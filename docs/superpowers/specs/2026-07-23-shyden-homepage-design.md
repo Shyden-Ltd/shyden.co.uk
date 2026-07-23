@@ -153,7 +153,7 @@ All results formatted with thousands separators. Result copy mirrors the origina
 - Empty / whitespace-only → "Please enter a number."
 - Not plain digits (letters, decimals, `1e3`, `1,000`, signs) → "Please enter a whole number."
 - **Zero → "Enter a number greater than zero."** (the original silently produced nonsense for zero — an impossible-good-state we now reject; negatives can't occur because `-` isn't a digit).
-- **Upper bound:** reject values above `Number.MAX_SAFE_INTEGER` (9,007,199,254,740,991) → "That number is too large." — beyond it, `ceil` loses integer precision. Valid inputs up to that bound format correctly with thousands separators.
+- **Upper bound:** reject values above **1,000,000,000** → "That number is too large." — across the accepted range `[1, 1e9]` the naive `ceil` arithmetic is exact (verified exhaustively to 50M and by BigInt cross-check to 1e9; float division by 0.9/0.4 loses integer precision only far above the cap, first divergence ~2^51 — a >1,000,000× margin). Valid inputs format with thousands separators.
 
 ### UX / a11y
 - Instant result on submit (Enter key + button), `inputmode="numeric"`, mobile keyboard shows digits.
@@ -175,7 +175,7 @@ All results formatted with thousands separators. Result copy mirrors the origina
 
 ## 8. Testing (TDD — tests first, every layer)
 
-- **Unit (pure logic)** — `lib/gloryPoints.ts`: the three-step formula at representative + boundary inputs (1, 9, 10, 100, 1000, and near `MAX_SAFE_INTEGER`), rounding edges (values that do/don't need `ceil`), and every validation branch (empty/whitespace, letters, decimal `3.5`, `1e3`, `1,000`, signs `+5`/`-5`, zero, and the too-large bound). RED before GREEN.
+- **Unit (pure logic)** — `lib/gloryPoints.ts`: the three-step formula at representative + boundary inputs (1, 9, 10, 100, 1000, and the 1,000,000,000 cap), rounding edges (values that do/don't need `ceil`), and every validation branch (empty/whitespace, letters, decimal `3.5`, `1e3`, `1,000`, signs `+5`/`-5`, zero, and the too-large bound). RED before GREEN.
 - **E2E (Playwright)** across the config's browser projects (chromium/firefox/webkit + mobile viewports):
   - **Homepage**: renders; hero CTA is a `mailto:support@shyden.co.uk`; nav works (incl. mobile hamburger open/close); "See our work" scrolls; work cards link correctly (ShyTalk external, calculator internal); footer shows the legal disclosure; no horizontal scroll at 320/375/768/1280; no console errors.
   - **Calculator**: entering a value shows the correct coins/beans/gift breakdown (asserts exact numbers from the formula); each validation message appears for its bad input; keyboard (Enter) works; `aria-live` updates.
