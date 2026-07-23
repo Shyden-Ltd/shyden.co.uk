@@ -1,0 +1,68 @@
+/* src/styles/tokens.css — design tokens (see spec §4). Palette AA-verified. */
+@import '@fontsource/space-grotesk/400.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/600.css';
+
+:root {
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --ink: #16171c;
+  --ink-soft: #565a66;
+  --border: #e7e4dc;
+  --accent: #0a7d66; /* do NOT lighten past AA */
+  --accent-ink: #096452;
+  --danger: #c0392b;
+
+  --font-head: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --measure: 66ch;
+  --radius: 10px;
+  --space: clamp(1rem, 0.6rem + 2vw, 2rem);
+  --maxw: 1080px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  color-scheme: light;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+h1,
+h2,
+h3 {
+  font-family: var(--font-head);
+  line-height: 1.15;
+}
+a {
+  color: var(--accent);
+}
+a:hover {
+  color: var(--accent-ink);
+}
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

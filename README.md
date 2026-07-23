@@ -8,6 +8,7 @@ The **Shyden Ltd** company website — a bespoke, AI-powered software company.
 [`docs/superpowers/specs/2026-07-23-shyden-homepage-design.md`](docs/superpowers/specs/2026-07-23-shyden-homepage-design.md)
 
 v1 scope:
+
 - **Homepage** — company landing / lead generation.
 - **Glory Points Calculator** (`/glory-points`) — a re-designed, client-side companion tool for the third-party YeeTalk app.
 
