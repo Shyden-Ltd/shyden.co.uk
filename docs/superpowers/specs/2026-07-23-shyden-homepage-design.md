@@ -132,6 +132,13 @@ Mobile-first, single scrolling column that becomes a centred max-width (~1080px)
 
 A single-purpose, on-brand tool. Re-designed from the bare Flask original into a clean card: title, one-line explainer, a number input, a **Calculate** button, and a clear **results breakdown**. Computed **live in the browser** (instant; no page reload).
 
+### YeeTalk attribution (this tool is YeeTalk-specific)
+Glory points belong to **YeeTalk** — a global social chat app (video/voice/text with worldwide auto-matching and translation) with an in-app gifting economy — **not** to Shyden. The page makes that explicit so users know exactly what it's for:
+- A **"For YeeTalk" lockup** near the title: YeeTalk's name (and official logo when sourced), linking to **https://yeetalkapp.com/** (`target="_blank"`, `rel="noopener noreferrer"`).
+- A one-line explainer, e.g. *"Glory points are part of YeeTalk's in-app gifting. This companion tool, built by Shyden, converts them to coins, beans and gift value."*
+- **Framing:** neutral companion-tool wording — clearly a Shyden-built tool *for* YeeTalk, presented inside an unmistakably Shyden page (Shyden header/footer). This is **nominative use** (naming + linking a third party), **not** an official YeeTalk product and not an impersonation. *(Open item §11: confirm whether to add an explicit "unofficial" disclaimer or state an official partnership.)*
+- **Asset:** use YeeTalk's **real** logo, sourced from their site — do **not** fabricate a YeeTalk mark. Until the asset is available, ship a plain-text "YeeTalk" wordmark link (still clear, still branded).
+
 ### Ported logic (from the operator's Flask source — verified)
 Given `gloryPoints` (a positive whole number):
 ```
@@ -205,6 +212,7 @@ All results formatted with thousands separators. Result copy mirrors the origina
 - **Brand review** (§4) — confirm/adjust palette (accent is now `#0A7D66`, AA-fixed), type, light-vs-dark, before build.
 - **Legal values (before launch)** — obtain Shyden Ltd's **company number** and **registered office address** for the footer disclosure (§5.6). The requirement is specced now; the values are filled at content time.
 - **ShyTalk subdomain (launch dependency)** — the flagship Work card links to `https://shytalk.shyden.co.uk`; confirm it resolves before cutover, else the flagship card dead-links.
+- **YeeTalk branding** — source YeeTalk's official logo asset for the `/glory-points` lockup (§6); confirm the affiliation framing (neutral "for YeeTalk" vs an explicit "unofficial" note vs an official-partnership statement).
 - **Copy** — finalise hero/services/work/footer wording during build for approval.
 - **Calculator home** — `/glory-points` now; promote to `/tools/glory-points` under a Tools hub only if a second YeeTalk tool appears.
 - **Future pages** — Services / Work / About / Contact (+ contact form/backend) as separate tickets on the same infrastructure.
