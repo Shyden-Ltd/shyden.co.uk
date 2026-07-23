@@ -5,11 +5,11 @@ interface Props {
   external?: boolean;
 }
 const { title, href, external = false } = Astro.props;
-const rel = external ? 'noopener' : undefined;
+const rel = external ? 'noopener noreferrer' : undefined;
 const target = external ? '_blank' : undefined;
 ---
 
-<a class="work-card" href={href} rel={rel} target={target}>
+<a class="work-card" href={href} rel={rel} target={target} aria-label={title}>
   <h3>{title}</h3>
   <p><slot /></p>
 </a>

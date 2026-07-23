@@ -23,6 +23,26 @@ test.describe('homepage content', () => {
     ).toHaveCount(1);
     await expect(page.locator('#work a[href="/glory-points"]')).toHaveCount(1);
   });
+  test('contact section CTA links to the support mailbox', async ({ page }) => {
+    await page.goto('/');
+    await expect(
+      page.locator('#contact').getByRole('link', { name: /email us/i }),
+    ).toHaveAttribute('href', 'mailto:support@shyden.co.uk');
+  });
+  test('call-to-action buttons meet the 44×44px touch target', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto('/');
+    const btns = page.locator('.btn');
+    await expect(btns.first()).toBeVisible();
+    for (const b of await btns.all()) {
+      const box = await b.boundingBox();
+      expect(box).not.toBeNull();
+      expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
+      expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
+    }
+  });
 });
 test.describe('mobile-first layout', () => {
   for (const width of [320, 375, 768, 1280]) {
