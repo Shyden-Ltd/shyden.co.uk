@@ -45,12 +45,20 @@ describe('calculateGlory — validation', () => {
   });
 });
 
-describe('calculateGlory — upper bound', () => {
-  it('accepts exactly Number.MAX_SAFE_INTEGER', () => {
-    expect(calculateGlory(String(Number.MAX_SAFE_INTEGER)).ok).toBe(true);
+describe('calculateGlory — upper bound (cap 1,000,000,000)', () => {
+  it('accepts the cap and computes it exactly', () => {
+    expect(calculateGlory('1000000000')).toEqual({
+      ok: true,
+      result: {
+        gloryPoints: 1000000000,
+        coinsNeeded: 1000000000,
+        beansNeeded: 1111111112,
+        totalGiftValue: 2777777780,
+      },
+    });
   });
-  it('rejects MAX_SAFE_INTEGER + 1', () => {
-    expect(calculateGlory('9007199254740992')).toEqual({
+  it('rejects one above the cap', () => {
+    expect(calculateGlory('1000000001')).toEqual({
       ok: false,
       error: ERRORS.tooLarge,
     });
