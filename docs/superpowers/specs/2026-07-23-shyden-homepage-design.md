@@ -1,7 +1,7 @@
 # shyden.co.uk — Company Site v1 (Homepage + Glory Points Calculator) — Design Spec
 
 - **Date:** 2026-07-23
-- **Status:** Draft — awaiting operator review
+- **Status:** Reviewed — brand/AA, legal-disclosure, SEO and calculator-input fixes applied; ready for implementation plan
 - **Repo:** `Shyden-Ltd/shyden.co.uk`
 - **Owner:** claude (with operator)
 
@@ -49,7 +49,8 @@ shyden.co.uk currently serves the Glory Points Calculator at its **root** (a Fla
 - **Language:** TypeScript for scripts + tests; `.astro` components.
 - **Styling:** a small global **design-token** stylesheet (CSS custom properties) + component-scoped CSS. No CSS framework.
 - **Fonts:** self-hosted (no external CDN — faster, privacy-friendly, cross-browser). See §4.
-- **Testing:** Vitest (or Node test) for the pure calc module; **Playwright** for E2E + cross-browser.
+- **SEO / Head:** every page sets a unique `<title>` + meta description via `BaseLayout` props; the homepage adds Open Graph + Twitter-card tags and an OG image; canonical URLs throughout. `@astrojs/sitemap` generates the sitemap; `robots.txt` lives in `public/`.
+- **Testing:** **Vitest** for the pure calc module; **Playwright** for E2E + cross-browser.
 - **Hosting:** **Cloudflare Pages** → `shyden.co.uk`. Build command `astro build`, output `dist/`.
 - **CI:** GitHub Actions — build, lint/format, unit + Playwright on push/PR (mirrors ShyTalk's discipline, scaled down).
 
@@ -65,7 +66,7 @@ shyden.co.uk/
 ├── public/                        # static assets, fonts, favicon, robots.txt
 ├── src/
 │   ├── styles/tokens.css          # design tokens (colour, type, spacing)
-│   ├── layouts/BaseLayout.astro   # <html>, head, header, footer, slot
+│   ├── layouts/BaseLayout.astro   # <html>, head (SEO/meta/OG/canonical), header, footer, slot
 │   ├── components/
 │   │   ├── Header.astro           # wordmark + nav + mobile hamburger
 │   │   ├── Footer.astro
@@ -76,7 +77,8 @@ shyden.co.uk/
 │   ├── scripts/glory-points.ts    # DOM wiring for the calculator page
 │   └── pages/
 │       ├── index.astro            # homepage
-│       └── glory-points.astro     # calculator
+│       ├── glory-points.astro     # calculator
+│       └── 404.astro              # custom not-found
 └── tests/
     ├── unit/gloryPoints.test.ts   # pure-logic tests
     └── e2e/*.spec.ts              # Playwright
@@ -99,9 +101,10 @@ Distinct **Shyden** identity — deliberately **not** ShyTalk's dark purple, and
   | `--ink` | `#16171C` | primary text / headings |
   | `--ink-soft` | `#565A66` | secondary text |
   | `--border` | `#E7E4DC` | hairlines, card borders |
-  | `--accent` | `#0E8C74` | **signature deep teal** — CTAs, links, highlights (a confident, less-default alternative to the usual startup blue) |
-  | `--accent-ink` | `#0A6B58` | accent hover/pressed |
+  | `--accent` | `#0A7D66` | **signature deep teal** — CTAs, links, highlights (a confident, less-default alternative to the usual startup blue) |
+  | `--accent-ink` | `#096452` | accent hover/pressed (darker) |
   | `--danger` | `#C0392B` | validation errors |
+- **Palette verified for WCAG AA (computed):** body ink 16.6:1, secondary text 6.4:1 and error red 5.0:1 on paper all pass comfortably; the accent clears AA in every use — white-on-accent 5.1:1 (buttons), accent-on-paper 4.7:1 and accent-on-white 5.1:1 (links). *The originally-proposed `#0E8C74` failed AA for normal text (≈4.2:1) and was darkened to `#0A7D66`; do not lighten it past that without re-checking contrast.*
 - **Typography (self-hosted, open-source):** **Space Grotesk** for headings (technical, distinctive, geometric) + **Inter** for body (highly legible, cross-browser). Strong hierarchy, generous line-height, comfortable measure (~66ch max).
 - **Feel:** generous whitespace, subtle depth (soft 1px borders + faint shadows, no heavy gradients), rounded-but-restrained corners, motion only for affordance (hover/focus), full dark-mode deferred.
 - **Voice:** confident, clear, jargon-light. e.g. *"We build bespoke software — AI-accelerated, yours end-to-end. Or embed our specialists in the team you already have."*
@@ -114,12 +117,12 @@ Distinct **Shyden** identity — deliberately **not** ShyTalk's dark purple, and
 
 Mobile-first, single scrolling column that becomes a centred max-width (~1080px) layout on larger screens. Sections top→bottom:
 
-1. **Header** — Shyden wordmark (left) + nav (right): `Work · Services · Contact` (anchors for v1; real pages later). On mobile: wordmark + hamburger toggling an accessible menu. Sticky, subtle border on scroll.
+1. **Header** — Shyden wordmark (left) + nav (right): `Services · Work · Contact` (anchors for v1, in scroll order; real pages later). On mobile: wordmark + hamburger toggling an accessible menu. Sticky, subtle border on scroll.
 2. **Hero** — H1 on the bespoke/AI positioning; one-line subhead; **primary CTA "Get in touch"** (`mailto:support@shyden.co.uk`) + secondary "See our work" (scrolls to Work). Restrained, confident, lots of space.
 3. **Services** — two `ServiceCard`s: **"We build your product"** (end-to-end: plan → build → maintain, AI-accelerated) and **"Hire our specialists"** (embed in your existing software & processes). Stack on mobile, side-by-side ≥720px.
-4. **Our work** — `WorkCard`s: **ShyTalk** (Shyden's flagship product → `https://shytalk.shyden.co.uk`) featured; the **Glory Points Calculator** (a tool we built → `/glory-points`) as a smaller secondary card. Extensible list.
+4. **Our work** — `WorkCard`s: **ShyTalk** (Shyden's flagship product → `https://shytalk.shyden.co.uk`) featured; the **Glory Points Calculator** (a tool we built → `/glory-points`) as a smaller secondary card. Extensible list. *(Launch dependency: the ShyTalk subdomain must resolve at cutover — see §11.)*
 5. **Contact** — closing band repeating **"Get in touch" → `mailto:support@shyden.co.uk`**, with the address shown in plain text too.
-6. **Footer** — © Shyden Ltd, year; minimal links (email, and room for legal/social later).
+6. **Footer** — © Shyden Ltd + year. **UK legal disclosure (required in v1):** registered company name, **company number**, **place of registration** ("Registered in England & Wales"), and **registered office address** — a Companies Act 2006 / Trading Disclosures requirement for a UK limited company's website (actual values supplied at content/build time — see §11). Plus the contact email and room for legal/social links later.
 
 **Copy** will be drafted in-spec/PR for operator approval; the above is structure + intent.
 
@@ -138,11 +141,12 @@ totalGiftValue = ceil(beansNeeded / 0.40)        // gifts convert to beans at 40
 ```
 All results formatted with thousands separators. Result copy mirrors the original's three lines (coins → beans → total gift value).
 
-### Validation (improvement over the original)
-- Empty input → "Please enter a number."
-- Non-numeric / non-integer → "Please enter a whole number."
-- **≤ 0 → "Enter a number greater than zero."** (the original silently produced nonsense for zero/negatives — an impossible-good-state we now reject).
-- Reasonable upper bound handling (no overflow/`Infinity`); very large valid inputs still format correctly.
+### Input parsing & validation (improvement over the original)
+**Parse strategy (canonical, so the tests are unambiguous):** trim the input, then accept **plain digits only** (`/^\d+$/`) — mirroring the original Python `int()`. This deliberately rejects decimals (`3.5`), scientific notation (`1e3`), thousands separators (`1,000`) and signs (`+5` / `-5`) with a clear message rather than silently truncating.
+- Empty / whitespace-only → "Please enter a number."
+- Not plain digits (letters, decimals, `1e3`, `1,000`, signs) → "Please enter a whole number."
+- **Zero → "Enter a number greater than zero."** (the original silently produced nonsense for zero — an impossible-good-state we now reject; negatives can't occur because `-` isn't a digit).
+- **Upper bound:** reject values above `Number.MAX_SAFE_INTEGER` (9,007,199,254,740,991) → "That number is too large." — beyond it, `ceil` loses integer precision. Valid inputs up to that bound format correctly with thousands separators.
 
 ### UX / a11y
 - Instant result on submit (Enter key + button), `inputmode="numeric"`, mobile keyboard shows digits.
@@ -157,16 +161,16 @@ All results formatted with thousands separators. Result copy mirrors the origina
 - **Mobile-first CSS**: base styles target small screens; enhance up with `min-width` breakpoints. Fluid units, `clamp()` type, `max-width:100%` media.
 - **No horizontal scroll** at any width from 320px up; **content never clips** (pages scroll).
 - **Touch targets ≥ 44×44px**; comfortable spacing.
-- **WCAG AA** contrast; semantic HTML; keyboard-navigable; visible focus; `prefers-reduced-motion` respected.
+- **WCAG AA** contrast (palette verified in §4); semantic HTML; keyboard-navigable; visible focus; `prefers-reduced-motion` respected.
 - **Cross-browser**: correct on chromium, firefox, webkit (desktop) + mobile chromium + mobile webkit. No JS required for the homepage; the calculator degrades to a clear message if JS is off.
 
 ---
 
 ## 8. Testing (TDD — tests first, every layer)
 
-- **Unit (pure logic)** — `lib/gloryPoints.ts`: the three-step formula at representative + boundary inputs (1, 9, 10, 100, 1000, very large), rounding edges (values that do/don't need `ceil`), and every validation branch (empty, non-numeric, decimal, zero, negative). RED before GREEN.
+- **Unit (pure logic)** — `lib/gloryPoints.ts`: the three-step formula at representative + boundary inputs (1, 9, 10, 100, 1000, and near `MAX_SAFE_INTEGER`), rounding edges (values that do/don't need `ceil`), and every validation branch (empty/whitespace, letters, decimal `3.5`, `1e3`, `1,000`, signs `+5`/`-5`, zero, and the too-large bound). RED before GREEN.
 - **E2E (Playwright)** across the config's browser projects (chromium/firefox/webkit + mobile viewports):
-  - **Homepage**: renders; hero CTA is a `mailto:support@shyden.co.uk`; nav works (incl. mobile hamburger open/close); "See our work" scrolls; work cards link correctly (ShyTalk external, calculator internal); no horizontal scroll at 320/375/768/1280; no console errors.
+  - **Homepage**: renders; hero CTA is a `mailto:support@shyden.co.uk`; nav works (incl. mobile hamburger open/close); "See our work" scrolls; work cards link correctly (ShyTalk external, calculator internal); footer shows the legal disclosure; no horizontal scroll at 320/375/768/1280; no console errors.
   - **Calculator**: entering a value shows the correct coins/beans/gift breakdown (asserts exact numbers from the formula); each validation message appears for its bad input; keyboard (Enter) works; `aria-live` updates.
 - **Cross-browser + mobile-first** are gate conditions, not afterthoughts.
 - **Owed on device return**: the real mobile-device browser gauntlet (real Android + real iPhone browsers) — per the standing rule, web work is verified on real devices too; here it's Mac-browser-verified first, devices owed.
@@ -183,10 +187,13 @@ All results formatted with thousands separators. Result copy mirrors the origina
 
 ## 10. Acceptance Criteria (v1)
 
-- [ ] Astro site builds clean; homepage + `/glory-points` render as static HTML.
+- [ ] Astro site builds clean; homepage + `/glory-points` render as static HTML; a custom `404` page is present.
 - [ ] Homepage matches the approved brand + structure; "Get in touch" is `mailto:support@shyden.co.uk`; work cards link to ShyTalk + the calculator.
-- [ ] Calculator computes coins/beans/gift **exactly** per the ported formula, formatted; all validation branches covered; live/instant; accessible.
-- [ ] Mobile-first: no clipping/no horizontal scroll 320px+, touch targets ≥44px, WCAG AA.
+- [ ] Footer shows the required UK company disclosures (registered name, company number, place of registration, registered office address).
+- [ ] Every page has a unique `<title>` + meta description; the homepage has Open Graph / Twitter-card tags + an OG image; sitemap + `robots.txt` present.
+- [ ] The chosen accent passes WCAG AA in every use (white-on-accent ≥ 4.5:1, accent-on-bg ≥ 4.5:1) — verified.
+- [ ] Calculator computes coins/beans/gift **exactly** per the ported formula, formatted; all input branches covered (digits-only, zero, too-large); live/instant; accessible.
+- [ ] Mobile-first: no clipping / no horizontal scroll 320px+, touch targets ≥44px, WCAG AA.
 - [ ] Unit tests (calc) + Playwright E2E green across all configured browsers; lint/format clean; CI green.
 - [ ] Deployed to Cloudflare Pages; ready for shyden.co.uk cutover.
 - [ ] Real mobile-device browser gauntlet run on device return (owed, tracked).
@@ -195,7 +202,9 @@ All results formatted with thousands separators. Result copy mirrors the origina
 
 ## 11. Open Items / Future
 
-- **Brand review** (§4) — confirm/adjust palette, type, light-vs-dark, before build.
+- **Brand review** (§4) — confirm/adjust palette (accent is now `#0A7D66`, AA-fixed), type, light-vs-dark, before build.
+- **Legal values (before launch)** — obtain Shyden Ltd's **company number** and **registered office address** for the footer disclosure (§5.6). The requirement is specced now; the values are filled at content time.
+- **ShyTalk subdomain (launch dependency)** — the flagship Work card links to `https://shytalk.shyden.co.uk`; confirm it resolves before cutover, else the flagship card dead-links.
 - **Copy** — finalise hero/services/work/footer wording during build for approval.
 - **Calculator home** — `/glory-points` now; promote to `/tools/glory-points` under a Tools hub only if a second YeeTalk tool appears.
 - **Future pages** — Services / Work / About / Contact (+ contact form/backend) as separate tickets on the same infrastructure.
