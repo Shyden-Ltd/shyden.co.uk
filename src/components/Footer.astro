@@ -1,0 +1,34 @@
+---
+// Legal values are supplied at content time (spec §11). Placeholders below are
+// clearly marked; replace before launch — do not ship the bracketed text.
+const companyNo = '[[COMPANY_NUMBER]]';
+const regOffice = '[[REGISTERED_OFFICE_ADDRESS]]';
+const year = new Date().getFullYear();
+---
+
+<footer id="contact-legal">
+  <div class="inner">
+    <p class="disclosure">
+      &copy; {year} Shyden Ltd. Registered in England &amp; Wales. Company No. {
+        companyNo
+      }. Registered office: {regOffice}.
+    </p>
+    <p><a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a></p>
+  </div>
+</footer>
+<style>
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 4rem;
+  }
+  .inner {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 2rem var(--space);
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+  }
+  .inner a {
+    color: var(--accent);
+  }
+</style>

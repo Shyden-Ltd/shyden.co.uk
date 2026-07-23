@@ -1,0 +1,100 @@
+---
+const links = [
+  { href: '#services', label: 'Services' },
+  { href: '#work', label: 'Work' },
+  { href: '#contact', label: 'Contact' },
+];
+---
+
+<header>
+  <div class="bar">
+    <a class="wordmark" href="/">Shyden</a>
+    <details class="menu">
+      <summary aria-label="Toggle navigation menu"
+        ><span class="bars"></span></summary
+      >
+      <nav>
+        {links.map((l) => <a href={l.href}>{l.label}</a>)}
+      </nav>
+    </details>
+  </div>
+</header>
+<style>
+  header {
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .bar {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0.75rem var(--space);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .wordmark {
+    font-family: var(--font-head);
+    font-weight: 600;
+    font-size: 1.25rem;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  summary {
+    list-style: none;
+    min-width: 44px;
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  .bars,
+  .bars::before,
+  .bars::after {
+    display: block;
+    width: 24px;
+    height: 2px;
+    background: var(--ink);
+    content: '';
+  }
+  .bars {
+    position: relative;
+  }
+  .bars::before {
+    position: absolute;
+    top: -7px;
+  }
+  .bars::after {
+    position: absolute;
+    top: 7px;
+  }
+  nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0;
+  }
+  nav a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  @media (min-width: 720px) {
+    summary {
+      display: none;
+    }
+    nav {
+      flex-direction: row;
+      gap: 1.5rem;
+    }
+    .menu > nav {
+      display: flex;
+    } /* force-show regardless of open state on desktop */
+  }
+</style>
