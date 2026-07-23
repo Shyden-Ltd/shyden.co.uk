@@ -1,5 +1,8 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import Button from '../components/Button.astro';
+import ServiceCard from '../components/ServiceCard.astro';
+import WorkCard from '../components/WorkCard.astro';
 const description =
   'Shyden Ltd builds bespoke, AI-accelerated software end-to-end — or embeds specialists in your existing team.';
 ---
@@ -8,5 +11,79 @@ const description =
   title="Shyden Ltd — Bespoke, AI-powered software"
   description={description}
 >
-  <h1>Shyden</h1>
+  <section class="hero wrap">
+    <h1>We build bespoke software — AI-accelerated, yours end-to-end.</h1>
+    <p class="lead">Or embed our specialists in the team you already have.</p>
+    <p class="cta">
+      <Button href="mailto:support@shyden.co.uk">Get in touch</Button>
+      <Button href="#work" variant="secondary">See our work</Button>
+    </p>
+  </section>
+
+  <section id="services" class="wrap">
+    <h2>What we do</h2>
+    <div class="grid-2">
+      <ServiceCard title="We build your product"
+        >Plan, build and maintain your software end-to-end — AI-accelerated,
+        delivered by us.</ServiceCard
+      >
+      <ServiceCard title="Hire our specialists"
+        >Embed our people in your existing software and processes to move faster
+        with less risk.</ServiceCard
+      >
+    </div>
+  </section>
+
+  <section id="work" class="wrap">
+    <h2>Our work</h2>
+    <div class="grid-2">
+      <WorkCard title="ShyTalk" href="https://shytalk.shyden.co.uk" external
+        >Our flagship product.</WorkCard
+      >
+      <WorkCard title="Glory Points Calculator" href="/glory-points"
+        >A companion tool we built for YeeTalk.</WorkCard
+      >
+    </div>
+  </section>
+
+  <section id="contact" class="wrap">
+    <h2>Get in touch</h2>
+    <p>
+      Tell us what you're building. <a href="mailto:support@shyden.co.uk"
+        >support@shyden.co.uk</a
+      >
+    </p>
+    <p><Button href="mailto:support@shyden.co.uk">Email us</Button></p>
+  </section>
 </BaseLayout>
+<style>
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem var(--space);
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 1.2rem + 4vw, 3.25rem);
+    max-width: var(--measure);
+  }
+  .lead {
+    font-size: 1.15rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  .cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  @media (min-width: 720px) {
+    .grid-2 {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>
