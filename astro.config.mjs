@@ -1,5 +1,5 @@
 import { defineConfig } from 'astro/config';
 
-// Task 1: minimal static config. `site` (canonical/OG) is added in Task 3;
-// the sitemap integration is added in Task 7.
-export default defineConfig({});
+// Task 3: `site` set for canonical/OG URL resolution.
+// The sitemap integration is added in Task 7.
+export default defineConfig({ site: 'https://shyden.co.uk' });
