@@ -33,3 +33,17 @@ test('an unauthenticated request is challenged with 401', async () => {
   expect(res.status).toBe(401);
   expect(res.headers.get('www-authenticate')).toMatch(/^Basic realm=/);
 });
+
+test('outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-env leak)', async ({
+  page,
+}) => {
+  // The dev build injects PUBLIC_SHYTALK_URL=dev, so the work-card must link to
+  // DEV ShyTalk — and the prod URL must NOT appear anywhere on the dev site.
+  await page.goto('/');
+  await expect(
+    page.locator('a[href="https://dev.shytalk.shyden.co.uk"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('a[href="https://shytalk.shyden.co.uk"]'),
+  ).toHaveCount(0);
+});

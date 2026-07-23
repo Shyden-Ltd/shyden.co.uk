@@ -43,7 +43,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Build (dev — outbound ShyTalk link points at DEV, never prod)
+        env:
+          # Env-derived cross-product URL: the dev site must link to dev
+          # ShyTalk, not the prod site. index.astro defaults to prod when unset.
+          PUBLIC_SHYTALK_URL: https://dev.shytalk.shyden.co.uk
+        run: npm run build
       - name: Deploy dist/ to Cloudflare Pages (dev project)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

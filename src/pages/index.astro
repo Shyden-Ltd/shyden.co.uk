@@ -5,6 +5,11 @@ import ServiceCard from '../components/ServiceCard.astro';
 import WorkCard from '../components/WorkCard.astro';
 const description =
   'Shyden Ltd builds bespoke, AI-accelerated software end-to-end — or embeds specialists in your existing team.';
+// Env-derived so we never cross environments: the DEV site must link to DEV
+// ShyTalk, prod to prod. Defaults to prod; deploy-dev.yml sets
+// PUBLIC_SHYTALK_URL=https://dev.shytalk.shyden.co.uk before the dev build.
+const shytalkUrl =
+  import.meta.env.PUBLIC_SHYTALK_URL ?? 'https://shytalk.shyden.co.uk';
 ---
 
 <BaseLayout
@@ -37,7 +42,7 @@ const description =
   <section id="work" class="wrap">
     <h2>Our work</h2>
     <div class="grid-2">
-      <WorkCard title="ShyTalk" href="https://shytalk.shyden.co.uk" external
+      <WorkCard title="ShyTalk" href={shytalkUrl} external
         >Our flagship product.</WorkCard
       >
       <WorkCard title="Glory Points Calculator" href="/glory-points"
