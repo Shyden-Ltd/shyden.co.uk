@@ -6,7 +6,8 @@ interface Props {
   ogImage?: string;
 }
 const { title, description, ogImage = '/og-default.png' } = Astro.props;
-const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
+const siteOrigin = Astro.site ?? Astro.url;
+const canonical = new URL(Astro.url.pathname, siteOrigin).href;
 ---
 
 <!doctype html>
@@ -21,10 +22,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta
-      property="og:image"
-      content={new URL(ogImage, Astro.site ?? Astro.url).href}
-    />
+    <meta property="og:image" content={new URL(ogImage, siteOrigin).href} />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <slot name="head" />
