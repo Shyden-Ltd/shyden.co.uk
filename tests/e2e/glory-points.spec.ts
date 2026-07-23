@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 test.describe('glory points calculator', () => {
   test('computes the exact breakdown for 1000', async ({ page }) => {
     await page.goto('/glory-points');
@@ -8,12 +8,14 @@ test.describe('glory points calculator', () => {
     await expect(result).toContainText('1,000'); // coins
     await expect(result).toContainText('1,112'); // beans
     await expect(result).toContainText('2,780'); // gift
+    await expect(page.locator('#glory-error')).toBeEmpty(); // result & error are mutually exclusive
   });
   test('Enter key submits', async ({ page }) => {
     await page.goto('/glory-points');
     await page.fill('#glory-input', '9');
     await page.press('#glory-input', 'Enter');
     await expect(page.locator('#glory-result')).toContainText('25');
+    await expect(page.locator('#glory-error')).toBeEmpty();
   });
   test('shows YeeTalk attribution linking to the official site', async ({
     page,
@@ -43,6 +45,42 @@ test.describe('glory points calculator', () => {
       await page.click('#glory-submit');
       await expect(page.locator('#glory-error')).toHaveText(message);
       await expect(page.locator('#glory-result')).toBeEmpty();
+    });
+  }
+});
+
+test.describe('glory points — touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
+  const atLeast44 = async (locator: Locator) => {
+    const box = await locator.boundingBox();
+    expect(box).not.toBeNull();
+    // Round to the nearest device pixel: engines can report a sub-pixel value
+    // like 43.9999 for a declared `min-height: 44px` (fixed-point layout math).
+    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
+    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
+  };
+
+  test('mobile: attribution link, input and submit button are ≥44px', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto('/glory-points');
+    await atLeast44(page.locator('a[href="https://yeetalkapp.com/"]'));
+    await atLeast44(page.locator('#glory-input'));
+    await atLeast44(page.locator('#glory-submit'));
+  });
+});
+
+test.describe('glory points — mobile-first layout', () => {
+  for (const width of [320, 375, 768, 1280]) {
+    test(`no horizontal scroll at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/glory-points');
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
     });
   }
 });
