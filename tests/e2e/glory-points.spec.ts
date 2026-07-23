@@ -49,6 +49,49 @@ test.describe('glory points calculator', () => {
   }
 });
 
+test.describe('glory points — explains what it does and how to use it', () => {
+  test('the lead says: enter a target, get the exact amounts NEEDED to reach it', async ({
+    page,
+  }) => {
+    // Pin the CAUSAL DIRECTION, not just the vocabulary: glory points are the
+    // INPUT you enter, and the exact coins/beans/total gift value are the OUTPUT
+    // you NEED to reach that target. A backwards rewrite that keeps all the same
+    // keywords (e.g. "enter the gift value → get the glory points") must FAIL
+    // this, which a set of order-independent substring checks could not catch.
+    await page.goto('/glory-points');
+    const lead = page.locator('.lead');
+    await expect(lead).toContainText(
+      /enter the number of glory points.+exact coins, beans and total gift value you need to reach it/i,
+    );
+  });
+
+  test('gives numbered, in-order steps: enter → calculate → read the result', async ({
+    page,
+  }) => {
+    await page.goto('/glory-points');
+    await expect(
+      page.getByRole('heading', { name: /how to use it/i }),
+    ).toBeVisible();
+    // The steps are a real list in the accessibility tree, named by the "How to
+    // use it" heading (via aria-labelledby) — so a screen reader announces
+    // "How to use it, list, 3 items". Asserting the ROLE (not just the CSS
+    // selector) guards the native list semantics against a styling regression.
+    await expect(
+      page.getByRole('list', { name: /how to use it/i }),
+    ).toBeVisible();
+    const steps = page.locator('.how-to ol > li');
+    await expect(steps).toHaveCount(3);
+    // 1) Enter the glory-point target.
+    await expect(steps.nth(0)).toContainText(/glory points/i);
+    await expect(steps.nth(0)).toContainText(/enter|type/i);
+    // 2) Trigger the calculation (the button is labelled "Calculate").
+    await expect(steps.nth(1)).toContainText(/calculate/i);
+    // 3) Read off the beans and gift value needed — the amounts the user asked about.
+    await expect(steps.nth(2)).toContainText(/beans/i);
+    await expect(steps.nth(2)).toContainText(/total gift value/i);
+  });
+});
+
 test.describe('glory points — touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
   const atLeast44 = async (locator: Locator) => {
     const box = await locator.boundingBox();

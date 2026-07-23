@@ -17,10 +17,24 @@ const description =
     </p>
     <h1>Glory Points Calculator</h1>
     <p class="lead">
-      Glory points are part of <strong>YeeTalk</strong>'s in-app gifting. This
-      companion tool, built by Shyden, converts a glory-point total into coins,
-      beans and gift value.
+      Glory points are part of <strong>YeeTalk</strong>'s in-app gifting. Enter
+      the number of glory points you're aiming for and this companion tool,
+      built by Shyden, works out the exact coins, beans and total gift value you
+      need to reach it.
     </p>
+    <div class="how-to">
+      <h2 id="how-to-heading">How to use it</h2>
+      <ol aria-labelledby="how-to-heading">
+        <li>
+          Enter the number of glory points you want to reach in the box below.
+        </li>
+        <li>Select <strong>Calculate</strong> — or press Enter.</li>
+        <li>
+          Read off the exact coins, beans and total gift value you need to hit
+          that target.
+        </li>
+      </ol>
+    </div>
     <div class="card">
       <label for="glory-input">Glory points</label>
       <input
@@ -75,6 +89,27 @@ const description =
   .for-yeetalk a:hover {
     border-color: var(--accent);
     color: var(--accent-ink);
+  }
+  .how-to {
+    margin: 0 0 1.5rem;
+  }
+  .how-to h2 {
+    font-size: 1rem;
+    margin: 0 0 0.5rem;
+  }
+  .how-to ol {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--ink-soft);
+  }
+  /* Native list flow (no display override) keeps the ordered-list role and
+     numbered markers intact across engines; space the steps with margin so we
+     never blockify the <li> away from `list-item`. */
+  .how-to li {
+    line-height: 1.5;
+  }
+  .how-to li + li {
+    margin-top: 0.35rem;
   }
   .card {
     background: var(--surface);
