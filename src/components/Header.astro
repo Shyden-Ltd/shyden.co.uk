@@ -1,8 +1,12 @@
 ---
+// Root-relative (/#…) not bare (#…): the Header renders on every page via
+// BaseLayout, but these section anchors live only on the homepage — so bare
+// fragments would dead-link on /glory-points and /404. /#services scrolls in
+// place on the homepage and navigates home-then-scrolls from any other page.
 const links = [
-  { href: '#services', label: 'Services' },
-  { href: '#work', label: 'Work' },
-  { href: '#contact', label: 'Contact' },
+  { href: '/#services', label: 'Services' },
+  { href: '/#work', label: 'Work' },
+  { href: '/#contact', label: 'Contact' },
 ];
 ---
 
