@@ -47,10 +47,11 @@ Run:
 npm create astro@latest . -- --template minimal --no-install --no-git --typescript strict --yes
 npm pkg set scripts.dev="astro dev" scripts.build="astro build" scripts.preview="astro preview"
 npm pkg set scripts.test:unit="vitest run" scripts.test:e2e="playwright test" scripts.test="npm run test:unit && npm run test:e2e" scripts.format="prettier --check ."
-npm install -D vitest @playwright/test prettier @astrojs/sitemap @fontsource/space-grotesk @fontsource/inter
-npx playwright install --with-deps
+npm install -D vitest @playwright/test prettier prettier-plugin-astro @astrojs/sitemap @fontsource/space-grotesk @fontsource/inter
+npx playwright install    # local/macOS: NO --with-deps (that flag is Ubuntu/Debian only); CI on ubuntu keeps --with-deps
 echo "24" > .nvmrc
-printf '{\n  "singleQuote": true,\n  "semi": true\n}\n' > .prettierrc.json
+printf '{\n  "singleQuote": true,\n  "semi": true,\n  "plugins": ["prettier-plugin-astro"]\n}\n' > .prettierrc.json
+printf 'dist/\n.astro/\n.superpowers/\nnode_modules/\npackage-lock.json\npublic/\n' > .prettierignore
 ```
 Expected: `package.json`, `astro.config.mjs`, `tsconfig.json` exist; dependencies installed.
 
