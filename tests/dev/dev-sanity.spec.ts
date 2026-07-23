@@ -24,13 +24,12 @@ test('robots.txt disallows all crawling on the dev site', async ({
   expect(body).toContain('Disallow: /');
 });
 
-test('an unauthenticated request is challenged with 401', async ({
-  playwright,
-}) => {
-  // A fresh context with NO credentials must be blocked by the gate.
-  const ctx = await playwright.request.newContext();
-  const res = await ctx.get(`${BASE}/`);
-  expect(res.status()).toBe(401);
-  expect(res.headers()['www-authenticate']).toMatch(/^Basic realm=/);
-  await ctx.dispose();
+test('an unauthenticated request is challenged with 401', async () => {
+  // Raw fetch — NOT a Playwright request context, which would inherit the
+  // config's httpCredentials and silently authenticate (making this pass a
+  // 200 as if unchallenged). fetch sends no Authorization header, so this
+  // genuinely exercises the no-credentials path.
+  const res = await fetch(`${BASE}/`, { redirect: 'manual' });
+  expect(res.status).toBe(401);
+  expect(res.headers.get('www-authenticate')).toMatch(/^Basic realm=/);
 });
