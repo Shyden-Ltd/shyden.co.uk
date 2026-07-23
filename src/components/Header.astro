@@ -13,10 +13,10 @@ const links = [
       <summary aria-label="Toggle navigation menu"
         ><span class="bars"></span></summary
       >
-      <nav>
-        {links.map((l) => <a href={l.href}>{l.label}</a>)}
-      </nav>
     </details>
+    <nav>
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+    </nav>
   </div>
 </header>
 <style>
@@ -27,6 +27,7 @@ const links = [
     border-bottom: 1px solid var(--border);
   }
   .bar {
+    position: relative;
     max-width: var(--maxw);
     margin: 0 auto;
     padding: 0.75rem var(--space);
@@ -44,7 +45,8 @@ const links = [
     color: var(--ink);
     text-decoration: none;
   }
-  summary {
+  /* Mobile disclosure toggle (the hamburger). */
+  .menu > summary {
     list-style: none;
     min-width: 44px;
     min-height: 44px;
@@ -52,7 +54,7 @@ const links = [
     place-items: center;
     cursor: pointer;
   }
-  summary::-webkit-details-marker {
+  .menu > summary::-webkit-details-marker {
     display: none;
   }
   .bars,
@@ -75,11 +77,24 @@ const links = [
     position: absolute;
     top: 7px;
   }
+  /* The nav lives OUTSIDE <details> so that at desktop it is a plain flex
+     element (a closed <details> wrapper collapses to 0 width and pushes its
+     children off-screen on every engine). On mobile it is hidden until the
+     disclosure opens, then shown as an absolutely-positioned dropdown. */
   nav {
+    display: none;
+  }
+  .menu[open] ~ nav {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    padding: 0.5rem 0;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem var(--space);
   }
   nav a {
     min-width: 44px;
@@ -90,15 +105,15 @@ const links = [
     text-decoration: none;
   }
   @media (min-width: 720px) {
-    summary {
+    .menu {
       display: none;
     }
     nav {
+      display: flex;
       flex-direction: row;
       gap: 1.5rem;
+      position: static;
+      padding: 0;
     }
-    .menu > nav {
-      display: flex;
-    } /* force-show regardless of open state on desktop */
   }
 </style>
