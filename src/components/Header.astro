@@ -10,12 +10,18 @@ const links = [
   <div class="bar">
     <a class="wordmark" href="/">Shyden</a>
     <details class="menu">
-      <summary aria-label="Toggle navigation menu"
+      <summary aria-label="Toggle navigation menu" aria-controls="primary-nav"
         ><span class="bars"></span></summary
       >
     </details>
-    <nav>
-      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+    <nav id="primary-nav">
+      {
+        links.map((l) => (
+          <a href={l.href} tabindex="0">
+            {l.label}
+          </a>
+        ))
+      }
     </nav>
   </div>
 </header>
@@ -38,6 +44,7 @@ const links = [
   .wordmark {
     display: inline-flex;
     align-items: center;
+    min-width: 44px;
     min-height: 44px;
     font-family: var(--font-head);
     font-weight: 600;
@@ -84,17 +91,19 @@ const links = [
   nav {
     display: none;
   }
-  .menu[open] ~ nav {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    padding: 0.5rem var(--space);
+  @media (max-width: 719.98px) {
+    .menu[open] ~ nav {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0.5rem var(--space);
+    }
   }
   nav a {
     min-width: 44px;

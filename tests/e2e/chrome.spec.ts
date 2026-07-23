@@ -44,6 +44,35 @@ test.describe('header + footer', () => {
     await expect(details).toHaveJSProperty('open', false);
     await expect(firstLink).toBeHidden();
   });
+
+  test('nav stays a horizontal row at desktop even if opened at mobile first', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto('/');
+    await page.locator('header summary').click(); // open at mobile
+    await expect(page.locator('header details')).toHaveJSProperty('open', true);
+    await page.setViewportSize({ width: 1280, height: 800 }); // resize WITHOUT reload
+    const nav = page.locator('header nav');
+    await expect(nav).toHaveCSS('flex-direction', 'row');
+    await expect(nav).toHaveCSS('position', 'static');
+    const lastBox = await page.locator('header nav a').last().boundingBox();
+    expect(lastBox!.x + lastBox!.width).toBeLessThanOrEqual(1280);
+  });
+
+  test('desktop: nav is keyboard-reachable in order (WCAG 2.1.1)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    await page.locator('.wordmark').focus();
+    for (const label of ['Services', 'Work', 'Contact']) {
+      await page.keyboard.press('Tab');
+      await expect(
+        page.locator('header nav a', { hasText: label }),
+      ).toBeFocused();
+    }
+  });
 });
 
 test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
@@ -87,5 +116,19 @@ test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
     // The last link (Contact) previously overflowed past the viewport edge.
     const lastBox = await links.last().boundingBox();
     expect(lastBox!.x + lastBox!.width).toBeLessThanOrEqual(1280);
+  });
+});
+
+test.describe('mobile layout: no horizontal overflow', () => {
+  test('no horizontal scroll at 320px with the menu open', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto('/');
+    await page.locator('header summary').click();
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });
