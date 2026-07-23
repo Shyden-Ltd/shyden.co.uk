@@ -33,6 +33,11 @@ test.describe('header + footer', () => {
     await expect(footer).toContainText('Shyden Ltd');
     await expect(footer).toContainText('Registered in England & Wales');
     await expect(footer).toContainText(/Company (No\.|number)/i);
+    // Real Companies House values (SHYDEN LTD, 17110487) — and no bracketed
+    // placeholder may leak into the shipped disclosure.
+    await expect(footer).toContainText('Company No. 17110487');
+    await expect(footer).toContainText(/WC2H 9JQ/);
+    await expect(footer).not.toContainText('[[');
     await expect(
       footer.locator('a[href="mailto:support@shyden.co.uk"]'),
     ).toBeVisible();
