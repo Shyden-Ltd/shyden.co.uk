@@ -72,6 +72,10 @@ describe('basicAuthOk — FAILS CLOSED', () => {
     ['Bearer abc', 'wrong scheme'],
     ['Basic ', 'empty credential'],
     ['Basic ' + Buffer.from('nocolon').toString('base64'), 'no colon'],
+    [
+      'Basic @@@not-valid-base64@@@',
+      'undecodable base64 (atob throws → catch)',
+    ],
   ])('rejects %s', (header) =>
     expect(basicAuthOk(header as unknown as string, 'secret')).toBe(false),
   );

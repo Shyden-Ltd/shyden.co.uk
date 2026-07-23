@@ -16,12 +16,12 @@ Same shape, adapted for a static **Astro** site (build output `dist/`, not `publ
 2. **`functions/_middleware.js`** (ESM) — the Cloudflare Pages plumbing: prod hostname → `next()`; `/robots.txt` → blocking body (before the auth gate, so crawlers read `Disallow`); else Basic-auth via `env.DEV_PASSWORD` → on pass, graft `X-Robots-Tag` onto the response. `functions/` sits at the repo ROOT (wrangler scans `<repo>/functions/`, never `dist/functions/`).
 3. **`tests/unit/lockdown.test.ts`** (Vitest) — every branch of the pure logic: exact/near-miss/case hostname matching, fail-closed auth (unset password, missing/malformed header, wrong vs correct password, username-ignored), robots body contains `Disallow: /`, header value.
 4. **`.github/workflows/deploy-dev.yml`** (`workflow_dispatch`, `ref` input) — `npm ci` → `npm run build` → `wrangler pages deploy dist --project-name shyden-site-dev --branch main` → Playwright sanity check against `https://dev.shyden.co.uk` using `httpCredentials` (the Basic-auth password).
-5. **`tests/e2e/dev-sanity.spec.ts`** — post-deploy: the dev homepage + `/glory-points` load (200) behind Basic auth; unauthenticated request gets 401; `/robots.txt` says `Disallow: /`.
+5. **`tests/dev/dev-sanity.spec.ts`** (its own `testDir`, isolated from `npm run test:e2e`) — post-deploy: the dev homepage + `/glory-points` load (200) behind Basic auth; unauthenticated request gets 401; `/robots.txt` says `Disallow: /`.
 
 ### Cloudflare provisioning (this session, via operator API token)
 
-- Create Pages project **`shyden-site-dev`** (account `9315582c39b627dca58dfa83602db385`, same Shyden-Ltd account as ShyTalk — verified against the token).
-- Set the Pages **environment variable `DEV_PASSWORD`** (the shared Basic-auth secret; the value lives at `~/.shytalk/dev-web-auth.env`, never committed/logged).
+- Create Pages project **`shyden-site-dev`** in the Shyden-Ltd account (same account as ShyTalk — verified against the token; account id lives in CI secrets, not here).
+- Set the Pages **secret `DEV_PASSWORD`** (encrypted, via `wrangler pages secret put`; shyden's own Basic-auth password lives at `~/.shytalk/shyden-dev-web-auth.env`, never committed/logged). A secret change only takes effect on the NEXT deploy.
 - Add custom domain **`dev.shyden.co.uk`** + the DNS CNAME → `shyden-site-dev.pages.dev`.
 - Add the repo GitHub secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` so CI deploys work after this session.
 

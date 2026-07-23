@@ -17,6 +17,13 @@ concurrency:
   group: deploy-shyden-dev
   cancel-in-progress: false
 
+# This workflow never writes to the repo — it only reads code and deploys to
+# Cloudflare. Pin GITHUB_TOKEN to read-only so a compromised dependency pulled
+# by `npm ci` / wrangler (which run in the same job that holds the Cloudflare
+# token) can't abuse repo write scope.
+permissions:
+  contents: read
+
 jobs:
   deploy-web-dev:
     name: Build + Deploy Web to Dev
@@ -44,7 +51,7 @@ jobs:
         # `functions/` at the repo root ships the Basic-auth middleware;
         # wrangler bundles it alongside the dist/ static assets.
         run: |
-          npm install -g wrangler
+          npm install -g wrangler@4
           wrangler pages deploy dist --project-name shyden-site-dev --branch main
 
   sanity-check:
