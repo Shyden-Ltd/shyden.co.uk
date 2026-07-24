@@ -1,0 +1,119 @@
+name: Deploy (main → dev → prod)
+# Release pipeline. Fires on every push to main (i.e. a merged PR). main is
+# branch-protected (PR-only, required CI check), so code only arrives here after
+# a green PR. Flow: comprehensive web tests → auto-deploy DEV → deploy PROD only
+# after a human approves the `prod` Environment gate.
+
+on:
+  push:
+    branches: [main]
+
+# One release at a time; a queued run waits rather than racing on the Pages
+# projects. Never cancel an in-flight release (a half-cancelled deploy is worse
+# than a queued one).
+concurrency:
+  group: deploy-shyden
+  cancel-in-progress: false
+
+# Read-only GITHUB_TOKEN: these jobs only read code and deploy to Cloudflare.
+# The Cloudflare token lives in secrets, so a compromised dependency can't also
+# gain repo write scope.
+permissions:
+  contents: read
+
+jobs:
+  # ---- Gate: the full comprehensive web-test suite ------------------------
+  # dev/prod deploys BOTH sit behind this. If any test fails, nothing ships.
+  test:
+    name: Comprehensive web tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format
+      - run: npm run build
+      - run: npm run test:unit
+      - run: npx playwright install --with-deps
+      - run: npm run test:e2e
+
+  # ---- Dev: auto-deploy once tests pass -----------------------------------
+  deploy-dev:
+    name: Deploy to Dev
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: dev
+      url: https://dev.shyden.co.uk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build (dev — outbound ShyTalk link points at DEV, never prod)
+        env:
+          # Env-derived cross-product URL: the dev site must link to dev
+          # ShyTalk, not prod. index.astro defaults to prod when unset.
+          PUBLIC_SHYTALK_URL: https://dev.shytalk.shyden.co.uk
+        run: npm run build
+      - name: Deploy dist/ to Cloudflare Pages (dev project)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # functions/ at the repo root ships the Basic-auth middleware; wrangler
+        # bundles it alongside the dist/ static assets.
+        run: |
+          npm install -g wrangler@4
+          wrangler pages deploy dist --project-name shyden-site-dev --branch main
+      - name: Sanity-check the deployed dev site
+        env:
+          WEB_BASE_URL: https://dev.shyden.co.uk
+          DEV_BASIC_AUTH_PASSWORD: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
+        run: |
+          npx playwright install chromium --with-deps
+          npx playwright test --config=playwright.dev.config.ts --reporter=list
+
+  # ---- Prod: MANUAL APPROVAL gate -----------------------------------------
+  # `environment: prod` carries a required reviewer, so GitHub pauses this job
+  # in the Actions UI until a human approves. Only then does prod deploy.
+  deploy-prod:
+    name: Deploy to Prod (needs approval)
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: prod
+      url: https://shyden.co.uk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build (prod defaults — outbound ShyTalk link points at PROD)
+        # No PUBLIC_SHYTALK_URL: index.astro defaults to the prod ShyTalk URL.
+        # The functions/ middleware passes through on the shyden.co.uk hostname,
+        # so prod is PUBLIC (no Basic-auth) once the apex points here.
+        run: npm run build
+      - name: Guard — fail if any [[placeholder]] leaked into the shipped build
+        run: |
+          if grep -rn '\[\[' dist/; then
+            echo "::error::A [[…]] placeholder reached dist/ — refusing to ship to prod."
+            exit 1
+          fi
+          echo "No bracket placeholders in dist/."
+      - name: Deploy dist/ to Cloudflare Pages (prod project)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install -g wrangler@4
+          wrangler pages deploy dist --project-name shyden-site --branch main

@@ -10,6 +10,9 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Cloudflare / wrangler local state
+.wrangler/
+
 # Env / secrets
 .env
 .env.*

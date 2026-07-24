@@ -1,0 +1,20 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Page not found — Shyden"
+  description="The page you were looking for doesn't exist."
+>
+  <section class="wrap">
+    <h1>Page not found</h1>
+    <p>That page doesn't exist. <a href="/">Back to the homepage</a>.</p>
+  </section>
+</BaseLayout>
+<style>
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 4rem var(--space);
+  }
+</style>

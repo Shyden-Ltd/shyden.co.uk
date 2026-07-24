@@ -1,0 +1,22 @@
+name: CI
+# The REQUIRED status check branch protection enforces before `main` can be
+# updated. PR-only on purpose: the Deploy pipeline (deploy.yml) re-runs the same
+# full suite as its own gate on every push to main, so a push:[main] trigger
+# here would only double the work on each merge.
+on:
+  pull_request:
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format
+      - run: npm run build
+      - run: npm run test:unit
+      - run: npx playwright install --with-deps
+      - run: npm run test:e2e

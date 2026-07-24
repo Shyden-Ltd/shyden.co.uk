@@ -1,0 +1,29 @@
+---
+interface Props {
+  title: string;
+  href: string;
+  external?: boolean;
+}
+const { title, href, external = false } = Astro.props;
+const rel = external ? 'noopener noreferrer' : undefined;
+const target = external ? '_blank' : undefined;
+---
+
+<a class="work-card" href={href} rel={rel} target={target} aria-label={title}>
+  <h3>{title}</h3>
+  <p><slot /></p>
+</a>
+<style>
+  .work-card {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .work-card:hover {
+    border-color: var(--accent);
+  }
+</style>
