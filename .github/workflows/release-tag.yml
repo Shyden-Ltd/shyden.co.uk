@@ -1,0 +1,46 @@
+name: Release tag + notes (on merge to main)
+# AUTO-RELEASE. Every merge to main (a verified release, since branch protection
+# requires prod-verified) gets a versioned git tag + GitHub Release with notes
+# generated from the conventional commits since the last tag. Versioning is
+# release metadata only (a static site serves no version), so we create the tag
+# + Release directly — no package.json commit, no branch-protection bypass.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-tag-shyden
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create tags + GitHub Releases
+
+jobs:
+  tag-and-release:
+    name: Tag + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need all tags + history for version + notes
+      - name: Compute next version + notes
+        id: rel
+        run: bash .github/scripts/compute-release.sh RELEASE_NOTES.md
+      - name: Create tag + GitHub Release
+        if: steps.rel.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — nothing to do."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes-file RELEASE_NOTES.md
+          echo "Created release $TAG"

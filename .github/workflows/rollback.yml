@@ -1,0 +1,62 @@
+name: Rollback prod (Cloudflare Pages)
+# Emergency recovery: instantly re-promote a previous successful Cloudflare Pages
+# production deployment of shyden-site — no rebuild, seconds to recover. Manual
+# dispatch only (a repo collaborator must trigger it), deliberately WITHOUT the
+# prod approval gate so recovery isn't blocked when prod is broken.
+#
+# Default target = the deployment immediately before the current live one. Pass a
+# specific deployment ID to roll back further (see the Deployments list in the
+# Cloudflare dashboard for project shyden-site).
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: 'CF Pages deployment ID to roll back to. Blank = the previous live production deployment.'
+        required: false
+        default: ''
+
+concurrency:
+  group: deploy-shyden-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Roll back shyden-site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Promote a previous production deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TARGET_ID: ${{ inputs.deployment_id }}
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/shyden-site"
+          hdr="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+
+          target="${TARGET_ID}"
+          if [ -z "$target" ]; then
+            echo "No deployment ID given — finding the previous production deployment…"
+            # Production deployments are returned newest-first: [0] is the current
+            # live one, [1] the previous. Roll back to [1].
+            target="$(curl -fsS -H "$hdr" "${API}/deployments?per_page=25" \
+              | jq -r '[.result[] | select(.environment == "production")] | .[1].id // ""')"
+          fi
+
+          if [ -z "$target" ]; then
+            echo "::error::No previous production deployment found to roll back to."
+            exit 1
+          fi
+          echo "Rolling shyden-site back to deployment: ${target}"
+
+          resp="$(curl -fsS -X POST -H "$hdr" "${API}/deployments/${target}/rollback")"
+          if [ "$(jq -r '.success' <<<"$resp")" != "true" ]; then
+            echo "::error::Rollback failed: $(jq -c '.errors' <<<"$resp")"
+            exit 1
+          fi
+          echo "Rollback OK. Live deployment is now $(jq -r '.result.id' <<<"$resp") ($(jq -r '.result.url' <<<"$resp"))"
