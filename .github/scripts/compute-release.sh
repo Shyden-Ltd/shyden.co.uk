@@ -25,7 +25,7 @@ else
   range=("${last_tag}..HEAD")
   if [ -z "$(git rev-list "${range[@]}" 2>/dev/null)" ]; then
     echo "No commits since ${last_tag} — skipping release."
-    [ -n "${GITHUB_OUTPUT:-}" ] && echo "should_release=false" >>"$GITHUB_OUTPUT"
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "should_release=false" >>"$GITHUB_OUTPUT"; fi
     exit 0
   fi
   subjects="$(git log --no-merges --format='%s' "${range[@]}" || true)"
@@ -43,7 +43,9 @@ fi
 log_group() { # $1 = ERE to keep, $2 = heading
   local body
   body="$(git log --no-merges --format='- %s (%h)' "${range[@]}" 2>/dev/null | grep -E "$1" || true)"
-  [ -n "$body" ] && printf '### %s\n%s\n\n' "$2" "$body"
+  # `if`, not `&&`: a bare `[ … ] && …` returns 1 when empty, which trips the
+  # caller's `set -e` and kills the script (release notes have empty sections).
+  if [ -n "$body" ]; then printf '### %s\n%s\n\n' "$2" "$body"; fi
 }
 {
   printf '## v%s\n\n' "$version"
@@ -51,7 +53,7 @@ log_group() { # $1 = ERE to keep, $2 = heading
   log_group '^- fix' 'Fixes'
   log_group '^- perf' 'Performance'
   other="$(git log --no-merges --format='- %s (%h)' "${range[@]}" 2>/dev/null | grep -Ev '^- (feat|fix|perf)' || true)"
-  [ -n "$other" ] && printf '### Other\n%s\n\n' "$other"
+  if [ -n "$other" ]; then printf '### Other\n%s\n\n' "$other"; fi
 } >"$notes_file"
 
 echo "Computed version v${version} (last tag: ${last_tag:-none})"
