@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isProdHostname,
+  wwwRedirectLocation,
   shouldServeBlockingRobots,
   blockingRobotsBody,
   noIndexHeaderValue,
@@ -31,6 +32,34 @@ describe('isProdHostname — exact, case-insensitive, fail-safe', () => {
   it.each([null, undefined, 42, {}])(
     'rejects non-string input %p (no throw)',
     (h) => expect(isProdHostname(h as unknown as string)).toBe(false),
+  );
+});
+
+describe('wwwRedirectLocation — www → apex, 301, before auth', () => {
+  it('redirects the www host to the bare apex, preserving path + query', () => {
+    expect(wwwRedirectLocation(new URL('https://www.shyden.co.uk/'))).toBe(
+      'https://shyden.co.uk/',
+    );
+    expect(
+      wwwRedirectLocation(new URL('https://www.shyden.co.uk/glory-points?x=1')),
+    ).toBe('https://shyden.co.uk/glory-points?x=1');
+  });
+  it('is case-insensitive on the host (DNS is)', () => {
+    expect(wwwRedirectLocation(new URL('https://WWW.SHYDEN.CO.UK/a'))).toBe(
+      'https://shyden.co.uk/a',
+    );
+  });
+  it.each([
+    'https://shyden.co.uk/', // the apex itself must NOT redirect (no loop)
+    'https://dev.shyden.co.uk/', // dev is handled by the auth gate, not here
+    'https://shyden-site.pages.dev/', // preview host
+    'https://www.shyden.co.uk.evil.com/', // near-miss suffix must not match
+  ])('returns null for non-www host %j', (u) =>
+    expect(wwwRedirectLocation(new URL(u))).toBeNull(),
+  );
+  it.each([null, undefined, 42, {}])(
+    'returns null (no throw) for non-URL input %p',
+    (bad) => expect(wwwRedirectLocation(bad as unknown as URL)).toBeNull(),
   );
 });
 
