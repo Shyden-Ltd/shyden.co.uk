@@ -14,13 +14,29 @@ test.describe('homepage content', () => {
     await page.goto('/');
     await expect(page.locator('#services .service-card')).toHaveCount(2);
   });
-  test('work cards link to ShyTalk (external) and the calculator (internal)', async ({
+  test('work cards: ShyTalk shown as its brand wordmark (external), calculator internal', async ({
     page,
   }) => {
     await page.goto('/');
-    await expect(
-      page.locator('#work a[href="https://shytalk.shyden.co.uk"]'),
-    ).toHaveCount(1);
+    const shytalk = page.locator(
+      '#work a[href="https://shytalk.shyden.co.uk"]',
+    );
+    await expect(shytalk).toHaveCount(1);
+    // Accessible name stays "ShyTalk" even though the visible title is a wordmark.
+    await expect(shytalk).toHaveAttribute('aria-label', 'ShyTalk');
+    // The card's title is the ShyTalk wordmark: "Shy" + a spanned, brand-purple
+    // "Talk" (the two-tone mark from shytalk.shyden.co.uk), not plain text.
+    const wordmark = shytalk.locator('.shytalk-wordmark');
+    await expect(wordmark).toHaveText('ShyTalk');
+    await expect(wordmark.locator('span')).toHaveText('Talk');
+    // The exact two-tone logo colours from shytalk.shyden.co.uk:
+    // light "Shy" (#e8e0f0) + purple "Talk" (#d0bcff), on the dark brand tile.
+    await expect(wordmark).toHaveCSS('color', 'rgb(232, 224, 240)');
+    await expect(wordmark.locator('span')).toHaveCSS(
+      'color',
+      'rgb(208, 188, 255)',
+    );
+    await expect(shytalk).toHaveCSS('background-color', 'rgb(15, 13, 21)');
     await expect(page.locator('#work a[href="/glory-points"]')).toHaveCount(1);
   });
   test('contact section CTA links to the support mailbox', async ({ page }) => {
