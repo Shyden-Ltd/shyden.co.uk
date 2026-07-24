@@ -42,9 +42,10 @@ const shytalkUrl =
   <section id="work" class="wrap">
     <h2>Our work</h2>
     <div class="grid-2">
-      <WorkCard title="ShyTalk" href={shytalkUrl} external
-        >Our flagship product.</WorkCard
-      >
+      <WorkCard title="ShyTalk" href={shytalkUrl} external>
+        <span slot="logo" class="shytalk-wordmark">Shy<span>Talk</span></span>
+        Our flagship product.
+      </WorkCard>
       <WorkCard title="Glory Points Calculator" href="/glory-points"
         >A companion tool we built for YeeTalk.</WorkCard
       >
@@ -90,5 +91,16 @@ const shytalkUrl =
     .grid-2 {
       grid-template-columns: 1fr 1fr;
     }
+  }
+  /* ShyTalk brand wordmark — the two-tone mark from shytalk.shyden.co.uk
+     ("Shy" + purple "Talk"), bold with tight tracking, sized to the card
+     heading (not the hero). #6750a4 is ShyTalk's primary purple, AA-legible
+     on the white card. */
+  .shytalk-wordmark {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .shytalk-wordmark span {
+    color: #6750a4;
   }
 </style>
