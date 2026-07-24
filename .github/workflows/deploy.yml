@@ -104,8 +104,12 @@ jobs:
         # so prod is PUBLIC (no Basic-auth) once the apex points here.
         run: npm run build
       - name: Guard — fail if any [[placeholder]] leaked into the shipped build
+        # -I (skip binary files): a [[…]] placeholder is a TEXT concern, but
+        # self-hosted font woff/woff2 in dist/_astro/ contain the raw bytes
+        # `[[`, which grep would otherwise report as "binary file matches" and
+        # false-fail the deploy. Scan text only.
         run: |
-          if grep -rn '\[\[' dist/; then
+          if grep -rnI '\[\[' dist/; then
             echo "::error::A [[…]] placeholder reached dist/ — refusing to ship to prod."
             exit 1
           fi
