@@ -1,7 +1,9 @@
 name: CI
+# The REQUIRED status check branch protection enforces before `main` can be
+# updated. PR-only on purpose: the Deploy pipeline (deploy.yml) re-runs the same
+# full suite as its own gate on every push to main, so a push:[main] trigger
+# here would only double the work on each merge.
 on:
-  push:
-    branches: [main]
   pull_request:
 jobs:
   build-and-test:
