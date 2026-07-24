@@ -39,6 +39,22 @@ export function shouldServeBlockingRobots(hostname) {
   return !isProdHostname(hostname);
 }
 
+/** The `www.` variant of the prod host — canonically redirected to the apex. */
+export const WWW_HOSTNAME = `www.${PROD_HOSTNAME}`;
+
+/**
+ * Canonicalisation: `www.shyden.co.uk` 301-redirects to the bare apex,
+ * preserving path + query. Returns the absolute redirect target when the
+ * request is for the www host, else null (so the caller falls through to the
+ * normal prod/dev logic). Case-insensitive on the host (DNS is). This runs
+ * BEFORE the auth gate so www is publicly redirected, never challenged.
+ */
+export function wwwRedirectLocation(url) {
+  if (typeof url?.hostname !== 'string') return null;
+  if (url.hostname.toLowerCase() !== WWW_HOSTNAME) return null;
+  return `https://${PROD_HOSTNAME}${url.pathname}${url.search}`;
+}
+
 /**
  * Body of the dev `robots.txt`. Single literal so the format doesn't
  * drift between the served response and the test.

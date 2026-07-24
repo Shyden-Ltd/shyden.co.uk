@@ -22,6 +22,7 @@
  */
 import {
   isProdHostname,
+  wwwRedirectLocation,
   blockingRobotsBody,
   noIndexHeaderValue,
   basicAuthOk,
@@ -31,6 +32,17 @@ import {
 export const onRequest = async ({ request, env, next }) => {
   const url = new URL(request.url);
   const hostname = url.hostname;
+
+  // Canonical host: www.shyden.co.uk → apex, 301, BEFORE the auth gate so the
+  // redirect is public (www is not the prod host, so it would otherwise be
+  // Basic-auth challenged on the prod project).
+  const wwwTarget = wwwRedirectLocation(url);
+  if (wwwTarget) {
+    return new Response(null, {
+      status: 301,
+      headers: { Location: wwwTarget },
+    });
+  }
 
   // Prod = pass through untouched. The gate exists for dev / preview only.
   if (isProdHostname(hostname)) {
