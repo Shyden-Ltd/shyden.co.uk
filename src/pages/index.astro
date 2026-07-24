@@ -42,7 +42,7 @@ const shytalkUrl =
   <section id="work" class="wrap">
     <h2>Our work</h2>
     <div class="grid-2">
-      <WorkCard title="ShyTalk" href={shytalkUrl} external>
+      <WorkCard title="ShyTalk" href={shytalkUrl} external variant="shytalk">
         <span slot="logo" class="shytalk-wordmark">Shy<span>Talk</span></span>
         Our flagship product.
       </WorkCard>
@@ -92,15 +92,19 @@ const shytalkUrl =
       grid-template-columns: 1fr 1fr;
     }
   }
-  /* ShyTalk brand wordmark — the two-tone mark from shytalk.shyden.co.uk
-     ("Shy" + purple "Talk"), bold with tight tracking, sized to the card
-     heading (not the hero). #6750a4 is ShyTalk's primary purple, AA-legible
-     on the white card. */
+  /* ShyTalk brand wordmark — the exact two-tone mark from shytalk.shyden.co.uk:
+     light "Shy" + light-purple glowing "Talk", bold with tight tracking. Sits
+     on the dark .work-card--shytalk tile so it reads as the real logo. Colours
+     taken from the live logo (#e8e0f0 / #d0bcff). */
   .shytalk-wordmark {
+    display: inline-block;
+    font-size: 1.9rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
+    color: #e8e0f0;
   }
   .shytalk-wordmark span {
-    color: #6750a4;
+    color: #d0bcff;
+    text-shadow: 0 0 24px rgba(208, 188, 255, 0.3);
   }
 </style>

@@ -29,10 +29,14 @@ test.describe('homepage content', () => {
     const wordmark = shytalk.locator('.shytalk-wordmark');
     await expect(wordmark).toHaveText('ShyTalk');
     await expect(wordmark.locator('span')).toHaveText('Talk');
+    // The exact two-tone logo colours from shytalk.shyden.co.uk:
+    // light "Shy" (#e8e0f0) + purple "Talk" (#d0bcff), on the dark brand tile.
+    await expect(wordmark).toHaveCSS('color', 'rgb(232, 224, 240)');
     await expect(wordmark.locator('span')).toHaveCSS(
       'color',
-      'rgb(103, 80, 164)', // #6750a4 — ShyTalk primary purple
+      'rgb(208, 188, 255)',
     );
+    await expect(shytalk).toHaveCSS('background-color', 'rgb(15, 13, 21)');
     await expect(page.locator('#work a[href="/glory-points"]')).toHaveCount(1);
   });
   test('contact section CTA links to the support mailbox', async ({ page }) => {
