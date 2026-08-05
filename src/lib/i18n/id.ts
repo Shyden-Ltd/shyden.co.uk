@@ -1,0 +1,128 @@
+import type { Strings } from './en';
+
+/**
+ * Bahasa Indonesia.
+ *
+ * Typed as `Strings`, so this file cannot compile while a key is missing or
+ * renamed — the guarantee that the Indonesian page never quietly serves an
+ * English sentence.
+ */
+export const id: Strings = {
+  locale: 'id',
+  localeName: 'Bahasa Indonesia',
+  otherLocaleName: 'English',
+
+  title: 'Pembuat Kelompok Kelas',
+  description:
+    'Bagi kelas Anda menjadi kelompok secara instan — langsung di peramban, tanpa mengirim data ke mana pun.',
+  heading: 'Pembuat Kelompok Kelas',
+  lead: 'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
+  privacy:
+    'Semuanya berjalan di peramban Anda. Daftar kelas tidak pernah keluar dari halaman ini.',
+
+  howToHeading: 'Cara menggunakannya',
+  howToSteps: [
+    'Masukkan jumlah siswa di kelas Anda — atau tempel nama mereka, satu nama per baris.',
+    'Pilih berapa siswa dalam setiap kelompok, atau berapa banyak kelompok yang Anda inginkan.',
+    'Tekan Buat Kelompok dan lihat mereka dibagikan.',
+  ],
+
+  classHeading: 'Kelas Anda',
+  studentsLabel: 'Jumlah siswa',
+  studentsHelp: 'Biarkan kotak nama kosong untuk memakai siswa bernomor.',
+  namesLabel: 'Nama siswa (opsional)',
+  namesHelp:
+    'Satu nama per baris. Jika Anda menambahkan nama, nama itu dipakai menggantikan angka di atas.',
+
+  groupsHeading: 'Cara membaginya',
+  modeLabel: 'Bagi berdasarkan',
+  modePerGroup: 'Siswa per kelompok',
+  modeGroupCount: 'Jumlah kelompok',
+  groupSizeLabel: 'Siswa dalam setiap kelompok',
+  groupCountLabel: 'Berapa banyak kelompok',
+  leftoversLabel: 'Jika ada siswa tersisa',
+  leftoversSpread: 'Bagikan merata',
+  leftoversBunch: 'Masukkan semuanya ke satu kelompok',
+  leftoversHelp:
+    'Dengan cara apa pun, tidak ada kelompok yang lebih kecil dari ukuran yang Anda pilih.',
+
+  namingLabel: 'Beri nama kelompok',
+  namingNumbered: 'Kelompok 1, 2, 3…',
+  namingThemed: 'Pakai tema',
+  themeLabel: 'Tema',
+  themeNames: { animals: 'Hewan', colours: 'Warna', planets: 'Planet' },
+
+  keepApartHeading: 'Pisahkan (opsional)',
+  keepApartLabel: 'Siswa yang tidak boleh sekelompok',
+  keepApartHelp: 'Satu pasang per baris, dipisahkan koma — misalnya: Ana, Budi',
+  keepApartNeedsNamesHint: 'Tambahkan nama siswa di atas untuk memakai ini.',
+
+  playbackHeading: 'Suara dan animasi',
+  soundLabel: 'Suara',
+  soundOn: 'Suara aktif',
+  soundOff: 'Suara mati',
+  speedLabel: 'Kecepatan',
+  speedNormal: 'Normal',
+  speedFast: 'Cepat',
+  speedSkip: 'Lewati animasi',
+
+  makeGroups: 'Buat Kelompok',
+  again: 'Acak lagi',
+
+  resultsHeading: 'Kelompok Anda',
+  resultsSummary: (groups: number, students: number) =>
+    `${groups} kelompok dari ${students} siswa.`,
+  groupLabel: (n: number) => `Kelompok ${n}`,
+  studentNumber: (n: number) => `Siswa ${n}`,
+  dealing: 'Membuat kelompok…',
+
+  switchLanguage: 'Read in English',
+
+  errors: {
+    NO_STUDENTS:
+      'Tambahkan siswa terlebih dahulu — berupa angka atau daftar nama.',
+    INVALID_GROUP_SIZE: 'Setiap kelompok membutuhkan minimal 1 siswa.',
+    INVALID_GROUP_COUNT: 'Anda membutuhkan minimal 1 kelompok.',
+    TOO_MANY_GROUPS: (max: number) =>
+      `Jumlah siswa tidak cukup untuk sebanyak itu kelompok. Paling banyak Anda bisa membuat ${max}.`,
+    KEEP_APART_NEEDS_NAMES:
+      'Untuk memisahkan siswa, tambahkan nama mereka ke daftar kelas di atas.',
+    KEEP_APART_UNKNOWN_NAME: (names: string[]) =>
+      `${names.join(', ')} tidak ada dalam daftar kelas Anda. Periksa kembali ejaannya.`,
+    KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
+      `${names.join(', ')} semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal ${groupsNeeded} kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.`,
+  },
+
+  themes: {
+    animals: [
+      'Harimau',
+      'Elang',
+      'Lumba-lumba',
+      'Rubah',
+      'Panda',
+      'Rajawali',
+      'Berang-berang',
+      'Singa',
+    ],
+    colours: [
+      'Merah',
+      'Biru',
+      'Hijau',
+      'Kuning',
+      'Ungu',
+      'Jingga',
+      'Tosca',
+      'Merah Muda',
+    ],
+    planets: [
+      'Merkurius',
+      'Venus',
+      'Bumi',
+      'Mars',
+      'Yupiter',
+      'Saturnus',
+      'Uranus',
+      'Neptunus',
+    ],
+  },
+};

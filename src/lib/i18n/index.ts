@@ -1,0 +1,70 @@
+import { en, type Strings } from './en';
+import { id } from './id';
+import { ERROR_CODES, type GroupingError } from '../grouping';
+
+/** English first: it is the default and lives at the unprefixed route. */
+export const LOCALES = ['en', 'id'] as const;
+export type Locale = (typeof LOCALES)[number];
+
+const TABLE: Record<Locale, Strings> = { en, id };
+
+export const isLocale = (value: unknown): value is Locale =>
+  typeof value === 'string' && (LOCALES as readonly string[]).includes(value);
+
+/** Unknown or absent locale falls back to English rather than throwing. */
+export const getStrings = (locale: unknown): Strings =>
+  isLocale(locale) ? TABLE[locale] : en;
+
+/** The path to this tool in a given locale. English is unprefixed. */
+export const toolPath = (locale: Locale): string =>
+  locale === 'en' ? '/classroom-groups' : `/${locale}/classroom-groups`;
+
+export const otherLocale = (locale: Locale): Locale =>
+  locale === 'en' ? 'id' : 'en';
+
+/**
+ * Turn an engine error into a sentence in the page's language.
+ *
+ * The engine deliberately returns a code plus data instead of prose, so this
+ * is the single place a message is composed. The switch is exhaustive over
+ * ErrorCode; adding a code without handling it here fails the type check
+ * rather than silently rendering the raw code to a teacher.
+ */
+export function renderError(error: GroupingError, strings: Strings): string {
+  const e = strings.errors;
+  switch (error.code) {
+    case ERROR_CODES.noStudents:
+      return e.NO_STUDENTS;
+    case ERROR_CODES.invalidGroupSize:
+      return e.INVALID_GROUP_SIZE;
+    case ERROR_CODES.invalidGroupCount:
+      return e.INVALID_GROUP_COUNT;
+    case ERROR_CODES.tooManyGroups:
+      return e.TOO_MANY_GROUPS(error.maxGroups ?? 0);
+    case ERROR_CODES.keepApartNeedsNames:
+      return e.KEEP_APART_NEEDS_NAMES;
+    case ERROR_CODES.keepApartUnknownName:
+      return e.KEEP_APART_UNKNOWN_NAME(error.students ?? []);
+    case ERROR_CODES.keepApartImpossible:
+      return e.KEEP_APART_IMPOSSIBLE(
+        error.students ?? [],
+        error.groupsNeeded ?? 0,
+      );
+  }
+}
+
+/** The display name for a group: numbered, or the nth name of a theme. */
+export function groupName(
+  index: number,
+  naming: 'numbered' | 'themed',
+  theme: string,
+  strings: Strings,
+): string {
+  if (naming === 'numbered') return strings.groupLabel(index + 1);
+  const names = strings.themes[theme] ?? [];
+  // More groups than the theme has names: fall back to numbering rather than
+  // repeating a name, which would make two groups indistinguishable.
+  return names[index] ?? strings.groupLabel(index + 1);
+}
+
+export type { Strings };
