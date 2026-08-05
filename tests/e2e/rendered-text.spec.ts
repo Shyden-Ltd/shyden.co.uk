@@ -206,6 +206,23 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
     expect(findings, findings.join('\n')).toEqual([]);
   });
 
+  test('no unfilled [[placeholder]] reaches a page', async ({ page }) => {
+    // release.yml refuses to ship a `[[…]]` placeholder, but that guard only
+    // runs at release — by which point the fix costs a re-dispatch and an
+    // approval. The same check belongs here, where it runs on every PR.
+    const paths = await publishedPaths(page);
+    const findings: string[] = [];
+
+    for (const path of paths) {
+      await page.goto(path);
+      const text = await renderedText(page);
+      for (const m of text.matchAll(/\[\[[^\]]{1,60}\]\]/g)) {
+        findings.push(`${path}: ${m[0]}`);
+      }
+    }
+    expect(findings, findings.join('\n')).toEqual([]);
+  });
+
   test('the scan can actually see a broken seam', async ({ page }) => {
     // A detector nobody has watched fail is a detector nobody should trust.
     // This injects the exact defect that shipped and asserts the scan finds

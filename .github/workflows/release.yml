@@ -88,8 +88,20 @@ jobs:
       - name: Guard — fail if a [[placeholder]] leaked into shipped text
         # -I: skip binary files. woff/woff2 fonts contain the bytes `[[`; a
         # placeholder leak is a TEXT concern, so scanning binaries false-fails.
+        #
+        # Matches the placeholder SHAPE — `[[` … `]]` with no `]` between —
+        # rather than a bare `[[`. A bare `[[` is ordinary JavaScript: the
+        # minified bundle contains `new Map([[k,v],[k,v]])`, which blocked a
+        # release on 2026-08-05 with nothing wrong with the site. This is the
+        # second false positive of the same kind (see the `-I` note above), and
+        # both had the same cause — matching a fragment instead of the thing.
+        #
+        # It stays safe against that syntax because `[^]]` cannot cross the
+        # first `]`, so `[[k,v],` never completes the pattern. Verified against
+        # a real build: 0 matches, while an injected `[[companyNo]]` and an
+        # injected `[[reg office]]` are both caught.
         run: |
-          if grep -rnI '\[\[' dist/; then
+          if grep -rnIE '\[\[[^]]{1,60}\]\]' dist/; then
             echo "::error::A [[…]] placeholder reached dist/ — refusing to ship to prod."
             exit 1
           fi
