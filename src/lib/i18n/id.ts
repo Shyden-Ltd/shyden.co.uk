@@ -8,10 +8,6 @@ import type { Strings } from './en';
  * English sentence.
  */
 export const id: Strings = {
-  locale: 'id',
-  localeName: 'Bahasa Indonesia',
-  otherLocaleName: 'English',
-
   title: 'Pembuat Kelompok Kelas',
   description:
     'Bagi kelas Anda menjadi kelompok secara instan — langsung di peramban, tanpa mengirim data ke mana pun.',
@@ -58,7 +54,6 @@ export const id: Strings = {
   keepApartNeedsNamesHint: 'Tambahkan nama siswa di atas untuk memakai ini.',
 
   playbackHeading: 'Suara dan animasi',
-  soundLabel: 'Suara',
   soundOn: 'Suara aktif',
   soundOff: 'Suara mati',
   speedLabel: 'Kecepatan',
@@ -75,9 +70,6 @@ export const id: Strings = {
     `${groups} kelompok dari ${students} siswa.`,
   groupLabel: (n: number) => `Kelompok ${n}`,
   studentNumber: (n: number) => `Siswa ${n}`,
-  dealing: 'Membuat kelompok…',
-
-  switchLanguage: 'Read in English',
 
   errors: {
     NO_STUDENTS:

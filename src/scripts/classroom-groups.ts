@@ -196,7 +196,6 @@ if (form) {
       group.forEach((student, j) => {
         const li = document.createElement('li');
         li.className = 'student';
-        li.style.setProperty('--i', String(i + j));
         li.style.setProperty('--hue', String(hueFor(student)));
         li.innerHTML = AVATAR_SVG; // constant markup, no interpolation
         const who = document.createElement('span');
@@ -218,13 +217,11 @@ if (form) {
     }
     const step = speed === 'fast' ? 45 : 110;
     sfx.shuffle();
-    tables.classList.add('dealing');
     for (let i = 0; i < cards.length; i++) {
       cards[i].classList.add('dealt');
       sfx.land(i);
       await new Promise((r) => setTimeout(r, step));
     }
-    tables.classList.remove('dealing');
     sfx.done();
   };
 

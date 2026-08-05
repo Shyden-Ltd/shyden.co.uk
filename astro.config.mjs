@@ -16,6 +16,14 @@ export default defineConfig({
     locales: ['en', 'id'],
     routing: { prefixDefaultLocale: false },
   },
-  integrations: [sitemap()],
+  // @astrojs/sitemap reads its OWN i18n option and does not inherit the
+  // routing config above, so without this the sitemap listed six <loc>
+  // entries and zero xhtml:link alternates — declaring no relationship
+  // between the English and Indonesian versions of the same page.
+  integrations: [
+    sitemap({
+      i18n: { defaultLocale: 'en', locales: { en: 'en-GB', id: 'id-ID' } },
+    }),
+  ],
   devToolbar: { enabled: false },
 });

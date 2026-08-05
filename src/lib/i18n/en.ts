@@ -15,10 +15,6 @@ export const THEME_KEYS = ['animals', 'colours', 'planets'] as const;
 export type ThemeKey = (typeof THEME_KEYS)[number];
 
 export const en = {
-  locale: 'en',
-  localeName: 'English',
-  otherLocaleName: 'Bahasa Indonesia',
-
   title: 'Classroom Group Creator',
   description:
     'Split your class into groups instantly — in your browser, with nothing sent anywhere.',
@@ -75,7 +71,6 @@ export const en = {
   keepApartNeedsNamesHint: 'Add student names above to use this.',
 
   playbackHeading: 'Sound and animation',
-  soundLabel: 'Sound',
   soundOn: 'Sound on',
   soundOff: 'Sound off',
   speedLabel: 'Speed',
@@ -94,9 +89,6 @@ export const en = {
     `${groups} ${groups === 1 ? 'group' : 'groups'} from ${students} ${students === 1 ? 'student' : 'students'}.`,
   groupLabel: (n: number) => `Group ${n}`,
   studentNumber: (n: number) => `Student ${n}`,
-  dealing: 'Making groups…',
-
-  switchLanguage: 'Baca dalam Bahasa Indonesia',
 
   errors: {
     NO_STUDENTS:

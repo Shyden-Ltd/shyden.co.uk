@@ -58,6 +58,30 @@ img {
   max-width: 100%;
   height: auto;
 }
+/* Off-screen rather than display:none — a hidden element is not focusable,
+   and a skip link that cannot be focused is no skip link at all. It comes
+   back on focus, which is the only time anyone needs it. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  border-bottom-right-radius: 6px;
+}
+.skip-link:focus {
+  left: 0;
+}
+/* The target takes focus programmatically (tabindex="-1") so the next Tab
+   continues from the content, not from the top of the page again. It must
+   never draw a focus ring while merely being clicked past. */
+main:focus {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
