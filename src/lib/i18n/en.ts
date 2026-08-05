@@ -1,11 +1,19 @@
 /**
  * English — the REFERENCE locale.
  *
- * `Strings` is derived from this object, so every other locale is checked
- * against it at build time. Adding a key here without adding it to id.ts is a
- * compile error, which is the point: a missing translation must never degrade
- * into an English sentence on the Indonesian page.
+ * `Strings` is derived from this object, so `id: Strings` cannot be written
+ * with a key missing: a missing translation must never degrade into an
+ * English sentence on the Indonesian page.
+ *
+ * That is a promise the TYPES make, and nothing in this repo runs a type
+ * checker — `astro build` strips types without checking them, and CI runs
+ * format, build, unit and e2e. So the promise is kept by tests instead:
+ * i18n.test.ts walks both locales for missing keys, blank values and
+ * untranslated copy, at every depth. Treat this file as a review surface.
  */
+export const THEME_KEYS = ['animals', 'colours', 'planets'] as const;
+export type ThemeKey = (typeof THEME_KEYS)[number];
+
 export const en = {
   locale: 'en',
   localeName: 'English',
@@ -49,11 +57,16 @@ export const en = {
   namingNumbered: 'Group 1, 2, 3…',
   namingThemed: 'Use a theme',
   themeLabel: 'Theme',
+  // `satisfies`, not `as`. The cast that used to be here widened the type to
+  // Record<string, string>, so `id: Strings` accepted a themeNames with keys
+  // MISSING — the page would then render an empty <option> on
+  // /id/classroom-groups. `satisfies` checks completeness while keeping the
+  // literal keys, so the guarantee this file claims is actually made.
   themeNames: {
     animals: 'Animals',
     colours: 'Colours',
     planets: 'Planets',
-  } as Record<string, string>,
+  } satisfies Record<ThemeKey, string>,
 
   keepApartHeading: 'Keep apart (optional)',
   keepApartLabel: 'Students who should not share a group',
@@ -140,7 +153,7 @@ export const en = {
       'Uranus',
       'Neptune',
     ],
-  } as Record<string, string[]>,
+  } satisfies Record<ThemeKey, string[]>,
 };
 
 export type Strings = typeof en;

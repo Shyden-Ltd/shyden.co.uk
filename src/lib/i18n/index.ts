@@ -1,4 +1,4 @@
-import { en, type Strings } from './en';
+import { en, THEME_KEYS, type Strings, type ThemeKey } from './en';
 import { id } from './id';
 import { ERROR_CODES, type GroupingError } from '../grouping';
 
@@ -58,24 +58,25 @@ export function renderError(error: GroupingError, strings: Strings): string {
     case ERROR_CODES.invalidGroupCount:
       return e.INVALID_GROUP_COUNT;
     case ERROR_CODES.tooManyGroups:
-      return e.TOO_MANY_GROUPS(error.maxGroups ?? 0);
+      return e.TOO_MANY_GROUPS(error.maxGroups);
     case ERROR_CODES.keepApartNeedsNames:
       return e.KEEP_APART_NEEDS_NAMES;
     case ERROR_CODES.keepApartUnknownName:
-      return e.KEEP_APART_UNKNOWN_NAME(error.students ?? []);
+      return e.KEEP_APART_UNKNOWN_NAME(error.students);
     case ERROR_CODES.tooManyStudents:
-      return e.TOO_MANY_STUDENTS(error.maxStudents ?? 0);
+      return e.TOO_MANY_STUDENTS(error.maxStudents);
     case ERROR_CODES.keepApartImpossible:
-      return e.KEEP_APART_IMPOSSIBLE(
-        error.students ?? [],
-        error.groupsNeeded ?? 0,
-      );
+      return e.KEEP_APART_IMPOSSIBLE(error.students, error.groupsNeeded);
     case ERROR_CODES.keepApartNoArrangement:
-      return e.KEEP_APART_NO_ARRANGEMENT(error.groupsTried ?? 0);
+      return e.KEEP_APART_NO_ARRANGEMENT(error.groupsTried);
     case ERROR_CODES.keepApartSearchGaveUp:
       return e.KEEP_APART_SEARCH_GAVE_UP;
   }
 }
+
+/** Whether a string off the DOM is one of the themes that actually exist. */
+export const isThemeKey = (value: string): value is ThemeKey =>
+  (THEME_KEYS as readonly string[]).includes(value);
 
 /** The display name for a group: numbered, or the nth name of a theme. */
 export function groupName(
@@ -84,11 +85,17 @@ export function groupName(
   theme: string,
   strings: Strings,
 ): string {
-  if (naming === 'numbered') return strings.groupLabel(index + 1);
-  const names = strings.themes[theme] ?? [];
+  // `theme` arrives from a <select> value, so it is a string from the page
+  // rather than a key anyone has checked. Numbering is the honest fallback
+  // for an unknown one, and the same fallback the theme runs out of names.
+  if (naming === 'numbered' || !isThemeKey(theme)) {
+    return strings.groupLabel(index + 1);
+  }
+  const names = strings.themes[theme];
   // More groups than the theme has names: fall back to numbering rather than
   // repeating a name, which would make two groups indistinguishable.
   return names[index] ?? strings.groupLabel(index + 1);
 }
 
-export type { Strings };
+export { THEME_KEYS };
+export type { Strings, ThemeKey };

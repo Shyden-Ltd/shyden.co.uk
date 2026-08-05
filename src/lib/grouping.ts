@@ -53,19 +53,30 @@ export const ERROR_CODES = {
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 
-export interface GroupingError {
-  code: ErrorCode;
-  /** The specific names involved — unknown entries, or the conflicting set. */
-  students?: string[];
-  /** For an impossible request: how many groups it would actually take. */
-  groupsNeeded?: number;
-  /** For too-many-groups: the most that were possible. */
-  maxGroups?: number;
-  /** For too-many-students: the largest class this engine will attempt. */
-  maxStudents?: number;
-  /** For no-arrangement: the group count that was searched and ruled out. */
-  groupsTried?: number;
-}
+/**
+ * An error and exactly the data its message needs — never a bag of optionals.
+ *
+ * With every field optional, `renderError({ code: KEEP_APART_UNKNOWN_NAME })`
+ * type-checks and renders " are not in your class list. Check the spelling.",
+ * and the renderer needs `?? []` and `?? 0` fallbacks whose only job is to
+ * turn missing data into a plausible-looking sentence. A union removes both:
+ * the data cannot be absent, so there is nothing to fall back to.
+ */
+export type GroupingError =
+  | { code: typeof ERROR_CODES.noStudents }
+  | { code: typeof ERROR_CODES.tooManyStudents; maxStudents: number }
+  | { code: typeof ERROR_CODES.invalidGroupSize }
+  | { code: typeof ERROR_CODES.invalidGroupCount }
+  | { code: typeof ERROR_CODES.tooManyGroups; maxGroups: number }
+  | { code: typeof ERROR_CODES.keepApartNeedsNames }
+  | { code: typeof ERROR_CODES.keepApartUnknownName; students: string[] }
+  | {
+      code: typeof ERROR_CODES.keepApartImpossible;
+      students: string[];
+      groupsNeeded: number;
+    }
+  | { code: typeof ERROR_CODES.keepApartNoArrangement; groupsTried: number }
+  | { code: typeof ERROR_CODES.keepApartSearchGaveUp };
 
 export type GroupingOutcome =
   | { ok: true; result: { groups: Student[][] } }

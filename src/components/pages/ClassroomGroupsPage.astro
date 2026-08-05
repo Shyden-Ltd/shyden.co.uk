@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getStrings, type Locale } from '../../lib/i18n';
+import { getStrings, THEME_KEYS, type Locale } from '../../lib/i18n';
 // The engine owns the ceiling. Hard-coding a second number here is how the
 // field comes to advertise one limit while the tool enforces another.
 import { MAX_STUDENTS } from '../../lib/grouping';
@@ -10,7 +10,10 @@ interface Props {
 }
 const { lang } = Astro.props;
 const t = getStrings(lang);
-const themes = Object.keys(t.themes);
+// The declared list, not Object.keys of one of the two tables — enumerating
+// `themes` while rendering from `themeNames` is how one gains a key the other
+// lacks and the option ships with no label.
+const themes = THEME_KEYS;
 ---
 
 <BaseLayout

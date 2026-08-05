@@ -337,25 +337,87 @@ test.describe('site-wide language switching', () => {
     });
   }
 
-  test('Indonesian nav links stay inside Indonesian', async ({ page }) => {
-    await page.goto('/id/');
-    await expect(page.locator('nav a[href="/id/#services"]')).toHaveCount(1);
-  });
-
-  test('every page declares both languages to search engines', async ({
+  test('Indonesian nav links stay inside Indonesian — and read as Indonesian', async ({
     page,
   }) => {
-    for (const path of ['/', '/classroom-groups', '/id/classroom-groups']) {
-      await page.goto(path);
-      await expect(
-        page.locator('link[rel="alternate"][hreflang="en"]'),
-      ).toHaveCount(1);
-      await expect(
-        page.locator('link[rel="alternate"][hreflang="id"]'),
-      ).toHaveCount(1);
-      await expect(
-        page.locator('link[rel="alternate"][hreflang="x-default"]'),
-      ).toHaveCount(1);
+    await page.goto('/id/');
+    await expect(page.locator('nav a[href="/id/#services"]')).toHaveCount(1);
+    // The hrefs were asserted; the WORDS were not. An entirely English nav
+    // bar on every Indonesian page passed the whole suite.
+    await expect(page.locator('nav a')).toHaveText([
+      'Layanan',
+      'Karya',
+      'Kontak',
+    ]);
+  });
+
+  test('the Indonesian homepage links to the Indonesian tools', async ({
+    page,
+  }) => {
+    // localisePath's own doc comment calls this "the classic i18n bug", and
+    // nothing asserted it anywhere: an Indonesian visitor clicking a work
+    // card landed on the English page.
+    await page.goto('/id/');
+    await expect(
+      page.locator('#work a[href="/id/classroom-groups"]'),
+    ).toHaveCount(1);
+    await expect(page.locator('#work a[href="/id/glory-points"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator('#work a[href="/classroom-groups"]')).toHaveCount(
+      0,
+    );
+  });
+
+  test.describe('what each page tells a search engine', () => {
+    // Asserted by VALUE. Counting the tags cannot tell the difference between
+    // a correct alternate and every page on the site advertising the
+    // Indonesian homepage as its translation.
+    const SITE = 'https://shyden.co.uk';
+    for (const [path, self, other, locale] of [
+      ['/', '/', '/id/', 'en_GB'],
+      ['/id/', '/id/', '/', 'id_ID'],
+      [
+        '/classroom-groups',
+        '/classroom-groups/',
+        '/id/classroom-groups/',
+        'en_GB',
+      ],
+      [
+        '/id/classroom-groups',
+        '/id/classroom-groups/',
+        '/classroom-groups/',
+        'id_ID',
+      ],
+      ['/glory-points', '/glory-points/', '/id/glory-points/', 'en_GB'],
+      ['/id/glory-points', '/id/glory-points/', '/glory-points/', 'id_ID'],
+    ] as const) {
+      test(`${path}`, async ({ page }) => {
+        await page.goto(path);
+        const isId = locale === 'id_ID';
+        await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+          'href',
+          SITE + self,
+        );
+        await expect(
+          page.locator('link[rel="alternate"][hreflang="id"]'),
+        ).toHaveAttribute('href', SITE + (isId ? self : other));
+        await expect(
+          page.locator('link[rel="alternate"][hreflang="en"]'),
+        ).toHaveAttribute('href', SITE + (isId ? other : self));
+        // English is x-default, the correct convention for the unprefixed
+        // locale — and asserted nowhere before this.
+        await expect(
+          page.locator('link[rel="alternate"][hreflang="x-default"]'),
+        ).toHaveAttribute('href', SITE + (isId ? other : self));
+        await expect(
+          page.locator('meta[property="og:locale"]'),
+        ).toHaveAttribute('content', locale);
+        await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+          'content',
+          SITE + self,
+        );
+      });
     }
   });
 
