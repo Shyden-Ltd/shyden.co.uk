@@ -1,0 +1,402 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getStrings, type Locale } from '../../lib/i18n';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = getStrings(lang);
+const themes = Object.keys(t.themes);
+---
+
+<BaseLayout
+  title={`${t.title} — Shyden`}
+  description={t.description}
+  lang={lang}
+>
+  <section class="wrap">
+    <h1>{t.heading}</h1>
+    <p class="lead">{t.lead}</p>
+    <p class="privacy">{t.privacy}</p>
+
+    <div class="how-to">
+      <h2 id="how-to-heading">{t.howToHeading}</h2>
+      <ol aria-labelledby="how-to-heading">
+        {t.howToSteps.map((step) => <li>{step}</li>)}
+      </ol>
+    </div>
+
+    <form id="cg-form" novalidate>
+      <fieldset>
+        <legend>{t.classHeading}</legend>
+
+        <div class="field">
+          <label for="cg-count">{t.studentsLabel}</label>
+          <input
+            id="cg-count"
+            name="count"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max="200"
+            value="24"
+            aria-describedby="cg-count-help"
+          />
+          <p class="help" id="cg-count-help">{t.studentsHelp}</p>
+        </div>
+
+        <div class="field">
+          <label for="cg-names">{t.namesLabel}</label>
+          <textarea
+            id="cg-names"
+            name="names"
+            rows="5"
+            aria-describedby="cg-names-help"></textarea>
+          <p class="help" id="cg-names-help">{t.namesHelp}</p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.groupsHeading}</legend>
+
+        <div class="field">
+          <span class="label" id="cg-mode-label">{t.modeLabel}</span>
+          <div class="radios" role="radiogroup" aria-labelledby="cg-mode-label">
+            <label
+              ><input type="radio" name="mode" value="perGroup" checked />{
+                t.modePerGroup
+              }</label
+            >
+            <label
+              ><input type="radio" name="mode" value="groupCount" />{
+                t.modeGroupCount
+              }</label
+            >
+          </div>
+        </div>
+
+        <div class="field" data-mode="perGroup">
+          <label for="cg-size">{t.groupSizeLabel}</label>
+          <input
+            id="cg-size"
+            name="size"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max="50"
+            value="4"
+          />
+        </div>
+
+        <div class="field" data-mode="groupCount" hidden>
+          <label for="cg-groups">{t.groupCountLabel}</label>
+          <input
+            id="cg-groups"
+            name="groups"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max="50"
+            value="6"
+          />
+        </div>
+
+        <div class="field">
+          <span class="label" id="cg-left-label">{t.leftoversLabel}</span>
+          <div class="radios" role="radiogroup" aria-labelledby="cg-left-label">
+            <label
+              ><input type="radio" name="leftovers" value="spread" checked />{
+                t.leftoversSpread
+              }</label
+            >
+            <label
+              ><input type="radio" name="leftovers" value="bunch" />{
+                t.leftoversBunch
+              }</label
+            >
+          </div>
+          <p class="help">{t.leftoversHelp}</p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.namingLabel}</legend>
+        <div class="field">
+          <div class="radios" role="radiogroup" aria-label={t.namingLabel}>
+            <label
+              ><input type="radio" name="naming" value="numbered" checked />{
+                t.namingNumbered
+              }</label
+            >
+            <label
+              ><input type="radio" name="naming" value="themed" />{
+                t.namingThemed
+              }</label
+            >
+          </div>
+        </div>
+        <div class="field" data-naming="themed" hidden>
+          <label for="cg-theme">{t.themeLabel}</label>
+          <select id="cg-theme" name="theme">
+            {
+              themes.map((key) => (
+                <option value={key}>{t.themeNames[key]}</option>
+              ))
+            }
+          </select>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.keepApartHeading}</legend>
+        <div class="field">
+          <label for="cg-apart">{t.keepApartLabel}</label>
+          <textarea
+            id="cg-apart"
+            name="apart"
+            rows="3"
+            aria-describedby="cg-apart-help"></textarea>
+          <p class="help" id="cg-apart-help">{t.keepApartHelp}</p>
+          <p class="help" id="cg-apart-hint" hidden>
+            {t.keepApartNeedsNamesHint}
+          </p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.playbackHeading}</legend>
+        <div class="field">
+          <label class="switch"
+            ><input id="cg-sound" type="checkbox" name="sound" checked /><span
+              id="cg-sound-text">{t.soundOn}</span
+            ></label
+          >
+        </div>
+        <div class="field">
+          <label for="cg-speed">{t.speedLabel}</label>
+          <select id="cg-speed" name="speed">
+            <option value="normal">{t.speedNormal}</option>
+            <option value="fast">{t.speedFast}</option>
+            <option value="skip">{t.speedSkip}</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <p class="actions">
+        <button type="submit" id="cg-go">{t.makeGroups}</button>
+      </p>
+    </form>
+
+    <p class="error" id="cg-error" role="alert" hidden></p>
+
+    <!-- The results are written here as real text regardless of animation
+         state, so a screen reader, a skipped animation and a finished one all
+         expose exactly the same thing. -->
+    <section
+      id="cg-results"
+      aria-live="polite"
+      aria-labelledby="cg-results-h"
+      hidden
+    >
+      <h2 id="cg-results-h">{t.resultsHeading}</h2>
+      <p class="summary" id="cg-summary"></p>
+      <div class="tables" id="cg-tables"></div>
+    </section>
+  </section>
+
+  <script src="../../scripts/classroom-groups.ts"></script>
+</BaseLayout>
+
+<style>
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem var(--space);
+  }
+  .lead {
+    font-size: 1.15rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  .privacy {
+    color: var(--ink-soft);
+    max-width: var(--measure);
+    font-size: 0.95rem;
+  }
+  .how-to ol {
+    max-width: var(--measure);
+    padding-left: 1.2rem;
+  }
+  .how-to li {
+    margin-bottom: 0.35rem;
+  }
+
+  form {
+    display: grid;
+    gap: 1.25rem;
+    margin: 2rem 0;
+  }
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0;
+  }
+  legend {
+    font-weight: 700;
+    padding: 0 0.35rem;
+  }
+  .field {
+    margin-bottom: 1rem;
+  }
+  .field:last-child {
+    margin-bottom: 0;
+  }
+  label,
+  .label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+  .help {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    margin: 0.35rem 0 0;
+    max-width: var(--measure);
+  }
+  input[type='number'],
+  textarea,
+  select {
+    width: 100%;
+    max-width: 22rem;
+    /* 44px minimum touch target (CLAUDE.md). */
+    min-height: 44px;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  textarea {
+    max-width: var(--measure);
+    resize: vertical;
+  }
+  .radios {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .radios label,
+  .switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 400;
+    min-height: 44px;
+  }
+  .radios input,
+  .switch input {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+  .actions button {
+    min-height: 44px;
+    padding: 0.6rem 1.4rem;
+    font: inherit;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent, #0a7d66);
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .actions button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .error {
+    max-width: var(--measure);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #b3261e;
+    color: #8c1d18;
+    background: #fdecea;
+  }
+
+  .tables {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  @media (min-width: 560px) {
+    .tables {
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    }
+  }
+
+  /* ── results ─────────────────────────────────────────────────────────── */
+  .group {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem 1rem;
+  }
+  .group h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+  }
+  .group ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+  .student {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    /* Dealt in by the script. Starting hidden means a half-finished deal never
+       shows a card in a nonsense position; `.dealt` is added per card. */
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.96);
+  }
+  .student.dealt {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 220ms ease-out,
+      transform 220ms ease-out;
+  }
+  .avatar {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+  }
+  /* Per-student colour arrives as --hue, so the SVG markup itself stays a
+     constant with nothing interpolated into it. */
+  .a-bg {
+    fill: hsl(var(--hue) 62% 88%);
+  }
+  .a-head,
+  .a-body {
+    fill: hsl(var(--hue) 45% 38%);
+  }
+  .who {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  /* Someone who asked their device for less motion gets the result with no
+     movement at all, even if the animation runs. */
+  @media (prefers-reduced-motion: reduce) {
+    .student,
+    .student.dealt {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+</style>

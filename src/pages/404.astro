@@ -1,14 +1,31 @@
 ---
+// BILINGUAL on purpose, and it is the only page that is.
+//
+// Cloudflare Pages serves this one file for ANY unknown path, including
+// /id/something — so a localised /id/404 route would never actually be
+// reached, and an Indonesian visitor who mistyped a URL would be answered in
+// English. Showing both languages here is the only thing that is correct
+// regardless of how the host resolves the miss, and it needs no JavaScript.
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { siteEn, siteId } from '../lib/i18n/site';
 ---
 
 <BaseLayout
-  title="Page not found — Shyden"
-  description="The page you were looking for doesn't exist."
+  title={siteEn.notFound.title}
+  description={siteEn.notFound.description}
+  lang="en"
 >
   <section class="wrap">
-    <h1>Page not found</h1>
-    <p>That page doesn't exist. <a href="/">Back to the homepage</a>.</p>
+    <h1>{siteEn.notFound.heading}</h1>
+    <p>{siteEn.notFound.body} <a href="/">{siteEn.notFound.backHome}</a>.</p>
+
+    <hr />
+
+    <h2 lang="id">{siteId.notFound.heading}</h2>
+    <p lang="id">
+      {siteId.notFound.body}
+      <a href="/id/">{siteId.notFound.backHome}</a>.
+    </p>
   </section>
 </BaseLayout>
 <style>
@@ -16,5 +33,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     max-width: var(--maxw);
     margin: 0 auto;
     padding: 4rem var(--space);
+  }
+  hr {
+    margin: 2rem 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+  h2 {
+    font-size: 1.25rem;
   }
 </style>

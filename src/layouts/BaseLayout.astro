@@ -2,36 +2,67 @@
 import '../styles/tokens.css';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import {
+  LOCALES,
+  localisePath,
+  localeFromPath,
+  type Locale,
+} from '../lib/i18n';
+
 interface Props {
   title: string;
   description: string;
   ogImage?: string;
+  /** Defaults to the locale implied by the URL, so pages rarely pass it. */
+  lang?: Locale;
 }
-const { title, description, ogImage = '/og-default.png' } = Astro.props;
+const {
+  title,
+  description,
+  ogImage = '/og-default.png',
+  lang = localeFromPath(Astro.url.pathname),
+} = Astro.props;
 const siteOrigin = Astro.site ?? Astro.url;
 const canonical = new URL(Astro.url.pathname, siteOrigin).href;
+
+// hreflang for BOTH locales plus x-default. Without these, search engines
+// treat the English and Indonesian pages as unrelated near-duplicates rather
+// than translations of one another, and may index only one of them.
+const alternates = LOCALES.map((code) => ({
+  code,
+  href: new URL(localisePath(Astro.url.pathname, code), siteOrigin).href,
+}));
+const xDefault = new URL(localisePath(Astro.url.pathname, 'en'), siteOrigin)
+  .href;
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    {
+      alternates.map((a) => (
+        <link rel="alternate" hreflang={a.code} href={a.href} />
+      ))
+    }
+    <link rel="alternate" hreflang="x-default" href={xDefault} />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={new URL(ogImage, siteOrigin).href} />
+    <meta property="og:locale" content={lang === 'id' ? 'id_ID' : 'en_GB'} />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <slot name="head" />
   </head>
   <body>
-    <Header />
+    <Header lang={lang} />
     <main><slot /></main>
-    <Footer />
+    <Footer lang={lang} />
   </body>
 </html>

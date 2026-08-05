@@ -7,6 +7,15 @@ import sitemap from '@astrojs/sitemap';
 // reflow flakiness in E2E measurements and never ships to production.
 export default defineConfig({
   site: 'https://shyden.co.uk',
+  // English stays unprefixed (/) and Indonesian lives under /id/. Both are
+  // real built pages so both are indexed and both land in the sitemap —
+  // a client-side text swap would leave the Indonesian version invisible to
+  // search and impossible to link to directly.
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en', 'id'],
+    routing: { prefixDefaultLocale: false },
+  },
   integrations: [sitemap()],
   devToolbar: { enabled: false },
 });

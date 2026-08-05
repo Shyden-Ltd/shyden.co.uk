@@ -23,6 +23,24 @@ export const otherLocale = (locale: Locale): Locale =>
   locale === 'en' ? 'id' : 'en';
 
 /**
+ * The same page in another locale.
+ *
+ * Every page needs this for its hreflang links and its language switcher, and
+ * getting it wrong is the classic i18n bug: a switcher that always dumps the
+ * visitor on the homepage instead of the page they were reading. English is
+ * unprefixed, so switching is purely adding or removing the `/id` segment.
+ */
+export function localisePath(pathname: string, target: Locale): string {
+  const stripped = pathname.replace(/^\/id(?=\/|$)/, '') || '/';
+  if (target === 'en') return stripped;
+  return stripped === '/' ? '/id/' : `/id${stripped}`;
+}
+
+/** The locale a path belongs to, inferred from its prefix. */
+export const localeFromPath = (pathname: string): Locale =>
+  /^\/id(\/|$)/.test(pathname) ? 'id' : 'en';
+
+/**
  * Turn an engine error into a sentence in the page's language.
  *
  * The engine deliberately returns a code plus data instead of prose, so this

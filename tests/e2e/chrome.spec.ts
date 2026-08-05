@@ -85,12 +85,30 @@ test.describe('header + footer', () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
     await page.locator('.wordmark').focus();
+
     for (const label of ['Services', 'Work', 'Contact']) {
       await page.keyboard.press('Tab');
       await expect(
         page.locator('header nav a', { hasText: label }),
       ).toBeFocused();
     }
+  });
+
+  test('the language switcher is keyboard-focusable on every engine', async ({
+    page,
+  }) => {
+    // Asserted with an explicit focus() rather than a Tab press: WebKit leaves
+    // plain links out of the Tab sequence unless the user turns on "Press Tab
+    // to highlight each item", so a Tab-based assertion would test Safari's
+    // preference rather than our markup. What must be true everywhere is that
+    // the control CAN take focus and is not removed from the tab order.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    const lang = page.locator('header a.lang');
+    await expect(lang).toBeVisible();
+    await expect(lang).not.toHaveAttribute('tabindex', '-1');
+    await lang.focus();
+    await expect(lang).toBeFocused();
   });
 });
 

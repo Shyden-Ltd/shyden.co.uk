@@ -131,6 +131,11 @@ describe('site-wide copy is fully translated', () => {
       'language.switchTo', // literally the other language's own name
       'language.label',
       'footer.companyNo', // "No. Perusahaan" vs "Company No." differ, but keep the guard honest
+      // "Glory points" is YeeTalk's in-app currency — a product name, not
+      // English prose, so it is correctly identical in both locales. Listed
+      // explicitly rather than loosening the check: the guard's value is that
+      // every exception is a decision someone made on purpose.
+      'glory.inputLabel',
     ]);
     const enMap = new Map(walk(siteEn));
     const identical = walk(siteId)

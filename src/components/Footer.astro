@@ -1,6 +1,18 @@
 ---
+import { type Locale } from '../lib/i18n';
+import { siteEn, siteId } from '../lib/i18n/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = lang === 'id' ? siteId : siteEn;
+
 // Legal values from Companies House (SHYDEN LTD, company 17110487, active,
 // incorporated 23 Mar 2026). Registered office is the exact CH address.
+//
+// The entity name, number and address are legal FACTS and stay verbatim in
+// every language — only the wording around them is translated.
 const companyNo = '17110487';
 const regOffice =
   '71-75 Shelton Street, Covent Garden, London, United Kingdom, WC2H 9JQ';
@@ -10,9 +22,10 @@ const year = new Date().getFullYear();
 <footer id="contact-legal">
   <div class="inner">
     <p class="disclosure">
-      &copy; {year} Shyden Ltd. Registered in England &amp; Wales. Company No. {
-        companyNo
-      }. Registered office: {regOffice}.
+      &copy; {year} Shyden Ltd. {t.footer.registered}
+      {t.footer.companyNo}
+      {companyNo}. {t.footer.regOffice}
+      {regOffice}.
     </p>
     <p><a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a></p>
   </div>

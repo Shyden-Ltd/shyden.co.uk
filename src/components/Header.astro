@@ -1,23 +1,48 @@
 ---
+import { localisePath, otherLocale, type Locale } from '../lib/i18n';
+import { siteEn, siteId } from '../lib/i18n/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = lang === 'id' ? siteId : siteEn;
+
 // Root-relative (/#…) not bare (#…): the Header renders on every page via
 // BaseLayout, but these section anchors live only on the homepage — so bare
 // fragments would dead-link on /glory-points and /404. /#services scrolls in
 // place on the homepage and navigates home-then-scrolls from any other page.
+//
+// The home path is locale-aware for the same reason: on /id/* pages a bare
+// `/#services` would silently throw the visitor back to the ENGLISH homepage,
+// which looks like the site forgetting their language mid-visit.
+const home = localisePath('/', lang);
+const base = home === '/' ? '' : home.replace(/\/$/, '');
 const links = [
-  { href: '/#services', label: 'Services' },
-  { href: '/#work', label: 'Work' },
-  { href: '/#contact', label: 'Contact' },
+  { href: `${base}/#services`, label: t.nav.services },
+  { href: `${base}/#work`, label: t.nav.work },
+  { href: `${base}/#contact`, label: t.nav.contact },
 ];
+
+const other = otherLocale(lang);
+const otherHref = localisePath(Astro.url.pathname, other);
 ---
 
 <header>
   <div class="bar">
-    <a class="wordmark" href="/">Shyden</a>
+    <a class="wordmark" href={home}>Shyden</a>
     <details class="menu">
-      <summary aria-label="Toggle navigation menu" aria-controls="primary-nav"
+      <summary aria-label={t.menuLabel} aria-controls="primary-nav"
         ><span class="bars"></span></summary
       >
     </details>
+    <a
+      class="lang"
+      href={otherHref}
+      hreflang={other}
+      lang={other}
+      rel="alternate">{t.language.switchTo}</a
+    >
     <nav id="primary-nav">
       {
         links.map((l) => (
@@ -128,5 +153,25 @@ const links = [
       position: static;
       padding: 0;
     }
+  }
+  /* The language link lives in the BAR, not in <nav>.
+     Two reasons, both learned from a failing test:
+     1. <nav> means "the site's sections" and is pinned to exactly those three
+        links; a language control is a different kind of thing.
+     2. On mobile <nav> collapses behind the disclosure, which would have
+        hidden the switcher behind a hamburger — unreachable for exactly the
+        visitors most likely to want it. */
+  .lang {
+    margin-left: auto;
+    margin-right: 1rem;
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--ink);
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
   }
 </style>
