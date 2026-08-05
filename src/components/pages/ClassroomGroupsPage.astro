@@ -220,6 +220,79 @@ const themes = THEME_KEYS;
   <script src="../../scripts/classroom-groups.ts"></script>
 </BaseLayout>
 
+<style is:global>
+  /* ── results ─────────────────────────────────────────────────────────────
+     GLOBAL, not scoped, because the script BUILDS these elements at runtime.
+
+     Astro scopes a component's styles by stamping `data-astro-cid-…` onto the
+     elements in its template and compiling every rule to match it. Nothing
+     created by document.createElement carries that attribute, so a scoped
+     `.avatar` rule compiled to `.avatar[data-astro-cid-vs67owv4]` matched
+     none of the avatars this page actually renders. The whole results area
+     shipped unstyled: 202px black circles instead of 34px coloured faces, a
+     list-item instead of a row, no card border, and a deal animation that
+     never animated because `.student { opacity: 0 }` never applied either.
+
+     Every test passed throughout, because they all counted elements and read
+     text. A real phone showed it in one screenshot.
+
+     Anchored on #cg-results so these generic names — .group, .student,
+     .avatar, .who — cannot reach any other page. Pinned by
+     classroom-groups-controls.spec.ts, which asserts rendered sizes and
+     computed colours rather than class names. */
+  #cg-results .group {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem 1rem;
+  }
+  #cg-results .group h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+  }
+  #cg-results .group ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+  #cg-results .student {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    /* Dealt in by the script. Starting hidden means a half-finished deal never
+       shows a card in a nonsense position; `.dealt` is added per card. */
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.96);
+  }
+  #cg-results .student.dealt {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 220ms ease-out,
+      transform 220ms ease-out;
+  }
+  #cg-results .avatar {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+  }
+  /* Per-student colour arrives as --hue, so the SVG markup itself stays a
+     constant with nothing interpolated into it. */
+  #cg-results .a-bg {
+    fill: hsl(var(--hue) 62% 88%);
+  }
+  #cg-results .a-head,
+  #cg-results .a-body {
+    fill: hsl(var(--hue) 45% 38%);
+  }
+  #cg-results .who {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+</style>
+
 <style>
   .wrap {
     max-width: var(--maxw);
@@ -359,64 +432,11 @@ const themes = THEME_KEYS;
     }
   }
 
-  /* ── results ─────────────────────────────────────────────────────────── */
-  .group {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.75rem 1rem 1rem;
-  }
-  .group h3 {
-    margin: 0 0 0.5rem;
-    font-size: 1.05rem;
-  }
-  .group ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.4rem;
-  }
-  .student {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    /* Dealt in by the script. Starting hidden means a half-finished deal never
-       shows a card in a nonsense position; `.dealt` is added per card. */
-    opacity: 0;
-    transform: translateY(-0.5rem) scale(0.96);
-  }
-  .student.dealt {
-    opacity: 1;
-    transform: none;
-    transition:
-      opacity 220ms ease-out,
-      transform 220ms ease-out;
-  }
-  .avatar {
-    width: 34px;
-    height: 34px;
-    flex: 0 0 auto;
-    border-radius: 50%;
-  }
-  /* Per-student colour arrives as --hue, so the SVG markup itself stays a
-     constant with nothing interpolated into it. */
-  .a-bg {
-    fill: hsl(var(--hue) 62% 88%);
-  }
-  .a-head,
-  .a-body {
-    fill: hsl(var(--hue) 45% 38%);
-  }
-  .who {
-    font-weight: 600;
-    overflow-wrap: anywhere;
-  }
-
   /* Someone who asked their device for less motion gets the result with no
      movement at all, even if the animation runs. */
   @media (prefers-reduced-motion: reduce) {
-    .student,
-    .student.dealt {
+    #cg-results .student,
+    #cg-results .student.dealt {
       opacity: 1;
       transform: none;
       transition: none;

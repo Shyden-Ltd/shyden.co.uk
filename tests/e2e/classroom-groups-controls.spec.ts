@@ -150,6 +150,61 @@ test.describe('the controls that had no tests', () => {
   });
 });
 
+test.describe('the results are styled, not just present', () => {
+  /**
+   * Every other test here counts elements and reads text, and all of them
+   * passed while the entire results area rendered unstyled.
+   *
+   * The script BUILDS the results at runtime, so the elements it creates
+   * never carry Astro's `data-astro-cid-…` scope attribute — and every rule
+   * in the component's <style> block is compiled to
+   * `.avatar[data-astro-cid-vs67owv4]`, which matches none of them. The
+   * avatars therefore had no size and filled the width of the card as black
+   * circles, and the deal animation never animated. Found on a real phone,
+   * where one child's face covered the screen.
+   */
+  test('an avatar is a small coloured face, not a full-width black circle', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await makeGroups(page, '8', '4');
+    await expect(page.locator('#cg-results .student')).toHaveCount(8);
+
+    const box = await page.locator('#cg-results .avatar').first().boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(20);
+    expect(box!.width).toBeLessThan(60);
+    expect(Math.abs(box!.width - box!.height)).toBeLessThan(2);
+
+    // Coloured from --hue. Unstyled SVG paths default to black.
+    const fill = await page
+      .locator('#cg-results .a-bg')
+      .first()
+      .evaluate((el) => getComputedStyle(el).fill);
+    expect(fill).not.toBe('rgb(0, 0, 0)');
+  });
+
+  test('a student row lays out beside its avatar', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await makeGroups(page, '8', '4');
+    const display = await page
+      .locator('#cg-results .student')
+      .first()
+      .evaluate((el) => getComputedStyle(el).display);
+    expect(display).toBe('flex');
+  });
+
+  test('a group is a card, not bare text', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await makeGroups(page, '8', '4');
+    const border = await page
+      .locator('#cg-results .group')
+      .first()
+      .evaluate((el) => getComputedStyle(el).borderTopWidth);
+    expect(border).not.toBe('0px');
+  });
+});
+
 test.describe('classroom groups — mobile-first layout', () => {
   for (const path of ['/classroom-groups', '/id/classroom-groups']) {
     for (const width of [320, 375, 768, 1280]) {
