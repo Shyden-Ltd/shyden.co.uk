@@ -202,6 +202,68 @@ test.describe('classroom group creator', () => {
     await expect(groupWithBoth).toHaveCount(0);
   });
 
+  test('the summary reads as a sentence, singular included', async ({
+    page,
+  }) => {
+    // The tool's own headline case, and the page has said "1 groups from 7
+    // students." since it shipped. The old assertion was toContainText('22')
+    // — a bare number, which would also have passed with the arguments the
+    // wrong way round.
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '7', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-summary')).toHaveText(
+      '1 group from 7 students.',
+    );
+
+    await fill(page, { count: '22', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-summary')).toHaveText(
+      '5 groups from 22 students.',
+    );
+  });
+
+  test('three names on one line means all three apart', async ({ page }) => {
+    // The help says "one pair per line", but the box is free text and this is
+    // how a teacher writes it. The old parser kept the first pair, dropped
+    // the rest, seated Citra next to Ana and reported success.
+    await page.goto('/classroom-groups');
+    await fill(page, {
+      names: 'Ana\nBudi\nCitra\nDewi\nEko\nFitri',
+      size: '2',
+      apart: 'Ana, Budi, Citra',
+    });
+    await page.click('#cg-go');
+
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+    for (const [a, b] of [
+      ['Ana', 'Budi'],
+      ['Ana', 'Citra'],
+      ['Budi', 'Citra'],
+    ]) {
+      await expect(
+        page
+          .locator('#cg-results .group')
+          .filter({ hasText: a })
+          .filter({ hasText: b }),
+      ).toHaveCount(0);
+    }
+  });
+
+  test('the error clears the stale "Shuffle again" label', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '8', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-go')).toHaveText('Shuffle again');
+
+    // Now a refusal. Offering to reshuffle results that are no longer on
+    // screen is an offer the page cannot keep.
+    await fill(page, { count: '0', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-error')).toBeVisible();
+    await expect(page.locator('#cg-go')).toHaveText('Make Groups');
+  });
+
   test('keep-apart is disabled until there are names to refer to', async ({
     page,
   }) => {

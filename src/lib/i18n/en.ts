@@ -75,8 +75,10 @@ export const en = {
   needsJs: 'This tool needs JavaScript enabled.',
 
   resultsHeading: 'Your groups',
+  // English inflects; the tool's own headline case (7 students in groups of
+  // 4 is ONE group of 7) hits the singular every time.
   resultsSummary: (groups: number, students: number) =>
-    `${groups} groups from ${students} students.`,
+    `${groups} ${groups === 1 ? 'group' : 'groups'} from ${students} ${students === 1 ? 'student' : 'students'}.`,
   groupLabel: (n: number) => `Group ${n}`,
   studentNumber: (n: number) => `Student ${n}`,
   dealing: 'Making groups…',

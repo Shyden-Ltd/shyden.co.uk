@@ -172,6 +172,35 @@ function targetSizes(
   return sizes;
 }
 
+/**
+ * Turn the keep-apart box into pairs.
+ *
+ * Lives here rather than in the page script for the reason the working
+ * agreement gives — the logic is the library's, the DOM is the script's — and
+ * because a free-text box is exactly the surface that deserves unit tests
+ * rather than an end-to-end guess.
+ *
+ * A line of three or more names expands to every pair on it. The help text
+ * asks for one pair per line, but the box is free text and "Ana, Budi, Citra"
+ * is a natural way to write "keep all three apart". Keeping only the first
+ * two was the worst of the three available behaviours: it seated Citra next
+ * to Ana and reported success.
+ */
+export function parseKeepApart(text: string): Array<[string, string]> {
+  const pairs: Array<[string, string]> = [];
+  for (const line of text.split('\n')) {
+    const names = line
+      .split(',')
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0);
+    for (let i = 0; i < names.length; i++) {
+      for (let j = i + 1; j < names.length; j++)
+        pairs.push([names[i], names[j]]);
+    }
+  }
+  return pairs;
+}
+
 /** Conflict adjacency by student index, built from name pairs. */
 function buildConflicts(
   students: Student[],

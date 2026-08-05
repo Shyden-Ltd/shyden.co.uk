@@ -8,7 +8,7 @@
  * exactly the same result — the animation is a presentation of the answer, never
  * the means of producing it.
  */
-import { buildGroups, type Student } from '../lib/grouping';
+import { buildGroups, parseKeepApart, type Student } from '../lib/grouping';
 import { getStrings, renderError, groupName, type Strings } from '../lib/i18n';
 
 const $ = <T extends HTMLElement>(id: string) =>
@@ -245,13 +245,7 @@ if (form) {
             size: Number(($('cg-size') as HTMLInputElement).value),
           };
 
-    const keepApart = apartBox.disabled
-      ? []
-      : apartBox.value
-          .split('\n')
-          .map((line) => line.split(',').map((n) => n.trim()))
-          .filter((parts) => parts.length >= 2 && parts[0] && parts[1])
-          .map((parts) => [parts[0], parts[1]] as [string, string]);
+    const keepApart = apartBox.disabled ? [] : parseKeepApart(apartBox.value);
 
     const outcome = buildGroups({
       students: names
@@ -265,9 +259,20 @@ if (form) {
 
     if (!outcome.ok) {
       results.hidden = true;
-      errorBox.textContent = renderError(outcome.error, t);
+      // Unhidden BEFORE the text lands. A live region only reports mutations
+      // to something already in the accessibility tree, so writing first and
+      // revealing second announced nothing at all — the visitor pressed the
+      // button and heard silence.
       errorBox.hidden = false;
-      errorBox.focus?.();
+      errorBox.textContent = renderError(outcome.error, t);
+      // No focus move: role="alert" is what announces this. The old
+      // errorBox.focus?.() was neither a guard (focus always exists on an
+      // HTMLElement, so the ?. never short-circuits) nor a focus move (a <p>
+      // with no tabindex is not focusable) — it only looked like both.
+
+      // The results are gone, so the button must stop offering to reshuffle
+      // them. Left alone it still read "Shuffle again" from the last success.
+      goButton.textContent = t.makeGroups;
       return;
     }
 
@@ -277,12 +282,20 @@ if (form) {
 
     // Text first, animation second — see the note at the top of this file.
     render(groups, naming, theme);
-    summary.textContent = t.resultsSummary(groups.length, groups.flat().length);
+    // Same ordering rule as the error path: the region joins the tree, and
+    // only then is the sentence written into it.
     results.hidden = false;
+    summary.textContent = t.resultsSummary(groups.length, groups.flat().length);
     goButton.textContent = t.again;
 
     goButton.disabled = true;
-    await animate(groups, speedSelect.value);
-    goButton.disabled = false;
+    try {
+      await animate(groups, speedSelect.value);
+    } finally {
+      // In a finally because a rejection here would otherwise leave the
+      // button disabled for good — and a disabled default button also
+      // suppresses Enter, so there would be no keyboard way out either.
+      goButton.disabled = false;
+    }
   });
 }

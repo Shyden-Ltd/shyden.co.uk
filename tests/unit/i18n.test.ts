@@ -166,3 +166,32 @@ describe('locale lookup', () => {
     expect(en.studentNumber(7)).not.toBe(id.studentNumber(7));
   });
 });
+
+describe('the sentences a teacher reads at the end', () => {
+  // These are asserted as WHOLE SENTENCES. The e2e suite checked
+  // `toContainText('22')` — a bare number, which would pass just as happily
+  // if the two arguments were swapped, and did pass while the page said
+  // "1 groups from 7 students."
+  it.each([
+    [5, 22, '5 groups from 22 students.'],
+    // The tool's own documented headline case: 7 students in groups of 4 is
+    // ONE group of 7. The page has printed "1 groups" since it shipped.
+    [1, 7, '1 group from 7 students.'],
+    [1, 1, '1 group from 1 student.'],
+    [2, 2, '2 groups from 2 students.'],
+  ])('English %i/%i', (groups, students, sentence) => {
+    expect(en.resultsSummary(groups, students)).toBe(sentence);
+  });
+
+  it.each([
+    [5, 22, '5 kelompok dari 22 siswa.'],
+    [1, 7, '1 kelompok dari 7 siswa.'],
+  ])('Indonesian %i/%i — no inflection, correct as written', (g, s, out) => {
+    expect(id.resultsSummary(g, s)).toBe(out);
+  });
+
+  it('cannot pass with its arguments swapped', () => {
+    // The property the old assertion lacked.
+    expect(en.resultsSummary(5, 22)).not.toBe(en.resultsSummary(22, 5));
+  });
+});

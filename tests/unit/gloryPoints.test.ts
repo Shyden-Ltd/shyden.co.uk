@@ -71,5 +71,21 @@ describe('formatNumber', () => {
     [280, '280'],
     [2780, '2,780'],
     [1000000, '1,000,000'],
-  ])('%i -> %s', (n, s) => expect(formatNumber(n)).toBe(s));
+  ])('English: %i -> %s', (n, s) => expect(formatNumber(n, 'en')).toBe(s));
+
+  it.each([
+    [5, '5'],
+    [280, '280'],
+    [2780, '2.780'],
+    [1000000, '1.000.000'],
+  ])('Indonesian: %i -> %s', (n, s) => expect(formatNumber(n, 'id')).toBe(s));
+
+  it('does not print an Indonesian number in the English convention', () => {
+    // In Indonesian "." groups thousands and "," is the decimal mark, so the
+    // English rendering of 1112 reads to an Indonesian teacher as "one point
+    // one one two". The static copy on the same page already writes "0,9
+    // bean per koin" correctly, so the page was contradicting itself.
+    expect(formatNumber(1112, 'id')).toBe('1.112');
+    expect(formatNumber(1112, 'id')).not.toBe(formatNumber(1112, 'en'));
+  });
 });

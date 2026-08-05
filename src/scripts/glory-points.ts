@@ -5,7 +5,8 @@ import { siteEn, siteId } from '../lib/i18n/site';
 // gloryPoints.ts stays English and untouched. Mapping BY THE EXPORTED ERRORS
 // OBJECT rather than by literal strings means a reworded message updates here
 // automatically instead of silently falling through to English.
-const t = (document.documentElement.lang === 'id' ? siteId : siteEn).glory;
+const lang = document.documentElement.lang === 'id' ? 'id' : 'en';
+const t = (lang === 'id' ? siteId : siteEn).glory;
 const LOCALISED_ERROR = new Map<string, string>([
   [ERRORS.empty, t.errors.empty],
   [ERRORS.notWhole, t.errors.notWhole],
@@ -29,9 +30,9 @@ function run(): void {
   error.textContent = '';
   const { coinsNeeded, beansNeeded, totalGiftValue } = outcome.result;
   result.textContent = t.resultLine(
-    formatNumber(coinsNeeded),
-    formatNumber(beansNeeded),
-    formatNumber(totalGiftValue),
+    formatNumber(coinsNeeded, lang),
+    formatNumber(beansNeeded, lang),
+    formatNumber(totalGiftValue, lang),
   );
 }
 

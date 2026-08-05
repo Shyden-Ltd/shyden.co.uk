@@ -199,15 +199,17 @@ const themes = Object.keys(t.themes);
 
     <!-- The results are written here as real text regardless of animation
          state, so a screen reader, a skipped animation and a finished one all
-         expose exactly the same thing. -->
-    <section
-      id="cg-results"
-      aria-live="polite"
-      aria-labelledby="cg-results-h"
-      hidden
-    >
+         expose exactly the same thing.
+
+         The live region is the SUMMARY, not this section. Announcing the
+         whole section would read out every group and every child on every
+         shuffle; announcing the summary says "5 groups from 22 students" and
+         leaves the detail to be read at the visitor's own pace. Either way
+         the script must unhide before it writes — a live region that appears
+         already-populated is announced by nobody. -->
+    <section id="cg-results" aria-labelledby="cg-results-h" hidden>
       <h2 id="cg-results-h">{t.resultsHeading}</h2>
-      <p class="summary" id="cg-summary"></p>
+      <p class="summary" id="cg-summary" role="status"></p>
       <div class="tables" id="cg-tables"></div>
     </section>
   </section>

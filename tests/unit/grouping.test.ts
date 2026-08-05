@@ -3,6 +3,7 @@ import {
   buildGroups,
   ERROR_CODES,
   MAX_STUDENTS,
+  parseKeepApart,
   type GroupingInput,
   type Student,
 } from '../../src/lib/grouping';
@@ -520,6 +521,61 @@ describe('buildGroups — a refusal must not assert something untrue', () => {
       'Dewi',
     ]);
     expect(out.error.groupsNeeded).toBe(4);
+  });
+});
+
+describe('parseKeepApart — what the teacher typed becomes what was meant', () => {
+  it('reads the documented shape: one pair per line', () => {
+    expect(parseKeepApart('Ana, Budi\nCitra, Dewi')).toEqual([
+      ['Ana', 'Budi'],
+      ['Citra', 'Dewi'],
+    ]);
+  });
+
+  it('a line of three names means all three apart, not the first two', () => {
+    // The help text says "one pair per line", but the box is free text and
+    // this is a natural way to write it. The old parser kept Ana away from
+    // Budi and then seated Citra next to Ana — and reported success.
+    expect(parseKeepApart('Ana, Budi, Citra')).toEqual([
+      ['Ana', 'Budi'],
+      ['Ana', 'Citra'],
+      ['Budi', 'Citra'],
+    ]);
+  });
+
+  it.each([
+    ['blank lines', 'Ana, Budi\n\n   \nCitra, Dewi'],
+    ['ragged spacing', '  Ana ,   Budi  \n\tCitra,Dewi'],
+    ['a trailing comma', 'Ana, Budi,\nCitra, Dewi,'],
+  ])('survives %s', (_label, text) => {
+    expect(parseKeepApart(text)).toEqual([
+      ['Ana', 'Budi'],
+      ['Citra', 'Dewi'],
+    ]);
+  });
+
+  it.each([
+    ['nothing at all', ''],
+    ['only whitespace', '  \n\t\n'],
+    ['a single name, which constrains nothing', 'Ana'],
+    ['a lone comma', ','],
+  ])('reads %s as no constraint', (_label, text) => {
+    expect(parseKeepApart(text)).toEqual([]);
+  });
+
+  it('a name repeated on one line does not conflict with itself', () => {
+    expect(parseKeepApart('Ana, Ana')).toEqual([['Ana', 'Ana']]);
+    // The engine drops the self-pair; the parser's job is only to report what
+    // was written. Pinned so the two halves cannot both assume the other did
+    // it — the shape of most "who was supposed to handle this" defects.
+    const out = buildGroups(
+      base({
+        students: ['Ana', 'Budi'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: parseKeepApart('Ana, Ana'),
+      }),
+    );
+    expect(out.ok).toBe(true);
   });
 });
 
