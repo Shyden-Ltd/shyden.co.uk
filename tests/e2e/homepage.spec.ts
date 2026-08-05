@@ -45,6 +45,31 @@ test.describe('homepage content', () => {
       page.locator('#contact').getByRole('link', { name: /email us/i }),
     ).toHaveAttribute('href', 'mailto:support@shyden.co.uk');
   });
+
+  // Asserting the READ sentence, not just that the link exists: the invitation
+  // and the address are separate nodes, and the space between them is dropped
+  // whenever a formatter puts them on separate lines — which shipped
+  // "building.support@shyden.co.uk" to real phones. Checking the href alone
+  // cannot see that; only the rendered text can.
+  for (const { locale, path, sentence } of [
+    {
+      locale: 'English',
+      path: '/',
+      sentence: "Tell us what you're building. support@shyden.co.uk",
+    },
+    {
+      locale: 'Indonesian',
+      path: '/id/',
+      sentence: 'Ceritakan apa yang sedang Anda bangun. support@shyden.co.uk',
+    },
+  ]) {
+    test(`${locale}: the contact invitation reads as one sentence`, async ({
+      page,
+    }) => {
+      await page.goto(path);
+      await expect(page.locator('#contact p').first()).toHaveText(sentence);
+    });
+  }
   test('call-to-action buttons meet the 44×44px touch target', async ({
     page,
   }) => {

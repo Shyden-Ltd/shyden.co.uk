@@ -6,6 +6,13 @@
 // reached, and an Indonesian visitor who mistyped a URL would be answered in
 // English. Showing both languages here is the only thing that is correct
 // regardless of how the host resolves the miss, and it needs no JavaScript.
+//
+// Both paragraphs write the space before their link as {' '} rather than as a
+// literal one. They are the same markup and differed only in line wrapping,
+// and that alone was enough for the Indonesian half to render "tidak
+// ada.Kembali ke beranda" while the English half read correctly: a newline
+// between two nodes is whitespace JSX discards. Written as an expression the
+// space cannot be reformatted away.
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { siteEn, siteId } from '../lib/i18n/site';
 ---
@@ -17,13 +24,15 @@ import { siteEn, siteId } from '../lib/i18n/site';
 >
   <section class="wrap">
     <h1>{siteEn.notFound.heading}</h1>
-    <p>{siteEn.notFound.body} <a href="/">{siteEn.notFound.backHome}</a>.</p>
+    <p>
+      {siteEn.notFound.body}{' '}<a href="/">{siteEn.notFound.backHome}</a>.
+    </p>
 
     <hr />
 
     <h2 lang="id">{siteId.notFound.heading}</h2>
     <p lang="id">
-      {siteId.notFound.body}
+      {siteId.notFound.body}{' '}
       <a href="/id/">{siteId.notFound.backHome}</a>.
     </p>
   </section>

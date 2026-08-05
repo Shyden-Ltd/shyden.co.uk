@@ -6,6 +6,11 @@ import WorkCard from '../WorkCard.astro';
 import { localisePath, type Locale } from '../../lib/i18n';
 import { siteEn, siteId } from '../../lib/i18n/site';
 
+// The {' '} in the contact paragraph is load-bearing, not decoration: a newline
+// between two nodes is whitespace JSX discards, so with a literal space there
+// the invitation shipped as "building.support@shyden.co.uk". Written as an
+// expression it survives any re-wrapping by the formatter.
+
 interface Props {
   lang: Locale;
 }
@@ -61,7 +66,7 @@ const classroom = localisePath('/classroom-groups', lang);
   <section id="contact" class="wrap">
     <h2>{t.contactHeading}</h2>
     <p>
-      {t.contactBody}
+      {t.contactBody}{' '}
       <a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a>
     </p>
     <p><Button href="mailto:support@shyden.co.uk">{t.emailUs}</Button></p>
