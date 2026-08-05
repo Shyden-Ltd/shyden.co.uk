@@ -524,6 +524,220 @@ describe('buildGroups — a refusal must not assert something untrue', () => {
   });
 });
 
+describe('buildGroups — the edges of a class size', () => {
+  it('floors a fractional count rather than inventing a part-student', () => {
+    expect(
+      ok(
+        base({ students: 2.7, mode: { kind: 'perGroup', size: 1 } }),
+      ).groups.flat(),
+    ).toHaveLength(2);
+  });
+
+  it.each([[-1], [0], [-0.5]])('refuses a count of %i', (students) => {
+    const out = buildGroups(base({ students }));
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.noStudents);
+  });
+
+  it('one group per student is allowed; one more is not', () => {
+    // The boundary itself. Only `count > students` was covered, so an
+    // off-by-one either way would have gone unnoticed.
+    expect(
+      ok(base({ students: 4, mode: { kind: 'groupCount', count: 4 } })).groups,
+    ).toHaveLength(4);
+
+    const out = buildGroups(
+      base({ students: 4, mode: { kind: 'groupCount', count: 5 } }),
+    );
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.tooManyGroups);
+  });
+
+  it('bunches leftovers in groupCount mode too, not only perGroup', () => {
+    // The two settings are independent controls on the page and their
+    // combination was never exercised.
+    const { groups } = ok(
+      base({
+        students: 11,
+        mode: { kind: 'groupCount', count: 3 },
+        leftovers: 'bunch',
+      }),
+    );
+    expect(shape(groups)).toEqual([5, 3, 3]);
+  });
+
+  it.each([
+    ['always 0', () => 0],
+    ['always just under 1', () => 0.999999999],
+    // A source that returns exactly 1 is out of contract, but it is a
+    // PARAMETER: nothing stops a caller supplying one, and the swap would
+    // then read past the end of the array and seat `undefined` in a group.
+    ['always exactly 1', () => 1],
+  ])('survives a random source that %s', (_label, random) => {
+    const { groups } = ok(base({ students: 12, random }));
+    const all = groups.flat();
+    expect(all).toHaveLength(12);
+    expect(all.every((s) => s !== undefined)).toBe(true);
+    expect(new Set(all.map((s) => s.id)).size).toBe(12);
+  });
+});
+
+describe('buildGroups — names that are not plain ASCII', () => {
+  it('matches a name typed in a different Unicode form', () => {
+    // "José" has two encodings: NFC (é as one code point) and NFD (e plus a
+    // combining accent). They look identical, and macOS keyboards and file
+    // pastes produce different ones — so a teacher could paste the class
+    // list one way and type the keep-apart rule the other and be told "José
+    // is not in your class list. Check the spelling."
+    const nfc = 'José';
+    const nfd = 'José';
+    expect(nfc).not.toBe(nfd);
+
+    const out = buildGroups(
+      base({
+        students: [nfc, 'Budi', 'Citra', 'Dewi'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [[nfd, 'Budi']],
+      }),
+    );
+    if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
+    const together = out.result.groups.find(
+      (g) =>
+        g.some((s) => s.name?.normalize('NFC') === nfc.normalize('NFC')) &&
+        g.some((s) => s.name === 'Budi'),
+    );
+    expect(together).toBeUndefined();
+  });
+
+  it('still refuses a name that genuinely is not in the class', () => {
+    // Normalising must not turn the unknown-name check into a no-op.
+    const out = buildGroups(
+      base({
+        students: ['Ana', 'Budi'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['Zara', 'Budi']],
+      }),
+    );
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.keepApartUnknownName);
+  });
+
+  it('treats a difference of case as a different child', () => {
+    // Two children really can be "ana" and "Ana". Case-folding names would
+    // merge them, which is a worse failure than asking for the exact
+    // spelling the class list uses.
+    const out = buildGroups(
+      base({
+        students: ['Ana', 'Budi'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['ana', 'Budi']],
+      }),
+    );
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.keepApartUnknownName);
+  });
+
+  it.each([
+    ['Chinese', ['张伟', '李娜', '王芳', '刘洋']],
+    ['Arabic', ['أحمد', 'فاطمة', 'محمد', 'عائشة']],
+    ['Hebrew', ['אבי', 'שרה', 'דוד', 'רחל']],
+    ['Thai', ['สมชาย', 'สมหญิง', 'ประเสริฐ', 'มาลี']],
+  ])('keeps %s names apart correctly', (_label, names) => {
+    const { groups } = ok(
+      base({
+        students: names,
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [[names[0], names[1]]],
+      }),
+    );
+    expect(
+      groups
+        .flat()
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual([...names].sort());
+    expect(
+      groups.some(
+        (g) =>
+          g.some((s) => s.name === names[0]) &&
+          g.some((s) => s.name === names[1]),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('buildGroups — duplicate names and empty rules', () => {
+  it('keeps BOTH children of a shared name away from the named one', () => {
+    // Two Anas and a rule about "Ana". The safe reading is that it applies
+    // to every child called Ana, and this is the only test of it.
+    const { groups } = ok(
+      base({
+        students: ['Ana', 'Budi', 'Ana', 'Citra', 'Dewi', 'Eko'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['Ana', 'Budi']],
+      }),
+    );
+    const withBudi = groups.find((g) => g.some((s) => s.name === 'Budi'))!;
+    expect(withBudi.some((s) => s.name === 'Ana')).toBe(false);
+  });
+
+  it('a rule naming the same child twice is not a conflict with themself', () => {
+    // The i === j branch. With one Ana this must not make Ana unplaceable.
+    const out = buildGroups(
+      base({
+        students: ['Ana', 'Budi'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['Ana', 'Ana']],
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it('but with two children of that name, it separates them', () => {
+    const { groups } = ok(
+      base({
+        students: ['Ana', 'Ana', 'Budi', 'Citra'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['Ana', 'Ana']],
+      }),
+    );
+    const together = groups.find(
+      (g) => g.filter((s) => s.name === 'Ana').length > 1,
+    );
+    expect(together).toBeUndefined();
+  });
+
+  it('ignores padding around a name in a rule', () => {
+    const { groups } = ok(
+      base({
+        students: ['Ana', 'Budi', 'Citra', 'Dewi'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['  Ana  ', ' Budi ']],
+      }),
+    );
+    expect(
+      groups.some(
+        (g) =>
+          g.some((s) => s.name === 'Ana') && g.some((s) => s.name === 'Budi'),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['both sides blank', [['', '']] as Array<[string, string]>],
+    ['one side blank', [['Ana', '']] as Array<[string, string]>],
+    ['only whitespace', [['  ', ' ']] as Array<[string, string]>],
+  ])(
+    'an empty rule (%s) is no rule, even without names',
+    (_label, keepApart) => {
+      // A numbered class has no names to refer to, so an empty rule must NOT
+      // trip KEEP_APART_NEEDS_NAMES — it is not a rule at all.
+      const out = buildGroups(base({ students: 8, keepApart }));
+      expect(out.ok).toBe(true);
+    },
+  );
+});
+
 describe('parseKeepApart — what the teacher typed becomes what was meant', () => {
   it('reads the documented shape: one pair per line', () => {
     expect(parseKeepApart('Ana, Budi\nCitra, Dewi')).toEqual([

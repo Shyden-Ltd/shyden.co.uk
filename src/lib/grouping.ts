@@ -116,11 +116,30 @@ function requestedSize(input: number | string[]): number {
     : input.reduce((n, s) => (s.trim().length > 0 ? n + 1 : n), 0);
 }
 
+/**
+ * A name as it is compared: trimmed, and in one Unicode form.
+ *
+ * "José" has two encodings — é as a single code point (NFC) or e plus a
+ * combining accent (NFD) — which render identically. macOS filenames and some
+ * keyboards produce NFD while most pastes produce NFC, so a teacher could
+ * paste the class list one way and type the keep-apart rule the other and be
+ * told "José is not in your class list. Check the spelling."
+ *
+ * Case is deliberately NOT folded: two children really can be "ana" and
+ * "Ana", and merging them is a worse failure than asking for the spelling the
+ * class list uses.
+ */
+const nameKey = (name: string): string => name.trim().normalize('NFC');
+
 /** Fisher-Yates against the injected source. */
 function shuffled<T>(items: readonly T[], random: () => number): T[] {
   const out = items.slice();
   for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
+    // Clamped because `random` is a PARAMETER. The contract is [0, 1), and
+    // Math.random honours it, but nothing stops a caller passing a source
+    // that returns exactly 1 — and then j is i + 1, the swap reads past the
+    // end, and `undefined` is seated in a group with a real child.
+    const j = Math.min(i, Math.floor(random() * (i + 1)));
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
@@ -138,7 +157,7 @@ function normaliseStudents(input: number | string[]): Student[] {
   // duplicate name IS kept — two children genuinely can share a first name,
   // and silently de-duplicating would drop one of them from the class.
   return input
-    .map((n) => n.trim())
+    .map(nameKey)
     .filter((n) => n.length > 0)
     .map((name, i) => ({ id: i + 1, name }));
 }
@@ -229,8 +248,8 @@ function buildConflicts(
   for (const [a, b] of pairs) {
     // A duplicated name expands to every student carrying it — the safe
     // reading of "keep Ana away from Budi" when there are two Anas.
-    for (const i of byName.get(a.trim()) ?? []) {
-      for (const j of byName.get(b.trim()) ?? []) {
+    for (const i of byName.get(nameKey(a)) ?? []) {
+      for (const j of byName.get(nameKey(b)) ?? []) {
         if (i === j) continue;
         adj[i].add(j);
         adj[j].add(i);
@@ -367,7 +386,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     if (!named) return fail({ code: ERROR_CODES.keepApartNeedsNames });
 
     const roster = new Set(students.map((s) => s.name));
-    const unknown = [...new Set(pairs.flat().map((n) => n.trim()))].filter(
+    const unknown = [...new Set(pairs.flat().map(nameKey))].filter(
       (n) => !roster.has(n),
     );
     if (unknown.length > 0) {

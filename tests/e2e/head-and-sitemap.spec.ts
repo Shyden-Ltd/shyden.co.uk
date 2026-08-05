@@ -81,19 +81,34 @@ test.describe('skip link — WCAG 2.4.1', () => {
     });
   }
 
-  test('it is the first thing a keyboard reaches, and it works', async ({
-    page,
-  }) => {
-    // The point of the link, on the page where it matters most: without it a
-    // keyboard user crosses the wordmark, the hamburger, the language
-    // switcher and three nav links before the first form field.
+  test('it is the FIRST thing a Tab reaches', async ({ page, browserName }) => {
+    test.skip(
+      browserName === 'webkit',
+      'Safari omits plain links from the Tab sequence unless the visitor opts ' +
+        'in, so a Tab walk here would assert a browser preference rather than ' +
+        'our markup. The link itself is asserted for WebKit in the test below.',
+    );
+    // The whole point of the link, on the page where it matters most:
+    // without it a keyboard user crosses the wordmark, the hamburger, the
+    // language switcher and three nav links before the first form field.
     await page.goto('/classroom-groups');
     await page.keyboard.press('Tab');
+    await expect(page.locator(':focus')).toHaveClass(/skip-link/);
+  });
 
-    const first = page.locator(':focus');
-    await expect(first).toHaveClass(/skip-link/);
-    // Visible once focused — an off-screen link nobody can see is no help.
-    await expect(first).toBeInViewport();
+  test('it becomes visible when focused, and lands on the content', async ({
+    page,
+  }) => {
+    // Asserted on EVERY engine, WebKit included: focusability and the jump
+    // are our markup, and only the Tab ORDER is the browser's preference.
+    await page.goto('/classroom-groups');
+    const link = page.locator('.skip-link');
+
+    // Off-screen until focused, which is the only time it is any use — and
+    // `display: none` would have made it unfocusable, i.e. not a skip link.
+    await expect(link).not.toBeInViewport();
+    await link.focus();
+    await expect(link).toBeInViewport();
 
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#main$/);
