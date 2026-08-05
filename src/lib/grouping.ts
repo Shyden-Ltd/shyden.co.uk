@@ -37,12 +37,18 @@ export interface GroupingInput {
 
 export const ERROR_CODES = {
   noStudents: 'NO_STUDENTS',
+  tooManyStudents: 'TOO_MANY_STUDENTS',
   invalidGroupSize: 'INVALID_GROUP_SIZE',
   invalidGroupCount: 'INVALID_GROUP_COUNT',
   tooManyGroups: 'TOO_MANY_GROUPS',
   keepApartNeedsNames: 'KEEP_APART_NEEDS_NAMES',
   keepApartUnknownName: 'KEEP_APART_UNKNOWN_NAME',
+  /** PROVEN by a clique: these students all conflict, so they need N groups. */
   keepApartImpossible: 'KEEP_APART_IMPOSSIBLE',
+  /** PROVEN by exhaustive search: no arrangement exists at this group count. */
+  keepApartNoArrangement: 'KEEP_APART_NO_ARRANGEMENT',
+  /** Proves NOTHING: the search hit its budget. Says so rather than guessing. */
+  keepApartSearchGaveUp: 'KEEP_APART_SEARCH_GAVE_UP',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -55,6 +61,10 @@ export interface GroupingError {
   groupsNeeded?: number;
   /** For too-many-groups: the most that were possible. */
   maxGroups?: number;
+  /** For too-many-students: the largest class this engine will attempt. */
+  maxStudents?: number;
+  /** For no-arrangement: the group count that was searched and ruled out. */
+  groupsTried?: number;
 }
 
 export type GroupingOutcome =
@@ -69,7 +79,31 @@ export type GroupingOutcome =
  */
 const SEARCH_NODE_CAP = 200_000;
 
+/**
+ * The largest class this engine will attempt, and the single source of truth
+ * for the number the page puts in its `max` attribute.
+ *
+ * A roster is materialised as objects before anything else can guard it, so
+ * `Array.from({ length: 100000000 })` from a mis-keyed paste allocates until
+ * the tab is killed — on a phone, until the browser is. 500 is far above any
+ * real class and far below anything that hurts.
+ */
+export const MAX_STUDENTS = 500;
+
 const fail = (error: GroupingError): GroupingOutcome => ({ ok: false, error });
+
+/**
+ * How many students were asked for, WITHOUT building them.
+ *
+ * Deliberately returns the raw number, Infinity and NaN included: the caller
+ * distinguishes them, because "more than the tool will do" and "not a number
+ * at all" are different mistakes and deserve different sentences.
+ */
+function requestedSize(input: number | string[]): number {
+  return typeof input === 'number'
+    ? input
+    : input.reduce((n, s) => (s.trim().length > 0 ? n + 1 : n), 0);
+}
 
 /** Fisher-Yates against the injected source. */
 function shuffled<T>(items: readonly T[], random: () => number): T[] {
@@ -172,13 +206,27 @@ function buildConflicts(
  * This is the honest explanation of impossibility: if five students must all
  * be kept apart from one another, they need five groups, and no shuffling of
  * four will ever work. Reporting that set by name gives the teacher something
- * to act on. Exact search is fine at classroom scale.
+ * to act on.
+ *
+ * Budgeted like `assign`, and for the same reason. "Exact search is fine at
+ * classroom scale" was measured and is not true: a keep-apart list shaped like
+ * "these three wind each other up, and those three, and those three" is the
+ * worst case for clique search, and 48 students of it took 121 SECONDS in a
+ * tab that had no way to say what it was doing.
+ *
+ * A clique found under the budget is still a valid certificate — it is a set
+ * that genuinely all conflict, whether or not a bigger one exists. Only the
+ * opposite conclusion, "no large clique exists", would need a complete search,
+ * and this function is never used to draw it. So exhaustion costs precision,
+ * never correctness: the caller simply falls through to the real search.
  */
 function largestMutualConflict(adj: Set<number>[]): number[] {
   let best: number[] = [];
+  let nodes = 0;
   const n = adj.length;
 
   const extend = (clique: number[], candidates: number[]): void => {
+    if (++nodes > SEARCH_NODE_CAP) return;
     if (clique.length > best.length) best = clique.slice();
     // Bound: even taking every remaining candidate cannot beat the best found.
     if (clique.length + candidates.length <= best.length) return;
@@ -207,13 +255,19 @@ function assign(
   order: number[],
   sizes: number[],
   adj: Set<number>[],
-): number[][] | null {
+): { groups: number[][] | null; gaveUp: boolean } {
   const groups: number[][] = sizes.map(() => []);
   let nodes = 0;
+  let gaveUp = false;
 
   const place = (idx: number): boolean => {
     if (idx === order.length) return true;
-    if (++nodes > SEARCH_NODE_CAP) return false;
+    if (++nodes > SEARCH_NODE_CAP) {
+      // Not "no arrangement exists" — "I stopped looking". Collapsing the two
+      // is how a tool ends up telling a teacher a falsehood with confidence.
+      gaveUp = true;
+      return false;
+    }
     const student = order[idx];
 
     for (let g = 0; g < groups.length; g++) {
@@ -226,10 +280,20 @@ function assign(
     return false;
   };
 
-  return place(0) ? groups : null;
+  const placed = place(0);
+  return { groups: placed ? groups : null, gaveUp };
 }
 
 export function buildGroups(input: GroupingInput): GroupingOutcome {
+  // Counted before it is built. Past this line the roster exists in memory,
+  // so this is the only place the size can still be refused cheaply.
+  if (requestedSize(input.students) > MAX_STUDENTS) {
+    return fail({
+      code: ERROR_CODES.tooManyStudents,
+      maxStudents: MAX_STUDENTS,
+    });
+  }
+
   const students = normaliseStudents(input.students);
   if (students.length === 0) return fail({ code: ERROR_CODES.noStudents });
 
@@ -295,17 +359,27 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     random,
   ).sort((a, b) => adj[b].size - adj[a].size);
 
-  const placed = assign(order, sizes, adj);
+  const { groups: placed, gaveUp } = assign(order, sizes, adj);
   if (placed === null) {
-    // Reachable when the constraints are individually satisfiable but cannot
-    // co-exist with these group sizes — no single clique explains it, so name
-    // everyone involved and report that more groups are required.
-    const involved = [...new Set(pairs.flat().map((n) => n.trim()))].sort();
-    return fail({
-      code: ERROR_CODES.keepApartImpossible,
-      students: involved,
-      groupsNeeded: sizes.length + 1,
-    });
+    // Two different failures, and the difference is everything. The search
+    // either ran to completion — in which case no arrangement exists at this
+    // group count, and saying so is a proof — or it hit its budget, in which
+    // case nothing whatsoever has been established.
+    //
+    // What is NOT said here is who conflicts with whom. The old code handed
+    // back every name appearing in any pair and let the copy call them
+    // mutually inseparable; for a five-student ring that named two children
+    // who have no rule between them at all. A clique is the only thing that
+    // licenses that sentence, and by this line the clique gate has already
+    // declined to fire.
+    return fail(
+      gaveUp
+        ? { code: ERROR_CODES.keepApartSearchGaveUp }
+        : {
+            code: ERROR_CODES.keepApartNoArrangement,
+            groupsTried: sizes.length,
+          },
+    );
   }
 
   // Randomise which group is "oversized" so bunched leftovers do not always

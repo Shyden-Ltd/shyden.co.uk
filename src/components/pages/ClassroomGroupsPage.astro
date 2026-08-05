@@ -1,6 +1,9 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getStrings, type Locale } from '../../lib/i18n';
+// The engine owns the ceiling. Hard-coding a second number here is how the
+// field comes to advertise one limit while the tool enforces another.
+import { MAX_STUDENTS } from '../../lib/grouping';
 
 interface Props {
   lang: Locale;
@@ -27,6 +30,14 @@ const themes = Object.keys(t.themes);
       </ol>
     </div>
 
+    <!-- No `name` on any control that holds something a teacher typed. A form
+         with no `action` submits to its OWN url as a GET, so a `name` here
+         would put the class list in the address bar, the history and the
+         access log the moment the script below fails to attach — which is a
+         real state (JS blocked at a school, a 404'd bundle, a throw). The
+         radio groups keep theirs because `name` is what binds a radio group
+         together, and "students per group" is not personal data.
+         Everything else is read by id. Pinned by classroom-groups-privacy.spec.ts. -->
     <form id="cg-form" novalidate>
       <fieldset>
         <legend>{t.classHeading}</legend>
@@ -35,11 +46,10 @@ const themes = Object.keys(t.themes);
           <label for="cg-count">{t.studentsLabel}</label>
           <input
             id="cg-count"
-            name="count"
             type="number"
             inputmode="numeric"
             min="1"
-            max="200"
+            max={MAX_STUDENTS}
             value="24"
             aria-describedby="cg-count-help"
           />
@@ -48,11 +58,8 @@ const themes = Object.keys(t.themes);
 
         <div class="field">
           <label for="cg-names">{t.namesLabel}</label>
-          <textarea
-            id="cg-names"
-            name="names"
-            rows="5"
-            aria-describedby="cg-names-help"></textarea>
+          <textarea id="cg-names" rows="5" aria-describedby="cg-names-help"
+          ></textarea>
           <p class="help" id="cg-names-help">{t.namesHelp}</p>
         </div>
       </fieldset>
@@ -80,7 +87,6 @@ const themes = Object.keys(t.themes);
           <label for="cg-size">{t.groupSizeLabel}</label>
           <input
             id="cg-size"
-            name="size"
             type="number"
             inputmode="numeric"
             min="1"
@@ -93,7 +99,6 @@ const themes = Object.keys(t.themes);
           <label for="cg-groups">{t.groupCountLabel}</label>
           <input
             id="cg-groups"
-            name="groups"
             type="number"
             inputmode="numeric"
             min="1"
@@ -138,7 +143,7 @@ const themes = Object.keys(t.themes);
         </div>
         <div class="field" data-naming="themed" hidden>
           <label for="cg-theme">{t.themeLabel}</label>
-          <select id="cg-theme" name="theme">
+          <select id="cg-theme">
             {
               themes.map((key) => (
                 <option value={key}>{t.themeNames[key]}</option>
@@ -152,11 +157,8 @@ const themes = Object.keys(t.themes);
         <legend>{t.keepApartHeading}</legend>
         <div class="field">
           <label for="cg-apart">{t.keepApartLabel}</label>
-          <textarea
-            id="cg-apart"
-            name="apart"
-            rows="3"
-            aria-describedby="cg-apart-help"></textarea>
+          <textarea id="cg-apart" rows="3" aria-describedby="cg-apart-help"
+          ></textarea>
           <p class="help" id="cg-apart-help">{t.keepApartHelp}</p>
           <p class="help" id="cg-apart-hint" hidden>
             {t.keepApartNeedsNamesHint}
@@ -168,14 +170,14 @@ const themes = Object.keys(t.themes);
         <legend>{t.playbackHeading}</legend>
         <div class="field">
           <label class="switch"
-            ><input id="cg-sound" type="checkbox" name="sound" checked /><span
+            ><input id="cg-sound" type="checkbox" checked /><span
               id="cg-sound-text">{t.soundOn}</span
             ></label
           >
         </div>
         <div class="field">
           <label for="cg-speed">{t.speedLabel}</label>
-          <select id="cg-speed" name="speed">
+          <select id="cg-speed">
             <option value="normal">{t.speedNormal}</option>
             <option value="fast">{t.speedFast}</option>
             <option value="skip">{t.speedSkip}</option>
@@ -186,6 +188,11 @@ const themes = Object.keys(t.themes);
       <p class="actions">
         <button type="submit" id="cg-go">{t.makeGroups}</button>
       </p>
+
+      <!-- Without this, a visitor whose browser is not running the script
+           presses the button and gets a page reload with nothing to show for
+           it — no result and no reason. Says so instead, in their language. -->
+      <noscript><p class="error" id="cg-noscript">{t.needsJs}</p></noscript>
     </form>
 
     <p class="error" id="cg-error" role="alert" hidden></p>

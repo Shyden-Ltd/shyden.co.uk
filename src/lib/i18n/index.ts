@@ -63,11 +63,17 @@ export function renderError(error: GroupingError, strings: Strings): string {
       return e.KEEP_APART_NEEDS_NAMES;
     case ERROR_CODES.keepApartUnknownName:
       return e.KEEP_APART_UNKNOWN_NAME(error.students ?? []);
+    case ERROR_CODES.tooManyStudents:
+      return e.TOO_MANY_STUDENTS(error.maxStudents ?? 0);
     case ERROR_CODES.keepApartImpossible:
       return e.KEEP_APART_IMPOSSIBLE(
         error.students ?? [],
         error.groupsNeeded ?? 0,
       );
+    case ERROR_CODES.keepApartNoArrangement:
+      return e.KEEP_APART_NO_ARRANGEMENT(error.groupsTried ?? 0);
+    case ERROR_CODES.keepApartSearchGaveUp:
+      return e.KEEP_APART_SEARCH_GAVE_UP;
   }
 }
 

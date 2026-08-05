@@ -12,6 +12,8 @@ const fill = async (
     count?: string;
     names?: string;
     size?: string;
+    /** Switches to "number of groups" mode and sets it. */
+    groups?: string;
     apart?: string;
     speed?: 'normal' | 'fast' | 'skip';
   },
@@ -19,6 +21,10 @@ const fill = async (
   if (opts.count !== undefined) await page.fill('#cg-count', opts.count);
   if (opts.names !== undefined) await page.fill('#cg-names', opts.names);
   if (opts.size !== undefined) await page.fill('#cg-size', opts.size);
+  if (opts.groups !== undefined) {
+    await page.check('input[name="mode"][value="groupCount"]');
+    await page.fill('#cg-groups', opts.groups);
+  }
   if (opts.apart !== undefined) await page.fill('#cg-apart', opts.apart);
   // Default to skip so the tests assert the RESULT, not the show. The
   // animation gets its own test below.
@@ -118,6 +124,65 @@ test.describe('classroom group creator', () => {
     await expect(error).toContainText('Eko');
     await expect(error).toContainText('5');
     await expect(page.locator('#cg-results')).toBeHidden();
+  });
+
+  test('splits by number of groups, not just by group size', async ({
+    page,
+  }) => {
+    // The whole second half of the "how to split them" fieldset — reachable
+    // from the page, and until now asserted by nothing.
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '20', groups: '3' });
+    await page.click('#cg-go');
+
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+    await expect(page.locator('#cg-results .student')).toHaveCount(20);
+  });
+
+  test('a mis-keyed class size is refused, not attempted', async ({ page }) => {
+    // Before the cap this allocated 100 million objects and the tab died —
+    // on a phone, taking the browser with it.
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '100000000', size: '4' });
+    await page.click('#cg-go');
+
+    await expect(page.locator('#cg-error')).toHaveText(
+      'That is more students than this tool will take. The most is 500.',
+    );
+    // Still alive and still usable, which is the actual claim.
+    await expect(page.locator('#cg-go')).toBeEnabled();
+    await expect(page.locator('#cg-results')).toBeHidden();
+  });
+
+  test('an unarrangeable class is explained without accusing anyone', async ({
+    page,
+  }) => {
+    // A ring: Ana-Budi-Citra-Dewi-Eko-Ana. No two of these five all conflict
+    // beyond a pair, so nothing licenses the sentence "these five all need to
+    // be kept apart from each other" — which is what the page used to print,
+    // naming Ana and Citra, who have no rule between them.
+    await page.goto('/classroom-groups');
+    await fill(page, {
+      names: 'Ana\nBudi\nCitra\nDewi\nEko',
+      groups: '2',
+      apart: [
+        'Ana, Budi',
+        'Budi, Citra',
+        'Citra, Dewi',
+        'Dewi, Eko',
+        'Eko, Ana',
+      ].join('\n'),
+    });
+    await page.click('#cg-go');
+
+    const error = page.locator('#cg-error');
+    await expect(error).toHaveText(
+      'There is no way to fit your class into 2 groups while keeping everyone apart who needs to be. Either make more groups or remove one of the rules.',
+    );
+    // Names no children at all — the point of the fix.
+    for (const child of ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko']) {
+      await expect(error).not.toContainText(child);
+    }
   });
 
   test('keeps a named pair apart when it is possible', async ({ page }) => {

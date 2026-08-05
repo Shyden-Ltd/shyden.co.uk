@@ -68,6 +68,7 @@ export const id: Strings = {
 
   makeGroups: 'Buat Kelompok',
   again: 'Acak lagi',
+  needsJs: 'Alat ini memerlukan JavaScript yang aktif.',
 
   resultsHeading: 'Kelompok Anda',
   resultsSummary: (groups: number, students: number) =>
@@ -81,6 +82,8 @@ export const id: Strings = {
   errors: {
     NO_STUDENTS:
       'Tambahkan siswa terlebih dahulu — berupa angka atau daftar nama.',
+    TOO_MANY_STUDENTS: (max: number) =>
+      `Jumlah siswa itu melebihi batas alat ini. Paling banyak ${max}.`,
     INVALID_GROUP_SIZE: 'Setiap kelompok membutuhkan minimal 1 siswa.',
     INVALID_GROUP_COUNT: 'Anda membutuhkan minimal 1 kelompok.',
     TOO_MANY_GROUPS: (max: number) =>
@@ -91,6 +94,12 @@ export const id: Strings = {
       `${names.join(', ')} tidak ada dalam daftar kelas Anda. Periksa kembali ejaannya.`,
     KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
       `${names.join(', ')} semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal ${groupsNeeded} kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.`,
+    // Bahasa Indonesia tidak mengubah bentuk kata untuk jamak, jadi tidak ada
+    // percabangan tunggal/jamak di sini — berbeda dengan versi Inggrisnya.
+    KEEP_APART_NO_ARRANGEMENT: (groupsTried: number) =>
+      `Tidak ada cara membagi kelas Anda menjadi ${groupsTried} kelompok sambil tetap memisahkan siswa yang harus dipisahkan. Tambah jumlah kelompok atau hapus salah satu aturannya.`,
+    KEEP_APART_SEARCH_GAVE_UP:
+      'Aturan pemisahan di sini terlalu banyak untuk dihitung. Coba hapus sebagian aturannya.',
   },
 
   themes: {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildGroups,
   ERROR_CODES,
+  MAX_STUDENTS,
   type GroupingInput,
   type Student,
 } from '../../src/lib/grouping';
@@ -334,6 +335,191 @@ describe('buildGroups — refusals', () => {
     );
     if (out.ok) throw new Error('expected refusal');
     expect(out.error.maxGroups).toBe(4);
+  });
+});
+
+/**
+ * Moon–Moser: `n / partSize` parts, every student in conflict with everyone
+ * NOT in their own part. Max clique is one per part, but the number of
+ * MAXIMUM cliques is partSize^(n/partSize) — the worst case for exact clique
+ * search, and the shape a real keep-apart list takes when a teacher writes
+ * "these three wind each other up, and those three, and those three".
+ *
+ * Measured against the uncapped engine: 24 students 27ms, 36 students 471ms,
+ * 42 students 7.3s, 48 students 121.7s. A browser tab, not a test runner.
+ */
+const moonMoser = (n: number, partSize: number) => {
+  const names = Array.from({ length: n }, (_, i) => `S${i}`);
+  const part = (i: number) => Math.floor(i / partSize);
+  const pairs: Array<[string, string]> = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (part(i) !== part(j)) pairs.push([names[i], names[j]]);
+    }
+  }
+  return { names, pairs };
+};
+
+describe('buildGroups — no input may hang or crash the browser tab', () => {
+  it('refuses a class bigger than it will attempt, and says what the limit is', () => {
+    // The tab-killer: Array.from({ length: 1e8 }) before any guard runs.
+    const out = buildGroups(base({ students: 100_000_000 }));
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.tooManyStudents);
+    expect(out.error.maxStudents).toBe(MAX_STUDENTS);
+  });
+
+  it('accepts a class of exactly the limit — the cap is a ceiling, not a fence', () => {
+    const result = ok(base({ students: MAX_STUDENTS }));
+    expect(result.groups.flat()).toHaveLength(MAX_STUDENTS);
+  });
+
+  it('refuses an over-limit pasted name list the same way', () => {
+    const out = buildGroups(
+      base({
+        students: Array.from({ length: MAX_STUDENTS + 1 }, (_, i) => `S${i}`),
+      }),
+    );
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.tooManyStudents);
+  });
+
+  it('reads an infinite count as too many, not as an empty class', () => {
+    // "Not a finite number" is true of Infinity and of NaN, but they mean
+    // opposite things to the teacher who typed them.
+    const out = buildGroups(base({ students: Number.POSITIVE_INFINITY }));
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.tooManyStudents);
+  });
+
+  it('reads a nonsense count as an empty class', () => {
+    const out = buildGroups(base({ students: Number.NaN }));
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.noStudents);
+  });
+
+  it('a search that would take two minutes returns at once', () => {
+    // 48 students of this shape took 121,712 ms measured against the
+    // uncapped engine. The budget below is 2 s — a 60x margin, so this is a
+    // termination guarantee rather than a race with the machine. There is
+    // no way to assert "this terminates" without a clock; there is a way to
+    // do it without a close one.
+    //
+    // This test exists because the OTHER pathological test does not pin the
+    // clique cap: remove that cap and the outcome is unchanged, just slower.
+    const { names, pairs } = moonMoser(48, 3);
+    const out = buildGroups(
+      base({
+        students: names,
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: pairs,
+      }),
+    );
+    expect(out.ok).toBe(false);
+  }, 2000);
+
+  it('gives up on a pathological keep-apart list instead of searching forever', () => {
+    // 42 students took 7.3 SECONDS before the cap existed. The assertion is
+    // the outcome, not the clock: an uncapped engine reaches a different
+    // answer, so removing the cap fails this test deterministically.
+    const { names, pairs } = moonMoser(42, 3);
+    const out = buildGroups(
+      base({
+        students: names,
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: pairs,
+      }),
+    );
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.keepApartSearchGaveUp);
+  });
+});
+
+describe('buildGroups — a refusal must not assert something untrue', () => {
+  it('an odd cycle is refused WITHOUT claiming everyone conflicts with everyone', () => {
+    // Ana-Budi-Citra-Dewi-Eko-Ana. Max clique is 2, so two groups look
+    // sufficient — but a 5-cycle is not 2-colourable, so no arrangement
+    // exists. The old code reported all five as mutually inseparable, which
+    // is false: Ana and Citra have no rule between them at all.
+    const out = buildGroups(
+      base({
+        students: ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko'],
+        mode: { kind: 'groupCount', count: 2 },
+        keepApart: [
+          ['Ana', 'Budi'],
+          ['Budi', 'Citra'],
+          ['Citra', 'Dewi'],
+          ['Dewi', 'Eko'],
+          ['Eko', 'Ana'],
+        ],
+      }),
+    );
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.keepApartNoArrangement);
+    // It may say how many groups it tried with. It may NOT hand back a set of
+    // children and call them mutually inseparable.
+    expect(out.error.students).toBeUndefined();
+    expect(out.error.groupsTried).toBe(2);
+  });
+
+  it('distinguishes "there is no arrangement" from "I stopped looking"', () => {
+    // Both are refusals; only one of them is a proof. A teacher who is told
+    // "this cannot be done" will go and change their class, so the tool must
+    // only say it when it actually searched the whole space.
+    const proved = buildGroups(
+      base({
+        students: ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko'],
+        mode: { kind: 'groupCount', count: 2 },
+        keepApart: [
+          ['Ana', 'Budi'],
+          ['Budi', 'Citra'],
+          ['Citra', 'Dewi'],
+          ['Dewi', 'Eko'],
+          ['Eko', 'Ana'],
+        ],
+      }),
+    );
+    const { names, pairs } = moonMoser(42, 3);
+    const gaveUp = buildGroups(
+      base({
+        students: names,
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: pairs,
+      }),
+    );
+
+    if (proved.ok || gaveUp.ok) throw new Error('expected two refusals');
+    expect(proved.error.code).toBe(ERROR_CODES.keepApartNoArrangement);
+    expect(gaveUp.error.code).toBe(ERROR_CODES.keepApartSearchGaveUp);
+    expect(proved.error.code).not.toBe(gaveUp.error.code);
+  });
+
+  it('still names the students when a clique genuinely proves it', () => {
+    // The good message must survive: five students who all conflict with each
+    // other DO need five groups, and naming them is the actionable part.
+    const out = buildGroups(
+      base({
+        students: ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko', 'Fitri'],
+        mode: { kind: 'groupCount', count: 2 },
+        keepApart: [
+          ['Ana', 'Budi'],
+          ['Ana', 'Citra'],
+          ['Ana', 'Dewi'],
+          ['Budi', 'Citra'],
+          ['Budi', 'Dewi'],
+          ['Citra', 'Dewi'],
+        ],
+      }),
+    );
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.error.code).toBe(ERROR_CODES.keepApartImpossible);
+    expect(out.error.students?.sort()).toEqual([
+      'Ana',
+      'Budi',
+      'Citra',
+      'Dewi',
+    ]);
+    expect(out.error.groupsNeeded).toBe(4);
   });
 });
 

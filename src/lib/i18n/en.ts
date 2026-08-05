@@ -72,6 +72,7 @@ export const en = {
 
   makeGroups: 'Make Groups',
   again: 'Shuffle again',
+  needsJs: 'This tool needs JavaScript enabled.',
 
   resultsHeading: 'Your groups',
   resultsSummary: (groups: number, students: number) =>
@@ -85,6 +86,8 @@ export const en = {
   errors: {
     NO_STUDENTS:
       'Add some students first — either a number or a list of names.',
+    TOO_MANY_STUDENTS: (max: number) =>
+      `That is more students than this tool will take. The most is ${max}.`,
     INVALID_GROUP_SIZE: 'Each group needs at least 1 student.',
     INVALID_GROUP_COUNT: 'You need at least 1 group.',
     TOO_MANY_GROUPS: (max: number) =>
@@ -95,6 +98,13 @@ export const en = {
       `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} not in your class list. Check the spelling.`,
     KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
       `${names.join(', ')} all need to be kept apart from each other, so you would need at least ${groupsNeeded} groups. Either make more groups or remove one of the rules.`,
+    // Says only what an exhaustive search proved: not that any particular
+    // students conflict, just that this many groups cannot hold them all.
+    KEEP_APART_NO_ARRANGEMENT: (groupsTried: number) =>
+      `There is no way to fit your class into ${groupsTried} ${groupsTried === 1 ? 'group' : 'groups'} while keeping everyone apart who needs to be. Either make more groups or remove one of the rules.`,
+    // Claims nothing at all, because nothing was established.
+    KEEP_APART_SEARCH_GAVE_UP:
+      'There are too many keep-apart rules here to work through. Try removing some of them.',
   },
 
   themes: {

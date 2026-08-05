@@ -16,6 +16,42 @@ const $ = <T extends HTMLElement>(id: string) =>
 
 const form = $<HTMLFormElement>('cg-form');
 if (form) {
+  // The FIRST statement in the module, before anything that could throw.
+  //
+  // A <form> with no `action` natively GETs its own url, so a native submit
+  // is the one path by which anything typed on this page could reach a URL,
+  // a history entry or an access log. Everything below is enhancement; this
+  // line is the privacy promise, and it is deliberately not guarded by any
+  // condition, wrapped in any try, or placed after any work that might fail.
+  // The markup carries no `name` on a data field either — two independent
+  // barriers, because one of them is one careless edit from being removed.
+  form.addEventListener('submit', (e) => e.preventDefault());
+
+  /**
+   * Storage is a convenience, never a dependency. Safari's "Block all
+   * cookies", partitioned third-party contexts and some managed device
+   * profiles throw SecurityError on the mere act of touching localStorage.
+   * Uncaught, that throw would abort this module — and a dead module is
+   * precisely the state the guard above exists to survive.
+   */
+  const remember = {
+    read: (key: string): string | null => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    write: (key: string, value: string): void => {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        // The preference cannot follow them to their next lesson. The toggle
+        // still works for this one, which is the part that matters now.
+      }
+    },
+  };
+
   const t: Strings = getStrings(document.documentElement.lang);
   const errorBox = $<HTMLParagraphElement>('cg-error')!;
   const results = $<HTMLElement>('cg-results')!;
@@ -37,14 +73,14 @@ if (form) {
   // ── settings ────────────────────────────────────────────────────────────
   // Sound defaults ON (operator decision). A stored preference wins, so a
   // teacher who muted it once is not surprised again on their next lesson.
-  const stored = localStorage.getItem(SOUND_KEY);
+  const stored = remember.read(SOUND_KEY);
   if (stored !== null) soundToggle.checked = stored === 'on';
   const syncSoundLabel = () => {
     soundText.textContent = soundToggle.checked ? t.soundOn : t.soundOff;
   };
   syncSoundLabel();
   soundToggle.addEventListener('change', () => {
-    localStorage.setItem(SOUND_KEY, soundToggle.checked ? 'on' : 'off');
+    remember.write(SOUND_KEY, soundToggle.checked ? 'on' : 'off');
     syncSoundLabel();
   });
 
