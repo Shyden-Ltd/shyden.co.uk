@@ -105,21 +105,31 @@ test.describe('header + footer', () => {
     expect(lastBox!.x + lastBox!.width).toBeLessThanOrEqual(1280);
   });
 
+  // Keyboard access in the header is TWO separate contracts, because engines
+  // genuinely disagree about one of them and agree about the other.
+  //
+  // Safari, by default, does not put plain links in the Tab sequence at all —
+  // the visitor opts in with "Press Tab to highlight each item". That is the
+  // VISITOR's setting to make, so the Tab-sequence test below runs only where
+  // links are tabbed, and the contract that must hold everywhere — that each
+  // control can take focus and none is removed from the tab order — is
+  // asserted separately, on every engine.
   test('desktop: nav is keyboard-reachable in order (WCAG 2.1.1)', async ({
     page,
+    browserName,
   }) => {
+    test.skip(
+      browserName === 'webkit',
+      'Safari omits plain links from the Tab sequence unless the visitor opts in, ' +
+        'so a Tab walk here would assert a browser preference, not our markup. ' +
+        'Focusability and order are asserted for WebKit in the tests below.',
+    );
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
-    // Start from the language link — the last thing in the bar before <nav> —
-    // rather than from the wordmark. Engines DISAGREE about how many Tab
-    // presses separate the wordmark from the nav: Chromium and Firefox stop on
-    // `a.lang` on the way, WebKit skips it (Safari leaves plain links out of
-    // the Tab sequence unless the visitor turns on "Press Tab to highlight each
-    // item"). Anchoring on `a.lang` with an explicit focus() sidesteps that
-    // disagreement entirely — Tab then advances to the next tabbable element
-    // after it in DOM order on every engine — so this test asserts OUR running
-    // order and not the browser's link preference. That preference is a
-    // separate contract, covered by the focusability test below.
+    // Anchor on the language link — the last thing in the bar before <nav> —
+    // rather than on the wordmark: engines differ on how many Tab presses that
+    // gap costs, and an explicit focus() fixes the starting point on all of
+    // them. Tab then advances in DOM order, so this asserts OUR running order.
     await page.locator('header a.lang').focus();
 
     for (const label of ['Services', 'Work', 'Contact']) {
@@ -130,21 +140,51 @@ test.describe('header + footer', () => {
     }
   });
 
-  test('the language switcher is keyboard-focusable on every engine', async ({
+  test('every header link can take focus, on every engine', async ({
     page,
   }) => {
-    // Asserted with an explicit focus() rather than a Tab press: WebKit leaves
-    // plain links out of the Tab sequence unless the user turns on "Press Tab
-    // to highlight each item", so a Tab-based assertion would test Safari's
-    // preference rather than our markup. What must be true everywhere is that
-    // the control CAN take focus and is not removed from the tab order.
+    // The contract that holds regardless of the visitor's Tab preference:
+    // asserted with an explicit focus() rather than a Tab press, so it measures
+    // our markup and not Safari's default. This is the whole header, not just
+    // the language switcher — a control left out here would be unreachable by
+    // keyboard even for a visitor who HAS opted in.
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
-    const lang = page.locator('header a.lang');
-    await expect(lang).toBeVisible();
-    await expect(lang).not.toHaveAttribute('tabindex', '-1');
-    await lang.focus();
-    await expect(lang).toBeFocused();
+    for (const sel of [
+      'header .wordmark',
+      'header a.lang',
+      'header nav a:nth-of-type(1)',
+      'header nav a:nth-of-type(2)',
+      'header nav a:nth-of-type(3)',
+    ]) {
+      const el = page.locator(sel);
+      await expect(el, sel).toBeVisible();
+      await expect(el, sel).not.toHaveAttribute('tabindex', '-1');
+      await el.focus();
+      await expect(el, sel).toBeFocused();
+    }
+  });
+
+  test('no header link overrides the visitor’s own Tab preference', async ({
+    page,
+  }) => {
+    // The nav links once carried a redundant tabindex="0". It changes nothing
+    // on Chromium or Firefox, but on Safari it FORCES a link into the Tab
+    // sequence even when the visitor has chosen to keep links out of it — so
+    // Tab reached Services/Work/Contact while silently skipping the wordmark
+    // and the language switcher, an inconsistency created by our markup rather
+    // than chosen by anyone. Links are focusable natively; the attribute is
+    // redundant everywhere it is not actively harmful.
+    await page.goto('/');
+    const withTabindex = await page
+      .locator('header a[tabindex]')
+      .evaluateAll((els) =>
+        els.map(
+          (e) =>
+            `${e.className || e.textContent?.trim()}=${e.getAttribute('tabindex')}`,
+        ),
+      );
+    expect(withTabindex).toEqual([]);
   });
 });
 

@@ -44,13 +44,7 @@ const otherHref = localisePath(Astro.url.pathname, other);
       rel="alternate">{t.language.switchTo}</a
     >
     <nav id="primary-nav">
-      {
-        links.map((l) => (
-          <a href={l.href} tabindex="0">
-            {l.label}
-          </a>
-        ))
-      }
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
     </nav>
   </div>
 </header>
