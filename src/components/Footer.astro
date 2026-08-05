@@ -17,16 +17,30 @@ const companyNo = '17110487';
 const regOffice =
   '71-75 Shelton Street, Covent Garden, London, United Kingdom, WC2H 9JQ';
 const year = new Date().getFullYear();
+
+// Assembled HERE rather than in the template below, because JSX drops the
+// whitespace between two expressions whenever a newline falls between them.
+// Written inline, this sentence rendered as "Company No.17110487" and
+// "Registered office:71-75 …" in BOTH languages — introduced not by an edit but
+// by a formatter re-wrapping one long line into several. Building the string in
+// the frontmatter makes the rendered output independent of how the markup is
+// wrapped, so a future `prettier --write` cannot silently change what the legal
+// disclosure says.
+//
+// The joins are plain spaces: both languages this site ships (en, id) are
+// space-separated. A language that is not — Chinese, Thai, Japanese — would
+// need the separator to come from the locale rather than from here.
+const disclosure = [
+  `© ${year} Shyden Ltd.`,
+  t.footer.registered,
+  `${t.footer.companyNo} ${companyNo}.`,
+  `${t.footer.regOffice} ${regOffice}.`,
+].join(' ');
 ---
 
 <footer id="contact-legal">
   <div class="inner">
-    <p class="disclosure">
-      &copy; {year} Shyden Ltd. {t.footer.registered}
-      {t.footer.companyNo}
-      {companyNo}. {t.footer.regOffice}
-      {regOffice}.
-    </p>
+    <p class="disclosure">{disclosure}</p>
     <p><a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a></p>
   </div>
 </footer>

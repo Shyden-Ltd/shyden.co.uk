@@ -27,16 +27,42 @@ test.describe('header + footer', () => {
     expect(hrefs).toEqual(['/#services', '/#work', '/#contact']);
   });
 
+  // The disclosure is asserted as ONE whole sentence rather than as a handful
+  // of substrings. It is assembled from four fragments (three of them
+  // translated), and every join between them is a place a space can go missing
+  // — which is exactly how "Company No.17110487" once shipped. Substring
+  // assertions only ever pinned the joins someone thought to name; matching the
+  // finished sentence pins all of them at once.
+  //
+  // The year is matched as \d{4} on purpose: asserting the CURRENT year would
+  // either restate the implementation or break the suite on 1 January.
+  const disclosureEn =
+    /^© \d{4} Shyden Ltd\. Registered in England & Wales\. Company No\. 17110487\. Registered office: 71-75 Shelton Street, Covent Garden, London, United Kingdom, WC2H 9JQ\.$/;
+  const disclosureId =
+    /^© \d{4} Shyden Ltd\. Terdaftar di Inggris & Wales\. No\. Perusahaan 17110487\. Kantor terdaftar: 71-75 Shelton Street, Covent Garden, London, United Kingdom, WC2H 9JQ\.$/;
+
   test('footer shows the required UK company disclosure', async ({ page }) => {
     await page.goto('/');
     const footer = page.locator('footer');
-    await expect(footer).toContainText('Shyden Ltd');
-    await expect(footer).toContainText('Registered in England & Wales');
-    await expect(footer).toContainText(/Company (No\.|number)/i);
     // Real Companies House values (SHYDEN LTD, 17110487) — and no bracketed
     // placeholder may leak into the shipped disclosure.
-    await expect(footer).toContainText('Company No. 17110487');
-    await expect(footer).toContainText(/WC2H 9JQ/);
+    await expect(footer.locator('.disclosure')).toHaveText(disclosureEn);
+    await expect(footer).not.toContainText('[[');
+    await expect(
+      footer.locator('a[href="mailto:support@shyden.co.uk"]'),
+    ).toBeVisible();
+  });
+
+  test('the Indonesian footer carries the same disclosure, translated', async ({
+    page,
+  }) => {
+    // The company name, number and registered office are legal FACTS and stay
+    // verbatim in every language; only the wording around them is translated.
+    // Indonesian also reorders the label ("No. Perusahaan"), so this is a real
+    // second arrangement of the same fragments — not a copy of the English one.
+    await page.goto('/id/');
+    const footer = page.locator('footer');
+    await expect(footer.locator('.disclosure')).toHaveText(disclosureId);
     await expect(footer).not.toContainText('[[');
     await expect(
       footer.locator('a[href="mailto:support@shyden.co.uk"]'),
@@ -84,7 +110,17 @@ test.describe('header + footer', () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
-    await page.locator('.wordmark').focus();
+    // Start from the language link — the last thing in the bar before <nav> —
+    // rather than from the wordmark. Engines DISAGREE about how many Tab
+    // presses separate the wordmark from the nav: Chromium and Firefox stop on
+    // `a.lang` on the way, WebKit skips it (Safari leaves plain links out of
+    // the Tab sequence unless the visitor turns on "Press Tab to highlight each
+    // item"). Anchoring on `a.lang` with an explicit focus() sidesteps that
+    // disagreement entirely — Tab then advances to the next tabbable element
+    // after it in DOM order on every engine — so this test asserts OUR running
+    // order and not the browser's link preference. That preference is a
+    // separate contract, covered by the focusability test below.
+    await page.locator('header a.lang').focus();
 
     for (const label of ['Services', 'Work', 'Contact']) {
       await page.keyboard.press('Tab');
