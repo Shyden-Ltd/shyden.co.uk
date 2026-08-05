@@ -1,0 +1,445 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getStrings, THEME_KEYS, type Locale } from '../../lib/i18n';
+// The engine owns the ceiling. Hard-coding a second number here is how the
+// field comes to advertise one limit while the tool enforces another.
+import { MAX_STUDENTS } from '../../lib/grouping';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = getStrings(lang);
+// The declared list, not Object.keys of one of the two tables — enumerating
+// `themes` while rendering from `themeNames` is how one gains a key the other
+// lacks and the option ships with no label.
+const themes = THEME_KEYS;
+---
+
+<BaseLayout
+  title={`${t.title} — Shyden`}
+  description={t.description}
+  lang={lang}
+>
+  <section class="wrap">
+    <h1>{t.heading}</h1>
+    <p class="lead">{t.lead}</p>
+    <p class="privacy">{t.privacy}</p>
+
+    <div class="how-to">
+      <h2 id="how-to-heading">{t.howToHeading}</h2>
+      <ol aria-labelledby="how-to-heading">
+        {t.howToSteps.map((step) => <li>{step}</li>)}
+      </ol>
+    </div>
+
+    <!-- No `name` on any control that holds something a teacher typed. A form
+         with no `action` submits to its OWN url as a GET, so a `name` here
+         would put the class list in the address bar, the history and the
+         access log the moment the script below fails to attach — which is a
+         real state (JS blocked at a school, a 404'd bundle, a throw). The
+         radio groups keep theirs because `name` is what binds a radio group
+         together, and "students per group" is not personal data.
+         Everything else is read by id. Pinned by classroom-groups-privacy.spec.ts. -->
+    <form id="cg-form" novalidate>
+      <fieldset>
+        <legend>{t.classHeading}</legend>
+
+        <div class="field">
+          <label for="cg-count">{t.studentsLabel}</label>
+          <input
+            id="cg-count"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max={MAX_STUDENTS}
+            value="24"
+            aria-describedby="cg-count-help"
+          />
+          <p class="help" id="cg-count-help">{t.studentsHelp}</p>
+        </div>
+
+        <div class="field">
+          <label for="cg-names">{t.namesLabel}</label>
+          <textarea id="cg-names" rows="5" aria-describedby="cg-names-help"
+          ></textarea>
+          <p class="help" id="cg-names-help">{t.namesHelp}</p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.groupsHeading}</legend>
+
+        <div class="field">
+          <span class="label" id="cg-mode-label">{t.modeLabel}</span>
+          <div class="radios" role="radiogroup" aria-labelledby="cg-mode-label">
+            <label
+              ><input type="radio" name="mode" value="perGroup" checked />{
+                t.modePerGroup
+              }</label
+            >
+            <label
+              ><input type="radio" name="mode" value="groupCount" />{
+                t.modeGroupCount
+              }</label
+            >
+          </div>
+        </div>
+
+        <div class="field" data-mode="perGroup">
+          <label for="cg-size">{t.groupSizeLabel}</label>
+          <input
+            id="cg-size"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max="50"
+            value="4"
+          />
+        </div>
+
+        <div class="field" data-mode="groupCount" hidden>
+          <label for="cg-groups">{t.groupCountLabel}</label>
+          <input
+            id="cg-groups"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max="50"
+            value="6"
+          />
+        </div>
+
+        <div class="field">
+          <span class="label" id="cg-left-label">{t.leftoversLabel}</span>
+          <div class="radios" role="radiogroup" aria-labelledby="cg-left-label">
+            <label
+              ><input type="radio" name="leftovers" value="spread" checked />{
+                t.leftoversSpread
+              }</label
+            >
+            <label
+              ><input type="radio" name="leftovers" value="bunch" />{
+                t.leftoversBunch
+              }</label
+            >
+          </div>
+          <p class="help">{t.leftoversHelp}</p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.namingLabel}</legend>
+        <div class="field">
+          <div class="radios" role="radiogroup" aria-label={t.namingLabel}>
+            <label
+              ><input type="radio" name="naming" value="numbered" checked />{
+                t.namingNumbered
+              }</label
+            >
+            <label
+              ><input type="radio" name="naming" value="themed" />{
+                t.namingThemed
+              }</label
+            >
+          </div>
+        </div>
+        <div class="field" data-naming="themed" hidden>
+          <label for="cg-theme">{t.themeLabel}</label>
+          <select id="cg-theme">
+            {
+              themes.map((key) => (
+                <option value={key}>{t.themeNames[key]}</option>
+              ))
+            }
+          </select>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.keepApartHeading}</legend>
+        <div class="field">
+          <label for="cg-apart">{t.keepApartLabel}</label>
+          <textarea id="cg-apart" rows="3" aria-describedby="cg-apart-help"
+          ></textarea>
+          <p class="help" id="cg-apart-help">{t.keepApartHelp}</p>
+          <p class="help" id="cg-apart-hint" hidden>
+            {t.keepApartNeedsNamesHint}
+          </p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.playbackHeading}</legend>
+        <div class="field">
+          <label class="switch"
+            ><input id="cg-sound" type="checkbox" checked /><span
+              id="cg-sound-text">{t.soundOn}</span
+            ></label
+          >
+        </div>
+        <div class="field">
+          <label for="cg-speed">{t.speedLabel}</label>
+          <select id="cg-speed">
+            <option value="normal">{t.speedNormal}</option>
+            <option value="fast">{t.speedFast}</option>
+            <option value="skip">{t.speedSkip}</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <p class="actions">
+        <button type="submit" id="cg-go">{t.makeGroups}</button>
+      </p>
+
+      <!-- Without this, a visitor whose browser is not running the script
+           presses the button and gets a page reload with nothing to show for
+           it — no result and no reason. Says so instead, in their language. -->
+      <noscript><p class="error" id="cg-noscript">{t.needsJs}</p></noscript>
+    </form>
+
+    <p class="error" id="cg-error" role="alert" hidden></p>
+
+    <!-- The results are written here as real text regardless of animation
+         state, so a screen reader, a skipped animation and a finished one all
+         expose exactly the same thing.
+
+         The live region is the SUMMARY, not this section. Announcing the
+         whole section would read out every group and every child on every
+         shuffle; announcing the summary says "5 groups from 22 students" and
+         leaves the detail to be read at the visitor's own pace. Either way
+         the script must unhide before it writes — a live region that appears
+         already-populated is announced by nobody. -->
+    <section id="cg-results" aria-labelledby="cg-results-h" hidden>
+      <h2 id="cg-results-h">{t.resultsHeading}</h2>
+      <p class="summary" id="cg-summary" role="status"></p>
+      <div class="tables" id="cg-tables"></div>
+    </section>
+  </section>
+
+  <script src="../../scripts/classroom-groups.ts"></script>
+</BaseLayout>
+
+<style is:global>
+  /* ── results ─────────────────────────────────────────────────────────────
+     GLOBAL, not scoped, because the script BUILDS these elements at runtime.
+
+     Astro scopes a component's styles by stamping `data-astro-cid-…` onto the
+     elements in its template and compiling every rule to match it. Nothing
+     created by document.createElement carries that attribute, so a scoped
+     `.avatar` rule compiled to `.avatar[data-astro-cid-vs67owv4]` matched
+     none of the avatars this page actually renders. The whole results area
+     shipped unstyled: 202px black circles instead of 34px coloured faces, a
+     list-item instead of a row, no card border, and a deal animation that
+     never animated because `.student { opacity: 0 }` never applied either.
+
+     Every test passed throughout, because they all counted elements and read
+     text. A real phone showed it in one screenshot.
+
+     Anchored on #cg-results so these generic names — .group, .student,
+     .avatar, .who — cannot reach any other page. Pinned by
+     classroom-groups-controls.spec.ts, which asserts rendered sizes and
+     computed colours rather than class names. */
+  #cg-results .group {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem 1rem;
+  }
+  #cg-results .group h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+  }
+  #cg-results .group ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+  #cg-results .student {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    /* Dealt in by the script. Starting hidden means a half-finished deal never
+       shows a card in a nonsense position; `.dealt` is added per card. */
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.96);
+  }
+  #cg-results .student.dealt {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 220ms ease-out,
+      transform 220ms ease-out;
+  }
+  #cg-results .avatar {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+  }
+  /* Per-student colour arrives as --hue, so the SVG markup itself stays a
+     constant with nothing interpolated into it. */
+  #cg-results .a-bg {
+    fill: hsl(var(--hue) 62% 88%);
+  }
+  #cg-results .a-head,
+  #cg-results .a-body {
+    fill: hsl(var(--hue) 45% 38%);
+  }
+  #cg-results .who {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+</style>
+
+<style>
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem var(--space);
+  }
+  .lead {
+    font-size: 1.15rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  .privacy {
+    color: var(--ink-soft);
+    max-width: var(--measure);
+    font-size: 0.95rem;
+  }
+  .how-to ol {
+    max-width: var(--measure);
+    padding-left: 1.2rem;
+  }
+  .how-to li {
+    margin-bottom: 0.35rem;
+  }
+
+  form {
+    display: grid;
+    gap: 1.25rem;
+    margin: 2rem 0;
+  }
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0;
+  }
+  legend {
+    font-weight: 700;
+    padding: 0 0.35rem;
+  }
+  .field {
+    margin-bottom: 1rem;
+  }
+  .field:last-child {
+    margin-bottom: 0;
+  }
+  label,
+  .label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+  .help {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    margin: 0.35rem 0 0;
+    max-width: var(--measure);
+  }
+  input[type='number'],
+  textarea,
+  select {
+    width: 100%;
+    max-width: 22rem;
+    /* 44px minimum touch target (CLAUDE.md).
+       Safari ignores min-height on a native `menulist` control: both selects
+       on this page rendered 25px tall on WebKit — every iPhone — while
+       Chromium honoured the rule and showed 44. So the native appearance is
+       reset and the arrow drawn here instead, inline rather than as a request
+       (no third-party assets, per CLAUDE.md). */
+    appearance: none;
+    -webkit-appearance: none;
+    min-height: 44px;
+    padding: 0.5rem 2.2rem 0.5rem 0.6rem;
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--bg);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23444' stroke-width='2' stroke-linecap='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 0.7rem;
+    color: var(--ink);
+  }
+  textarea {
+    max-width: var(--measure);
+    resize: vertical;
+  }
+  .radios {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .radios label,
+  .switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 400;
+    min-height: 44px;
+  }
+  .radios input,
+  .switch input {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+  .actions button {
+    min-height: 44px;
+    padding: 0.6rem 1.4rem;
+    font: inherit;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent, #0a7d66);
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .actions button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .error {
+    max-width: var(--measure);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #b3261e;
+    color: #8c1d18;
+    background: #fdecea;
+  }
+
+  .tables {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  @media (min-width: 560px) {
+    .tables {
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    }
+  }
+
+  /* Someone who asked their device for less motion gets the result with no
+     movement at all, even if the animation runs. */
+  @media (prefers-reduced-motion: reduce) {
+    #cg-results .student,
+    #cg-results .student.dealt {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+</style>

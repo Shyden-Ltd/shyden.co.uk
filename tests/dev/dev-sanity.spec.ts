@@ -16,6 +16,36 @@ test('the Glory Points calculator loads on dev', async ({ page }) => {
   await expect(page.locator('#glory-input')).toBeVisible();
 });
 
+test('the Classroom Group Creator loads on dev', async ({ page }) => {
+  const res = await page.goto('/classroom-groups');
+  expect(res?.status()).toBe(200);
+  await expect(page.locator('#cg-form')).toBeVisible();
+  // The script is what makes this page a tool rather than a form that leaks.
+  // If the bundle 404s after a partial deploy, this is where it shows.
+  await page.fill('#cg-count', '8');
+  await page.fill('#cg-size', '4');
+  await page.selectOption('#cg-speed', 'skip');
+  await page.click('#cg-go');
+  await expect(page.locator('#cg-results .student')).toHaveCount(8);
+});
+
+test.describe('the Indonesian half of the site exists on dev', () => {
+  // Half the routes on this site are /id/* and none of them were checked
+  // here. A build that dropped the locale would have deployed green.
+  for (const [path, heading] of [
+    ['/id/', 'Kami membangun'],
+    ['/id/glory-points', 'Kalkulator Glory Points'],
+    ['/id/classroom-groups', 'Pembuat Kelompok Kelas'],
+  ] as const) {
+    test(`${path} is served in Indonesian`, async ({ page }) => {
+      const res = await page.goto(path);
+      expect(res?.status()).toBe(200);
+      await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+      await expect(page.locator('h1')).toContainText(heading);
+    });
+  }
+});
+
 test('robots.txt disallows all crawling on the dev site', async ({
   request,
 }) => {

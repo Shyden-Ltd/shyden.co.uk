@@ -10,6 +10,38 @@ test.describe('glory points calculator', () => {
     await expect(result).toContainText('2,780'); // gift
     await expect(page.locator('#glory-error')).toBeEmpty(); // result & error are mutually exclusive
   });
+  test('the Indonesian calculator prints Indonesian numbers', async ({
+    page,
+  }) => {
+    // "." groups thousands and "," is the decimal mark in Indonesian, so the
+    // English rendering "1.112" would read as one-point-one-one-two. The
+    // static copy on this very page already says "0,9 bean per koin".
+    //
+    // The Indonesian calculator had never been exercised at all — which is
+    // how this survived, along with t.errors.* and the English fallback in
+    // glory-points.ts.
+    await page.goto('/id/glory-points');
+    await page.fill('#glory-input', '1000');
+    await page.click('#glory-submit');
+    const result = page.locator('#glory-result');
+    await expect(result).toContainText('1.000'); // koin
+    await expect(result).toContainText('1.112'); // bean
+    await expect(result).toContainText('2.780'); // nilai hadiah
+    await expect(result).not.toContainText('1,112');
+  });
+
+  test('the Indonesian calculator refuses in Indonesian', async ({ page }) => {
+    await page.goto('/id/glory-points');
+    await page.fill('#glory-input', 'abc');
+    await page.click('#glory-submit');
+    const error = page.locator('#glory-error');
+    await expect(error).not.toBeEmpty();
+    // The English fallback at glory-points.ts would render the raw English
+    // message here; the map must actually cover this code.
+    await expect(error).not.toContainText('whole number');
+    await expect(page.locator('#glory-result')).toBeEmpty();
+  });
+
   test('Enter key submits', async ({ page }) => {
     await page.goto('/glory-points');
     await page.fill('#glory-input', '9');

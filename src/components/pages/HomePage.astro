@@ -1,0 +1,116 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Button from '../Button.astro';
+import ServiceCard from '../ServiceCard.astro';
+import WorkCard from '../WorkCard.astro';
+import { localisePath, type Locale } from '../../lib/i18n';
+import { siteEn, siteId } from '../../lib/i18n/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = (lang === 'id' ? siteId : siteEn).home;
+
+// Env-derived so we never cross environments: the DEV site must link to DEV
+// ShyTalk, prod to prod. Defaults to prod; deploy-dev.yml sets
+// PUBLIC_SHYTALK_URL=https://dev.shytalk.shyden.co.uk before the dev build.
+const shytalkUrl =
+  import.meta.env.PUBLIC_SHYTALK_URL ?? 'https://shytalk.shyden.co.uk';
+
+// Internal links stay inside the visitor's language.
+const glory = localisePath('/glory-points', lang);
+const classroom = localisePath('/classroom-groups', lang);
+---
+
+<BaseLayout title={t.title} description={t.description} lang={lang}>
+  <section class="hero wrap">
+    <h1>{t.heroHeading}</h1>
+    <p class="lead">{t.heroLead}</p>
+    <p class="cta">
+      <Button href="mailto:support@shyden.co.uk">{t.getInTouch}</Button>
+      <Button href="#work" variant="secondary">{t.seeOurWork}</Button>
+    </p>
+  </section>
+
+  <section id="services" class="wrap">
+    <h2>{t.servicesHeading}</h2>
+    <div class="grid-2">
+      <ServiceCard title={t.serviceBuildTitle}>{t.serviceBuildBody}</ServiceCard
+      >
+      <ServiceCard title={t.serviceHireTitle}>{t.serviceHireBody}</ServiceCard>
+    </div>
+  </section>
+
+  <section id="work" class="wrap">
+    <h2>{t.workHeading}</h2>
+    <div class="grid-2">
+      <WorkCard title="ShyTalk" href={shytalkUrl} external variant="shytalk">
+        <span slot="logo" class="shytalk-wordmark">Shy<span>Talk</span></span>
+        {t.workShytalkBody}
+      </WorkCard>
+      <WorkCard title={t.workClassroomTitle} href={classroom}
+        >{t.workClassroomBody}</WorkCard
+      >
+      <WorkCard title={t.workGloryTitle} href={glory}
+        >{t.workGloryBody}</WorkCard
+      >
+    </div>
+  </section>
+
+  <section id="contact" class="wrap">
+    <h2>{t.contactHeading}</h2>
+    <p>
+      {/* {' '} is load-bearing: a newline here would glue the two together. */}
+      {t.contactBody}{' '}
+      <a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a>
+    </p>
+    <p><Button href="mailto:support@shyden.co.uk">{t.emailUs}</Button></p>
+  </section>
+</BaseLayout>
+<style>
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem var(--space);
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 1.2rem + 4vw, 3.25rem);
+    max-width: var(--measure);
+  }
+  .lead {
+    font-size: 1.15rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  .cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  @media (min-width: 720px) {
+    .grid-2 {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  /* ShyTalk brand wordmark — the exact two-tone mark from shytalk.shyden.co.uk:
+     light "Shy" + light-purple glowing "Talk", bold with tight tracking. Sits
+     on the dark .work-card--shytalk tile so it reads as the real logo. Colours
+     taken from the live logo (#e8e0f0 / #d0bcff). */
+  .shytalk-wordmark {
+    display: inline-block;
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #e8e0f0;
+  }
+  .shytalk-wordmark span {
+    color: #d0bcff;
+    text-shadow: 0 0 24px rgba(208, 188, 255, 0.3);
+  }
+</style>

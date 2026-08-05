@@ -2,36 +2,100 @@
 import '../styles/tokens.css';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import {
+  LOCALES,
+  localisePath,
+  localeFromPath,
+  type Locale,
+} from '../lib/i18n';
+import { siteEn, siteId } from '../lib/i18n/site';
+
 interface Props {
   title: string;
   description: string;
   ogImage?: string;
+  /** Defaults to the locale implied by the URL, so pages rarely pass it. */
+  lang?: Locale;
+  /**
+   * A page that is not a real URL. Suppresses canonical and hreflang and asks
+   * not to be indexed — for the 404, which is served for any unknown path and
+   * therefore has no address of its own to be canonical about.
+   */
+  noIndex?: boolean;
 }
-const { title, description, ogImage = '/og-default.png' } = Astro.props;
+const {
+  title,
+  description,
+  ogImage = '/og-default.png',
+  lang = localeFromPath(Astro.url.pathname),
+  noIndex = false,
+} = Astro.props;
+const site = lang === 'id' ? siteId : siteEn;
 const siteOrigin = Astro.site ?? Astro.url;
 const canonical = new URL(Astro.url.pathname, siteOrigin).href;
+
+// hreflang for BOTH locales plus x-default. Without these, search engines
+// treat the English and Indonesian pages as unrelated near-duplicates rather
+// than translations of one another, and may index only one of them.
+const alternates = LOCALES.map((code) => ({
+  code,
+  href: new URL(localisePath(Astro.url.pathname, code), siteOrigin).href,
+}));
+const xDefault = new URL(localisePath(Astro.url.pathname, 'en'), siteOrigin)
+  .href;
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
+    {
+      /* The 404 emitted `canonical=/404/` and `hreflang=id → /id/404/`, and
+         neither is a page that exists. Nothing catastrophic, since the
+         response is a 404 — but it is unmanaged head output on a live site,
+         pointing search engines at two URLs that do not resolve and do not
+         reciprocate. */
+      noIndex ? (
+        <meta name="robots" content="noindex" />
+      ) : (
+        <>
+          <link rel="canonical" href={canonical} />
+          {alternates.map((a) => (
+            <link rel="alternate" hreflang={a.code} href={a.href} />
+          ))}
+          <link rel="alternate" hreflang="x-default" href={xDefault} />
+        </>
+      )
+    }
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonical} />
+    {
+      /* Same reasoning as the canonical: a page served for every unknown path
+        has no og:url to give, and /404/ is not one. */
+    }
+    {!noIndex && <meta property="og:url" content={canonical} />}
     <meta property="og:image" content={new URL(ogImage, siteOrigin).href} />
+    <meta property="og:locale" content={lang === 'id' ? 'id_ID' : 'en_GB'} />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <slot name="head" />
   </head>
   <body>
-    <Header />
-    <main><slot /></main>
-    <Footer />
+    {
+      /* WCAG 2.4.1. The copy for this existed in both languages from the
+        start while no page had the link, which made the repo look like it
+        had met the criterion. It bites hardest on /classroom-groups, the
+        most control-dense page here: without it a keyboard user crosses the
+        wordmark, the hamburger, the language switcher and three nav links
+        before reaching the first form field, on every single page load. */
+    }
+    <a class="skip-link" href="#main">{site.skipToContent}</a>
+    <Header lang={lang} />
+    <main id="main" tabindex="-1"><slot /></main>
+    <Footer lang={lang} />
   </body>
 </html>

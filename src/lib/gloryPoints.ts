@@ -47,6 +47,14 @@ export function calculateGlory(rawInput: string): GloryOutcome {
   };
 }
 
-export function formatNumber(n: number): string {
-  return n.toLocaleString('en-US');
+/**
+ * A number in the reader's own convention.
+ *
+ * Indonesian groups thousands with "." and marks decimals with ",", the exact
+ * reverse of English — so `1,112` rendered on /id/glory-points reads as "one
+ * point one one two". The page's own static copy already says "0,9 bean per
+ * koin", so hard-coding en-US here made it contradict itself.
+ */
+export function formatNumber(n: number, locale: 'en' | 'id'): string {
+  return n.toLocaleString(locale === 'id' ? 'id-ID' : 'en-GB');
 }
