@@ -100,6 +100,14 @@ export const id: Strings = {
       `Tidak ada cara membagi kelas Anda menjadi ${groupsTried} kelompok sambil tetap memisahkan siswa yang harus dipisahkan. Tambah jumlah kelompok atau hapus salah satu aturannya.`,
     KEEP_APART_SEARCH_GAVE_UP:
       'Aturan pemisahan di sini terlalu banyak untuk dihitung. Coba hapus sebagian aturannya.',
+    // Lihat komentar pada versi Inggrisnya (en.ts): kedua jenis aturan punya
+    // solusi yang berlawanan, dan pencarian ini tidak bisa memastikan aturan
+    // mana yang jadi masalah -- jadi kalimat ini menyebutkan keduanya dan
+    // menawarkan kedua solusi tanpa memilih salah satu.
+    BOTH_RULES_NO_ARRANGEMENT: (groupsTried: number) =>
+      `Tidak ada cara membagi kelas Anda menjadi ${groupsTried} kelompok sambil tetap menyatukan siswa yang harus disatukan dan memisahkan siswa yang harus dipisahkan. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: perbesar kelompoknya atau berikan setiap huruf ke lebih sedikit siswa, atau tambah jumlah kelompok atau hapus salah satu aturannya.`,
+    BOTH_RULES_SEARCH_GAVE_UP:
+      'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus. Coba gunakan lebih sedikit huruf, atau perbesar kelompoknya.',
   },
 
   themes: {

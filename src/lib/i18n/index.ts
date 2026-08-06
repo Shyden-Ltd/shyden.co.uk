@@ -41,14 +41,41 @@ export const localeFromPath = (pathname: string): Locale =>
   /^\/id(\/|$)/.test(pathname) ? 'id' : 'en';
 
 /**
+ * A student number, resolved to a label a teacher can read.
+ *
+ * The engine's errors carry numbers, never names (see `Student.number`'s
+ * comment: identity is the number, and `GroupingError`'s `keepApartImpossible`
+ * variant carries `students: number[]` for exactly that reason) — grouping.ts
+ * has no roster to resolve one from. `renderError` has no roster either by
+ * default, so a resolver is how one gets supplied.
+ */
+export type ResolveStudentLabel = (studentNumber: number) => string;
+
+/**
  * Turn an engine error into a sentence in the page's language.
  *
  * The engine deliberately returns a code plus data instead of prose, so this
  * is the single place a message is composed. The switch is exhaustive over
  * ErrorCode; adding a code without handling it here fails the type check
  * rather than silently rendering the raw code to a teacher.
+ *
+ * `resolveStudent` turns a `KEEP_APART_IMPOSSIBLE` number into display text.
+ * It defaults to the same numbered label an anonymous student already gets
+ * elsewhere on the page (`strings.studentNumber`) rather than a second,
+ * independent spelling of "Student N" — so a caller that forgets to pass a
+ * resolver still gets "Student 1, Student 2 all need to be kept apart…",
+ * never bare digits. Stage 2's page passes its own resolver, one that reads
+ * the roster and prefers `name ?? studentNumber(n)`, so a teacher who typed
+ * names sees them. This keeps the engine pure — `GroupingError` still carries
+ * only numbers, and nothing in this module imports grouping.ts's `Student`
+ * type — while guaranteeing the default is still a full sentence, not a
+ * partial one.
  */
-export function renderError(error: GroupingError, strings: Strings): string {
+export function renderError(
+  error: GroupingError,
+  strings: Strings,
+  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber(n),
+): string {
   const e = strings.errors;
   switch (error.code) {
     case ERROR_CODES.noStudents:
@@ -74,11 +101,18 @@ export function renderError(error: GroupingError, strings: Strings): string {
     case ERROR_CODES.duplicateNumber:
       return e.DUPLICATE_NUMBER(error.number);
     case ERROR_CODES.keepApartImpossible:
-      return e.KEEP_APART_IMPOSSIBLE(error.students, error.groupsNeeded);
+      return e.KEEP_APART_IMPOSSIBLE(
+        error.students.map(resolveStudent),
+        error.groupsNeeded,
+      );
     case ERROR_CODES.keepApartNoArrangement:
       return e.KEEP_APART_NO_ARRANGEMENT(error.groupsTried);
     case ERROR_CODES.keepApartSearchGaveUp:
       return e.KEEP_APART_SEARCH_GAVE_UP;
+    case ERROR_CODES.bothRulesNoArrangement:
+      return e.BOTH_RULES_NO_ARRANGEMENT(error.groupsTried);
+    case ERROR_CODES.bothRulesSearchGaveUp:
+      return e.BOTH_RULES_SEARCH_GAVE_UP;
   }
 }
 

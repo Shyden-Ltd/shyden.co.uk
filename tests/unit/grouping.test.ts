@@ -4,6 +4,7 @@ import {
   ERROR_CODES,
   MAX_STUDENTS,
   type GroupingInput,
+  type Mode,
 } from '../../src/lib/grouping';
 import * as grouping from '../../src/lib/grouping';
 import { student, shape, groupOf, seeded } from './factories';
@@ -1021,5 +1022,393 @@ describe('together letters', () => {
         expect(host?.map((m) => m.number)).toContain(s.number);
       }
     }
+  });
+});
+
+describe('apart letters', () => {
+  it('separates everyone sharing a letter from everyone else sharing it', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, apart: 'X' }),
+          student({ number: 2, apart: 'X' }),
+          student({ number: 3, apart: 'X' }),
+          student({ number: 4 }),
+          student({ number: 5 }),
+          student({ number: 6 }),
+        ],
+        mode: { kind: 'groupCount', count: 3 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    for (const g of out.result.groups) {
+      expect(g.filter((s) => s.apart === 'X')).toHaveLength(1);
+    }
+  });
+
+  it('treats two different letters as unrelated', () => {
+    // What this actually guards: with a single group, "does X end up with Y"
+    // is true by construction regardless of whether apart-letters are read
+    // at all -- everyone is in the one group either way. So this test cannot
+    // go RED for the reason its name suggests (confirmed: it already passes
+    // before buildConflicts reads `apart` at all, see task-5-report.md). Its
+    // real job is narrower and still real: it guards against
+    // OVER-separation, i.e. a bug that conflicted every letter-holder with
+    // every other regardless of which letter they hold -- that bug WOULD
+    // turn this impossible (two mutually-conflicting singletons cannot both
+    // fit in one group) and this test would catch it. Proven by mutation,
+    // not asserted: see task-5-report.md for the mutant and its failure.
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, apart: 'X' }),
+          student({ number: 2, apart: 'Y' }),
+        ],
+        mode: { kind: 'groupCount', count: 1 },
+      }),
+    );
+    expect(out.ok).toBe(true); // X and Y have no rule between them
+  });
+
+  it('proves impossibility by naming the students, as numbers', () => {
+    const out = buildGroups(
+      base({
+        students: Array.from({ length: 6 }, (_, i) =>
+          student({ number: i + 1, apart: i < 4 ? 'X' : null }),
+        ),
+        mode: { kind: 'groupCount', count: 3 },
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error.code).toBe(ERROR_CODES.keepApartImpossible);
+    if (out.error.code !== ERROR_CODES.keepApartImpossible) return;
+    expect(out.error.students.sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+    expect(out.error.groupsNeeded).toBe(4);
+  });
+
+  it('ignores the letter of an absent student', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, apart: 'X' }),
+          student({ number: 2, apart: 'X' }),
+          student({ number: 3, apart: 'X', absent: true }),
+        ],
+        mode: { kind: 'groupCount', count: 2 },
+      }),
+    );
+    expect(out.ok).toBe(true); // two present, two groups
+  });
+
+  it('separates whole units, not just the students carrying the letter', () => {
+    // Ana is with Budi, and Ana must be away from Citra. Budi therefore cannot
+    // be with Citra either -- the unit moves as one, so the conflict does too.
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, name: 'Ana', together: 'A', apart: 'X' }),
+          student({ number: 2, name: 'Budi', together: 'A' }),
+          student({ number: 3, name: 'Citra', apart: 'X' }),
+          student({ number: 4, name: 'Dewi' }),
+        ],
+        mode: { kind: 'groupCount', count: 2 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const withBudi = groupOf(out.result.groups, 2);
+    expect(withBudi?.map((s) => s.number)).not.toContain(3);
+  });
+});
+
+// Debt (a) from the task-5 brief's opening notice: "two students who must be
+// apart never share a group" is the headline promise of the whole feature,
+// and until this task it had zero cover -- `assign`'s conflict check has
+// been unreachable since Task 2. The five tests above each pin one small,
+// hand-picked roster; this proves the same guarantee broadly, with an
+// invariant re-checked directly against the raw `apart` field (never via
+// buildConflicts or any other engine internal, so this cannot pass merely
+// because the test and the implementation share a bug).
+describe('apart letters — the guarantee holds broadly, not just on hand-picked rosters (debt a)', () => {
+  it('holds across a spread of class sizes, group-count and per-group modes, and seeds', () => {
+    const sizesToTry = [4, 6, 9, 12, 16, 20, 25, 30];
+    const letters = ['X', 'Y', 'Z'];
+    let successes = 0;
+    let attempts = 0;
+
+    for (const n of sizesToTry) {
+      const students = Array.from({ length: n }, (_, i) =>
+        student({ number: i + 1, apart: letters[i % letters.length] }),
+      );
+      // Cyclic assignment balances each letter's membership to
+      // ceil(n/3) at most, so this is the largest clique the search can
+      // ever meet for this roster -- used to keep every mode comfortably
+      // feasible (a few groups of slack) rather than accidentally
+      // constructing a SECOND pathological-search fixture here; that is
+      // debt (b)'s job, deliberately, in its own dedicated test below.
+      const largestLetterGroup = Math.ceil(n / letters.length);
+      const modes: Mode[] = [
+        { kind: 'groupCount', count: largestLetterGroup + 2 },
+        { kind: 'groupCount', count: largestLetterGroup + 4 },
+        {
+          kind: 'perGroup',
+          size: Math.max(2, Math.floor(n / (largestLetterGroup + 3))),
+        },
+      ];
+      for (const mode of modes) {
+        if (mode.kind === 'groupCount' && mode.count > n) continue;
+        for (let seed = 1; seed <= 8; seed++) {
+          attempts++;
+          const out = buildGroups(
+            base({ students, mode, random: seeded(seed * 97 + n) }),
+          );
+          if (!out.ok) continue;
+          successes++;
+          // The invariant, re-derived from `apart` directly rather than
+          // trusting any engine internal: no group holds two present
+          // students who share a non-null apart letter.
+          for (const g of out.result.groups) {
+            for (const letter of letters) {
+              expect(
+                g.filter((s) => s.apart === letter).length,
+              ).toBeLessThanOrEqual(1);
+            }
+          }
+        }
+      }
+    }
+    // The invariant must actually be exercised on real successes, not hold
+    // vacuously because every attempt in the sweep happened to fail.
+    // Measured (task-5-report.md): 184 attempts, 179 successes.
+    expect(attempts).toBeGreaterThan(100);
+    expect(successes).toBeGreaterThan(80);
+  });
+
+  it('holds even when together-letters merge students into multi-student blocks', () => {
+    // A pure apart-only sweep cannot see a block-index/student-index
+    // substitution bug (the exact class of bug the pre-Task-5 comment above
+    // `pairs` warned about): with no together-letters every block is a
+    // singleton, so block index and student index are the same sequence of
+    // numbers and a swap between them is invisible. Together-letters here
+    // make blocks of size 2, so block index and student index diverge from
+    // student 3 onward, giving this sweep something a same-index bug cannot
+    // hide from.
+    const students = [
+      student({ number: 1, together: 'A', apart: 'X' }),
+      student({ number: 2, together: 'A' }),
+      student({ number: 3, together: 'B', apart: 'X' }),
+      student({ number: 4, together: 'B' }),
+      student({ number: 5, together: 'C', apart: 'Y' }),
+      student({ number: 6, together: 'C' }),
+      student({ number: 7, apart: 'Y' }),
+      student({ number: 8, apart: 'Z' }),
+      student({ number: 9, apart: 'Z' }),
+      student({ number: 10 }),
+      student({ number: 11 }),
+      student({ number: 12 }),
+    ];
+    const modes: Mode[] = [
+      { kind: 'groupCount', count: 4 },
+      { kind: 'groupCount', count: 6 },
+      { kind: 'perGroup', size: 3 },
+      { kind: 'perGroup', size: 4 },
+    ];
+    let successes = 0;
+    for (const mode of modes) {
+      for (let seed = 1; seed <= 25; seed++) {
+        const out = buildGroups(base({ students, mode, random: seeded(seed) }));
+        if (!out.ok) continue;
+        successes++;
+        for (const g of out.result.groups) {
+          for (const letter of ['X', 'Y', 'Z']) {
+            expect(
+              g.filter((s) => s.apart === letter).length,
+            ).toBeLessThanOrEqual(1);
+          }
+          // The together-units still move as whole blocks under this mix.
+          for (const letter of ['A', 'B', 'C']) {
+            const withLetter = g.filter((s) => s.together === letter);
+            expect(withLetter.length === 0 || withLetter.length === 2).toBe(
+              true,
+            );
+          }
+        }
+      }
+    }
+    // Measured (task-5-report.md): 100 successes out of 100 attempts.
+    expect(successes).toBeGreaterThan(20);
+  });
+});
+
+// Debt (b): exhausting SEARCH_NODE_CAP must never be reported as "no
+// arrangement exists" -- the old engine once shipped exactly that bug,
+// reporting five students mutually inseparable when it had merely stopped
+// looking, and its regression tests were deleted with the free-text
+// `keepApart` field. Re-proven here against a REAL apart-only input that
+// exhausts the budget on the CURRENT (two-pass, block-based) engine --
+// re-measured, not cited from the SEARCH_NODE_CAP comment's old numbers,
+// because those were taken against a since-retired engine shape (see that
+// comment for how far off they turned out to be: disjoint same-size
+// cliques, the literal old shape, no longer exhaust the budget at all on
+// this engine, up to 484 students -- see task-5-report.md for the full
+// search that established that before this shape was found).
+describe('apart letters — exhausting the search budget is never reported as "no arrangement exists" (debt b)', () => {
+  it('says it gave up, not that no arrangement exists, once BOTH passes exhaust the budget', () => {
+    // Six disjoint apart-letter cliques of UNEVEN size (20, 19, 18, 17, 16,
+    // 15 -- 105 students) into exactly 20 groups. Even sizes (e.g. many
+    // same-size disjoint triangles, or several cliques each exactly matching
+    // the group count) measured trivially fast on this engine regardless of
+    // scale -- greedy first-fit essentially self-balances a perfectly
+    // regular shape. Unevenness is what defeats it: with no slack capacity
+    // and clique sizes that do not divide the groups evenly, the shuffled
+    // first-fit search paints itself into corners that need deep
+    // backtracking to escape, 334 of 400 seeds measured exhausting the
+    // budget outright with the remaining 66 succeeding (see
+    // task-5-report.md) -- this is a common outcome for this shape, not a
+    // hand-picked unlucky seed. No `random` override is passed, so this
+    // runs on `base()`'s default `seeded(1)`, confirmed to land in the
+    // gave-up set and to reproduce identically across repeated runs (both
+    // properties are deterministic, not a matter of luck at test-run time).
+    //
+    // Every block here is a singleton (no `together`), so pass 2's
+    // first-fit-decreasing sort has no size difference to act on -- a
+    // stable sort over equal keys is a no-op, so pass 2's order is
+    // byte-identical to pass 1's and it replays the same exhausted search
+    // node for node. Confirmed by temporary instrumentation on this exact
+    // input (reverted before commit, not left in the source): pass 1
+    // gaveUp=true/found=false; pass 2 gaveUp=true/found=false, and its order
+    // was verified byte-identical to pass 1's. BOTH passes are defeated,
+    // not just one, and the earlier "same shape, all-equal-size blocks"
+    // together-test (the 15-buddy-pairs one, above) establishes the general
+    // pattern this instantiates for apart letters specifically.
+    const students = [20, 19, 18, 17, 16, 15].flatMap((size, ci) =>
+      Array.from({ length: size }, (_, j) =>
+        student({ number: ci * 100 + j + 1, apart: `C${ci}` }),
+      ),
+    );
+    expect(students).toHaveLength(105);
+
+    const start = performance.now();
+    const out = buildGroups(
+      base({ students, mode: { kind: 'groupCount', count: 20 } }),
+    );
+    const ms = performance.now() - start;
+
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    // The specific code, not just `ok === false`: the historical bug this
+    // guards had the right verdict (refused) and the WRONG code (claimed
+    // impossibility when it had only given up), so a test that stopped at
+    // the verdict would have passed on that exact bug.
+    expect(out.error).toEqual({ code: ERROR_CODES.keepApartSearchGaveUp });
+    // Sanity on the measurement itself: genuinely slow relative to the rest
+    // of this suite (tens of ms, not fractions of one), which is what
+    // "exhausted a 200,000-node budget, twice" should look like -- not a
+    // hard ceiling, since machines vary, but a floor far above what a quick
+    // proof or a quick success would cost.
+    expect(ms).toBeGreaterThan(5);
+  });
+});
+
+// Debt (c): `largestMutualConflict` has been unreachable since Task 2, so
+// nothing has ever proven it reports a genuine clique rather than merely
+// "everyone who has some conflict". Two disjoint apart-letters below: X is a
+// mutual triangle (a real 3-clique), Y is a mutual pair, and X and Y have no
+// rule between them (a different letter is unrelated -- see "treats two
+// different letters as unrelated" above). A certificate that named every
+// conflicted student rather than the actual maximum clique would wrongly
+// include 4 and 5 here.
+describe('apart letters — the clique certificate names exactly the conflicting students (debt c)', () => {
+  it('does not include a student who has some conflict but is not part of the reported clique', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, apart: 'X' }),
+          student({ number: 2, apart: 'X' }),
+          student({ number: 3, apart: 'X' }),
+          student({ number: 4, apart: 'Y' }),
+          student({ number: 5, apart: 'Y' }),
+        ],
+        mode: { kind: 'groupCount', count: 2 }, // 2 groups cannot hold X's clique of 3
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error.code).toBe(ERROR_CODES.keepApartImpossible);
+    if (out.error.code !== ERROR_CODES.keepApartImpossible) return;
+    expect(out.error.students.sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    expect(out.error.groupsNeeded).toBe(3);
+  });
+});
+
+// Correction 2: Task 4 left "both a together- and an apart-letter are live
+// when the search fails" as a stated placeholder, falling through to the
+// keep-apart codes. This task makes apart-letters real, so that fallthrough
+// is reachable for the first time -- this proves it now resolves to the
+// neutral BOTH_RULES code rather than either single-rule guess.
+describe('apart and together letters both in play — the failure names both rules, guesses neither', () => {
+  it('reports BOTH_RULES_NO_ARRANGEMENT, not a single-rule code, when both kinds of rule are live and the search proves impossibility', () => {
+    // Same shape as "refuses no arrangement exists when three together-pairs
+    // cannot all fit" above (3 blocks of 2 into 2 groups of 3 -- provably
+    // impossible on the together constraint alone: each group of 3 can hold
+    // only ONE block of 2, so at most 2 of the 3 blocks ever fit), with an
+    // apart-letter added ACROSS two of those blocks so a real keep-apart
+    // conflict is live too. The together clash alone already makes this
+    // impossible, and adding a strictly tighter constraint cannot make an
+    // impossible problem possible again, so this stays a PROVEN
+    // impossibility -- just with both rules live at once.
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: 'A', apart: 'X' }),
+          student({ number: 2, together: 'A' }),
+          student({ number: 3, together: 'B', apart: 'X' }),
+          student({ number: 4, together: 'B' }),
+          student({ number: 5, together: 'C' }),
+          student({ number: 6, together: 'C' }),
+        ],
+        mode: { kind: 'perGroup', size: 3 },
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.bothRulesNoArrangement,
+      groupsTried: 2,
+    });
+  });
+
+  it('reports BOTH_RULES_SEARCH_GAVE_UP, not a single-rule code, when both kinds of rule are live and the search merely gave up', () => {
+    // The exact roster from "says it gave up, not that no arrangement
+    // exists, once the search budget is exhausted" (together letters,
+    // above): 15 buddy-pairs (30 students) into 10 groups, the reviewer's
+    // own repro from Task 4, confirmed there to exhaust SEARCH_NODE_CAP in
+    // BOTH passes because all 15 blocks are the SAME size (2), so pass 2's
+    // first-fit-decreasing sort is a no-op and replays pass 1 exactly.
+    //
+    // One apart-letter is added here, across two students in DIFFERENT
+    // pairs (student 1, pair A; student 17, pair I) -- a real cross-block
+    // keep-apart conflict, live alongside the together-letters, and one
+    // that does not touch any block's SIZE (apart never does), so the
+    // same-size argument for why pass 2 cannot rescue this input still
+    // applies unchanged. Confirmed empirically (task-5-report.md), not
+    // assumed from that argument alone: this exact roster reproducibly
+    // returns BOTH_RULES_SEARCH_GAVE_UP, deterministically, on repeated
+    // runs.
+    const pairs = Array.from({ length: 30 }, (_, i) =>
+      student({
+        number: i + 1,
+        together: String.fromCharCode(65 + Math.floor(i / 2)), // A,A,B,B,...,O,O
+        apart: i === 0 || i === 16 ? 'X' : null, // student 1 (pair A) vs student 17 (pair I)
+      }),
+    );
+    const out = buildGroups(
+      base({ students: pairs, mode: { kind: 'groupCount', count: 10 } }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({ code: ERROR_CODES.bothRulesSearchGaveUp });
   });
 });

@@ -64,6 +64,15 @@ export const ERROR_CODES = {
   keepApartNoArrangement: 'KEEP_APART_NO_ARRANGEMENT',
   /** Proves NOTHING: the search hit its budget. Says so rather than guessing. */
   keepApartSearchGaveUp: 'KEEP_APART_SEARCH_GAVE_UP',
+  /**
+   * PROVEN by exhaustive search, but with BOTH a together- and an apart-letter
+   * live, so unlike the two codes above this cannot be pinned on one rule.
+   * See the comment at its call site in buildGroups for why guessing is worse
+   * than saying so.
+   */
+  bothRulesNoArrangement: 'BOTH_RULES_NO_ARRANGEMENT',
+  /** Proves NOTHING: the search hit its budget with both kinds of rule live. */
+  bothRulesSearchGaveUp: 'BOTH_RULES_SEARCH_GAVE_UP',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -96,11 +105,18 @@ export type GroupingError =
   | { code: typeof ERROR_CODES.togetherSearchGaveUp }
   | {
       code: typeof ERROR_CODES.keepApartImpossible;
-      students: string[];
+      // Numbers, not names: identity is the number (see Student.number), and
+      // the engine has no business formatting a display string -- the page
+      // resolves a number to `name ?? "Student N"`, this union just carries
+      // the fact. renderError's resolver parameter is what turns this into
+      // words; see its doc comment in src/lib/i18n/index.ts.
+      students: number[];
       groupsNeeded: number;
     }
   | { code: typeof ERROR_CODES.keepApartNoArrangement; groupsTried: number }
-  | { code: typeof ERROR_CODES.keepApartSearchGaveUp };
+  | { code: typeof ERROR_CODES.keepApartSearchGaveUp }
+  | { code: typeof ERROR_CODES.bothRulesNoArrangement; groupsTried: number }
+  | { code: typeof ERROR_CODES.bothRulesSearchGaveUp };
 
 export type GroupingOutcome =
   | { ok: true; result: { groups: Student[][] } }
@@ -114,14 +130,17 @@ export type GroupingOutcome =
  *
  * Measured uncapped, on a keep-apart list shaped like "these three wind each
  * other up, and those three, and those three" -- the worst case for both the
- * clique search below and the assignment search in `assign`: 24 students
- * took 27ms, 36 took 471ms, 42 took 7.3s, and 48 took 121.7s. The growth
- * between those points is why the cap exists at all, not just what value it
- * holds -- a handful of students past classroom scale is the difference
- * between instant and a hung tab. (Formerly reproduced by a `moonMoser` test
+ * clique search below and the assignment search in `assign`, AS THOSE
+ * FUNCTIONS EXISTED AT THE TIME: 24 students took 27ms, 36 took 471ms, 42
+ * took 7.3s, and 48 took 121.7s. (Formerly reproduced by a `moonMoser` test
  * helper, retired in Task 2 along with the free-text `keepApart` field that
- * fed it; Task 5 needs an equivalently pathological letter-based input to
- * re-prove this number, not just to trust this comment.)
+ * fed it.) SUPERSEDED, not just old -- see the Task 5 paragraphs below: this
+ * exact shape (many disjoint SAME-size cliques) no longer reproduces on the
+ * current engine at all, at any size up to the 500-student ceiling. Kept
+ * here as a record of why the cap exists and roughly what scale of danger it
+ * was guarding against, not as a claim about current behaviour -- Task 5
+ * needed an equivalently pathological letter-based input to re-prove that,
+ * not to trust these numbers, and found this shape does not transfer.
  *
  * This cap now also bounds `assign`'s block-placement search (Fix round 1,
  * F-2/F-3), a second and different consumer -- pure bin-packing among
@@ -140,6 +159,37 @@ export type GroupingOutcome =
  * true worst case for block placement is 2x this many nodes, not this many,
  * on the rare input that defeats both the shuffled order and
  * first-fit-decreasing.
+ *
+ * Task 5 re-measured against the CURRENT engine (block-based, two-pass) with
+ * real letter-fed conflicts, rather than trusting the paragraph above -- and
+ * the old shape turned out not to transfer. Many disjoint cliques, all the
+ * SAME size (the literal old shape: "these three, and those three"),
+ * measured trivially fast here regardless of scale or how tightly capacity
+ * is drawn: 8 to 20 triangles (24-60 students) into 3 groups, several
+ * tightness variants including capacity matching the clique size exactly,
+ * and a "Latin square" shape (K disjoint K-cliques into K groups of exactly
+ * K, zero slack anywhere) up to K=22 (484 students, just under
+ * MAX_STUDENTS) -- every one resolved in low single-digit milliseconds. The
+ * reason: this engine's placer tries groups in a FIXED ascending order for
+ * every block, so a perfectly regular shape (every clique the same size,
+ * every group the same capacity) lets first-fit self-balance into a valid
+ * arrangement without ever needing to backtrack, however large it is scaled.
+ *
+ * UNEVEN clique sizes is what actually defeats it. Six disjoint cliques
+ * sized 20, 19, 18, 17, 16 and 15 (105 students) into exactly 20 groups
+ * (tests/unit/grouping.test.ts, "apart letters" debt (b) test) reliably
+ * exhausts the cap: 334 of 400 seeds measured gave up outright and the other
+ * 66 succeeded, confirming this is a common outcome for the shape rather
+ * than one unlucky seed -- seed 1 (this engine's default in tests) is among
+ * the 334, reproducibly, at ~51-57ms. Every block in that input is a
+ * singleton (no `together`), so pass 2's first-fit-decreasing sort is a
+ * no-op there (a stable sort over equal-size keys preserves order) and
+ * replays pass 1's exhausted search node for node -- confirmed by temporary
+ * instrumentation on that exact input, not assumed from the stable-sort
+ * argument alone: pass 1 gaveUp=true/found=false, pass 2
+ * gaveUp=true/found=false, and pass 2's order verified byte-identical to
+ * pass 1's. Both passes are genuinely defeated on that input, matching the
+ * two-pass docstring's own "rare input that defeats both" case above.
  */
 const SEARCH_NODE_CAP = 200_000;
 
@@ -305,31 +355,37 @@ function buildBlocks(present: Student[]): Block[] {
   return blocks;
 }
 
-/** Conflict adjacency by student index, built from name pairs. */
-function buildConflicts(
-  students: Student[],
-  pairs: Array<[string, string]>,
-): Set<number>[] {
-  // Temporarily unread: `pairs` is always [] until Task 5 (see the comment
-  // at its construction site in buildGroups), so nothing ever looks this
-  // map up. Left in place -- Task 5 refills `pairs`, not this function.
-  const byName = new Map<string, number[]>();
-  students.forEach((s, i) => {
-    if (s.name === null) return;
-    const list = byName.get(s.name) ?? [];
-    list.push(i);
-    byName.set(s.name, list);
+/**
+ * Conflict adjacency BETWEEN BLOCKS, from apart-letters.
+ *
+ * Everyone sharing a letter is mutually separated, so a letter is a set and
+ * not a pair. The conflict is recorded between blocks rather than students
+ * because a block moves as one: separating Ana from Citra separates everyone
+ * kept together with Ana from Citra too.
+ *
+ * Identity here is entirely the block index and the letter string — nothing
+ * is matched on a student's name. `nameKey` (used only for display
+ * normalisation in `normaliseStudents`) is never called from this function.
+ */
+function buildConflicts(present: Student[], blocks: Block[]): Set<number>[] {
+  const adj: Set<number>[] = blocks.map(() => new Set<number>());
+  const byLetter = new Map<string, number[]>();
+
+  blocks.forEach((block, b) => {
+    for (const i of block) {
+      const letter = present[i].apart;
+      if (letter === null) continue;
+      const list = byLetter.get(letter) ?? [];
+      if (!list.includes(b)) list.push(b);
+      byLetter.set(letter, list);
+    }
   });
 
-  const adj: Set<number>[] = students.map(() => new Set<number>());
-  for (const [a, b] of pairs) {
-    // A duplicated name expands to every student carrying it — the safe
-    // reading of "keep Ana away from Budi" when there are two Anas.
-    for (const i of byName.get(nameKey(a)) ?? []) {
-      for (const j of byName.get(nameKey(b)) ?? []) {
-        if (i === j) continue;
-        adj[i].add(j);
-        adj[j].add(i);
+  for (const members of byLetter.values()) {
+    for (let x = 0; x < members.length; x++) {
+      for (let y = x + 1; y < members.length; y++) {
+        adj[members[x]].add(members[y]);
+        adj[members[y]].add(members[x]);
       }
     }
   }
@@ -341,8 +397,11 @@ function buildConflicts(
  *
  * This is the honest explanation of impossibility: if five students must all
  * be kept apart from one another, they need five groups, and no shuffling of
- * four will ever work. Reporting that set by name gives the teacher something
- * to act on.
+ * four will ever work. Reporting that set — by number; identity is the
+ * number, see Student.number — gives the teacher something to act on. It
+ * operates on an adjacency array indexed however the caller likes (student
+ * index or block index) and does not care which; only the caller's reading
+ * of its output does.
  *
  * Budgeted like `assign`, and for the same reason. "Exact search is fine at
  * classroom scale" was measured and is not true: a keep-apart list shaped like
@@ -547,43 +606,6 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     }
   }
 
-  // No source of conflicts yet. The free-text `keepApart` pairs this used to
-  // read are retired by this task, and Task 5's letter-based `apart` field
-  // (see Student.apart) is not wired in until then -- so buildConflicts,
-  // largestMutualConflict and the KEEP_APART_* branches below all still
-  // exist and still run, they simply have nothing to do. An empty list here
-  // is that "nothing to do" made visible, rather than a read of a field that
-  // no longer exists on GroupingInput.
-  //
-  // Concretely: with `pairs` always empty, `largestMutualConflict`, the
-  // clique-impossibility gate just below, and `KEEP_APART_NO_ARRANGEMENT` and
-  // `KEEP_APART_SEARCH_GAVE_UP` are all UNREACHABLE through the public API,
-  // and therefore UNTESTED, until Task 5 refills `pairs`. This is a real
-  // coverage gap, not a stylistic one (see Fix round 1, F-3 in
-  // task-2-report.md). Two guarantees are at risk while it stands: that two
-  // students who must be apart never end up sharing a group, and that
-  // exhausting SEARCH_NODE_CAP is never reported as "no arrangement exists"
-  // (the gaveUp / no-arrangement distinction just above `assign`'s call
-  // site, below). Task 5 must RE-PROVE both against letter-fed conflicts,
-  // not merely add new apart-letter tests on top of an already-untested
-  // path.
-  //
-  // Task 4 addendum: `assign` no longer reads the `adj` built below at all.
-  // `adj` is indexed by a student's position in `present`; `assign` moves
-  // BLOCKS now (see `Block`, `buildBlocks`), and blocks.length is
-  // <= present.length from the moment any together-letter merges two or more
-  // students into one block. Handing `assign` that student-indexed adjacency
-  // and letting it index by BLOCK would silently read some unrelated
-  // student's conflict set instead of the block's own -- wrong, but not
-  // wrong enough for any test to catch, because every set is empty until
-  // Task 5 (same reasoning as the paragraph above). `blockAdj`, below, is
-  // therefore built fresh at blocks.length -- one empty set per block --
-  // rather than reused from `adj`. Task 5 must fill `blockAdj` PER BLOCK (for
-  // instance, by unioning the student-level conflicts of everyone inside
-  // each block), not per student, or this exact substitution bug comes back
-  // with real data behind it and nothing left to catch it.
-  const pairs: Array<[string, string]> = [];
-
   const sizes = targetSizes(present.length, mode, leftovers);
   const blocks = buildBlocks(present);
 
@@ -602,35 +624,52 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     }
   }
 
-  const adj = buildConflicts(present, pairs);
+  // Block-indexed conflict adjacency from apart-letters (see buildConflicts).
+  // This IS what `assign` places against below -- there is no separate
+  // student-indexed adjacency and no later substitution step, so the bug the
+  // Task 4 addendum used to warn about here (handing `assign` a
+  // student-indexed set and reading it as if it were block-indexed) has no
+  // seam left for it to reappear at: one adjacency, built at block width,
+  // used everywhere a conflict is asked about.
+  const adj = buildConflicts(present, blocks);
 
-  if (pairs.length > 0) {
+  // "Is an apart-rule actually live" has two possible readings, and they
+  // disagree. `present.some((s) => s.apart !== null)` is true the moment ONE
+  // student carries a letter, even though a letter only one person holds
+  // constrains nobody -- buildConflicts never gives a lone holder an edge.
+  // Deriving it from the adjacency instead -- some block has a real conflict
+  // -- is the truthful reading: it can only be true when the search's own
+  // input actually contains a constraint. It is computed once, here, and
+  // both the clique gate immediately below and the failure attribution
+  // further down read this SAME flag, so the two can never disagree with
+  // each other about what "in play" means.
+  const apartInPlay = adj.some((conflicts) => conflicts.size > 0);
+
+  if (apartInPlay) {
     const clique = largestMutualConflict(adj);
     if (clique.length > sizes.length) {
       return fail({
         code: ERROR_CODES.keepApartImpossible,
-        students: clique.map((i) => present[i].name as string),
+        // Every member of every block in the clique -- not one
+        // representative per block, since a block can hold more than one
+        // student. Numbers, because identity is the number (Student.number);
+        // renderError's resolver turns these into names for a page that has
+        // a roster to resolve them against.
+        students: clique.flatMap((b) =>
+          blocks[b].map((i) => present[i].number),
+        ),
         groupsNeeded: clique.length,
       });
     }
   }
 
-  // See the Task 4 addendum on the comment above `pairs`: this is
-  // block-indexed and empty, never the student-indexed `adj` above.
-  const blockAdj: Set<number>[] = blocks.map(() => new Set<number>());
-
   // Two-pass placement -- see `placeBlocks`. Pass 1 is the shuffled order,
   // unsorted, which is what supplies arrangement variety; pass 2
   // (first-fit-decreasing) runs only if pass 1 gives up (Fix round 2, closing
-  // the arrangement-variety regression Fix round 1's sort caused). blockAdj
-  // is not read as a tie-break in either pass: every set is empty until Task
-  // 5, so it would decide nothing today.
-  const { groups: placed, gaveUp } = placeBlocks(
-    blocks,
-    sizes,
-    blockAdj,
-    random,
-  );
+  // the arrangement-variety regression Fix round 1's sort caused). `adj` is
+  // real now: a block-vs-block conflict can and does turn away a placement
+  // that capacity alone would have allowed, in both passes.
+  const { groups: placed, gaveUp } = placeBlocks(blocks, sizes, adj, random);
   if (placed === null) {
     // Two different failures, and the difference is everything. The search
     // either ran to completion — in which case no arrangement exists at this
@@ -649,27 +688,35 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     // make groups BIGGER or use fewer/lighter letters, the keep-apart copy
     // says make MORE groups or drop a rule -- so attributing a together
     // failure to keep-apart hands the teacher a fix that makes the real
-    // problem worse. Decided from what is actually in play, not guessed:
-    // a block bigger than one student means a together-letter is live; a
-    // non-empty entry in blockAdj means an apart-letter conflict is live.
-    // `pairs` is always [] until Task 5, so blockAdj is always all-empty
-    // sets and apartInPlay is always false here today -- every reachable
-    // failure this stage is a together failure. It is still computed
-    // rather than hardcoded so the attribution stays correct once Task 5
-    // makes apartInPlay real.
+    // problem worse. Decided from what is actually in play: a block bigger
+    // than one student means a together-letter is live; `apartInPlay`
+    // (computed once, above, and reused here rather than from a second,
+    // different definition) means an apart-letter conflict is live.
     //
-    // Task 5 must decide what happens when BOTH are true at once -- e.g. a
-    // class with together- AND apart-letters where the search still fails.
-    // That combination cannot be attributed to a single rule from these two
-    // booleans alone, and it is untestable today because apart-letters do
-    // not exist yet. This only resolves the two single-rule cases; the
-    // combined case is not decided here and falls through to the
-    // keep-apart branch below, which is a placeholder, not a considered
-    // answer -- do not read it as one.
+    // Task 5 resolves the third case Task 4 left as a stated placeholder:
+    // BOTH kinds of rule live at once. Neither single-rule code is safe to
+    // guess here -- their remedies are opposites (bigger groups make a
+    // together clash better and a keep-apart clash worse; more groups is the
+    // reverse), and the search genuinely cannot say which rule is the one
+    // actually blocking a fit, only that it could not find one. Guessing
+    // sends the teacher the wrong way exactly as often as the right one.
+    // BOTH_RULES_NO_ARRANGEMENT / BOTH_RULES_SEARCH_GAVE_UP say what is
+    // actually known: both rules are named, both remedies are offered, and
+    // neither is claimed to be the cause.
     const togetherInPlay = blocks.some((block) => block.length > 1);
-    const apartInPlay = blockAdj.some((conflicts) => conflicts.size > 0);
 
-    if (togetherInPlay && !apartInPlay) {
+    if (togetherInPlay && apartInPlay) {
+      return fail(
+        gaveUp
+          ? { code: ERROR_CODES.bothRulesSearchGaveUp }
+          : {
+              code: ERROR_CODES.bothRulesNoArrangement,
+              groupsTried: sizes.length,
+            },
+      );
+    }
+
+    if (togetherInPlay) {
       return fail(
         gaveUp
           ? { code: ERROR_CODES.togetherSearchGaveUp }
@@ -680,6 +727,14 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
       );
     }
 
+    // apartInPlay must be true here: `placed === null` only happens when
+    // `assign` actually turned a placement away, and with togetherInPlay
+    // false every block is a singleton, which cannot fail on capacity alone
+    // (sizes always sums to present.length -- see targetSizes) -- only a
+    // live conflict can. Written as the fallback rather than
+    // `else if (apartInPlay)` so a future change to either flag's
+    // definition fails safe into the strongest claim's OPPOSITE (a refusal
+    // rather than a silent wrong success), not into silence.
     return fail(
       gaveUp
         ? { code: ERROR_CODES.keepApartSearchGaveUp }

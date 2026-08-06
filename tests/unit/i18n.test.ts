@@ -137,9 +137,12 @@ describe('every engine error can be rendered in every language', () => {
       groupsTried: 2,
     },
     TOGETHER_SEARCH_GAVE_UP: { code: ERROR_CODES.togetherSearchGaveUp },
+    // Numbers, not names -- identity is the number (Student.number). See the
+    // "resolving a student number to a label" block below for how a name
+    // reaches the page from here.
     KEEP_APART_IMPOSSIBLE: {
       code: ERROR_CODES.keepApartImpossible,
-      students: ['Ana', 'Budi'],
+      students: [1, 2],
       groupsNeeded: 2,
     },
     KEEP_APART_NO_ARRANGEMENT: {
@@ -147,6 +150,11 @@ describe('every engine error can be rendered in every language', () => {
       groupsTried: 2,
     },
     KEEP_APART_SEARCH_GAVE_UP: { code: ERROR_CODES.keepApartSearchGaveUp },
+    BOTH_RULES_NO_ARRANGEMENT: {
+      code: ERROR_CODES.bothRulesNoArrangement,
+      groupsTried: 2,
+    },
+    BOTH_RULES_SEARCH_GAVE_UP: { code: ERROR_CODES.bothRulesSearchGaveUp },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -171,18 +179,131 @@ describe('every engine error can be rendered in every language', () => {
     },
   );
 
-  it('the impossible-constraints message names the students and the group count', () => {
+  it('the impossible-constraints message names the students, via the resolver, and the group count', () => {
+    const names = ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko'];
     const msg = renderError(
       {
         code: ERROR_CODES.keepApartImpossible,
-        students: ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko'],
+        students: [1, 2, 3, 4, 5],
         groupsNeeded: 5,
       },
       en,
+      (n) => names[n - 1],
     );
-    for (const name of ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko'])
-      expect(msg).toContain(name);
+    for (const name of names) expect(msg).toContain(name);
     expect(msg).toContain('5');
+  });
+
+  describe('resolving a student number to a label', () => {
+    // KEEP_APART_IMPOSSIBLE carries numbers (Student.number is the identity;
+    // see grouping.ts), never names -- the engine has no roster to resolve
+    // one from. renderError's third parameter is how a caller with a roster
+    // supplies a better label than a bare number; a caller without one --
+    // or one that simply forgets -- must still get a readable sentence.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          {
+            code: ERROR_CODES.keepApartImpossible,
+            students: [1, 2],
+            groupsNeeded: 2,
+          },
+          strings,
+        );
+        // The exact rendered sentence, not merely "a function was called" --
+        // a resolver that fires but formats wrongly would still pass a
+        // weaker check.
+        expect(msg).toBe(
+          strings.errors.KEEP_APART_IMPOSSIBLE(
+            [strings.studentNumber(1), strings.studentNumber(2)],
+            2,
+          ),
+        );
+        expect(msg).toContain(strings.studentNumber(1));
+        expect(msg).toContain(strings.studentNumber(2));
+        // Digits alone, with no word around them, is exactly the bug this
+        // default exists to prevent -- "1, 2 all need to be kept apart" reads
+        // as nonsense to a teacher.
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    it('English default reads "Student 1, Student 2 …", not bare digits', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.keepApartImpossible,
+          students: [1, 2],
+          groupsNeeded: 2,
+        },
+        en,
+      );
+      expect(msg).toContain('Student 1, Student 2');
+    });
+
+    it('Indonesian default reads "Siswa 1, Siswa 2 …", not bare digits', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.keepApartImpossible,
+          students: [1, 2],
+          groupsNeeded: 2,
+        },
+        id,
+      );
+      expect(msg).toContain('Siswa 1, Siswa 2');
+    });
+
+    it('a supplied resolver is used in place of the default, for every number', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 2: 'Budi' };
+      const msg = renderError(
+        {
+          code: ERROR_CODES.keepApartImpossible,
+          students: [1, 2],
+          groupsNeeded: 2,
+        },
+        en,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Budi all need to be kept apart from each other, so you would need at least 2 groups. Either make more groups or remove one of the rules.',
+      );
+      expect(msg).not.toContain('Student');
+    });
+  });
+
+  describe('both together- and apart-letters are live at once', () => {
+    // Correction 2: the two single-rule codes have OPPOSITE remedies, so
+    // guessing between them when both rules are live sends the teacher the
+    // wrong way as often as the right one. These pin that the combined
+    // copy commits to neither.
+    it.each(locales)(
+      'names how many groups were tried, without picking a side (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.bothRulesNoArrangement, groupsTried: 3 },
+          strings,
+        );
+        expect(msg).toContain('3');
+      },
+    );
+
+    it('English offers BOTH remedies -- bigger groups AND more groups -- not one', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.bothRulesNoArrangement, groupsTried: 3 },
+        en,
+      );
+      // "bigger" is the together remedy; "more groups" is the keep-apart
+      // remedy. A version that silently collapsed to one rule's copy (the
+      // Task 4 placeholder this replaces) would fail one side of this.
+      expect(msg).toContain('bigger');
+      expect(msg).toContain('more groups');
+    });
+
+    it('English gave-up copy does not claim either rule is the cause', () => {
+      const msg = renderError({ code: ERROR_CODES.bothRulesSearchGaveUp }, en);
+      expect(msg).not.toContain(ERROR_CODES.bothRulesSearchGaveUp);
+      expect(msg).toMatch(/^\S.*[.!?]$/);
+    });
   });
 
   it('states the maximum possible when too many groups were requested', () => {

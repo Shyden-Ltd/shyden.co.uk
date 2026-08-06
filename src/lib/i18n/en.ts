@@ -126,6 +126,19 @@ export const en = {
     // Claims nothing at all, because nothing was established.
     KEEP_APART_SEARCH_GAVE_UP:
       'There are too many keep-apart rules here to work through. Try removing some of them.',
+    // Together and keep-apart clashes have OPPOSITE remedies (bigger groups
+    // helps one and hurts the other; more groups is the reverse), and when
+    // both kinds of rule are live the search genuinely cannot say which one
+    // is the actual sticking point -- only that no arrangement was found.
+    // Guessing would send the teacher the wrong way as often as the right
+    // one, so this names both rules and offers both remedies without
+    // choosing between them.
+    BOTH_RULES_NO_ARRANGEMENT: (groupsTried: number) =>
+      `There is no way to fit your class into ${groupsTried} ${groupsTried === 1 ? 'group' : 'groups'} while satisfying every together-letter and every apart-letter at once. The search cannot tell which kind of rule is the problem, so try either remedy: make the groups bigger or give a together-letter to fewer students, or make more groups or remove one of the apart-rules.`,
+    // Claims nothing at all, because nothing was established -- and, same
+    // reasoning as above, does not guess which kind of rule to blame.
+    BOTH_RULES_SEARCH_GAVE_UP:
+      'There are too many together- and apart-letters here to work through at once. Try using fewer letters of either kind, or make the groups bigger.',
   },
 
   themes: {
