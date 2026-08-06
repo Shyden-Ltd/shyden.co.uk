@@ -3,10 +3,10 @@ import {
   buildGroups,
   ERROR_CODES,
   MAX_STUDENTS,
-  parseKeepApart,
   type GroupingInput,
   type Student,
 } from '../../src/lib/grouping';
+import * as grouping from '../../src/lib/grouping';
 
 /**
  * A seeded generator, so "random" is reproducible.
@@ -270,33 +270,6 @@ describe('buildGroups — keep-apart pairs', () => {
       'Eko',
     ]);
     expect(out.error.groupsNeeded).toBe(5);
-  });
-
-  it('refuses a keep-apart name that is not in the class', () => {
-    const out = buildGroups(
-      base({
-        students: klass,
-        mode: { kind: 'perGroup', size: 2 },
-        keepApart: [['Ana', 'Zara']],
-      }),
-    );
-    expect(out.ok).toBe(false);
-    if (out.ok) return;
-    expect(out.error.code).toBe(ERROR_CODES.keepApartUnknownName);
-    expect(out.error.students).toEqual(['Zara']);
-  });
-
-  it('refuses keep-apart when the class has no names to refer to', () => {
-    const out = buildGroups(
-      base({
-        students: 8,
-        mode: { kind: 'perGroup', size: 2 },
-        keepApart: [['Ana', 'Budi']],
-      }),
-    );
-    expect(out.ok).toBe(false);
-    if (out.ok) return;
-    expect(out.error.code).toBe(ERROR_CODES.keepApartNeedsNames);
   });
 });
 
@@ -609,34 +582,6 @@ describe('buildGroups — names that are not plain ASCII', () => {
     expect(together).toBeUndefined();
   });
 
-  it('still refuses a name that genuinely is not in the class', () => {
-    // Normalising must not turn the unknown-name check into a no-op.
-    const out = buildGroups(
-      base({
-        students: ['Ana', 'Budi'],
-        mode: { kind: 'perGroup', size: 2 },
-        keepApart: [['Zara', 'Budi']],
-      }),
-    );
-    if (out.ok) throw new Error('expected refusal');
-    expect(out.error.code).toBe(ERROR_CODES.keepApartUnknownName);
-  });
-
-  it('treats a difference of case as a different child', () => {
-    // Two children really can be "ana" and "Ana". Case-folding names would
-    // merge them, which is a worse failure than asking for the exact
-    // spelling the class list uses.
-    const out = buildGroups(
-      base({
-        students: ['Ana', 'Budi'],
-        mode: { kind: 'perGroup', size: 2 },
-        keepApart: [['ana', 'Budi']],
-      }),
-    );
-    if (out.ok) throw new Error('expected refusal');
-    expect(out.error.code).toBe(ERROR_CODES.keepApartUnknownName);
-  });
-
   it.each([
     ['Chinese', ['张伟', '李娜', '王芳', '刘洋']],
     ['Arabic', ['أحمد', 'فاطمة', 'محمد', 'عائشة']],
@@ -738,61 +683,6 @@ describe('buildGroups — duplicate names and empty rules', () => {
   );
 });
 
-describe('parseKeepApart — what the teacher typed becomes what was meant', () => {
-  it('reads the documented shape: one pair per line', () => {
-    expect(parseKeepApart('Ana, Budi\nCitra, Dewi')).toEqual([
-      ['Ana', 'Budi'],
-      ['Citra', 'Dewi'],
-    ]);
-  });
-
-  it('a line of three names means all three apart, not the first two', () => {
-    // The help text says "one pair per line", but the box is free text and
-    // this is a natural way to write it. The old parser kept Ana away from
-    // Budi and then seated Citra next to Ana — and reported success.
-    expect(parseKeepApart('Ana, Budi, Citra')).toEqual([
-      ['Ana', 'Budi'],
-      ['Ana', 'Citra'],
-      ['Budi', 'Citra'],
-    ]);
-  });
-
-  it.each([
-    ['blank lines', 'Ana, Budi\n\n   \nCitra, Dewi'],
-    ['ragged spacing', '  Ana ,   Budi  \n\tCitra,Dewi'],
-    ['a trailing comma', 'Ana, Budi,\nCitra, Dewi,'],
-  ])('survives %s', (_label, text) => {
-    expect(parseKeepApart(text)).toEqual([
-      ['Ana', 'Budi'],
-      ['Citra', 'Dewi'],
-    ]);
-  });
-
-  it.each([
-    ['nothing at all', ''],
-    ['only whitespace', '  \n\t\n'],
-    ['a single name, which constrains nothing', 'Ana'],
-    ['a lone comma', ','],
-  ])('reads %s as no constraint', (_label, text) => {
-    expect(parseKeepApart(text)).toEqual([]);
-  });
-
-  it('a name repeated on one line does not conflict with itself', () => {
-    expect(parseKeepApart('Ana, Ana')).toEqual([['Ana', 'Ana']]);
-    // The engine drops the self-pair; the parser's job is only to report what
-    // was written. Pinned so the two halves cannot both assume the other did
-    // it — the shape of most "who was supposed to handle this" defects.
-    const out = buildGroups(
-      base({
-        students: ['Ana', 'Budi'],
-        mode: { kind: 'perGroup', size: 2 },
-        keepApart: parseKeepApart('Ana, Ana'),
-      }),
-    );
-    expect(out.ok).toBe(true);
-  });
-});
-
 describe('buildGroups — randomness is real but reproducible', () => {
   it('the same seed gives the same arrangement', () => {
     const a = ok(base({ random: seeded(7) }));
@@ -813,5 +703,21 @@ describe('buildGroups — randomness is real but reproducible', () => {
       ),
     );
     expect(arrangements.size).toBeGreaterThan(1);
+  });
+});
+
+describe('the name-based keep-apart surface is gone', () => {
+  it('no longer exports parseKeepApart', () => {
+    expect(
+      (grouping as Record<string, unknown>).parseKeepApart,
+    ).toBeUndefined();
+  });
+
+  it('no longer has error codes that only free text could produce', () => {
+    // A letter needs no names and cannot be misspelt, so neither failure can
+    // occur. Leaving the codes would leave dead branches that no test reaches.
+    const codes = Object.values(ERROR_CODES);
+    expect(codes).not.toContain('KEEP_APART_NEEDS_NAMES');
+    expect(codes).not.toContain('KEEP_APART_UNKNOWN_NAME');
   });
 });

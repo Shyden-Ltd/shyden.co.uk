@@ -41,8 +41,6 @@ export const ERROR_CODES = {
   invalidGroupSize: 'INVALID_GROUP_SIZE',
   invalidGroupCount: 'INVALID_GROUP_COUNT',
   tooManyGroups: 'TOO_MANY_GROUPS',
-  keepApartNeedsNames: 'KEEP_APART_NEEDS_NAMES',
-  keepApartUnknownName: 'KEEP_APART_UNKNOWN_NAME',
   /** PROVEN by a clique: these students all conflict, so they need N groups. */
   keepApartImpossible: 'KEEP_APART_IMPOSSIBLE',
   /** PROVEN by exhaustive search: no arrangement exists at this group count. */
@@ -68,8 +66,6 @@ export type GroupingError =
   | { code: typeof ERROR_CODES.invalidGroupSize }
   | { code: typeof ERROR_CODES.invalidGroupCount }
   | { code: typeof ERROR_CODES.tooManyGroups; maxGroups: number }
-  | { code: typeof ERROR_CODES.keepApartNeedsNames }
-  | { code: typeof ERROR_CODES.keepApartUnknownName; students: string[] }
   | {
       code: typeof ERROR_CODES.keepApartImpossible;
       students: string[];
@@ -200,35 +196,6 @@ function targetSizes(
     remainder -= 1;
   }
   return sizes;
-}
-
-/**
- * Turn the keep-apart box into pairs.
- *
- * Lives here rather than in the page script for the reason the working
- * agreement gives — the logic is the library's, the DOM is the script's — and
- * because a free-text box is exactly the surface that deserves unit tests
- * rather than an end-to-end guess.
- *
- * A line of three or more names expands to every pair on it. The help text
- * asks for one pair per line, but the box is free text and "Ana, Budi, Citra"
- * is a natural way to write "keep all three apart". Keeping only the first
- * two was the worst of the three available behaviours: it seated Citra next
- * to Ana and reported success.
- */
-export function parseKeepApart(text: string): Array<[string, string]> {
-  const pairs: Array<[string, string]> = [];
-  for (const line of text.split('\n')) {
-    const names = line
-      .split(',')
-      .map((n) => n.trim())
-      .filter((n) => n.length > 0);
-    for (let i = 0; i < names.length; i++) {
-      for (let j = i + 1; j < names.length; j++)
-        pairs.push([names[i], names[j]]);
-    }
-  }
-  return pairs;
 }
 
 /** Conflict adjacency by student index, built from name pairs. */
@@ -375,27 +342,9 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     }
   }
 
-  const named = students.some((s) => s.name !== null);
   const pairs = keepApart.filter(
     ([a, b]) => a.trim() !== '' && b.trim() !== '',
   );
-
-  if (pairs.length > 0) {
-    // Refuse rather than ignore: quietly dropping the constraint would seat
-    // children together that the teacher explicitly separated.
-    if (!named) return fail({ code: ERROR_CODES.keepApartNeedsNames });
-
-    const roster = new Set(students.map((s) => s.name));
-    const unknown = [...new Set(pairs.flat().map(nameKey))].filter(
-      (n) => !roster.has(n),
-    );
-    if (unknown.length > 0) {
-      return fail({
-        code: ERROR_CODES.keepApartUnknownName,
-        students: unknown,
-      });
-    }
-  }
 
   const sizes = targetSizes(students.length, mode, leftovers);
   const adj = buildConflicts(students, pairs);
