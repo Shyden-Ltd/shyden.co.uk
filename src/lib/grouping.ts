@@ -14,9 +14,15 @@
  */
 
 export interface Student {
-  /** 1-based; the UI renders "Student 7" from this when no name was given. */
-  id: number;
+  /** The identity. Unique, whole, and the teacher's to choose — gaps allowed. */
+  number: number;
   name: string | null;
+  sex: 'M' | 'F' | null;
+  absent: boolean;
+  /** Letter. Everyone sharing it is placed as one unit. */
+  together: string | null;
+  /** Letter. Everyone sharing it is mutually separated. */
+  apart: string | null;
 }
 
 export type Mode =
@@ -24,20 +30,16 @@ export type Mode =
 
 export type Leftovers = 'spread' | 'bunch';
 
+export type SexMode = 'off' | 'mix' | 'separate';
+
 export interface GroupingInput {
-  /** A bare count (anonymous students) or a list of names. */
-  students: number | string[];
+  /** A bare count (anonymous students) or the roster. */
+  students: number | Student[];
   mode: Mode;
   leftovers: Leftovers;
-  /**
-   * Pairs of NAMES that must not share a group. A pair naming a student who
-   * is not on the roster, or supplied when the class has no names to check
-   * against, is silently dropped rather than refused — there is no guard
-   * left on this path (see finding I-2, task-1-review.md, and the pinning
-   * test in grouping.test.ts). Retired along with the rest of this field
-   * in Task 2.
-   */
-  keepApart: Array<[string, string]>;
+  sexMode: SexMode;
+  /** Groups the teacher pinned; left exactly as they are. */
+  pinned: Student[][];
   /** Injected so results are reproducible in tests. */
   random: () => number;
 }
@@ -45,6 +47,8 @@ export interface GroupingInput {
 export const ERROR_CODES = {
   noStudents: 'NO_STUDENTS',
   tooManyStudents: 'TOO_MANY_STUDENTS',
+  /** Two records claimed the same number — the roster is ambiguous. */
+  duplicateNumber: 'DUPLICATE_NUMBER',
   invalidGroupSize: 'INVALID_GROUP_SIZE',
   invalidGroupCount: 'INVALID_GROUP_COUNT',
   tooManyGroups: 'TOO_MANY_GROUPS',
@@ -72,6 +76,7 @@ export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 export type GroupingError =
   | { code: typeof ERROR_CODES.noStudents }
   | { code: typeof ERROR_CODES.tooManyStudents; maxStudents: number }
+  | { code: typeof ERROR_CODES.duplicateNumber; number: number }
   | { code: typeof ERROR_CODES.invalidGroupSize }
   | { code: typeof ERROR_CODES.invalidGroupCount }
   | { code: typeof ERROR_CODES.tooManyGroups; maxGroups: number }
@@ -115,24 +120,24 @@ const fail = (error: GroupingError): GroupingOutcome => ({ ok: false, error });
  * distinguishes them, because "more than the tool will do" and "not a number
  * at all" are different mistakes and deserve different sentences.
  */
-function requestedSize(input: number | string[]): number {
-  return typeof input === 'number'
-    ? input
-    : input.reduce((n, s) => (s.trim().length > 0 ? n + 1 : n), 0);
+function requestedSize(input: number | Student[]): number {
+  return typeof input === 'number' ? input : input.length;
 }
 
 /**
- * A name as it is compared: trimmed, and in one Unicode form.
+ * A name as it is DISPLAYED: trimmed, and in one Unicode form.
  *
- * "José" has two encodings — é as a single code point (NFC) or e plus a
- * combining accent (NFD) — which render identically. macOS filenames and some
- * keyboards produce NFD while most pastes produce NFC, so a teacher could
- * paste the class list one way and type the keep-apart rule the other and be
- * told "José is not in your class list. Check the spelling."
+ * This used to also be how two students were MATCHED against each other for
+ * a keep-apart rule: "José" pasted as NFC and typed as NFD needed to reach
+ * the same key, or the rule would silently fail to fire, and folding case
+ * was refused for the same reason — "ana" and "Ana" had to stay distinguishable
+ * or two different children could be merged into one conflict. Identity is
+ * the number now, so nothing is matched on the name at all; this function is
+ * kept purely so the roster renders consistently regardless of which Unicode
+ * form or stray whitespace a name arrived in.
  *
- * Case is deliberately NOT folded: two children really can be "ana" and
- * "Ana", and merging them is a worse failure than asking for the spelling the
- * class list uses.
+ * Case is still deliberately NOT folded: a teacher who typed "Ana" must see
+ * "Ana" on their own roster, not "ana".
  */
 const nameKey = (name: string): string => name.trim().normalize('NFC');
 
@@ -150,21 +155,29 @@ function shuffled<T>(items: readonly T[], random: () => number): T[] {
   return out;
 }
 
-function normaliseStudents(input: number | string[]): Student[] {
+const anonymous = (number: number): Student => ({
+  number,
+  name: null,
+  sex: null,
+  absent: false,
+  together: null,
+  apart: null,
+});
+
+function normaliseStudents(input: number | Student[]): Student[] {
   if (typeof input === 'number') {
     if (!Number.isFinite(input) || input < 1) return [];
-    return Array.from({ length: Math.floor(input) }, (_, i) => ({
-      id: i + 1,
-      name: null,
-    }));
+    return Array.from({ length: Math.floor(input) }, (_, i) =>
+      anonymous(i + 1),
+    );
   }
-  // Blank lines are how a pasted class list ends; they are not students. A
-  // duplicate name IS kept — two children genuinely can share a first name,
-  // and silently de-duplicating would drop one of them from the class.
-  return input
-    .map(nameKey)
-    .filter((n) => n.length > 0)
-    .map((name, i) => ({ id: i + 1, name }));
+  // A record list is taken as given. Renumbering it would throw away the one
+  // thing that makes a constraint unambiguous, which is the whole point of
+  // this rewrite: two children called Ana are two numbers, not one name.
+  return input.map((s) => ({
+    ...s,
+    name: s.name === null ? null : nameKey(s.name),
+  }));
 }
 
 /**
@@ -332,7 +345,18 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   const students = normaliseStudents(input.students);
   if (students.length === 0) return fail({ code: ERROR_CODES.noStudents });
 
-  const { mode, leftovers, keepApart, random } = input;
+  // The PAGE also refuses duplicates, live, in stage 3. Both must say the same
+  // sentence, so the engine reports the code and the number and the renderer
+  // owns the words -- exactly one place builds that string.
+  const seen = new Set<number>();
+  for (const s of students) {
+    if (seen.has(s.number)) {
+      return fail({ code: ERROR_CODES.duplicateNumber, number: s.number });
+    }
+    seen.add(s.number);
+  }
+
+  const { mode, leftovers, random } = input;
   if (
     mode.kind === 'perGroup' &&
     (!Number.isInteger(mode.size) || mode.size < 1)
@@ -351,9 +375,14 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     }
   }
 
-  const pairs = keepApart.filter(
-    ([a, b]) => a.trim() !== '' && b.trim() !== '',
-  );
+  // No source of conflicts yet. The free-text `keepApart` pairs this used to
+  // read are retired by this task, and Task 5's letter-based `apart` field
+  // (see Student.apart) is not wired in until then -- so buildConflicts,
+  // largestMutualConflict and the KEEP_APART_* branches below all still
+  // exist and still run, they simply have nothing to do. An empty list here
+  // is that "nothing to do" made visible, rather than a read of a field that
+  // no longer exists on GroupingInput.
+  const pairs: Array<[string, string]> = [];
 
   const sizes = targetSizes(students.length, mode, leftovers);
   const adj = buildConflicts(students, pairs);

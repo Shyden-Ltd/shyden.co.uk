@@ -95,6 +95,8 @@ export const en = {
       'Add some students first — either a number or a list of names.',
     TOO_MANY_STUDENTS: (max: number) =>
       `That is more students than this tool will take. The most is ${max}.`,
+    DUPLICATE_NUMBER: (number: number) =>
+      `Student number ${number} is used twice. Give each student their own number.`,
     INVALID_GROUP_SIZE: 'Each group needs at least 1 student.',
     INVALID_GROUP_COUNT: 'You need at least 1 group.',
     TOO_MANY_GROUPS: (max: number) =>

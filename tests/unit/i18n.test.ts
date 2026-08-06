@@ -122,6 +122,7 @@ describe('every engine error can be rendered in every language', () => {
       code: ERROR_CODES.tooManyStudents,
       maxStudents: 500,
     },
+    DUPLICATE_NUMBER: { code: ERROR_CODES.duplicateNumber, number: 5 },
     INVALID_GROUP_SIZE: { code: ERROR_CODES.invalidGroupSize },
     INVALID_GROUP_COUNT: { code: ERROR_CODES.invalidGroupCount },
     TOO_MANY_GROUPS: { code: ERROR_CODES.tooManyGroups, maxGroups: 4 },

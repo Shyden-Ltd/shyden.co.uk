@@ -61,6 +61,8 @@ export function renderError(error: GroupingError, strings: Strings): string {
       return e.TOO_MANY_GROUPS(error.maxGroups);
     case ERROR_CODES.tooManyStudents:
       return e.TOO_MANY_STUDENTS(error.maxStudents);
+    case ERROR_CODES.duplicateNumber:
+      return e.DUPLICATE_NUMBER(error.number);
     case ERROR_CODES.keepApartImpossible:
       return e.KEEP_APART_IMPOSSIBLE(error.students, error.groupsNeeded);
     case ERROR_CODES.keepApartNoArrangement:

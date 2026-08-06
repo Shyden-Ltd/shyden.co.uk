@@ -76,6 +76,8 @@ export const id: Strings = {
       'Tambahkan siswa terlebih dahulu — berupa angka atau daftar nama.',
     TOO_MANY_STUDENTS: (max: number) =>
       `Jumlah siswa itu melebihi batas alat ini. Paling banyak ${max}.`,
+    DUPLICATE_NUMBER: (number: number) =>
+      `Nomor siswa ${number} dipakai dua kali. Berikan setiap siswa nomor yang berbeda.`,
     INVALID_GROUP_SIZE: 'Setiap kelompok membutuhkan minimal 1 siswa.',
     INVALID_GROUP_COUNT: 'Anda membutuhkan minimal 1 kelompok.',
     TOO_MANY_GROUPS: (max: number) =>
