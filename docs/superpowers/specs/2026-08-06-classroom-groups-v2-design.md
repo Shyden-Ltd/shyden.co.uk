@@ -109,6 +109,30 @@ the engine cannot tell them apart. With numbers as IDs every constraint is unamb
 - **Box lower than the roster:** show a warning describing the mismatch **and what will happen**
   before continuing. Do not silently correct, and do not silently drop anyone.
 
+### Two size limits, not one
+
+The engine refuses above 500 today. That limit was set when a student was a number; a student is now
+a row of five controls, so 500 named students would put 2,500 form elements on the page — slow on a
+phone and slow to read out. The two costs are different, so they get different limits:
+
+| Limit | Value | Applies to |
+|---|---|---|
+| `MAX_STUDENTS` | **500** | The Students box — a plain count of anonymous students |
+| `MAX_ROSTER` | **100** | The customise table — students with a row of their own |
+
+100 is roughly twice the largest real class, so no teacher meets it by accident.
+
+Every way of exceeding `MAX_ROSTER` has a stated outcome. None of them may fail silently:
+
+- **Opening Customise students with the count above 100** — the section refuses to open and says why:
+  *"Customising works up to 100 students. Lower the number to customise this class."* The count itself
+  is left alone; the teacher can still shuffle.
+- **Adding a row at 100** — the add control is disabled and states the limit.
+- **Importing a file with more than 100 rows** — rejected whole, like any other invalid file, with the
+  row count and the limit in the message.
+- **Raising the box above 100 with a roster present** — allowed, and already covered: the roster stays
+  as it is and the extra become anonymous students, up to 500.
+
 ---
 
 ## 5. Avatars
@@ -274,11 +298,49 @@ each other.
 
 ## 10. Printing
 
-- A **print option** with a choice of **class list**, **group results**, or **both**.
-- A genuine **print-friendly view**: no form, no collapsed sections, no site chrome; class name and
-  date at the top.
-- **Must work in greyscale as well as colour.** This is why the avatars carry hair length as well as
-  colour, and why nothing may depend on colour alone.
+A **print panel**, not a bare print button. The teacher decides what goes on the paper — the operator
+was explicit that this is theirs to choose, not ours to fix.
+
+```
+Print                              ×
+
+What to print
+  ( ) Class list
+  ( ) Group results
+  (•) Both
+
+On the class list
+  [x] Show students who are away
+  [x] Show sex and the together/apart letters
+
+[x] Include avatars
+
+              [ Cancel ]   [ Print ]
+```
+
+**What to print** — class list, group results, or both. Both is the default.
+
+**The two class-list tick boxes are independent**, which is why they are tick boxes rather than three
+named sheets: all four combinations are reachable, including *only who is here, with the letters* —
+a combination the named sheets could not express.
+
+- *Show students who are away* — off drops absent students from the sheet entirely. The remaining
+  numbers then jump (1, 2, 3, 5) because a number belongs to a student, not to a position. The sheet
+  says how many are away so the gap is never a mystery.
+- *Show sex and the together/apart letters* — off prints numbers and names only.
+
+**Include avatars** — off prints names only: identical on every printer, and the least ink. On, faces
+print as line drawings, and hair length still separates boy from girl with no colour at all.
+
+**All three tick boxes start ticked**, *What to print* starts on *Both*, and **the panel remembers
+all four choices** for next time — UI preferences, no personal data, consistent with section 11.
+
+The sheet itself is a genuine **print-friendly view**: no form, no collapsed sections, no site
+chrome; class name and date at the top. **It must work in greyscale as well as colour** — this is why
+the avatars carry hair length as well as colour, and why nothing may depend on colour alone.
+
+Group results print as they appear, minus absent students, who by section 4 are never in the results
+at all — the *away* tick box governs the class list only.
 
 ---
 
@@ -286,7 +348,8 @@ each other.
 
 - **The roster is never persisted.** Saving is what export is for. When a teacher has customised
   anything, the Import/export header says `unsaved changes — export to keep them`.
-- **UI preferences may be persisted** (the how-to collapsed state). No personal data.
+- **UI preferences may be persisted** — the how-to collapsed state, and the four print-panel choices.
+  No personal data: a tick box is not a child.
 - Privacy copy changes, because the roster can now reach a second tab:
 
   > **EN** — Everything happens in your browser. Your class list is never sent anywhere, and is
@@ -344,7 +407,16 @@ existing roster.
 **Both-language export** — works from English and from Indonesian; nothing written to storage;
 nothing in the URL; source forgets only after acknowledgement; blocked tab reported and roster kept.
 
-**Print** — class list, groups, both; greyscale legible; no form or chrome on the sheet.
+**Print** — class list, groups, both; each of the four tick boxes changes the sheet in the way it
+says, and the two class-list boxes are proved independent by testing all four combinations; absent
+students dropped *and* the away count still stated; numbers still jump when they are dropped;
+avatars present and absent; choices survive a reload; greyscale legible; no form or chrome on the
+sheet.
+
+**Size limits** — the box refuses above 500; Customise students refuses to open above 100 and says
+why while leaving the count alone; the add control disables at 100 stating the limit; an import of
+101 rows is rejected whole naming the count and the limit; raising the box above 100 with a roster
+present tops up anonymously instead of failing.
 
 **i18n** — every new string in both locales; whole rendered sentences asserted, not fragments; the
 existing rendered-text seam scan must stay green.
@@ -362,19 +434,23 @@ half-migrated state:
 3. **Customise students + avatars** — the table, the new avatars, removal of themes and the two
    replaced controls.
 4. **CSV import/export + templates + validation + both-language handover.**
-5. **Print views.**
+5. **Print panel and print views.**
+
+The two size limits (section 4) belong to stage 1 for `MAX_STUDENTS` and stage 3 for `MAX_ROSTER`,
+since the roster limit has nothing to constrain until the table exists.
 
 ---
 
 ## 15. Open questions
 
-Still to decide before implementation:
+**None.** The three that were open when this document was first written are now decided and written
+into the sections above:
 
-1. **What the printed class list shows** — full register with absences and letters (usable as a
-   paper register), or just numbers and names, or only students present.
-2. **Whether avatars appear on printed sheets** — names only saves ink and prints identically
-   everywhere; keeping them helps younger children; or make it a choice at print time.
-3. **The class-size cap.** The engine currently refuses above 500. A roster table renders a row of
-   five controls per student, so 500 is 2,500 form elements — sluggish on a phone and slow for a
-   screen reader. Options: lower it to ~100, keep 500, or keep 500 for anonymous counts and cap the
-   table lower.
+| Question | Decision | Where |
+|---|---|---|
+| What the printed class list shows | The teacher decides, via two independent tick boxes | §10 |
+| Whether avatars print | The teacher decides, at print time, remembered | §10 |
+| The class-size cap | Two limits: 500 to shuffle, 100 to customise | §4 |
+
+The first two share an answer worth stating plainly: **where we could not name a single right sheet,
+we handed the choice to the teacher rather than guessing on their behalf.**
