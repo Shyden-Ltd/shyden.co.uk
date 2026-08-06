@@ -1002,7 +1002,18 @@ describe('together and apart at the same time', () => {
 npx vitest run tests/unit/grouping.test.ts -t 'together and apart at the same time'
 ```
 
-Expected: 1 failed — the first case currently returns a self-conflicting block that the placer cannot seat, so it reports `KEEP_APART_NO_ARRANGEMENT`, which is true but useless: the teacher is told no arrangement exists when what they need to hear is that they asked for a contradiction.
+Expected: 1 failed — **but not the way this plan originally predicted.** It said the placer would report `KEEP_APART_NO_ARRANGEMENT`, "true but useless". Task 5's review measured what actually happens, and it is worse:
+
+```
+students 1(together:'A', apart:'X'), 2(together:'A', apart:'X'), 3, 4 → groupCount 2
+result: ok === true, groups = [[4, 3], [1, 2]]
+```
+
+**It succeeds, and seats 1 and 2 together in violation of their own apart-letter.** `buildConflicts` records conflicts between *blocks*, and its `if (!list.includes(b))` guard means a letter held twice inside one block produces no edge at all — so no conflict exists, `apartInPlay` is false, and even the clique gate never runs. The teacher gets a seating plan that breaks the rule they typed, with no signal whatsoever.
+
+So the RED you should observe is `expected false, got true`, not a wrong error code. If you see a wrong error code instead, something changed since this was measured — stop and report rather than proceeding.
+
+This is why the error matters: the alternative to a clash error is not a confusing message, it is silence.
 
 - [ ] **Step 3: Implement**
 
