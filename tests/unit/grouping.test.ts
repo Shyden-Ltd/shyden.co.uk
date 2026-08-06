@@ -795,7 +795,9 @@ describe('together letters', () => {
         // 3 changed the too-many-groups guard to compare against PRESENT
         // students (2, since Ana is absent), so count: 3 trips TOO_MANY_GROUPS
         // before this test's own logic is ever reached -- confirmed by running
-        // the brief's version unmodified (see task-4-report.md). count: 2 keeps
+        // the brief's version unmodified (see
+        // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+        // "Why the absent-student test uses count: 2"). count: 2 keeps
         // the test's actual purpose -- Budi's unit collapses to a block of one
         // once Ana's letter is ignored -- while staying under present.length.
         mode: { kind: 'groupCount', count: 2 },
@@ -841,7 +843,9 @@ describe('together letters', () => {
   });
 
   it('says it gave up, not that no arrangement exists, once the search budget is exhausted', () => {
-    // The reviewer's own repro (task-4-report.md, Fix round 1, F-1/F-3):
+    // The reviewer's own repro (see
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "The 15-buddy-pairs gave-up input, timed across two engine shapes"):
     // 15 buddy-pairs (30 students) into 10 groups. Re-measured after the
     // F-2 sort fix rather than assumed correct -- all 15 blocks are the
     // SAME size (2), so first-fit-decreasing has no size difference to sort
@@ -951,8 +955,11 @@ describe('together letters', () => {
   // guard -- a change that broke "reuse pass 1's order, do not reshuffle"
   // could silently reintroduce give-ups and nothing would catch it.
   //
-  // Provenance (task-4-report.md, Fix round 3 has the full sweep). This
-  // roster -- five together-letters of 3 students (A-E), five of 2 (F-J),
+  // Provenance (see
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "Together letters: pass-2 rescue, proven on a real input" for the full
+  // sweep). This roster -- five together-letters of 3 students (A-E), five
+  // of 2 (F-J),
   // five unlettered singles; 15 blocks, 30 students -- into groupCount: 10
   // (ten groups of exactly 3) is the classic "a block of 2 needs exactly one
   // block of 1 to fill its group" bin-packing shape, mixed block sizes so
@@ -1063,13 +1070,18 @@ describe('apart letters', () => {
     // is true by construction regardless of whether apart-letters are read
     // at all -- everyone is in the one group either way. So this test cannot
     // go RED for the reason its name suggests (confirmed: it already passes
-    // before buildConflicts reads `apart` at all, see task-5-report.md). Its
-    // real job is narrower and still real: it guards against
+    // before buildConflicts reads `apart` at all -- see
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "The five original tests: which passed structurally, not by
+    // feature"). Its real job is narrower and still real: it guards against
     // OVER-separation, i.e. a bug that conflicted every letter-holder with
     // every other regardless of which letter they hold -- that bug WOULD
     // turn this impossible (two mutually-conflicting singletons cannot both
     // fit in one group) and this test would catch it. Proven by mutation,
-    // not asserted: see task-5-report.md for the mutant and its failure.
+    // not asserted: see
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "Mutation evidence for the structural claim" for the mutant and its
+    // failure.
     const out = buildGroups(
       base({
         students: [
@@ -1127,7 +1139,9 @@ describe('apart letters', () => {
   // into `buildConflicts` (the failure the test above cannot see: it has no
   // slack between "separates" and "does not"), the clique would include the
   // absent student 4 too -- 4 > 3 -- and this would fail with
-  // KEEP_APART_IMPOSSIBLE instead. Proven by mutation: see task-5-report.md.
+  // KEEP_APART_IMPOSSIBLE instead. Proven by mutation: see
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "The absence boundary: proven by mutation".
   it('an absent letter-holder does not inflate the clique past the group count', () => {
     const out = buildGroups(
       base({
@@ -1153,7 +1167,9 @@ describe('apart letters', () => {
   // no OTHER group it could partially share -- so Citra ends up with Dewi by
   // CAPACITY ALONE, whether or not the block-level conflict check runs at
   // all. Confirmed by mutation: it stayed green under both an ignored-apart
-  // mutant and a disabled-conflict mutant (task-5-report.md). Adding filler
+  // mutant and a disabled-conflict mutant (see
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "The deleted separates-whole-units test"). Adding filler
   // students to relieve that capacity pressure -- the obvious repair -- was
   // tried and it still passed at seed 1, so no repair was found, not for
   // lack of trying.
@@ -1226,7 +1242,10 @@ describe('apart letters — the guarantee holds broadly, not just on hand-picked
     }
     // The invariant must actually be exercised on real successes, not hold
     // vacuously because every attempt in the sweep happened to fail.
-    // Measured (task-5-report.md): 184 attempts, 179 successes.
+    // Measured (see
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "The guarantee holds broadly: two sweeps"): 184 attempts, 179
+    // successes.
     expect(attempts).toBeGreaterThan(100);
     expect(successes).toBeGreaterThan(80);
   });
@@ -1282,7 +1301,10 @@ describe('apart letters — the guarantee holds broadly, not just on hand-picked
         }
       }
     }
-    // Measured (task-5-report.md): 100 successes out of 100 attempts.
+    // Measured (see
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "The guarantee holds broadly: two sweeps"): 100 successes out of 100
+    // attempts.
     expect(successes).toBeGreaterThan(20);
   });
 });
@@ -1297,7 +1319,9 @@ describe('apart letters — the guarantee holds broadly, not just on hand-picked
 // because those were taken against a since-retired engine shape (see that
 // comment for how far off they turned out to be: disjoint same-size
 // cliques, the literal old shape, no longer exhaust the budget at all on
-// this engine, up to 484 students -- see task-5-report.md for the full
+// this engine, up to 484 students -- see
+// docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+// "Re-measured against the current engine: a negative result" for the full
 // search that established that before this shape was found).
 describe('apart letters — exhausting the search budget is never reported as "no arrangement exists" (debt b)', () => {
   it('says it gave up, not that no arrangement exists, once BOTH passes exhaust the budget', () => {
@@ -1311,8 +1335,10 @@ describe('apart letters — exhausting the search budget is never reported as "n
     // first-fit search paints itself into corners that need deep
     // backtracking to escape, 334 of 400 seeds measured exhausting the
     // budget outright with the remaining 66 succeeding (see
-    // task-5-report.md) -- this is a common outcome for this shape, not a
-    // hand-picked unlucky seed. No `random` override is passed, so this
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "The shape that does defeat it") -- this is a common outcome for this
+    // shape, not a hand-picked unlucky seed. No `random` override is
+    // passed, so this
     // runs on `base()`'s default `seeded(1)`, confirmed to land in the
     // gave-up set and to reproduce identically across repeated runs (both
     // properties are deterministic, not a matter of luck at test-run time).
@@ -1481,7 +1507,9 @@ describe('apart and together letters both in play — the failure names both rul
     // keep-apart conflict, live alongside the together-letters, and one
     // that does not touch any block's SIZE (apart never does), so the
     // same-size argument for why pass 2 cannot rescue this input still
-    // applies unchanged. Confirmed empirically (task-5-report.md), not
+    // applies unchanged. Confirmed empirically (see
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "Both rules at once: attribution, and the gave-up/proven split"), not
     // assumed from that argument alone: this exact roster reproducibly
     // returns BOTH_RULES_SEARCH_GAVE_UP, deterministically, on repeated
     // runs.
@@ -1613,7 +1641,9 @@ describe('sex mode: mix', () => {
   // `placeBlocks` (sexMode read nowhere, order = plain `shuffled`, sex
   // ignored entirely), reddens with `bothTogether` = [8, 12, 28, 29, 30] --
   // 5 of these 30 seeds put both girls in the same group. Full output
-  // recorded in task-7-report.md.
+  // recorded in
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "The alternation defect, and the first spread check".
   it('spreads the girls across different groups even when the numbers do not divide evenly', () => {
     const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
     const bothTogether = seeds.filter((seed) => {
@@ -1777,7 +1807,9 @@ describe('sex mode: mix', () => {
   // happens for a NULL first-member sex, and the guard below has already
   // ruled out every present student having a null sex by the time
   // `weaveBySex` runs -- `rest` is provably unreachable from `mix`; see
-  // task-7-report.md). It is silently classified by whichever sex its first
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "mix: sexOf and what rest actually means"). It is silently classified
+  // by whichever sex its first
   // member is. This is the same "one representative member speaks for the
   // whole block" shortcut `keepApartImpossible`'s naming already takes
   // (`blocks[b].find(...) ?? blocks[b][0]`), not a new one this task
@@ -1823,7 +1855,10 @@ describe('sex mode: mix', () => {
   });
 
   // Correction 4: deliberate ordering, not the brief's position kept by
-  // default -- see task-7-report.md for the full reasoning. In short: this
+  // default -- see
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "Why it fires before mode and rule validation" for the full reasoning.
+  // In short: this
   // guard is a caller-contract violation (stage 2 disables the mix switch
   // until every present student already has a sex, so a real teacher
   // cannot reach it), while an invalid group count and a together/apart
@@ -1879,7 +1914,9 @@ describe('sex mode: mix', () => {
   // seeds under `mix`, while `off` (no weave at all) landed it 107 times.
   // The feature made its own goal LESS likely than not shipping it. Full
   // reproduction across all five roster shapes the review named (this one
-  // plus four more) is in task-7-report.md, "Fix round 1".
+  // plus four more) is in
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "The five-shape table".
   it('reaches the split the numbers allow, at a group size the alternation bug could not hide behind', () => {
     const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
     for (const seed of seeds) {
@@ -1908,8 +1945,9 @@ describe('sex mode: mix', () => {
   // Measured against the pre-fix build: this roster landed boys-per-group
   // [0, 2, 2] -- a group with NO boy at all -- on all 200 of 200 seeds under
   // `mix`; [1, 1, 2] is what it lands on 200 of 200 seeds now. `off` reaches
-  // [1, 1, 2] only 115 of 200 times. Full table in task-7-report.md, "Fix
-  // round 1".
+  // [1, 1, 2] only 115 of 200 times. Full table in
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "The five-shape table".
   it('reaches the best achievable split when boys do not divide evenly, at a group size the bug could also hide behind', () => {
     const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
     for (const seed of seeds) {
@@ -1981,7 +2019,9 @@ describe('sex mode: mix', () => {
   // group, every seed) because the shape comes from the ratio merge's
   // counting, not from the shuffle -- only WHO fills each slot collapsed,
   // which is exactly what this test exists to catch. Mutant reverted before
-  // committing; see task-7-report.md, "Fix round 1" for this run recorded
+  // committing; see
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "Together-block shapes, and mutation evidence" for this run recorded
   // alongside the others.
   it('varies which buddy-pairs share a group across seeds, under mix', () => {
     const students: Student[] = [
@@ -2069,7 +2109,9 @@ describe('sex mode: mix', () => {
     // simply gone, no error, a teacher would have printed that roster.
     // `''`, `'m'`, `'male'` and `0` all slipped past the OLD guard
     // (`s.sex === null`) the same way, for the same reason: none of them
-    // `=== null`. Full output in task-7-report.md, "Fix round 1".
+    // `=== null`. Full output in
+    // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+    // "What slipped through before the fix".
     it.each([
       ['undefined', undefined],
       ['an empty string', ''],

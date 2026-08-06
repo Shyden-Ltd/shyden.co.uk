@@ -579,10 +579,11 @@ function assign(
  * Fix round 1, F-1: measured on the shipped alternation, 2 boys and 4 girls
  * into 2 groups landed the ideal {1M2F, 1M2F} split ZERO times in 200
  * seeds, while `off` (no weave at all) landed it 107 times — the feature
- * made its own goal less likely than not having it. See task-7-report.md,
- * "Fix round 1" for the full reproduction across five roster shapes: `mix`
- * now lands the ideal split 200/200 on every one of them, `off` never
- * better than 58%.
+ * made its own goal less likely than not having it. See
+ * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+ * "The five-shape table" for the full reproduction across five roster
+ * shapes: `mix` now lands the ideal split 200/200 on every one of them,
+ * `off` never better than 58%.
  *
  * The merge below counts BLOCKS, not students: `bi`/`gi` are how many boy-
  * and girl-blocks have been emitted so far, and a boy-block is emitted next
@@ -612,8 +613,11 @@ function assign(
  * has no further claim on the remaining ones. Block-count weighting has no
  * memory of a block's size once its single turn is taken, which is exactly
  * why it does not make this mistake. Rejected on measurement, not
- * intuition; see task-7-report.md, "Fix round 1" for the full comparison,
- * including a second together-block shape where block-count `mix` beats
+ * intuition; see
+ * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+ * "The block-size-weighted merge: tried, measured, and rejected" for the
+ * full comparison, including a second together-block shape where
+ * block-count `mix` beats
  * `off` by roughly 2x without reaching the ideal every time (30.7% vs
  * 15.3%), and a third where a pair of exactly-group-sized blocks of the
  * same sex forces the identical worst split on `mix` and `off` alike — a
@@ -677,12 +681,14 @@ export function weaveBySex(
  * matters — no comparison of block SIZE or conflict COUNT is applied, which
  * is what Fix round 1 got wrong — it is a fixed interleave over an order
  * that is still shuffled underneath, so variety survives (proven in
- * task-7-report.md) exactly as it did before this task. `sexMode` values
- * other than `mix` (`off`, and `separate` until Task 8) take this same
- * shuffled order unchanged, so this task is additive: it can only ever add
- * a branch `mix` reaches, never touch what `off` or `separate` compute
- * (confirmed byte-identical against the pre-Task-7 engine; see
- * task-7-report.md).
+ * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+ * "Singleton-block shapes") exactly as it did before this task. `sexMode`
+ * values other than `mix` (`off`, and `separate` until Task 8) take this
+ * same shuffled order unchanged, so this task is additive: it can only
+ * ever add a branch `mix` reaches, never touch what `off` or `separate`
+ * compute (confirmed byte-identical against the pre-Task-7 engine; see
+ * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+ * "mix: byte-identical under off and separate").
  *
  * If pass 1 runs to completion WITHOUT giving up, that is already a complete
  * proof that no arrangement exists at this group count: `assign` is an
@@ -802,8 +808,10 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // own `!== 'off'` (written before this task split `mix` and `separate`
   // into separate work): `separate` does not read `sex` at all yet (Task 8
   // owns it), and must stay byte-identical to today, when this guard did
-  // not exist and nothing about `sexMode` was read -- see task-7-report.md
-  // for the measurement that pins that. `!== 'off'` would refuse `separate`
+  // not exist and nothing about `sexMode` was read -- see
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "mix: byte-identical under off and separate" for the measurement that
+  // pins that. `!== 'off'` would refuse `separate`
   // rosters that succeed today, which is exactly the regression that
   // measurement exists to catch.
   //
@@ -818,8 +826,10 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // `girls`, `rest` and never reached `order` at all) -- `ok: true` with one
   // fewer student than the roster held, no error, nothing to tell a teacher
   // who would have printed that group list. Measured: `sex: undefined` on
-  // one student in a 6-student roster returned five. See task-7-report.md,
-  // "Fix round 1" for the reproduction. This check is the door, not one
+  // one student in a 6-student roster returned five. See
+  // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
+  // "What slipped through before the fix" for the reproduction. This check
+  // is the door, not one
   // hole in it: anything that is not exactly `'M'` or `'F'` is refused here,
   // by name, before it can reach the weave at all.
   if (input.sexMode === 'mix') {
