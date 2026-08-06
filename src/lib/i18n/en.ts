@@ -145,6 +145,20 @@ export const en = {
     // reasoning as above, does not guess which kind of rule to blame.
     BOTH_RULES_SEARCH_GAVE_UP:
       'There are too many together- and apart-letters here to work through at once. Try using fewer letters of either kind, or make the groups bigger.',
+    // Task 7. Carries `students: number[]`, never names -- same resolver
+    // pattern as TOGETHER_APART_CLASH and KEEP_APART_IMPOSSIBLE above:
+    // renderError maps each number through `resolveStudent` before this
+    // function ever sees it. This code should be unreachable from the page
+    // (stage 2 disables the mix switch until every student being grouped
+    // has a sex set), but the engine does not trust its caller, so the
+    // copy is written for a teacher, not for a developer. `names.length`
+    // can genuinely be 1 (the guard reports every unset student, and a
+    // roster can have exactly one), unlike the two codes above whose lists
+    // are always 2 or more by construction -- so, like TOO_MANY_GROUPS and
+    // the together/keep-apart "no arrangement" messages, this branches for
+    // singular/plural rather than assuming a list.
+    SEX_NEEDS_ALL_SET: (names: string[]) =>
+      `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} no sex set, so this mode cannot run until every student does. Set a sex for ${names.length === 1 ? 'them' : 'each of them'}, or turn it off.`,
   },
 
   themes: {

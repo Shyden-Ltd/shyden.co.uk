@@ -1570,3 +1570,296 @@ describe('together and apart at the same time', () => {
     expect(out.ok).toBe(true);
   });
 });
+
+describe('sex mode: mix', () => {
+  const M = (number: number) => student({ number, sex: 'M' });
+  const F = (number: number) => student({ number, sex: 'F' });
+
+  it('spreads boys and girls as evenly as the numbers allow', () => {
+    const out = buildGroups(
+      base({
+        students: [M(1), M(2), M(3), M(4), F(5), F(6), F(7), F(8)],
+        mode: { kind: 'groupCount', count: 4 },
+        sexMode: 'mix',
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    for (const g of out.result.groups) {
+      expect(g.filter((s) => s.sex === 'M')).toHaveLength(1);
+      expect(g.filter((s) => s.sex === 'F')).toHaveLength(1);
+    }
+  });
+
+  // Correction 5: the brief's own version of this test used five boys and
+  // ONE girl into three groups, asserting only that exactly one group
+  // contains a girl -- true with a single girl no matter what the code
+  // does, mix logic included or not, so it could never fail. Replaced with
+  // a shape where the weave has real work to do: four boys, two girls,
+  // three groups of two. Under the weave (see `weaveBySex`), pass 1's order
+  // is [boy, girl, boy, girl, boy, boy] -- the girls sit at positions 1 and
+  // 3 -- and with no conflicts live, `assign` fills groups strictly in
+  // order (group 0 takes positions 0-1, group 1 takes 2-3, group 2 takes
+  // 4-5; see the "fixed ascending order" comment on `assign`), so the two
+  // girls land in group 0 and group 1 -- never the same group -- for every
+  // seed, because the weave's ALTERNATION (not which student fills which
+  // slot) is what fixes each girl's position. Swept across seeds rather
+  // than trusting one, matching this file's own standing objection to
+  // single-seed proof elsewhere ("NOT A LUCKY SEED").
+  //
+  // Verified this fails without the weave: this exact assertion, run
+  // against the engine as it stood immediately before this task touched
+  // `placeBlocks` (sexMode read nowhere, order = plain `shuffled`, sex
+  // ignored entirely), reddens with `bothTogether` = [8, 12, 28, 29, 30] --
+  // 5 of these 30 seeds put both girls in the same group. Full output
+  // recorded in task-7-report.md.
+  it('spreads the girls across different groups even when the numbers do not divide evenly', () => {
+    const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
+    const bothTogether = seeds.filter((seed) => {
+      const out = buildGroups(
+        base({
+          students: [M(1), M(2), M(3), M(4), F(5), F(6)],
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'mix',
+          random: seeded(seed),
+        }),
+      );
+      if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
+      return out.result.groups.some(
+        (g) => g.filter((s) => s.sex === 'F').length === 2,
+      );
+    });
+    expect(bothTogether).toEqual([]);
+  });
+
+  // Correction 2: the dedicated variety regression guard the together-letters
+  // section above already has one of ("varies which students land together
+  // across seeds"). Nothing else in this describe block would notice the
+  // weave collapsing to a single arrangement, because every other assertion
+  // here checks a STRUCTURAL property (how many boys/girls per group, which
+  // groups a girl is in) that is permutation-invariant: an implementation
+  // that always paired the SAME boy with the SAME girl would satisfy every
+  // test above this one and still be exactly the Fix-round-1-style
+  // regression Task 4 spent two fix rounds recovering from. Only the
+  // PARTITION -- which student landed with which -- can see that collapse.
+  //
+  // Same roster as "spreads boys and girls as evenly as the numbers allow"
+  // above, which the weave forces into exactly one boy and one girl per
+  // group. What is NOT forced is WHICH boy pairs with WHICH girl: a perfect
+  // matching between 4 boys and 4 girls, of which there are mathematically
+  // exactly 4! = 24 (girl 1 can pair with any of 4 boys, girl 2 with any of
+  // the remaining 3, and so on). Measured on this build: 24 distinct
+  // partitions over 200 seeds -- every one of the 24 possible matchings was
+  // seen at least once. Asserting > 10 leaves more than half of that
+  // headroom, so an implementation that still varies, just not maximally,
+  // does not turn this test flaky.
+  it('varies which boy pairs with which girl across seeds, not just the 1-and-1 split', () => {
+    const seeds = Array.from({ length: 200 }, (_, i) => i + 1);
+    const partitions = new Set(
+      seeds.map((seed) => {
+        const { groups } = ok(
+          base({
+            students: [M(1), M(2), M(3), M(4), F(5), F(6), F(7), F(8)],
+            mode: { kind: 'groupCount', count: 4 },
+            sexMode: 'mix',
+            random: seeded(seed),
+          }),
+        );
+        return groups
+          .map((g) =>
+            g
+              .map((s) => s.number)
+              .sort((a, b) => a - b)
+              .join('.'),
+          )
+          .sort()
+          .join(' | ');
+      }),
+    );
+    expect(partitions.size).toBeGreaterThan(10);
+  });
+
+  // Same measurement, on the uneven roster ("spreads the girls across
+  // different groups" above): four boys, two girls, three groups of two.
+  // The weave forces the two girls into different groups (proven above) and
+  // leaves the third group as the two leftover boys -- what varies is WHICH
+  // two boys pair with the girls and WHICH specific girl lands with WHICH
+  // specific boy: an injective function from 2 girls to 4 boys, of which
+  // there are mathematically exactly 4 x 3 = 12. Measured on this build: 12
+  // distinct partitions over 200 seeds -- the mathematical maximum, every
+  // one seen. Asserting > 5 leaves more than half of that headroom.
+  it('varies pairings on the uneven roster too, not just the evenly-divided one', () => {
+    const seeds = Array.from({ length: 200 }, (_, i) => i + 1);
+    const partitions = new Set(
+      seeds.map((seed) => {
+        const { groups } = ok(
+          base({
+            students: [M(1), M(2), M(3), M(4), F(5), F(6)],
+            mode: { kind: 'groupCount', count: 3 },
+            sexMode: 'mix',
+            random: seeded(seed),
+          }),
+        );
+        return groups
+          .map((g) =>
+            g
+              .map((s) => s.number)
+              .sort((a, b) => a - b)
+              .join('.'),
+          )
+          .sort()
+          .join(' | ');
+      }),
+    );
+    expect(partitions.size).toBeGreaterThan(5);
+  });
+
+  it('refuses when a student being grouped has no sex set', () => {
+    const out = buildGroups(
+      base({
+        students: [M(1), F(2), student({ number: 3 })],
+        mode: { kind: 'groupCount', count: 1 },
+        sexMode: 'mix',
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.sexNeedsAllSet,
+      students: [3],
+    });
+  });
+
+  it('does not count an absent student with no sex', () => {
+    const out = buildGroups(
+      base({
+        students: [M(1), F(2), student({ number: 3, absent: true })],
+        mode: { kind: 'groupCount', count: 1 },
+        sexMode: 'mix',
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it('ignores sex entirely when the mode is off', () => {
+    const out = buildGroups(
+      base({
+        students: [M(1), F(2), student({ number: 3 })],
+        mode: { kind: 'groupCount', count: 1 },
+        sexMode: 'off',
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  // Correction 2: `separate` must stay byte-identical to today's behaviour,
+  // where sexMode is not read at all -- Task 8 owns turning it into a real
+  // mode. If the guard below were written as `!== 'off'` (the brief's own
+  // wording, written before this task split `mix` and `separate` into
+  // separate work), this exact input would flip from ok:true to a refusal,
+  // which is precisely the kind of change Correction 2 requires proving did
+  // NOT happen. Scoping the guard to `=== 'mix'` is what keeps this true.
+  it('leaves separate as a no-op — Task 8 owns it, and this stays byte-identical to off until then', () => {
+    const out = buildGroups(
+      base({
+        students: [M(1), F(2), student({ number: 3 })],
+        mode: { kind: 'groupCount', count: 1 },
+        sexMode: 'separate',
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  // Correction 1: `sexOf` reads only the block's FIRST present-order member
+  // -- it does not check that every member of a together-block agrees on
+  // sex. So this boy-girl buddy pair does NOT fall into `rest` (that only
+  // happens for a NULL first-member sex, and the guard below has already
+  // ruled out every present student having a null sex by the time
+  // `weaveBySex` runs -- `rest` is provably unreachable from `mix`; see
+  // task-7-report.md). It is silently classified by whichever sex its first
+  // member is. This is the same "one representative member speaks for the
+  // whole block" shortcut `keepApartImpossible`'s naming already takes
+  // (`blocks[b].find(...) ?? blocks[b][0]`), not a new one this task
+  // invents.
+  //
+  // WHAT THIS PROVES, AND WHAT IT DOES NOT. It proves a mixed-sex
+  // together-block does not trip the unset-sex guard (both members here
+  // have a sex, just different ones) and does not break the together
+  // constraint. It does NOT prove which bucket (`boys` or `girls`)
+  // `weaveBySex` put the block in -- that is an implementation detail this
+  // test deliberately does not pin, because the brief only commits to "the
+  // only honest thing to do", not to a specific classification.
+  //
+  // NO MUTATION OF THE CLASSIFICATION LOGIC MAKES THIS TEST FAIL. Tried:
+  // reading the block's LAST member instead of the first (`sexOf` keyed off
+  // `blocks[b][blocks[b].length - 1]`) -- still ok:true, together still
+  // holds, because this test does not assert which bucket either member's
+  // sex put the block in. Only a change that CRASHES (a null-unsafe read)
+  // or that BREAKS the together invariant would redden this -- both of
+  // which every other test that calls buildGroups would also catch, so
+  // this test earns its place as documentation of the edge case and a
+  // guard against a specific plausible bug (a per-MEMBER classification
+  // that double-adds a block into both `boys` and `girls`, corrupting
+  // `order` with a duplicate block index), not as a pin on `sexOf`'s
+  // specific choice of representative.
+  it('places a together-block spanning both sexes without crashing or refusing it', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, sex: 'M', together: 'A' }),
+          student({ number: 2, sex: 'F', together: 'A' }),
+          student({ number: 3, sex: 'M' }),
+          student({ number: 4, sex: 'F' }),
+        ],
+        mode: { kind: 'groupCount', count: 2 },
+        sexMode: 'mix',
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const host = groupOf(out.result.groups, 1);
+    expect(host?.map((s) => s.number)).toContain(2); // the together-letter still binds
+  });
+
+  // Correction 4: deliberate ordering, not the brief's position kept by
+  // default -- see task-7-report.md for the full reasoning. In short: this
+  // guard is a caller-contract violation (stage 2 disables the mix switch
+  // until every present student already has a sex, so a real teacher
+  // cannot reach it), while an invalid group count and a together/apart
+  // clash are things a teacher can genuinely type. It still fires FIRST, on
+  // the same footing as duplicateNumber and noStudents earlier in
+  // buildGroups: all three ask "is this roster's data usable" before
+  // anything downstream spends effort validating the requested shape or
+  // the rules' self-consistency.
+  describe('the unset-sex guard fires before checks a teacher can actually trigger', () => {
+    it('wins over an invalid group count', () => {
+      const out = buildGroups(
+        base({
+          students: [M(1), student({ number: 2 })],
+          mode: { kind: 'groupCount', count: 0 }, // also invalid, on its own
+          sexMode: 'mix',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error.code).toBe(ERROR_CODES.sexNeedsAllSet);
+    });
+
+    it('wins over a together/apart clash', () => {
+      const out = buildGroups(
+        base({
+          students: [
+            student({ number: 1, sex: 'M', together: 'A', apart: 'X' }),
+            student({ number: 2, sex: 'F', together: 'A', apart: 'X' }), // also a clash, on its own
+            student({ number: 3 }), // unset sex
+          ],
+          mode: { kind: 'groupCount', count: 2 },
+          sexMode: 'mix',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error.code).toBe(ERROR_CODES.sexNeedsAllSet);
+    });
+  });
+});

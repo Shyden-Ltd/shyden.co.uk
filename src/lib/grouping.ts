@@ -81,6 +81,16 @@ export const ERROR_CODES = {
   bothRulesNoArrangement: 'BOTH_RULES_NO_ARRANGEMENT',
   /** Proves NOTHING: the search hit its budget with both kinds of rule live. */
   bothRulesSearchGaveUp: 'BOTH_RULES_SEARCH_GAVE_UP',
+  /**
+   * A guard, not a feature. Stage 2 disables the mix switch until every
+   * student being grouped already has a sex, so this should be unreachable
+   * from the real page -- it exists because this module is the pure logic
+   * and must not trust its caller. Scoped to `mix` only: `separate` does
+   * not read `sex` yet (Task 8 owns it) and must stay byte-identical to
+   * today, when this code did not exist at all. See the call site in
+   * buildGroups for why it is checked where it is.
+   */
+  sexNeedsAllSet: 'SEX_NEEDS_ALL_SET',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -133,7 +143,15 @@ export type GroupingError =
   | { code: typeof ERROR_CODES.keepApartNoArrangement; groupsTried: number }
   | { code: typeof ERROR_CODES.keepApartSearchGaveUp }
   | { code: typeof ERROR_CODES.bothRulesNoArrangement; groupsTried: number }
-  | { code: typeof ERROR_CODES.bothRulesSearchGaveUp };
+  | { code: typeof ERROR_CODES.bothRulesSearchGaveUp }
+  | {
+      code: typeof ERROR_CODES.sexNeedsAllSet;
+      // Numbers, not names -- same reasoning as togetherApartClash and
+      // keepApartImpossible above: identity is the number (Student.number),
+      // and the engine has no roster to format a display string from.
+      // renderError's resolver parameter is what turns these into words.
+      students: number[];
+    };
 
 export type GroupingOutcome =
   | { ok: true; result: { groups: Student[][] } }
@@ -516,6 +534,50 @@ function assign(
 }
 
 /**
+ * Pass 1's block order under `mix`: shuffled, then woven boy-girl-boy-girl.
+ *
+ * `indices` must already be shuffled — this only sorts them INTO the boy,
+ * girl and rest lists, preserving whatever order they arrive in within each
+ * list. That is what supplies the variety in WHICH boy and WHICH girl lands
+ * in each woven slot; the weave's own alternation (boy, girl, boy, girl,
+ * …) is fixed by construction and supplies none by itself — the same
+ * alternation runs every call, for every seed. See the "spreads the girls
+ * across different groups" test in grouping.test.ts for the measured proof
+ * that the alternation is what does the spreading, and task-7-report.md for
+ * the variety measurement proving the shuffled input is what still varies
+ * the result seed to seed.
+ *
+ * `sexOf` reads the block's FIRST member. A together-unit spanning both
+ * sexes has no single sex; it falls into `rest` and is dealt last, which is
+ * the only honest thing to do with it under `mix`. In practice `rest` is
+ * unreachable from this call site: `weaveBySex` only ever runs after
+ * buildGroups's unset-sex guard has already confirmed every PRESENT student
+ * has a sex, and a block's first member is always a present student, so
+ * `sexOf` can never actually return null here — it is written to return
+ * `'M' | 'F' | null` anyway because that is `Student.sex`'s real type, and
+ * because a future caller of this same function (Task 8's `separate`, which
+ * does not get that guard) may not have the same guarantee. Under `separate`
+ * a spanning block is a contradiction, not a rest case — Task 8.
+ */
+function weaveBySex(
+  blocks: Block[],
+  present: Student[],
+  indices: number[],
+): number[] {
+  const sexOf = (b: number): 'M' | 'F' | null => present[blocks[b][0]].sex;
+  const boys = indices.filter((b) => sexOf(b) === 'M');
+  const girls = indices.filter((b) => sexOf(b) === 'F');
+  const rest = indices.filter((b) => sexOf(b) === null);
+
+  const woven: number[] = [];
+  for (let i = 0; i < Math.max(boys.length, girls.length); i++) {
+    if (i < boys.length) woven.push(boys[i]);
+    if (i < girls.length) woven.push(girls[i]);
+  }
+  return [...woven, ...rest];
+}
+
+/**
  * Two-pass placement (Fix round 2).
  *
  * Pass 1 tries the blocks in the shuffled order, unsorted — exactly what
@@ -524,6 +586,19 @@ function assign(
  * backtracking fill lands differently seed to seed. If it succeeds, that
  * arrangement is used and pass 2 never runs, so the common path — nearly
  * every real class — costs exactly the one search it always needed.
+ *
+ * Task 7 adds one more shape to pass 1's order, under `mix` only: the
+ * shuffled order is woven boy-girl-boy-girl before `assign` ever sees it
+ * (see `weaveBySex`). This is still "pass 1, unsorted" in the sense that
+ * matters — no comparison of block SIZE or conflict COUNT is applied, which
+ * is what Fix round 1 got wrong — it is a fixed interleave over an order
+ * that is still shuffled underneath, so variety survives (proven in
+ * task-7-report.md) exactly as it did before this task. `sexMode` values
+ * other than `mix` (`off`, and `separate` until Task 8) take this same
+ * shuffled order unchanged, so this task is additive: it can only ever add
+ * a branch `mix` reaches, never touch what `off` or `separate` compute
+ * (confirmed byte-identical against the pre-Task-7 engine; see
+ * task-7-report.md).
  *
  * If pass 1 runs to completion WITHOUT giving up, that is already a complete
  * proof that no arrangement exists at this group count: `assign` is an
@@ -544,6 +619,12 @@ function assign(
  * own shuffled order, rather than shuffling again, so both passes draw from
  * the same sequence of `random` calls — there is no second, independent
  * source of randomness here, only a second look at the first one's output.
+ * Under `mix` that copy is of the WOVEN order, and the size sort discards
+ * the weave along with everything else about pass 1's order — deliberately:
+ * pass 2 exists purely as the robustness fallback once pass 1's order,
+ * whatever shape it had, has already failed to find a fit within budget, and
+ * mixing is a preference that has already lost to finding ANY valid
+ * arrangement by the time pass 2 runs at all.
  *
  * SEARCH_NODE_CAP is a PER-PASS budget, not a shared one: each call to
  * `assign` opens its own `nodes` counter at zero (see `assign`'s closure),
@@ -558,11 +639,17 @@ function placeBlocks(
   sizes: number[],
   adj: Set<number>[], // conflicts BETWEEN BLOCKS
   random: () => number,
+  present: Student[],
+  sexMode: SexMode,
 ): { groups: number[][] | null; gaveUp: boolean } {
-  const order = shuffled(
+  const shuffledOrder = shuffled(
     blocks.map((_, i) => i),
     random,
   );
+  const order =
+    sexMode === 'mix'
+      ? weaveBySex(blocks, present, shuffledOrder)
+      : shuffledOrder;
 
   const pass1 = assign(order, blocks, sizes, adj);
   if (pass1.groups !== null || !pass1.gaveUp) return pass1;
@@ -603,6 +690,44 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // is going to untick it tomorrow.
   const present = students.filter((s) => !s.absent);
   if (present.length === 0) return fail({ code: ERROR_CODES.noStudents });
+
+  // A precondition on the ROSTER'S data, not on the requested shape or the
+  // rules the teacher wrote -- the same tier as duplicateNumber and
+  // noStudents above, both of which also ask "is this data usable" before
+  // anything downstream (mode validation, block-building, the search) is
+  // asked to make sense of it. So it is checked here, before mode
+  // validation and before togetherApartClash below, rather than closer to
+  // where `sex` is actually consumed (`placeBlocks`'s weave).
+  //
+  // That ordering is deliberate, not just "as early as it can be". This
+  // guard is a caller-contract violation -- stage 2 disables the mix switch
+  // until every student being grouped already has a sex, so a real teacher
+  // cannot reach it -- while an invalid group count, too many groups, and a
+  // together/apart clash are things a teacher genuinely types. Even so, it
+  // fires FIRST: duplicateNumber and noStudents do not spend effort
+  // validating a request's SHAPE when the roster's DATA is not even usable
+  // yet, and this guard is the same kind of check -- "can I trust what I
+  // was handed" -- just conditioned on `sexMode` the way invalidGroupSize is
+  // conditioned on `mode.kind`. A non-page caller (a test, a future
+  // integration) that violates the contract gets told about ITS mistake
+  // first, on the same footing its other data mistakes already are, rather
+  // than being sent on a detour through mode/rule errors that are moot the
+  // moment this module cannot honour the setting it was asked to run under.
+  //
+  // Scoped to `sexMode === 'mix'`, deliberately narrower than the brief's
+  // own `!== 'off'` (written before this task split `mix` and `separate`
+  // into separate work): `separate` does not read `sex` at all yet (Task 8
+  // owns it), and must stay byte-identical to today, when this guard did
+  // not exist and nothing about `sexMode` was read -- see task-7-report.md
+  // for the measurement that pins that. `!== 'off'` would refuse `separate`
+  // rosters that succeed today, which is exactly the regression that
+  // measurement exists to catch.
+  if (input.sexMode === 'mix') {
+    const unset = present.filter((s) => s.sex === null).map((s) => s.number);
+    if (unset.length > 0) {
+      return fail({ code: ERROR_CODES.sexNeedsAllSet, students: unset });
+    }
+  }
 
   const { mode, leftovers, random } = input;
   if (
@@ -721,12 +846,20 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   }
 
   // Two-pass placement -- see `placeBlocks`. Pass 1 is the shuffled order,
-  // unsorted, which is what supplies arrangement variety; pass 2
-  // (first-fit-decreasing) runs only if pass 1 gives up (Fix round 2, closing
-  // the arrangement-variety regression Fix round 1's sort caused). `adj` is
-  // real now: a block-vs-block conflict can and does turn away a placement
-  // that capacity alone would have allowed, in both passes.
-  const { groups: placed, gaveUp } = placeBlocks(blocks, sizes, adj, random);
+  // unsorted apart from Task 7's boy-girl weave under `mix`, which is what
+  // supplies arrangement variety; pass 2 (first-fit-decreasing) runs only if
+  // pass 1 gives up (Fix round 2, closing the arrangement-variety regression
+  // Fix round 1's sort caused). `adj` is real now: a block-vs-block conflict
+  // can and does turn away a placement that capacity alone would have
+  // allowed, in both passes.
+  const { groups: placed, gaveUp } = placeBlocks(
+    blocks,
+    sizes,
+    adj,
+    random,
+    present,
+    input.sexMode,
+  );
   if (placed === null) {
     // Two different failures, and the difference is everything. The search
     // either ran to completion — in which case no arrangement exists at this

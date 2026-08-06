@@ -118,6 +118,11 @@ export function renderError(
       return e.BOTH_RULES_NO_ARRANGEMENT(error.groupsTried);
     case ERROR_CODES.bothRulesSearchGaveUp:
       return e.BOTH_RULES_SEARCH_GAVE_UP;
+    // Carries `students: number[]`, exactly like togetherApartClash and
+    // keepApartImpossible above -- same reason (identity is the number) and
+    // the same fix (resolve each one through `resolveStudent` first).
+    case ERROR_CODES.sexNeedsAllSet:
+      return e.SEX_NEEDS_ALL_SET(error.students.map(resolveStudent));
   }
 }
 

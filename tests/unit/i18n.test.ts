@@ -160,6 +160,14 @@ describe('every engine error can be rendered in every language', () => {
       groupsTried: 2,
     },
     BOTH_RULES_SEARCH_GAVE_UP: { code: ERROR_CODES.bothRulesSearchGaveUp },
+    // Task 7. Carries `students: number[]`, never names -- same resolver
+    // pattern as TOGETHER_APART_CLASH and KEEP_APART_IMPOSSIBLE above. A
+    // single student, deliberately: the guard can legitimately fire for
+    // just one (see grouping.test.ts's "refuses when a student being
+    // grouped has no sex set"), so English copy has a singular/plural
+    // branch to get right, unlike the two codes above whose student lists
+    // are always >= 2 by construction.
+    SEX_NEEDS_ALL_SET: { code: ERROR_CODES.sexNeedsAllSet, students: [3] },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -343,6 +351,96 @@ describe('every engine error can be rendered in every language', () => {
         'Ana, Budi ditandai untuk disatukan sekaligus dipisahkan satu sama lain. Hapus huruf yang menyatukan mereka, atau huruf yang memisahkan mereka.',
       );
       expect(msg).not.toContain('Siswa');
+    });
+  });
+
+  describe('sex-needs-all-set resolves student numbers to names', () => {
+    // Task 7. Carries `students: number[]`, exactly like
+    // TOGETHER_APART_CLASH and KEEP_APART_IMPOSSIBLE above, and must go
+    // through the same resolver -- a teacher reading "3 does not have..."
+    // instead of "Citra does not have..." is the same regression the
+    // resolver parameter exists to prevent for the other two codes.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.sexNeedsAllSet, students: [3] },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.errors.SEX_NEEDS_ALL_SET([strings.studentNumber(3)]),
+        );
+        expect(msg).toContain(strings.studentNumber(3));
+        // A bare digit with no word around it is exactly the bug this
+        // default exists to prevent.
+        expect(msg).not.toMatch(/^\d+ /);
+      },
+    );
+
+    it('English default reads "Student 3 …", not a bare digit', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexNeedsAllSet, students: [3] },
+        en,
+      );
+      expect(msg).toContain('Student 3');
+    });
+
+    it('Indonesian default reads "Siswa 3 …", not a bare digit', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexNeedsAllSet, students: [3] },
+        id,
+      );
+      expect(msg).toContain('Siswa 3');
+    });
+
+    it('English: a supplied resolver is used in place of the default', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexNeedsAllSet, students: [3] },
+        en,
+        (n) => (n === 3 ? 'Citra' : `#${n}`),
+      );
+      expect(msg).toBe(
+        'Citra has no sex set, so this mode cannot run until every student does. Set a sex for them, or turn it off.',
+      );
+      expect(msg).not.toContain('Student');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexNeedsAllSet, students: [3] },
+        id,
+        (n) => (n === 3 ? 'Citra' : `#${n}`),
+      );
+      expect(msg).toBe(
+        'Citra belum memiliki jenis kelamin, jadi mode ini tidak bisa dijalankan sampai jenis kelamin semua siswa terisi. Isi jenis kelamin untuk mereka, atau matikan mode ini.',
+      );
+      expect(msg).not.toContain('Siswa');
+    });
+
+    it('English names everyone when more than one student has no sex set, with plural grammar', () => {
+      // English inflects (see resultsSummary's own singular/plural split),
+      // so a list of TWO must read differently from the singular case
+      // above -- "has" -> "have", "them" -> "each of them" -- not just a
+      // longer name list glued onto the same singular verb.
+      const msg = renderError(
+        { code: ERROR_CODES.sexNeedsAllSet, students: [1, 2] },
+        en,
+        (n) => (n === 1 ? 'Ana' : 'Budi'),
+      );
+      expect(msg).toBe(
+        'Ana, Budi have no sex set, so this mode cannot run until every student does. Set a sex for each of them, or turn it off.',
+      );
+    });
+
+    it('Indonesian reads the same with two students, since Indonesian does not inflect for plural', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexNeedsAllSet, students: [1, 2] },
+        id,
+        (n) => (n === 1 ? 'Ana' : 'Budi'),
+      );
+      expect(msg).toBe(
+        'Ana, Budi belum memiliki jenis kelamin, jadi mode ini tidak bisa dijalankan sampai jenis kelamin semua siswa terisi. Isi jenis kelamin untuk mereka, atau matikan mode ini.',
+      );
     });
   });
 

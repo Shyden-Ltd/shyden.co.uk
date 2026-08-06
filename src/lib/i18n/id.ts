@@ -128,6 +128,14 @@ export const id: Strings = {
     // versi Inggrisnya.
     BOTH_RULES_SEARCH_GAVE_UP:
       'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus. Coba gunakan lebih sedikit huruf dari kedua jenis itu, atau perbesar kelompoknya.',
+    // Task 7. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+    // lengkap mengapa ini melewati resolver yang sama dengan
+    // TOGETHER_APART_CLASH dan KEEP_APART_IMPOSSIBLE. Tidak ada percabangan
+    // tunggal/jamak di sini -- sama seperti KEEP_APART_NO_ARRANGEMENT di
+    // atas, Bahasa Indonesia tidak mengubah bentuk kata untuk jamak, jadi
+    // satu kalimat ini benar untuk satu siswa maupun lebih.
+    SEX_NEEDS_ALL_SET: (names: string[]) =>
+      `${names.join(', ')} belum memiliki jenis kelamin, jadi mode ini tidak bisa dijalankan sampai jenis kelamin semua siswa terisi. Isi jenis kelamin untuk mereka, atau matikan mode ini.`,
   },
 
   themes: {
