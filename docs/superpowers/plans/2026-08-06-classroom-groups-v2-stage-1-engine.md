@@ -735,6 +735,34 @@ contradiction and must not behave differently."
 
 ## Task 5: Apart letters — mutual separation between blocks
 
+> **⚠️ THIS TASK CARRIES A DEBT FROM TASK 2. Read before writing any new test.**
+>
+> Task 2 removed `keepApart`, which left `pairs` permanently empty. That gated off the entire
+> conflict machinery, so from Task 2 until you refill `pairs` the following are **unreachable
+> through the public API and therefore covered by nothing**:
+> `largestMutualConflict`, the clique gate, `assign`'s conflict check,
+> `KEEP_APART_NO_ARRANGEMENT`, and `KEEP_APART_SEARCH_GAVE_UP`.
+> The comment at the `pairs` construction site in `src/lib/grouping.ts` says the same thing.
+>
+> **You must RE-PROVE these, not build letter tests on top of the gap.** Two guarantees
+> specifically, both of which the deleted tests existed to protect:
+>
+> 1. **Two students who must be apart never share a group.** This is the headline promise of the
+>    whole feature and currently has zero cover.
+> 2. **Exhausting `SEARCH_NODE_CAP` is never reported as "no arrangement exists".** The spec
+>    mandates this distinction. A refusal must not assert something untrue — the old code once
+>    shipped a bug reporting five students as mutually inseparable when it had merely stopped
+>    looking, and the regression tests for it are gone.
+>
+> For (2) you need a pathological input. The retired `moonMoser` helper's measurements are
+> preserved in the comment above `SEARCH_NODE_CAP`: uncapped, 24 students took 27 ms, 36 took
+> 471 ms, 42 took 7.3 s, 48 took 121.7 s. **Re-measure — do not cite the comment as proof.** The
+> engine has changed shape since those numbers were taken, and a test that no longer reaches the
+> cap passes for the wrong reason.
+>
+> When you migrate `keepApartImpossible.students` from `string[]` to `number[]`, that is the last
+> place in the engine where identity was a name. Check nothing else still matches on one.
+
 **Files:**
 - Modify: `src/lib/grouping.ts` — `buildConflicts`, the clique certificate
 - Modify: `tests/unit/grouping.test.ts`

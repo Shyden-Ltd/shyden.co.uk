@@ -44,6 +44,30 @@
 
 Nothing else can be tested until the page runs again.
 
+> **⚠️ THE BRANCH DOES NOT BUILD WHEN YOU START. This is expected — verify it, then fix it.**
+>
+> Stage 1 changed the engine's contract; this task is where the page catches up. Until it does:
+>
+> ```
+> [ERROR] [vite] ✗ Build failed
+> [MISSING_EXPORT] "parseKeepApart" is not exported by "src/lib/grouping.ts"
+>     src/scripts/classroom-groups.ts:11
+> ```
+>
+> **First step, before writing anything: run `npm run build` and confirm it fails with exactly
+> that error.** If it fails differently, something happened that stage 1 did not intend, and you
+> should stop and report rather than fix past it.
+>
+> Because `playwright.config.ts` builds `dist/` before running, **the entire e2e suite has been
+> unavailable throughout stage 1** — eleven tasks landed with unit cover only. The first green
+> `npm run build` is therefore also the first moment anything can be checked end-to-end since
+> then. Expect e2e failures that have nothing to do with your own work, and triage them as
+> stage-1 debt surfacing rather than as breakage you caused.
+>
+> **Do not delete or weaken an e2e assertion to get the suite green.** The engine is what changed;
+> the promises the page makes to a teacher did not. If an assertion can no longer be satisfied,
+> that is a finding to report, not a line to remove.
+
 **Files:**
 - Modify: `src/scripts/classroom-groups.ts`, `ClassroomGroupsPage.astro`, `en.ts`, `id.ts`
 - Modify: `tests/e2e/classroom-groups.spec.ts`, `classroom-groups-controls.spec.ts`
