@@ -1,7 +1,7 @@
 # Classroom Group Creator v2 — design
 
 **Date:** 2026-08-06
-**Status:** design agreed in brainstorming; three questions still open (see the end)
+**Status:** design agreed in brainstorming; no questions open
 **Supersedes nothing** — extends the tool shipped in PR #8 (`7b9336b`), live at
 `shyden.co.uk/classroom-groups` and `/id/classroom-groups`.
 
@@ -32,24 +32,49 @@ by default and opening is a deliberate act.
 
 ## 3. Layout
 
-- **Arrangement B.** On wide screens the four collapsed sections sit two-by-two, so the button rises
-  and results start above the fold. On a phone they stack. Identical content either way.
+- **Arrangement B.** On wide screens the three collapsed sections sit side by side, so the button
+  rises and results start above the fold. On a phone they stack. Identical content either way.
 - **Top row:** Class (optional) · Students · Split by (per group / number of groups).
-- **Sections:** How does this work? · Customise students · Together & apart · Import / export ·
+- **Sections, inside the tool:** Student details · Together & apart · Import / export ·
   Sound & animation.
-- **How-to is EXPANDED by default.** If the teacher collapses it, remember that in `localStorage`
-  and honour it next visit. This is a UI preference, not class data — the roster is never stored.
-- The long intro paragraph is cut to one line; the three how-to steps move into the collapsed
-  section. Together these are most of today's scrolling.
-- **Every collapsed header reports its own state**, so collapsing never means forgetting:
-  - `▸ Customise students · nothing customised` → `· 24 named` → `· 24 named · 2 absent`
-  - `▸ Together & apart · none` → `· 2 together · 1 apart`
-  - `▸ Import / export · nothing to save yet` → `· unsaved changes — export to keep them`
-  That last one is where the operator's "advise them to export so they don't lose their changes"
-  lives: permanently on the header, not a toast that vanishes before it is read.
-- **Customise students expands in place** inside the form — not an overlay, drawer or separate page.
-  Chosen because expanding is allowed to scroll, so the simplest option is also sufficient, and it
-  behaves identically on phone and desktop with no focus trap or second layout to test.
+
+### How to use — at the very top, outside the tool
+
+**How to use is not one of the tool's sections.** It sits at the very top of the page, above the
+form, because it is the page's summary and description rather than part of the feature. It is
+**one section holding two parts**, and both collapse together under a single header:
+
+1. **What this is** — what the tool does, and why: fair random groups, no favourites, no arguments,
+   and nothing about the class leaves the browser.
+2. **How to use it** — the three steps.
+
+- **Expanded by default.** If the teacher collapses it, remember that in `localStorage` and honour it
+  next visit. This is a UI preference, not class data — the roster is never stored.
+- **Collapsed, the header `▸ How to use` remains**, so it can always be opened again. Collapsing it
+  is the single biggest saving on the page: today's long intro paragraph and three how-to steps are
+  most of the scrolling.
+
+### Section headers report their own state
+
+**Every collapsed header reports its own state**, so collapsing never means forgetting:
+
+- `▸ Student details · none added` → `· 24 named` → `· 24 named · 2 away`
+- `▸ Together & apart · none` → `· 2 together · 1 apart`
+- `▸ Import / export · nothing to save yet` → `· unsaved changes — export to keep them`
+
+That last one is where the operator's "advise them to export so they don't lose their changes"
+lives: permanently on the header, not a toast that vanishes before it is read.
+
+**Student details expands in place** inside the form — not an overlay, drawer or separate page.
+Chosen because expanding is allowed to scroll, so the simplest option is also sufficient, and it
+behaves identically on phone and desktop with no focus trap or second layout to test.
+
+### Naming
+
+The section is **Student details**, not "Customise students". It holds facts about students — name,
+sex, whether they are here — which is a register, not a customisation. Proposed Indonesian:
+**`Detail siswa`**, and **`Cara menggunakan`** for How to use. Both go through the normal locale
+review; they are recorded here so the rename is not quietly dropped in one language.
 
 ---
 
@@ -77,7 +102,7 @@ the engine cannot tell them apart. With numbers as IDs every constraint is unamb
 - The tool assigns `1…N`. **The teacher may override them.**
 - Whole numbers, **unique**, **gaps allowed** — a real register number survives a round trip.
 - A gap raises a **non-blocking warning**: the class list appears to be incomplete, check it by
-  opening Customise students.
+  opening Student details.
 
 ### Sex
 
@@ -87,7 +112,8 @@ the engine cannot tell them apart. With numbers as IDs every constraint is unamb
 ### Absence
 
 - An absent student's **row stays, greyed out**, so tomorrow they are one tick away.
-- The **class size drops** and groups are built from those present.
+- **The number being grouped drops; the class size does not.** Groups are built from those present,
+  while the Students box stays at 24 — see *The Students box* below.
 - Absent students **do not appear in the results at all**.
 
 ### Together / apart
@@ -102,12 +128,36 @@ the engine cannot tell them apart. With numbers as IDs every constraint is unamb
 - **A pair marked both together and apart is refused in the table, as it is typed**, naming the
   clash: *"Ana and Budi are kept together, so they cannot also be kept apart."*
 
-### The Students box and the roster
+### The Students box — an input, then a read-out
 
-- With no roster, the box is a plain count of anonymous students.
-- **Box higher than the roster:** the extra are added as anonymous students (24 named + 6 anonymous).
-- **Box lower than the roster:** show a warning describing the mismatch **and what will happen**
-  before continuing. Do not silently correct, and do not silently drop anyone.
+Two things could claim to know how big the class is: the box and the list. Every mismatch problem
+comes from letting them disagree, so **they are never both in charge**.
+
+- **With no list, the box is the input.** Type a number, get that many anonymous students, up to
+  `MAX_STUDENTS`. This path is unchanged and a teacher can use the whole tool without ever opening
+  Student details.
+- **The moment a list exists, the box becomes a read-out.** It reports the list and cannot be typed
+  into. Underneath it, in every state, **the reason is shown**:
+
+  > **Students** · 24
+  > *Set by your list. Add or remove students in Student details to change it.*
+
+  Never a bare greyed-out box. A disabled control that does not say why is a defect.
+- **Changing the class size is then a list operation**, in Student details:
+  - `+ Add student` — one row.
+  - `+ Add several…` — asks how many and adds that many unnamed rows, for the teacher who has 24
+    named and six more to come.
+  - Removing a row removes the student.
+- **Emptying the list** returns the box to being an input.
+
+**What this buys.** The count and the list cannot disagree, so there is no mismatch to warn about,
+none to block, and no rule about which students get dropped when a number shrinks — because a number
+can no longer shrink out from under the list. The earlier draft warned about the mismatch and a later
+revision blocked it; removing the contradiction is better than either.
+
+**Absence does not touch the box.** Ticking a student away leaves it at 24 — it is the size of the
+class, not of tonight's group work. The line beneath does the arithmetic (`24 students · 22 here ·
+2 away`) and groups are built from those present.
 
 ### Two size limits, not one
 
@@ -118,20 +168,22 @@ phone and slow to read out. The two costs are different, so they get different l
 | Limit | Value | Applies to |
 |---|---|---|
 | `MAX_STUDENTS` | **500** | The Students box — a plain count of anonymous students |
-| `MAX_ROSTER` | **100** | The customise table — students with a row of their own |
+| `MAX_ROSTER` | **100** | Student details — students with a row of their own |
 
 100 is roughly twice the largest real class, so no teacher meets it by accident.
 
 Every way of exceeding `MAX_ROSTER` has a stated outcome. None of them may fail silently:
 
-- **Opening Customise students with the count above 100** — the section refuses to open and says why:
-  *"Customising works up to 100 students. Lower the number to customise this class."* The count itself
-  is left alone; the teacher can still shuffle.
-- **Adding a row at 100** — the add control is disabled and states the limit.
+- **Opening Student details with the count above 100** — the section refuses to open and says why:
+  *"Student details holds up to 100 students. Lower the number to list this class individually."* The
+  count itself is left alone; the teacher can still shuffle all 500 anonymously.
+- **Adding a row at 100** — both `+ Add student` and `+ Add several…` are disabled and state the
+  limit; `+ Add several…` also refuses a number that would cross it, saying how many rows are free.
 - **Importing a file with more than 100 rows** — rejected whole, like any other invalid file, with the
   row count and the limit in the message.
-- **Raising the box above 100 with a roster present** — allowed, and already covered: the roster stays
-  as it is and the extra become anonymous students, up to 500.
+
+There is no fifth case: with a list present the box is a read-out, so it cannot be typed past the
+limit at all.
 
 ---
 
@@ -168,7 +220,7 @@ Two optional switches, both **off by default**:
 Rules:
 
 - **Both are DISABLED unless every student on the list has `M` or `F`.** When disabled, say why:
-  *"18 of your 24 students have no sex set. Open Customise students and set M or F for everyone to
+  *"18 of your 24 students have no sex set. Open Student details and set M or F for everyone to
   use these."* This removes the question of where a neutral student goes in a single-sex group.
 - **Separate mode warns when the counts don't divide**, and **names the students who end up in a
   group of the other sex**.
@@ -191,6 +243,34 @@ outstanding here, but the engine work is real).
 - Class name is **optional**. Blank is fine and nothing is blocked.
 - It **heads the results**: `7B — your groups`. Groups themselves are numbered.
 - It is **not** repeated on every group card.
+
+### Full screen — the projector view
+
+A **Full screen** button on the results, appearing only once groups exist. The groups go on the board
+and the class reads them off it, which is what this tool is actually for.
+
+- **Fullscreen API where available, full-viewport overlay where not.** iOS Safari does not grant
+  `requestFullscreen` on arbitrary elements, so the fallback is not optional and is not a degraded
+  experience — it is a real full-viewport layer with the same content. Both paths are tested; a
+  refused promise must land in the fallback, never in nothing happening.
+- **Only the groups.** Class name at the top, numbered groups, avatars and names. No form, no site
+  header, no footer.
+- **Type scales to fit, down to a floor.** Everything on one board wherever it fits. Student names
+  never render below **24px** and group headings never below **32px**; past that the board scrolls
+  instead of shrinking further. Those figures are a starting point to be **checked on a real
+  projector**, in keeping with this repo's device-verification rule — not settled by looking at a
+  laptop.
+- **Controls fade, but never trap.** A bar carrying *Shuffle again*, *Print* and *Close* fades after
+  about three seconds and returns on pointer-move, tap or any key.
+  - **It must never fade while any control inside it has focus**, or a keyboard user loses the
+    controls they are using. This is a defect the fade would otherwise introduce and must be tested.
+  - **Escape always exits**, faded or not.
+- **Pins still work**, so the teacher can keep the group that worked and re-roll the rest in front of
+  the class.
+- **The reveal animation plays**, honouring the existing Sound & animation switch and
+  `prefers-reduced-motion`. It is wasted on a laptop the teacher is looking at alone; on the board it
+  is the moment the children are waiting for.
+- **Exiting returns to the same results, unchanged**, at the same scroll position.
 
 ---
 
@@ -241,7 +321,7 @@ import it."* The refusal is written in the language of the page the teacher is o
 
 ### Import over an existing roster
 
-**Always warn first**, naming what will be lost — including how much of it was customised. Never
+**Always warn first**, naming what will be lost — including how much of it was filled in by hand. Never
 silent, even when the counts match, because the same count can be a completely different class.
 
 ### Exports
@@ -346,7 +426,7 @@ at all — the *away* tick box governs the class list only.
 
 ## 11. Persistence and privacy
 
-- **The roster is never persisted.** Saving is what export is for. When a teacher has customised
+- **The roster is never persisted.** Saving is what export is for. When a teacher has changed
   anything, the Import/export header says `unsaved changes — export to keep them`.
 - **UI preferences may be persisted** — the how-to collapsed state, and the four print-panel choices.
   No personal data: a tick box is not a child.
@@ -380,8 +460,10 @@ The operator was explicit: **write the Playwright tests first, watch them fail, 
 with real code.** Every clarification in this document is a test. Non-exhaustively:
 
 **Layout** — collapsed default fits without scrolling at 320/375/768/1280; expanding is allowed to
-scroll; how-to open by default and its collapse remembered across a reload; each section header
-reports its state in every state.
+scroll; How to use sits above the form and outside the tool's sections; both its parts collapse
+together under one header; it is open by default and its collapse is remembered across a reload;
+the `▸ How to use` header is still present and operable when collapsed; each section header reports
+its state in every state; the section is named Student details in both locales.
 
 **Roster** — number assigned 1…N; override accepted; duplicates refused; gaps allowed but warned;
 absent row greyed, excluded from groups, absent from results; unnamed row renders "Student N";
@@ -394,10 +476,21 @@ refused as typed; a together-unit larger than the group size refused, naming the
 separate warns and names who lands in the other sex's group; contradiction with together blocked
 with a reason.
 
-**Count vs roster** — higher box tops up with anonymous students; lower box warns and states the
-outcome before continuing.
+**The Students box** — typeable with no list; becomes a read-out the moment a list exists, and
+**the reason is rendered, not merely implied** — a disabled box with no explanation is a failing
+test; emptying the list makes it typeable again; `+ Add student` and `+ Add several…` change it;
+removing a row lowers it; ticking a student away does **not** change it while the here/away line and
+the groups both follow; no code path can produce a box that disagrees with the list.
 
 **Reshuffle** — pinned groups survive; unpinned redealt; constraints still honoured.
+
+**Full screen** — button appears only once groups exist; the API path and the overlay fallback are
+both exercised, and a refused `requestFullscreen` lands in the fallback rather than doing nothing;
+no form or site chrome on the board; type shrinks to fit and stops at the floor, below which the
+board scrolls; the control bar fades and returns on pointer, tap and key; **it does not fade while a
+control inside it holds focus**; Escape exits whether the bar is visible or not; pins still work;
+the reveal plays and is suppressed by both the Sound & animation switch and `prefers-reduced-motion`;
+exiting restores the same groups and scroll position.
 
 **CSV** — minimum file (number column only); partial rows; class-name round trip; every value in
 both languages; wrong-language file recognised and refused with a link; bad file rejected whole with
@@ -413,7 +506,7 @@ students dropped *and* the away count still stated; numbers still jump when they
 avatars present and absent; choices survive a reload; greyscale legible; no form or chrome on the
 sheet.
 
-**Size limits** — the box refuses above 500; Customise students refuses to open above 100 and says
+**Size limits** — the box refuses above 500; Student details refuses to open above 100 and says
 why while leaving the count alone; the add control disables at 100 stating the limit; an import of
 101 rows is rejected whole naming the count and the limit; raising the box above 100 with a roster
 present tops up anonymously instead of failing.
@@ -431,10 +524,10 @@ half-migrated state:
 1. **Data model + engine** — Student records, number identity, together/apart letters, absence,
    sex-based grouping, pinned groups.
 2. **Compact layout** — arrangement B, collapsed sections with state headers, class name, how-to.
-3. **Customise students + avatars** — the table, the new avatars, removal of themes and the two
+3. **Student details + avatars** — the table, the new avatars, removal of themes and the two
    replaced controls.
 4. **CSV import/export + templates + validation + both-language handover.**
-5. **Print panel and print views.**
+5. **Print panel and print views, and the full-screen projector view.**
 
 The two size limits (section 4) belong to stage 1 for `MAX_STUDENTS` and stage 3 for `MAX_ROSTER`,
 since the roster limit has nothing to constrain until the table exists.
@@ -450,7 +543,7 @@ into the sections above:
 |---|---|---|
 | What the printed class list shows | The teacher decides, via two independent tick boxes | §10 |
 | Whether avatars print | The teacher decides, at print time, remembered | §10 |
-| The class-size cap | Two limits: 500 to shuffle, 100 to customise | §4 |
+| The class-size cap | Two limits: 500 to shuffle, 100 to list individually | §4 |
 
 The first two share an answer worth stating plainly: **where we could not name a single right sheet,
 we handed the choice to the teacher rather than guessing on their behalf.**
