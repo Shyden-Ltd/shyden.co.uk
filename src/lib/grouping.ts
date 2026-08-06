@@ -133,6 +133,13 @@ export type GroupingOutcome =
  * exhausts the cap (Fix round 1, F-3), but that is one data point, not a
  * growth curve -- nobody has yet measured where together-block search time
  * blows up the way the keep-apart numbers above do.
+ *
+ * Fix round 2: block placement can now call `assign` up to twice, once per
+ * pass (see `placeBlocks`). This cap is spent PER CALL, not once for the
+ * whole placement -- each pass opens its own node counter at zero -- so the
+ * true worst case for block placement is 2x this many nodes, not this many,
+ * on the rare input that defeats both the shuffled order and
+ * first-fit-decreasing.
  */
 const SEARCH_NODE_CAP = 200_000;
 
@@ -378,15 +385,24 @@ function largestMutualConflict(adj: Set<number>[]): number[] {
 /**
  * Place blocks into fixed-capacity groups without seating two conflicting
  * blocks together, and without ever splitting a block across groups.
- * Most-constrained-first ordering keeps the search shallow; the shuffle
- * beforehand is what makes the arrangement vary between runs.
+ *
+ * `assign` places in whatever `order` it is handed — it does not choose that
+ * order itself. That choice, and the trade-off it carries, lives one level
+ * up in `placeBlocks`: a shuffled order costs more search depth but supplies
+ * the arrangement variety that makes "shuffle again" mean something; sorting
+ * largest-block-first (first-fit-decreasing) keeps the search shallow at the
+ * cost of that variety. Fix round 1 (F-2) put that sort directly in the only
+ * order `assign` ever saw, which cleared its "gave up" cases but collapsed
+ * variety on together-rosters to a single arrangement. Fix round 2 moved the
+ * sort out of `assign` entirely, into a second, later pass in `placeBlocks`
+ * — `assign` itself is unchanged from before either fix round.
  *
  * A student with no together-letter is a block of one (see `buildBlocks`),
  * so this is the only placement function — there is no separate
  * single-student path that could drift out of sync with this one.
  */
 function assign(
-  order: number[], // block indices, most-constrained first
+  order: number[], // block indices, in the order the caller wants them tried
   blocks: Block[],
   sizes: number[],
   adj: Set<number>[], // conflicts BETWEEN BLOCKS
@@ -421,6 +437,64 @@ function assign(
 
   const placed = place(0);
   return { groups: placed ? groups : null, gaveUp };
+}
+
+/**
+ * Two-pass placement (Fix round 2).
+ *
+ * Pass 1 tries the blocks in the shuffled order, unsorted — exactly what
+ * this placer did before Fix round 1. This is what supplies arrangement
+ * variety: the search meets blocks in an unpredictable order, and the
+ * backtracking fill lands differently seed to seed. If it succeeds, that
+ * arrangement is used and pass 2 never runs, so the common path — nearly
+ * every real class — costs exactly the one search it always needed.
+ *
+ * If pass 1 runs to completion WITHOUT giving up, that is already a complete
+ * proof that no arrangement exists at this group count: `assign` is an
+ * exhaustive backtracking search over every valid group choice for every
+ * block, so the order it meets blocks in changes how many nodes it visits
+ * before deciding, never what it is capable of deciding. A second pass in a
+ * different order cannot find an arrangement the first pass already proved
+ * does not exist, so none is run — see the call site in `buildGroups` for
+ * where that proof is reported.
+ *
+ * Only when pass 1 hits SEARCH_NODE_CAP — proving nothing, "I stopped
+ * looking" — does pass 2 run, with blocks sorted largest-first
+ * (first-fit-decreasing, the standard bin-packing heuristic). That sort is
+ * what cleared Fix round 1's "gave up" cases (13 of 1540 measured
+ * together-rosters, down to 0): it trades away the variety pass 1 exists to
+ * protect, but only once pass 1 has already shown the varied order cannot
+ * decide this particular case within budget. Pass 2 sorts a COPY of pass 1's
+ * own shuffled order, rather than shuffling again, so both passes draw from
+ * the same sequence of `random` calls — there is no second, independent
+ * source of randomness here, only a second look at the first one's output.
+ *
+ * SEARCH_NODE_CAP is a PER-PASS budget, not a shared one: each call to
+ * `assign` opens its own `nodes` counter at zero (see `assign`'s closure),
+ * so the worst case — pass 1 gives up, then pass 2 also gives up — visits up
+ * to 2 * SEARCH_NODE_CAP nodes and costs roughly twice one pass's time. That
+ * only happens on an input that defeats first-fit-decreasing outright (see
+ * the "gave up" test in grouping.test.ts, where every block is the same
+ * size so pass 2's sort cannot help); every other input pays for one pass.
+ */
+function placeBlocks(
+  blocks: Block[],
+  sizes: number[],
+  adj: Set<number>[], // conflicts BETWEEN BLOCKS
+  random: () => number,
+): { groups: number[][] | null; gaveUp: boolean } {
+  const order = shuffled(
+    blocks.map((_, i) => i),
+    random,
+  );
+
+  const pass1 = assign(order, blocks, sizes, adj);
+  if (pass1.groups !== null || !pass1.gaveUp) return pass1;
+
+  const ffdOrder = order
+    .slice()
+    .sort((a, b) => blocks[b].length - blocks[a].length);
+  return assign(ffdOrder, blocks, sizes, adj);
 }
 
 export function buildGroups(input: GroupingInput): GroupingOutcome {
@@ -545,21 +619,18 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // block-indexed and empty, never the student-indexed `adj` above.
   const blockAdj: Set<number>[] = blocks.map(() => new Set<number>());
 
-  // Shuffle for variety, then order the most-constrained blocks first so the
-  // search fails fast rather than deep. Size is what constrains a block: a
-  // block of 4 has far fewer groups it can fit in than a block of 1, so
-  // largest-first is first-fit-decreasing, the standard bin-packing
-  // heuristic -- and it is what actually clears most of the "gave up" cases
-  // a size-blind order produces (Fix round 1, F-2). blockAdj is not read
-  // here even as a tie-break: every set is empty until Task 5, so it would
-  // decide nothing today; ties are left to the shuffle, which is what still
-  // supplies arrangement variety between runs.
-  const order = shuffled(
-    blocks.map((_, i) => i),
+  // Two-pass placement -- see `placeBlocks`. Pass 1 is the shuffled order,
+  // unsorted, which is what supplies arrangement variety; pass 2
+  // (first-fit-decreasing) runs only if pass 1 gives up (Fix round 2, closing
+  // the arrangement-variety regression Fix round 1's sort caused). blockAdj
+  // is not read as a tie-break in either pass: every set is empty until Task
+  // 5, so it would decide nothing today.
+  const { groups: placed, gaveUp } = placeBlocks(
+    blocks,
+    sizes,
+    blockAdj,
     random,
-  ).sort((a, b) => blocks[b].length - blocks[a].length);
-
-  const { groups: placed, gaveUp } = assign(order, blocks, sizes, blockAdj);
+  );
   if (placed === null) {
     // Two different failures, and the difference is everything. The search
     // either ran to completion — in which case no arrangement exists at this

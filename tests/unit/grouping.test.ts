@@ -702,10 +702,21 @@ describe('together letters', () => {
     // groupCount: 2 makes it observable: two equal-sized groups (sizes
     // [4, 4]) large enough to hold A-with-B or to keep them apart, so
     // whether they ever share is a real question the search answers rather
-    // than a foregone conclusion. Across a spread of seeds, at least one
-    // arrangement must seat an A with a B -- this fails the moment anyone
-    // adds the rule nobody wrote ("different letters must not share a
-    // group"), which is exactly the regression this test exists to catch.
+    // than a foregone conclusion.
+    //
+    // Fix round 2: this test passed trivially for a second, different
+    // reason than the one it was rewritten for -- Fix round 1's
+    // first-fit-decreasing sort made A and B share EVERY seed,
+    // deterministically (block A always fills group 0 first, and block B
+    // still fits in group 0, so it lands there too, regardless of
+    // shuffle). "At least one seed together" cannot see "every seed
+    // together" as a problem; it was true both before and after the
+    // regression. Measured on this build: of these 30 seeds, 12 seated A
+    // with B and 18 kept them apart, so the test now also requires the
+    // opposite outcome to show up at least once -- it fails immediately if
+    // the always-together collapse comes back. The dedicated regression
+    // test below (same roster, 200 seeds) is the direct guard; this
+    // strengthening is so THIS test's own name stays true.
     const students = [
       student({ number: 1, together: 'A' }),
       student({ number: 2, together: 'A' }),
@@ -717,7 +728,7 @@ describe('together letters', () => {
       student({ number: 8 }),
     ];
     const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
-    const sawAWithB = seeds.some((seed) => {
+    const outcomes = seeds.map((seed) => {
       const out = buildGroups(
         base({
           students,
@@ -725,12 +736,14 @@ describe('together letters', () => {
           random: seeded(seed),
         }),
       );
-      if (!out.ok) return false;
-      return (
-        groupOf(out.result.groups, 1)?.some((s) => s.number === 3) ?? false
-      );
+      if (!out.ok) return 'failed';
+      return groupOf(out.result.groups, 1)?.some((s) => s.number === 3)
+        ? 'together'
+        : 'apart';
     });
-    expect(sawAWithB).toBe(true);
+    expect(outcomes.some((o) => o === 'together')).toBe(true);
+    // Fix round 2: and not ALWAYS together, or the collapse is back.
+    expect(outcomes.some((o) => o === 'apart')).toBe(true);
   });
 
   it('refuses a unit larger than the group, naming the letter and both numbers', () => {
@@ -832,7 +845,19 @@ describe('together letters', () => {
     // SAME size (2), so first-fit-decreasing has no size difference to sort
     // on here and this input still exhausts SEARCH_NODE_CAP exactly as it
     // did before F-2. Confirmed by measurement, not by carrying the number
-    // over: still gaveUp in single-digit milliseconds post-fix.
+    // over: gaveUp in 11ms post-F-2 (correcting an earlier version of this
+    // comment, which claimed "single-digit milliseconds" -- 11 never was).
+    //
+    // Fix round 2 re-measured again, because the placer changed again: pass
+    // 1 (now the unsorted, varied order) and pass 2 (first-fit-decreasing)
+    // BOTH run here and BOTH exhaust the budget -- confirmed by temporary
+    // instrumentation on this exact test (pass1: gaveUp=true, groups=null;
+    // pass2: gaveUp=true, groups=null), not assumed from the arithmetic
+    // alone. All 15 blocks being the SAME size means sorting by size is a
+    // no-op, so pass 2's order is byte-identical to pass 1's and it re-runs
+    // an already-exhausted search a second time -- measured at 17-23ms
+    // across repeated runs, roughly double the single-pass number above,
+    // as two equal exhaustions predict.
     const pairs = Array.from({ length: 30 }, (_, i) =>
       student({
         number: i + 1,
@@ -845,5 +870,72 @@ describe('together letters', () => {
     expect(out.ok).toBe(false);
     if (out.ok) return;
     expect(out.error).toEqual({ code: ERROR_CODES.togetherSearchGaveUp });
+  });
+
+  it('varies which students land together across seeds, not just the group sizes', () => {
+    // Fix round 2 regression guard. Nothing previously pinned arrangement
+    // VARIETY -- every existing assertion here either checks `shape()`
+    // (group SIZES, permutation-invariant) or "at least one seed does X",
+    // and Fix round 1's first-fit-decreasing sort collapsed this exact
+    // roster to a SINGLE partition on every one of 200 seeds without
+    // failing a single existing test: shape() stayed [4, 4] regardless, and
+    // "at least one seed together" stayed true because it was true on
+    // EVERY seed. Only the partition -- which student landed with which --
+    // can see the collapse, so that is what this test asserts on.
+    //
+    // Same roster and mode as the "lets two different letters share a
+    // group" test above, reused so these numbers are directly comparable
+    // to what was measured before this fix: two together-pairs (A, A) and
+    // (B, B) plus four unlettered students, into two groups of four. Block
+    // sizes [2, 2, 1, 1, 1, 1] -- the exact shape whose collapse was
+    // reported (1 distinct partition over 200 seeds, always {1,2,3,4} |
+    // {5,6,7,8}, confirmed by re-measuring the pre-Fix-round-2 build here).
+    //
+    // Measured on THIS build (Fix round 2, two-pass placement): 7 distinct
+    // partitions over these exact 200 seeds -- the mathematical maximum for
+    // this roster (either A and B share a group and all four singles share
+    // the other -- 1 way -- or A and B split across groups and the four
+    // singles divide 2-and-2 between them -- C(4,2) = 6 ways -- 1 + 6 = 7
+    // total). Asserting > 3 leaves more than half of that headroom, so an
+    // implementation that still varies, just not maximally, does not turn
+    // this test flaky.
+    const students = [
+      student({ number: 1, together: 'A' }),
+      student({ number: 2, together: 'A' }),
+      student({ number: 3, together: 'B' }),
+      student({ number: 4, together: 'B' }),
+      student({ number: 5 }),
+      student({ number: 6 }),
+      student({ number: 7 }),
+      student({ number: 8 }),
+    ];
+    const seeds = Array.from({ length: 200 }, (_, i) => i + 1);
+    const partitions = new Set(
+      seeds.map((seed) => {
+        const { groups } = ok(
+          base({
+            students,
+            mode: { kind: 'groupCount', count: 2 },
+            random: seeded(seed),
+          }),
+        );
+        // The partition: which students share a group, independent of
+        // which output slot the group landed in (that slot is itself
+        // shuffled -- see "randomise which group is oversized" in
+        // grouping.ts -- and carries no meaning of its own). Sorted within
+        // a group, and the groups sorted against each other, so "A with B"
+        // and "B with A" collapse to the one partition they actually are.
+        return groups
+          .map((g) =>
+            g
+              .map((s) => s.number)
+              .sort((a, b) => a - b)
+              .join('.'),
+          )
+          .sort()
+          .join(' | ');
+      }),
+    );
+    expect(partitions.size).toBeGreaterThan(3);
   });
 });
