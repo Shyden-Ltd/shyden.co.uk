@@ -5,6 +5,7 @@ import {
   MAX_STUDENTS,
   type GroupingInput,
   type Mode,
+  type Student,
 } from '../../src/lib/grouping';
 import * as grouping from '../../src/lib/grouping';
 import { student, shape, groupOf, seeded } from './factories';
@@ -1860,6 +1861,239 @@ describe('sex mode: mix', () => {
       expect(out.ok).toBe(false);
       if (out.ok) return;
       expect(out.error.code).toBe(ERROR_CODES.sexNeedsAllSet);
+    });
+  });
+
+  // Fix round 1, F-1: the shipped weave's alternation (`woven[i] = boys[i],
+  // girls[i]`) exhausts the shorter list partway through and appends the
+  // REMAINDER of the longer one as one contiguous run, which `assign`'s
+  // ascending first-fit then seats as a single-sex group -- every seed, not
+  // an unlucky one. Both tests above this point use a group size of 2 with
+  // balanced sexes, where the alternation period equals the group size, so
+  // the tail can never span a whole group -- structurally blind to this
+  // bug. These two are not: group sizes 3 and 4, sexes 2-and-4 and 4-and-8.
+  //
+  // Measured directly against the pre-fix build (commit 1a6a23e, before this
+  // fix round touched `weaveBySex`): this exact roster landed the ideal
+  // {1M2F, 1M2F} -- the only split these numbers allow -- ZERO times in 200
+  // seeds under `mix`, while `off` (no weave at all) landed it 107 times.
+  // The feature made its own goal LESS likely than not shipping it. Full
+  // reproduction across all five roster shapes the review named (this one
+  // plus four more) is in task-7-report.md, "Fix round 1".
+  it('reaches the split the numbers allow, at a group size the alternation bug could not hide behind', () => {
+    const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
+    for (const seed of seeds) {
+      const out = buildGroups(
+        base({
+          students: [M(1), M(2), F(3), F(4), F(5), F(6)],
+          mode: { kind: 'groupCount', count: 2 },
+          sexMode: 'mix',
+          random: seeded(seed),
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      const boysPerGroup = out.result.groups
+        .map((g) => g.filter((s) => s.sex === 'M').length)
+        .sort((a, b) => a - b);
+      expect(boysPerGroup).toEqual([1, 1]);
+    }
+  });
+
+  // The uneven-division counterpart, at a group size the old bug could also
+  // hide behind (this one is 4, not 2): 4 boys cannot split evenly across 3
+  // groups of 4, so the best achievable is two groups with 1 boy and one
+  // with 2 -- sorted, [1, 1, 2] -- never a group with none.
+  //
+  // Measured against the pre-fix build: this roster landed boys-per-group
+  // [0, 2, 2] -- a group with NO boy at all -- on all 200 of 200 seeds under
+  // `mix`; [1, 1, 2] is what it lands on 200 of 200 seeds now. `off` reaches
+  // [1, 1, 2] only 115 of 200 times. Full table in task-7-report.md, "Fix
+  // round 1".
+  it('reaches the best achievable split when boys do not divide evenly, at a group size the bug could also hide behind', () => {
+    const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
+    for (const seed of seeds) {
+      const out = buildGroups(
+        base({
+          students: [
+            M(1),
+            M(2),
+            M(3),
+            M(4),
+            F(5),
+            F(6),
+            F(7),
+            F(8),
+            F(9),
+            F(10),
+            F(11),
+            F(12),
+          ],
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'mix',
+          random: seeded(seed),
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      const boysPerGroup = out.result.groups
+        .map((g) => g.filter((s) => s.sex === 'M').length)
+        .sort((a, b) => a - b);
+      expect(boysPerGroup).toEqual([1, 1, 2]);
+    }
+  });
+
+  // Fix round 1, F-3: both variety tests earlier in this file use
+  // singleton-block rosters. The regression that cost this project two fix
+  // rounds (Task 4, "varies which students land together across seeds") was
+  // specifically a together-block roster collapsing to a single arrangement
+  // -- nothing above this point would notice that happening again under
+  // `mix`.
+  //
+  // Three boy-pairs and six girl-pairs (18 students, 9 blocks) into 3 groups
+  // of 6: the ratio merge weaves 1 boy-block for every 2 girl-blocks (nb=3,
+  // ng=6 divides evenly), so every group lands 2M4F, deterministically --
+  // confirmed on this exact roster, all 200 seeds below, matching Fix round
+  // 1's own point about a correct SHAPE. What varies is WHICH boy-pair and
+  // WHICH two girl-pairs share a group: assigning 6 girl-blocks into 3
+  // designated pairs (one per boy-block) is a multinomial count, 6! / (2! 2!
+  // 2!) = 90 distinct partitions, the theoretical maximum. Measured on this
+  // build: 78 distinct partitions over these 200 seeds. Asserting > 30
+  // leaves well over half of that measured headroom, matching this file's
+  // own convention elsewhere.
+  //
+  // PROVEN BY MUTATION, not by a pre-fix comparison: this roster's
+  // boys-per-group shape is ALSO wrong before this fix round (that is Fix
+  // round 1's own point, pinned by the two tests above), but the pre-fix
+  // weave still produces plenty of distinct partitions on it -- 127 of 200,
+  // even more than the fixed build's 78 -- because raw partition count and a
+  // correct sex balance are different claims. A "reddens pre-fix" comparison
+  // on partition count alone would not have caught a collapse here, so it
+  // would not prove this test guards one.
+  //
+  // What DOES collapse it: weaving in fixed block-index order instead of the
+  // shuffled order --
+  //   weaveBySex(blocks, present, shuffledOrder.slice().sort((a, b) => a - b))
+  // in place of `weaveBySex(blocks, present, shuffledOrder)` at the
+  // `weaveBySex` call site in `placeBlocks` -- applied and run against
+  // exactly this test: 1 distinct partition over these 200 seeds, not 78 (a
+  // wrong-answer failure, not a crash). The shape stayed correct (2M4F every
+  // group, every seed) because the shape comes from the ratio merge's
+  // counting, not from the shuffle -- only WHO fills each slot collapsed,
+  // which is exactly what this test exists to catch. Mutant reverted before
+  // committing; see task-7-report.md, "Fix round 1" for this run recorded
+  // alongside the others.
+  it('varies which buddy-pairs share a group across seeds, under mix', () => {
+    const students: Student[] = [
+      ...['A', 'B', 'C'].flatMap((letter, gi) =>
+        Array.from({ length: 2 }, (_, k) =>
+          student({ number: gi * 2 + k + 1, sex: 'M', together: letter }),
+        ),
+      ),
+      ...['D', 'E', 'F', 'G', 'H', 'I'].flatMap((letter, gi) =>
+        Array.from({ length: 2 }, (_, k) =>
+          student({ number: 6 + gi * 2 + k + 1, sex: 'F', together: letter }),
+        ),
+      ),
+    ];
+    const seeds = Array.from({ length: 200 }, (_, i) => i + 1);
+    const partitions = new Set(
+      seeds.map((seed) => {
+        const { groups } = ok(
+          base({
+            students,
+            mode: { kind: 'groupCount', count: 3 },
+            sexMode: 'mix',
+            random: seeded(seed),
+          }),
+        );
+        return groups
+          .map((g) =>
+            g
+              .map((s) => s.number)
+              .sort((a, b) => a - b)
+              .join('.'),
+          )
+          .sort()
+          .join(' | ');
+      }),
+    );
+    expect(partitions.size).toBeGreaterThan(30);
+  });
+
+  // Fix round 1, F-2: `boys`/`girls`/`rest` were three FILTERS, not a
+  // partition. `rest` only ever caught `sex === null`, so anything else off
+  // the `'M' | 'F' | null` domain -- `undefined`, `''`, `'m'`, `'male'`, `0`,
+  // anything a non-TypeScript caller might send; this repo has no runtime
+  // type checker (see the module doc) -- fell into NONE of the three lists
+  // and never reached `order`. `assign` only ever places what `order` hands
+  // it, so that student was placed nowhere and simply did not appear in the
+  // result: `ok: true`, one student short, no error to explain why.
+  describe('a sex value outside M/F/null (Fix round 1, F-2)', () => {
+    // This is the same "nobody lost, nobody invented" invariant the
+    // "invariants that must hold for ANY input" describe block pins at the
+    // buildGroups level, earlier in this file. Pointing that exact sweep at
+    // this bug is not possible: it drives bare student COUNTS, where every
+    // student's `sex` is `null` by construction (see the `anonymous` factory
+    // in grouping.ts), and the guard below now refuses `null` under `mix`
+    // same as any other off-domain value -- there is no roster shape that
+    // sweep can express which would even reach `weaveBySex`. This pins the
+    // same invariant directly on `weaveBySex`, which is where the loss
+    // actually happened, using the identical assertion idiom.
+    it('weaveBySex never drops a block, whatever `sex` holds', () => {
+      const badSexes: unknown[] = [
+        'M',
+        'F',
+        null,
+        undefined,
+        '',
+        'm',
+        'male',
+        0,
+      ];
+      const present: Student[] = badSexes.map((sex, i) =>
+        student({ number: i + 1, sex: sex as Student['sex'] }),
+      );
+      const blocks = present.map((_, i) => [i]);
+      const indices = present.map((_, i) => i);
+
+      const woven = grouping.weaveBySex(blocks, present, indices);
+
+      expect(woven).toHaveLength(indices.length); // nobody lost or invented
+      expect(new Set(woven).size).toBe(indices.length); // nobody duplicated
+      expect([...woven].sort((a, b) => a - b)).toEqual(indices); // exactly this set
+    });
+
+    // Measured against the pre-fix build: `sex: undefined` on one student in
+    // a 6-student roster returned `ok: true` with FIVE students -- student 3
+    // simply gone, no error, a teacher would have printed that roster.
+    // `''`, `'m'`, `'male'` and `0` all slipped past the OLD guard
+    // (`s.sex === null`) the same way, for the same reason: none of them
+    // `=== null`. Full output in task-7-report.md, "Fix round 1".
+    it.each([
+      ['undefined', undefined],
+      ['an empty string', ''],
+      ["'m'", 'm'],
+      ["'male'", 'male'],
+      ['0', 0],
+    ])('refuses a sex of %s, not just literal null', (_label, badSex) => {
+      const out = buildGroups(
+        base({
+          students: [
+            M(1),
+            F(2),
+            student({ number: 3, sex: badSex as unknown as Student['sex'] }),
+          ],
+          mode: { kind: 'groupCount', count: 1 },
+          sexMode: 'mix',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.sexNeedsAllSet,
+        students: [3],
+      });
     });
   });
 });

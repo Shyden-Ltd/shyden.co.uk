@@ -534,45 +534,129 @@ function assign(
 }
 
 /**
- * Pass 1's block order under `mix`: shuffled, then woven boy-girl-boy-girl.
+ * Pass 1's block order under `mix`: shuffled, then woven by a ratio merge —
+ * emitting from whichever side (boys or girls) has fallen furthest behind
+ * its share of the blocks emitted so far.
  *
- * `indices` must already be shuffled — this only sorts them INTO the boy,
- * girl and rest lists, preserving whatever order they arrive in within each
- * list. That is what supplies the variety in WHICH boy and WHICH girl lands
- * in each woven slot; the weave's own alternation (boy, girl, boy, girl,
- * …) is fixed by construction and supplies none by itself — the same
- * alternation runs every call, for every seed. See the "spreads the girls
- * across different groups" test in grouping.test.ts for the measured proof
- * that the alternation is what does the spreading, and task-7-report.md for
- * the variety measurement proving the shuffled input is what still varies
- * the result seed to seed.
+ * WHAT THE CODE DOES, first: `sexOf` reads the block's FIRST member and
+ * classifies the WHOLE block by that one member's sex — it does not check
+ * that every member agrees. A together-block spanning both sexes (one boy,
+ * one girl) is therefore silently classified into `boys` or `girls` by
+ * whichever sex its first member happens to be; it does NOT fall into
+ * `rest`. (Task 7's own comment here previously said the opposite — "it
+ * falls into `rest`, which is the only honest thing to do with it" — that
+ * was never what this code did; Fix round 1 corrects the comment, not the
+ * classification, which is unchanged and still pinned by the "places a
+ * together-block spanning both sexes" test in grouping.test.ts.) `rest`
+ * holds only a block whose first member's sex is neither `'M'` nor `'F'` —
+ * `null`, `undefined`, or any other off-domain value a non-TypeScript
+ * caller might hand this pure module (Fix round 1, F-2: `sexOf` normalises
+ * anything that is not exactly `'M'` or `'F'` to `null` before classifying,
+ * so `boys`, `girls` and `rest` are provably exhaustive and mutually
+ * exclusive over EVERY index in `indices` — a permutation by construction,
+ * not by the assumption the pre-fix code rested on). In practice `rest` is
+ * unreachable from `mix`'s own call site specifically: `weaveBySex` only
+ * ever runs after buildGroups's unset-sex guard has confirmed every
+ * PRESENT student's `sex` is exactly `'M'` or `'F'`. A future caller that
+ * does not carry that guarantee — Task 8's `separate`, which the doc
+ * comment on `ERROR_CODES.sexNeedsAllSet` notes does not get the guard —
+ * gets a `weaveBySex` that cannot silently lose or misfile whatever it is
+ * handed, guard or no guard.
  *
- * `sexOf` reads the block's FIRST member. A together-unit spanning both
- * sexes has no single sex; it falls into `rest` and is dealt last, which is
- * the only honest thing to do with it under `mix`. In practice `rest` is
- * unreachable from this call site: `weaveBySex` only ever runs after
- * buildGroups's unset-sex guard has already confirmed every PRESENT student
- * has a sex, and a block's first member is always a present student, so
- * `sexOf` can never actually return null here — it is written to return
- * `'M' | 'F' | null` anyway because that is `Student.sex`'s real type, and
- * because a future caller of this same function (Task 8's `separate`, which
- * does not get that guard) may not have the same guarantee. Under `separate`
- * a spanning block is a contradiction, not a rest case — Task 8.
+ * WHY A RATIO MERGE, not straight alternation. `indices` must already be
+ * shuffled — this only sorts them into the boy, girl and rest lists,
+ * preserving whatever order they arrive in within each list; that is what
+ * supplies the variety in WHICH boy and WHICH girl lands in each slot, same
+ * as before — pinned by the "varies which boy pairs with which girl across
+ * seeds, not just the 1-and-1 split" and "varies pairings on the uneven
+ * roster too, not just the evenly-divided one" tests in grouping.test.ts,
+ * not by a narrative measurement alone. What changed is HOW the two lists
+ * are merged. The original alternation (`woven[i] = boys[i], girls[i]`,
+ * i = 0..max(nb,ng)) exhausts the shorter list partway through and then
+ * appends the remainder of the longer one as ONE CONTIGUOUS RUN — and
+ * `assign` fills groups in ascending order via first-fit, so that run lands
+ * as a single-sex group every time.
+ * Fix round 1, F-1: measured on the shipped alternation, 2 boys and 4 girls
+ * into 2 groups landed the ideal {1M2F, 1M2F} split ZERO times in 200
+ * seeds, while `off` (no weave at all) landed it 107 times — the feature
+ * made its own goal less likely than not having it. See task-7-report.md,
+ * "Fix round 1" for the full reproduction across five roster shapes: `mix`
+ * now lands the ideal split 200/200 on every one of them, `off` never
+ * better than 58%.
+ *
+ * The merge below counts BLOCKS, not students: `bi`/`gi` are how many boy-
+ * and girl-blocks have been emitted so far, and a boy-block is emitted next
+ * when `bi * ng <= gi * nb` (the boy side's share-so-far is still at or
+ * below its true share of the two block counts) — a girl-block otherwise —
+ * and whichever side is exhausted yields unconditionally to the other. This
+ * spreads the minority side proportionally across every position instead of
+ * front-loading it, so the excess of the majority side is spread out too,
+ * rather than landing as one trailing block.
+ *
+ * NOT weighted by block SIZE, deliberately, and only after building and
+ * measuring the weighted version. A together-block's size is invisible to
+ * this count: a 4-student together-block counts as one "boy" the same as a
+ * lone boy, so it can still clump — measured on a 4-boy together-block plus
+ * 4 lone boys and 8 lone girls into 4 groups, block-COUNT `mix` lands
+ * {2M2F, 1M3F, 1M3F, 4M0F} (the best any ordering can do, since a block the
+ * exact size of a group cannot share it with anyone) on 100/100 seeds,
+ * beating `off`'s 58/100. A student-WEIGHTED variant of this same merge
+ * (emit by cumulative student count against each side's true total, so a
+ * size-4 block counts as 4) was built and measured on the identical roster:
+ * it reached that same best split only 36/100 seeds, WORSE than `off`. The
+ * mechanism: weighting makes a block's size a forward-looking "debt" against
+ * the OTHER side that persists after the block is placed — the big block
+ * pushes `bTotal` to 4 in one step, and the merge then owes girls four turns
+ * in a row to let `gTotal` catch up, clumping the very thing it was meant to
+ * spread, even though the big block has already claimed its own group and
+ * has no further claim on the remaining ones. Block-count weighting has no
+ * memory of a block's size once its single turn is taken, which is exactly
+ * why it does not make this mistake. Rejected on measurement, not
+ * intuition; see task-7-report.md, "Fix round 1" for the full comparison,
+ * including a second together-block shape where block-count `mix` beats
+ * `off` by roughly 2x without reaching the ideal every time (30.7% vs
+ * 15.3%), and a third where a pair of exactly-group-sized blocks of the
+ * same sex forces the identical worst split on `mix` and `off` alike — a
+ * hard limit no ordering can move, not a regression.
+ *
+ * EXPORTED, unlike every other helper in this module, for exactly one
+ * reason (Fix round 1, F-2): its total-partition guarantee -- every index in
+ * `indices` lands in exactly one of `boys`, `girls`, `rest` -- has to hold
+ * for ANY caller, including one that does not carry buildGroups's unset-sex
+ * guard (Task 8's `separate`). Today `mix` is the only caller, and the guard
+ * now refuses every off-domain `sex` before it can reach this function, so
+ * there is no path through `buildGroups` left to exercise that guarantee
+ * with bad data -- proving it as a property of THIS function, not of
+ * `buildGroups`'s current callers, needs a direct call. See the "never
+ * drops a block, whatever `sex` holds" test in grouping.test.ts.
  */
-function weaveBySex(
+export function weaveBySex(
   blocks: Block[],
   present: Student[],
   indices: number[],
 ): number[] {
-  const sexOf = (b: number): 'M' | 'F' | null => present[blocks[b][0]].sex;
+  const sexOf = (b: number): 'M' | 'F' | null => {
+    const sex = present[blocks[b][0]].sex;
+    return sex === 'M' || sex === 'F' ? sex : null;
+  };
   const boys = indices.filter((b) => sexOf(b) === 'M');
   const girls = indices.filter((b) => sexOf(b) === 'F');
   const rest = indices.filter((b) => sexOf(b) === null);
+  const nb = boys.length;
+  const ng = girls.length;
 
   const woven: number[] = [];
-  for (let i = 0; i < Math.max(boys.length, girls.length); i++) {
-    if (i < boys.length) woven.push(boys[i]);
-    if (i < girls.length) woven.push(girls[i]);
+  let bi = 0;
+  let gi = 0;
+  while (bi < nb || gi < ng) {
+    const takeBoy = gi >= ng || (bi < nb && bi * ng <= gi * nb);
+    if (takeBoy) {
+      woven.push(boys[bi]);
+      bi += 1;
+    } else {
+      woven.push(girls[gi]);
+      gi += 1;
+    }
   }
   return [...woven, ...rest];
 }
@@ -722,8 +806,26 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // for the measurement that pins that. `!== 'off'` would refuse `separate`
   // rosters that succeed today, which is exactly the regression that
   // measurement exists to catch.
+  //
+  // Fix round 1, F-2: reads `!== 'M' && !== 'F'`, not `=== null`. The old
+  // check closed exactly one hole -- a `sex` of literally `null` -- and left
+  // every other off-domain value (`undefined`, `''`, `'m'`, `'male'`, `0`,
+  // anything a non-TypeScript caller might send; this repo has no runtime
+  // type checker, see the module doc) to slip straight through, because
+  // `undefined === null` is false. A slipped-through value then vanished
+  // silently in `weaveBySex`'s old two-list split (neither `=== 'M'` nor
+  // `=== 'F'` nor `=== null` matched it, so it landed in NONE of `boys`,
+  // `girls`, `rest` and never reached `order` at all) -- `ok: true` with one
+  // fewer student than the roster held, no error, nothing to tell a teacher
+  // who would have printed that group list. Measured: `sex: undefined` on
+  // one student in a 6-student roster returned five. See task-7-report.md,
+  // "Fix round 1" for the reproduction. This check is the door, not one
+  // hole in it: anything that is not exactly `'M'` or `'F'` is refused here,
+  // by name, before it can reach the weave at all.
   if (input.sexMode === 'mix') {
-    const unset = present.filter((s) => s.sex === null).map((s) => s.number);
+    const unset = present
+      .filter((s) => s.sex !== 'M' && s.sex !== 'F')
+      .map((s) => s.number);
     if (unset.length > 0) {
       return fail({ code: ERROR_CODES.sexNeedsAllSet, students: unset });
     }
