@@ -86,6 +86,11 @@ export function renderError(
       return e.INVALID_GROUP_COUNT;
     case ERROR_CODES.tooManyGroups:
       return e.TOO_MANY_GROUPS(error.maxGroups);
+    // Carries `students: number[]`, exactly like keepApartImpossible below --
+    // same reason (identity is the number) and the same fix (resolve each
+    // one through `resolveStudent` before the copy ever sees it).
+    case ERROR_CODES.togetherApartClash:
+      return e.TOGETHER_APART_CLASH(error.students.map(resolveStudent));
     case ERROR_CODES.togetherUnitTooLarge:
       return e.TOGETHER_UNIT_TOO_LARGE(
         error.letter,

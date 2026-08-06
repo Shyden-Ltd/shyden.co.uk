@@ -52,6 +52,14 @@ export const ERROR_CODES = {
   invalidGroupSize: 'INVALID_GROUP_SIZE',
   invalidGroupCount: 'INVALID_GROUP_COUNT',
   tooManyGroups: 'TOO_MANY_GROUPS',
+  /**
+   * Two students in the same together-block also hold the same apart-letter
+   * as each other -- kept together and kept apart from each other at once.
+   * Caught as a contradiction before the placer ever runs; see the comment
+   * at its call site in buildGroups for why that beats letting the search
+   * fail on it.
+   */
+  togetherApartClash: 'TOGETHER_APART_CLASH',
   /** A together-letter unit is bigger than even the largest group. */
   togetherUnitTooLarge: 'TOGETHER_UNIT_TOO_LARGE',
   /** PROVEN by exhaustive search: no arrangement of together-blocks fits at this group count. */
@@ -95,6 +103,15 @@ export type GroupingError =
   | { code: typeof ERROR_CODES.invalidGroupSize }
   | { code: typeof ERROR_CODES.invalidGroupCount }
   | { code: typeof ERROR_CODES.tooManyGroups; maxGroups: number }
+  | {
+      code: typeof ERROR_CODES.togetherApartClash;
+      // Numbers, not names -- same reasoning as keepApartImpossible below:
+      // identity is the number (Student.number), and the engine has no
+      // roster to format a display string from. renderError's resolver
+      // parameter is what turns these into words; see its doc comment in
+      // src/lib/i18n/index.ts.
+      students: number[];
+    }
   | {
       code: typeof ERROR_CODES.togetherUnitTooLarge;
       letter: string;
@@ -608,6 +625,30 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
 
   const sizes = targetSizes(present.length, mode, leftovers);
   const blocks = buildBlocks(present);
+
+  // Caught here rather than left to the placer. The search would fail on a
+  // self-conflicting block and report "no arrangement exists" -- true, and
+  // the wrong sentence: the teacher asked for something impossible, not for
+  // something merely unreachable, and only one of those tells them what to
+  // fix.
+  for (const block of blocks) {
+    const seenLetters = new Map<string, number[]>();
+    for (const i of block) {
+      const letter = present[i].apart;
+      if (letter === null) continue;
+      const list = seenLetters.get(letter) ?? [];
+      list.push(present[i].number);
+      seenLetters.set(letter, list);
+    }
+    for (const numbers of seenLetters.values()) {
+      if (numbers.length > 1) {
+        return fail({
+          code: ERROR_CODES.togetherApartClash,
+          students: numbers,
+        });
+      }
+    }
+  }
 
   // Checked against the LARGEST group, because that is the only one a big unit
   // could fit in. Comparing against the smallest would refuse arrangements

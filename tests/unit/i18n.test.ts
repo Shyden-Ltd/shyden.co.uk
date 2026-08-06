@@ -126,6 +126,11 @@ describe('every engine error can be rendered in every language', () => {
     INVALID_GROUP_SIZE: { code: ERROR_CODES.invalidGroupSize },
     INVALID_GROUP_COUNT: { code: ERROR_CODES.invalidGroupCount },
     TOO_MANY_GROUPS: { code: ERROR_CODES.tooManyGroups, maxGroups: 4 },
+    // Numbers, not names -- same reason as KEEP_APART_IMPOSSIBLE below.
+    TOGETHER_APART_CLASH: {
+      code: ERROR_CODES.togetherApartClash,
+      students: [1, 2],
+    },
     TOGETHER_UNIT_TOO_LARGE: {
       code: ERROR_CODES.togetherUnitTooLarge,
       letter: 'A',
@@ -268,6 +273,76 @@ describe('every engine error can be rendered in every language', () => {
         'Ana, Budi all need to be kept apart from each other, so you would need at least 2 groups. Either make more groups or remove one of the rules.',
       );
       expect(msg).not.toContain('Student');
+    });
+  });
+
+  describe('together-apart clash resolves student numbers to names', () => {
+    // Correction 1: TOGETHER_APART_CLASH carries `students: number[]`,
+    // exactly like KEEP_APART_IMPOSSIBLE above, and must go through the same
+    // resolver -- a teacher reading "1, 2 are marked..." instead of
+    // "Ana, Budi are marked..." is exactly the regression the resolver
+    // parameter exists to prevent.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.togetherApartClash, students: [1, 2] },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.errors.TOGETHER_APART_CLASH([
+            strings.studentNumber(1),
+            strings.studentNumber(2),
+          ]),
+        );
+        expect(msg).toContain(strings.studentNumber(1));
+        expect(msg).toContain(strings.studentNumber(2));
+        // Digits alone, with no word around them, is exactly the bug this
+        // default exists to prevent.
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    it('English default reads "Student 1, Student 2 …", not bare digits', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.togetherApartClash, students: [1, 2] },
+        en,
+      );
+      expect(msg).toContain('Student 1, Student 2');
+    });
+
+    it('Indonesian default reads "Siswa 1, Siswa 2 …", not bare digits', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.togetherApartClash, students: [1, 2] },
+        id,
+      );
+      expect(msg).toContain('Siswa 1, Siswa 2');
+    });
+
+    it('English: a supplied resolver is used in place of the default, for every number', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 2: 'Budi' };
+      const msg = renderError(
+        { code: ERROR_CODES.togetherApartClash, students: [1, 2] },
+        en,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Budi are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.',
+      );
+      expect(msg).not.toContain('Student');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default, for every number', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 2: 'Budi' };
+      const msg = renderError(
+        { code: ERROR_CODES.togetherApartClash, students: [1, 2] },
+        id,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Budi ditandai untuk disatukan sekaligus dipisahkan satu sama lain. Hapus huruf yang menyatukan mereka, atau huruf yang memisahkan mereka.',
+      );
+      expect(msg).not.toContain('Siswa');
     });
   });
 

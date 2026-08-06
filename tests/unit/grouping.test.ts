@@ -1499,3 +1499,54 @@ describe('apart and together letters both in play — the failure names both rul
     expect(out.error).toEqual({ code: ERROR_CODES.bothRulesSearchGaveUp });
   });
 });
+
+describe('together and apart at the same time', () => {
+  it('refuses two students kept together who are also kept apart', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, name: 'Ana', together: 'A', apart: 'X' }),
+          student({ number: 2, name: 'Budi', together: 'A', apart: 'X' }),
+          student({ number: 3, name: 'Citra' }),
+          student({ number: 4, name: 'Dewi' }),
+        ],
+        mode: { kind: 'groupCount', count: 2 },
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.togetherApartClash,
+      students: [1, 2],
+    });
+  });
+
+  it('allows the same apart letter on students who are NOT kept together', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: 'A', apart: 'X' }),
+          student({ number: 2, together: 'A' }),
+          student({ number: 3, apart: 'X' }),
+          student({ number: 4 }),
+        ],
+        mode: { kind: 'groupCount', count: 2 },
+      }),
+    );
+    expect(out.ok).toBe(true); // 1 and 3 share X but are in different units
+  });
+
+  it('does not fire when one of the pair is absent', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: 'A', apart: 'X' }),
+          student({ number: 2, together: 'A', apart: 'X', absent: true }),
+          student({ number: 3 }),
+        ],
+        mode: { kind: 'groupCount', count: 2 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+});

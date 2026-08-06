@@ -101,6 +101,12 @@ export const en = {
     INVALID_GROUP_COUNT: 'You need at least 1 group.',
     TOO_MANY_GROUPS: (max: number) =>
       `There are not enough students for that many groups. The most you can have is ${max}.`,
+    // Carries `students: number[]`, never names -- identity is the number
+    // (Student.number). Same resolver pattern as KEEP_APART_IMPOSSIBLE below:
+    // renderError maps each number through `resolveStudent` before this
+    // function ever sees it, so `names` here is already display text.
+    TOGETHER_APART_CLASH: (names: string[]) =>
+      `${names.join(', ')} are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.`,
     TOGETHER_UNIT_TOO_LARGE: (
       letter: string,
       unit: number,

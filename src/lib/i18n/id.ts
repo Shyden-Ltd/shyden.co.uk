@@ -82,6 +82,8 @@ export const id: Strings = {
     INVALID_GROUP_COUNT: 'Anda membutuhkan minimal 1 kelompok.',
     TOO_MANY_GROUPS: (max: number) =>
       `Jumlah siswa tidak cukup untuk sebanyak itu kelompok. Paling banyak Anda bisa membuat ${max}.`,
+    TOGETHER_APART_CLASH: (names: string[]) =>
+      `${names.join(', ')} ditandai untuk disatukan sekaligus dipisahkan satu sama lain. Hapus huruf yang menyatukan mereka, atau huruf yang memisahkan mereka.`,
     TOGETHER_UNIT_TOO_LARGE: (
       letter: string,
       unit: number,
