@@ -938,4 +938,88 @@ describe('together letters', () => {
     );
     expect(partitions.size).toBeGreaterThan(3);
   });
+
+  // Fix round 3: pass 2 (first-fit-decreasing) exists solely to rescue
+  // rosters pass 1 (the shuffled, unsorted order) gives up on -- see
+  // `placeBlocks`'s docstring. Nothing before this test exercised that
+  // rescue: the gave-up test above uses 15 SAME-size blocks, so sorting by
+  // size is a no-op and pass 2 replays pass 1's exhausted search node for
+  // node; the variety test above resolves entirely inside pass 1. So the one
+  // capability the two-pass design exists to provide had no regression
+  // guard -- a change that broke "reuse pass 1's order, do not reshuffle"
+  // could silently reintroduce give-ups and nothing would catch it.
+  //
+  // Provenance (task-4-report.md, Fix round 3 has the full sweep). This
+  // roster -- five together-letters of 3 students (A-E), five of 2 (F-J),
+  // five unlettered singles; 15 blocks, 30 students -- into groupCount: 10
+  // (ten groups of exactly 3) is the classic "a block of 2 needs exactly one
+  // block of 1 to fill its group" bin-packing shape, mixed block sizes so
+  // the FFD sort is not a no-op.
+  //
+  // PASS 1 ALONE GIVES UP on this input: established by temporarily
+  // disabling pass 2 in grouping.ts (`return pass1;` before the FFD branch)
+  // and running this exact roster/mode through the real engine for seeds
+  // 1..300. Result: pass 1 hit SEARCH_NODE_CAP and returned
+  // TOGETHER_SEARCH_GAVE_UP on 63 of the 300 (seed 1 -- used below -- among
+  // them: 1, 6, 9, 12, 15, 20, 22, 35, 40, 41, 47, 56, 59, 60, 65, 67, 71,
+  // 77, 79, 85, 90, 91, 93, 96, 106, 107, 108, 110, 114, 122, 123, 124, 128,
+  // 132, 133, 135, 139, 148, 152, 159, 173, 179, 187, 192, 199, 203, 216,
+  // 217, 219, 222, 224, 226, 238, 247, 256, 261, 263, 264, 265, 267, 277,
+  // 286, 297) and NEVER ONCE proved no arrangement exists (0 of 300) -- this
+  // is real search exhaustion on a feasible input, not a fixture that
+  // happens to be impossible.
+  //
+  // NOT A LUCKY SEED: with pass 2 restored (the real, committed engine),
+  // ALL 63 of those give-up seeds succeed, each one checked for validity
+  // (every letter's block intact, exactly 30 students, no duplicates, no
+  // invented numbers, every group size 3) -- 63/63, zero exceptions. Seed 1
+  // is an arbitrary pick from a uniform 63-wide spread, not the one seed
+  // that happens to work.
+  //
+  // Timing, measured on this machine, not a guarantee: the full call at
+  // seed 1 took ~12-14ms (pass 1 spends its ~200,000-node budget before
+  // giving up; pass 2's sorted order then succeeds quickly) -- roughly what
+  // the existing gave-up test measures for ONE exhausted pass, consistent
+  // with pass 1 here also running to exhaustion before pass 2 rescues it.
+  it('is rescued by pass 2 when pass 1 alone would give up, without losing or inventing anyone', () => {
+    const students = [
+      ...['A', 'B', 'C', 'D', 'E'].flatMap((letter, gi) =>
+        Array.from({ length: 3 }, (_, k) =>
+          student({ number: gi * 3 + k + 1, together: letter }),
+        ),
+      ),
+      ...['F', 'G', 'H', 'I', 'J'].flatMap((letter, gi) =>
+        Array.from({ length: 2 }, (_, k) =>
+          student({ number: 15 + gi * 2 + k + 1, together: letter }),
+        ),
+      ),
+      ...Array.from({ length: 5 }, (_, k) => student({ number: 26 + k })),
+    ];
+    const out = buildGroups(
+      base({
+        students,
+        mode: { kind: 'groupCount', count: 10 },
+        random: seeded(1),
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const { groups } = out.result;
+
+    // Nobody lost, nobody invented -- scoped to this test's own roster, not
+    // a general claim (the general block-path version is the next task's).
+    const numbers = groups.flat().map((s) => s.number);
+    expect(numbers.length).toBe(30);
+    expect(new Set(numbers)).toEqual(new Set(students.map((s) => s.number)));
+
+    // Every together-letter's students share one group -- the property pass
+    // 2 exists to preserve while rescuing the search.
+    for (const letter of 'ABCDEFGHIJ') {
+      const withLetter = students.filter((s) => s.together === letter);
+      const host = groupOf(groups, withLetter[0].number);
+      for (const s of withLetter) {
+        expect(host?.map((m) => m.number)).toContain(s.number);
+      }
+    }
+  });
 });
