@@ -35,8 +35,14 @@ by default and opening is a deliberate act.
 - **Arrangement B.** On wide screens the three collapsed sections sit side by side, so the button
   rises and results start above the fold. On a phone they stack. Identical content either way.
 - **Top row:** Class (optional) · Students · Split by (per group / number of groups).
-- **Sections, inside the tool:** Student details · Together & apart · Import / export ·
+- **Sections, inside the tool:** Student details · Grouping options · Import / export ·
   Sound & animation.
+
+  **`Grouping options` replaces what was going to be `Together & apart`.** The together and apart
+  letters are set per student, in the Student details table, so a section named after them had
+  nothing left to hold once the free-text keep-apart box was removed (§12). Meanwhile two controls
+  had no home at all: the sex switches (§6), and the shipped *If students are left over* choice
+  (below). They fit the empty section exactly. Still four sections, still two-by-two, so §2 holds.
 
 ### How to use — at the very top, outside the tool
 
@@ -58,9 +64,12 @@ form, because it is the page's summary and description rather than part of the f
 
 **Every collapsed header reports its own state**, so collapsing never means forgetting:
 
-- `▸ Student details · none added` → `· 24 named` → `· 24 named · 2 absent`
-- `▸ Together & apart · none` → `· 2 together · 1 apart`
+- `▸ Student details · none added` → `· 24 named` → `· 24 named · 2 absent · 2 together · 1 apart`
+- `▸ Grouping options · none` → `· mixed by sex` → `· mixed by sex · leftovers in one group`
 - `▸ Import / export · nothing to save yet` → `· unsaved changes — export to keep them`
+
+The together and apart counts sit on the **Student details** header, where the letters are actually
+set, so the rename above loses nothing.
 
 That last one is where the operator's "advise them to export so they don't lose their changes"
 lives: permanently on the header, not a toast that vanishes before it is read.
@@ -230,6 +239,44 @@ Every way of exceeding `MAX_ROSTER` has a stated outcome. None of them may fail 
 There is no fifth case: with a list present the box is a read-out, so it cannot be typed past the
 limit at all.
 
+### The engine's contract changes shape
+
+`src/lib/grouping.ts` is the tests-first surface, so its signature has to be settled before a line of
+it is written. Today it is built for names; it becomes built for records.
+
+```ts
+// today                                  // after
+interface Student {                       interface Student {
+  id: number;                               number: number;      // was `id`
+  name: string | null;                      name: string | null;
+}                                           sex: 'M' | 'F' | null;
+                                            absent: boolean;
+                                            together: string | null;
+                                            apart: string | null;
+                                          }
+
+students: number | string[];              students: number | Student[];
+keepApart: Array<[string, string]>;       // gone — the letters carry it
+                                          sexMode: 'off' | 'mix' | 'separate';
+                                          pinned: Student[][];
+```
+
+**Two error codes become impossible and are deleted:**
+
+- `keepApartNeedsNames` — letters need no names.
+- `keepApartUnknownName` — a letter cannot be misspelt.
+
+Both exist only because keep-apart was typed as free text. The three that *prove* something —
+`keepApartImpossible`, `keepApartNoArrangement`, `keepApartSearchGaveUp` — all survive, restated over
+letters rather than pairs.
+
+**New codes are needed** for the refusals this design adds: duplicate number, together-unit larger
+than the group size, together-and-apart clash, and a sex contradiction. Each follows the existing
+discriminated-union pattern, carrying exactly the data its message needs and no bag of optionals.
+
+**`parseKeepApart()` is deleted with its unit tests.** It parses the free-text box removed in §12;
+leaving an exported function with no caller is how dead code survives a rewrite.
+
 ---
 
 ## 5. Avatars
@@ -284,6 +331,23 @@ Rules:
   group of the other sex**.
 - **A contradiction with together/apart is blocked, with the reason stated** — e.g. Ana (F) and Budi
   (M) bound together while single-sex groups are requested. Blocked, not silently resolved.
+
+Both switches live in the **Grouping options** section (§3).
+
+### Leftovers — kept, and now placed
+
+`If students are left over` is **live today** in both languages (`leftoversLabel`, `leftoversSpread`,
+`leftoversBunch`, `leftoversHelp`, and `Leftovers = 'spread' | 'bunch'` in the engine). The first
+draft of this design neither kept it, removed it nor placed it — it simply did not know about it.
+**It is kept**, unchanged in behaviour, and it lives in **Grouping options** beside the sex switches:
+
+- *Share them out evenly* (default) — 25 students in groups of 4 gives six groups, one of five.
+- *Put them all in one group* — six groups of four and a seventh holding the one child left over.
+
+It answers a real classroom question and teachers have opinions about it, so it is not ours to
+delete. Its interaction with the new constraints is engine work in stage 1 like any other: a spare
+student who carries a together letter goes wherever their unit goes, and *bunch* may not create a
+leftover group that violates an apart letter.
 
 ---
 
@@ -530,10 +594,13 @@ at all — the *absent* tick box governs the class list only.
 | Removed | Why |
 |---|---|
 | Group themes (Animals / Colours / Planets) + both locale tables | Avatars chosen instead; groups always numbered |
+| The **naming radio** — `namingLabel`, `namingNumbered`, `namingThemed` — and its four locale keys | With themes gone it is a choice with one option |
 | "Paste names, one per line" box | The table and import replace it |
-| Free-text keep-apart box | Replaced by the Apart letter in the table |
+| Free-text keep-apart box, and `parseKeepApart()` | Replaced by the Apart letter in the table |
 
-All three are live today. Each is a decision, not an oversight.
+All four are live today. Each is a decision, not an oversight.
+
+**Kept, though the first draft forgot it:** the *If students are left over* control. See §6.
 
 ---
 
@@ -612,7 +679,17 @@ why while leaving the count alone; both add controls disable at 100 stating the 
 `MAX_ROSTER` with a list present, because with a list present the box cannot be typed at all.
 
 **i18n** — every new string in both locales; whole rendered sentences asserted, not fragments; the
-existing rendered-text seam scan must stay green.
+existing rendered-text seam scan must stay green; the removed keys are gone from **both** locale
+files and `dead-copy.test.ts` proves nothing renders them.
+
+**The existing suites are extended, not duplicated.** `classroom-groups.spec.ts`,
+`-controls.spec.ts`, `-privacy.spec.ts` and `-announcements.spec.ts` already exist, along with
+`tests/unit/grouping.test.ts`. New coverage goes into them. **Tests covering a removed feature are
+deleted in the same stage that removes it**, so the suite never asserts a feature that is gone and
+never sits green over a page that no longer has the control.
+
+**The no-JS message is unchanged.** `needsJs` still covers the whole tool; the new sections do not
+each need their own, and nothing in this design works without script.
 
 ---
 
@@ -621,12 +698,15 @@ existing rendered-text seam scan must stay green.
 Staged, **merged behind the scenes and deployed once at the end**, so the live page never sits in a
 half-migrated state:
 
-1. **Data model + engine** — Student records, number identity, together/apart letters, absence,
-   sex-based grouping, pinned groups.
-2. **Compact layout** — arrangement B, collapsed sections with state headers, class name, and How to
-   use above the tool.
-3. **Student details + avatars** — the table, the new avatars, removal of themes and the two
-   replaced controls.
+1. **Data model + engine** — the new `Student` record and `GroupingInput`, `id` renamed to `number`,
+   together/apart letters, absence, sex-based grouping, pinned groups, leftovers restated against all
+   of them, the two dead error codes deleted and the four new ones added, `parseKeepApart()` removed.
+   The largest stage, and the only one that is pure logic.
+2. **Compact layout** — arrangement B, the four collapsed sections with state headers including
+   **Grouping options**, class name, and How to use above the tool.
+3. **Student details + avatars** — the table, the new avatars, and the four removals: themes, the
+   naming radio, the paste-names box and the free-text keep-apart box, each with its locale keys and
+   its tests.
 4. **CSV import/export + templates + validation + both-language handover.**
 5. **Print panel and print views, and the full-screen projector view.**
 
