@@ -612,3 +612,103 @@ describe('the name-based keep-apart surface is gone', () => {
     expect(codes).not.toContain('KEEP_APART_UNKNOWN_NAME');
   });
 });
+
+describe('together letters', () => {
+  it('places everyone sharing a letter in the same group', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, name: 'Ana', together: 'A' }),
+          student({ number: 2, name: 'Budi', together: 'A' }),
+          student({ number: 3, name: 'Citra' }),
+          student({ number: 4, name: 'Dewi' }),
+          student({ number: 5, name: 'Eko' }),
+          student({ number: 6, name: 'Gita' }),
+        ],
+        mode: { kind: 'groupCount', count: 3 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const g = groupOf(out.result.groups, 1);
+    expect(g?.map((s) => s.number)).toContain(2);
+  });
+
+  it('keeps two different letters apart from each other only by chance, not by rule', () => {
+    // A and B are two units. Nothing says they may not share a group, and
+    // asserting that they do not would be asserting a rule nobody wrote.
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: 'A' }),
+          student({ number: 2, together: 'A' }),
+          student({ number: 3, together: 'B' }),
+          student({ number: 4, together: 'B' }),
+        ],
+        mode: { kind: 'groupCount', count: 1 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.groups[0]).toHaveLength(4);
+  });
+
+  it('refuses a unit larger than the group, naming the letter and both numbers', () => {
+    const out = buildGroups(
+      base({
+        students: Array.from({ length: 8 }, (_, i) =>
+          student({ number: i + 1, together: i < 6 ? 'A' : null }),
+        ),
+        mode: { kind: 'perGroup', size: 4 },
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.togetherUnitTooLarge,
+      letter: 'A',
+      unit: 6,
+      groupSize: 4,
+    });
+  });
+
+  it('refuses the same clash reached by shrinking the groups instead', () => {
+    // Same contradiction, opposite direction. One check has to catch both or
+    // the teacher meets it from one side and not the other.
+    const out = buildGroups(
+      base({
+        students: Array.from({ length: 8 }, (_, i) =>
+          student({ number: i + 1, together: i < 3 ? 'A' : null }),
+        ),
+        mode: { kind: 'groupCount', count: 4 }, // 8 into 4 -> groups of 2
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error.code).toBe(ERROR_CODES.togetherUnitTooLarge);
+  });
+
+  it('ignores the letter of an absent student', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, name: 'Ana', together: 'A', absent: true }),
+          student({ number: 2, name: 'Budi', together: 'A' }),
+          student({ number: 3, name: 'Citra' }),
+        ],
+        // Brief says count: 3, but that is against the ROSTER (3 students). Task
+        // 3 changed the too-many-groups guard to compare against PRESENT
+        // students (2, since Ana is absent), so count: 3 trips TOO_MANY_GROUPS
+        // before this test's own logic is ever reached -- confirmed by running
+        // the brief's version unmodified (see task-4-report.md). count: 2 keeps
+        // the test's actual purpose -- Budi's unit collapses to a block of one
+        // once Ana's letter is ignored -- while staying under present.length.
+        mode: { kind: 'groupCount', count: 2 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    // Budi's unit is now one student, so he can go anywhere.
+    expect(out.result.groups.flat()).toHaveLength(2);
+  });
+});

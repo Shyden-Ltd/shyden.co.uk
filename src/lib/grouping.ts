@@ -52,6 +52,8 @@ export const ERROR_CODES = {
   invalidGroupSize: 'INVALID_GROUP_SIZE',
   invalidGroupCount: 'INVALID_GROUP_COUNT',
   tooManyGroups: 'TOO_MANY_GROUPS',
+  /** A together-letter unit is bigger than even the largest group. */
+  togetherUnitTooLarge: 'TOGETHER_UNIT_TOO_LARGE',
   /** PROVEN by a clique: these students all conflict, so they need N groups. */
   keepApartImpossible: 'KEEP_APART_IMPOSSIBLE',
   /** PROVEN by exhaustive search: no arrangement exists at this group count. */
@@ -80,6 +82,12 @@ export type GroupingError =
   | { code: typeof ERROR_CODES.invalidGroupSize }
   | { code: typeof ERROR_CODES.invalidGroupCount }
   | { code: typeof ERROR_CODES.tooManyGroups; maxGroups: number }
+  | {
+      code: typeof ERROR_CODES.togetherUnitTooLarge;
+      letter: string;
+      unit: number;
+      groupSize: number;
+    }
   | {
       code: typeof ERROR_CODES.keepApartImpossible;
       students: string[];
@@ -235,6 +243,37 @@ function targetSizes(
   return sizes;
 }
 
+/** Indices into the present roster that must end up in one group. */
+type Block = number[];
+
+/**
+ * Collapse together-letters into blocks.
+ *
+ * A student with no letter is a block of one, so the placer below has exactly
+ * one kind of thing to move. That is what keeps the backtracking search — and
+ * its node budget, and its honest "I stopped looking" — identical to the one
+ * that already works.
+ */
+function buildBlocks(present: Student[]): Block[] {
+  const byLetter = new Map<string, Block>();
+  const blocks: Block[] = [];
+  present.forEach((s, i) => {
+    if (s.together === null) {
+      blocks.push([i]);
+      return;
+    }
+    const existing = byLetter.get(s.together);
+    if (existing) {
+      existing.push(i);
+      return;
+    }
+    const block: Block = [i];
+    byLetter.set(s.together, block);
+    blocks.push(block);
+  });
+  return blocks;
+}
+
 /** Conflict adjacency by student index, built from name pairs. */
 function buildConflicts(
   students: Student[],
@@ -313,18 +352,25 @@ function largestMutualConflict(adj: Set<number>[]): number[] {
 }
 
 /**
- * Place students into fixed-capacity groups without seating two conflicting
- * students together. Most-constrained-first ordering keeps the search shallow;
- * the shuffle beforehand is what makes the arrangement vary between runs.
+ * Place blocks into fixed-capacity groups without seating two conflicting
+ * blocks together, and without ever splitting a block across groups.
+ * Most-constrained-first ordering keeps the search shallow; the shuffle
+ * beforehand is what makes the arrangement vary between runs.
+ *
+ * A student with no together-letter is a block of one (see `buildBlocks`),
+ * so this is the only placement function — there is no separate
+ * single-student path that could drift out of sync with this one.
  */
 function assign(
-  order: number[],
+  order: number[], // block indices, most-constrained first
+  blocks: Block[],
   sizes: number[],
-  adj: Set<number>[],
+  adj: Set<number>[], // conflicts BETWEEN BLOCKS
 ): { groups: number[][] | null; gaveUp: boolean } {
-  const groups: number[][] = sizes.map(() => []);
+  const groups: number[][] = sizes.map(() => []); // holds block indices
   let nodes = 0;
   let gaveUp = false;
+  const filled = sizes.map(() => 0);
 
   const place = (idx: number): boolean => {
     if (idx === order.length) return true;
@@ -334,14 +380,17 @@ function assign(
       gaveUp = true;
       return false;
     }
-    const student = order[idx];
+    const b = order[idx];
+    const size = blocks[b].length;
 
     for (let g = 0; g < groups.length; g++) {
-      if (groups[g].length >= sizes[g]) continue;
-      if (groups[g].some((other) => adj[student].has(other))) continue;
-      groups[g].push(student);
+      if (filled[g] + size > sizes[g]) continue;
+      if (groups[g].some((other) => adj[b].has(other))) continue;
+      groups[g].push(b);
+      filled[g] += size;
       if (place(idx + 1)) return true;
       groups[g].pop();
+      filled[g] -= size;
     }
     return false;
   };
@@ -409,8 +458,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // no longer exists on GroupingInput.
   //
   // Concretely: with `pairs` always empty, `largestMutualConflict`, the
-  // clique-impossibility gate just below, `assign`'s own conflict check (adj
-  // is always all-empty sets), `KEEP_APART_NO_ARRANGEMENT` and
+  // clique-impossibility gate just below, and `KEEP_APART_NO_ARRANGEMENT` and
   // `KEEP_APART_SEARCH_GAVE_UP` are all UNREACHABLE through the public API,
   // and therefore UNTESTED, until Task 5 refills `pairs`. This is a real
   // coverage gap, not a stylistic one (see Fix round 1, F-3 in
@@ -421,9 +469,41 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // site, below). Task 5 must RE-PROVE both against letter-fed conflicts,
   // not merely add new apart-letter tests on top of an already-untested
   // path.
+  //
+  // Task 4 addendum: `assign` no longer reads the `adj` built below at all.
+  // `adj` is indexed by a student's position in `present`; `assign` moves
+  // BLOCKS now (see `Block`, `buildBlocks`), and blocks.length is
+  // <= present.length from the moment any together-letter merges two or more
+  // students into one block. Handing `assign` that student-indexed adjacency
+  // and letting it index by BLOCK would silently read some unrelated
+  // student's conflict set instead of the block's own -- wrong, but not
+  // wrong enough for any test to catch, because every set is empty until
+  // Task 5 (same reasoning as the paragraph above). `blockAdj`, below, is
+  // therefore built fresh at blocks.length -- one empty set per block --
+  // rather than reused from `adj`. Task 5 must fill `blockAdj` PER BLOCK (for
+  // instance, by unioning the student-level conflicts of everyone inside
+  // each block), not per student, or this exact substitution bug comes back
+  // with real data behind it and nothing left to catch it.
   const pairs: Array<[string, string]> = [];
 
   const sizes = targetSizes(present.length, mode, leftovers);
+  const blocks = buildBlocks(present);
+
+  // Checked against the LARGEST group, because that is the only one a big unit
+  // could fit in. Comparing against the smallest would refuse arrangements
+  // that are perfectly possible.
+  const largestGroup = Math.max(...sizes);
+  for (const block of blocks) {
+    if (block.length > largestGroup) {
+      return fail({
+        code: ERROR_CODES.togetherUnitTooLarge,
+        letter: present[block[0]].together as string,
+        unit: block.length,
+        groupSize: largestGroup,
+      });
+    }
+  }
+
   const adj = buildConflicts(present, pairs);
 
   if (pairs.length > 0) {
@@ -437,14 +517,18 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     }
   }
 
-  // Shuffle for variety, then order the most-constrained students first so the
+  // See the Task 4 addendum on the comment above `pairs`: this is
+  // block-indexed and empty, never the student-indexed `adj` above.
+  const blockAdj: Set<number>[] = blocks.map(() => new Set<number>());
+
+  // Shuffle for variety, then order the most-constrained blocks first so the
   // search fails fast rather than deep.
   const order = shuffled(
-    present.map((_, i) => i),
+    blocks.map((_, i) => i),
     random,
-  ).sort((a, b) => adj[b].size - adj[a].size);
+  ).sort((a, b) => blockAdj[b].size - blockAdj[a].size);
 
-  const { groups: placed, gaveUp } = assign(order, sizes, adj);
+  const { groups: placed, gaveUp } = assign(order, blocks, sizes, blockAdj);
   if (placed === null) {
     // Two different failures, and the difference is everything. The search
     // either ran to completion — in which case no arrangement exists at this
@@ -476,6 +560,10 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   );
   return {
     ok: true,
-    result: { groups: slots.map((i) => placed[i].map((s) => present[s])) },
+    result: {
+      groups: slots.map((i) =>
+        placed[i].flatMap((b) => blocks[b].map((j) => present[j])),
+      ),
+    },
   };
 }

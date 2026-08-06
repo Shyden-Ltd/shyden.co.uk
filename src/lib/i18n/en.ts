@@ -101,6 +101,12 @@ export const en = {
     INVALID_GROUP_COUNT: 'You need at least 1 group.',
     TOO_MANY_GROUPS: (max: number) =>
       `There are not enough students for that many groups. The most you can have is ${max}.`,
+    TOGETHER_UNIT_TOO_LARGE: (
+      letter: string,
+      unit: number,
+      groupSize: number,
+    ) =>
+      `The "${letter}" group has ${unit} students, but the largest group here only holds ${groupSize}. Make the groups bigger, or give the letter "${letter}" to fewer students.`,
     KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
       `${names.join(', ')} all need to be kept apart from each other, so you would need at least ${groupsNeeded} groups. Either make more groups or remove one of the rules.`,
     // Says only what an exhaustive search proved: not that any particular

@@ -82,6 +82,12 @@ export const id: Strings = {
     INVALID_GROUP_COUNT: 'Anda membutuhkan minimal 1 kelompok.',
     TOO_MANY_GROUPS: (max: number) =>
       `Jumlah siswa tidak cukup untuk sebanyak itu kelompok. Paling banyak Anda bisa membuat ${max}.`,
+    TOGETHER_UNIT_TOO_LARGE: (
+      letter: string,
+      unit: number,
+      groupSize: number,
+    ) =>
+      `Kelompok "${letter}" berisi ${unit} siswa, padahal kelompok terbesar di sini hanya menampung ${groupSize} siswa. Perbesar kelompoknya, atau berikan huruf "${letter}" ke lebih sedikit siswa.`,
     KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
       `${names.join(', ')} semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal ${groupsNeeded} kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.`,
     // Bahasa Indonesia tidak mengubah bentuk kata untuk jamak, jadi tidak ada

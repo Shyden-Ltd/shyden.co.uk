@@ -126,6 +126,12 @@ describe('every engine error can be rendered in every language', () => {
     INVALID_GROUP_SIZE: { code: ERROR_CODES.invalidGroupSize },
     INVALID_GROUP_COUNT: { code: ERROR_CODES.invalidGroupCount },
     TOO_MANY_GROUPS: { code: ERROR_CODES.tooManyGroups, maxGroups: 4 },
+    TOGETHER_UNIT_TOO_LARGE: {
+      code: ERROR_CODES.togetherUnitTooLarge,
+      letter: 'A',
+      unit: 6,
+      groupSize: 4,
+    },
     KEEP_APART_IMPOSSIBLE: {
       code: ERROR_CODES.keepApartImpossible,
       students: ['Ana', 'Budi'],
@@ -179,6 +185,21 @@ describe('every engine error can be rendered in every language', () => {
       { code: ERROR_CODES.tooManyGroups, maxGroups: 4 },
       en,
     );
+    expect(msg).toContain('4');
+  });
+
+  it('the together-unit-too-large message names the letter, the unit size and the group size', () => {
+    const msg = renderError(
+      {
+        code: ERROR_CODES.togetherUnitTooLarge,
+        letter: 'A',
+        unit: 6,
+        groupSize: 4,
+      },
+      en,
+    );
+    expect(msg).toContain('A');
+    expect(msg).toContain('6');
     expect(msg).toContain('4');
   });
 });
