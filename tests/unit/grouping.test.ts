@@ -306,6 +306,44 @@ describe('absence', () => {
     if (out.ok) return;
     expect(out.error.code).toBe(ERROR_CODES.tooManyStudents);
   });
+
+  it('refuses too many groups using the number PRESENT, not the roster size', () => {
+    // 4 on the roster, 3 present. Asking for 4 groups from 3 must be refused,
+    // and the count offered back must be 3 -- present.length, not the 4 on
+    // the roster. A silent revert to students.length here would read
+    // `4 > 4` as false, let the guard pass, and hand the teacher a group of
+    // size 0. Fix round 1, F-1.
+    const out = buildGroups(
+      base({ students: roster, mode: { kind: 'groupCount', count: 4 } }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.tooManyGroups,
+      maxGroups: 3,
+    });
+  });
+
+  it('still refuses a duplicate number when the duplicate is the absent row', () => {
+    // The duplicate-number loop runs over the whole roster, before absence is
+    // applied, precisely so a duplicate in a row marked absent today is still
+    // caught -- the teacher unticks that row tomorrow (see the comment above
+    // `present` in grouping.ts). Fix round 1, F-2.
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 7, name: 'Eko' }),
+          student({ number: 7, name: 'Fitri', absent: true }),
+        ],
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.duplicateNumber,
+      number: 7,
+    });
+  });
 });
 
 describe('buildGroups — refusals', () => {
