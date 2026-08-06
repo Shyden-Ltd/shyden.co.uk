@@ -1027,23 +1027,33 @@ describe('together letters', () => {
 
 describe('apart letters', () => {
   it('separates everyone sharing a letter from everyone else sharing it', () => {
-    const out = buildGroups(
-      base({
-        students: [
-          student({ number: 1, apart: 'X' }),
-          student({ number: 2, apart: 'X' }),
-          student({ number: 3, apart: 'X' }),
-          student({ number: 4 }),
-          student({ number: 5 }),
-          student({ number: 6 }),
-        ],
-        mode: { kind: 'groupCount', count: 3 },
-      }),
-    );
-    expect(out.ok).toBe(true);
-    if (!out.ok) return;
-    for (const g of out.result.groups) {
-      expect(g.filter((s) => s.apart === 'X')).toHaveLength(1);
+    // Swept across seeds, not asserted once (Fix round 1, F-3): a single
+    // arbitrary seed leaves this holding by LUCK, not by the feature -- with
+    // apart-letters completely ignored, this exact roster's assertion still
+    // holds on 23 of 50 seeds (confirmed by mutation below), and seed 1
+    // (base()'s default) is one of the lucky ones. This is the feature's
+    // headline promise, so it gets real search pressure: 25 seeds, every one
+    // checked, not "at least one".
+    for (let seed = 1; seed <= 25; seed++) {
+      const out = buildGroups(
+        base({
+          students: [
+            student({ number: 1, apart: 'X' }),
+            student({ number: 2, apart: 'X' }),
+            student({ number: 3, apart: 'X' }),
+            student({ number: 4 }),
+            student({ number: 5 }),
+            student({ number: 6 }),
+          ],
+          mode: { kind: 'groupCount', count: 3 },
+          random: seeded(seed),
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) continue;
+      for (const g of out.result.groups) {
+        expect(g.filter((s) => s.apart === 'X')).toHaveLength(1);
+      }
     }
   });
 
@@ -1089,6 +1099,13 @@ describe('apart letters', () => {
   });
 
   it('ignores the letter of an absent student', () => {
+    // Structurally unbreakable as apart-COVERAGE, not just weak: 2 present
+    // students into sizes [1, 1] separate by CAPACITY alone, whether or not
+    // `apart` (or absence-filtering) is read at all -- confirmed, no mutant
+    // of the apart logic reddens this (Fix round 1, F-4). Kept anyway as a
+    // cheap boundary check that an absent letter-holder does not otherwise
+    // disrupt sizing. The real guarantee -- that an absent student's letter
+    // cannot inflate the clique -- is the test below.
     const out = buildGroups(
       base({
         students: [
@@ -1102,25 +1119,52 @@ describe('apart letters', () => {
     expect(out.ok).toBe(true); // two present, two groups
   });
 
-  it('separates whole units, not just the students carrying the letter', () => {
-    // Ana is with Budi, and Ana must be away from Citra. Budi therefore cannot
-    // be with Citra either -- the unit moves as one, so the conflict does too.
+  // Fix round 1, F-4: sits on the refusal boundary instead. Four X-holders
+  // (1-4) plus two plain students; student 4 is absent. The PRESENT clique
+  // is exactly {1, 2, 3} -- 3 blocks -- which equals sizes.length (3), so
+  // the clique gate does not fire and this succeeds. If absence ever leaked
+  // into `buildConflicts` (the failure the test above cannot see: it has no
+  // slack between "separates" and "does not"), the clique would include the
+  // absent student 4 too -- 4 > 3 -- and this would fail with
+  // KEEP_APART_IMPOSSIBLE instead. Proven by mutation: see task-5-report.md.
+  it('an absent letter-holder does not inflate the clique past the group count', () => {
     const out = buildGroups(
       base({
         students: [
-          student({ number: 1, name: 'Ana', together: 'A', apart: 'X' }),
-          student({ number: 2, name: 'Budi', together: 'A' }),
-          student({ number: 3, name: 'Citra', apart: 'X' }),
-          student({ number: 4, name: 'Dewi' }),
+          student({ number: 1, apart: 'X' }),
+          student({ number: 2, apart: 'X' }),
+          student({ number: 3, apart: 'X' }),
+          student({ number: 4, apart: 'X', absent: true }),
+          student({ number: 5 }),
+          student({ number: 6 }),
         ],
-        mode: { kind: 'groupCount', count: 2 },
+        mode: { kind: 'groupCount', count: 3 },
       }),
     );
     expect(out.ok).toBe(true);
-    if (!out.ok) return;
-    const withBudi = groupOf(out.result.groups, 2);
-    expect(withBudi?.map((s) => s.number)).not.toContain(3);
   });
+
+  // 'separates whole units, not just the students carrying the letter' used
+  // to live here (Ana+Budi together, Ana apart from Citra, expecting Budi
+  // never ends up with Citra) and was deleted (Fix round 1, F-3): with 4
+  // students into 2 groups of 2, the together-block {Ana, Budi} has size 2,
+  // which can ONLY ever be placed as an entire group on its own -- there is
+  // no OTHER group it could partially share -- so Citra ends up with Dewi by
+  // CAPACITY ALONE, whether or not the block-level conflict check runs at
+  // all. Confirmed by mutation: it stayed green under both an ignored-apart
+  // mutant and a disabled-conflict mutant (task-5-report.md). Adding filler
+  // students to relieve that capacity pressure -- the obvious repair -- was
+  // tried and it still passed at seed 1, so no repair was found, not for
+  // lack of trying.
+  //
+  // The guarantee it meant to protect -- a together-block moves as one, so
+  // its apart-conflict moves with it -- is properly covered, under real
+  // search pressure across 100 attempts with multiple modes and seeds, by
+  // 'holds even when together-letters merge students into multi-student
+  // blocks' below (debt (a) sweep 2), independently reconfirmed here to go
+  // red under the disabled-conflict mutant (`expected 2 to be less than or
+  // equal to 1`) where this deleted test stayed green under the identical
+  // mutation.
 });
 
 // Debt (a) from the task-5 brief's opening notice: "two students who must be
@@ -1290,25 +1334,26 @@ describe('apart letters — exhausting the search budget is never reported as "n
     );
     expect(students).toHaveLength(105);
 
-    const start = performance.now();
     const out = buildGroups(
       base({ students, mode: { kind: 'groupCount', count: 20 } }),
     );
-    const ms = performance.now() - start;
 
     expect(out.ok).toBe(false);
     if (out.ok) return;
     // The specific code, not just `ok === false`: the historical bug this
     // guards had the right verdict (refused) and the WRONG code (claimed
     // impossibility when it had only given up), so a test that stopped at
-    // the verdict would have passed on that exact bug.
+    // the verdict would have passed on that exact bug. That code has exactly
+    // one producer (KEEP_APART_SEARCH_GAVE_UP), so this assertion alone
+    // already proves the cap was hit -- no separate timing check is needed
+    // to establish that (Fix round 1, F-5: a wall-clock assertion
+    // (`expect(ms).toBeGreaterThan(5)`) was removed here; this codebase does
+    // not allow tests whose pass/fail depends on wall-clock time, since it
+    // turns a slow or loaded CI machine into a mystery failure). Measured,
+    // as a record rather than an assertion: ~51-57ms on repeated local runs
+    // (matches the SEARCH_NODE_CAP comment in grouping.ts, which has the
+    // full sweep this input was drawn from).
     expect(out.error).toEqual({ code: ERROR_CODES.keepApartSearchGaveUp });
-    // Sanity on the measurement itself: genuinely slow relative to the rest
-    // of this suite (tens of ms, not fractions of one), which is what
-    // "exhausted a 200,000-node budget, twice" should look like -- not a
-    // hard ceiling, since machines vary, but a floor far above what a quick
-    // proof or a quick success would cost.
-    expect(ms).toBeGreaterThan(5);
   });
 });
 
@@ -1340,6 +1385,42 @@ describe('apart letters — the clique certificate names exactly the conflicting
     if (out.error.code !== ERROR_CODES.keepApartImpossible) return;
     expect(out.error.students.sort((a, b) => a - b)).toEqual([1, 2, 3]);
     expect(out.error.groupsNeeded).toBe(3);
+  });
+
+  // Fix round 1, F-1: every test above uses only singleton blocks (no
+  // `together`), so block index and student index coincide and this cannot
+  // see a bug that named every MEMBER of every block rather than one
+  // representative per block. Three together-pairs below, with the
+  // apart-letter on only one student per pair, close that gap: students 2,
+  // 4 and 6 carry no apart-letter at all -- they are only in the clique's
+  // blocks because a together-letter binds them to 1, 3 and 5 -- so naming
+  // them would assert that 1 and 2 (who must be kept TOGETHER) also need to
+  // be kept apart from each other, and would leave `students.length` at 6
+  // against a `groupsNeeded` of 3.
+  it('names one student per block, not every member of a multi-student block', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: 'P', apart: 'X' }),
+          student({ number: 2, together: 'P' }),
+          student({ number: 3, together: 'Q', apart: 'X' }),
+          student({ number: 4, together: 'Q' }),
+          student({ number: 5, together: 'R', apart: 'X' }),
+          student({ number: 6, together: 'R' }),
+        ],
+        mode: { kind: 'groupCount', count: 2 }, // 2 groups cannot hold X's clique of 3
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error.code).toBe(ERROR_CODES.keepApartImpossible);
+    if (out.error.code !== ERROR_CODES.keepApartImpossible) return;
+    // students.length reconciles with groupsNeeded -- unlike the pre-fix
+    // certificate, which named all 6.
+    expect(out.error.groupsNeeded).toBe(3);
+    expect(out.error.students).toHaveLength(3);
+    // Exactly the three actual letter-holders -- never their blockmates.
+    expect(out.error.students.sort((a, b) => a - b)).toEqual([1, 3, 5]);
   });
 });
 

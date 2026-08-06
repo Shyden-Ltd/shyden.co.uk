@@ -284,25 +284,67 @@ describe('every engine error can be rendered in every language', () => {
           strings,
         );
         expect(msg).toContain('3');
+        // "Without picking a side" (Fix round 1, F-7): the old version
+        // asserted only the group count, which both single-rule PROVEN
+        // messages also contain at groupsTried=3 -- so it could not have
+        // told a collapse-to-one-rule bug from the real thing. This can:
+        // the two single-rule messages are distinct copy this must never
+        // equal.
+        expect(msg).not.toBe(strings.errors.TOGETHER_NO_ARRANGEMENT(3));
+        expect(msg).not.toBe(strings.errors.KEEP_APART_NO_ARRANGEMENT(3));
       },
     );
 
-    it('English offers BOTH remedies -- bigger groups AND more groups -- not one', () => {
-      const msg = renderError(
-        { code: ERROR_CODES.bothRulesNoArrangement, groupsTried: 3 },
-        en,
-      );
-      // "bigger" is the together remedy; "more groups" is the keep-apart
-      // remedy. A version that silently collapsed to one rule's copy (the
-      // Task 4 placeholder this replaces) would fail one side of this.
-      expect(msg).toContain('bigger');
-      expect(msg).toContain('more groups');
-    });
+    // Fix round 1, F-6: folds in and replaces the old English-only "offers
+    // BOTH remedies -- bigger groups AND more groups -- not one" test, whose
+    // two assertions ('bigger', 'more groups') this strictly subsumes as
+    // substrings, and mirrors it into Indonesian, which had NO assertion on
+    // this content at all before now -- the gap F-6 found: the Indonesian
+    // used to offer four actions with no way to tell which addressed which
+    // rule ("berikan setiap huruf ke lebih sedikit siswa" for a message
+    // about BOTH letter kinds, when only the together-letter remedy is
+    // that). Each phrase below only appears in the FIXED copy -- picked so
+    // a regression back to the old generic listing reddens this, not just a
+    // regression that drops a remedy entirely.
+    it.each([
+      ['en', en, 'make the groups bigger', 'make more groups'],
+      ['id', id, 'untuk huruf yang harus disatukan', 'untuk aturan pemisahan'],
+    ] as const)(
+      'ties each remedy to the rule it fixes, not a shared generic list (%s)',
+      (_name, strings, togetherPhrase, apartPhrase) => {
+        const msg = renderError(
+          { code: ERROR_CODES.bothRulesNoArrangement, groupsTried: 3 },
+          strings,
+        );
+        expect(msg).toContain(togetherPhrase);
+        expect(msg).toContain(apartPhrase);
+      },
+    );
 
     it('English gave-up copy does not claim either rule is the cause', () => {
+      // Fix round 1, F-2: the old version only re-checked, for this one
+      // code, what the `it.each(locales)` sentence-shape loop above already
+      // asserts for EVERY code in SAMPLES (no raw code leaking through; a
+      // real sentence) -- nothing in it tested this code's own claim.
       const msg = renderError({ code: ERROR_CODES.bothRulesSearchGaveUp }, en);
-      expect(msg).not.toContain(ERROR_CODES.bothRulesSearchGaveUp);
-      expect(msg).toMatch(/^\S.*[.!?]$/);
+      // Mentions BOTH kinds of letter...
+      expect(msg).toContain('together');
+      expect(msg).toContain('apart');
+      // ...and is not a single-rule message in disguise: the two
+      // single-rule gave-up sentences are distinct copy this must never
+      // collapse into.
+      expect(msg).not.toBe(en.errors.TOGETHER_SEARCH_GAVE_UP);
+      expect(msg).not.toBe(en.errors.KEEP_APART_SEARCH_GAVE_UP);
+    });
+
+    it('Indonesian gave-up copy does not claim either rule is the cause', () => {
+      const msg = renderError({ code: ERROR_CODES.bothRulesSearchGaveUp }, id);
+      // "disatukan" (together) and "pemisahan" (apart) -- the Indonesian
+      // words the single-rule copy above uses on their own.
+      expect(msg).toContain('disatukan');
+      expect(msg).toContain('pemisahan');
+      expect(msg).not.toBe(id.errors.TOGETHER_SEARCH_GAVE_UP);
+      expect(msg).not.toBe(id.errors.KEEP_APART_SEARCH_GAVE_UP);
     });
   });
 

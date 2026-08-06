@@ -650,14 +650,30 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     if (clique.length > sizes.length) {
       return fail({
         code: ERROR_CODES.keepApartImpossible,
-        // Every member of every block in the clique -- not one
-        // representative per block, since a block can hold more than one
-        // student. Numbers, because identity is the number (Student.number);
-        // renderError's resolver turns these into names for a page that has
-        // a roster to resolve them against.
-        students: clique.flatMap((b) =>
-          blocks[b].map((i) => present[i].number),
-        ),
+        // ONE representative per block, not every member of every block
+        // (Fix round 1, F-1). Every member would name students who are not
+        // mutually apart at all -- a block can hold students with no
+        // apart-letter of their own (they are there only because a
+        // together-letter binds them to a real letter-holder), and naming
+        // them alongside their blockmate asserts that two students who must
+        // be kept TOGETHER also need to be kept apart from each other. It
+        // also makes `students.length` bigger than `groupsNeeded`,
+        // self-contradicting the sentence it feeds: N mutually-apart
+        // students need N groups, not fewer.
+        //
+        // Every block reported here is guaranteed to have at least one
+        // apart-letter holder: `buildConflicts` only ever gives a block an
+        // edge because one of its members shares a letter with a member of
+        // another block, and a clique this gate reports always has at least
+        // two blocks (`clique.length > sizes.length >= 1`). So `.find` below
+        // always succeeds; the `?? blocks[b][0]` fallback is unreachable
+        // defensive code, not a real path. Numbers, because identity is the
+        // number (Student.number); renderError's resolver turns these into
+        // names for a page that has a roster to resolve them against.
+        students: clique.map((b) => {
+          const holder = blocks[b].find((i) => present[i].apart !== null);
+          return present[holder ?? blocks[b][0]].number;
+        }),
         groupsNeeded: clique.length,
       });
     }

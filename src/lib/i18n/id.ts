@@ -104,10 +104,28 @@ export const id: Strings = {
     // solusi yang berlawanan, dan pencarian ini tidak bisa memastikan aturan
     // mana yang jadi masalah -- jadi kalimat ini menyebutkan keduanya dan
     // menawarkan kedua solusi tanpa memilih salah satu.
+    //
+    // Fix round 1, F-6: dua perbaikan sebelumnya berupa daftar generik
+    // ("berikan setiap huruf...", "hapus salah satu aturannya") yang tidak
+    // menyebutkan aturan mana yang diperbaiki -- guru mendapat empat
+    // tindakan tanpa tahu mana untuk masalah yang mana. Sekarang setiap
+    // pasangan perbaikan diawali "untuk X,", menempelkannya langsung ke
+    // aturan yang dimaksud, sama seperti versi Inggrisnya memasangkan
+    // "bigger"/"fewer students" ke together dan "more groups"/"remove" ke
+    // apart. Kalimat penutupnya juga sengaja TIDAK sama persis dengan
+    // KEEP_APART_NO_ARRANGEMENT di atas (dulu identik kata demi kata) --
+    // seorang guru yang sudah membaca keduanya akan membaca ekor yang sama
+    // sebagai "pesan pemisahan lagi", yang melemahkan maksud pesan ini:
+    // tidak menyalahkan satu aturan saja.
     BOTH_RULES_NO_ARRANGEMENT: (groupsTried: number) =>
-      `Tidak ada cara membagi kelas Anda menjadi ${groupsTried} kelompok sambil tetap menyatukan siswa yang harus disatukan dan memisahkan siswa yang harus dipisahkan. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: perbesar kelompoknya atau berikan setiap huruf ke lebih sedikit siswa, atau tambah jumlah kelompok atau hapus salah satu aturannya.`,
+      `Tidak ada cara membagi kelas Anda menjadi ${groupsTried} kelompok sambil tetap menyatukan siswa yang harus disatukan dan memisahkan siswa yang harus dipisahkan. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: untuk huruf yang harus disatukan, perbesar kelompoknya atau berikan hurufnya ke lebih sedikit siswa; untuk aturan pemisahan, tambah jumlah kelompoknya atau hapus salah satu aturan itu.`,
+    // Ekornya juga diubah supaya tidak identik dengan TOGETHER_SEARCH_GAVE_UP
+    // di atas ("dari kedua jenis itu" menandai bahwa ini mencakup kedua
+    // jenis huruf, bukan cuma huruf penyatu) -- konsisten dengan perbaikan
+    // BOTH_RULES_NO_ARRANGEMENT di atas, dan dengan "of either kind" pada
+    // versi Inggrisnya.
     BOTH_RULES_SEARCH_GAVE_UP:
-      'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus. Coba gunakan lebih sedikit huruf, atau perbesar kelompoknya.',
+      'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus. Coba gunakan lebih sedikit huruf dari kedua jenis itu, atau perbesar kelompoknya.',
   },
 
   themes: {
