@@ -123,6 +123,13 @@ rather than left exported with no caller."
 **Files:**
 - Modify: `src/lib/grouping.ts` — `Student`, `GroupingInput`, `normaliseStudents`, `requestedSize`
 - Modify: `tests/unit/grouping.test.ts`
+- **Create: `tests/unit/factories.ts`** — `student()`, `seeded()`, `shape()`, `groupOf()`
+
+> **Why a factory file rather than a helper at the top of the suite.** `student()` is used ~200 times
+> across this stage and again in stage 3's roster tests. Defined twice, the two drift — and a factory
+> whose defaults differ between suites produces two different meanings for "a student with nothing
+> set", which is the shape of a bug nobody looks for. Move `seeded`, `shape` and `groupOf` there at
+> the same time and import them back into `grouping.test.ts`.
 
 **Interfaces:**
 - Consumes: Task 1's trimmed `ERROR_CODES`
@@ -152,11 +159,31 @@ rather than left exported with no caller."
 
 - [ ] **Step 1: Write the failing tests**
 
+Create `tests/unit/factories.ts`:
+
 ```ts
+import type { Student } from '../../src/lib/grouping';
+
 /** A record with the boring fields filled in, so tests state only what they mean. */
-const student = (over: Partial<Student> & { number: number }): Student => ({
+export const student = (over: Partial<Student> & { number: number }): Student => ({
   name: null, sex: null, absent: false, together: null, apart: null, ...over,
 });
+
+/** Group sizes, largest first — the shape of a split, independent of who landed where. */
+export const shape = (groups: Student[][]): number[] =>
+  groups.map((g) => g.length).sort((a, b) => b - a);
+
+/** The group containing this student number. */
+export const groupOf = (groups: Student[][], number: number): Student[] | undefined =>
+  groups.find((g) => g.some((s) => s.number === number));
+
+// `seeded` moves here unchanged from grouping.test.ts.
+```
+
+Then in `tests/unit/grouping.test.ts`:
+
+```ts
+import { student, shape, groupOf, seeded } from './factories';
 
 describe('students are records identified by a number', () => {
   it('keeps the teacher\'s numbers rather than renumbering from 1', () => {
@@ -290,6 +317,9 @@ function normaliseStudents(input: number | Student[]): Student[] {
 In `buildGroups`, immediately after `if (students.length === 0)`:
 
 ```ts
+  // The PAGE also refuses duplicates, live, in stage 3. Both must say the same
+  // sentence, so the engine reports the code and the number and the renderer
+  // owns the words -- exactly one place builds that string.
   const seen = new Set<number>();
   for (const s of students) {
     if (seen.has(s.number)) {

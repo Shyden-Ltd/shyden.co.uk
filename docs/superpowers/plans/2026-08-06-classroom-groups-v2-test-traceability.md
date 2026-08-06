@@ -36,7 +36,7 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | L-03 | …at 768px | P | ☐ |
 | L-04 | …at 1280px | P | ☐ |
 | L-05 | **No horizontal page scroll at any of those four widths, in any state** | P | ☐ |
-| L-06 | …including with Student details open and a 100-student roster loaded | P | ☐ |
+| L-06 | …including with Student details open and a 100-student roster loaded — **stage 3**, not stage 2: the section has no body until then | P | ☐ |
 | L-07 | Expanding a section is allowed to scroll vertically — this is not a failure | P | ☐ |
 | L-08 | Every interactive target is ≥44px in both dimensions | P | ☐ |
 | L-09 | Accent `#0A7D66` still meets AA against its background | P | ☐ |
