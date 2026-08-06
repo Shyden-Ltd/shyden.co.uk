@@ -361,7 +361,6 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   }
 
   const students = normaliseStudents(input.students);
-  if (students.length === 0) return fail({ code: ERROR_CODES.noStudents });
 
   // The PAGE also refuses duplicates, live, in stage 3. Both must say the same
   // sentence, so the engine reports the code and the number and the renderer
@@ -374,6 +373,14 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     seen.add(s.number);
   }
 
+  if (students.length === 0) return fail({ code: ERROR_CODES.noStudents });
+
+  // Absence is applied here, after the roster is counted and validated, so a
+  // duplicate number is still caught in a row that is out today -- the teacher
+  // is going to untick it tomorrow.
+  const present = students.filter((s) => !s.absent);
+  if (present.length === 0) return fail({ code: ERROR_CODES.noStudents });
+
   const { mode, leftovers, random } = input;
   if (
     mode.kind === 'perGroup' &&
@@ -385,10 +392,10 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     if (!Number.isInteger(mode.count) || mode.count < 1) {
       return fail({ code: ERROR_CODES.invalidGroupCount });
     }
-    if (mode.count > students.length) {
+    if (mode.count > present.length) {
       return fail({
         code: ERROR_CODES.tooManyGroups,
-        maxGroups: students.length,
+        maxGroups: present.length,
       });
     }
   }
@@ -416,15 +423,15 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // path.
   const pairs: Array<[string, string]> = [];
 
-  const sizes = targetSizes(students.length, mode, leftovers);
-  const adj = buildConflicts(students, pairs);
+  const sizes = targetSizes(present.length, mode, leftovers);
+  const adj = buildConflicts(present, pairs);
 
   if (pairs.length > 0) {
     const clique = largestMutualConflict(adj);
     if (clique.length > sizes.length) {
       return fail({
         code: ERROR_CODES.keepApartImpossible,
-        students: clique.map((i) => students[i].name as string),
+        students: clique.map((i) => present[i].name as string),
         groupsNeeded: clique.length,
       });
     }
@@ -433,7 +440,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // Shuffle for variety, then order the most-constrained students first so the
   // search fails fast rather than deep.
   const order = shuffled(
-    students.map((_, i) => i),
+    present.map((_, i) => i),
     random,
   ).sort((a, b) => adj[b].size - adj[a].size);
 
@@ -469,6 +476,6 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   );
   return {
     ok: true,
-    result: { groups: slots.map((i) => placed[i].map((s) => students[s])) },
+    result: { groups: slots.map((i) => placed[i].map((s) => present[s])) },
   };
 }

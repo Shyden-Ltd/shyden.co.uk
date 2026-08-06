@@ -255,6 +255,59 @@ describe('students are records identified by a number', () => {
   });
 });
 
+describe('absence', () => {
+  const roster = [
+    student({ number: 1, name: 'Ana' }),
+    student({ number: 2, name: 'Budi' }),
+    student({ number: 3, name: 'Citra', absent: true }),
+    student({ number: 4, name: 'Dewi' }),
+  ];
+
+  it('leaves an absent student out of the results entirely', () => {
+    const out = buildGroups(
+      base({ students: roster, mode: { kind: 'groupCount', count: 2 } }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const numbers = out.result.groups.flat().map((s) => s.number);
+    expect(numbers).not.toContain(3);
+    expect(numbers.sort((a, b) => a - b)).toEqual([1, 2, 4]);
+  });
+
+  it('sizes the groups from those present, not from the roster', () => {
+    // 4 on the roster, 3 present, groups of 3 -> one group of 3, not of 4.
+    const out = buildGroups(
+      base({ students: roster, mode: { kind: 'perGroup', size: 3 } }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(shape(out.result.groups)).toEqual([3]);
+  });
+
+  it('refuses when everybody is absent, as if there were no students', () => {
+    const out = buildGroups(
+      base({
+        students: roster.map((s) => ({ ...s, absent: true })),
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({ code: ERROR_CODES.noStudents });
+  });
+
+  it('counts absent students against MAX_STUDENTS, because the roster is built first', () => {
+    // The cap exists to stop a mis-keyed number allocating until the tab dies.
+    // That allocation happens before anyone is filtered, so the guard must too.
+    const many = Array.from({ length: MAX_STUDENTS + 1 }, (_, i) =>
+      student({ number: i + 1, absent: true }),
+    );
+    const out = buildGroups(base({ students: many }));
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error.code).toBe(ERROR_CODES.tooManyStudents);
+  });
+});
+
 describe('buildGroups — refusals', () => {
   it.each([
     ['no students at all', base({ students: 0 }), ERROR_CODES.noStudents],
