@@ -103,6 +103,12 @@ the engine cannot tell them apart. With numbers as IDs every constraint is unamb
 - Whole numbers, **unique**, **gaps allowed** — a real register number survives a round trip.
 - A gap raises a **non-blocking warning**: the class list appears to be incomplete, check it by
   opening Student details.
+- **A new student gets one past the highest number in use**, never the first free gap. With 1, 2, 3
+  and 5 on the list the next student is 6, not 4 — a gap is usually a register number belonging to a
+  child who has left, and filling it would quietly hand their number to somebody else.
+- **A duplicate is refused as it is typed**, in the table, exactly like the together-and-apart clash:
+  *"Number 5 is already used by Eko. Every student needs their own."* Not held back until the button
+  is pressed — one rule for both clashes means one behaviour to learn.
 
 ### Sex
 
@@ -160,6 +166,10 @@ backwards.
     but Budi and Citra together" can no longer be expressed. The operator chose this knowingly.
 - **A pair marked both together and apart is refused in the table, as it is typed**, naming the
   clash: *"Ana and Budi are kept together, so they cannot also be kept apart."*
+- **A together-unit larger than the group size is refused**, naming both numbers and both ways out:
+  *"6 students are kept together with A, but your groups hold 4. Use larger groups, or move 2 of them
+  off A."* Checked whenever either the letters or the group size changes, so raising the letter count
+  and lowering the group size are caught the same way.
 
 ### The Students box — an input, then a read-out
 
@@ -181,7 +191,8 @@ comes from letting them disagree, so **they are never both in charge**.
   - `+ Add several…` — asks how many and adds that many unnamed rows, for the teacher who has 24
     named and six more to come.
   - Removing a row removes the student.
-- **Emptying the list** returns the box to being an input.
+- **Emptying the list** returns the box to being an input, **keeping the number it was last
+  reporting**. Clearing a list of 24 leaves 24 in the box, so nothing jumps and nothing is lost.
 
 **What this buys.** The count and the list cannot disagree, so there is no mismatch to warn about,
 none to block, and no rule about which students get dropped when a number shrinks — because a number
@@ -195,8 +206,9 @@ class, not of tonight's group work. The line beneath does the arithmetic (`24 st
 ### Two size limits, not one
 
 The engine refuses above 500 today. That limit was set when a student was a number; a student is now
-a row of five controls, so 500 named students would put 2,500 form elements on the page — slow on a
-phone and slow to read out. The two costs are different, so they get different limits:
+a row of six controls — number, name, sex, absent, together, apart — so 500 named students would put
+3,000 form elements on the page, slow on a phone and slow to read out. The two costs are different,
+so they get different limits:
 
 | Limit | Value | Applies to |
 |---|---|---|
@@ -233,9 +245,10 @@ Direction **C — friendly faces**, at the **Bold** strength.
 Shared: hair `hsl(24 40% 24%)`, face `hsl(32 55% 78%)`, eyes/mouth `hsl(215 30% 20%)`.
 Simple dot eyes and a smile; 40×40 viewBox; rendered at 34px in group cards.
 
-**Two signals, not one.** Colour *and* hair length (short / medium / long) both differ. Colour alone
-would fail the roughly 1 in 12 boys who cannot separate pink from blue, and would not survive a
-greyscale printout. This is deliberate and must not be "simplified" away.
+**Two signals, not one.** Colour *and* hair length (short / medium / long) both differ. The palette
+puts pink beside green, which is the classic confusion for the roughly 1 in 12 males with red-green
+colour blindness — and no colour at all survives a greyscale printout. Hair length is what carries
+the distinction for both. This is deliberate and must not be "simplified" away.
 
 **Removed:** the group-name themes (Animals / Colours / Planets), their `themeNames`/`themes` tables
 in both locales, `THEME_KEYS`, the themed branch of `groupName()`, and the theme `<select>`. Groups
@@ -252,9 +265,21 @@ Two optional switches, both **off by default**:
 
 Rules:
 
-- **Both are DISABLED unless every student on the list has `M` or `F`.** When disabled, say why:
-  *"18 of your 24 students have no sex set. Open Student details and set M or F for everyone to
-  use these."* This removes the question of where a neutral student goes in a single-sex group.
+- **Both are DISABLED unless every student *being grouped* has `M` or `F`.** This removes the
+  question of where a neutral student goes in a single-sex group.
+  - **Absent students are not counted.** A child who is off today and has no sex set does not hold
+    the options shut, because they are not being placed in anything. Measuring the whole list instead
+    would have produced the worst kind of block: every group on screen has a sex, nothing looks
+    wrong, and the child preventing it is the one who is not there.
+  - **When disabled, say why**, and name the number: *"3 of the 22 students being grouped have no sex
+    set. Open Student details and set M or F for them to use these."*
+  - **With no list at all**, nobody has a sex, so both are disabled with their own wording:
+    *"Add your students in Student details and set M or F for each to use these."*
+  - **They can switch off again when a student returns.** Unticking an absence can put an unsexed
+    student back into the grouping and close the options. That must be **explained, not silent**:
+    *"Dewi is back and has no sex set. These options need one for every student being grouped."*
+    A control that disables itself without a reason is the same defect as a greyed-out box that does
+    not say why.
 - **Separate mode warns when the counts don't divide**, and **names the students who end up in a
   group of the other sex**.
 - **A contradiction with together/apart is blocked, with the reason stated** — e.g. Ana (F) and Budi
@@ -265,9 +290,9 @@ Rules:
 ## 7. Partial reshuffle
 
 **In scope.** Each group card carries a pin. **Shuffle again** leaves pinned groups untouched and
-redeals everyone else. Pinned students are a third constraint alongside together, apart and the sex
-options, and interactions between them must be specified and tested (see open questions — none
-outstanding here, but the engine work is real).
+redeals everyone else. Pinned students are a fourth constraint alongside together, apart and the sex
+options, and every interaction between them must be specified and tested — the engine work here is
+real and is the largest single piece of stage 1.
 
 ---
 
@@ -303,7 +328,10 @@ and the class reads them off it, which is what this tool is actually for.
 - **The reveal animation plays**, honouring the existing Sound & animation switch and
   `prefers-reduced-motion`. It is wasted on a laptop the teacher is looking at alone; on the board it
   is the moment the children are waiting for.
-- **Exiting returns to the same results, unchanged**, at the same scroll position.
+- **Exiting shows whatever is on the board when you leave** — including a shuffle done there — at
+  the same scroll position. The page behind is never a stale copy of the results you started with.
+- **Warnings appear on the board too**, not only on the page behind it. A separate-sex shuffle that
+  names who landed in the other sex's group must say so where the teacher is looking.
 
 ---
 
@@ -327,6 +355,9 @@ number,name,sex,absent,together,apart
   in Excel, Numbers and Sheets.
 - **Only `number` is required.** A file containing nothing but a `number` column is valid and
   imports that many anonymous students. Everything else may be blank per row.
+- **`absent` is blank for everyone who is in**, so the column stays quiet until somebody is out. A
+  teacher who writes `no` (or `tidak`) is being reasonable and it is accepted as present; anything
+  else in that column is refused by name, like any other bad value.
 - **Class name travels as a `# Class:` comment line** above the headers, so it round-trips. Excel
   shows it as a first row; the importer reads it.
 
@@ -339,7 +370,7 @@ The file must match the language of the page — **headers and values both**.
 | headers | `number,name,sex,absent,together,apart` | `nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah` |
 | class comment | `# Class:` | `# Kelas:` |
 | sex | `M` / `F` / blank | `L` / `P` / blank |
-| absent | `yes`, or **blank for present** | `ya`, or **blank for present** |
+| absent | `yes` · present is blank or `no` | `ya` · present is blank or `tidak` |
 
 A file in the wrong language is **recognised as such**, refused, and offers a link to the correct
 page — *"This looks like a Bahasa Indonesia class list. Open the Indonesian version of this page to
@@ -378,9 +409,23 @@ without ragged blank columns. *A is data; B was a picture — and for a picture 
 
 ### Templates
 
-**Context-sensitive.** With no class list on screen, the template carries the headers plus clearly
-marked example rows the importer recognises and skips, so a teacher who forgets to delete them does
-not import "Example One". With a class list already present, the template is **your roster**.
+**Context-sensitive.** With no class list on screen, the template carries the headers plus example
+rows. With a class list already present, the template is **your roster**.
+
+**The example rows are comment lines**, and the importer ignores every line beginning with `#`:
+
+```
+# Class:
+number,name,sex,absent,together,apart
+# 1,Ana,F,,A,
+# 2,Budi,M,,,X
+# delete these two lines and type your own
+```
+
+One rule, applied to the whole file, does the job: the `# Class:` line, the example rows and any note
+a teacher adds are all handled by it. **No name matching** — recognising examples by their contents
+would silently drop a real child called Example One, which is exactly the class of bug this avoids.
+A teacher who forgets to delete them imports nothing by accident.
 
 ### Exporting in both languages — bidirectional
 
@@ -440,7 +485,12 @@ a combination the named sheets could not express.
 - *Show students who are absent* — off drops absent students from the sheet entirely. The remaining
   numbers then jump (1, 2, 3, 5) because a number belongs to a student, not to a position. The sheet
   says how many are absent so the gap is never a mystery.
-- *Show sex and the together/apart letters* — off prints numbers and names only.
+  - **On, the sheet gets an `Absent` column**, ticked for the students who are out. This column
+    belongs to *this* tick box, not to the one below it: choosing to show absent students and then
+    being unable to tell which they are would print a lie. Off, the column goes too — there is then
+    nobody on the sheet it applies to.
+- *Show sex and the together/apart letters* — off drops the sex and the letters. It does **not**
+  touch the `Absent` column, because it says sex and letters and that is what it governs.
 
 **Include avatars** — off prints names only: identical on every printer, and the least ink. On, faces
 print as line drawings, and hair length still separates boy from girl with no colour at all.
@@ -498,7 +548,9 @@ together under one header; it is open by default and its collapse is remembered 
 the `▸ How to use` header is still present and operable when collapsed; each section header reports
 its state in every state; the section is named Student details in both locales.
 
-**Roster** — number assigned 1…N; override accepted; duplicates refused; gaps allowed but warned;
+**Roster** — number assigned 1…N; override accepted; **a duplicate is refused as it is typed, not
+at shuffle time**, naming who already holds it; gaps allowed but warned; **a new student takes one
+past the highest number, not the first free gap** — 1,2,3,5 is followed by 6;
 the Absent column marks a student out and **nothing in that row is disabled** — name, sex and
 letters all still editable; the row is tinted and the ticked box carries the same fact without
 colour; the consequence line is on screen whether or not anyone is marked; an absent student is
@@ -506,15 +558,19 @@ excluded from groups and from results, and their letters constrain nobody; unnam
 fixed-width cells so an empty name does not resize the row.
 
 **Constraints** — together placed as a unit; apart mutually separated; together+apart contradiction
-refused as typed; a together-unit larger than the group size refused, naming the clash.
+refused as typed; a together-unit larger than the group size refused, naming both numbers — and
+refused **both** ways into it, by growing the unit and by shrinking the groups.
 
-**Sex options** — disabled with a reason unless every student has M or F; mix spreads evenly;
-separate warns and names who lands in the other sex's group; contradiction with together blocked
-with a reason.
+**Sex options** — disabled with a reason unless every student **being grouped** has M or F; **an
+absent student with no sex does not disable them**, and unticking that absence disables them again
+**with its own message naming the student**; a third message covers having no list at all; mix
+spreads evenly; separate warns and names who lands in the other sex's group; contradiction with
+together blocked with a reason.
 
 **The Students box** — typeable with no list; becomes a read-out the moment a list exists, and
 **the reason is rendered, not merely implied** — a disabled box with no explanation is a failing
-test; emptying the list makes it typeable again; `+ Add student` and `+ Add several…` change it;
+test; emptying the list makes it typeable again **and keeps the number it was reporting**;
+`+ Add student` and `+ Add several…` change it;
 removing a row lowers it; ticking a student absent does **not** change it while the here/absent line and
 the groups both follow; no code path can produce a box that disagrees with the list.
 
@@ -526,26 +582,34 @@ no form or site chrome on the board; type shrinks to fit and stops at the floor,
 board scrolls; the control bar fades and returns on pointer, tap and key; **it does not fade while a
 control inside it holds focus**; Escape exits whether the bar is visible or not; pins still work;
 the reveal plays and is suppressed by both the Sound & animation switch and `prefers-reduced-motion`;
-exiting restores the same groups and scroll position.
+**a shuffle done on the board is what the page shows on exit**, not the arrangement it started with;
+warnings raised by a shuffle appear on the board, not only on the page behind it.
 
 **CSV** — minimum file (number column only); partial rows; class-name round trip; every value in
-both languages; wrong-language file recognised and refused with a link; bad file rejected whole with
-*every* problem listed; import over an existing roster always warns; template with and without an
-existing roster.
+both languages; `absent` accepts blank, `no` and `tidak` as present and refuses anything else by
+name; wrong-language file recognised and refused with a link; bad file rejected whole with *every*
+problem listed; import over an existing roster always warns; template with and without an existing
+roster; **every `#` line is ignored on import** — the class comment, the example rows, and a note a
+teacher typed themselves — and a downloaded template imported unedited adds **no students at all**,
+including one whose example row is named "Example One".
 
 **Both-language export** — works from English and from Indonesian; nothing written to storage;
 nothing in the URL; source forgets only after acknowledgement; blocked tab reported and roster kept.
 
 **Print** — class list, groups, both; each of the four tick boxes changes the sheet in the way it
-says, and the two class-list boxes are proved independent by testing all four combinations; absent
-students dropped *and* the absent count still stated; numbers still jump when they are dropped;
+says, and the two class-list boxes are proved independent by testing all four combinations;
+**showing absent students always prints the `Absent` column, including when sex and letters are
+off** — the combination that would otherwise print an absent child indistinguishable from a present
+one; unticking sex and letters leaves that column alone; absent students dropped *and* the absent
+count still stated; numbers still jump when they are dropped;
 avatars present and absent; choices survive a reload; greyscale legible; no form or chrome on the
 sheet.
 
 **Size limits** — the box refuses above 500; Student details refuses to open above 100 and says
-why while leaving the count alone; the add control disables at 100 stating the limit; an import of
-101 rows is rejected whole naming the count and the limit; raising the box above 100 with a roster
-present tops up anonymously instead of failing.
+why while leaving the count alone; both add controls disable at 100 stating the limit, and
+`+ Add several…` refuses a number that would cross it, saying how many rows are free; an import of
+101 rows is rejected whole naming the count and the limit. There is no case for typing the box past
+`MAX_ROSTER` with a list present, because with a list present the box cannot be typed at all.
 
 **i18n** — every new string in both locales; whole rendered sentences asserted, not fragments; the
 existing rendered-text seam scan must stay green.
@@ -559,7 +623,8 @@ half-migrated state:
 
 1. **Data model + engine** — Student records, number identity, together/apart letters, absence,
    sex-based grouping, pinned groups.
-2. **Compact layout** — arrangement B, collapsed sections with state headers, class name, how-to.
+2. **Compact layout** — arrangement B, collapsed sections with state headers, class name, and How to
+   use above the tool.
 3. **Student details + avatars** — the table, the new avatars, removal of themes and the two
    replaced controls.
 4. **CSV import/export + templates + validation + both-language handover.**
