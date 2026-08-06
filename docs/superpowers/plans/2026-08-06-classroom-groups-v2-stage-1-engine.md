@@ -40,9 +40,34 @@ Nothing else is touched in this stage. `src/scripts/classroom-groups.ts` still c
 
 Deletes what the letters replace, so nothing later is written against a surface that is going away.
 
+> **AS BUILT — this task's scope grew twice during execution. Recorded here so the plan matches
+> the commits.** Ledger:
+> `.superpowers/sdd/2026-08-06-classroom-groups-v2-stage-1-engine/progress.md`.
+>
+> 1. **`src/lib/i18n/index.ts` had to change too** (`d4c4745`). Deleting the two `ERROR_CODES`
+>    entries left their two `case` labels in `renderError` evaluating to `case undefined:`, so an
+>    unknown-name sample rendered the *needs-names* sentence and `tests/unit/i18n.test.ts` went
+>    red. A red baseline across the remaining ten tasks would blind every one of them to breakage
+>    it caused, so the dead copy and its i18n cases were deleted here. The locale files are a
+>    review surface with no type checker behind them — deleting an error code is never a
+>    one-file change.
+> 2. **Two of the deleted test cases covered still-live behaviour** (`a62a829`, after review).
+>    Restoring that cover is part of this task:
+>    - `nameKey` deliberately does not fold case. Pin it with **4 students and 2 pairs**, not the
+>      obvious 3-and-1 — case-folding only ever *adds* conflict edges, so a "these two are never
+>      grouped" assertion survives the mutation and proves nothing. The 4/2 shape makes the
+>      groupmate a logical necessity, so the mutant yields no arrangement at all.
+>    - Removing the roster guard turned a loud refusal into a **silent dropped constraint**. Pin
+>      the fallthrough with **two** tests — the guard had two independent triggers (unknown name
+>      in a pair; a nameless class). These are transitional and die with Task 2.
+>    - Correct the two now-false doc comments in `src/lib/grouping.ts`: `GroupingInput.keepApart`
+>      no longer "requires named students", and the `GroupingError` example must not cite the
+>      retired `KEEP_APART_UNKNOWN_NAME`.
+
 **Files:**
-- Modify: `src/lib/grouping.ts` — delete `parseKeepApart`, `buildConflicts`'s name lookup, two error codes
-- Modify: `tests/unit/grouping.test.ts` — delete the cases covering them
+- Modify: `src/lib/grouping.ts` — delete `parseKeepApart`, `buildConflicts`'s name lookup, two error codes; correct two doc comments
+- Modify: `src/lib/i18n/index.ts`, `src/lib/i18n/en.ts`, `src/lib/i18n/id.ts` — delete the two dead `renderError` cases and their copy
+- Modify: `tests/unit/grouping.test.ts` — delete the cases covering them, and restore cover for the two live invariants above
 
 **Interfaces:**
 - Consumes: nothing
