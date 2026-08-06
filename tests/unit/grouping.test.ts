@@ -1401,12 +1401,18 @@ describe('apart letters — the clique certificate names exactly the conflicting
     const out = buildGroups(
       base({
         students: [
-          student({ number: 1, together: 'P', apart: 'X' }),
+          // The letter-holder is declared SECOND in every pair, deliberately.
+          // With the holder first, `blocks[b][0]` and "the member carrying the
+          // letter" are the same student, so this test would pass just as well
+          // against a certificate that always named the block's first member --
+          // the same lie in a quieter form. Declared second, that regression
+          // reports [2, 4, 6]: three children with no apart-rule at all.
           student({ number: 2, together: 'P' }),
-          student({ number: 3, together: 'Q', apart: 'X' }),
+          student({ number: 1, together: 'P', apart: 'X' }),
           student({ number: 4, together: 'Q' }),
-          student({ number: 5, together: 'R', apart: 'X' }),
+          student({ number: 3, together: 'Q', apart: 'X' }),
           student({ number: 6, together: 'R' }),
+          student({ number: 5, together: 'R', apart: 'X' }),
         ],
         mode: { kind: 'groupCount', count: 2 }, // 2 groups cannot hold X's clique of 3
       }),
