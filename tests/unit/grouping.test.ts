@@ -572,6 +572,62 @@ describe('buildGroups — a blank name collapses to null', () => {
   });
 });
 
+describe('buildGroups — a blank together (or apart) collapses to null, not a shared letter', () => {
+  // Same field shape as name, same defect, same fix (Fix round 1, F-4):
+  // normaliseStudents used to pass `together` and `apart` through untouched,
+  // so a blank cell was a LIVE letter rather than "no letter".
+  it('a whitespace-only together forms no block', () => {
+    // If '   ' were a real, shared letter, six students who all typed only
+    // spaces would collapse into one block of 6 and trip
+    // togetherUnitTooLarge against a group size of 3 (6 > 3). Succeeding,
+    // with every student free to land in either group, is the proof a
+    // blank forms no block at all.
+    const out = buildGroups(
+      base({
+        students: Array.from({ length: 6 }, (_, i) =>
+          student({ number: i + 1, together: '   ' }),
+        ),
+        mode: { kind: 'perGroup', size: 3 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it('two students with different-looking blank values are not merged into one block', () => {
+    // The failure mode a naive fix (trim, but forget to collapse the empty
+    // result to null) would still have: '' and '   ' both trim to '', so
+    // they would become the SAME map key in buildBlocks and wrongly share a
+    // block of 2 -- which trips togetherUnitTooLarge against a group size of
+    // 1 (2 > 1). Succeeding, with each student alone in their own group of
+    // 1, is the proof both collapsed to null rather than to a shared ''.
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: '' }),
+          student({ number: 2, together: '   ' }),
+        ],
+        mode: { kind: 'perGroup', size: 1 },
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.groups).toHaveLength(2);
+  });
+
+  it('a whitespace-only apart also normalises to null, not to an empty string', () => {
+    // apart has no grouping behaviour yet (Task 5) -- normalisation is a
+    // field-level fix applied to name, together and apart identically in
+    // normaliseStudents, so this is observable only as the returned field,
+    // not through any placement decision.
+    const out = buildGroups(
+      base({ students: [student({ number: 1, apart: '   ' })] }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.groups.flat()[0].apart).toBeNull();
+  });
+});
+
 describe('buildGroups — randomness is real but reproducible', () => {
   it('the same seed gives the same arrangement', () => {
     const a = ok(base({ random: seeded(7) }));
@@ -634,23 +690,47 @@ describe('together letters', () => {
     expect(g?.map((s) => s.number)).toContain(2);
   });
 
-  it('keeps two different letters apart from each other only by chance, not by rule', () => {
-    // A and B are two units. Nothing says they may not share a group, and
-    // asserting that they do not would be asserting a rule nobody wrote.
-    const out = buildGroups(
-      base({
-        students: [
-          student({ number: 1, together: 'A' }),
-          student({ number: 2, together: 'A' }),
-          student({ number: 3, together: 'B' }),
-          student({ number: 4, together: 'B' }),
-        ],
-        mode: { kind: 'groupCount', count: 1 },
-      }),
-    );
-    expect(out.ok).toBe(true);
-    if (!out.ok) return;
-    expect(out.result.groups[0]).toHaveLength(4);
+  it('lets two different letters share a group when nothing says they must not', () => {
+    // Was 'keeps two different letters apart from each other only by
+    // chance, not by rule', asserted with groupCount: 1. With one group,
+    // "may A and B share a group" is true by construction -- everyone is in
+    // the one group regardless of whether `together` is read at all -- so
+    // that test passed even with the feature switched off. It asserted a
+    // 4-member group under this test's name, which is coverage the name
+    // promised and the body never gave. Fix round 1, F-5.
+    //
+    // groupCount: 2 makes it observable: two equal-sized groups (sizes
+    // [4, 4]) large enough to hold A-with-B or to keep them apart, so
+    // whether they ever share is a real question the search answers rather
+    // than a foregone conclusion. Across a spread of seeds, at least one
+    // arrangement must seat an A with a B -- this fails the moment anyone
+    // adds the rule nobody wrote ("different letters must not share a
+    // group"), which is exactly the regression this test exists to catch.
+    const students = [
+      student({ number: 1, together: 'A' }),
+      student({ number: 2, together: 'A' }),
+      student({ number: 3, together: 'B' }),
+      student({ number: 4, together: 'B' }),
+      student({ number: 5 }),
+      student({ number: 6 }),
+      student({ number: 7 }),
+      student({ number: 8 }),
+    ];
+    const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
+    const sawAWithB = seeds.some((seed) => {
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 2 },
+          random: seeded(seed),
+        }),
+      );
+      if (!out.ok) return false;
+      return (
+        groupOf(out.result.groups, 1)?.some((s) => s.number === 3) ?? false
+      );
+    });
+    expect(sawAWithB).toBe(true);
   });
 
   it('refuses a unit larger than the group, naming the letter and both numbers', () => {
@@ -710,5 +790,60 @@ describe('together letters', () => {
     if (!out.ok) return;
     // Budi's unit is now one student, so he can go anywhere.
     expect(out.result.groups.flat()).toHaveLength(2);
+  });
+
+  // Fix round 1, F-3: `gaveUp` vs "no arrangement exists" is the spec's
+  // honesty promise -- until together-blocks existed it was unreachable
+  // through the public API, and therefore untested. Both cases below assert
+  // the CODE, not just `out.ok === false`: the defect these close was a
+  // wrong code with a right verdict, so a test that only checks the verdict
+  // would pass on the very bug being fixed.
+  it('proves no arrangement exists when three together-pairs cannot all fit', () => {
+    // 3 blocks of 2 into 2 groups of 3: each group can hold only ONE block
+    // of 2 (two would need 4 of 3), so at most 2 of the 3 blocks ever fit,
+    // and the third never does, however the search orders them. Small
+    // enough that the search runs to genuine exhaustion, nowhere near
+    // SEARCH_NODE_CAP -- this is "proven impossible", not "gave up".
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: 'A' }),
+          student({ number: 2, together: 'A' }),
+          student({ number: 3, together: 'B' }),
+          student({ number: 4, together: 'B' }),
+          student({ number: 5, together: 'C' }),
+          student({ number: 6, together: 'C' }),
+        ],
+        mode: { kind: 'perGroup', size: 3 },
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.togetherNoArrangement,
+      groupsTried: 2,
+    });
+  });
+
+  it('says it gave up, not that no arrangement exists, once the search budget is exhausted', () => {
+    // The reviewer's own repro (task-4-report.md, Fix round 1, F-1/F-3):
+    // 15 buddy-pairs (30 students) into 10 groups. Re-measured after the
+    // F-2 sort fix rather than assumed correct -- all 15 blocks are the
+    // SAME size (2), so first-fit-decreasing has no size difference to sort
+    // on here and this input still exhausts SEARCH_NODE_CAP exactly as it
+    // did before F-2. Confirmed by measurement, not by carrying the number
+    // over: still gaveUp in single-digit milliseconds post-fix.
+    const pairs = Array.from({ length: 30 }, (_, i) =>
+      student({
+        number: i + 1,
+        together: String.fromCharCode(65 + Math.floor(i / 2)), // A,A,B,B,...,O,O
+      }),
+    );
+    const out = buildGroups(
+      base({ students: pairs, mode: { kind: 'groupCount', count: 10 } }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({ code: ERROR_CODES.togetherSearchGaveUp });
   });
 });

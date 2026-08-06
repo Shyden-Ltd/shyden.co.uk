@@ -54,6 +54,10 @@ export const ERROR_CODES = {
   tooManyGroups: 'TOO_MANY_GROUPS',
   /** A together-letter unit is bigger than even the largest group. */
   togetherUnitTooLarge: 'TOGETHER_UNIT_TOO_LARGE',
+  /** PROVEN by exhaustive search: no arrangement of together-blocks fits at this group count. */
+  togetherNoArrangement: 'TOGETHER_NO_ARRANGEMENT',
+  /** Proves NOTHING: the together-block search hit its budget. Says so rather than guessing. */
+  togetherSearchGaveUp: 'TOGETHER_SEARCH_GAVE_UP',
   /** PROVEN by a clique: these students all conflict, so they need N groups. */
   keepApartImpossible: 'KEEP_APART_IMPOSSIBLE',
   /** PROVEN by exhaustive search: no arrangement exists at this group count. */
@@ -88,6 +92,8 @@ export type GroupingError =
       unit: number;
       groupSize: number;
     }
+  | { code: typeof ERROR_CODES.togetherNoArrangement; groupsTried: number }
+  | { code: typeof ERROR_CODES.togetherSearchGaveUp }
   | {
       code: typeof ERROR_CODES.keepApartImpossible;
       students: string[];
@@ -116,6 +122,17 @@ export type GroupingOutcome =
  * helper, retired in Task 2 along with the free-text `keepApart` field that
  * fed it; Task 5 needs an equivalently pathological letter-based input to
  * re-prove this number, not just to trust this comment.)
+ *
+ * This cap now also bounds `assign`'s block-placement search (Fix round 1,
+ * F-2/F-3), a second and different consumer -- pure bin-packing among
+ * same-cost groups, no conflicts, since `pairs` is still always empty this
+ * stage. The measurements above were never taken against that shape of
+ * input, so they justify the cap for keep-apart only; they are not evidence
+ * for the together-block case, and should not be read as if they were.
+ * tests/unit/grouping.test.ts pins one concrete together-block input that
+ * exhausts the cap (Fix round 1, F-3), but that is one data point, not a
+ * growth curve -- nobody has yet measured where together-block search time
+ * blows up the way the keep-apart numbers above do.
  */
 const SEARCH_NODE_CAP = 200_000;
 
@@ -200,6 +217,13 @@ function normaliseStudents(input: number | Student[]): Student[] {
     // null meaning "no name"). '' is not nullish, so `name ?? 'Student N'`
     // would render a blank label instead of falling back to it.
     name: s.name === null ? null : nameKey(s.name) || null,
+    // Same field shape, same defect, same fix (Fix round 1, F-4). Left
+    // untrimmed, '' and '   ' are two DIFFERENT Map keys in buildBlocks, so
+    // two students with blank cells merge into one block or not depending on
+    // invisible whitespace -- and a blank collapsed the wrong way still
+    // reads as a real, shared letter rather than as "no letter".
+    together: s.together === null ? null : nameKey(s.together) || null,
+    apart: s.apart === null ? null : nameKey(s.apart) || null,
   }));
 }
 
@@ -522,11 +546,18 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   const blockAdj: Set<number>[] = blocks.map(() => new Set<number>());
 
   // Shuffle for variety, then order the most-constrained blocks first so the
-  // search fails fast rather than deep.
+  // search fails fast rather than deep. Size is what constrains a block: a
+  // block of 4 has far fewer groups it can fit in than a block of 1, so
+  // largest-first is first-fit-decreasing, the standard bin-packing
+  // heuristic -- and it is what actually clears most of the "gave up" cases
+  // a size-blind order produces (Fix round 1, F-2). blockAdj is not read
+  // here even as a tie-break: every set is empty until Task 5, so it would
+  // decide nothing today; ties are left to the shuffle, which is what still
+  // supplies arrangement variety between runs.
   const order = shuffled(
     blocks.map((_, i) => i),
     random,
-  ).sort((a, b) => blockAdj[b].size - blockAdj[a].size);
+  ).sort((a, b) => blocks[b].length - blocks[a].length);
 
   const { groups: placed, gaveUp } = assign(order, blocks, sizes, blockAdj);
   if (placed === null) {
@@ -541,6 +572,43 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     // who have no rule between them at all. A clique is the only thing that
     // licenses that sentence, and by this line the clique gate has already
     // declined to fire.
+    //
+    // Which RULE failed matters too (Fix round 1, F-1): a together clash and
+    // a keep-apart clash have opposite remedies -- the together copy says
+    // make groups BIGGER or use fewer/lighter letters, the keep-apart copy
+    // says make MORE groups or drop a rule -- so attributing a together
+    // failure to keep-apart hands the teacher a fix that makes the real
+    // problem worse. Decided from what is actually in play, not guessed:
+    // a block bigger than one student means a together-letter is live; a
+    // non-empty entry in blockAdj means an apart-letter conflict is live.
+    // `pairs` is always [] until Task 5, so blockAdj is always all-empty
+    // sets and apartInPlay is always false here today -- every reachable
+    // failure this stage is a together failure. It is still computed
+    // rather than hardcoded so the attribution stays correct once Task 5
+    // makes apartInPlay real.
+    //
+    // Task 5 must decide what happens when BOTH are true at once -- e.g. a
+    // class with together- AND apart-letters where the search still fails.
+    // That combination cannot be attributed to a single rule from these two
+    // booleans alone, and it is untestable today because apart-letters do
+    // not exist yet. This only resolves the two single-rule cases; the
+    // combined case is not decided here and falls through to the
+    // keep-apart branch below, which is a placeholder, not a considered
+    // answer -- do not read it as one.
+    const togetherInPlay = blocks.some((block) => block.length > 1);
+    const apartInPlay = blockAdj.some((conflicts) => conflicts.size > 0);
+
+    if (togetherInPlay && !apartInPlay) {
+      return fail(
+        gaveUp
+          ? { code: ERROR_CODES.togetherSearchGaveUp }
+          : {
+              code: ERROR_CODES.togetherNoArrangement,
+              groupsTried: sizes.length,
+            },
+      );
+    }
+
     return fail(
       gaveUp
         ? { code: ERROR_CODES.keepApartSearchGaveUp }

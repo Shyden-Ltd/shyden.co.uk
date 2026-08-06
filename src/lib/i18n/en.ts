@@ -106,7 +106,17 @@ export const en = {
       unit: number,
       groupSize: number,
     ) =>
-      `The "${letter}" group has ${unit} students, but the largest group here only holds ${groupSize}. Make the groups bigger, or give the letter "${letter}" to fewer students.`,
+      `The letter "${letter}" has ${unit} students, but the largest group here only holds ${groupSize}. Make the groups bigger, or give the letter "${letter}" to fewer students.`,
+    // Says only what an exhaustive search proved: not that any particular
+    // letter is the problem, just that this many groups cannot hold every
+    // together-unit whole. The remedy is the opposite of KEEP_APART's: more
+    // groups makes a together clash WORSE, never better, so this never
+    // suggests it.
+    TOGETHER_NO_ARRANGEMENT: (groupsTried: number) =>
+      `There is no way to fit your class into ${groupsTried} ${groupsTried === 1 ? 'group' : 'groups'} while keeping everyone together who needs to be. Make the groups bigger, or give each letter to fewer students.`,
+    // Claims nothing at all, because nothing was established.
+    TOGETHER_SEARCH_GAVE_UP:
+      'There are too many together-letters here to work through. Try using fewer letters, or make the groups bigger.',
     KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
       `${names.join(', ')} all need to be kept apart from each other, so you would need at least ${groupsNeeded} groups. Either make more groups or remove one of the rules.`,
     // Says only what an exhaustive search proved: not that any particular

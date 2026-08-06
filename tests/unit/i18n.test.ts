@@ -132,6 +132,11 @@ describe('every engine error can be rendered in every language', () => {
       unit: 6,
       groupSize: 4,
     },
+    TOGETHER_NO_ARRANGEMENT: {
+      code: ERROR_CODES.togetherNoArrangement,
+      groupsTried: 2,
+    },
+    TOGETHER_SEARCH_GAVE_UP: { code: ERROR_CODES.togetherSearchGaveUp },
     KEEP_APART_IMPOSSIBLE: {
       code: ERROR_CODES.keepApartImpossible,
       students: ['Ana', 'Budi'],
@@ -188,20 +193,47 @@ describe('every engine error can be rendered in every language', () => {
     expect(msg).toContain('4');
   });
 
-  it('the together-unit-too-large message names the letter, the unit size and the group size', () => {
-    const msg = renderError(
-      {
-        code: ERROR_CODES.togetherUnitTooLarge,
-        letter: 'A',
-        unit: 6,
-        groupSize: 4,
-      },
-      en,
-    );
-    expect(msg).toContain('A');
-    expect(msg).toContain('6');
-    expect(msg).toContain('4');
-  });
+  it.each(locales)(
+    'the together-unit-too-large message names the letter, the unit size and the group size (%s)',
+    (_name, strings) => {
+      // letter: 'Q' rather than 'A' -- the sample used to pass 'A', so a
+      // renderError that quietly hardcoded the letter to 'A' instead of
+      // substituting `error.letter` would render "...letter "A"..." and this
+      // test could not tell the difference: its own expected value was the
+      // same letter the bug would have hardcoded. 'Q' does not collide with
+      // a plausible hardcoded default, so a dropped substitution now shows
+      // up as a missing 'Q' rather than a coincidental match. Fix round 1, F-6.
+      const msg = renderError(
+        {
+          code: ERROR_CODES.togetherUnitTooLarge,
+          letter: 'Q',
+          unit: 6,
+          groupSize: 4,
+        },
+        strings,
+      );
+      expect(msg).toContain('Q');
+      expect(msg).toContain('6');
+      expect(msg).toContain('4');
+    },
+  );
+
+  it.each(locales)(
+    'the together-no-arrangement message names how many groups were tried (%s)',
+    (_name, strings) => {
+      // Fix round 1, F-1/F-6: the generic "renders every code as a real
+      // sentence" check above only looks at sentence SHAPE, so it would not
+      // notice renderError threading the wrong number through. This is the
+      // dedicated check that does, matching the precedent set by the
+      // together-unit-too-large test above rather than by
+      // KEEP_APART_NO_ARRANGEMENT, which has no dedicated test at all.
+      const msg = renderError(
+        { code: ERROR_CODES.togetherNoArrangement, groupsTried: 3 },
+        strings,
+      );
+      expect(msg).toContain('3');
+    },
+  );
 });
 
 describe('site-wide copy is fully translated', () => {

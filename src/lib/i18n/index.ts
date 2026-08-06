@@ -65,6 +65,10 @@ export function renderError(error: GroupingError, strings: Strings): string {
         error.unit,
         error.groupSize,
       );
+    case ERROR_CODES.togetherNoArrangement:
+      return e.TOGETHER_NO_ARRANGEMENT(error.groupsTried);
+    case ERROR_CODES.togetherSearchGaveUp:
+      return e.TOGETHER_SEARCH_GAVE_UP;
     case ERROR_CODES.tooManyStudents:
       return e.TOO_MANY_STUDENTS(error.maxStudents);
     case ERROR_CODES.duplicateNumber:
