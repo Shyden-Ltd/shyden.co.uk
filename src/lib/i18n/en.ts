@@ -99,10 +99,6 @@ export const en = {
     INVALID_GROUP_COUNT: 'You need at least 1 group.',
     TOO_MANY_GROUPS: (max: number) =>
       `There are not enough students for that many groups. The most you can have is ${max}.`,
-    KEEP_APART_NEEDS_NAMES:
-      'To keep students apart, add their names to the class list above.',
-    KEEP_APART_UNKNOWN_NAME: (names: string[]) =>
-      `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} not in your class list. Check the spelling.`,
     KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
       `${names.join(', ')} all need to be kept apart from each other, so you would need at least ${groupsNeeded} groups. Either make more groups or remove one of the rules.`,
     // Says only what an exhaustive search proved: not that any particular

@@ -125,11 +125,6 @@ describe('every engine error can be rendered in every language', () => {
     INVALID_GROUP_SIZE: { code: ERROR_CODES.invalidGroupSize },
     INVALID_GROUP_COUNT: { code: ERROR_CODES.invalidGroupCount },
     TOO_MANY_GROUPS: { code: ERROR_CODES.tooManyGroups, maxGroups: 4 },
-    KEEP_APART_NEEDS_NAMES: { code: ERROR_CODES.keepApartNeedsNames },
-    KEEP_APART_UNKNOWN_NAME: {
-      code: ERROR_CODES.keepApartUnknownName,
-      students: ['Zara'],
-    },
     KEEP_APART_IMPOSSIBLE: {
       code: ERROR_CODES.keepApartImpossible,
       students: ['Ana', 'Budi'],
@@ -164,24 +159,6 @@ describe('every engine error can be rendered in every language', () => {
     },
   );
 
-  it.each([
-    [['Zara'], 'Zara is not in your class list. Check the spelling.'],
-    [
-      ['Zara', 'Kai'],
-      'Zara, Kai are not in your class list. Check the spelling.',
-    ],
-  ])('composes the unknown-name sentence for %s', (students, sentence) => {
-    expect(
-      renderError(
-        {
-          code: ERROR_CODES.keepApartUnknownName,
-          students: students as string[],
-        },
-        en,
-      ),
-    ).toBe(sentence);
-  });
-
   it('the impossible-constraints message names the students and the group count', () => {
     const msg = renderError(
       {
@@ -194,14 +171,6 @@ describe('every engine error can be rendered in every language', () => {
     for (const name of ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko'])
       expect(msg).toContain(name);
     expect(msg).toContain('5');
-  });
-
-  it('names the unrecognised entry when a keep-apart name is not in the class', () => {
-    const msg = renderError(
-      { code: ERROR_CODES.keepApartUnknownName, students: ['Zara'] },
-      id,
-    );
-    expect(msg).toContain('Zara');
   });
 
   it('states the maximum possible when too many groups were requested', () => {
