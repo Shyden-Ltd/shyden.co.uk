@@ -165,8 +165,9 @@ test.describe('How to use', () => {
 
   test('holds both parts and is open by default', async ({ page }) => {
     await page.goto('/classroom-groups');
+    // The whole sentence, and it must name WHO and WHY -- not just what.
     await expect(page.getByText(
-      'A quick way to split your class into fair, random groups — no favourites, no arguments, and nothing about your class ever leaves your browser.'
+      'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.'
     )).toBeVisible();
     await expect(page.getByText('Say how many students are in your class.')).toBeVisible();
   });
@@ -175,7 +176,7 @@ test.describe('How to use', () => {
     await page.goto('/classroom-groups');
     await page.getByRole('button', { name: 'How to use' }).click();
     await expect(page.getByText('Say how many students are in your class.')).toBeHidden();
-    await expect(page.getByText('A quick way to split your class')).toBeHidden();
+    await expect(page.getByText('Built for teachers, by Shyden.')).toBeHidden();
     await expect(page.getByRole('button', { name: 'How to use' })).toBeVisible();
   });
 
@@ -237,9 +238,14 @@ New keys in both locales:
 ```ts
 // en.ts
 howToHeading: 'How to use',
+// Part 1 must say WHO it is for and WHY it was built, not only what it does --
+// an explicit operator instruction. See spec section 3, which carries the
+// approved copy. Assemble with `+` here; never across template lines.
 howToWhat:
-  'A quick way to split your class into fair, random groups — no favourites, ' +
-  'no arguments, and nothing about your class ever leaves your browser.',
+  'Built for teachers, by Shyden. Splitting a class fairly takes time you do ' +
+  'not have, and doing it by hand invites an argument about favourites. This ' +
+  'does it in one press — free, with no sign-up, and with nothing about your ' +
+  'class ever leaving your browser.',
 howToSteps: [
   'Say how many students are in your class.',
   'Choose how to split them.',

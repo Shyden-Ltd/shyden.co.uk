@@ -50,8 +50,28 @@ by default and opening is a deliberate act.
 form, because it is the page's summary and description rather than part of the feature. It is
 **one section holding two parts**, and both collapse together under a single header:
 
-1. **What this is** — what the tool does, and why: fair random groups, no favourites, no arguments,
-   and nothing about the class leaves the browser.
+1. **What this is** — what the tool does, **why it was built, and who it is for**. The operator was
+   explicit about the last two: a visitor should be able to tell, without asking, why this exists
+   and whose problem it solves. So part 1 covers, in this order:
+   - **who it is for** — teachers, and specifically teachers without a budget or an IT department;
+   - **why it was built** — splitting a class fairly by hand is slow and invites the accusation of
+     favouritism, and the tools that do it either cost money or want the children's names on a
+     server;
+   - **what it does** — fair random groups, no favourites, no arguments;
+   - **what it does not do** — nothing about the class leaves the browser, nothing is stored,
+     no sign-up.
+
+   **Draft copy, for the operator's approval before it is built:**
+
+   > **EN** — Built for teachers, by Shyden. Splitting a class fairly takes time you do not have,
+   > and doing it by hand invites an argument about favourites. This does it in one press — free,
+   > with no sign-up, and with nothing about your class ever leaving your browser.
+   >
+   > **ID** — Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang
+   > tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih.
+   > Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas
+   > Anda yang pernah meninggalkan peramban Anda.
+
 2. **How to use it** — the three steps.
 
 - **Expanded by default.** If the teacher collapses it, remember that in `localStorage` and honour it
