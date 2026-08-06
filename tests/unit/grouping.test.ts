@@ -1537,6 +1537,26 @@ describe('together and apart at the same time', () => {
   });
 
   it('does not fire when one of the pair is absent', () => {
+    // WHAT THIS PROVES, AND WHAT IT DOES NOT.
+    //
+    // It does NOT prove the clash check is absence-aware, because the check
+    // has no absence-aware branch to test. Student 2 is removed by the
+    // `present` filter long before `buildBlocks` runs, so the block this code
+    // actually sees is student 1 alone -- mechanically the same block-of-one
+    // the test above already covers. Mutate the clash guard and this reddens
+    // through that single-occurrence path, not through anything to do with
+    // `absent`.
+    //
+    // It DOES pin that absence is resolved upstream. Measured: drop the filter
+    // (`const present = students`) and this fails cleanly with `expected false
+    // to be true` -- the absent student rejoins the block, the contradiction is
+    // detected, and a teacher is refused over a child who is not even in today.
+    // That is the regression this guards, and it is why the test stays.
+    //
+    // Note for whoever mutates this next: passing the unfiltered roster to
+    // `buildBlocks` instead is NOT a faithful mutant. Block indices are into
+    // `present`, so it dies with a TypeError -- a crash, which any test would
+    // catch, proving nothing about this one.
     const out = buildGroups(
       base({
         students: [
