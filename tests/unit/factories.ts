@@ -20,7 +20,8 @@ export const shape = (groups: Student[][]): number[] =>
 export const groupOf = (
   groups: Student[][],
   number: number,
-): Student[] | undefined => groups.find((g) => g.some((s) => s.number === number));
+): Student[] | undefined =>
+  groups.find((g) => g.some((s) => s.number === number));
 
 /**
  * A seeded generator, so "random" is reproducible.
