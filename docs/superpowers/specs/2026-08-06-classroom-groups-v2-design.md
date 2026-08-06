@@ -118,8 +118,24 @@ backwards.
 - **The row is not greyed out and nothing in it is disabled.** Every detail stays editable: a teacher
   can correct a name, set a sex or change a letter for a child who is off today, ready for tomorrow.
   Absence marks a student out of *this shuffle*, not out of the register.
-- **The row is tinted instead**, so a scan down the table shows at a glance who is out. Colour is
-  never the only signal — the ticked box in the `Absent` column carries the same fact without it.
+- **The row is tinted instead**, so a scan down the table shows at a glance who is out:
+
+  | | |
+  |---|---|
+  | row background | `#fff6e3` |
+  | left edge stripe | `#d9a441`, 3px |
+  | label | a small pill reading **`absent`**, beside the tick — white on `#8a6a10` |
+
+  **Three signals, none of them colour on its own:** the ticked box, the word *absent*, and the tint.
+  A teacher who cannot separate the amber from the cream still has two ways to read the row, and the
+  text inside it keeps full contrast because it is still being edited.
+
+  The amber is the same family the page uses for warnings. That was the argument against it — being
+  off school is not a fault — and the operator chose it anyway, for visibility. Recorded so it is not
+  "corrected" later by someone reading the palette rather than this line.
+
+- **Printed sheets carry neither the tint nor the pill.** The `Absent` column already says it in
+  ink-free form, and the print rule is that nothing may depend on colour.
 - **A permanent line under the table states the consequence**, whether or not anyone is marked:
   *"Students marked absent are not included when groups are made."* The count line then reports it:
   `24 students · 22 here · 2 absent`.
