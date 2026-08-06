@@ -409,8 +409,13 @@ describe('buildGroups — names that are not plain ASCII', () => {
     // matching by name is gone for good. It is an NFC-stability check: all
     // four samples are already one Unicode form with no padding, so nameKey
     // is a no-op on them today -- that's the point. The value is future: it
-    // fails the day nameKey gains a locale-aware transform or moves to
-    // NFKC, either of which could reshape a real name silently.
+    // fails the day nameKey gains a transform that reshapes a real name
+    // silently. Decomposition (NFD) is the proven case -- it lengthens the
+    // Arabic sample, which is how this test was shown to be load-bearing.
+    // NFKC is NOT guarded here: all four samples were measured unchanged
+    // under it, so swapping NFC for NFKC would leave this test green. If you
+    // need that guarded, add a compatibility-form sample -- do not assume
+    // this one covers it.
     const names = ['张伟', 'أحمد', 'דוד', 'สมชาย'];
     const out = buildGroups(
       base({
