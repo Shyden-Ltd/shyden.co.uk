@@ -75,8 +75,29 @@ That last one is where the operator's "advise them to export so they don't lose 
 lives: permanently on the header, not a toast that vanishes before it is read.
 
 **Student details expands in place** inside the form — not an overlay, drawer or separate page.
-Chosen because expanding is allowed to scroll, so the simplest option is also sufficient, and it
-behaves identically on phone and desktop with no focus trap or second layout to test.
+Chosen because expanding is allowed to scroll, so the simplest option is also sufficient, and there
+is no focus trap and no second page to test.
+
+### The roster is a table on a laptop and cards on a phone
+
+**Six controls per student cannot fit a 320px screen with 44px touch targets.** 320px less the page
+padding leaves about 304px; six targets at 44px need 264px before any gaps, which leaves the name
+box at roughly 44px — wide enough to satisfy the arithmetic and far too narrow to read or type a name
+in. Shrinking the controls to make room fails the touch-target rule instead. There is no arrangement
+of six controls across 304px that satisfies both of this repo's rules, so the row must reflow.
+
+- **Below the breakpoint, one card per student.** Number and name on the first line, with the name
+  taking the full remaining width; sex, absent and the two letters on the second.
+- **At and above it, the approved table.** Identical content and identical behaviour — one component
+  with two layouts, not two components.
+- **The absent treatment survives the change**: the card is tinted `#fff6e3`, striped `#d9a441` down
+  its left edge, and carries the `absent` pill, exactly as the row does.
+- **The breakpoint is ~600px, and is one of two figures that must be settled on real hardware** —
+  see §13. It is a starting point, not a decision.
+
+*Rejected:* letting the table scroll sideways inside its own box. It satisfies the letter of the rule,
+since the page never scrolls, but setting a student's sex and then their letter means scrolling right
+until the name has gone off the left — editing a row you can no longer identify.
 
 ### Naming
 
@@ -197,8 +218,9 @@ comes from letting them disagree, so **they are never both in charge**.
   Never a bare greyed-out box. A disabled control that does not say why is a defect.
 - **Changing the class size is then a list operation**, in Student details:
   - `+ Add student` — one row.
-  - `+ Add several…` — asks how many and adds that many unnamed rows, for the teacher who has 24
-    named and six more to come.
+  - `+ Add several…` — a small number field and a confirm button that appear **inline in the table
+    footer**, for the teacher who has 24 named and six more to come. No dialog and no `prompt()`:
+    everything else here expands in place, and it keeps the keyboard where the teacher already is.
   - Removing a row removes the student.
 - **Emptying the list** returns the box to being an input, **keeping the number it was last
   reporting**. Clearing a list of 24 leaves 24 in the box, so nothing jumps and nothing is lost.
@@ -366,6 +388,26 @@ real and is the largest single piece of stage 1.
 - It **heads the results**: `7B — your groups`. Groups themselves are numbered.
 - It is **not** repeated on every group card.
 
+### When the class changes after a shuffle
+
+Groups are on screen; the teacher then opens Student details and marks someone absent. Left unsaid,
+the results quietly become a lie — and the sheet that gets printed or projected contains a child who
+is not in the room. So the rule is explicit, and it distinguishes **editing a fact** from **changing
+the class**:
+
+- **A rename is not a change of class.** Correcting "Ana" to "Anna" updates the name wherever it
+  appears in the results. Nobody moved, so nothing is stale.
+- **Anything that could change who goes where marks the groups out of date**: marking a student
+  absent or present, adding or removing a student, changing a together or apart letter, changing a
+  sex while a sex option is on, or changing the group size or the leftovers choice.
+- **Out of date means dimmed and badged**, with the reason and the way out:
+  *"These groups are out of date — Dewi is now marked absent."* plus **Shuffle again**. The old groups
+  stay visible, because they are still useful to look at and the teacher may simply not care.
+- **Export groups, Print and Full screen refuse while the groups are out of date**, and say why.
+  Printing or projecting a stale sheet is the one outcome that leaves a classroom with the wrong
+  answer on paper.
+- **Shuffling clears the badge**, as does undoing the change that caused it.
+
 ### Full screen — the projector view
 
 A **Full screen** button on the results, appearing only once groups exist. The groups go on the board
@@ -486,10 +528,12 @@ number,name,sex,absent,together,apart
 # delete these two lines and type your own
 ```
 
-One rule, applied to the whole file, does the job: the `# Class:` line, the example rows and any note
-a teacher adds are all handled by it. **No name matching** — recognising examples by their contents
-would silently drop a real child called Example One, which is exactly the class of bug this avoids.
-A teacher who forgets to delete them imports nothing by accident.
+**A `#` line is never a student.** `# Class:` (and `# Kelas:`) are recognised as metadata first;
+every other `#` line is discarded — the example rows, and any note a teacher types themselves.
+
+**No name matching.** Recognising examples by their contents would silently drop a real child called
+Example One, which is exactly the class of bug this avoids. A teacher who forgets to delete the
+example rows imports nothing by accident.
 
 ### Exporting in both languages — bidirectional
 
@@ -515,6 +559,11 @@ shared classroom machine. Putting the roster in a URL is the exact defect closed
 `7B-groups-2026-08-06.csv` · `7B-kelompok-2026-08-06.csv`
 With no class name: `class-list-2026-08-06.csv`. The date prevents successive saves overwriting
 each other.
+
+**The class name is made safe for a filename, and only there.** `Year 7 / Set B` contains a slash,
+which breaks a filename on every platform; anything a filesystem will not take is replaced and the
+runs collapsed, giving `Year-7-Set-B-class-list-2026-08-06.csv`. **The class name itself is never
+altered** — not on the page, not in the `# Class:` line, not in the results heading.
 
 ---
 
@@ -610,7 +659,10 @@ The operator was explicit: **write the Playwright tests first, watch them fail, 
 with real code.** Every clarification in this document is a test. Non-exhaustively:
 
 **Layout** — collapsed default fits without scrolling at 320/375/768/1280; expanding is allowed to
-scroll; How to use sits above the form and outside the tool's sections; both its parts collapse
+scroll; **no horizontal page scroll at any of those widths, in any state, including with the roster
+open**; every interactive target is at least 44px; the roster renders as cards below the breakpoint
+and as the table at and above it, with **the same content and the same behaviour proved in both** —
+including the absent tint, stripe and pill; How to use sits above the form and outside the tool's sections; both its parts collapse
 together under one header; it is open by default and its collapse is remembered across a reload;
 the `▸ How to use` header is still present and operable when collapsed; each section header reports
 its state in every state; the section is named Student details in both locales.
@@ -643,6 +695,13 @@ the groups both follow; no code path can produce a box that disagrees with the l
 
 **Reshuffle** — pinned groups survive; unpinned redealt; constraints still honoured.
 
+**Stale groups** — a rename updates the results and marks nothing stale; marking absent or present,
+adding, removing, changing a letter, changing a sex under a sex option, and changing the group size
+or leftovers each mark them out of date, **stating which change did it**; the old groups stay on
+screen, dimmed; **Export groups, Print and Full screen all refuse while stale and say why** — asserted
+separately for each of the three, because one of them silently succeeding is how a wrong sheet
+reaches a classroom; shuffling clears it, and so does undoing the change.
+
 **Full screen** — button appears only once groups exist; the API path and the overlay fallback are
 both exercised, and a refused `requestFullscreen` lands in the fallback rather than doing nothing;
 no form or site chrome on the board; type shrinks to fit and stops at the floor, below which the
@@ -672,11 +731,19 @@ count still stated; numbers still jump when they are dropped;
 avatars present and absent; choices survive a reload; greyscale legible; no form or chrome on the
 sheet.
 
+**Leftovers** — spread and bunch each produce the arrangement they describe; a spare student
+carrying a together letter goes where their unit goes; bunch never builds a leftover group that
+violates an apart letter.
+
 **Size limits** — the box refuses above 500; Student details refuses to open above 100 and says
 why while leaving the count alone; both add controls disable at 100 stating the limit, and
 `+ Add several…` refuses a number that would cross it, saying how many rows are free; an import of
 101 rows is rejected whole naming the count and the limit. There is no case for typing the box past
 `MAX_ROSTER` with a list present, because with a list present the box cannot be typed at all.
+
+**Filenames** — a class name containing `/`, `\`, `:` or a control character produces a usable
+filename, and **the class name itself is unchanged** on the page, in the `# Class:` line and in the
+results heading.
 
 **i18n** — every new string in both locales; whole rendered sentences asserted, not fragments; the
 existing rendered-text seam scan must stay green; the removed keys are gone from **both** locale
@@ -690,6 +757,20 @@ never sits green over a page that no longer has the control.
 
 **The no-JS message is unchanged.** `needsJs` still covers the whole tool; the new sections do not
 each need their own, and nothing in this design works without script.
+
+### Two figures that a laptop cannot settle
+
+`CLAUDE.md` already records a real mobile-device browser run as owed before launch. Two numbers in
+this design are **starting points chosen at a desk** and must be checked on real hardware before they
+are treated as decided:
+
+| Figure | Proposed | Checked how |
+|---|---|---|
+| Roster card-vs-table breakpoint | ~600px | A real phone and a real tablet, in both orientations |
+| Projector type floor | names 24px, headings 32px | Read from the back of a room, off a real projector |
+
+Neither is a guess to be quietly kept. Both are written here so the gauntlet has something specific
+to confirm or overturn.
 
 ---
 
