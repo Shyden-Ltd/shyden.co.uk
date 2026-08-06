@@ -58,7 +58,7 @@ form, because it is the page's summary and description rather than part of the f
 
 **Every collapsed header reports its own state**, so collapsing never means forgetting:
 
-- `▸ Student details · none added` → `· 24 named` → `· 24 named · 2 away`
+- `▸ Student details · none added` → `· 24 named` → `· 24 named · 2 absent`
 - `▸ Together & apart · none` → `· 2 together · 1 apart`
 - `▸ Import / export · nothing to save yet` → `· unsaved changes — export to keep them`
 
@@ -87,7 +87,7 @@ interface Student {
   number: number;              // the ID — required, always present
   name: string | null;         // optional
   sex: 'M' | 'F' | null;       // null = neutral, the default
-  present: boolean;            // default true
+  absent: boolean;             // default false
   together: string | null;     // letter; same letter = same group
   apart: string | null;        // letter; same letter = mutually separated
 }
@@ -111,10 +111,27 @@ the engine cannot tell them apart. With numbers as IDs every constraint is unamb
 
 ### Absence
 
-- An absent student's **row stays, greyed out**, so tomorrow they are one tick away.
+The column is **`Absent`**, and ticking it marks a student out. The word, the tick and the field all
+point the same way — page, CSV and data model all say *absent*, so nothing anywhere has to be read
+backwards.
+
+- **The row is not greyed out and nothing in it is disabled.** Every detail stays editable: a teacher
+  can correct a name, set a sex or change a letter for a child who is off today, ready for tomorrow.
+  Absence marks a student out of *this shuffle*, not out of the register.
+- **The row is tinted instead**, so a scan down the table shows at a glance who is out. Colour is
+  never the only signal — the ticked box in the `Absent` column carries the same fact without it.
+- **A permanent line under the table states the consequence**, whether or not anyone is marked:
+  *"Students marked absent are not included when groups are made."* The count line then reports it:
+  `24 students · 22 here · 2 absent`.
 - **The number being grouped drops; the class size does not.** Groups are built from those present,
   while the Students box stays at 24 — see *The Students box* below.
 - Absent students **do not appear in the results at all**.
+- **Their letters lapse with them.** A together or apart letter belonging to an absent student
+  constrains nobody, and a together-unit whose other members are all absent places its remaining
+  member normally.
+
+**Wording is uniform.** *Absent*, not *away*, everywhere it appears — the column, the header state
+(`· 24 named · 2 absent`), the count line, the print panel and the printed sheet.
 
 ### Together / apart
 
@@ -155,9 +172,9 @@ none to block, and no rule about which students get dropped when a number shrink
 can no longer shrink out from under the list. The earlier draft warned about the mismatch and a later
 revision blocked it; removing the contradiction is better than either.
 
-**Absence does not touch the box.** Ticking a student away leaves it at 24 — it is the size of the
+**Absence does not touch the box.** Ticking a student absent leaves it at 24 — it is the size of the
 class, not of tonight's group work. The line beneath does the arithmetic (`24 students · 22 here ·
-2 away`) and groups are built from those present.
+2 absent`) and groups are built from those present.
 
 ### Two size limits, not one
 
@@ -280,13 +297,13 @@ and the class reads them off it, which is what this tool is actually for.
 
 ```
 # Class: 7B
-number,name,sex,present,together,apart
-1,Ana,F,yes,A,
-2,Budi,M,yes,A,
-3,Citra,F,yes,,X
-4,Dewi,F,no,,
-5,Eko,M,yes,,X
-6,,,yes,,
+number,name,sex,absent,together,apart
+1,Ana,F,,A,
+2,Budi,M,,A,
+3,Citra,F,,,X
+4,Dewi,F,yes,,
+5,Eko,M,,,X
+6,,,,,
 ```
 
 - **CSV only.** No `.xlsx` — it would need a spreadsheet library of a few hundred KB on a site that
@@ -303,10 +320,10 @@ The file must match the language of the page — **headers and values both**.
 
 | | English page | Indonesian page |
 |---|---|---|
-| headers | `number,name,sex,present,together,apart` | `nomor,nama,jenis kelamin,hadir,bersama,terpisah` |
+| headers | `number,name,sex,absent,together,apart` | `nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah` |
 | class comment | `# Class:` | `# Kelas:` |
 | sex | `M` / `F` / blank | `L` / `P` / blank |
-| present | `yes` / `no` | `ya` / `tidak` |
+| absent | `yes`, or **blank for present** | `ya`, or **blank for present** |
 
 A file in the wrong language is **recognised as such**, refused, and offers a link to the correct
 page — *"This looks like a Bahasa Indonesia class list. Open the Indonesian version of this page to
@@ -390,7 +407,7 @@ What to print
   (•) Both
 
 On the class list
-  [x] Show students who are away
+  [x] Show students who are absent
   [x] Show sex and the together/apart letters
 
 [x] Include avatars
@@ -404,9 +421,9 @@ On the class list
 named sheets: all four combinations are reachable, including *only who is here, with the letters* —
 a combination the named sheets could not express.
 
-- *Show students who are away* — off drops absent students from the sheet entirely. The remaining
+- *Show students who are absent* — off drops absent students from the sheet entirely. The remaining
   numbers then jump (1, 2, 3, 5) because a number belongs to a student, not to a position. The sheet
-  says how many are away so the gap is never a mystery.
+  says how many are absent so the gap is never a mystery.
 - *Show sex and the together/apart letters* — off prints numbers and names only.
 
 **Include avatars** — off prints names only: identical on every printer, and the least ink. On, faces
@@ -420,7 +437,7 @@ chrome; class name and date at the top. **It must work in greyscale as well as c
 the avatars carry hair length as well as colour, and why nothing may depend on colour alone.
 
 Group results print as they appear, minus absent students, who by section 4 are never in the results
-at all — the *away* tick box governs the class list only.
+at all — the *absent* tick box governs the class list only.
 
 ---
 
@@ -466,7 +483,10 @@ the `▸ How to use` header is still present and operable when collapsed; each s
 its state in every state; the section is named Student details in both locales.
 
 **Roster** — number assigned 1…N; override accepted; duplicates refused; gaps allowed but warned;
-absent row greyed, excluded from groups, absent from results; unnamed row renders "Student N";
+the Absent column marks a student out and **nothing in that row is disabled** — name, sex and
+letters all still editable; the row is tinted and the ticked box carries the same fact without
+colour; the consequence line is on screen whether or not anyone is marked; an absent student is
+excluded from groups and from results, and their letters constrain nobody; unnamed row renders "Student N";
 fixed-width cells so an empty name does not resize the row.
 
 **Constraints** — together placed as a unit; apart mutually separated; together+apart contradiction
@@ -479,7 +499,7 @@ with a reason.
 **The Students box** — typeable with no list; becomes a read-out the moment a list exists, and
 **the reason is rendered, not merely implied** — a disabled box with no explanation is a failing
 test; emptying the list makes it typeable again; `+ Add student` and `+ Add several…` change it;
-removing a row lowers it; ticking a student away does **not** change it while the here/away line and
+removing a row lowers it; ticking a student absent does **not** change it while the here/absent line and
 the groups both follow; no code path can produce a box that disagrees with the list.
 
 **Reshuffle** — pinned groups survive; unpinned redealt; constraints still honoured.
@@ -502,7 +522,7 @@ nothing in the URL; source forgets only after acknowledgement; blocked tab repor
 
 **Print** — class list, groups, both; each of the four tick boxes changes the sheet in the way it
 says, and the two class-list boxes are proved independent by testing all four combinations; absent
-students dropped *and* the away count still stated; numbers still jump when they are dropped;
+students dropped *and* the absent count still stated; numbers still jump when they are dropped;
 avatars present and absent; choices survive a reload; greyscale legible; no form or chrome on the
 sheet.
 
