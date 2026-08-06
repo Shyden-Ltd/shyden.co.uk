@@ -29,7 +29,14 @@ export interface GroupingInput {
   students: number | string[];
   mode: Mode;
   leftovers: Leftovers;
-  /** Pairs of NAMES that must not share a group. Requires named students. */
+  /**
+   * Pairs of NAMES that must not share a group. A pair naming a student who
+   * is not on the roster, or supplied when the class has no names to check
+   * against, is silently dropped rather than refused — there is no guard
+   * left on this path (see finding I-2, task-1-review.md, and the pinning
+   * test in grouping.test.ts). Retired along with the rest of this field
+   * in Task 2.
+   */
   keepApart: Array<[string, string]>;
   /** Injected so results are reproducible in tests. */
   random: () => number;
@@ -54,11 +61,13 @@ export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 /**
  * An error and exactly the data its message needs — never a bag of optionals.
  *
- * With every field optional, `renderError({ code: KEEP_APART_UNKNOWN_NAME })`
- * type-checks and renders " are not in your class list. Check the spelling.",
- * and the renderer needs `?? []` and `?? 0` fallbacks whose only job is to
- * turn missing data into a plausible-looking sentence. A union removes both:
- * the data cannot be absent, so there is nothing to fall back to.
+ * With every field optional, `renderError({ code: KEEP_APART_IMPOSSIBLE })`
+ * type-checks and renders " all need to be kept apart from each other, so
+ * you would need at least 0 groups. Either make more groups or remove one
+ * of the rules.", and the renderer needs `?? []` and `?? 0` fallbacks whose
+ * only job is to turn missing data into a plausible-looking sentence. A
+ * union removes both: the data cannot be absent, so there is nothing to
+ * fall back to.
  */
 export type GroupingError =
   | { code: typeof ERROR_CODES.noStudents }

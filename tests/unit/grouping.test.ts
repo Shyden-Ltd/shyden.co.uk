@@ -273,6 +273,40 @@ describe('buildGroups — keep-apart pairs', () => {
   });
 });
 
+describe('buildGroups — TRANSITIONAL: keepApart silently drops what it cannot match', () => {
+  // Pins CURRENT behaviour only, not desired behaviour. buildGroups used to
+  // refuse a keepApart pair naming a student who is not on the roster, and
+  // refuse outright when the class had no names at all — see the deleted
+  // guard, finding I-2 in task-1-review.md. A letter-based rule cannot
+  // produce either input, so removing the guard was correct, but that left
+  // this path silently dropping the constraint with nothing pinning it.
+  //
+  // This test exists only to catch accidental drift before Task 2, which
+  // deletes the `keepApart` field entirely — this whole describe block goes
+  // with it at that point, not before.
+  it('drops a pair naming a student who is not on the roster, without error', () => {
+    const out = buildGroups(
+      base({
+        students: ['Ana', 'Budi'],
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['Ana', 'Zara']],
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it('drops every pair when the class has no names to check against, without error', () => {
+    const out = buildGroups(
+      base({
+        students: 8,
+        mode: { kind: 'perGroup', size: 2 },
+        keepApart: [['Ana', 'Budi']],
+      }),
+    );
+    expect(out.ok).toBe(true);
+  });
+});
+
 describe('buildGroups — refusals', () => {
   it.each([
     ['no students at all', base({ students: 0 }), ERROR_CODES.noStudents],
@@ -608,6 +642,37 @@ describe('buildGroups — names that are not plain ASCII', () => {
           g.some((s) => s.name === names[1]),
       ),
     ).toBe(false);
+  });
+});
+
+describe('buildGroups — case distinguishes one child from another', () => {
+  it('treats a difference of case as a different child', () => {
+    // Two children really can be "ana" and "Ana"; case-folding names would
+    // merge them, which is a worse failure than asking for the exact
+    // spelling the class list uses (see the comment on nameKey). This is now
+    // the only test anywhere pinning that invariant — the case that used to
+    // observe it through KEEP_APART_UNKNOWN_NAME was deleted along with that
+    // error code (see finding I-1, task-1-review.md).
+    //
+    // Budi is kept apart from BOTH "ana" and "Citra". With two-seat groups,
+    // Budi's only possible groupmate is therefore "Ana" — but only if she is
+    // treated as a genuinely different child from "ana". If case were
+    // folded, "Ana" would inherit "ana"'s conflict with Budi too, and no
+    // arrangement would exist at all. That makes the outcome deterministic
+    // regardless of which random seed is supplied, so none needs pinning.
+    const { groups } = ok(
+      base({
+        students: ['ana', 'Ana', 'Budi', 'Citra'],
+        mode: { kind: 'groupCount', count: 2 },
+        keepApart: [
+          ['ana', 'Budi'],
+          ['Citra', 'Budi'],
+        ],
+      }),
+    );
+    const withBudi = groups.find((g) => g.some((s) => s.name === 'Budi'))!;
+    expect(withBudi.some((s) => s.name === 'Ana')).toBe(true);
+    expect(withBudi.some((s) => s.name === 'ana')).toBe(false);
   });
 });
 
