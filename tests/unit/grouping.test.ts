@@ -139,6 +139,18 @@ describe('buildGroups — students with and without names', () => {
     ]);
   });
 
+  it('a bare count produces a fully-defaulted record, matching the factory field-for-field', () => {
+    // anonymous() here and student() in factories.ts are two independent
+    // definitions of "a student with nothing set". A per-field assertion
+    // only guards fields both sides remember to check; a whole-object
+    // comparison also catches a field added to (or dropped from) one side
+    // and not the other, which per-field checks cannot. Fix round 1, F-2.
+    const { groups } = ok(
+      base({ students: 1, mode: { kind: 'perGroup', size: 1 } }),
+    );
+    expect(groups.flat()[0]).toEqual(student({ number: 1 }));
+  });
+
   it('keeps every student, including two who share a name, because identity is the number', () => {
     // Was 'a name list keeps every name, including genuine duplicates',
     // written against `students: string[]`. That input mode is gone --
@@ -221,9 +233,11 @@ describe('students are records identified by a number', () => {
     );
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.result.groups[0].map((s) => s.number).sort()).toEqual([
-      1, 2, 3,
-    ]);
+    // A bare .sort() sorts lexicographically -- correct here only by luck,
+    // because every number involved is a single digit. Fix round 1, F-5.
+    expect(
+      out.result.groups[0].map((s) => s.number).sort((a, b) => a - b),
+    ).toEqual([1, 2, 3]);
     expect(out.result.groups[0].every((s) => s.name === null)).toBe(true);
   });
 
@@ -388,6 +402,30 @@ describe('buildGroups — names that are not plain ASCII', () => {
     if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
     expect(out.result.groups.flat()[0].name).toBe(nfc);
   });
+
+  it('a roster of non-Latin names comes back intact through display normalisation', () => {
+    // Restores coverage dropped when the free-text keepApart matching tests
+    // were retired (see Fix round 1, F-5) -- this is NOT a matching test,
+    // matching by name is gone for good. It is an NFC-stability check: all
+    // four samples are already one Unicode form with no padding, so nameKey
+    // is a no-op on them today -- that's the point. The value is future: it
+    // fails the day nameKey gains a locale-aware transform or moves to
+    // NFKC, either of which could reshape a real name silently.
+    const names = ['张伟', 'أحمد', 'דוד', 'สมชาย'];
+    const out = buildGroups(
+      base({
+        students: names.map((name, i) => student({ number: i + 1, name })),
+        mode: { kind: 'perGroup', size: 2 },
+      }),
+    );
+    if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
+    expect(
+      out.result.groups
+        .flat()
+        .sort((a, b) => a.number - b.number)
+        .map((s) => s.name),
+    ).toEqual(names);
+  });
 });
 
 describe('buildGroups — display normalisation preserves case', () => {
@@ -406,6 +444,32 @@ describe('buildGroups — display normalisation preserves case', () => {
     // a teacher who typed "Ana" would see "ana" on their own roster.
     const out = buildGroups(
       base({ students: [student({ number: 1, name: 'Ana' })] }),
+    );
+    if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
+    expect(out.result.groups.flat()[0].name).toBe('Ana');
+  });
+});
+
+describe('buildGroups — a blank name collapses to null', () => {
+  it('a whitespace-only name normalises to null, not to an empty string', () => {
+    // The contract is two states: a name, or null meaning "no name". Without
+    // collapsing the empty result back to null, a whitespace-only name would
+    // land in a third, undocumented state -- '' is not nullish, so a
+    // consumer reading `name ?? 'Student N'` would render a blank label
+    // instead of falling back to it. Fix round 1, F-1.
+    const out = buildGroups(
+      base({ students: [student({ number: 1, name: '   ' })] }),
+    );
+    if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
+    expect(out.result.groups.flat()[0].name).toBeNull();
+  });
+
+  it('nameKey trims padding around a real name', () => {
+    // Zero trim coverage existed anywhere in this file before this test --
+    // nameKey has three behaviours (NFC normalisation, case preservation,
+    // trimming) and only the first two had a test. Fix round 1, F-1.
+    const out = buildGroups(
+      base({ students: [student({ number: 1, name: '  Ana  ' })] }),
     );
     if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
     expect(out.result.groups.flat()[0].name).toBe('Ana');

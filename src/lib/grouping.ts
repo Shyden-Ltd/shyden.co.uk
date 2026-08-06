@@ -97,6 +97,17 @@ export type GroupingOutcome =
  * handful of constraints, so a real solution is found in far fewer steps than
  * this. The cap exists so a pathological input degrades into an honest
  * "cannot be done" rather than hanging the teacher's browser.
+ *
+ * Measured uncapped, on a keep-apart list shaped like "these three wind each
+ * other up, and those three, and those three" -- the worst case for both the
+ * clique search below and the assignment search in `assign`: 24 students
+ * took 27ms, 36 took 471ms, 42 took 7.3s, and 48 took 121.7s. The growth
+ * between those points is why the cap exists at all, not just what value it
+ * holds -- a handful of students past classroom scale is the difference
+ * between instant and a hung tab. (Formerly reproduced by a `moonMoser` test
+ * helper, retired in Task 2 along with the free-text `keepApart` field that
+ * fed it; Task 5 needs an equivalently pathological letter-based input to
+ * re-prove this number, not just to trust this comment.)
  */
 const SEARCH_NODE_CAP = 200_000;
 
@@ -176,7 +187,11 @@ function normaliseStudents(input: number | Student[]): Student[] {
   // this rewrite: two children called Ana are two numbers, not one name.
   return input.map((s) => ({
     ...s,
-    name: s.name === null ? null : nameKey(s.name),
+    // A blank is not a name. Without the `|| null`, nameKey('   ') returns
+    // '' -- a third state the contract does not describe (it is name, or
+    // null meaning "no name"). '' is not nullish, so `name ?? 'Student N'`
+    // would render a blank label instead of falling back to it.
+    name: s.name === null ? null : nameKey(s.name) || null,
   }));
 }
 
@@ -225,6 +240,9 @@ function buildConflicts(
   students: Student[],
   pairs: Array<[string, string]>,
 ): Set<number>[] {
+  // Temporarily unread: `pairs` is always [] until Task 5 (see the comment
+  // at its construction site in buildGroups), so nothing ever looks this
+  // map up. Left in place -- Task 5 refills `pairs`, not this function.
   const byName = new Map<string, number[]>();
   students.forEach((s, i) => {
     if (s.name === null) return;
@@ -382,6 +400,20 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // exist and still run, they simply have nothing to do. An empty list here
   // is that "nothing to do" made visible, rather than a read of a field that
   // no longer exists on GroupingInput.
+  //
+  // Concretely: with `pairs` always empty, `largestMutualConflict`, the
+  // clique-impossibility gate just below, `assign`'s own conflict check (adj
+  // is always all-empty sets), `KEEP_APART_NO_ARRANGEMENT` and
+  // `KEEP_APART_SEARCH_GAVE_UP` are all UNREACHABLE through the public API,
+  // and therefore UNTESTED, until Task 5 refills `pairs`. This is a real
+  // coverage gap, not a stylistic one (see Fix round 1, F-3 in
+  // task-2-report.md). Two guarantees are at risk while it stands: that two
+  // students who must be apart never end up sharing a group, and that
+  // exhausting SEARCH_NODE_CAP is never reported as "no arrangement exists"
+  // (the gaveUp / no-arrangement distinction just above `assign`'s call
+  // site, below). Task 5 must RE-PROVE both against letter-fed conflicts,
+  // not merely add new apart-letter tests on top of an already-untested
+  // path.
   const pairs: Array<[string, string]> = [];
 
   const sizes = targetSizes(students.length, mode, leftovers);
