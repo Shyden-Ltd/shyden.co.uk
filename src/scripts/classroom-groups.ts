@@ -8,7 +8,7 @@
  * exactly the same result — the animation is a presentation of the answer, never
  * the means of producing it.
  */
-import { buildGroups, parseKeepApart, type Student } from '../lib/grouping';
+import { buildGroups, type Student } from '../lib/grouping';
 import { getStrings, renderError, groupName, type Strings } from '../lib/i18n';
 
 const $ = <T extends HTMLElement>(id: string) =>
@@ -53,6 +53,17 @@ if (form) {
   };
 
   const t: Strings = getStrings(document.documentElement.lang);
+  // The engine's errors (and warnings) carry student NUMBERS, never names --
+  // identity is the number, and grouping.ts has no roster to resolve one
+  // from (see Student.number's doc comment there). `renderError` defaults to
+  // exactly this numbered label when no resolver is passed, but wiring one
+  // explicitly -- rather than omitting the argument, as this file used to --
+  // is what lets `label` below and every rendered error share one rule, so
+  // they can never drift apart. Still only the numbered label today: the
+  // paste-names box that used to feed a real name is gone (see the fieldset
+  // removed from ClassroomGroupsPage.astro), and a future roster is what
+  // gives this something better to resolve to.
+  const resolveStudent = (n: number): string => t.studentNumber(n);
   const errorBox = $<HTMLParagraphElement>('cg-error')!;
   const results = $<HTMLElement>('cg-results')!;
   const summary = $<HTMLParagraphElement>('cg-summary')!;
@@ -60,9 +71,6 @@ if (form) {
   const soundToggle = $<HTMLInputElement>('cg-sound')!;
   const soundText = $<HTMLSpanElement>('cg-sound-text')!;
   const speedSelect = $<HTMLSelectElement>('cg-speed')!;
-  const namesBox = $<HTMLTextAreaElement>('cg-names')!;
-  const apartBox = $<HTMLTextAreaElement>('cg-apart')!;
-  const apartHint = $<HTMLParagraphElement>('cg-apart-hint')!;
   const goButton = $<HTMLButtonElement>('cg-go')!;
 
   const SOUND_KEY = 'cg-sound';
@@ -106,16 +114,6 @@ if (form) {
     if (target.name === 'mode') showFor('mode', target.value);
     if (target.name === 'naming') showFor('naming', target.value);
   });
-
-  // Keep-apart needs names to refer to. Disabling it with a visible reason is
-  // kinder than letting the teacher type pairs that will be rejected.
-  const syncApartAvailability = () => {
-    const hasNames = namesBox.value.trim().length > 0;
-    apartBox.disabled = !hasNames;
-    apartHint.hidden = hasNames;
-  };
-  namesBox.addEventListener('input', syncApartAvailability);
-  syncApartAvailability();
 
   // ── sound (synthesised; the site ships no audio assets by policy) ────────
   let audio: AudioContext | null = null;
@@ -175,10 +173,10 @@ if (form) {
 
   /** Deterministic per student, so the same child keeps the same face. */
   const hueFor = (student: Student) =>
-    AVATAR_HUES[student.id % AVATAR_HUES.length];
+    AVATAR_HUES[student.number % AVATAR_HUES.length];
 
   const label = (student: Student) =>
-    student.name ?? t.studentNumber(student.id);
+    student.name ?? resolveStudent(student.number);
 
   const render = (groups: Student[][], naming: string, theme: string) => {
     tables.textContent = '';
@@ -230,7 +228,6 @@ if (form) {
     e.preventDefault();
     errorBox.hidden = true;
 
-    const names = namesBox.value.trim();
     const mode =
       readRadio('mode') === 'groupCount'
         ? {
@@ -242,15 +239,13 @@ if (form) {
             size: Number(($('cg-size') as HTMLInputElement).value),
           };
 
-    const keepApart = apartBox.disabled ? [] : parseKeepApart(apartBox.value);
-
+    const count = Number(($('cg-count') as HTMLInputElement).value);
     const outcome = buildGroups({
-      students: names
-        ? names.split('\n')
-        : Number(($('cg-count') as HTMLInputElement).value),
+      students: count, // a number until a future stage gives us a roster
       mode,
       leftovers: readRadio('leftovers') === 'bunch' ? 'bunch' : 'spread',
-      keepApart,
+      sexMode: 'off', // Task 4 wires the switches
+      pinned: [], // a later stage wires the pins
       random: Math.random,
     });
 
@@ -261,7 +256,7 @@ if (form) {
       // revealing second announced nothing at all — the visitor pressed the
       // button and heard silence.
       errorBox.hidden = false;
-      errorBox.textContent = renderError(outcome.error, t);
+      errorBox.textContent = renderError(outcome.error, t, resolveStudent);
       // No focus move: role="alert" is what announces this. The old
       // errorBox.focus?.() was neither a guard (focus always exists on an
       // HTMLElement, so the ?. never short-circuits) nor a focus move (a <p>
@@ -273,7 +268,14 @@ if (form) {
       return;
     }
 
-    const { groups } = outcome.result;
+    // A success can still carry `warnings` -- e.g. "two girls ended up in a
+    // group of boys" -- see grouping.ts's own module doc. Read here, not
+    // dropped silently, but not yet rendered anywhere on the page: `sexMode`
+    // is hardcoded 'off' just above until Task 4 wires the sex switches, so
+    // this array is always empty today regardless. Task 4 is what gives it
+    // somewhere to appear.
+    const { groups, warnings } = outcome.result;
+    void warnings;
     const naming = readRadio('naming');
     const theme = ($('cg-theme') as HTMLSelectElement).value;
 

@@ -10,28 +10,49 @@ const fill = async (
   page: Page,
   opts: {
     count?: string;
-    names?: string;
     size?: string;
     /** Switches to "number of groups" mode and sets it. */
     groups?: string;
-    apart?: string;
     speed?: 'normal' | 'fast' | 'skip';
   },
 ) => {
   if (opts.count !== undefined) await page.fill('#cg-count', opts.count);
-  if (opts.names !== undefined) await page.fill('#cg-names', opts.names);
   if (opts.size !== undefined) await page.fill('#cg-size', opts.size);
   if (opts.groups !== undefined) {
     await page.check('input[name="mode"][value="groupCount"]');
     await page.fill('#cg-groups', opts.groups);
   }
-  if (opts.apart !== undefined) await page.fill('#cg-apart', opts.apart);
   // Default to skip so the tests assert the RESULT, not the show. The
   // animation gets its own test below.
   await page.selectOption('#cg-speed', opts.speed ?? 'skip');
 };
 
 test.describe('classroom group creator', () => {
+  // Stage 2, Task 1's own RED tests. The brief's literal snippet used
+  // `getByLabel('How many students?')` and `#cg-groups .group` — neither
+  // matches this page: the label reads "Number of students" (`studentsLabel`
+  // in en.ts) and `#cg-groups` is the "how many groups" NUMBER INPUT's id,
+  // not the results container (that's `#cg-results`, as every other test in
+  // this file already uses). Corrected to the real label and the real
+  // selector rather than reproduced verbatim.
+  test('shuffles anonymous students against the rewritten engine', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Number of students').fill('12');
+    await page.getByRole('button', { name: 'Make groups' }).click();
+    // 12 students at the default group size (4) => 3 groups.
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+  });
+
+  test('the paste-names box and the keep-apart box are gone', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await expect(page.locator('#cg-names')).toHaveCount(0);
+    await expect(page.locator('#cg-apart')).toHaveCount(0);
+  });
+
   test('splits a class and shows every student exactly once', async ({
     page,
   }) => {
@@ -58,17 +79,15 @@ test.describe('classroom group creator', () => {
     await expect(page.locator('#cg-results .student')).toHaveCount(7);
   });
 
-  test('uses pasted names, and numbers students when none are given', async ({
+  test('numbers students since there is no roster to name them from yet', async ({
     page,
   }) => {
+    // The paste-names box is gone: it fed `students: string[]`, an input
+    // shape the rewritten engine no longer accepts (see grouping.ts's
+    // GroupingInput). Numbered students are the only mode there is until a
+    // later stage brings a roster back, so this is the default case, not a
+    // fallback from something else.
     await page.goto('/classroom-groups');
-    await fill(page, { names: 'Ana\nBudi\nCitra\nDewi', size: '2' });
-    await page.click('#cg-go');
-    await expect(page.locator('#cg-results')).toContainText('Ana');
-    await expect(page.locator('#cg-results')).toContainText('Budi');
-
-    // Now with no names at all — the DEFAULT mode, so it must be first-class.
-    await page.fill('#cg-names', '');
     await fill(page, { count: '4', size: '2' });
     await page.click('#cg-go');
     await expect(page.locator('#cg-results .student').first()).toContainText(
@@ -93,37 +112,6 @@ test.describe('classroom group creator', () => {
     // Auto-retries until the deal finishes — no timing bet.
     await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
     await expect(page.locator('#cg-go')).toBeEnabled();
-  });
-
-  test('explains an impossible keep-apart instead of failing silently', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await fill(page, {
-      names: 'Ana\nBudi\nCitra\nDewi\nEko\nFitri\nGita\nHadi',
-      size: '2', // 8 students / 2 = 4 groups
-      apart: [
-        'Ana, Budi',
-        'Ana, Citra',
-        'Ana, Dewi',
-        'Ana, Eko',
-        'Budi, Citra',
-        'Budi, Dewi',
-        'Budi, Eko',
-        'Citra, Dewi',
-        'Citra, Eko',
-        'Dewi, Eko',
-      ].join('\n'),
-    });
-    await page.click('#cg-go');
-
-    const error = page.locator('#cg-error');
-    await expect(error).toBeVisible();
-    // Must NAME the students and say how many groups are needed.
-    await expect(error).toContainText('Ana');
-    await expect(error).toContainText('Eko');
-    await expect(error).toContainText('5');
-    await expect(page.locator('#cg-results')).toBeHidden();
   });
 
   test('splits by number of groups, not just by group size', async ({
@@ -154,54 +142,6 @@ test.describe('classroom group creator', () => {
     await expect(page.locator('#cg-results')).toBeHidden();
   });
 
-  test('an unarrangeable class is explained without accusing anyone', async ({
-    page,
-  }) => {
-    // A ring: Ana-Budi-Citra-Dewi-Eko-Ana. No two of these five all conflict
-    // beyond a pair, so nothing licenses the sentence "these five all need to
-    // be kept apart from each other" — which is what the page used to print,
-    // naming Ana and Citra, who have no rule between them.
-    await page.goto('/classroom-groups');
-    await fill(page, {
-      names: 'Ana\nBudi\nCitra\nDewi\nEko',
-      groups: '2',
-      apart: [
-        'Ana, Budi',
-        'Budi, Citra',
-        'Citra, Dewi',
-        'Dewi, Eko',
-        'Eko, Ana',
-      ].join('\n'),
-    });
-    await page.click('#cg-go');
-
-    const error = page.locator('#cg-error');
-    await expect(error).toHaveText(
-      'There is no way to fit your class into 2 groups while keeping everyone apart who needs to be. Either make more groups or remove one of the rules.',
-    );
-    // Names no children at all — the point of the fix.
-    for (const child of ['Ana', 'Budi', 'Citra', 'Dewi', 'Eko']) {
-      await expect(error).not.toContainText(child);
-    }
-  });
-
-  test('keeps a named pair apart when it is possible', async ({ page }) => {
-    await page.goto('/classroom-groups');
-    await fill(page, {
-      names: 'Ana\nBudi\nCitra\nDewi',
-      size: '2',
-      apart: 'Ana, Budi',
-    });
-    await page.click('#cg-go');
-
-    await expect(page.locator('#cg-results .group')).toHaveCount(2);
-    const groupWithBoth = page
-      .locator('#cg-results .group')
-      .filter({ hasText: 'Ana' })
-      .filter({ hasText: 'Budi' });
-    await expect(groupWithBoth).toHaveCount(0);
-  });
-
   test('the summary reads as a sentence, singular included', async ({
     page,
   }) => {
@@ -223,33 +163,6 @@ test.describe('classroom group creator', () => {
     );
   });
 
-  test('three names on one line means all three apart', async ({ page }) => {
-    // The help says "one pair per line", but the box is free text and this is
-    // how a teacher writes it. The old parser kept the first pair, dropped
-    // the rest, seated Citra next to Ana and reported success.
-    await page.goto('/classroom-groups');
-    await fill(page, {
-      names: 'Ana\nBudi\nCitra\nDewi\nEko\nFitri',
-      size: '2',
-      apart: 'Ana, Budi, Citra',
-    });
-    await page.click('#cg-go');
-
-    await expect(page.locator('#cg-results .group')).toHaveCount(3);
-    for (const [a, b] of [
-      ['Ana', 'Budi'],
-      ['Ana', 'Citra'],
-      ['Budi', 'Citra'],
-    ]) {
-      await expect(
-        page
-          .locator('#cg-results .group')
-          .filter({ hasText: a })
-          .filter({ hasText: b }),
-      ).toHaveCount(0);
-    }
-  });
-
   test('the error clears the stale "Shuffle again" label', async ({ page }) => {
     await page.goto('/classroom-groups');
     await fill(page, { count: '8', size: '4' });
@@ -262,16 +175,6 @@ test.describe('classroom group creator', () => {
     await page.click('#cg-go');
     await expect(page.locator('#cg-error')).toBeVisible();
     await expect(page.locator('#cg-go')).toHaveText('Make Groups');
-  });
-
-  test('keep-apart is disabled until there are names to refer to', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await expect(page.locator('#cg-apart')).toBeDisabled();
-    await expect(page.locator('#cg-apart-hint')).toBeVisible();
-    await page.fill('#cg-names', 'Ana\nBudi');
-    await expect(page.locator('#cg-apart')).toBeEnabled();
   });
 
   test('the mute choice survives a reload', async ({ page }) => {

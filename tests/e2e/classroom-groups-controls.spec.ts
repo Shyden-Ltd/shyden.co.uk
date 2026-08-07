@@ -221,27 +221,13 @@ test.describe('classroom groups — mobile-first layout', () => {
     }
   }
 
-  test('a long name does not push the layout sideways', async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 900 });
-    await page.goto('/classroom-groups');
-    await page.fill(
-      '#cg-names',
-      ['Bartholomew-Fitzgerald Wollstonecraft', 'Ana', 'Budi', 'Citra'].join(
-        '\n',
-      ),
-    );
-    await page.fill('#cg-size', '2');
-    await page.selectOption('#cg-speed', 'skip');
-    await page.click('#cg-go');
-    await expect(page.locator('#cg-results .student')).toHaveCount(4);
-
-    const overflow = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
-  });
+  // 'a long name does not push the layout sideways' is retired along with
+  // the paste-names box it depended on (#cg-names) -- it fed `students:
+  // string[]`, an input shape the rewritten engine no longer accepts (see
+  // grouping.ts's GroupingInput). The `overflow-wrap: anywhere` rule this
+  // test exercised on `.who` in ClassroomGroupsPage.astro's global styles is
+  // still in place; a later stage that reintroduces a named roster should
+  // also reintroduce this test against it.
 
   test('every control meets the 44px touch target', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 900 });

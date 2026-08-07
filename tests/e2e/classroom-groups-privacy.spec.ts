@@ -67,20 +67,20 @@ test.describe('privacy — with JavaScript blocked', () => {
     await page.goto('/classroom-groups');
 
     // A teacher fills the form in and presses the button before noticing the
-    // notice. With no listener attached, this is a native GET.
+    // notice. With no listener attached, this is a native GET. The
+    // paste-names box that used to carry typed names is gone (it fed
+    // `students: string[]`, an input shape the rewritten engine no longer
+    // accepts -- see grouping.ts's GroupingInput), so there is currently no
+    // control on this page a class list could even be typed into. What
+    // remains general on purpose, rather than naming fields that do not
+    // exist yet: the query string a native submit produces may contain ONLY
+    // the allow-list, so a `name` added to any future data field -- whatever
+    // roster a later stage brings back included -- fails here the moment it
+    // is added, before it carries anything that looks personal.
     await page.fill('#cg-count', '24');
-    await page.fill('#cg-names', 'Ana\nBudi\nCitra');
     await page.click('#cg-go');
 
-    // Whatever the browser did, nothing typed may appear in the address bar.
     const url = new URL(page.url());
-    for (const child of ['Ana', 'Budi', 'Citra']) {
-      expect(url.href).not.toContain(child);
-    }
-
-    // Stronger, and durable: the query may contain ONLY the allow-list. A new
-    // `name` on a data field fails here even if today's fixture has no name
-    // that happens to look personal.
     for (const key of url.searchParams.keys()) {
       expect(NON_PERSONAL_NAMES).toContain(key);
     }
@@ -112,12 +112,13 @@ test.describe('privacy — when the script dies half-way', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
-    await page.fill('#cg-names', 'Ana\nBudi');
+    await page.fill('#cg-count', '8');
     await page.click('#cg-go');
 
     // No native submit happened, so no query string exists at all — not even
     // the harmless radio values. That is the unconditional guard registered
-    // as the module's first statement, and nothing else.
+    // as the module's first statement, and it does not care what was typed
+    // into the form, so filling the count field alone still proves it.
     expect(new URL(page.url()).search).toBe('');
   });
 });

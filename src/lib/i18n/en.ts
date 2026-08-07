@@ -33,9 +33,6 @@ export const en = {
   classHeading: 'Your class',
   studentsLabel: 'Number of students',
   studentsHelp: 'Leave the names box empty to use numbered students.',
-  namesLabel: 'Student names (optional)',
-  namesHelp:
-    'One name per line. If you add names, they are used instead of the number above.',
 
   groupsHeading: 'How to split them',
   modeLabel: 'Split by',
@@ -63,12 +60,6 @@ export const en = {
     colours: 'Colours',
     planets: 'Planets',
   } satisfies Record<ThemeKey, string>,
-
-  keepApartHeading: 'Keep apart (optional)',
-  keepApartLabel: 'Students who should not share a group',
-  keepApartHelp:
-    'One pair per line, separated by a comma — for example: Ana, Budi',
-  keepApartNeedsNamesHint: 'Add student names above to use this.',
 
   playbackHeading: 'Sound and animation',
   soundOn: 'Sound on',

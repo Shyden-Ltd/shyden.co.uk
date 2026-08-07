@@ -26,9 +26,6 @@ export const id: Strings = {
   classHeading: 'Kelas Anda',
   studentsLabel: 'Jumlah siswa',
   studentsHelp: 'Biarkan kotak nama kosong untuk memakai siswa bernomor.',
-  namesLabel: 'Nama siswa (opsional)',
-  namesHelp:
-    'Satu nama per baris. Jika Anda menambahkan nama, nama itu dipakai menggantikan angka di atas.',
 
   groupsHeading: 'Cara membaginya',
   modeLabel: 'Bagi berdasarkan',
@@ -47,11 +44,6 @@ export const id: Strings = {
   namingThemed: 'Pakai tema',
   themeLabel: 'Tema',
   themeNames: { animals: 'Hewan', colours: 'Warna', planets: 'Planet' },
-
-  keepApartHeading: 'Pisahkan (opsional)',
-  keepApartLabel: 'Siswa yang tidak boleh sekelompok',
-  keepApartHelp: 'Satu pasang per baris, dipisahkan koma — misalnya: Ana, Budi',
-  keepApartNeedsNamesHint: 'Tambahkan nama siswa di atas untuk memakai ini.',
 
   playbackHeading: 'Suara dan animasi',
   soundOn: 'Suara aktif',
