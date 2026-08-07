@@ -4043,6 +4043,861 @@ describe('pinned groups', () => {
       }
     });
   });
+
+  // Whole-branch review, I-5. Every test above in this describe block drives
+  // buildGroups with a real pin and checks the returned CODE and DATA -- but
+  // none of them ever call renderError or renderWarning, so a structurally
+  // correct code carrying the WRONG NUMBER (exactly what commit 82fa7de
+  // fixed -- see restoreWholeClassCount's own doc comment in grouping.ts)
+  // would have passed every one of them. `sex mode: separate`'s own
+  // "rendered messages" sub-block, and its sexSeparateImpossible/
+  // sexSeparateSearchGaveUp tests further up, already prove this pattern
+  // catches real bugs; this block applies it to the PINNED path
+  // specifically, because that is the one seam where a count gets computed
+  // once over the pool and once over the whole class (see
+  // restoreWholeClassCount) -- exactly what a code-only assertion cannot
+  // see.
+  //
+  // Each fixture below drives a REAL buildGroups call with a REAL pin,
+  // asserts the structural error/warning first (so the comment's arithmetic
+  // is checkable against a concrete number), then renders the ACTUAL
+  // returned value in both languages. Where the code names students, it
+  // also renders with a supplied resolver -- proving the plumbing on a real
+  // pinned outcome, not a hand-fed sample the way i18n.test.ts's own
+  // "resolves student numbers to names" blocks do for the renderer in
+  // isolation.
+  describe('rendered messages: every pinned-path refusal and warning reads correctly, in both languages (I-5)', () => {
+    const M = (number: number) => student({ number, sex: 'M' as const });
+    const F = (number: number) => student({ number, sex: 'F' as const });
+
+    // -- pin-exclusive codes: reuse the exact rosters the code-level tests
+    // above already proved produce these codes; the only new work here is
+    // the render step those tests never took. -------------------------
+
+    const testPinnedSplitsUnit = () => {
+      const split = roster.map((s) =>
+        s.number === 1 || s.number === 7 ? { ...s, together: 'A' } : s,
+      );
+      const out = buildGroups(
+        base({
+          students: split,
+          mode: { kind: 'groupCount', count: 3 },
+          pinned: [[split[0], split[1], split[2]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.pinnedSplitsUnit,
+        students: [1, 7],
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Student 1, Student 7 are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Siswa 1, Siswa 7 ditandai untuk disatukan, tetapi hanya sebagian dari mereka yang berada di kelompok yang dikunci. Batalkan kunci kelompok itu, atau hapus huruf penyatu itu dari yang berada di luar kelompok.',
+      );
+      expect(
+        renderError(out.error, en, (n) => (n === 1 ? 'Wayan' : 'Made')),
+      ).toBe(
+        'Wayan, Made are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.',
+      );
+    };
+
+    const testPinnedApartClash = () => {
+      const withApart = roster.map((s) =>
+        s.number === 1 || s.number === 2 ? { ...s, apart: 'X' } : s,
+      );
+      const out = buildGroups(
+        base({
+          students: withApart,
+          mode: { kind: 'groupCount', count: 3 },
+          pinned: [[withApart[0], withApart[1]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.pinnedApartClash,
+        students: [1, 2],
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Student 1, Student 2 are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Siswa 1, Siswa 2 ditandai untuk dipisahkan satu sama lain, tetapi kelompok yang dikunci menempatkan mereka bersama. Batalkan kunci kelompok itu, atau hapus huruf pemisah itu dari salah satu siswa tersebut.',
+      );
+      expect(
+        renderError(out.error, en, (n) => (n === 1 ? 'Ana' : 'Budi')),
+      ).toBe(
+        'Ana, Budi are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.',
+      );
+    };
+
+    const testPinnedInTwoGroups = () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 3 },
+          pinned: [
+            [roster[0], roster[1]],
+            [roster[0], roster[3]],
+          ],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.pinnedInTwoGroups,
+        number: 1,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Student 1 is pinned into two different groups at once. A student can only be pinned into one group. Remove them from one of the two.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Siswa 1 dikunci ke dalam dua kelompok berbeda sekaligus. Satu siswa hanya bisa dikunci ke dalam satu kelompok. Keluarkan dari salah satu kelompok tersebut.',
+      );
+      expect(renderError(out.error, en, () => 'Citra')).toBe(
+        'Citra is pinned into two different groups at once. A student can only be pinned into one group. Remove them from one of the two.',
+      );
+    };
+
+    // PINNED_TOO_MANY_GROUPS has THREE distinct sentence branches (see its
+    // template in en.ts/id.ts), keyed on the sign of `poolGroupsNeeded =
+    // requestedGroups - pinnedGroupCount` -- each gets its own fixture,
+    // reusing the exact rosters the "degenerate cases" / "refuses when the
+    // pins leave too FEW pool students" tests above already proved produce
+    // this code.
+    const testPinnedTooManyGroupsShortfall = () => {
+      // Teacher typed 4 groups total; the pin alone already claims 1,
+      // leaving only 2 pool students for the 3 pool groups that still need
+      // filling (4 requested - 1 pinned = 3 needed, but only 2 remain).
+      const tenRoster = Array.from({ length: 10 }, (_, i) =>
+        student({ number: i + 1 }),
+      );
+      const out = buildGroups(
+        base({
+          students: tenRoster,
+          mode: { kind: 'groupCount', count: 4 },
+          pinned: [tenRoster.slice(0, 8)],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.pinnedTooManyGroups,
+        requestedGroups: 4,
+        pinnedGroupCount: 1,
+        remainingStudents: 2,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Your pins already fill 1 of the 4 groups you asked for, which only leaves 2 students — not enough for the 3 groups still needed. Unpin a group, or ask for fewer groups.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Kunci Anda sudah memakai 1 dari 4 kelompok yang Anda minta, sehingga hanya tersisa 2 siswa — tidak cukup untuk 3 kelompok yang masih dibutuhkan. Batalkan kunci salah satu kelompok, atau minta lebih sedikit kelompok.',
+      );
+    };
+
+    const testPinnedTooManyGroupsExact = () => {
+      // Teacher typed 1 group total; the pin alone already claims that one
+      // group (1 requested - 1 pinned = 0 pool groups left), stranding the
+      // 6 students who were never pinned.
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 1 },
+          pinned: [[roster[0], roster[1], roster[2]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.pinnedTooManyGroups,
+        requestedGroups: 1,
+        pinnedGroupCount: 1,
+        remainingStudents: 6,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Your pins already fill 1 of the 1 group you asked for, which only leaves 6 students with no group left for them. Unpin a group, or ask for more groups.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Kunci Anda sudah memakai 1 dari 1 kelompok yang Anda minta, sehingga hanya tersisa 6 siswa tanpa kelompok tersisa untuk mereka. Batalkan kunci salah satu kelompok, atau minta lebih banyak kelompok.',
+      );
+    };
+
+    const testPinnedTooManyGroupsSurplus = () => {
+      // Teacher typed 2 groups total; the pins alone already claim 3 -- MORE
+      // than was asked for (poolGroupsNeeded = 2 - 3 = -1) -- while still
+      // leaving 3 students unpinned.
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 2 },
+          pinned: [
+            [roster[0], roster[1]],
+            [roster[2], roster[3]],
+            [roster[4], roster[5]],
+          ],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.pinnedTooManyGroups,
+        requestedGroups: 2,
+        pinnedGroupCount: 3,
+        remainingStudents: 3,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Your pins already use 3 groups — more than the 2 groups you asked for — which leaves 3 students with no group left for them. Unpin a group, or ask for more groups.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Kunci Anda sudah memakai 3 kelompok — lebih banyak daripada 2 kelompok yang Anda minta — sehingga tersisa 3 siswa tanpa kelompok tersisa untuk mereka. Batalkan kunci salah satu kelompok, atau minta lebih banyak kelompok.',
+      );
+    };
+
+    const testPinnedMixedSex = () => {
+      const mixedPinRoster = [M(1), M(2), M(3), F(4), F(5), F(6)];
+      const out = buildGroups(
+        base({
+          students: mixedPinRoster,
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'separate',
+          pinned: [[mixedPinRoster[0], mixedPinRoster[3]]],
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.warnings).toEqual([
+        { code: WARNING_CODES.pinnedMixedSex, students: [1, 4] },
+      ]);
+      const [warning] = out.result.warnings;
+      expect(renderWarning(warning, en)).toBe(
+        'Student 1, Student 4 are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.',
+      );
+      expect(renderWarning(warning, id)).toBe(
+        'Siswa 1, Siswa 4 dikunci bersama dalam satu kelompok, tetapi tidak semuanya berjenis kelamin sama, sehingga kelompok ini tidak dipisahkan berdasarkan jenis kelamin seperti kelompok lainnya. Itu sesuai permintaan kunci kelompoknya, bukan kesalahan yang perlu diperbaiki.',
+      );
+      expect(
+        renderWarning(warning, en, (n) => (n === 1 ? 'Dewi' : 'Eko')),
+      ).toBe(
+        'Dewi, Eko are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.',
+      );
+    };
+
+    // -- restored-count codes: the exact defect class commit 82fa7de fixed.
+    // Each of these fires from a fresh pool-only conflict, WITH a pin also
+    // in play, so the reported count only reads true if
+    // restoreWholeClassCount actually ran. ------------------------------
+
+    const testKeepApartImpossiblePinned = () => {
+      // 2 students pinned together (no rules of their own) + a 3-student
+      // mutual apart-clique left in the pool. Teacher asked for 3 groups
+      // total (1 pinned + 2 requested for the pool); the pool's OWN clique
+      // needs 3 of ITS OWN groups (poolSizes.length is only 2, since
+      // poolMode.count = 3 - 1), so the true whole-class requirement is the
+      // clique's 3 plus the 1 already pinned = 4 -- MORE than the 3 the
+      // teacher typed, which is the honest, actionable claim. Pre-fix this
+      // said 3: "you'd need at least 3", when the teacher had already typed
+      // 3 -- self-contradicting.
+      const students = [
+        student({ number: 1 }),
+        student({ number: 2 }),
+        student({ number: 3, apart: 'X' }),
+        student({ number: 4, apart: 'X' }),
+        student({ number: 5, apart: 'X' }),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 3 },
+          pinned: [[students[0], students[1]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.keepApartImpossible,
+        students: [3, 4, 5],
+        groupsNeeded: 4,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Student 3, Student 4, Student 5 all need to be kept apart from each other, so you would need at least 4 groups. Either make more groups or remove one of the rules.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Siswa 3, Siswa 4, Siswa 5 semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal 4 kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.',
+      );
+      expect(
+        renderError(
+          out.error,
+          en,
+          (n) => ({ 3: 'Fitri', 4: 'Gita', 5: 'Hani' })[n] ?? `#${n}`,
+        ),
+      ).toBe(
+        'Fitri, Gita, Hani all need to be kept apart from each other, so you would need at least 4 groups. Either make more groups or remove one of the rules.',
+      );
+    };
+
+    const testTogetherNoArrangementPinned = () => {
+      // The exact together-pair roster from "proves no arrangement exists
+      // when three together-pairs cannot all fit" above (3 blocks of 2 into
+      // 2 groups of 3 -- provably impossible), plus one pinned pair. Teacher
+      // typed 3 groups total (2 for the pool's own letters + 1 already
+      // pinned); poolSizes.length alone is only 2. Pre-fix this said 2,
+      // silently pretending the pinned group was never asked for.
+      const students = [
+        student({ number: 1, together: 'A' }),
+        student({ number: 2, together: 'A' }),
+        student({ number: 3, together: 'B' }),
+        student({ number: 4, together: 'B' }),
+        student({ number: 5, together: 'C' }),
+        student({ number: 6, together: 'C' }),
+        student({ number: 7 }),
+        student({ number: 8 }),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 3 },
+          pinned: [[students[6], students[7]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.togetherNoArrangement,
+        groupsTried: 3,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'There is no way to fit your class into 3 groups while keeping everyone together who needs to be. Make the groups bigger, or give each letter to fewer students.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Tidak ada cara membagi kelas Anda menjadi 3 kelompok sambil tetap menyatukan siswa yang harus disatukan. Perbesar kelompoknya, atau berikan setiap huruf ke lebih sedikit siswa.',
+      );
+    };
+
+    const testKeepApartNoArrangementPinned = () => {
+      // The exact three-clique roster from "apart letters -- three cliques
+      // whose sizes and capacities collide" above (X, Y sized 3 each, Z
+      // sized 2, groupCount 3, leftovers 'bunch' -- a proven, not
+      // exhausted, impossibility), plus one pinned pair. Teacher typed 4
+      // groups total (3 for the pool's own letters + 1 already pinned);
+      // poolSizes.length alone is only 3. Pre-fix this said 3, silently
+      // pretending the pinned group was never asked for.
+      const students = [
+        ...['X', 'Y'].flatMap((letter, li) =>
+          Array.from({ length: 3 }, (_, i) =>
+            student({ number: li * 3 + i + 1, apart: letter }),
+          ),
+        ),
+        student({ number: 7, apart: 'Z' }),
+        student({ number: 8, apart: 'Z' }),
+        student({ number: 9 }),
+        student({ number: 10 }),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 4 },
+          leftovers: 'bunch',
+          pinned: [[students[8], students[9]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.keepApartNoArrangement,
+        groupsTried: 4,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'There is no way to fit your class into 4 groups while keeping everyone apart who needs to be. Either make more groups or remove one of the rules.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Tidak ada cara membagi kelas Anda menjadi 4 kelompok sambil tetap memisahkan siswa yang harus dipisahkan. Tambah jumlah kelompok atau hapus salah satu aturannya.',
+      );
+    };
+
+    const testBothRulesNoArrangementPinned = () => {
+      // The exact roster from "reports BOTH_RULES_NO_ARRANGEMENT..." above
+      // (together clash alone already proves impossibility at perGroup size
+      // 3), plus one pinned trio. perGroup has no explicit "count" the
+      // teacher typed, but the true total groups in the arrangement is 3 (2
+      // needed for the pool's own letters + 1 already pinned) -- pre-fix
+      // this said 2, silently pretending the pinned group did not exist.
+      const students = [
+        student({ number: 1, together: 'A', apart: 'X' }),
+        student({ number: 2, together: 'A' }),
+        student({ number: 3, together: 'B', apart: 'X' }),
+        student({ number: 4, together: 'B' }),
+        student({ number: 5, together: 'C' }),
+        student({ number: 6, together: 'C' }),
+        student({ number: 7 }),
+        student({ number: 8 }),
+        student({ number: 9 }),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'perGroup', size: 3 },
+          pinned: [[students[6], students[7], students[8]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.bothRulesNoArrangement,
+        groupsTried: 3,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'There is no way to fit your class into 3 groups while satisfying every together-letter and every apart-letter at once. The search cannot tell which kind of rule is the problem, so try either remedy: make the groups bigger or give a together-letter to fewer students, or make more groups or remove one of the apart-rules.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Tidak ada cara membagi kelas Anda menjadi 3 kelompok sambil tetap menyatukan siswa yang harus disatukan dan memisahkan siswa yang harus dipisahkan. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: untuk huruf yang harus disatukan, perbesar kelompoknya atau berikan hurufnya ke lebih sedikit siswa; untuk aturan pemisahan, tambah jumlah kelompoknya atau hapus salah satu aturan itu.',
+      );
+    };
+
+    const testSexSeparateImpossiblePinned = () => {
+      // 6 boys mutually apart (need 6 groups no matter how the total is
+      // split between the sexes) + 4 pool girls, plus 2 more girls pinned
+      // together. Teacher typed 4 groups total (3 for the pool + 1 already
+      // pinned); buildSeparateGroups only ever sees poolMode.count = 3, the
+      // number every failed candidate is measured against. Pre-fix this
+      // said 3, contradicting the 4 the teacher actually typed.
+      const students = [
+        ...Array.from({ length: 6 }, (_, i) =>
+          student({ number: i + 1, sex: 'M' as const, apart: 'X' }),
+        ),
+        F(7),
+        F(8),
+        F(9),
+        F(10),
+        F(11),
+        F(12),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 4 },
+          sexMode: 'separate',
+          pinned: [[students[10], students[11]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.sexSeparateImpossible,
+        groupsRequested: 4,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Boys and girls cannot be kept in separate groups across 4 groups while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for a different number of groups, or turn this mode off.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam 4 kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta jumlah kelompok yang berbeda, atau matikan mode ini.',
+      );
+    };
+
+    // -- reachable-with-pins, but legitimately NOT restored: these carry
+    // either no data at all, or a value that is correctly POOL-scoped even
+    // with a pin present (see restoreWholeClassCount's own doc comment for
+    // why it does not touch them). Rendered here anyway, both languages,
+    // because the whole point of this describe block is that "zero
+    // renderError/renderWarning calls" is what let the real defect through
+    // -- and TOGETHER_UNIT_TOO_LARGE in particular is a guard against a
+    // future, over-eager fix that copies the +pinnedGroups.length pattern
+    // here where it does NOT belong (a together-unit can only ever land in
+    // the pool, per that doc comment). --------------------------------
+
+    const testTogetherSearchGaveUpPinned = () => {
+      const pairs = Array.from({ length: 30 }, (_, i) =>
+        student({
+          number: i + 1,
+          together: String.fromCharCode(65 + Math.floor(i / 2)),
+        }),
+      );
+      // The pinned pair must be REAL roster members, not just numbers handed
+      // to `pinned` -- a pin resolves by matching `presentByNumber` (see
+      // buildGroups's own comment on `pinnedGroups`), so a number with no
+      // matching student in `students` is silently dropped, exactly like the
+      // "pinned student who is not on the roster at all" test above. Dropped
+      // silently means `pinnedGroups.length` stays 0, and every fixture in
+      // this block depends on it being 1 -- so the pinned pair is built once
+      // here and spread into `students` too, not just referenced by number.
+      const pinnedPair = [student({ number: 31 }), student({ number: 32 })];
+      const out = buildGroups(
+        base({
+          students: [...pairs, ...pinnedPair],
+          mode: { kind: 'groupCount', count: 11 },
+          pinned: [pinnedPair],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({ code: ERROR_CODES.togetherSearchGaveUp });
+      expect(renderError(out.error, en)).toBe(
+        'There are too many together-letters here to work through. Try using fewer letters, or make the groups bigger.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Huruf yang harus disatukan di sini terlalu banyak untuk dihitung. Coba gunakan lebih sedikit huruf, atau perbesar kelompoknya.',
+      );
+    };
+
+    const testKeepApartSearchGaveUpPinned = () => {
+      const students = [20, 19, 18, 17, 16, 15].flatMap((size, ci) =>
+        Array.from({ length: size }, (_, j) =>
+          student({ number: ci * 100 + j + 1, apart: `C${ci}` }),
+        ),
+      );
+      // See testTogetherSearchGaveUpPinned's comment: the pinned pair must
+      // be real roster members (numbers well clear of the 1-515 range the
+      // six cliques above already use -- `ci` up to 5, `j` up to 14), or the
+      // pin silently fails to resolve and `pinnedGroups.length` stays 0.
+      const pinnedPair = [student({ number: 701 }), student({ number: 702 })];
+      const out = buildGroups(
+        base({
+          students: [...students, ...pinnedPair],
+          mode: { kind: 'groupCount', count: 21 },
+          pinned: [pinnedPair],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({ code: ERROR_CODES.keepApartSearchGaveUp });
+      expect(renderError(out.error, en)).toBe(
+        'There are too many keep-apart rules here to work through. Try removing some of them.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Aturan pemisahan di sini terlalu banyak untuk dihitung. Coba hapus sebagian aturannya.',
+      );
+    };
+
+    const testBothRulesSearchGaveUpPinned = () => {
+      const pairs = Array.from({ length: 30 }, (_, i) =>
+        student({
+          number: i + 1,
+          together: String.fromCharCode(65 + Math.floor(i / 2)),
+          apart: i === 0 || i === 16 ? 'X' : null,
+        }),
+      );
+      // See testTogetherSearchGaveUpPinned's comment.
+      const pinnedPair = [student({ number: 31 }), student({ number: 32 })];
+      const out = buildGroups(
+        base({
+          students: [...pairs, ...pinnedPair],
+          mode: { kind: 'groupCount', count: 11 },
+          pinned: [pinnedPair],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({ code: ERROR_CODES.bothRulesSearchGaveUp });
+      expect(renderError(out.error, en)).toBe(
+        'There are too many together- and apart-letters here to work through at once. Try using fewer letters of either kind, or make the groups bigger.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus. Coba gunakan lebih sedikit huruf dari kedua jenis itu, atau perbesar kelompoknya.',
+      );
+    };
+
+    const testSexSeparateSearchGaveUpPinned = () => {
+      const students = [
+        ...Array.from({ length: 8 }, (_, i) => M(i + 1)),
+        ...Array.from({ length: 5 }, (_, i) =>
+          student({ number: i + 9, sex: 'F' as const, apart: 'X' }),
+        ),
+        F(14),
+        F(15),
+        F(16),
+        F(17),
+        F(18),
+        F(19),
+        F(20),
+        F(21),
+        F(22),
+        F(23),
+      ];
+      // See testTogetherSearchGaveUpPinned's comment. `sexMode: 'separate'`
+      // additionally requires every PRESENT student to have a sex set (the
+      // unset-sex guard runs on `present`, before pins are even resolved),
+      // so the pinned pair must carry one too -- M() already does.
+      const pinnedPair = [M(24), M(25)];
+      const out = buildGroups(
+        base({
+          students: [...students, ...pinnedPair],
+          mode: { kind: 'groupCount', count: 7 },
+          sexMode: 'separate',
+          pinned: [pinnedPair],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.sexSeparateSearchGaveUp,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'There are too many together- and apart-letters here to work through while also keeping boys and girls in separate groups. Try using fewer letters, or turn this mode off.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus, sambil juga menjaga laki-laki dan perempuan di kelompok terpisah. Coba gunakan lebih sedikit huruf, atau matikan mode ini.',
+      );
+    };
+
+    const testTogetherUnitTooLargePinned = () => {
+      // The exact roster from "refuses a unit larger than the group, naming
+      // the letter and both numbers" above (unit of 6 into groups of 4: 6 >
+      // 4), plus one pinned pair drawn from students who carry no letter at
+      // all. groupSize stays the POOL's own largest group (4) -- a
+      // together-unit can only ever land in the pool, never inside an
+      // already-fixed pinned group, so there is nothing here for
+      // restoreWholeClassCount to add back (see its own doc comment).
+      const students = Array.from({ length: 8 }, (_, i) =>
+        student({ number: i + 1, together: i < 6 ? 'A' : null }),
+      );
+      // See testTogetherSearchGaveUpPinned's comment.
+      const pinnedPair = [student({ number: 9 }), student({ number: 10 })];
+      const out = buildGroups(
+        base({
+          students: [...students, ...pinnedPair],
+          mode: { kind: 'perGroup', size: 4 },
+          pinned: [pinnedPair],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.togetherUnitTooLarge,
+        letter: 'A',
+        unit: 6,
+        groupSize: 4,
+      });
+      expect(renderError(out.error, en)).toBe(
+        'The letter "A" has 6 students, but the largest group here only holds 4. Make the groups bigger, or give the letter "A" to fewer students.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Huruf "A" digunakan oleh 6 siswa, padahal kelompok terbesar di sini hanya menampung 4 siswa. Perbesar kelompoknya, atau berikan huruf "A" ke lebih sedikit siswa.',
+      );
+    };
+
+    const testSexSeparateSplitsUnitPinned = () => {
+      const students = [
+        student({ number: 1, sex: 'F' as const, together: 'A' }),
+        student({ number: 2, sex: 'M' as const, together: 'A' }),
+        M(3),
+        F(4),
+      ];
+      // See testTogetherSearchGaveUpPinned's comment.
+      const pinnedPair = [M(5), M(6)];
+      const out = buildGroups(
+        base({
+          students: [...students, ...pinnedPair],
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'separate',
+          pinned: [pinnedPair],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.sexSeparateSplitsUnit,
+        students: [1, 2],
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Student 1, Student 2 are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Siswa 1, Siswa 2 ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.',
+      );
+      expect(
+        renderError(out.error, en, (n) => (n === 1 ? 'Ika' : 'Joko')),
+      ).toBe(
+        'Ika, Joko are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
+      );
+    };
+
+    const testTogetherApartClashPinned = () => {
+      const students = [
+        student({ number: 1, together: 'A', apart: 'X' }),
+        student({ number: 2, together: 'A', apart: 'X' }),
+        student({ number: 3 }),
+        student({ number: 4 }),
+      ];
+      // See testTogetherSearchGaveUpPinned's comment.
+      const pinnedPair = [student({ number: 5 }), student({ number: 6 })];
+      const out = buildGroups(
+        base({
+          students: [...students, ...pinnedPair],
+          mode: { kind: 'groupCount', count: 3 },
+          pinned: [pinnedPair],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.togetherApartClash,
+        students: [1, 2],
+      });
+      expect(renderError(out.error, en)).toBe(
+        'Student 1, Student 2 are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Siswa 1, Siswa 2 ditandai untuk disatukan sekaligus dipisahkan satu sama lain. Hapus huruf yang menyatukan mereka, atau huruf yang memisahkan mereka.',
+      );
+      expect(
+        renderError(out.error, en, (n) => (n === 1 ? 'Kadek' : 'Luh')),
+      ).toBe(
+        'Kadek, Luh are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.',
+      );
+    };
+
+    const fixtures: Array<[string, string, () => void]> = [
+      [
+        'PINNED_SPLITS_UNIT',
+        ERROR_CODES.pinnedSplitsUnit,
+        testPinnedSplitsUnit,
+      ],
+      [
+        'PINNED_APART_CLASH',
+        ERROR_CODES.pinnedApartClash,
+        testPinnedApartClash,
+      ],
+      [
+        'PINNED_IN_TWO_GROUPS',
+        ERROR_CODES.pinnedInTwoGroups,
+        testPinnedInTwoGroups,
+      ],
+      [
+        'PINNED_TOO_MANY_GROUPS (shortfall)',
+        ERROR_CODES.pinnedTooManyGroups,
+        testPinnedTooManyGroupsShortfall,
+      ],
+      [
+        'PINNED_TOO_MANY_GROUPS (exact)',
+        ERROR_CODES.pinnedTooManyGroups,
+        testPinnedTooManyGroupsExact,
+      ],
+      [
+        'PINNED_TOO_MANY_GROUPS (surplus)',
+        ERROR_CODES.pinnedTooManyGroups,
+        testPinnedTooManyGroupsSurplus,
+      ],
+      [
+        'PINNED_MIXED_SEX (warning)',
+        WARNING_CODES.pinnedMixedSex,
+        testPinnedMixedSex,
+      ],
+      [
+        'KEEP_APART_IMPOSSIBLE, pinned',
+        ERROR_CODES.keepApartImpossible,
+        testKeepApartImpossiblePinned,
+      ],
+      [
+        'TOGETHER_NO_ARRANGEMENT, pinned',
+        ERROR_CODES.togetherNoArrangement,
+        testTogetherNoArrangementPinned,
+      ],
+      [
+        'KEEP_APART_NO_ARRANGEMENT, pinned',
+        ERROR_CODES.keepApartNoArrangement,
+        testKeepApartNoArrangementPinned,
+      ],
+      [
+        'BOTH_RULES_NO_ARRANGEMENT, pinned',
+        ERROR_CODES.bothRulesNoArrangement,
+        testBothRulesNoArrangementPinned,
+      ],
+      [
+        'SEX_SEPARATE_IMPOSSIBLE, pinned',
+        ERROR_CODES.sexSeparateImpossible,
+        testSexSeparateImpossiblePinned,
+      ],
+      [
+        'TOGETHER_SEARCH_GAVE_UP, pinned',
+        ERROR_CODES.togetherSearchGaveUp,
+        testTogetherSearchGaveUpPinned,
+      ],
+      [
+        'KEEP_APART_SEARCH_GAVE_UP, pinned',
+        ERROR_CODES.keepApartSearchGaveUp,
+        testKeepApartSearchGaveUpPinned,
+      ],
+      [
+        'BOTH_RULES_SEARCH_GAVE_UP, pinned',
+        ERROR_CODES.bothRulesSearchGaveUp,
+        testBothRulesSearchGaveUpPinned,
+      ],
+      [
+        'SEX_SEPARATE_SEARCH_GAVE_UP, pinned',
+        ERROR_CODES.sexSeparateSearchGaveUp,
+        testSexSeparateSearchGaveUpPinned,
+      ],
+      [
+        'TOGETHER_UNIT_TOO_LARGE, pinned',
+        ERROR_CODES.togetherUnitTooLarge,
+        testTogetherUnitTooLargePinned,
+      ],
+      [
+        'SEX_SEPARATE_SPLITS_UNIT, pinned',
+        ERROR_CODES.sexSeparateSplitsUnit,
+        testSexSeparateSplitsUnitPinned,
+      ],
+      [
+        'TOGETHER_APART_CLASH, pinned',
+        ERROR_CODES.togetherApartClash,
+        testTogetherApartClashPinned,
+      ],
+    ];
+
+    it.each(fixtures)(
+      '%s renders the whole sentence correctly',
+      (_name, _code, run) => {
+        run();
+      },
+    );
+
+    // Whole-branch review, I-5's own closing guard. A list of tests can be
+    // added to and forgotten -- this is what stops that, the same way the
+    // module-surface checklists at the top of this file stop a code being
+    // added with no test at all: FAILS when a fixture above is added or
+    // removed without this list changing to match, so the fixture table and
+    // the checklist cannot silently drift apart.
+    //
+    // What this does NOT catch: a brand-new code that becomes reachable via
+    // pins getting no fixture at all. "Reachable via pins" is a fact about
+    // buildGroups's CONTROL FLOW that no export exposes, so there is no
+    // runtime source of truth this list could be compared against the way
+    // the module-surface checklists above compare directly against
+    // ERROR_CODES/WARNING_CODES. What DOES catch that: those same two
+    // checklists, which fail the instant grouping.ts gains or loses ANY
+    // code, pinned-reachable or not -- that failure is what puts a human
+    // back in this file at all. When it does: reread "Task 9. Pinned groups
+    // are matched..." in buildGroups (and, for a `separate`-mode code,
+    // restoreWholeClassCount just above it) to decide whether the new
+    // code's data is computed differently once a pin is present. If it is,
+    // add a fixture above that pins a roster into producing it for real and
+    // renders the ACTUAL result in both languages, THEN add its code here.
+    it('has a rendered-sentence fixture for every pinned-path code that needs one', () => {
+      expect([...new Set(fixtures.map(([, code]) => code))].sort()).toEqual(
+        [
+          ERROR_CODES.pinnedSplitsUnit,
+          ERROR_CODES.pinnedApartClash,
+          ERROR_CODES.pinnedInTwoGroups,
+          ERROR_CODES.pinnedTooManyGroups,
+          WARNING_CODES.pinnedMixedSex,
+          ERROR_CODES.keepApartImpossible,
+          ERROR_CODES.togetherNoArrangement,
+          ERROR_CODES.keepApartNoArrangement,
+          ERROR_CODES.bothRulesNoArrangement,
+          ERROR_CODES.sexSeparateImpossible,
+          ERROR_CODES.togetherSearchGaveUp,
+          ERROR_CODES.keepApartSearchGaveUp,
+          ERROR_CODES.bothRulesSearchGaveUp,
+          ERROR_CODES.sexSeparateSearchGaveUp,
+          ERROR_CODES.togetherUnitTooLarge,
+          ERROR_CODES.sexSeparateSplitsUnit,
+          ERROR_CODES.togetherApartClash,
+        ].sort(),
+      );
+    });
+  });
 });
 
 // Task 10. The leftovers choice ('spread' vs 'bunch') predates blocks,
