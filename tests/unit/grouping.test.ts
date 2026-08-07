@@ -3628,6 +3628,35 @@ describe('pinned groups', () => {
         remainingStudents: 6,
       });
     });
+
+    // Fix round 2. The reviewer's gap: none of the four PINNED_TOO_MANY_GROUPS
+    // fixtures above ever set pinnedGroupCount > requestedGroups while pool
+    // students remain -- pin three groups, then lower the count field to
+    // two. The guard already refuses this correctly today (poolGroupsNeeded
+    // = 2 - 3 = -1, caught by `poolGroupsNeeded < 1`); this pins that the
+    // ENGINE's data is right. The bug was in the RENDERED SENTENCE ("fill 3
+    // of the 2 groups"), not this decision -- see i18n.test.ts for that.
+    it('refuses when the pins alone already claim MORE groups than requested and students still remain (Fix round 2)', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 2 },
+          pinned: [
+            [roster[0], roster[1]],
+            [roster[2], roster[3]],
+            [roster[4], roster[5]],
+          ],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.pinnedTooManyGroups,
+        requestedGroups: 2,
+        pinnedGroupCount: 3,
+        remainingStudents: 3,
+      });
+    });
   });
 
   // Fix round 1, F-1. The gap the degenerate-case guard above did not

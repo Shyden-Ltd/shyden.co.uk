@@ -228,12 +228,22 @@ export const en = {
     // that, under `groupCount` mode, was ALWAYS the exact number the
     // teacher had just typed -- a tautology, not a fix (F-2) -- and did not
     // exist at all for the opposite direction, where MORE pool groups were
-    // asked for than pool students remain to fill them (F-1). Both
-    // directions share the same opening clause (how many of the requested
-    // groups the pins already claim, and how many students that leaves),
-    // then diverge: naming "more" or "fewer" groups as the remedy would be
-    // FALSE in the other direction, so which branch fires is decided by
-    // the sign of `poolGroupsNeeded`, not asserted for both.
+    // asked for than pool students remain to fill them (F-1).
+    //
+    // Fix round 2. A third direction the two-way branch below did not
+    // cover: the pins can claim MORE groups than were requested
+    // (`pinnedGroupCount > requestedGroups`) while pool students still
+    // remain -- pin three groups, then lower the count field to two. That
+    // used to fall into the `poolGroupsNeeded <= 0` branch below and reuse
+    // its "fill X of the Y groups" opening, which only reads coherently
+    // when X <= Y -- producing "Your pins already fill 3 of the 2 groups
+    // you asked for". Split off as its own branch, checked first, with its
+    // own opening ("already use N groups -- more than the M you asked
+    // for"). Its remedy is still "Unpin a group, or ask for more groups",
+    // shared verbatim with the `poolGroupsNeeded === 0` case just below it
+    // -- both directions move `poolGroupsNeeded` the same way (up, toward
+    // 1), so the same two actions (unpin, or ask for more) are still true
+    // here; only "X of the Y" needed to change, not the remedy.
     PINNED_TOO_MANY_GROUPS: (
       requestedGroups: number,
       pinnedGroupCount: number,
@@ -241,9 +251,12 @@ export const en = {
     ) => {
       const groupWord = (n: number) => (n === 1 ? 'group' : 'groups');
       const studentWord = remainingStudents === 1 ? 'student' : 'students';
-      const opening = `Your pins already fill ${pinnedGroupCount} of the ${requestedGroups} ${groupWord(requestedGroups)} you asked for, which only leaves ${remainingStudents} ${studentWord}`;
       const poolGroupsNeeded = requestedGroups - pinnedGroupCount;
-      return poolGroupsNeeded <= 0
+      if (poolGroupsNeeded < 0) {
+        return `Your pins already use ${pinnedGroupCount} ${groupWord(pinnedGroupCount)} — more than the ${requestedGroups} ${groupWord(requestedGroups)} you asked for — which leaves ${remainingStudents} ${studentWord} with no group left for them. Unpin a group, or ask for more groups.`;
+      }
+      const opening = `Your pins already fill ${pinnedGroupCount} of the ${requestedGroups} ${groupWord(requestedGroups)} you asked for, which only leaves ${remainingStudents} ${studentWord}`;
+      return poolGroupsNeeded === 0
         ? `${opening} with no group left for them. Unpin a group, or ask for more groups.`
         : `${opening} — not enough for the ${poolGroupsNeeded} ${groupWord(poolGroupsNeeded)} still needed. Unpin a group, or ask for fewer groups.`;
     },

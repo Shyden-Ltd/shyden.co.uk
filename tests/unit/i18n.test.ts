@@ -946,7 +946,7 @@ describe('every engine error can be rendered in every language', () => {
     });
   });
 
-  describe('pinned-too-many-groups says the true thing in both directions (Fix round 1, F-1/F-2)', () => {
+  describe('pinned-too-many-groups says the true thing in all three directions (Fix round 1, F-1/F-2 + Fix round 2)', () => {
     // F-1's own reachable shape: an empty-group regression, not a caller
     // mistake -- MORE pool groups requested than pool students remain.
     // Exact sentences, both languages: this code's whole reason to exist is
@@ -1046,6 +1046,46 @@ describe('every engine error can be rendered in every language', () => {
       );
       expect(msg).toContain('1 group ');
       expect(msg).not.toContain('1 groups');
+    });
+
+    // Fix round 2. The third direction: the pins claim MORE groups than
+    // were requested (pinnedGroupCount > requestedGroups) while pool
+    // students still remain -- reachable by pinning three groups, then
+    // lowering the count field to two. Before this fix, this direction fell
+    // into the same `poolGroupsNeeded <= 0` branch as the "claims every
+    // group requested" case above and reused its "X of the Y groups"
+    // opening, which is only coherent when X <= Y -- producing "Your pins
+    // already fill 3 of the 2 groups you asked for". The refuse/succeed
+    // decision was always correct here (grouping.test.ts's own "Fix round
+    // 2" fixture pins that); only this sentence was wrong.
+    it('English: pins claim MORE groups than requested, names the true count instead of "X of the Y"', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 2,
+          pinnedGroupCount: 3,
+          remainingStudents: 3,
+        },
+        en,
+      );
+      expect(msg).toBe(
+        'Your pins already use 3 groups — more than the 2 groups you asked for — which leaves 3 students with no group left for them. Unpin a group, or ask for more groups.',
+      );
+    });
+
+    it('Indonesian: the same shape', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 2,
+          pinnedGroupCount: 3,
+          remainingStudents: 3,
+        },
+        id,
+      );
+      expect(msg).toBe(
+        'Kunci Anda sudah memakai 3 kelompok — lebih banyak daripada 2 kelompok yang Anda minta — sehingga tersisa 3 siswa tanpa kelompok tersisa untuk mereka. Batalkan kunci salah satu kelompok, atau minta lebih banyak kelompok.',
+      );
     });
   });
 });
