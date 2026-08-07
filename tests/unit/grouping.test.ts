@@ -3831,3 +3831,355 @@ describe('pinned groups', () => {
     });
   });
 });
+
+// Task 10. The leftovers choice ('spread' vs 'bunch') predates blocks,
+// absence and pins. These prove it still means what it says now that
+// `targetSizes` is reached from several different callers, not just the
+// plain roster.
+describe('leftovers, against the new constraints', () => {
+  // Corrected from the brief's own worked example (11 students / groups of
+  // 4). Derivation: groupCount = floor(11/4) = 2, base = floor(11/2) = 5,
+  // remainder = 1. `targetSizes`'s 'spread' branch round-robins the
+  // remainder one slot at a time; with a remainder of exactly 1 it visits
+  // only slot 0 -- the IDENTICAL thing 'bunch' does with any remainder. So
+  // 'spread' and 'bunch' compute the same [6, 5] at 11 students, and a
+  // caller that silently substituted one for the other would still pass.
+  // 14 students has remainder 2 (base 4, groupCount 3), the smallest
+  // remainder where the two rules actually diverge: spread [5,5,4] vs
+  // bunch [6,4,4] (which itself violates "within one"). Confirmed by
+  // mutation below, not just this arithmetic -- see the report.
+  it('spread still keeps the largest and smallest group within one', () => {
+    const out = buildGroups(
+      base({
+        students: 14,
+        mode: { kind: 'perGroup', size: 4 },
+        leftovers: 'spread',
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(shape(out.result.groups)).toEqual([5, 5, 4]);
+  });
+
+  // Corrected from the brief's own worked example (9 students / groupCount
+  // 4). Derivation: base = floor(9/4) = 2, remainder = 9 - 8 = 1 -- the
+  // exact same coincidence as above: 'bunch' and 'spread' both put the
+  // single leftover in slot 0, giving [3,2,2,2] either way. 10 students at
+  // the same groupCount has remainder 2 (base 2): bunch [4,2,2,2] vs spread
+  // [3,3,2,2] -- now capable of catching a caller that silently substitutes
+  // 'spread'.
+  it('bunch puts the remainder in one group', () => {
+    const out = buildGroups(
+      base({
+        students: 10,
+        mode: { kind: 'groupCount', count: 4 },
+        leftovers: 'bunch',
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(shape(out.result.groups)).toEqual([4, 2, 2, 2]);
+  });
+
+  it('a spare student carrying a together letter goes where the unit goes', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          student({ number: 1, together: 'A' }),
+          student({ number: 2, together: 'A' }),
+          student({ number: 3 }),
+          student({ number: 4 }),
+          student({ number: 5 }),
+        ],
+        mode: { kind: 'perGroup', size: 2 },
+        leftovers: 'spread',
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(groupOf(out.result.groups, 1)?.map((s) => s.number)).toContain(2);
+  });
+
+  // Corrected from the brief's own worked example (5 students / groupCount
+  // 2). A groupCount of 2 can never produce a remainder above 1 (remainder
+  // < groupCount always), so no roster at groupCount 2 could ever make
+  // 'bunch' build a leftover group any different from 'spread' -- the
+  // "leftover group" this test's own title describes cannot exist there.
+  // groupCount 3 with an 8-student roster has remainder 2 (base 2): bunch
+  // builds a real two-student-larger group ([4,2,2]), which is the shape
+  // the title is actually about.
+  //
+  // Swept across seeds, not pinned to `base()`'s default. Proven by
+  // mutation: disabling `assign`'s adjacency check entirely (the check this
+  // test exists to pin) does NOT redden this test at seed 1 -- the shuffled
+  // order that seed happens to produce keeps the two apart-lettered singles
+  // in different groups even with nothing enforcing it. A single seed is
+  // therefore not a real proof; sweeping catches the violation at several
+  // seeds once the check is disabled (confirmed while writing this test,
+  // reverted before committing).
+  it('bunch never builds a leftover group that violates an apart letter', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const out = buildGroups(
+        base({
+          students: [
+            student({ number: 1, apart: 'X' }),
+            student({ number: 2, apart: 'X' }),
+            student({ number: 3 }),
+            student({ number: 4 }),
+            student({ number: 5 }),
+            student({ number: 6 }),
+            student({ number: 7 }),
+            student({ number: 8 }),
+          ],
+          mode: { kind: 'groupCount', count: 3 },
+          leftovers: 'bunch',
+          random: seeded(seed),
+        }),
+      );
+      expect(out.ok, `seed ${seed}`).toBe(true);
+      if (!out.ok) continue;
+      expect(shape(out.result.groups), `seed ${seed}`).toEqual([4, 2, 2]);
+      for (const g of out.result.groups) {
+        expect(
+          g.filter((s) => s.apart === 'X').length,
+          `seed ${seed}`,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('counts only present students when sizing', () => {
+    const out = buildGroups(
+      base({
+        students: [
+          ...Array.from({ length: 11 }, (_, i) => student({ number: i + 1 })),
+          student({ number: 99, absent: true }),
+        ],
+        mode: { kind: 'perGroup', size: 4 },
+        leftovers: 'spread',
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(shape(out.result.groups)).toEqual([6, 5]);
+  });
+
+  // Correction 3: the five tests above all reach `targetSizes` through the
+  // SAME call site -- the plain pool, no pins, sexMode 'off'
+  // (`poolSizes = targetSizes(pool.length, poolMode, leftovers)` in
+  // `buildGroups`). That call site is reached with a REDUCED pool and a
+  // REDUCED group count once a pin is in play (Task 9's `poolMode`/`pool`).
+  // The pre-existing pinned-group invariant test ("invariants hold with a
+  // pinned group too, under groupCount mode (F-5)") never varies `leftovers`
+  // away from `base()`'s default 'spread' and never asserts a shape, only
+  // totals -- so a caller that dropped the pool's own `leftovers` and
+  // hardcoded 'spread' at this call site would still pass every test in
+  // this file before this addition.
+  describe('leftovers on the pinned pool', () => {
+    // 15 students, one pinned alone (pool = 14), groupCount 4 -> the pool
+    // gets 3 groups (4 requested, 1 already claimed by the pin). base =
+    // floor(14/3) = 4, remainder = 2 -- chosen, as above, so 'bunch' and
+    // 'spread' provably diverge on the POOL's sizes: bunch [6,4,4], spread
+    // [5,5,4]. The pinned student's own group of 1 rides along in
+    // `shape()`'s output unchanged either way.
+    const roster = Array.from({ length: 15 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+
+    it('bunch bunches the POOL remainder, not the whole roster', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 4 },
+          leftovers: 'bunch',
+          pinned: [[roster[0]]],
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(shape(out.result.groups)).toEqual([6, 4, 4, 1]);
+    });
+
+    it('contrasts with spread on the identical pinned roster', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 4 },
+          leftovers: 'spread',
+          pinned: [[roster[0]]],
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(shape(out.result.groups)).toEqual([5, 5, 4, 1]);
+    });
+  });
+
+  // Correction 3: "leftovers under separate (both sides)". Neither sex
+  // spills here -- each gets its own independent `ownSizes` call from
+  // `buildSeparateGroups`'s "neither sex spills" branch -- so this is the
+  // one shape in this file that proves BOTH sides' own sizing receives the
+  // teacher's `leftovers` choice, not just whichever side a spill test
+  // happens to size (the pre-existing "Fix round 1, F-4" describe block
+  // below only ever sizes the COMBINED spill total, never a side sized on
+  // its own).
+  describe('leftovers under separate mode, when neither sex spills', () => {
+    const M = (number: number) => student({ number, sex: 'M' as const });
+    const F = (number: number) => student({ number, sex: 'F' as const });
+    // 14 boys / groups of 4 -> 3 groups, base 4, remainder 2: bunch
+    // [6,4,4], spread [5,5,4]. 18 girls / groups of 4 -> 4 groups, base 4,
+    // remainder 2: bunch [6,4,4,4], spread [5,5,4,4]. Both sides chosen
+    // with remainder >= 2, for the same reason as every corrected test
+    // above -- remainder 1 cannot distinguish the two rules.
+    const roster = [
+      ...Array.from({ length: 14 }, (_, i) => M(i + 1)),
+      ...Array.from({ length: 18 }, (_, i) => F(i + 15)),
+    ];
+
+    it("bunches each side's own remainder separately", () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+          leftovers: 'bunch',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.warnings).toEqual([]);
+      const boysGroups = out.result.groups.filter((g) => g[0].sex === 'M');
+      const girlsGroups = out.result.groups.filter((g) => g[0].sex === 'F');
+      expect(shape(boysGroups)).toEqual([6, 4, 4]);
+      expect(shape(girlsGroups)).toEqual([6, 4, 4, 4]);
+    });
+
+    it('contrasts with spread on the identical roster, on both sides', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+          leftovers: 'spread',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      const boysGroups = out.result.groups.filter((g) => g[0].sex === 'M');
+      const girlsGroups = out.result.groups.filter((g) => g[0].sex === 'F');
+      expect(shape(boysGroups)).toEqual([5, 5, 4]);
+      expect(shape(girlsGroups)).toEqual([5, 5, 4, 4]);
+    });
+  });
+
+  // Correction 3 extension: every existing spill test in this file --
+  // including the brief's own "Fix round 1, F-4" describe block below --
+  // spills GIRLS into boys' groups. `buildSeparateGroups`'s OTHER spill
+  // branch, boys spilling into girls (`boysCount > 0 && boysGroups === 0`),
+  // has never been reached by any test in this file, with either
+  // `leftovers` value. It is the same `sizesForCount` call as the
+  // girls-spill branch, just sized from the girls' own group count instead
+  // of the boys' -- a genuinely separate call site, covered here for the
+  // same reason Correction 3 asks for "both sides".
+  describe('leftovers under separate mode, at the spill boundary -- boys spilling into girls', () => {
+    const M = (number: number) => student({ number, sex: 'M' as const });
+    const F = (number: number) => student({ number, sex: 'F' as const });
+    // 2 boys, 12 girls, groups of 4: girls make exactly 3 groups (12/4);
+    // boys' 2/4 floors to 0, so boys spill into girls' 3 groups. combined =
+    // sizesForCount(14, 3, leftovers) -- base 4, remainder 2 -- bunch
+    // [6,4,4], spread [5,5,4].
+    const roster = [
+      M(1),
+      M(2),
+      ...Array.from({ length: 12 }, (_, i) => F(i + 3)),
+    ];
+
+    it('bunch: [6, 4, 4], boys named in the spillover warning', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+          leftovers: 'bunch',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(shape(out.result.groups)).toEqual([6, 4, 4]);
+      expect(out.result.warnings).toEqual([
+        { code: WARNING_CODES.sexSpillover, students: [1, 2], sex: 'M' },
+      ]);
+    });
+
+    it('contrasts with spread on the identical roster', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+          leftovers: 'spread',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(shape(out.result.groups)).toEqual([5, 5, 4]);
+    });
+  });
+
+  // Correction 3 extension: `ownSizes` has TWO branches -- `perGroup` calls
+  // `targetSizes` directly (exercised above, "when neither sex spills"),
+  // `groupCount` instead goes through `sizesForCount`, sizing each side at
+  // its OWN allocated group count from `allocateSexGroups`. A textually
+  // different call site from either branch above, and untouched by any
+  // test in this file until now.
+  describe('leftovers under separate mode, groupCount allocation, when neither sex spills', () => {
+    const M = (number: number) => student({ number, sex: 'M' as const });
+    const F = (number: number) => student({ number, sex: 'F' as const });
+    // 14 boys, 9 girls, 5 groups requested. Proportional shares: boys
+    // 14/23*5 = 3.043, girls 9/23*5 = 1.957 -- floors 3 and 1 sum to 4,
+    // one group of remainder left over, and girls' fractional part (0.957)
+    // is larger, so girls claim it: boys 3 groups, girls 2. Both sides
+    // nonzero -- no spill. Boys' own sizing, `sizesForCount(14, 3,
+    // leftovers)`: base = floor(14/3) = 4, remainder = 2 -- bunch [6,4,4],
+    // spread [5,5,4]. (Girls' own sizing, sizesForCount(9, 2, leftovers),
+    // has remainder 1 -- the same coincidence as the corrected brief tests
+    // -- so only the boys' side is asserted; the boys' side alone is
+    // enough to prove this call site threads `leftovers` through.)
+    const roster = [
+      ...Array.from({ length: 14 }, (_, i) => M(i + 1)),
+      ...Array.from({ length: 9 }, (_, i) => F(i + 15)),
+    ];
+
+    it("bunches the boys' own allocated remainder", () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 5 },
+          sexMode: 'separate',
+          leftovers: 'bunch',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.warnings).toEqual([]);
+      const boysGroups = out.result.groups.filter((g) => g[0].sex === 'M');
+      expect(boysGroups).toHaveLength(3);
+      expect(shape(boysGroups)).toEqual([6, 4, 4]);
+    });
+
+    it('contrasts with spread on the identical roster', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 5 },
+          sexMode: 'separate',
+          leftovers: 'spread',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      const boysGroups = out.result.groups.filter((g) => g[0].sex === 'M');
+      expect(shape(boysGroups)).toEqual([5, 5, 4]);
+    });
+  });
+});
