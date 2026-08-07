@@ -142,6 +142,19 @@ export function renderError(
     // through.
     case ERROR_CODES.sexSeparateSearchGaveUp:
       return e.SEX_SEPARATE_SEARCH_GAVE_UP;
+    // Task 9. Carries `students: number[]`, exactly like togetherApartClash
+    // above -- same reason (identity is the number) and the same fix.
+    case ERROR_CODES.pinnedSplitsUnit:
+      return e.PINNED_SPLITS_UNIT(error.students.map(resolveStudent));
+    case ERROR_CODES.pinnedApartClash:
+      return e.PINNED_APART_CLASH(error.students.map(resolveStudent));
+    // Carries a single `number`, exactly like duplicateNumber, but --
+    // unlike duplicateNumber -- resolved through `resolveStudent` before the
+    // copy sees it: this fires after matching against the current roster,
+    // so the number is a real, current student, not an ambiguous raw
+    // digit (see ERROR_CODES.pinnedInTwoGroups's doc comment).
+    case ERROR_CODES.pinnedInTwoGroups:
+      return e.PINNED_IN_TWO_GROUPS(resolveStudent(error.number));
   }
 }
 
@@ -171,6 +184,11 @@ export function renderWarning(
   switch (warning.code) {
     case WARNING_CODES.sexSpillover:
       return w.SEX_SPILLOVER(warning.students.map(resolveStudent), warning.sex);
+    // Task 9. Carries `students: number[]`, same resolver pattern as
+    // sexSpillover above -- no `sex` field to pass through, see
+    // WARNING_CODES.pinnedMixedSex's doc comment in grouping.ts.
+    case WARNING_CODES.pinnedMixedSex:
+      return w.PINNED_MIXED_SEX(warning.students.map(resolveStudent));
   }
 }
 

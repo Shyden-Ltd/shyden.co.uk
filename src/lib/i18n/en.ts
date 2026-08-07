@@ -204,6 +204,24 @@ export const en = {
     // one of the tried splits gave up rather than being exhausted.
     SEX_SEPARATE_SEARCH_GAVE_UP:
       'There are too many together- and apart-letters here to work through while also keeping boys and girls in separate groups. Try using fewer letters, or turn this mode off.',
+    // Task 9. Carries `students: number[]`, never names -- same resolver
+    // pattern as TOGETHER_APART_CLASH above. Always >= 2 by construction: at
+    // least one student locked inside the pinned group and one outside it,
+    // sharing the together letter that straddles the boundary.
+    PINNED_SPLITS_UNIT: (names: string[]) =>
+      `${names.join(', ')} are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.`,
+    // Task 9. Carries `students: number[]`, never names -- same resolver
+    // pattern. Always >= 2 by construction: an apart-letter needs at least
+    // two holders, and this only fires when both are in the SAME pinned
+    // group.
+    PINNED_APART_CLASH: (names: string[]) =>
+      `${names.join(', ')} are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.`,
+    // Task 9. Carries a single resolved name, not a list -- `number: number`
+    // on the error (like DUPLICATE_NUMBER) always names exactly one student,
+    // never a pair, so there is no second party for this sentence to name
+    // and no plural form to branch for.
+    PINNED_IN_TWO_GROUPS: (name: string) =>
+      `${name} is pinned into two different groups at once. A student can only be pinned into one group. Remove them from one of the two.`,
   },
 
   warnings: {
@@ -218,6 +236,17 @@ export const en = {
     // every error above this carries no remedy: there is nothing to fix.
     SEX_SPILLOVER: (names: string[], sex: 'M' | 'F') =>
       `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} joined a group of ${sex === 'M' ? 'girls' : 'boys'} because there were not enough ${sex === 'M' ? 'boys' : 'girls'} to make a group of their own. That is simply how the numbers divided, not a mistake to fix.`,
+    // Task 9. Carries `students: number[]`, never names -- same resolver
+    // pattern as SEX_SPILLOVER above. Always >= 2 by construction (a pinned
+    // group needs at least one of each sex to be mixed), so, like
+    // SEX_SEPARATE_SPLITS_UNIT, this never branches for singular/plural. No
+    // `sex` field, unlike SEX_SPILLOVER: there is no single "spilled" side
+    // here, the whole group is mixed because the teacher pinned it that
+    // way, and the copy does not need to say which sex is which to make
+    // that point -- see WARNING_CODES.pinnedMixedSex's doc comment in
+    // grouping.ts for the decision this is the honest wording of.
+    PINNED_MIXED_SEX: (names: string[]) =>
+      `${names.join(', ')} are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.`,
   },
 
   themes: {

@@ -193,6 +193,25 @@ describe('every engine error can be rendered in every language', () => {
     // SEARCH_GAVE_UP codes above -- nothing was established, so there is
     // nothing to pass through.
     SEX_SEPARATE_SEARCH_GAVE_UP: { code: ERROR_CODES.sexSeparateSearchGaveUp },
+    // Task 9. Carries `students: number[]`, never names -- same resolver
+    // pattern as TOGETHER_APART_CLASH above. Always >= 2 by construction.
+    PINNED_SPLITS_UNIT: {
+      code: ERROR_CODES.pinnedSplitsUnit,
+      students: [1, 7],
+    },
+    // Task 9. Carries `students: number[]`, always >= 2 by construction
+    // (an apart-letter needs at least two holders, both inside one pinned
+    // group to trip this).
+    PINNED_APART_CLASH: {
+      code: ERROR_CODES.pinnedApartClash,
+      students: [1, 2],
+    },
+    // Task 9. Carries a single `number`, like DUPLICATE_NUMBER -- never a
+    // list.
+    PINNED_IN_TWO_GROUPS: {
+      code: ERROR_CODES.pinnedInTwoGroups,
+      number: 5,
+    },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -770,6 +789,152 @@ describe('every engine error can be rendered in every language', () => {
       expect(msg).toContain('3');
     },
   );
+
+  describe('pinned-splits-unit resolves student numbers to names', () => {
+    // Task 9, Correction 2. Carries `students: number[]`, exactly like
+    // togetherApartClash above, and must go through the same resolver.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.pinnedSplitsUnit, students: [1, 7] },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.errors.PINNED_SPLITS_UNIT([
+            strings.studentNumber(1),
+            strings.studentNumber(7),
+          ]),
+        );
+        expect(msg).toContain(strings.studentNumber(1));
+        expect(msg).toContain(strings.studentNumber(7));
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    it('English: a supplied resolver is used in place of the default, names the pair and both remedies', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 7: 'Gita' };
+      const msg = renderError(
+        { code: ERROR_CODES.pinnedSplitsUnit, students: [1, 7] },
+        en,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Gita are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.',
+      );
+      expect(msg).not.toContain('Student');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 7: 'Gita' };
+      const msg = renderError(
+        { code: ERROR_CODES.pinnedSplitsUnit, students: [1, 7] },
+        id,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Gita ditandai untuk disatukan, tetapi hanya sebagian dari mereka yang berada di kelompok yang dikunci. Batalkan kunci kelompok itu, atau hapus huruf penyatu itu dari yang berada di luar kelompok.',
+      );
+      expect(msg).not.toContain('Siswa');
+    });
+  });
+
+  describe('pinned-apart-clash resolves student numbers to names', () => {
+    // Task 9, Correction 3 (decision: refuse, not warn). Carries
+    // `students: number[]`, same resolver pattern as togetherApartClash.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.pinnedApartClash, students: [1, 2] },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.errors.PINNED_APART_CLASH([
+            strings.studentNumber(1),
+            strings.studentNumber(2),
+          ]),
+        );
+        expect(msg).toContain(strings.studentNumber(1));
+        expect(msg).toContain(strings.studentNumber(2));
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    it('English: a supplied resolver is used in place of the default', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 2: 'Budi' };
+      const msg = renderError(
+        { code: ERROR_CODES.pinnedApartClash, students: [1, 2] },
+        en,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Budi are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.',
+      );
+      expect(msg).not.toContain('Student');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 2: 'Budi' };
+      const msg = renderError(
+        { code: ERROR_CODES.pinnedApartClash, students: [1, 2] },
+        id,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Budi ditandai untuk dipisahkan satu sama lain, tetapi kelompok yang dikunci menempatkan mereka bersama. Batalkan kunci kelompok itu, atau hapus huruf pemisah itu dari salah satu siswa tersebut.',
+      );
+      expect(msg).not.toContain('Siswa');
+    });
+  });
+
+  describe('pinned-in-two-groups resolves the student number to a name', () => {
+    // Task 9, Correction 3 (an unsafe caller error, built not just
+    // reported -- see the report). Carries a single `number`, like
+    // duplicateNumber, but resolved through `resolveStudent` here (unlike
+    // duplicateNumber): this fires after matching against the current
+    // roster, so the number is a real, current student.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.pinnedInTwoGroups, number: 5 },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.errors.PINNED_IN_TWO_GROUPS(strings.studentNumber(5)),
+        );
+        expect(msg).toContain(strings.studentNumber(5));
+        // A bare digit with no word around it is exactly the bug this
+        // default exists to prevent.
+        expect(msg).not.toMatch(/^\d+ /);
+      },
+    );
+
+    it('English: a supplied resolver is used in place of the default', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.pinnedInTwoGroups, number: 5 },
+        en,
+        () => 'Eko',
+      );
+      expect(msg).toBe(
+        'Eko is pinned into two different groups at once. A student can only be pinned into one group. Remove them from one of the two.',
+      );
+      expect(msg).not.toContain('Student');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.pinnedInTwoGroups, number: 5 },
+        id,
+        () => 'Eko',
+      );
+      expect(msg).toBe(
+        'Eko dikunci ke dalam dua kelompok berbeda sekaligus. Satu siswa hanya bisa dikunci ke dalam satu kelompok. Keluarkan dari salah satu kelompok tersebut.',
+      );
+      expect(msg).not.toContain('Siswa');
+    });
+  });
 });
 
 describe('every engine warning can be rendered in every language', () => {
@@ -789,6 +954,12 @@ describe('every engine warning can be rendered in every language', () => {
       code: WARNING_CODES.sexSpillover,
       students: [7, 8],
       sex: 'F',
+    },
+    // Task 9. Carries `students: number[]`, never names, and no `sex` field
+    // (see WARNING_CODES.pinnedMixedSex's doc comment in grouping.ts).
+    PINNED_MIXED_SEX: {
+      code: WARNING_CODES.pinnedMixedSex,
+      students: [1, 4],
     },
   };
 
@@ -905,6 +1076,55 @@ describe('every engine warning can be rendered in every language', () => {
       expect(msg).toBe(
         'Ivan bergabung dengan kelompok perempuan karena jumlah laki-laki tidak cukup untuk membentuk kelompok sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.',
       );
+    });
+  });
+
+  describe('pinned-mixed-sex resolves student numbers to names', () => {
+    // Task 9, Correction 3 (decision: warn, not refuse). Carries
+    // `students: number[]`, same resolver pattern as sexSpillover above.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderWarning(
+          { code: WARNING_CODES.pinnedMixedSex, students: [1, 4] },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.warnings.PINNED_MIXED_SEX([
+            strings.studentNumber(1),
+            strings.studentNumber(4),
+          ]),
+        );
+        expect(msg).toContain(strings.studentNumber(1));
+        expect(msg).toContain(strings.studentNumber(4));
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    it('English: a supplied resolver is used in place of the default, and reassures rather than blaming', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.pinnedMixedSex, students: [1, 4] },
+        en,
+        (n) => (n === 1 ? 'Ana' : 'Budi'),
+      );
+      expect(msg).toBe(
+        'Ana, Budi are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.',
+      );
+      expect(msg).not.toContain('Student');
+      expect(msg).toContain('not a mistake');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.pinnedMixedSex, students: [1, 4] },
+        id,
+        (n) => (n === 1 ? 'Ana' : 'Budi'),
+      );
+      expect(msg).toBe(
+        'Ana, Budi dikunci bersama dalam satu kelompok, tetapi tidak semuanya berjenis kelamin sama, sehingga kelompok ini tidak dipisahkan berdasarkan jenis kelamin seperti kelompok lainnya. Itu sesuai permintaan kunci kelompoknya, bukan kesalahan yang perlu diperbaiki.',
+      );
+      expect(msg).not.toContain('Siswa');
+      expect(msg).toContain('bukan kesalahan');
     });
   });
 });

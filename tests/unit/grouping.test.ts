@@ -3032,3 +3032,457 @@ describe('sex mode: separate', () => {
     });
   });
 });
+
+describe('pinned groups', () => {
+  const roster = Array.from({ length: 9 }, (_, i) =>
+    student({ number: i + 1 }),
+  );
+
+  it('returns pinned groups untouched and redeals the rest', () => {
+    const pinned = [[roster[0], roster[1], roster[2]]];
+    const out = buildGroups(
+      base({
+        students: roster,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned,
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const first = out.result.groups.find((g) => g.some((s) => s.number === 1));
+    expect(first?.map((s) => s.number).sort((a, b) => a - b)).toEqual([
+      1, 2, 3,
+    ]);
+    expect(out.result.groups.flat()).toHaveLength(9);
+  });
+
+  it('never places a pinned student anywhere else as well', () => {
+    const out = buildGroups(
+      base({
+        students: roster,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [[roster[0], roster[1], roster[2]]],
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const numbers = out.result.groups.flat().map((s) => s.number);
+    expect(new Set(numbers).size).toBe(numbers.length);
+  });
+
+  it('drops a pinned student who has since been marked absent', () => {
+    const withAbsence = roster.map((s) =>
+      s.number === 2 ? { ...s, absent: true } : s,
+    );
+    const out = buildGroups(
+      base({
+        students: withAbsence,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [[roster[0], roster[1], roster[2]]],
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.groups.flat().map((s) => s.number)).not.toContain(2);
+  });
+
+  // A numbers fix to the brief's own worked example (see the Task 9
+  // report): as originally given, this pinned 1 of a requested 3 groups
+  // (leaving 2 pool groups -- "the group count reduced by
+  // pinnedGroups.length", per the brief's own prose, confirmed the only
+  // reading under which its degenerate-guard description is coherent at
+  // all; see the report) while putting THREE mutually apart-lettered
+  // students (4, 5 and 6 all sharing 'X') in that 2-group pool -- three
+  // students who must all be kept apart from each other need three
+  // DIFFERENT groups, so the original numbers asked for something no
+  // implementation could satisfy. `count: 4` gives the pool its needed
+  // third group (4 requested - 1 pinned = 3 pool groups) without changing
+  // what the test is actually proving: apart-letters are still honoured
+  // among the students being redealt around a pin.
+  it('still honours apart letters among the students being redealt', () => {
+    const withLetters = roster.map((s) =>
+      s.number >= 4 && s.number <= 6 ? { ...s, apart: 'X' } : s,
+    );
+    const out = buildGroups(
+      base({
+        students: withLetters,
+        mode: { kind: 'groupCount', count: 4 },
+        pinned: [[withLetters[0], withLetters[1], withLetters[2]]],
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    for (const g of out.result.groups) {
+      expect(g.filter((s) => s.apart === 'X').length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('refuses a together-unit split across a pinned boundary, naming both', () => {
+    const split = roster.map((s) =>
+      s.number === 1 || s.number === 7 ? { ...s, together: 'A' } : s,
+    );
+    const out = buildGroups(
+      base({
+        students: split,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [[split[0], split[1], split[2]]],
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.pinnedSplitsUnit,
+      students: [1, 7],
+    });
+  });
+
+  // Correction 1. A pinned record is a SNAPSHOT taken at a previous shuffle.
+  // The absent case above is one kind of staleness; this is the general
+  // case -- a name can be edited or a sex reassigned since. Matched by
+  // NUMBER only, every other field must come from the CURRENT roster, never
+  // the pinned copy: the pin fixes who is together, not what was true of
+  // them last time. The stale copy claims 'OldName'/'F'; the current
+  // roster (same number, looked up fresh) says 'NewName'/'M'. An
+  // implementation that reads a field off the pinned record instead of
+  // re-resolving by number resurrects the stale pair.
+  it('a pinned record with a stale name and sex does not resurrect either -- current roster wins', () => {
+    const stalePinnedCopy = student({ number: 1, name: 'OldName', sex: 'F' });
+    const currentRoster = roster.map((s) =>
+      s.number === 1 ? { ...s, name: 'NewName', sex: 'M' as const } : s,
+    );
+    const out = buildGroups(
+      base({
+        students: currentRoster,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [[stalePinnedCopy, currentRoster[1], currentRoster[2]]],
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const placed = out.result.groups.flat().find((s) => s.number === 1);
+    expect(placed?.name).toBe('NewName');
+    expect(placed?.sex).toBe('M');
+  });
+
+  // Correction 3, interaction 1 (decision -- flagged for the operator).
+  // A pinned group can legitimately be mixed-sex under `separate`: the
+  // engine's own spill mechanic already produces one (a few girls joining a
+  // boys' group because there were not enough girls for their own), warned
+  // about via sexSpillover rather than refused. A teacher re-pinning that
+  // exact group is the expected workflow, not a mistake -- refusing it
+  // would make the one group `separate` itself produced unrepinnable.
+  // DECISION: warn, not refuse. A hard refusal (mirroring
+  // sexSeparateSplitsUnit, which refuses a together-LETTER unit spanning
+  // both sexes) would be wrong here because a pin, unlike a letter, is the
+  // teacher's own direct, current instruction about this exact group --
+  // overriding a PREFERENCE (single-sex groups) is what a pin is for.
+  // "Silence is not an option" (per the brief): this warns explicitly
+  // rather than letting a mixed group through with no word said.
+  describe('a pinned group under separate that contains both sexes (decision: warn, not refuse)', () => {
+    const M = (number: number) => student({ number, sex: 'M' as const });
+    const F = (number: number) => student({ number, sex: 'F' as const });
+    // 3 boys, 3 girls: pinning one of each leaves a pool of 2 boys + 2
+    // girls, which `separate` splits evenly (1 pool group each, no
+    // remainder) -- deliberately even so the pool's OWN placement produces
+    // no incidental sexSpillover warning of its own, keeping this test
+    // isolated to the one warning it means to check.
+    const mixedPinRoster = [M(1), M(2), M(3), F(4), F(5), F(6)];
+
+    it('succeeds, keeps the pin, and warns instead of refusing', () => {
+      const out = buildGroups(
+        base({
+          students: mixedPinRoster,
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'separate',
+          pinned: [[mixedPinRoster[0], mixedPinRoster[3]]], // M(1), F(4)
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      const pinnedResult = groupOf(out.result.groups, 1);
+      expect(pinnedResult?.map((s) => s.number).sort((a, b) => a - b)).toEqual([
+        1, 4,
+      ]);
+      expect(out.result.warnings).toEqual([
+        { code: WARNING_CODES.pinnedMixedSex, students: [1, 4] },
+      ]);
+    });
+
+    // Scoping guard, same pattern as "allows that same mixed unit under mix,
+    // and under off" above for sexSeparateSplitsUnit: `off` and `mix` never
+    // claim single-sex groups, so a mixed PIN is not a contradiction of
+    // anything under either -- no warning is owed. Does not go red before
+    // implementation (today `pinned` is ignored, so there is trivially no
+    // warning either way); kept as a scoping regression guard, not a
+    // feature pin -- see the report for the explicit RED-count judgment.
+    it('needs no warning outside separate mode', () => {
+      for (const sexMode of ['off', 'mix'] as const) {
+        const out = buildGroups(
+          base({
+            students: mixedPinRoster,
+            mode: { kind: 'groupCount', count: 3 },
+            sexMode,
+            pinned: [[mixedPinRoster[0], mixedPinRoster[3]]],
+          }),
+        );
+        expect(out.ok, sexMode).toBe(true);
+        if (!out.ok) continue;
+        expect(out.result.warnings, sexMode).toEqual([]);
+      }
+    });
+  });
+
+  // Correction 3, interaction 2 (decision -- flagged for the operator).
+  // Two apart-lettered students pinned into the same group is a direct
+  // contradiction: the apart letter says "never seat these two together",
+  // the pin says "these two are in the same group, no matter what".
+  // DECISION: refuse, not warn -- the opposite call from the mixed-sex
+  // pin above, and deliberately so. `separate` is a PLACEMENT PREFERENCE
+  // (the engine's own spill already produces exceptions to it, warned not
+  // refused); an apart letter is a STUDENT-SAFETY/behaviour-management
+  // signal, and every other apart-letter violation in this engine
+  // (togetherApartClash, keepApartImpossible) is a hard refusal, never a
+  // warning -- there is no warning-level precedent for seating two
+  // apart-lettered students together anywhere in this file. Silently
+  // seating them together because a pin said so is exactly the kind of
+  // thing a teacher could miss in a warnings list and only discover in the
+  // classroom.
+  it('refuses two apart-lettered students pinned into the same group, naming both', () => {
+    const withApart = roster.map((s) =>
+      s.number === 1 || s.number === 2 ? { ...s, apart: 'X' } : s,
+    );
+    const out = buildGroups(
+      base({
+        students: withApart,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [[withApart[0], withApart[1]]],
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.pinnedApartClash,
+      students: [1, 2],
+    });
+  });
+
+  // Correction 3, interaction 3a: a pinned student not on the current
+  // roster at all is a caller error. REPORTED, not built: matched by
+  // number through the same `presentByNumber` lookup as the stale-field
+  // and absent-student cases above, a number with no match is dropped --
+  // exactly like an absent student, not a crash and not a corruption. Safe.
+  it('a pinned student who is not on the roster at all is silently dropped, like an absent one', () => {
+    const ghost = student({ number: 999 });
+    const out = buildGroups(
+      base({
+        students: roster,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [[roster[0], roster[1], ghost]],
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const numbers = out.result.groups.flat().map((s) => s.number);
+    expect(numbers).not.toContain(999);
+    expect(numbers.slice().sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 9 }, (_, i) => i + 1),
+    );
+    const g = groupOf(out.result.groups, 1);
+    expect(g?.map((s) => s.number).sort((a, b) => a - b)).toEqual([1, 2]);
+  });
+
+  // Correction 3, interaction 3b: a student pinned into two different
+  // groups at once is a caller error too, but UNSAFE, not merely
+  // surprising: without a guard, that number is resolved against the
+  // current roster independently for EACH group it appears in and ends up
+  // in the final output TWICE -- the same student physically listed in two
+  // groups, and the roster's own foundational "identity is the number,
+  // unique" invariant broken by the very feature meant to respect it. This
+  // is the same class of defect duplicateNumber already refuses for the
+  // raw roster; a pin claiming the same number twice is refused the same
+  // way. BUILT, not just reported, per the brief's own "unless you find the
+  // current behaviour is unsafe" clause.
+  it('refuses a student pinned into two different groups at once', () => {
+    const out = buildGroups(
+      base({
+        students: roster,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [
+          [roster[0], roster[1]],
+          [roster[0], roster[3]],
+        ],
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.pinnedInTwoGroups,
+      number: 1,
+    });
+  });
+
+  // Same defect, narrower shape: the duplicate is within ONE pinned group's
+  // own array rather than across two. Proves the guard is a general
+  // "seen this number before" check across all of `pinnedGroups`, not a
+  // check that only compares group-to-group.
+  it('refuses the same student listed twice within a single pinned group too', () => {
+    const out = buildGroups(
+      base({
+        students: roster,
+        mode: { kind: 'groupCount', count: 3 },
+        pinned: [[roster[0], roster[0], roster[1]]],
+      }),
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.pinnedInTwoGroups,
+      number: 1,
+    });
+  });
+
+  // Degenerate cases. The brief's own guard: if the pins alone already
+  // claim every requested group, the pool must be empty or the input is
+  // contradictory. Investigating that literally (see the report) found a
+  // narrower hole it does not cover: pins can cover the WHOLE roster using
+  // FEWER groups than requested (two big pinned groups against a
+  // groupCount of 5), which must also succeed with just the pinned
+  // groups -- not run the placer on an empty pool, which the naive
+  // `targetSizes(0, ...)` reading below would turn into phantom empty
+  // groups. Both are exercised, plus the ordinary "still contradictory"
+  // case.
+  describe('degenerate cases -- pins leave nothing, or too much, to deal', () => {
+    it('the pins alone cover everyone, using fewer groups than requested -- no phantom empty groups', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 5 },
+          pinned: [
+            [roster[0], roster[1], roster[2], roster[3], roster[4]],
+            [roster[5], roster[6], roster[7], roster[8]],
+          ],
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(2);
+      expect(shape(out.result.groups)).toEqual([5, 4]);
+      expect(out.result.groups.flat()).toHaveLength(9);
+    });
+
+    it('the pins alone cover everyone, exactly matching the requested count -- succeeds cleanly', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 3 },
+          pinned: [
+            [roster[0], roster[1], roster[2]],
+            [roster[3], roster[4], roster[5]],
+            [roster[6], roster[7], roster[8]],
+          ],
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(3);
+      expect(shape(out.result.groups)).toEqual([3, 3, 3]);
+      // Membership, not just shape: a plain (non-pin-aware) shuffle of 9
+      // students into 3 groups of 3 also produces the [3,3,3] shape, so the
+      // shape check alone would pass today whether or not pins are honoured
+      // at all. Each pinned group's own membership is what only a real
+      // implementation can get right.
+      expect(
+        out.result.groups.map((g) =>
+          g.map((s) => s.number).sort((a, b) => a - b),
+        ),
+      ).toEqual([
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ]);
+    });
+
+    it('refuses when the pins alone already claim every requested group and students still remain', () => {
+      const out = buildGroups(
+        base({
+          students: roster,
+          mode: { kind: 'groupCount', count: 1 },
+          pinned: [[roster[0], roster[1], roster[2]]],
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.tooManyGroups,
+        maxGroups: 1,
+      });
+    });
+  });
+
+  it('perGroup mode sizes the pool independently of the pinned group', () => {
+    const out = buildGroups(
+      base({
+        students: roster,
+        mode: { kind: 'perGroup', size: 3 },
+        pinned: [[roster[0], roster[1], roster[2]]],
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.groups).toHaveLength(3);
+    expect(shape(out.result.groups)).toEqual([3, 3, 3]);
+    const first = groupOf(out.result.groups, 1);
+    expect(first?.map((s) => s.number).sort((a, b) => a - b)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  describe('pins thread through every sexMode, not just off', () => {
+    const M = (number: number) => student({ number, sex: 'M' as const });
+    const F = (number: number) => student({ number, sex: 'F' as const });
+    const sepRoster = [M(1), M(2), M(3), M(4), F(5), F(6)];
+
+    it('separate mode places a single-sex pinned group and splits the pool by sex around it', () => {
+      const out = buildGroups(
+        base({
+          students: sepRoster,
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'separate',
+          pinned: [[sepRoster[0], sepRoster[1]]], // M(1), M(2)
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(3);
+      expect(out.result.warnings).toEqual([]);
+      const pinnedResult = groupOf(out.result.groups, 1);
+      expect(pinnedResult?.map((s) => s.number).sort((a, b) => a - b)).toEqual([
+        1, 2,
+      ]);
+      const boysGroup = groupOf(out.result.groups, 3);
+      expect(boysGroup?.every((s) => s.sex === 'M')).toBe(true);
+      const girlsGroup = groupOf(out.result.groups, 5);
+      expect(girlsGroup?.every((s) => s.sex === 'F')).toBe(true);
+      expect(boysGroup).not.toBe(girlsGroup);
+    });
+
+    it('mix mode places a pinned group and weaves the pool by sex around it', () => {
+      const out = buildGroups(
+        base({
+          students: sepRoster,
+          mode: { kind: 'groupCount', count: 2 },
+          sexMode: 'mix',
+          pinned: [[sepRoster[0], sepRoster[1]]],
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(2);
+      const pinnedResult = groupOf(out.result.groups, 1);
+      expect(pinnedResult?.map((s) => s.number).sort((a, b) => a - b)).toEqual([
+        1, 2,
+      ]);
+      expect(out.result.groups.flat()).toHaveLength(6);
+    });
+  });
+});

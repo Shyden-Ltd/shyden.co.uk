@@ -159,6 +159,19 @@ export const id: Strings = {
     // terbukti.
     SEX_SEPARATE_SEARCH_GAVE_UP:
       'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus, sambil juga menjaga laki-laki dan perempuan di kelompok terpisah. Coba gunakan lebih sedikit huruf, atau matikan mode ini.',
+    // Task 9. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+    // lengkap. Tidak ada percabangan tunggal/jamak di sini -- Bahasa
+    // Indonesia tidak mengubah bentuk kata untuk jamak.
+    PINNED_SPLITS_UNIT: (names: string[]) =>
+      `${names.join(', ')} ditandai untuk disatukan, tetapi hanya sebagian dari mereka yang berada di kelompok yang dikunci. Batalkan kunci kelompok itu, atau hapus huruf penyatu itu dari yang berada di luar kelompok.`,
+    // Task 9. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+    // lengkap.
+    PINNED_APART_CLASH: (names: string[]) =>
+      `${names.join(', ')} ditandai untuk dipisahkan satu sama lain, tetapi kelompok yang dikunci menempatkan mereka bersama. Batalkan kunci kelompok itu, atau hapus huruf pemisah itu dari salah satu siswa tersebut.`,
+    // Task 9. Satu nama yang sudah diselesaikan, bukan daftar -- lihat
+    // komentar pada versi Inggrisnya (en.ts).
+    PINNED_IN_TWO_GROUPS: (name: string) =>
+      `${name} dikunci ke dalam dua kelompok berbeda sekaligus. Satu siswa hanya bisa dikunci ke dalam satu kelompok. Keluarkan dari salah satu kelompok tersebut.`,
   },
 
   warnings: {
@@ -169,6 +182,12 @@ export const id: Strings = {
     // lebih.
     SEX_SPILLOVER: (names: string[], sex: 'M' | 'F') =>
       `${names.join(', ')} bergabung dengan kelompok ${sex === 'M' ? 'perempuan' : 'laki-laki'} karena jumlah ${sex === 'M' ? 'laki-laki' : 'perempuan'} tidak cukup untuk membentuk kelompok sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.`,
+    // Task 9. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+    // lengkap. Tidak ada bidang `sex` di sini, berbeda dengan SEX_SPILLOVER
+    // di atas -- tidak ada satu pihak yang "meluap" ke pihak lain, seluruh
+    // kelompok memang campuran karena guru menguncinya seperti itu.
+    PINNED_MIXED_SEX: (names: string[]) =>
+      `${names.join(', ')} dikunci bersama dalam satu kelompok, tetapi tidak semuanya berjenis kelamin sama, sehingga kelompok ini tidak dipisahkan berdasarkan jenis kelamin seperti kelompok lainnya. Itu sesuai permintaan kunci kelompoknya, bukan kesalahan yang perlu diperbaiki.`,
   },
 
   themes: {

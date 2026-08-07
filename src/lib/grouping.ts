@@ -187,6 +187,48 @@ export const ERROR_CODES = {
    * actually established that a number could honestly report.
    */
   sexSeparateSearchGaveUp: 'SEX_SEPARATE_SEARCH_GAVE_UP',
+  /**
+   * Task 9. A together-letter unit that straddles a pinned boundary: some
+   * of its members are locked inside a pinned group, and at least one is
+   * not. The pinned group is not being added to -- pins are left exactly as
+   * they are -- so the member(s) outside it have nowhere the rule can put
+   * them. Refused rather than silently unpinning (which would undo
+   * something the teacher explicitly asked to keep) or silently dropping
+   * the together-letter (which would undo something else the teacher
+   * explicitly asked for). See the call site in `buildGroups` for exactly
+   * which boundary this checks -- pinned-group-vs-pool. A unit split
+   * between two DIFFERENT pinned groups is a related but distinct gap this
+   * does not cover; see the Task 9 report for why that was reported rather
+   * than built here.
+   */
+  pinnedSplitsUnit: 'PINNED_SPLITS_UNIT',
+  /**
+   * Task 9. Two students who share an apart-letter (mutually separated)
+   * pinned into the SAME group -- the teacher has asked for two
+   * contradictory things about the same pair. Refused, not warned: unlike
+   * `pinnedMixedSex` below (a placement PREFERENCE a pin can knowingly
+   * override), an apart-letter is a student-safety/behaviour-management
+   * signal, and every other apart-letter violation in this engine
+   * (`togetherApartClash`, `keepApartImpossible`) is a hard refusal with no
+   * warning-level precedent anywhere in this file. See the Task 9 report
+   * for the full reasoning distinguishing the two decisions.
+   */
+  pinnedApartClash: 'PINNED_APART_CLASH',
+  /**
+   * Task 9. The same student number claimed by more than one pinned group
+   * (or twice within one group's own list) -- resolved independently
+   * against the current roster each time it appears, so without this guard
+   * the same student is placed into the final output MORE THAN ONCE,
+   * breaking the one invariant `Student.number` promises ("identity is the
+   * number, unique"). The same class of defect `duplicateNumber` already
+   * refuses for the raw roster; this is that same defect reached through
+   * the pins instead. Unlike `duplicateNumber` (which fires before the
+   * roster can be trusted at all, so it cannot resolve a name),
+   * `pinnedInTwoGroups` fires after matching against the current roster, so
+   * the number is a real, current student -- `renderError`'s resolver
+   * names them.
+   */
+  pinnedInTwoGroups: 'PINNED_IN_TWO_GROUPS',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -267,7 +309,29 @@ export type GroupingError =
       // non-empty by construction).
       groupsRequested: number;
     }
-  | { code: typeof ERROR_CODES.sexSeparateSearchGaveUp };
+  | { code: typeof ERROR_CODES.sexSeparateSearchGaveUp }
+  | {
+      code: typeof ERROR_CODES.pinnedSplitsUnit;
+      // Numbers, not names -- same reasoning as every other students-
+      // carrying code above. Always >= 2 by construction: naming the
+      // pinned member(s) sharing the letter plus the pool member outside
+      // the pin needs at least one of each.
+      students: number[];
+    }
+  | {
+      code: typeof ERROR_CODES.pinnedApartClash;
+      // Numbers, not names -- same reasoning as togetherApartClash above.
+      // Always exactly the members of ONE pinned group who share an
+      // apart-letter, so >= 2 by construction.
+      students: number[];
+    }
+  | {
+      code: typeof ERROR_CODES.pinnedInTwoGroups;
+      // A single number, like duplicateNumber -- one offending student is
+      // enough to act on, and (unlike a togetherApartClash-style pair)
+      // there is no second party to this contradiction to name.
+      number: number;
+    };
 
 /**
  * A successful outcome can still carry something worth telling the teacher
@@ -289,20 +353,47 @@ export type GroupingError =
  */
 export const WARNING_CODES = {
   sexSpillover: 'SEX_SPILLOVER',
+  /**
+   * Task 9. A pinned group under `separate` whose members are not all the
+   * same sex. DECISION (see the Task 9 report): a pin is the teacher's own
+   * current, direct instruction about this exact group, overriding the
+   * single-sex PREFERENCE `separate` otherwise expresses -- not the same
+   * kind of contradiction `sexSeparateSplitsUnit` refuses (a together-
+   * LETTER is a general rule that only incidentally spans two sexes, and
+   * single-sex groups and "this letter is one unit" genuinely cannot both
+   * be honoured). The engine's own spill mechanic already produces a
+   * mixed-sex group under `separate` today, warned rather than refused
+   * (`sexSpillover`), so refusing a teacher's own re-pin of exactly that
+   * group would make the one arrangement `separate` itself can produce
+   * unrepinnable. Warned, never silent: a teacher must not be handed a
+   * mixed group after asking for single-sex ones with nothing said.
+   */
+  pinnedMixedSex: 'PINNED_MIXED_SEX',
 } as const;
 
 /**
  * A warning and exactly the data its message needs -- same reasoning as
- * GroupingError above. `sex` is the sex of the NAMED students, not of the
- * group they landed in: the message needs to say both "you joined a group
- * of the other sex" and "there were not enough of your own", and the
- * spilled side's sex alone is enough data to derive both halves.
+ * GroupingError above.
  */
-export type GroupingWarning = {
-  code: typeof WARNING_CODES.sexSpillover;
-  students: number[];
-  sex: 'M' | 'F';
-};
+export type GroupingWarning =
+  | {
+      code: typeof WARNING_CODES.sexSpillover;
+      // `sex` is the sex of the NAMED students, not of the group they
+      // landed in: the message needs to say both "you joined a group of
+      // the other sex" and "there were not enough of your own", and the
+      // spilled side's sex alone is enough data to derive both halves.
+      students: number[];
+      sex: 'M' | 'F';
+    }
+  | {
+      code: typeof WARNING_CODES.pinnedMixedSex;
+      // Every member of the one pinned group that is mixed-sex -- no `sex`
+      // field, unlike sexSpillover above: there is no single "spilled"
+      // side here, the group is simply mixed because the teacher pinned it
+      // that way, and the copy does not need to say which sex is which to
+      // make that point.
+      students: number[];
+    };
 
 export type GroupingOutcome =
   | { ok: true; result: { groups: Student[][]; warnings: GroupingWarning[] } }
@@ -1689,7 +1780,160 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   }
 
   const sizes = targetSizes(present.length, mode, leftovers);
-  const blocks = buildBlocks(present);
+
+  // Task 9. Pinned groups are matched by NUMBER against the CURRENT roster,
+  // never taken as given: a pin is a snapshot from a previous shuffle, and a
+  // student in it may since have been marked absent, renamed, reassigned a
+  // sex, or removed from the roster altogether. `presentByNumber` is built
+  // from `present` (post-absence), so a pinned number that is absent today
+  // or was never on this roster at all simply is not found there -- dropped
+  // the same way, for the same reason, as any other unresolvable number: no
+  // CURRENT student to place (see the Task 9 report for why that is judged
+  // safe rather than refused). Every OTHER field (name, sex, ...) comes from
+  // this lookup too, never from the pinned record itself -- the pin fixes
+  // WHO is together, not what was true about them last time (Correction 1;
+  // see the "stale name and sex" test in grouping.test.ts).
+  const presentByNumber = new Map(present.map((s) => [s.number, s]));
+  const pinnedGroups = input.pinned
+    .map((g) =>
+      g
+        .map((s) => presentByNumber.get(s.number))
+        .filter((s): s is Student => s !== undefined),
+    )
+    .filter((g) => g.length > 0);
+
+  // Task 9, Correction 3: a caller error, not a teacher mistake -- see the
+  // report. The SAME student number resolved into more than one pinned
+  // group (or twice within one group's own list) would otherwise be placed
+  // into the final output more than once: each occurrence is looked up
+  // against the current roster independently, so nothing else here would
+  // ever notice the collision. That breaks the one invariant `Student.number`
+  // promises -- identity is the number, and it is unique -- so, like
+  // `duplicateNumber` for the raw roster, this is refused rather than
+  // silently tolerated. Checked before anything else here trusts
+  // `pinnedGroups`'s membership.
+  const seenPinned = new Set<number>();
+  for (const group of pinnedGroups) {
+    for (const s of group) {
+      if (seenPinned.has(s.number)) {
+        return fail({ code: ERROR_CODES.pinnedInTwoGroups, number: s.number });
+      }
+      seenPinned.add(s.number);
+    }
+  }
+
+  // Task 9, Correction 3, interaction 2 (decision -- see the report). Two
+  // students who share an apart-letter, mutually separated, pinned into the
+  // SAME group: the teacher has asked for two contradictory things about the
+  // same pair. Refused, not warned -- the opposite call from the mixed-sex
+  // pin below, and deliberately so; see ERROR_CODES.pinnedApartClash's doc
+  // comment for why.
+  for (const group of pinnedGroups) {
+    const seenLetters = new Map<string, number[]>();
+    for (const s of group) {
+      if (s.apart === null) continue;
+      const list = seenLetters.get(s.apart) ?? [];
+      list.push(s.number);
+      seenLetters.set(s.apart, list);
+    }
+    for (const numbers of seenLetters.values()) {
+      if (numbers.length > 1) {
+        return fail({
+          code: ERROR_CODES.pinnedApartClash,
+          students: numbers.slice().sort((a, b) => a - b),
+        });
+      }
+    }
+  }
+
+  const pinnedNumbers = new Set(pinnedGroups.flat().map((s) => s.number));
+  const pool = present.filter((s) => !pinnedNumbers.has(s.number));
+
+  // Task 9, Correction 3, interaction 1 (decision -- see the report). A
+  // pinned group under `separate` whose members are not all the same sex:
+  // warned, not refused. A pin is the teacher's own current, direct
+  // instruction about this exact group, overriding the single-sex
+  // PREFERENCE `separate` otherwise expresses -- unlike a together-LETTER
+  // (sexSeparateSplitsUnit below), which is a general rule that only
+  // incidentally spans two sexes. See WARNING_CODES.pinnedMixedSex's doc
+  // comment for the full reasoning, including why silence was not an option.
+  const warnings: GroupingWarning[] = [];
+  if (input.sexMode === 'separate') {
+    for (const group of pinnedGroups) {
+      const sexes = new Set(group.map((s) => s.sex));
+      if (sexes.size > 1) {
+        warnings.push({
+          code: WARNING_CODES.pinnedMixedSex,
+          students: group.map((s) => s.number).sort((a, b) => a - b),
+        });
+      }
+    }
+  }
+
+  // A together-unit that straddles a pinned boundary cannot be honoured: the
+  // pinned group is not being added to, so the other member(s) have nowhere
+  // to go. Silently unpinning would undo something the teacher explicitly
+  // asked to keep, so this is refused with every student it involves named.
+  // (A unit split between two DIFFERENT pinned groups is a related but
+  // distinct gap this does not cover -- reported, not built; see the Task 9
+  // report.)
+  for (const s of pool) {
+    if (s.together === null) continue;
+    const stranded = pinnedGroups
+      .flat()
+      .filter((p) => p.together === s.together);
+    if (stranded.length > 0) {
+      return fail({
+        code: ERROR_CODES.pinnedSplitsUnit,
+        students: [...stranded.map((p) => p.number), s.number].sort(
+          (a, b) => a - b,
+        ),
+      });
+    }
+  }
+
+  // Degenerate case: nothing left to deal. Checked directly on `pool.length`
+  // rather than by comparing `pinnedGroups.length` against a group count --
+  // pins can cover the whole roster using FEWER groups than were requested
+  // (two big pinned groups against a groupCount of 5), and that must also
+  // succeed with just the pinned groups, not hand an empty pool to
+  // `targetSizes`, which turns a zero total into PHANTOM EMPTY GROUPS under
+  // `groupCount` mode (`base` floors to 0, but `groupCount` itself is
+  // unchanged, so `sizes` comes back as N zeros, not an empty array). See
+  // the Task 9 report for the concrete case this closes.
+  if (pool.length === 0) {
+    return succeed(pinnedGroups, warnings);
+  }
+
+  // The other half of the degenerate case: the pins alone already claim
+  // every group `groupCount` mode asked for, and students still remain with
+  // nowhere to go. `perGroup` cannot reach this branch -- its group count is
+  // always re-derived from `pool.length` below, and `targetSizes`'s
+  // `Math.max(1, ...)` floor guarantees at least one group for any nonempty
+  // pool, so no analogous contradiction exists for it to report.
+  if (mode.kind === 'groupCount' && pinnedGroups.length >= mode.count) {
+    return fail({ code: ERROR_CODES.tooManyGroups, maxGroups: sizes.length });
+  }
+
+  // Everything downstream operates on the POOL, not `present` -- the pinned
+  // students are already placed and excluded above -- with the group count
+  // reduced by however many groups are already pinned (`groupCount` mode
+  // only; `perGroup`'s count has no explicit total to reduce, it simply
+  // re-derives from the smaller `pool.length` the same way it always
+  // derives from a total) and every size computed from `pool.length` rather
+  // than `present.length`. When `pinned` is empty this recomputes
+  // byte-identical values from the same effective inputs -- `pool` has the
+  // same members in the same order as `present` (filtering out of an empty
+  // Set changes nothing), and `poolMode` has the same value as `mode` (`count
+  // - 0`) -- so `off`, `mix` and `separate` are unaffected BY CONSTRUCTION,
+  // not merely by testing; see the Task 9 report for the sweep that verifies
+  // it empirically too.
+  const poolMode: Mode =
+    mode.kind === 'groupCount'
+      ? { kind: 'groupCount', count: mode.count - pinnedGroups.length }
+      : mode;
+  const poolSizes = targetSizes(pool.length, poolMode, leftovers);
+  const blocks = buildBlocks(pool);
 
   // Task 8b. A together-unit spanning both sexes is a contradiction under
   // `separate`: single-sex groups and "these students are one unit,
@@ -1702,14 +1946,17 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // than one that also happens to self-conflict on apart-letters. Every
   // present student's sex is already guaranteed to be exactly 'M' or 'F'
   // by the guard above (`sexMode !== 'off'` includes `separate`), so
-  // `sexes` can only ever be size 1 or 2, never contain `null`.
+  // `sexes` can only ever be size 1 or 2, never contain `null`. (Task 9:
+  // `blocks` is built from `pool` now, so a pinned student's sex is never
+  // consulted here -- a mixed-sex PIN is handled entirely by
+  // `pinnedMixedSex` above, which runs unconditionally, before this.)
   if (input.sexMode === 'separate') {
     for (const block of blocks) {
-      const sexes = new Set(block.map((i) => present[i].sex));
+      const sexes = new Set(block.map((i) => pool[i].sex));
       if (sexes.size > 1) {
         return fail({
           code: ERROR_CODES.sexSeparateSplitsUnit,
-          students: block.map((i) => present[i].number),
+          students: block.map((i) => pool[i].number),
         });
       }
     }
@@ -1723,10 +1970,10 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   for (const block of blocks) {
     const seenLetters = new Map<string, number[]>();
     for (const i of block) {
-      const letter = present[i].apart;
+      const letter = pool[i].apart;
       if (letter === null) continue;
       const list = seenLetters.get(letter) ?? [];
-      list.push(present[i].number);
+      list.push(pool[i].number);
       seenLetters.set(letter, list);
     }
     for (const numbers of seenLetters.values()) {
@@ -1750,14 +1997,15 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // the requested group count is allocated between the sexes unevenly
   // (see `allocateSexGroups`). `separate` runs this identical check
   // itself, per placement attempt, against that attempt's own sizes --
-  // see `placeSexSide`.
+  // see `placeSexSide`. (Task 9: `poolSizes`, not the whole-roster `sizes`
+  // -- the pinned groups already occupy their own share of the total.)
   if (input.sexMode !== 'separate') {
-    const largestGroup = Math.max(...sizes);
+    const largestGroup = Math.max(...poolSizes);
     for (const block of blocks) {
       if (block.length > largestGroup) {
         return fail({
           code: ERROR_CODES.togetherUnitTooLarge,
-          letter: present[block[0]].together as string,
+          letter: pool[block[0]].together as string,
           unit: block.length,
           groupSize: largestGroup,
         });
@@ -1772,7 +2020,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // student-indexed set and reading it as if it were block-indexed) has no
   // seam left for it to reappear at: one adjacency, built at block width,
   // used everywhere a conflict is asked about.
-  const adj = buildConflicts(present, blocks);
+  const adj = buildConflicts(pool, blocks);
 
   // "Is an apart-rule actually live" has two possible readings, and they
   // disagree. `present.some((s) => s.apart !== null)` is true the moment ONE
@@ -1796,10 +2044,11 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // different sexes are never seated together unless one of them spills
   // (see the report for the full reasoning). `separate` runs this
   // identical clique check itself, per placement attempt, against that
-  // attempt's own local adjacency and sizes -- see `placeSexSide`.
+  // attempt's own local adjacency and sizes -- see `placeSexSide`. (Task 9:
+  // `poolSizes`, same reasoning as togetherUnitTooLarge above.)
   if (input.sexMode !== 'separate' && apartInPlay) {
     const clique = largestMutualConflict(adj);
-    if (clique.length > sizes.length) {
+    if (clique.length > poolSizes.length) {
       return fail({
         code: ERROR_CODES.keepApartImpossible,
         // ONE representative per block, not every member of every block
@@ -1817,14 +2066,15 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
         // apart-letter holder: `buildConflicts` only ever gives a block an
         // edge because one of its members shares a letter with a member of
         // another block, and a clique this gate reports always has at least
-        // two blocks (`clique.length > sizes.length >= 1`). So `.find` below
-        // always succeeds; the `?? blocks[b][0]` fallback is unreachable
-        // defensive code, not a real path. Numbers, because identity is the
-        // number (Student.number); renderError's resolver turns these into
-        // names for a page that has a roster to resolve them against.
+        // two blocks (`clique.length > poolSizes.length >= 1`). So `.find`
+        // below always succeeds; the `?? blocks[b][0]` fallback is
+        // unreachable defensive code, not a real path. Numbers, because
+        // identity is the number (Student.number); renderError's resolver
+        // turns these into names for a page that has a roster to resolve
+        // them against.
         students: clique.map((b) => {
-          const holder = blocks[b].find((i) => present[i].apart !== null);
-          return present[holder ?? blocks[b][0]].number;
+          const holder = blocks[b].find((i) => pool[i].apart !== null);
+          return pool[holder ?? blocks[b][0]].number;
         }),
         groupsNeeded: clique.length,
       });
@@ -1835,16 +2085,25 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // placement below: it places each sex's own blocks separately and
   // concatenates, which is a different shape of work entirely (see
   // `buildSeparateGroups`) -- everything from here to the end of this
-  // function is `off` and `mix` only, unchanged by this task.
+  // function is `off` and `mix` only, unchanged by this task. (Task 9: pool
+  // and poolSizes/poolMode, not the whole-roster present/sizes/mode -- and
+  // the pinned groups plus their own warnings are stitched onto whichever
+  // outcome comes back, success only; a failure to place the POOL is still
+  // an overall failure, pins do not rescue it.)
   if (input.sexMode === 'separate') {
-    return buildSeparateGroups(
-      present,
+    const outcome = buildSeparateGroups(
+      pool,
       blocks,
       adj,
-      sizes,
-      mode,
+      poolSizes,
+      poolMode,
       leftovers,
       random,
+    );
+    if (!outcome.ok) return outcome;
+    return succeed(
+      [...pinnedGroups, ...outcome.result.groups],
+      [...warnings, ...outcome.result.warnings],
     );
   }
 
@@ -1854,13 +2113,13 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // pass 1 gives up (Fix round 2, closing the arrangement-variety regression
   // Fix round 1's sort caused). `adj` is real now: a block-vs-block conflict
   // can and does turn away a placement that capacity alone would have
-  // allowed, in both passes.
+  // allowed, in both passes. (Task 9: pool and poolSizes, not present/sizes.)
   const { groups: placed, gaveUp } = placeBlocks(
     blocks,
-    sizes,
+    poolSizes,
     adj,
     random,
-    present,
+    pool,
     input.sexMode,
   );
   if (placed === null) {
@@ -1904,7 +2163,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
           ? { code: ERROR_CODES.bothRulesSearchGaveUp }
           : {
               code: ERROR_CODES.bothRulesNoArrangement,
-              groupsTried: sizes.length,
+              groupsTried: poolSizes.length,
             },
       );
     }
@@ -1915,7 +2174,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
           ? { code: ERROR_CODES.togetherSearchGaveUp }
           : {
               code: ERROR_CODES.togetherNoArrangement,
-              groupsTried: sizes.length,
+              groupsTried: poolSizes.length,
             },
       );
     }
@@ -1923,7 +2182,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     // apartInPlay must be true here: `placed === null` only happens when
     // `assign` actually turned a placement away, and with togetherInPlay
     // false every block is a singleton, which cannot fail on capacity alone
-    // (sizes always sums to present.length -- see targetSizes) -- only a
+    // (poolSizes always sums to pool.length -- see targetSizes) -- only a
     // live conflict can. Written as the fallback rather than
     // `else if (apartInPlay)` so a future change to either flag's
     // definition fails safe into the strongest claim's OPPOSITE (a refusal
@@ -1933,7 +2192,7 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
         ? { code: ERROR_CODES.keepApartSearchGaveUp }
         : {
             code: ERROR_CODES.keepApartNoArrangement,
-            groupsTried: sizes.length,
+            groupsTried: poolSizes.length,
           },
     );
   }
@@ -1948,12 +2207,20 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // This is `off`/`mix`'s own success path -- `separate` returned via
   // `buildSeparateGroups` above and never reaches here. Neither `off` nor
   // `mix` ever populates WARNING_CODES.sexSpillover (see its doc comment),
-  // so every success on THIS path carries `[]`; `buildSeparateGroups` is
-  // the only place a non-empty warnings list is ever built.
+  // so the only warnings on THIS path are whatever pin-related ones were
+  // collected above (`pinnedMixedSex` needs `separate`, which returned
+  // already, so in practice this is always `[]` here too -- carried through
+  // rather than hardcoded so a future pin-related warning that DOES apply to
+  // `off`/`mix` is not silently dropped). Task 9: the pinned groups are
+  // prepended -- they were excluded from `blocks`/`placed` entirely, so
+  // `pool[j]`, not `present[j]`, resolves each dealt student.
   return succeed(
-    slots.map((i) =>
-      placed[i].flatMap((b) => blocks[b].map((j) => present[j])),
-    ),
-    [],
+    [
+      ...pinnedGroups,
+      ...slots.map((i) =>
+        placed[i].flatMap((b) => blocks[b].map((j) => pool[j])),
+      ),
+    ],
+    warnings,
   );
 }
