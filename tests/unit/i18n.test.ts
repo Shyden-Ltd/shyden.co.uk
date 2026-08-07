@@ -189,6 +189,10 @@ describe('every engine error can be rendered in every language', () => {
       code: ERROR_CODES.sexSeparateImpossible,
       groupsRequested: 4,
     },
+    // Fix round 2. Carries no data at all, like the other three
+    // SEARCH_GAVE_UP codes above -- nothing was established, so there is
+    // nothing to pass through.
+    SEX_SEPARATE_SEARCH_GAVE_UP: { code: ERROR_CODES.sexSeparateSearchGaveUp },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -575,6 +579,67 @@ describe('every engine error can be rendered in every language', () => {
         expect(msg).not.toBe(strings.errors.TOGETHER_NO_ARRANGEMENT(3));
         expect(msg).not.toBe(strings.errors.KEEP_APART_NO_ARRANGEMENT(3));
         expect(msg).not.toBe(strings.errors.BOTH_RULES_NO_ARRANGEMENT(3));
+      },
+    );
+  });
+
+  describe('sex-separate-search-gave-up claims nothing, and offers the mode switch (Fix round 2)', () => {
+    // Exact full sentences, both languages -- same word-for-word scrutiny
+    // sex-separate-impossible's own test above gets: a proof-shaped
+    // sentence reaching a teacher when nothing was actually proven is
+    // exactly the defect this code exists to prevent, so a substring check
+    // could not tell a correct fix from one that merely renders SOMETHING.
+    it('English reads the exact sentence: no proof claimed, fewer letters or the mode switch', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateSearchGaveUp },
+        en,
+      );
+      expect(msg).toBe(
+        'There are too many together- and apart-letters here to work through while also keeping boys and girls in separate groups. Try using fewer letters, or turn this mode off.',
+      );
+    });
+
+    it('Indonesian reads the exact sentence', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateSearchGaveUp },
+        id,
+      );
+      expect(msg).toBe(
+        'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus, sambil juga menjaga laki-laki dan perempuan di kelompok terpisah. Coba gunakan lebih sedikit huruf, atau matikan mode ini.',
+      );
+    });
+
+    // Collapsing into ANY of the other three SEARCH_GAVE_UP codes would be
+    // the same defect class as sex-separate-impossible's own "not a
+    // together/apart code in disguise" test above -- these four all carry
+    // ZERO data, so a copy-paste mistake here could not be caught by any
+    // number-based check the way that test uses; only the exact sentence
+    // can catch it.
+    it.each(locales)(
+      'is not one of the other three SEARCH_GAVE_UP codes in disguise (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.sexSeparateSearchGaveUp },
+          strings,
+        );
+        expect(msg).not.toBe(strings.errors.TOGETHER_SEARCH_GAVE_UP);
+        expect(msg).not.toBe(strings.errors.KEEP_APART_SEARCH_GAVE_UP);
+        expect(msg).not.toBe(strings.errors.BOTH_RULES_SEARCH_GAVE_UP);
+      },
+    );
+
+    it.each(locales)(
+      'is not sexSeparateImpossible in disguise (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.sexSeparateSearchGaveUp },
+          strings,
+        );
+        const proof = renderError(
+          { code: ERROR_CODES.sexSeparateImpossible, groupsRequested: 4 },
+          strings,
+        );
+        expect(msg).not.toBe(proof);
       },
     );
   });

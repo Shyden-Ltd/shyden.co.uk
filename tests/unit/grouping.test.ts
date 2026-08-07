@@ -2596,6 +2596,89 @@ describe('sex mode: separate', () => {
     });
   });
 
+  // Fix round 2. This finding was raised, not decided unilaterally, in Fix
+  // round 1's own report: `sexSeparateImpossible` fired whenever every
+  // candidate had failed, without checking whether every failure was a
+  // PROOF rather than the search merely giving up. Measured directly (see
+  // task-8b-report.md, "Fix round 2"): re-running the reviewer's own
+  // 1121-input sweep against the pre-this-fix engine found exactly 37
+  // inputs reporting `sexSeparateImpossible`, and EVERY ONE of them had at
+  // least one candidate whose own search hit SEARCH_NODE_CAP -- never a
+  // case where all candidates were genuinely exhausted. This roster is the
+  // smallest of those 37, kept exactly as the sweep generated it (8 boys,
+  // 15 girls, 5 of the girls mutually apart, 6 groups requested) so this
+  // test is grounded in a real measured input, not a hand-picked shape.
+  //
+  // Confirmed by temporary instrumentation on this exact input (reverted
+  // before commit, not left in the source): five candidates are tried
+  // (boys 2/1/3/4/5, girls 4/5/3/2/1). Four fail INSTANTLY on the fast
+  // clique check (KEEP_APART_IMPOSSIBLE -- the girls' 5-clique does not fit
+  // 4, 3, 2 or 1 groups, no search involved). Exactly one, boys=1/girls=5,
+  // sits at the clique-equals-group-count boundary (5 <= 5) where the fast
+  // gate does not fire, so the real backtracking search runs -- and at
+  // `base()`'s default seed it hits SEARCH_NODE_CAP and gives up
+  // (KEEP_APART_SEARCH_GAVE_UP). Four proofs and one gave-up: the fix must
+  // report the gave-up, not let the four proofs outvote it -- exactly the
+  // "prefer the weaker claim" rule in `buildSeparateGroups`'s own comment.
+  // At other seeds (2 through 5, checked directly) that same boys=1/girls=5
+  // candidate SUCCEEDS instead, which is why this test does not pass a
+  // `random` override: it relies on `base()`'s own default seed, exactly
+  // like this file's other SEARCH_GAVE_UP tests do (see "says it gave up,
+  // not that no arrangement exists" above).
+  describe('when at least one allocation candidate gives up rather than proving impossibility: reports sexSeparateSearchGaveUp, not the proof code (Fix round 2)', () => {
+    const eightBoysFifteenGirlsFiveApart = [
+      ...Array.from({ length: 8 }, (_, i) => M(i + 1)),
+      ...Array.from({ length: 5 }, (_, i) =>
+        student({ number: i + 9, sex: 'F' as const, apart: 'X' }),
+      ),
+      F(14),
+      F(15),
+      F(16),
+      F(17),
+      F(18),
+      F(19),
+      F(20),
+      F(21),
+      F(22),
+      F(23),
+    ];
+
+    it('reports the gave-up code, not sexSeparateImpossible, when the search never fully explored every candidate', () => {
+      const out = buildGroups(
+        base({
+          students: eightBoysFifteenGirlsFiveApart,
+          mode: { kind: 'groupCount', count: 6 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({ code: ERROR_CODES.sexSeparateSearchGaveUp });
+    });
+
+    // The assertion is on the SENTENCE, not the code -- same reasoning as
+    // sexSeparateImpossible's own rendered test above: a wrong CLAIM
+    // reaching a teacher (a proof, when nothing was proven) is the whole
+    // point of this finding, and a code-only check cannot see that.
+    it('renders the exact sentence claiming nothing about possibility, offering fewer letters or the mode switch, in both languages', () => {
+      const out = buildGroups(
+        base({
+          students: eightBoysFifteenGirlsFiveApart,
+          mode: { kind: 'groupCount', count: 6 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(renderError(out.error, en)).toBe(
+        'There are too many together- and apart-letters here to work through while also keeping boys and girls in separate groups. Try using fewer letters, or turn this mode off.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus, sambil juga menjaga laki-laki dan perempuan di kelompok terpisah. Coba gunakan lebih sedikit huruf, atau matikan mode ini.',
+      );
+    });
+  });
+
   // Reachable only under `perGroup` -- see the report for the proof that
   // largest-remainder allocation under `groupCount` can never give BOTH
   // sides zero groups while both have members (the single leftover group

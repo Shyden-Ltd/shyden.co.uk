@@ -137,6 +137,11 @@ export function renderError(
     // above.
     case ERROR_CODES.sexSeparateImpossible:
       return e.SEX_SEPARATE_IMPOSSIBLE(error.groupsRequested);
+    // Fix round 2. Carries no data at all, like togetherSearchGaveUp /
+    // keepApartSearchGaveUp / bothRulesSearchGaveUp above -- nothing to pass
+    // through.
+    case ERROR_CODES.sexSeparateSearchGaveUp:
+      return e.SEX_SEPARATE_SEARCH_GAVE_UP;
   }
 }
 

@@ -125,8 +125,12 @@ export const ERROR_CODES = {
    * `groupCount` between the two sexes that could not possibly leave
    * either side with an empty group, starting with the fairest
    * (proportional-by-headcount) and working outward -- and every one
-   * failed. The rules genuinely cannot be honoured at this group count, no
-   * matter how it is split between boys and girls.
+   * failed, EACH ONE EXHAUSTED TO COMPLETION rather than cut short by its
+   * own search budget (see `sexSeparateSearchGaveUp`, directly below, for
+   * the sibling that fires when that is not true of every candidate). The
+   * rules genuinely cannot be honoured at this group count, no matter how
+   * it is split between boys and girls -- a PROOF, not a practical
+   * near-certainty.
    *
    * Reported on its own rather than through whichever single-sex code the
    * LAST candidate happened to fail with (`togetherUnitTooLarge`,
@@ -142,6 +146,47 @@ export const ERROR_CODES = {
    * genuinely does not know which one is the problem.
    */
   sexSeparateImpossible: 'SEX_SEPARATE_IMPOSSIBLE',
+  /**
+   * Fix round 2. A finding raised during Fix round 1's own review and
+   * deliberately left open there rather than decided unilaterally (see
+   * that report's own closing paragraph): `sexSeparateImpossible` was
+   * firing whenever every candidate `allocationCandidates` offered had
+   * FAILED, without checking whether every one of those failures was
+   * actually PROVEN. A candidate's own failure, from `attemptSplit` /
+   * `placeSexSide`, is itself one of `togetherNoArrangement` /
+   * `togetherSearchGaveUp`, `keepApartNoArrangement` /
+   * `keepApartSearchGaveUp`, or `bothRulesNoArrangement` /
+   * `bothRulesSearchGaveUp` (or the non-search proofs
+   * `togetherUnitTooLarge` / `keepApartImpossible`, which are never a
+   * "gave up" outcome -- see their own doc comments) -- so a candidate
+   * whose search hit `SEARCH_NODE_CAP` proves nothing about THAT split, only
+   * that the search stopped looking there. Measured on the reviewer's own
+   * 1121-input sweep (see task-8b-report.md, "Fix round 2"): every one of
+   * the 37 inputs that reported `sexSeparateImpossible` had at least one
+   * candidate whose search gave up, never a case where every candidate was
+   * genuinely exhausted.
+   *
+   * Fired whenever ANY candidate's failure was a gave-up one, even if every
+   * OTHER candidate in the same search WAS proven impossible outright:
+   * `buildSeparateGroups` tracks this across the whole candidate loop, not
+   * just the last candidate tried, and the gave-up verdict wins over the
+   * proof the instant it appears even once. This is the same weaker-claim
+   * preference `assign`'s own "Not 'no arrangement exists' -- 'I stopped
+   * looking'" comment states for a single search -- extended here across a
+   * search OF searches: one unexplored split is enough to make "cannot be
+   * done" a claim this run has not earned, and reporting the proof anyway
+   * on the strength of the other candidates would be exactly the false
+   * confidence the NoArrangement/SearchGaveUp split exists to prevent
+   * everywhere else in this file (see the module doc). See the call site
+   * in `buildSeparateGroups` for exactly how the two are told apart.
+   *
+   * Carries no data, matching `togetherSearchGaveUp` / `keepApartSearchGaveUp`
+   * / `bothRulesSearchGaveUp` above: unlike `groupsRequested` on
+   * `sexSeparateImpossible` (which is simply `mode.count`, known upfront and
+   * independent of what the search proved), there is nothing this code has
+   * actually established that a number could honestly report.
+   */
+  sexSeparateSearchGaveUp: 'SEX_SEPARATE_SEARCH_GAVE_UP',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -221,7 +266,8 @@ export type GroupingError =
       // no cast needed, unlike a `students` list this module cannot prove
       // non-empty by construction).
       groupsRequested: number;
-    };
+    }
+  | { code: typeof ERROR_CODES.sexSeparateSearchGaveUp };
 
 /**
  * A successful outcome can still carry something worth telling the teacher
@@ -1300,9 +1346,11 @@ function placeSexSide(
  * direct reporting is still correct when only one candidate existed to try
  * (no ambiguity, so no reason to withhold which side/rule failed) --
  * `candidates.length === 1` is what distinguishes that from a genuine
- * multi-candidate exhaustion, which reports `sexSeparateImpossible`
- * instead (see its own doc comment for why naming a side or a rule would
- * be dishonest once several different splits have all been tried).
+ * multi-candidate exhaustion, which reports `sexSeparateImpossible` or
+ * `sexSeparateSearchGaveUp` instead -- see their own doc comments, the
+ * former for why naming a side or a rule would be dishonest once several
+ * different splits have all been tried, the latter (Fix round 2) for why
+ * even a multi-candidate exhaustion is not always a proof.
  */
 function buildSeparateGroups(
   present: Student[],
@@ -1448,21 +1496,43 @@ function buildSeparateGroups(
   // less-fair splits, stopping at the first that places.
   const candidates = allocationCandidates(boysCount, girlsCount, mode);
   let lastError: GroupingError | undefined;
+  // Fix round 2. Whether ANY candidate's own failure was a gave-up one
+  // rather than a proof -- tracked across the WHOLE loop, not just the
+  // last candidate, because the final verdict below must report the
+  // weaker, honest claim the instant even one candidate never got
+  // exhausted, even when every OTHER candidate WAS proven impossible
+  // outright. Only three of `attemptSplit`'s possible errors are
+  // themselves a "gave up": `togetherUnitTooLarge` and `keepApartImpossible`
+  // are direct proofs with no search involved at all (see their own doc
+  // comments), and the `*NoArrangement` codes are what a search reports once
+  // it DOES run to completion -- so this checks for exactly the three
+  // `*SearchGaveUp` codes, nothing else.
+  let anyGaveUp = false;
   for (const { boys, girls } of candidates) {
     const attempt = attemptSplit(boys, girls);
     if (attempt.ok) return finish(attempt);
     lastError = attempt.error;
+    if (
+      attempt.error.code === ERROR_CODES.togetherSearchGaveUp ||
+      attempt.error.code === ERROR_CODES.keepApartSearchGaveUp ||
+      attempt.error.code === ERROR_CODES.bothRulesSearchGaveUp
+    ) {
+      anyGaveUp = true;
+    }
   }
 
   // Every candidate failed. Exactly one candidate tried (one side absent,
   // or fewer than 2 groups requested -- see `allocationCandidates`) means
   // there was no ambiguity to search: report that one attempt's own
-  // honest error directly, exactly as this function always has. More than
-  // one means several different ways of splitting the SAME requested total
-  // between the two sexes were all tried and all rejected -- naming any
-  // one of their individual errors would carry a side-scoped number that
-  // contradicts what the teacher actually typed, and blame a rule the
-  // search has, collectively, not isolated (see
+  // honest error directly, exactly as this function always has -- including
+  // when that one attempt's own error is itself a `*SearchGaveUp` code;
+  // there is no OTHER candidate to have proven anything either way, so
+  // there is nothing for `sexSeparateImpossible`/`sexSeparateSearchGaveUp`
+  // to add. More than one means several different ways of splitting the
+  // SAME requested total between the two sexes were all tried and all
+  // rejected -- naming any one of their individual errors would carry a
+  // side-scoped number that contradicts what the teacher actually typed,
+  // and blame a rule the search has, collectively, not isolated (see
   // ERROR_CODES.sexSeparateImpossible's doc comment).
   // `as GroupingError`, not `?? ...`: `candidates` always has >= 1 entry
   // (`allocationCandidates` always includes `proportional`), and the loop
@@ -1473,10 +1543,27 @@ function buildSeparateGroups(
   // loop over a non-empty array finishes" (see the module doc: no type
   // checker enforces this repo's guarantees, a runtime one has to).
   if (candidates.length === 1) return fail(lastError as GroupingError);
-  return fail({
-    code: ERROR_CODES.sexSeparateImpossible,
-    groupsRequested: mode.count,
-  });
+  // Fix round 2. PREFER THE HONEST WEAKER CLAIM: `sexSeparateImpossible` is
+  // a proof (every candidate exhausted to completion, none work);
+  // `sexSeparateSearchGaveUp` is reported instead the moment ANY candidate
+  // gave up, even when every OTHER candidate above WAS proven impossible --
+  // the space this search covers was never actually fully explored, so
+  // "cannot be done" is not a claim this run has earned. Do NOT "optimise"
+  // this into reporting the proof whenever AT LEAST ONE candidate proved
+  // impossibility, and do NOT require ALL candidates to have given up
+  // before admitting defeat -- either change quietly reintroduces the
+  // overclaim this split exists to close (see sexSeparateImpossible's
+  // ERROR_CODES doc comment for the concrete teacher-facing lie that would
+  // be: "cannot be done" said with confidence when the search simply never
+  // looked far enough to know).
+  return fail(
+    anyGaveUp
+      ? { code: ERROR_CODES.sexSeparateSearchGaveUp }
+      : {
+          code: ERROR_CODES.sexSeparateImpossible,
+          groupsRequested: mode.count,
+        },
+  );
 }
 
 export function buildGroups(input: GroupingInput): GroupingOutcome {

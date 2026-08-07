@@ -151,6 +151,14 @@ export const id: Strings = {
     // kejujuran yang sama, jadi suaranya juga sama.
     SEX_SEPARATE_IMPOSSIBLE: (groupsRequested: number) =>
       `Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam ${groupsRequested} kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta lebih banyak kelompok, atau matikan mode ini.`,
+    // Fix round 2. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+    // lengkap. Tidak ada percabangan tunggal/jamak di sini -- sama seperti
+    // ketiga saudaranya (TOGETHER_SEARCH_GAVE_UP dkk.) di atas, Bahasa
+    // Indonesia tidak mengubah bentuk kata untuk jamak, dan kalimat ini
+    // tidak membawa data sama sekali karena tidak ada yang benar-benar
+    // terbukti.
+    SEX_SEPARATE_SEARCH_GAVE_UP:
+      'Huruf yang harus disatukan dan aturan pemisahan di sini terlalu banyak untuk dihitung sekaligus, sambil juga menjaga laki-laki dan perempuan di kelompok terpisah. Coba gunakan lebih sedikit huruf, atau matikan mode ini.',
   },
 
   warnings: {

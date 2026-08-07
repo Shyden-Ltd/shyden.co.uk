@@ -174,21 +174,36 @@ export const en = {
     // TEACHER typed, never a side's own smaller allocation (see the doc
     // comment on ERROR_CODES.sexSeparateImpossible for the defect that
     // substitution was). Reached only once every way of splitting that
-    // number between boys and girls has been tried and failed
-    // (`allocationCandidates`), so, like BOTH_RULES_NO_ARRANGEMENT, this
-    // does not guess which rule is to blame -- it names neither a rule nor
-    // a side, only the two remedies. Branches for singular/plural even
-    // though this code cannot currently fire with `groupsRequested === 1`
-    // (the search only runs at `groupsRequested >= 2` -- see
-    // `allocationCandidates`) -- same defensive choice this file already
-    // makes for TOGETHER_NO_ARRANGEMENT/KEEP_APART_NO_ARRANGEMENT/
-    // BOTH_RULES_NO_ARRANGEMENT's own `groupsTried`, which are equally
-    // unreachable at 1 in practice and still branch, rather than
-    // SEX_SEPARATE_SPLITS_UNIT's `names.length >= 2`, which is provable by
-    // TYPE/construction rather than by a runtime argument about when the
-    // engine happens to call this.
+    // number between boys and girls has been tried and EXHAUSTED -- see
+    // SEX_SEPARATE_SEARCH_GAVE_UP directly below for the sibling that fires
+    // when at least one of those tries never got that far -- so, like
+    // BOTH_RULES_NO_ARRANGEMENT, this does not guess which rule is to
+    // blame -- it names neither a rule nor a side, only the two remedies.
+    // Branches for singular/plural even though this code cannot currently
+    // fire with `groupsRequested === 1` (the search only runs at
+    // `groupsRequested >= 2` -- see `allocationCandidates`) -- same
+    // defensive choice this file already makes for TOGETHER_NO_ARRANGEMENT/
+    // KEEP_APART_NO_ARRANGEMENT/BOTH_RULES_NO_ARRANGEMENT's own
+    // `groupsTried`, which are equally unreachable at 1 in practice and
+    // still branch, rather than SEX_SEPARATE_SPLITS_UNIT's
+    // `names.length >= 2`, which is provable by TYPE/construction rather
+    // than by a runtime argument about when the engine happens to call
+    // this.
     SEX_SEPARATE_IMPOSSIBLE: (groupsRequested: number) =>
       `Boys and girls cannot be kept in separate groups across ${groupsRequested} ${groupsRequested === 1 ? 'group' : 'groups'} while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for more groups, or turn this mode off.`,
+    // Fix round 2. Claims nothing at all, same reasoning as
+    // TOGETHER_SEARCH_GAVE_UP/KEEP_APART_SEARCH_GAVE_UP/
+    // BOTH_RULES_SEARCH_GAVE_UP above -- carries no data because nothing
+    // was established, not even which of the tried splits was "the" one
+    // that ran out of room. Unlike those three, the remedy here names
+    // TURNING THE MODE OFF alongside using fewer letters: together- and
+    // apart-letters have no on/off switch of their own to offer, but
+    // `sexMode` genuinely does, and it is a real way out of a search this
+    // large -- see ERROR_CODES.sexSeparateSearchGaveUp's doc comment for
+    // why this is reported instead of SEX_SEPARATE_IMPOSSIBLE whenever even
+    // one of the tried splits gave up rather than being exhausted.
+    SEX_SEPARATE_SEARCH_GAVE_UP:
+      'There are too many together- and apart-letters here to work through while also keeping boys and girls in separate groups. Try using fewer letters, or turn this mode off.',
   },
 
   warnings: {
