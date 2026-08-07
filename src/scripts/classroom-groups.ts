@@ -52,6 +52,37 @@ if (form) {
     },
   };
 
+  // ── how to use ────────────────────────────────────────────────────────
+  // #cg-howto is page chrome, not one of the tool's sections (see
+  // ClassroomGroupsPage.astro's own comment on it), so it is wired here,
+  // ahead of everything below that reads the roster or the engine, and
+  // ahead of `reduceMotion`'s window.matchMedia call further down -- which
+  // is a real throw site (see classroom-groups-privacy.spec.ts's "a
+  // mid-module failure still cannot leak the class list"). Wiring this
+  // first means the one thing a visitor can always still open or close is
+  // this section, even if something later in the module dies. The
+  // collapsed/expanded state is a UI preference, never class data, so it
+  // goes through the same try/catch-wrapped `remember` the sound toggle
+  // below also uses -- see H-07 in the stage-2 traceability table.
+  const HOWTO_KEY = 'cg-howto-collapsed';
+  const howToToggle = $<HTMLButtonElement>('cg-howto-toggle');
+  const howToBody = $<HTMLElement>('cg-howto-body');
+  if (howToToggle && howToBody) {
+    const applyHowTo = (isCollapsed: boolean) => {
+      // Only the BODY ever gets `hidden`. The toggle itself is never
+      // hidden by either state -- a control that hides itself is a trap,
+      // and this is the only way back open once it is closed.
+      howToBody.hidden = isCollapsed;
+      howToToggle.setAttribute('aria-expanded', String(!isCollapsed));
+    };
+    applyHowTo(remember.read(HOWTO_KEY) === '1');
+    howToToggle.addEventListener('click', () => {
+      const next = !howToBody.hidden;
+      applyHowTo(next);
+      remember.write(HOWTO_KEY, next ? '1' : '0');
+    });
+  }
+
   const t: Strings = getStrings(document.documentElement.lang);
   // The engine's errors (and warnings) carry student NUMBERS, never names --
   // identity is the number, and grouping.ts has no roster to resolve one

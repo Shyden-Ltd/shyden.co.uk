@@ -26,12 +26,33 @@ const themes = THEME_KEYS;
     <p class="lead">{t.lead}</p>
     <p class="privacy">{t.privacy}</p>
 
-    <div class="how-to">
-      <h2 id="how-to-heading">{t.howToHeading}</h2>
-      <ol aria-labelledby="how-to-heading">
-        {t.howToSteps.map((step) => <li>{step}</li>)}
-      </ol>
-    </div>
+    <!-- NOT one of the tool's four collapsible sections (student details,
+         grouping options, import/export, sound & animation) -- it is the
+         page's own summary and description, so it sits above #cg-form and
+         outside it, per design spec section 3's "How to use — at the very
+         top, outside the tool". One header opens and closes BOTH parts
+         together: what this is (who it is for and why it was built, not
+         only what it does) and how to use it. Collapsed, #cg-howto-toggle
+         itself stays on screen and un-hidden -- a control that hides itself
+         is a trap -- and only #cg-howto-body, the content it discloses, ever
+         gets `hidden`. -->
+    <section id="cg-howto" class="howto">
+      <button
+        type="button"
+        class="howto-toggle"
+        id="cg-howto-toggle"
+        aria-expanded="true"
+        aria-controls="cg-howto-body"
+      >
+        {t.howToHeading}
+      </button>
+      <div id="cg-howto-body" class="howto-body">
+        <p>{t.howToWhat}</p>
+        <ol>
+          {t.howToSteps.map((step) => <li>{step}</li>)}
+        </ol>
+      </div>
+    </section>
 
     <!-- No `name` on any control that holds something a teacher typed. A form
          with no `action` submits to its OWN url as a GET, so a `name` here
@@ -289,11 +310,47 @@ const themes = THEME_KEYS;
     max-width: var(--measure);
     font-size: 0.95rem;
   }
-  .how-to ol {
+  .howto {
     max-width: var(--measure);
-    padding-left: 1.2rem;
+    margin-bottom: 1.5rem;
   }
-  .how-to li {
+  /* Reset to plain text so this reads as a header, not a native button --
+     full width and 44px tall, per CLAUDE.md's touch-target rule, so the
+     whole row is the tap target rather than just the glyph or the words. */
+  .howto-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.5rem 0;
+    font: inherit;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    text-align: left;
+    cursor: pointer;
+  }
+  /* Decorative only -- aria-expanded is what actually reports state to
+     assistive tech. Rotates rather than swapping glyphs, so open and closed
+     share one character and cannot drift into mismatched icons. */
+  .howto-toggle::before {
+    content: '▸ ';
+    display: inline-block;
+    transition: transform 150ms ease-out;
+  }
+  .howto-toggle[aria-expanded='true']::before {
+    transform: rotate(90deg);
+  }
+  .howto-body p {
+    color: var(--ink-soft);
+  }
+  .howto-body ol {
+    padding-left: 1.2rem;
+    margin: 0.75rem 0 0;
+  }
+  .howto-body li {
     margin-bottom: 0.35rem;
   }
 

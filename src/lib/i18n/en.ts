@@ -23,11 +23,35 @@ export const en = {
   privacy:
     'Everything happens in your browser. No class list ever leaves this page.',
 
-  howToHeading: 'How to use it',
+  howToHeading: 'How to use',
+  // Part 1 must say WHO it is for and WHY it was built, not only what it does
+  // -- an explicit operator instruction (design spec section 3, which carries
+  // the approved copy verbatim). Assembled with `+` HERE, in the locale file,
+  // never written across template lines: whitespace between two nodes in the
+  // Astro template survives only while they share a line, and prettier
+  // re-wraps long lines -- the seam that has already shipped three broken
+  // sentences on this site (see rendered-text.spec.ts). A single JS string
+  // constant, however it is line-wrapped, always concatenates back to the
+  // same characters -- prettier reflows the surrounding whitespace, never the
+  // contents of a string literal, so this sentence cannot lose a space no
+  // matter how these four lines get re-wrapped.
+  howToWhat:
+    'Built for teachers, by Shyden. Splitting a class fairly takes time you do ' +
+    'not have, and doing it by hand invites an argument about favourites. This ' +
+    'does it in one press — free, with no sign-up, and with nothing about your ' +
+    'class ever leaving your browser.',
+  // Rewritten alongside `howToWhat` above: the old step 1 ("...or paste their
+  // names, one per line") described the free-text names box removed when the
+  // engine was rewritten to a numbered roster (see grouping.ts's
+  // GroupingInput and classroom-groups.ts's own roster comment). Naming it
+  // here rather than leaving it for the locale-sweep task, since this task's
+  // own copy work already rewrites this exact array.
   howToSteps: [
-    'Enter how many students are in your class — or paste their names, one per line.',
-    'Choose how many students go in each group, or how many groups you want.',
-    'Press Make Groups and watch them get dealt out.',
+    'Say how many students are in your class.',
+    'Choose how to split them.',
+    // Matches the button's own label (`makeGroups` below) capital-for-capital,
+    // so an instruction to "press Make Groups" names exactly what is on screen.
+    'Press Make Groups.',
   ],
 
   classHeading: 'Your class',

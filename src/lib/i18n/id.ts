@@ -16,11 +16,29 @@ export const id: Strings = {
   privacy:
     'Semuanya berjalan di peramban Anda. Daftar kelas tidak pernah keluar dari halaman ini.',
 
-  howToHeading: 'Cara menggunakannya',
+  // Design spec section 3's "Naming" note records this rename explicitly --
+  // dropping "-nya" to match the English rename from "How to use it" to "How
+  // to use" -- so it is recorded here rather than quietly dropped in one
+  // language.
+  howToHeading: 'Cara menggunakan',
+  // The approved copy from design spec section 3, translated -- see en.ts's
+  // own comment on `howToWhat` for why this is assembled with `+` here rather
+  // than written across template lines.
+  howToWhat:
+    'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu ' +
+    'yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan ' +
+    'soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu ' +
+    'mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+  // Rewritten alongside `howToWhat` above, mirroring en.ts's own correction:
+  // the old step 1 mentioned pasting names, a box the rewritten engine no
+  // longer has anywhere to put (see grouping.ts's GroupingInput).
   howToSteps: [
-    'Masukkan jumlah siswa di kelas Anda — atau tempel nama mereka, satu nama per baris.',
-    'Pilih berapa siswa dalam setiap kelompok, atau berapa banyak kelompok yang Anda inginkan.',
-    'Tekan Buat Kelompok dan lihat mereka dibagikan.',
+    'Masukkan jumlah siswa di kelas Anda.',
+    // Reuses `groupsHeading`'s own phrase ("Cara membaginya") verbatim, the
+    // same way the English step reuses `groupsHeading`'s "How to split them".
+    'Pilih cara membaginya.',
+    // Matches `makeGroups` below ("Buat Kelompok") capital-for-capital.
+    'Tekan Buat Kelompok.',
   ],
 
   classHeading: 'Kelas Anda',

@@ -285,3 +285,142 @@ test.describe('classroom groups — mobile-first layout', () => {
     }
   });
 });
+
+// Stage 2, Task 2's own RED tests (H-01…H-08, Y-05). The plan's literal
+// snippet used `page.getByLabel('How many students?')` -- that does not
+// match this page, same correction Task 1's own tests already recorded
+// above (classroom-groups.spec.ts): the label reads "Number of students"
+// (`studentsLabel` in en.ts), not "How many students?". Corrected to the
+// real label here too, rather than reproduced verbatim.
+test.describe('How to use', () => {
+  test('sits above the form and outside the tool sections', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    const howTo = page.locator('#cg-howto');
+    const form = page.locator('#cg-form');
+    const hy = (await howTo.boundingBox())!.y;
+    const fy = (await form.boundingBox())!.y;
+    expect(hy).toBeLessThan(fy);
+    // and it is not one of the tool's collapsible sections
+    await expect(form.locator('#cg-howto')).toHaveCount(0);
+  });
+
+  test('holds both parts and is open by default', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    // The whole sentence, and it must name WHO and WHY -- not just what.
+    await expect(
+      page.getByText(
+        'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Say how many students are in your class.'),
+    ).toBeVisible();
+  });
+
+  test('both parts collapse together, and the header survives', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.getByRole('button', { name: 'How to use' }).click();
+    await expect(
+      page.getByText('Say how many students are in your class.'),
+    ).toBeHidden();
+    await expect(page.getByText('Built for teachers, by Shyden.')).toBeHidden();
+    await expect(
+      page.getByRole('button', { name: 'How to use' }),
+    ).toBeVisible();
+  });
+
+  test('the collapsed state survives a reload', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.getByRole('button', { name: 'How to use' }).click();
+    await page.reload();
+    await expect(
+      page.getByText('Say how many students are in your class.'),
+    ).toBeHidden();
+    await expect(
+      page.getByRole('button', { name: 'How to use' }),
+    ).toBeVisible();
+  });
+
+  test('only the preference is stored, never class data', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    // Not 'How many students?' -- see the describe block's own comment.
+    await page.getByLabel('Number of students').fill('12');
+    await page.getByRole('button', { name: 'How to use' }).click();
+    const stored = await page.evaluate(() => ({ ...localStorage }));
+    expect(Object.values(stored).join(' ')).not.toContain('12');
+    expect(Object.keys(stored)).toContain('cg-howto-collapsed');
+    // Every key this page writes starts `cg-`, and none of them may carry
+    // class data. Asserting the EXACT list here would be a false economy:
+    // stage 5 adds four print preferences and would break a test that is
+    // not about printing.
+    expect(Object.keys(stored).every((k) => k.startsWith('cg-'))).toBe(true);
+  });
+});
+
+test.describe('How to use — Indonesian', () => {
+  test('sits above the form and outside the tool sections', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    const howTo = page.locator('#cg-howto');
+    const form = page.locator('#cg-form');
+    const hy = (await howTo.boundingBox())!.y;
+    const fy = (await form.boundingBox())!.y;
+    expect(hy).toBeLessThan(fy);
+    await expect(form.locator('#cg-howto')).toHaveCount(0);
+  });
+
+  test('holds both parts and is open by default', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await expect(
+      page.getByText(
+        'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Masukkan jumlah siswa di kelas Anda.'),
+    ).toBeVisible();
+  });
+
+  test('both parts collapse together, and the header survives', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByRole('button', { name: 'Cara menggunakan' }).click();
+    await expect(
+      page.getByText('Masukkan jumlah siswa di kelas Anda.'),
+    ).toBeHidden();
+    await expect(
+      page.getByText('Dibuat untuk para guru, oleh Shyden.'),
+    ).toBeHidden();
+    await expect(
+      page.getByRole('button', { name: 'Cara menggunakan' }),
+    ).toBeVisible();
+  });
+
+  test('the collapsed state survives a reload', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByRole('button', { name: 'Cara menggunakan' }).click();
+    await page.reload();
+    await expect(
+      page.getByText('Masukkan jumlah siswa di kelas Anda.'),
+    ).toBeHidden();
+    await expect(
+      page.getByRole('button', { name: 'Cara menggunakan' }),
+    ).toBeVisible();
+  });
+
+  test('only the preference is stored, never class data', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByLabel('Jumlah siswa').fill('12');
+    await page.getByRole('button', { name: 'Cara menggunakan' }).click();
+    const stored = await page.evaluate(() => ({ ...localStorage }));
+    expect(Object.values(stored).join(' ')).not.toContain('12');
+    expect(Object.keys(stored)).toContain('cg-howto-collapsed');
+    expect(Object.keys(stored).every((k) => k.startsWith('cg-'))).toBe(true);
+  });
+});
