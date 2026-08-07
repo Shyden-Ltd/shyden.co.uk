@@ -959,42 +959,53 @@ test.describe('the no-scroll rule, measured', () => {
     // use", so the click is unambiguous.
     //
     // `fixme`, not a passing assertion, and not deleted -- measured, not
-    // guessed, and the measurement is real: with How to use collapsed, this
-    // page is 1348px too tall at 320px (scrollHeight 2148 vs an 800px
-    // budget) BEFORE this task touched anything, and 936px too tall at
-    // 768/1280px. Genuine CSS tightening done as part of this task --
-    // tighter form/fieldset/field/tool-section spacing, h1/lead/privacy
-    // margins reset (this file's own <style> block, see the git history on
-    // this comment) -- recovered real space (2148px -> 1903px at 320px,
-    // i.e. 245px) without touching touch targets or content, and is kept
-    // regardless of this fixme. It is still 1103px short at 320px and
-    // 724px short at 768/1280px even after that pass. Adding the fourth
-    // section (this task's own headline work) accounts for only ~50-60px of
-    // the total -- removing it would not come close to closing the gap.
+    // guessed. History: 2148px scrollHeight at 320px against an 800px
+    // budget when this file first measured it; a CSS-tightening pass
+    // (form/fieldset/field/tool-section spacing, h1/lead/privacy margins)
+    // recovered 245px (-> 1903px, 1103px short at 320px, 724px short at
+    // 768/1280px). Building the "Top row" design spec section 3 describes
+    // -- Class/Students/Split-by in one compact row instead of the two
+    // bordered `<fieldset>`s (`classHeading`/`groupsHeading`) Stage 2 Tasks
+    // 1 and 5 shipped, stacked -- recovered a further 97px at 320/375px
+    // (chrome removed; still one column at these widths) and 301px at
+    // 768/1280px (chrome removed AND the row goes three-across). See
+    // ClassroomGroupsPage.astro's own comment on `.top-row` for the
+    // touch-target arithmetic behind that layout and why it stacks below
+    // 768px regardless. No touch-target or content lost either pass.
+    // Measured again, same method, all four widths:
     //
-    // The remainder is structural, not decorative slack: the always-visible
-    // hero (h1 + lead + privacy, never collapsible -- #cg-howto only holds
-    // the WHO/WHY paragraph and the three steps, per design spec section 3),
-    // the three always-visible top fieldsets (Your class / How to split
-    // them / Name the groups -- design spec section 3's own "Top row: Class
-    // (optional) · Students · Split by" describes a single compact row;
-    // the shipped markup, from Stage 2 Tasks 1 and 5, is three separate
-    // bordered `<fieldset>`s with their own legends, stacked, which is
-    // considerably taller), and the site-wide header and footer every page
-    // on this site carries (BaseLayout.astro renders both unconditionally;
-    // Footer.astro's `<footer>` alone measures ~330px at 320px width, almost
-    // entirely the legally-required company disclosure text, which cannot
-    // be trimmed or hidden). None of the three is this task's file list
-    // (ClassroomGroupsPage.astro/classroom-groups.ts/en.ts/id.ts) or
-    // reasonably in its scope: closing this for real means a denser "top
-    // row" field layout -- matching what section 3 actually describes,
-    // rather than the three-fieldset shape Tasks 1 and 5 shipped -- which
-    // touches markup, CSS and tests well beyond "the no-scroll rule,
-    // measured". Recorded here, with the numbers, rather than silently
-    // loosened or dropped, so the traceability row (L-01..L-04) reads
-    // "owed, with a reason and a measurement" and the next task that
-    // touches this page's layout inherits the real target instead of
-    // rediscovering it.
+    //   width    scrollHeight   overflow (800px budget)
+    //   320px    1806px         1006px short
+    //   375px    1753px         953px short
+    //   768px    1223px         423px short
+    //   1280px   1223px         423px short
+    //
+    // Still short everywhere, so still `fixme` everywhere -- not weakened,
+    // not deleted. Of that remaining height, the site-wide header (69px at
+    // every width) and footer (267px at 320px, 244px at 375px, 198px at
+    // 768/1280px -- BaseLayout.astro renders both unconditionally, and
+    // neither is this task's to touch) are not the whole story: subtract
+    // both and the tool's OWN content -- the always-visible hero
+    // (h1/lead/privacy), the collapsed How-to toggle, this row, the
+    // still-live "Name the groups" fieldset (design spec section 12 marks
+    // it removed, but that removal is stage 3's, not built yet) and the
+    // four collapsed sections -- still comes to 1470px/1440px/956px/956px,
+    // which is itself 670px/640px/156px/156px over an 800px budget at
+    // 320/375/768/1280px. So a smaller header and footer alone would not
+    // close this at any width, and at 768/1280px the tool's own remaining
+    // content is now the SMALLER of the two shares.
+    //
+    // What would force a revisit: stage 3 removing the naming radio/theme
+    // picker (design spec section 12) drops the one remaining always-visible
+    // bordered fieldset below this row -- real, uncounted headroom this
+    // task did not touch because removing it is not this task's call to
+    // make. Short of that, only an operator decision to trim the hero copy,
+    // the site-wide footer, or how the four collapsed sections themselves
+    // are sized would move these numbers again. Recorded here, with the
+    // numbers, rather than silently loosened or dropped, so the
+    // traceability row (L-01..L-04) reads "owed, with a reason and a
+    // measurement" and the next task that touches this page's layout
+    // inherits the real target instead of rediscovering it.
     test.fixme(`collapsed default fits without vertical scrolling at ${width}px`, async ({
       page,
     }) => {

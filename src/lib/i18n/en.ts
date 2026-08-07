@@ -54,7 +54,18 @@ export const en = {
     'Press Make Groups.',
   ],
 
-  classHeading: 'Your class',
+  // `classHeading` ("Your class") and `groupsHeading` ("How to split
+  // them") were the legends of the two `<fieldset>`s Stage 2 Tasks 1 and 5
+  // shipped -- folded into one compact "Top row" by design spec section 3
+  // (ClassroomGroupsPage.astro's own comment on `.top-row` has the
+  // reasoning). Removed here rather than left unreferenced: once neither
+  // `<legend>` renders, dead-copy.test.ts fails a defined string nothing
+  // renders, and both would be exactly that. Every field underneath keeps
+  // its own accessible name regardless -- a <label>, or for the two mode
+  // radios the same `aria-labelledby="cg-mode-label"` pattern the naming
+  // and leftovers radiogroups elsewhere on this page already use -- so
+  // nothing loses a label; only the two purely organisational headings do.
+  //
   // Design spec section 3's own top-row ordering: "Class (optional) ·
   // Students · Split by". Stage 2, Task 5. The literal "(optional)" is
   // pinned by task-5-brief.md's own test (`getByLabel('Class (optional)')`)
@@ -66,7 +77,6 @@ export const en = {
   studentsLabel: 'Number of students',
   studentsHelp: 'Leave the names box empty to use numbered students.',
 
-  groupsHeading: 'How to split them',
   modeLabel: 'Split by',
   modePerGroup: 'Students per group',
   modeGroupCount: 'Number of groups',

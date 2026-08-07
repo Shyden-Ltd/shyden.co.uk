@@ -113,9 +113,34 @@ const sexWhyText = sexWhy(roster, t);
          together, and "students per group" is not personal data.
          Everything else is read by id. Pinned by classroom-groups-privacy.spec.ts. -->
     <form id="cg-form" novalidate>
-      <fieldset>
-        <legend>{t.classHeading}</legend>
+      <!-- Design spec section 3: "Top row: Class (optional) · Students ·
+           Split by" -- one compact row of three parallel fields, replacing
+           the two bordered `<fieldset>`s Stage 2 Tasks 1 and 5 shipped
+           (`classHeading` "Your class", wrapping Class + Students;
+           `groupsHeading` "How to split them", wrapping the mode radios and
+           the active size/count field). classroom-groups.spec.ts's own "the
+           no-scroll rule, measured" test.fixme block named those two boxes,
+           by name, as part of why the collapsed page did not fit -- see
+           that file for the measurements this row exists to close.
 
+           Neither legend is missed: every field here already carries its
+           own accessible name -- a <label>, or for the mode radios the same
+           `aria-labelledby="cg-mode-label"` pattern the naming and
+           leftovers radiogroups elsewhere on this page already use -- so
+           dropping the two purely organisational headings loses no
+           accessible name, only a redundant one. Both keys are removed from
+           en.ts/id.ts in the same commit, not left for dead-copy.test.ts to
+           catch as unreferenced.
+
+           Mobile-first: `.top-row` is one column, stacked, matching section
+           3's own "on a phone they stack" -- see its own CSS comment below
+           for the arithmetic on why three fields in a row is not the
+           six-controls-in-304px problem section 3 documents for the roster,
+           and stacks anyway because the phone always does regardless of
+           what geometrically fits. `min-width: 768px` reuses
+           `.tool-sections`' own breakpoint just below, for the same
+           side-by-side-on-wide transition on the same page. -->
+      <div class="top-row">
         <!-- Stage 2, Task 5. Design spec section 3's top row: "Class
              (optional) · Students · Split by" -- this field first, matching
              that order. Optional (section 8: "Blank is fine and nothing is
@@ -156,51 +181,60 @@ const sexWhyText = sexWhy(roster, t);
           />
           <p class="help" id="cg-count-help">{t.studentsHelp}</p>
         </div>
-      </fieldset>
 
-      <fieldset>
-        <legend>{t.groupsHeading}</legend>
+        <!-- The third top-row column: "Split by (per group / number of
+             groups)". `.split-by` carries no styling of its own -- it is a
+             grid placement wrapper only, so its three children still stack
+             with the SAME `.field` margin they used inside the old
+             `groupsHeading` fieldset (see .top-row > .field's own CSS
+             comment for why that margin is switched off one level up, on
+             Class/Students, but not reached down into here). -->
+        <div class="split-by">
+          <div class="field">
+            <span class="label" id="cg-mode-label">{t.modeLabel}</span>
+            <div
+              class="radios"
+              role="radiogroup"
+              aria-labelledby="cg-mode-label"
+            >
+              <label
+                ><input type="radio" name="mode" value="perGroup" checked />{
+                  t.modePerGroup
+                }</label
+              >
+              <label
+                ><input type="radio" name="mode" value="groupCount" />{
+                  t.modeGroupCount
+                }</label
+              >
+            </div>
+          </div>
 
-        <div class="field">
-          <span class="label" id="cg-mode-label">{t.modeLabel}</span>
-          <div class="radios" role="radiogroup" aria-labelledby="cg-mode-label">
-            <label
-              ><input type="radio" name="mode" value="perGroup" checked />{
-                t.modePerGroup
-              }</label
-            >
-            <label
-              ><input type="radio" name="mode" value="groupCount" />{
-                t.modeGroupCount
-              }</label
-            >
+          <div class="field" data-mode="perGroup">
+            <label for="cg-size">{t.groupSizeLabel}</label>
+            <input
+              id="cg-size"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="50"
+              value="4"
+            />
+          </div>
+
+          <div class="field" data-mode="groupCount" hidden>
+            <label for="cg-groups">{t.groupCountLabel}</label>
+            <input
+              id="cg-groups"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="50"
+              value="6"
+            />
           </div>
         </div>
-
-        <div class="field" data-mode="perGroup">
-          <label for="cg-size">{t.groupSizeLabel}</label>
-          <input
-            id="cg-size"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            max="50"
-            value="4"
-          />
-        </div>
-
-        <div class="field" data-mode="groupCount" hidden>
-          <label for="cg-groups">{t.groupCountLabel}</label>
-          <input
-            id="cg-groups"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            max="50"
-            value="6"
-          />
-        </div>
-      </fieldset>
+      </div>
 
       <fieldset>
         <legend>{t.namingLabel}</legend>
@@ -818,6 +852,51 @@ const sexWhyText = sexWhy(roster, t);
   }
   .switch input:disabled + span {
     color: var(--ink-soft);
+  }
+  /* Design spec section 3's "Top row: Class (optional) · Students · Split
+     by" -- see the markup's own comment on `.top-row` for what this
+     replaces. Mobile-first, one column, matching `.tool-sections` just
+     below; `min-width: 768px` reuses that exact breakpoint rather than
+     inventing a second figure for the same page.
+
+     The arithmetic before committing to this shape: at 320px, `.wrap`'s own
+     padding (`var(--space)`, 16px a side at this width) leaves ~288px of
+     content. Three columns across that, with two 0.75rem (12px) gaps
+     between them, would still leave ~88px per column -- well clear of the
+     44px touch-target floor in both dimensions, unlike the roster row
+     design spec section 3 separately documents (six 44px targets alone
+     need 264px of a 304px budget, leaving ~44px for the name box, too
+     narrow to read or type into). Three fields in ~288px is not that
+     problem -- but an 88px-wide box for an open-ended class name would
+     still be unpleasant to type into, and section 3 says plainly that a
+     phone stacks, full stop, so the row only goes side by side once
+     `min-width: 768px` actually gives it room (three ~229px columns
+     there). */
+  .top-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  /* `.field`'s own `margin-bottom` a few rules up is what `.split-by`'s own
+     three nested fields still rely on for vertical rhythm, unchanged from
+     when they sat inside the old `groupsHeading` fieldset. Here, on
+     Class/Students, it would only double up on the gap `.top-row` already
+     provides -- both stacked on a phone and side by side once wide --
+     so it is switched off, scoped to DIRECT children only so it cannot
+     reach down into `.split-by`'s own. */
+  .top-row > .field {
+    margin-bottom: 0;
+  }
+  @media (min-width: 768px) {
+    .top-row {
+      grid-template-columns: repeat(3, 1fr);
+      /* Grid's own default (`stretch`) would pull the shorter Class/
+         Students columns down to match `.split-by`'s taller one (a radio
+         pair plus a number field) the moment they sit in a row instead of
+         stacked -- `start` keeps each column exactly as tall as its own
+         content. */
+      align-items: start;
+    }
   }
   /* Mobile-first: one column, stacked -- design spec section 3's
      "Arrangement B" is the ENHANCEMENT, not the base. `auto` rows (not a

@@ -34,20 +34,23 @@ export const id: Strings = {
   // longer has anywhere to put (see grouping.ts's GroupingInput).
   howToSteps: [
     'Masukkan jumlah siswa di kelas Anda.',
-    // Reuses `groupsHeading`'s own phrase ("Cara membaginya") verbatim, the
-    // same way the English step reuses `groupsHeading`'s "How to split them".
+    // Echoes the same "cara membaginya" / "how to split them" phrasing the
+    // Split-by field's old fieldset legend used to carry (see classLabel's
+    // own comment below on why that legend, `groupsHeading`, is gone) --
+    // free-standing prose now, not a property reference either language
+    // could check.
     'Pilih cara membaginya.',
     // Matches `makeGroups` below ("Buat Kelompok") capital-for-capital.
     'Tekan Buat Kelompok.',
   ],
 
-  classHeading: 'Kelas Anda',
-  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
+  // `classHeading`/`groupsHeading` dihapus bersama dua <legend> yang dulu
+  // memakainya -- lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+  // lengkap.
   classLabel: 'Kelas (opsional)',
   studentsLabel: 'Jumlah siswa',
   studentsHelp: 'Biarkan kotak nama kosong untuk memakai siswa bernomor.',
 
-  groupsHeading: 'Cara membaginya',
   modeLabel: 'Bagi berdasarkan',
   modePerGroup: 'Siswa per kelompok',
   modeGroupCount: 'Jumlah kelompok',
