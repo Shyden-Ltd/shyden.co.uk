@@ -555,9 +555,23 @@ const sexWhyText = sexWhy(roster, t);
      scoped, for the SAME reason every other rule in this block is: `.group`
      is built with document.createElement, so it never carries Astro's
      scoping attribute -- see this block's own opening comment, and the
-     screenshot-shaped bug it records. */
+     screenshot-shaped bug it records.
+
+     0.65, not the 0.55 an earlier pass shipped: `.group` paints no
+     background of its own, so this opacity composites `--ink` (#16171c)
+     directly over the page's actual background, `--bg` (#f7f6f2) --
+     0.55 measured 3.89:1, under the 4.5:1 AA floor for normal text, and a
+     teacher reading a projected screen while it is true is exactly the
+     case design spec section 8 keeps the old groups VISIBLE for, not an
+     incidental label the AA exemption would cover. 0.65 measures 5.38:1,
+     clear of the floor with margin rather than sitting on it. Guarded by
+     tests/e2e/classroom-groups.spec.ts's "the dim stays above the WCAG AA
+     contrast floor for normal text", which computes the real composited
+     contrast from live computed styles -- the older "darker than before"
+     test beside it passes at ANY opacity, including the one that failed
+     AA, so it could not have caught this on its own. */
   #cg-results.stale .group {
-    opacity: 0.55;
+    opacity: 0.65;
   }
 </style>
 
@@ -845,7 +859,20 @@ const sexWhyText = sexWhy(roster, t);
      16.65:1 against this background, comfortably clear of the 4.5:1 AA
      floor. Mobile-first column stack; `align-items: flex-start` keeps the
      button its own width instead of stretching full-bleed, which reads
-     oddly at 320px around one short word. */
+     oddly at 320px around one short word.
+
+     Border darkened from the original #d9a441 (review, minor): that value
+     measured only 2.09:1 against the page background, and the fill behind
+     it (#fff6e3) measures 1.01:1 -- next to invisible -- so the box read as
+     a badge in name only, carried almost entirely by the sentence inside
+     it. Defensible under "colour is never the only signal" (the sentence
+     IS the signal, and stays legible on its own), but a badge that cannot
+     be seen is still worth fixing cheaply. #956b1e is the SAME hue and
+     saturation, just darker, so it stays the family design spec section 4
+     asks for rather than becoming a fourth palette; measured 4.41:1
+     against the page background, clear of the 3:1 floor WCAG 1.4.11 sets
+     for a UI component's boundary. The fill is unchanged -- this is a
+     border fix, not a redesign. */
   .stale-notice {
     display: flex;
     flex-direction: column;
@@ -855,7 +882,7 @@ const sexWhyText = sexWhy(roster, t);
     margin: 0 0 1rem;
     padding: 0.75rem 1rem;
     border-radius: 6px;
-    border: 1px solid #d9a441;
+    border: 1px solid #956b1e;
     background: #fff6e3;
   }
   /* `display: flex` above is an AUTHOR rule; the native `[hidden] {

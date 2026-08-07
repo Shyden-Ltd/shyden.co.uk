@@ -183,14 +183,14 @@ if (form) {
       ) as HTMLInputElement | null
     )?.value ?? '';
 
-  // `mode`/`leftovers`/`sexMode` -- ONE function each, called from every
-  // place that needs the live value (submit, the grouping header, and the
-  // staleness snapshot further down) so none of the three can ever read a
-  // different answer than the others. Two call sites computing the same
-  // fact by hand is how a header ends up disagreeing with reality (see the
-  // fix recorded on #cg-grouping's own header, Task 3) -- the same failure
-  // mode a staleness snapshot built from its OWN separate reads could
-  // reintroduce.
+  // `mode`/`leftovers`/`sexMode`/`count` -- ONE function each, called from
+  // every place that needs the live value (submit, the grouping header,
+  // and the staleness snapshot further down) so none of the four can ever
+  // read a different answer than the others. Two call sites computing the
+  // same fact by hand is how a header ends up disagreeing with reality
+  // (see the fix recorded on #cg-grouping's own header, Task 3) -- the same
+  // failure mode a staleness snapshot built from its OWN separate reads
+  // could reintroduce.
   //
   // `readMode` returns the exact shape buildGroups expects, not just the
   // radio's own value: #cg-size or #cg-groups can change while the radio
@@ -224,6 +224,30 @@ if (form) {
   // returning a hard-coded literal is the day the two sex switches -- and
   // staleReason's own `staleSexMode` branch below -- become live.
   const readSexMode = (): SexMode => 'off';
+
+  // #cg-count ("Number of students") -- the same ONE-function reasoning as
+  // mode/leftovers/sexMode above. Submit and `readRoster` (below) both need
+  // the exact live value; reading it inline at each call site is exactly
+  // the duplication this file's own comment, just above, warns is how two
+  // places end up disagreeing.
+  const readCount = (): number =>
+    Number(($('cg-count') as HTMLInputElement).value);
+
+  // `roster` is what the class list currently IS. Stage 2 has no
+  // per-student data yet -- #cg-count is the page's only population
+  // control, so reading it here is not a stand-in for a future roster
+  // snapshot, it already IS one, the same way `readMode` already returns
+  // the exact shape `buildGroups` expects rather than a placeholder for a
+  // richer shape later. JSON.stringify'd at this call site, the same way
+  // `readMode` stringifies its own shape just above, so the result is
+  // always a primitive `snapshot()`'s comparison can compare by VALUE --
+  // see staleReason's own `assertComparable` (src/lib/staleness.ts), which
+  // throws if a future call site ever skips this and hands it something
+  // that is not already a string. Stage 3 extends THIS function to fold
+  // real per-student fields into the same returned object, rather than
+  // adding a second field to Snapshot or a second machine alongside this
+  // one -- see Snapshot's own doc comment for why.
+  const readRoster = (): string => JSON.stringify({ count: readCount() });
 
   // `leftovers` is the one `ToolState` field a teacher can actually change
   // today: the radios now live inside `#cg-grouping-body` (Stage 2, Task 4
@@ -278,10 +302,7 @@ if (form) {
     mode: JSON.stringify(readMode()),
     leftovers: readLeftovers(),
     sexMode: readSexMode(),
-    // Stage 3 fills this once a roster exists to summarise -- '' on both
-    // sides of every comparison is honest until then, and can never read
-    // as falsely stale (see Snapshot's own doc comment).
-    roster: '',
+    roster: readRoster(),
   });
 
   const updateStaleness = () => {
@@ -444,7 +465,7 @@ if (form) {
 
     const mode = readMode();
 
-    const count = Number(($('cg-count') as HTMLInputElement).value);
+    const count = readCount();
     const outcome = buildGroups({
       students: count, // a number until a future stage gives us a roster
       mode,

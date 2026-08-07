@@ -85,11 +85,13 @@ describe('staleReason', () => {
     expect(staleReason(base, now, en)).toBe(EN_SEX_MODE);
   });
 
-  // Unreachable from the live page this stage (`roster` is `''` on both
-  // sides of every comparison until stage 3 -- see Snapshot's own doc
-  // comment), but the branch is real code and this is the seam stage 3
-  // extends: the day `roster` carries a real value, this branch is what
-  // fires.
+  // Reachable from the live page today (Task 6 fix, C-1): `roster` folds
+  // in #cg-count, the page's only population control this stage, via
+  // `readRoster` (classroom-groups.ts) -- see Snapshot's own doc comment.
+  // This test only pins staleReason's own comparison against an arbitrary
+  // literal; classroom-groups.spec.ts's "changing the number of students
+  // marks them out of date, naming the change" is what proves the live
+  // page actually drives this branch.
   it('names the roster change', () => {
     const now: Snapshot = { ...base, roster: 'something changed' };
     expect(staleReason(base, now, en)).toBe(EN_ROSTER);
@@ -181,5 +183,34 @@ describe('staleReason', () => {
     expect(en.staleLeftovers).not.toBe(id.staleLeftovers);
     expect(en.staleSexMode).not.toBe(id.staleSexMode);
     expect(en.staleRoster).not.toBe(id.staleRoster);
+  });
+
+  // I-2 (review): every Snapshot field is TYPED as a string, but nothing in
+  // this repo checks that at compile time -- there is no type checker
+  // anywhere, in the editor or in CI (see CLAUDE.md). `mode` avoids the
+  // consequence by explicitly JSON.stringify-ing at its own call site
+  // (classroom-groups.ts's `readMode`); `roster` now does the same
+  // (`readRoster`). But a future call site that skips that and assigns an
+  // array or object directly would make every `!==` below compare by
+  // REFERENCE, not value: `['x'] !== ['x']` is true regardless of what is
+  // inside either array, so two freshly-built, content-identical snapshots
+  // could never read as equal again -- the notice would stick on "the
+  // class list changed" permanently, and no revert could ever clear it,
+  // since no revert can make two different objects the same object. The
+  // "structurally-equal snapshots" test above only ever exercises
+  // primitives and would not catch this. This constructs the exact shape a
+  // type checker would have refused -- the way it can genuinely arrive at
+  // runtime, given this repo runs none -- and proves staleReason refuses it
+  // loudly instead of silently producing that bug.
+  it('throws if a non-string is ever assigned to a Snapshot field, instead of silently comparing by reference', () => {
+    const badRoster = { ...base, roster: ['a', 'b'] } as unknown as Snapshot;
+    expect(() => staleReason(base, badRoster, en)).toThrow(TypeError);
+    expect(() => staleReason(badRoster, { ...base }, en)).toThrow(TypeError);
+
+    const badMode = {
+      ...base,
+      mode: { kind: 'perGroup', size: 4 },
+    } as unknown as Snapshot;
+    expect(() => staleReason(base, badMode, en)).toThrow(TypeError);
   });
 });

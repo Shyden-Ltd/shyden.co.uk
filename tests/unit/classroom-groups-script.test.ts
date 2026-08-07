@@ -62,31 +62,18 @@ describe('classroom-groups.ts — sexMode is still hard-coded (stage 3 owes this
   });
 });
 
-/**
- * A second forcing function, alongside the one above, for the OTHER field
- * Stage 2 leaves deliberately unfinished (F-2, review).
- *
- * `snapshot()` (classroom-groups.ts) is what `updateStaleness` compares
- * against on every form input -- see src/lib/staleness.ts's own `Snapshot`
- * doc comment. Its `roster` field is hard-coded to `''` because no roster
- * exists on this page yet; comparing `'' !== ''` can never be true, so
- * `staleReason`'s own `staleRoster` branch is real code with no way to
- * reach it today. That is deliberate, not an oversight -- but a marker that
- * cannot fail is not a promise, so this pins the placeholder directly
- * rather than only leaving a comment beside it. The day `roster` carries a
- * real value is the day "a student was edited" becomes a genuine trigger on
- * this SAME machine, which is the whole point of Snapshot being a
- * comparison rather than a second, parallel mechanism -- see that
- * interface's own doc comment.
- */
-describe('classroom-groups.ts — the staleness snapshot still hard-codes an empty roster (stage 3 owes this)', () => {
-  it("snapshot()'s roster field is still the honest placeholder '', because no roster exists yet", () => {
-    const source = readFileSync('src/scripts/classroom-groups.ts', 'utf8');
-    const start = source.indexOf('const snapshot = ()');
-    expect(start).toBeGreaterThan(-1);
-    const end = source.indexOf('});', start);
-    expect(end).toBeGreaterThan(start);
-    const body = source.slice(start, end);
-    expect(body).toContain("roster: ''");
-  });
-});
+// A forcing-function test for `snapshot()`'s `roster` field used to sit
+// here, pinning it to the hard-coded placeholder `''` that `staleRoster`
+// could never actually reach (F-2, review). Task 6's fix (C-1) removed the
+// placeholder: `roster` now reads `#cg-count` through `readRoster`, the
+// page's only population control this stage, so "the class list changed"
+// is a real, reachable trigger today -- see Snapshot's own doc comment
+// (src/lib/staleness.ts) and classroom-groups.ts's own `readRoster`. The
+// forcing function did its job (it is what put this fix in front of
+// someone), so it is retired rather than left pinning a claim that is now
+// false. Behavioural coverage for the live trigger lives in
+// tests/e2e/classroom-groups.spec.ts's "out-of-date groups" describe block
+// ("changing the number of students marks them out of date..." and
+// "undoing the count change clears it"), the same place group-size and
+// leftovers are covered -- `readRoster` is DOM-wiring with no unit-test
+// seam of its own, same reasoning as `readMode`/`readLeftovers` above it.

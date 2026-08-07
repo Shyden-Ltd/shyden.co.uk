@@ -498,6 +498,41 @@ test.describe('out-of-date groups', () => {
     ).toBeVisible();
   });
 
+  // C-1 (review, task 6 fix): #cg-count ("Number of students") is the
+  // page's ONLY population control this stage -- there is no roster yet,
+  // so changing it is not cosmetic the way the class NAME is (see the very
+  // next test): it changes who the groups are actually made FROM. Before
+  // this fix, `snapshot()` (classroom-groups.ts) never read it at all, so
+  // shuffling 12 into 3 groups and then asking for 30 left the sheet
+  // showing three groups built from twelve students with no warning.
+  // `readRoster` folds the count into the SAME `roster` field
+  // staleness.ts's own Snapshot doc comment reserves for "a student was
+  // edited", rather than a parallel mechanism -- reusing `staleRoster`'s
+  // existing English ("the class list changed"), which is exactly what
+  // changing the count IS at this stage.
+  test('changing the number of students marks them out of date, naming the change', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Number of students').fill('30');
+    await expect(
+      page.getByText('These groups are out of date — the class list changed.'),
+    ).toBeVisible();
+  });
+
+  // Pinned in the OTHER direction too, the same reason "undoing the
+  // change clears it" exists for group size below: staleness is a
+  // comparison against a fresh read of the form, not a flag, so putting
+  // the count back needs no code of its own to clear the notice.
+  test('undoing the count change clears it', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Number of students').fill('30');
+    await page.getByLabel('Number of students').fill('12');
+    await expect(page.getByText('out of date')).toHaveCount(0);
+  });
+
   // The brief's own snippet also asserted `#cg-results-h` already read
   // '7B — your groups' at this point. It does not, and confirming that
   // against the RED baseline (before any staleness code existed) is what
@@ -630,6 +665,63 @@ test.describe('out-of-date groups', () => {
       .first()
       .evaluate((el) => getComputedStyle(el).opacity);
     expect(Number(after)).toBeLessThan(Number(before));
+  });
+
+  // C-2 (review, task 6 fix): the test above only proves darker-than-before,
+  // which passes at ANY opacity, including one that fails WCAG AA -- it
+  // stayed green throughout the bug (opacity: 0.55 measured 3.9:1 against
+  // this page's actual background, `--bg`, under the 4.5:1 floor for
+  // normal text). This computes the contrast the browser actually PAINTS,
+  // from real computed styles read live off the page, using the same
+  // relative-luminance formula WCAG 2.1 defines -- not a pinned opacity
+  // constant that would drift silently if `--ink`/`--bg` were ever retuned
+  // without anyone re-running a contrast checker by hand (tokens.css's own
+  // "do NOT lighten past AA" on --accent is why that retuning is a real
+  // risk on this page, not a hypothetical one).
+  test('the dim stays above the WCAG AA contrast floor for normal text', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await expect(page.locator('#cg-results')).toHaveClass(/stale/);
+    const contrast = await page
+      .locator('#cg-results .group')
+      .first()
+      .evaluate((el) => {
+        const style = getComputedStyle(el);
+        const opacity = Number(style.opacity);
+        // `.group` paints no background of its own (see this page's own
+        // :global CSS comment on why the results area is styled that way)
+        // -- walk up for the first ancestor that actually sets one, the
+        // same resolution the browser performs when compositing.
+        let bgEl = el.parentElement;
+        let backgroundCss = 'rgba(0, 0, 0, 0)';
+        while (bgEl) {
+          const c = getComputedStyle(bgEl).backgroundColor;
+          if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') {
+            backgroundCss = c;
+            break;
+          }
+          bgEl = bgEl.parentElement;
+        }
+        const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
+        const [ir, ig, ib] = nums(style.color);
+        const [br, bgn, bb] = nums(backgroundCss);
+        const mix = (i: number, b: number) => opacity * i + (1 - opacity) * b;
+        const lin = (c: number) => {
+          const s = c / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = (r: number, g: number, b: number) =>
+          0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+        const textLum = luminance(mix(ir, br), mix(ig, bgn), mix(ib, bb));
+        const bgLum = luminance(br, bgn, bb);
+        const lighter = Math.max(textLum, bgLum);
+        const darker = Math.min(textLum, bgLum);
+        return (lighter + 0.05) / (darker + 0.05);
+      });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
   });
 
   // CLAUDE.md's binding rules apply to anything this task adds: no
