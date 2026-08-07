@@ -352,11 +352,15 @@ export type GroupingError =
       // The number the teacher actually typed (`mode.count`), never a
       // side's own smaller allocation -- that substitution is the exact
       // defect this code exists to fix (see its ERROR_CODES doc comment).
-      // Only ever constructed from `mode.count` at the one call site in
+      // Constructed from `poolMode.count` (POOL-scoped: `mode.count` as
+      // `buildSeparateGroups` itself sees it) at the one call site in
       // `buildSeparateGroups`, which only runs once `mode.kind ===
       // 'groupCount'` is already known (control flow narrows it there --
       // no cast needed, unlike a `students` list this module cannot prove
-      // non-empty by construction).
+      // non-empty by construction) -- then restored to the WHOLE-CLASS
+      // figure this comment promises by `restoreWholeClassCount`, once pins
+      // are added back in, at the call site in `buildGroups` (whole-branch
+      // review, C-1; see that function's own doc comment).
       groupsRequested: number;
     }
   | { code: typeof ERROR_CODES.sexSeparateSearchGaveUp }
@@ -440,6 +444,27 @@ export const WARNING_CODES = {
    * mixed group after asking for single-sex ones with nothing said.
    */
   pinnedMixedSex: 'PINNED_MIXED_SEX',
+  /**
+   * Whole-branch review, I-2. Fires from the ONE place in
+   * `buildSeparateGroups` where NEITHER sex has enough of its own kind for
+   * even one group (`boysGroups === 0 && girlsGroups === 0`, both sexes
+   * present) -- everyone is placed as a single combined group, because
+   * there is no "other side's groups" for anyone to have joined. That call
+   * site used to push TWO `sexSpillover` warnings there, one per sex, each
+   * saying its side "joined a group of" the other -- about the SAME one
+   * group, so both were true about the seating and both false about the
+   * history: neither side had a pre-existing group to join, and the two
+   * sentences contradict each other read side by side ("boys joined a
+   * group of girls" / "girls joined a group of boys" cannot both describe
+   * one merger). `sexSpillover`'s own `sex` field cannot express this
+   * shape honestly no matter which value it is given -- it is built around
+   * a HOST side that already has a group and a side that spills into it,
+   * and this case has no host, so a distinct code says what actually
+   * happened instead of forcing a two-sided event into a one-sided
+   * vocabulary. See the call site in `buildSeparateGroups` for exactly
+   * where this replaces the old pair.
+   */
+  sexBothTooSmall: 'SEX_BOTH_TOO_SMALL',
 } as const;
 
 /**
@@ -463,6 +488,17 @@ export type GroupingWarning =
       // side here, the group is simply mixed because the teacher pinned it
       // that way, and the copy does not need to say which sex is which to
       // make that point.
+      students: number[];
+    }
+  | {
+      code: typeof WARNING_CODES.sexBothTooSmall;
+      // Every student in the one combined group -- both sexes together, not
+      // one side. No `sex` field, unlike sexSpillover: there is no spilled
+      // side and no host side, so no single sex is the "right" one to name;
+      // see WARNING_CODES.sexBothTooSmall's doc comment. Always >= 2 by
+      // construction (this only fires when both `boysCount > 0` and
+      // `girlsCount > 0` -- see the call site), so, like
+      // sexSeparateSplitsUnit, this never branches for singular/plural.
       students: number[];
     };
 
@@ -1560,16 +1596,28 @@ function buildSeparateGroups(
       // Neither sex has enough of its own kind for even one group at this
       // size. There is no "other side's groups" for anyone to join, so
       // this falls back to exactly what `off` would do with this roster:
-      // one placement, sized from the WHOLE roster. Warn about a sex only
+      // one placement, sized from the WHOLE roster. Warn about this only
       // when the OTHER sex actually has members too -- if one sex is
-      // entirely absent, this is not a spill at all, just an ordinary
+      // entirely absent, this is not a merge at all, just an ordinary
       // undersized single-sex group (same shape `off` would produce with
       // the same roster; see the "lone sex too small" test in
       // grouping.test.ts).
+      //
+      // Whole-branch review, I-2: ONE `sexBothTooSmall` warning naming
+      // everyone, not two `sexSpillover` warnings (one per sex, each
+      // claiming its side "joined a group of" the other) -- both of those
+      // described the SAME single merged group, and read together they
+      // contradict each other (boys "joined" girls' group; girls "joined"
+      // boys' group; neither side actually had a pre-existing group here
+      // to join). See WARNING_CODES.sexBothTooSmall's doc comment.
       attempts.push({ idx: blocks.map((_, i) => i), sizes });
       if (boysCount > 0 && girlsCount > 0) {
-        warnings.push(spillWarning(boysIdx, 'M'));
-        warnings.push(spillWarning(girlsIdx, 'F'));
+        warnings.push({
+          code: WARNING_CODES.sexBothTooSmall,
+          students: [...boysIdx, ...girlsIdx].flatMap((b) =>
+            blocks[b].map((i) => present[i].number),
+          ),
+        });
       }
     } else if (girlsCount > 0 && girlsGroups === 0) {
       // Girls spill into boys' groups. Sized from boys' OWN headcount,
@@ -1728,6 +1776,67 @@ function buildSeparateGroups(
   );
 }
 
+/**
+ * Whole-branch review, C-1. `buildSeparateGroups` (and `placeSexSide`, which
+ * it calls) operates entirely in POOL terms -- it is handed `poolMode` and
+ * `poolSizes`, already reduced by however many groups the pins claimed, and
+ * never sees `pinnedGroups.length` at all (see the call site below). Every
+ * count a failure from it carries -- `groupsRequested` (sexSeparateImpossible),
+ * `groupsTried` (togetherNoArrangement / keepApartNoArrangement /
+ * bothRulesNoArrangement, reached here when only one allocation candidate
+ * ever existed to try -- see buildSeparateGroups's own closing comment), or
+ * `groupsNeeded` (keepApartImpossible, from placeSexSide's fast clique gate)
+ * -- is therefore a POOL figure. But every one of those codes is rendered by
+ * copy that speaks in WHOLE-CLASS terms: "fit your class into N groups",
+ * "you would need at least N groups". A pinned group already claims one of
+ * those groups, so the pool's own count always undercounts the truthful
+ * whole-class figure by exactly `pinnedGroups.length` -- confirmed
+ * reachable, not hypothetical: a pinned pair plus a 4-strong apart-clique in
+ * the pool, groupCount 4, reported `groupsNeeded: 4` (implying the teacher's
+ * own typed 4 is already too few -- self-contradicting) when the true
+ * figure is 5 (4 for the clique, which cannot use the pinned group, plus
+ * the 1 already pinned).
+ *
+ * Restoring it here, once, at the single seam where a `separate`-mode
+ * failure crosses back from pool-scoped `buildSeparateGroups` into this
+ * whole-class-facing function, is what makes every one of those sentences
+ * describe a number the teacher actually typed -- see the matching fix a
+ * little further down for `off`/`mix`'s own keepApartImpossible/
+ * *NoArrangement sites, which reach the identical failure shape a different
+ * way (the one `placeBlocks` call this function makes directly, never
+ * through `buildSeparateGroups`). `pinnedTooManyGroups` never needed this
+ * fix: it captures `mode.count` -- the ORIGINAL, unreduced number -- before
+ * `poolMode` is ever computed (see its own ERROR_CODES doc comment).
+ *
+ * Every OTHER code `buildSeparateGroups`/`placeSexSide` can return is passed
+ * through unchanged: `togetherUnitTooLarge` carries a group SIZE, not a
+ * group COUNT (the largest available pool group really is the right number
+ * to compare against -- a together-unit can only ever land in the pool),
+ * `sexSeparateSplitsUnit` carries a student list, and every `*SearchGaveUp`
+ * code carries no data at all -- there is nothing on any of them for this
+ * function to adjust.
+ */
+function restoreWholeClassCount(
+  error: GroupingError,
+  pinnedGroupCount: number,
+): GroupingError {
+  switch (error.code) {
+    case ERROR_CODES.keepApartImpossible:
+      return { ...error, groupsNeeded: error.groupsNeeded + pinnedGroupCount };
+    case ERROR_CODES.togetherNoArrangement:
+    case ERROR_CODES.keepApartNoArrangement:
+    case ERROR_CODES.bothRulesNoArrangement:
+      return { ...error, groupsTried: error.groupsTried + pinnedGroupCount };
+    case ERROR_CODES.sexSeparateImpossible:
+      return {
+        ...error,
+        groupsRequested: error.groupsRequested + pinnedGroupCount,
+      };
+    default:
+      return error;
+  }
+}
+
 export function buildGroups(input: GroupingInput): GroupingOutcome {
   // Counted before it is built. Past this line the roster exists in memory,
   // so this is the only place the size can still be refused cheaply.
@@ -1751,11 +1860,20 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     seen.add(s.number);
   }
 
+  // Whole-branch review, I-4: this and the `present.length === 0` guard just
+  // below are TWO different triggers sharing one code with no data to tell
+  // them apart -- deliberate (see that guard's own comment) -- but the
+  // COPY must therefore be true of both, which it was not before this fix
+  // (see NO_STUDENTS's own comment in en.ts).
   if (students.length === 0) return fail({ code: ERROR_CODES.noStudents });
 
   // Absence is applied here, after the roster is counted and validated, so a
   // duplicate number is still caught in a row that is out today -- the teacher
-  // is going to untick it tomorrow.
+  // is going to untick it tomorrow. A NON-empty roster where every student is
+  // marked absent reaches the exact same `noStudents` code as the empty-roster
+  // guard above, deliberately -- see that guard's comment and NO_STUDENTS's
+  // own comment in en.ts for why the collapse is safe: the copy makes no
+  // claim only one of the two triggers can be true of.
   const present = students.filter((s) => !s.absent);
   if (present.length === 0) return fail({ code: ERROR_CODES.noStudents });
 
@@ -2198,7 +2316,16 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
           const holder = blocks[b].find((i) => pool[i].apart !== null);
           return pool[holder ?? blocks[b][0]].number;
         }),
-        groupsNeeded: clique.length,
+        // Whole-branch review, C-1. `clique.length` alone is a POOL figure --
+        // how many of the pins-excluded students conflict -- but the copy
+        // ("...so you would need at least N groups") states a WHOLE-CLASS
+        // fact. Every pinned group is already a group the clique's own
+        // members cannot use (they are, by definition, not pinned), so the
+        // truthful total is the clique's own need PLUS however many groups
+        // the pins already claim -- see `restoreWholeClassCount`'s doc
+        // comment (the identical fix for `separate`'s own equivalent gate)
+        // for the concrete reachable case this closes.
+        groupsNeeded: clique.length + pinnedGroups.length,
       });
     }
   }
@@ -2222,7 +2349,13 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
       leftovers,
       random,
     );
-    if (!outcome.ok) return outcome;
+    if (!outcome.ok) {
+      // Whole-branch review, C-1. See `restoreWholeClassCount`'s own doc
+      // comment for why this crossing is where a pool-scoped count from
+      // `separate`'s own search becomes the whole-class figure the copy
+      // actually renders.
+      return fail(restoreWholeClassCount(outcome.error, pinnedGroups.length));
+    }
     return succeed(
       [...pinnedGroups, ...outcome.result.groups],
       [...warnings, ...outcome.result.warnings],
@@ -2285,7 +2418,12 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
           ? { code: ERROR_CODES.bothRulesSearchGaveUp }
           : {
               code: ERROR_CODES.bothRulesNoArrangement,
-              groupsTried: poolSizes.length,
+              // Whole-branch review, C-1. `poolSizes.length` is how many
+              // groups the POOL was searched over; the copy states a
+              // WHOLE-CLASS fact ("fit your class into N groups"), so the
+              // pins' own groups are added back -- see
+              // `restoreWholeClassCount`'s doc comment.
+              groupsTried: poolSizes.length + pinnedGroups.length,
             },
       );
     }
@@ -2296,7 +2434,9 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
           ? { code: ERROR_CODES.togetherSearchGaveUp }
           : {
               code: ERROR_CODES.togetherNoArrangement,
-              groupsTried: poolSizes.length,
+              // Whole-branch review, C-1. Same fix as bothRulesNoArrangement
+              // just above -- see `restoreWholeClassCount`'s doc comment.
+              groupsTried: poolSizes.length + pinnedGroups.length,
             },
       );
     }
@@ -2314,7 +2454,9 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
         ? { code: ERROR_CODES.keepApartSearchGaveUp }
         : {
             code: ERROR_CODES.keepApartNoArrangement,
-            groupsTried: poolSizes.length,
+            // Whole-branch review, C-1. Same fix as bothRulesNoArrangement
+            // above -- see `restoreWholeClassCount`'s doc comment.
+            groupsTried: poolSizes.length + pinnedGroups.length,
           },
     );
   }

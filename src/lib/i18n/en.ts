@@ -91,8 +91,21 @@ export const en = {
   studentNumber: (n: number) => `Student ${n}`,
 
   errors: {
+    // Whole-branch review, I-4. `noStudents` fires from TWO different
+    // triggers in grouping.ts -- an empty roster (no count, no names) and a
+    // non-empty roster where every single student is marked absent -- and
+    // carries no data to tell them apart (see the call sites' own comments
+    // for why that collapse was deliberate). The old copy ("Add some
+    // students first...") was only ever checked against the first trigger;
+    // a 30-student roster with everyone unticked got told to add students
+    // it already had. This wording is true for both: "add some" fixes an
+    // empty roster, "make sure at least one ... is not marked absent" fixes
+    // the second trigger, and neither clause claims the other's problem is
+    // also present -- same "either/or, only one need apply" shape the rest
+    // of this file's multi-remedy copy already uses (see
+    // BOTH_RULES_NO_ARRANGEMENT below, for one).
     NO_STUDENTS:
-      'Add some students first — either a number or a list of names.',
+      'Add some students, or make sure at least one of them is not marked absent.',
     TOO_MANY_STUDENTS: (max: number) =>
       `That is more students than this tool will take. The most is ${max}.`,
     DUPLICATE_NUMBER: (number: number) =>
@@ -189,8 +202,26 @@ export const en = {
     // `names.length >= 2`, which is provable by TYPE/construction rather
     // than by a runtime argument about when the engine happens to call
     // this.
+    //
+    // Whole-branch review, I-1: used to say "ask for MORE groups" -- a
+    // specific direction, which TOGETHER_NO_ARRANGEMENT's own comment above
+    // warns against for exactly this reason (more groups makes a together
+    // clash worse, never better). Unlike TOGETHER_NO_ARRANGEMENT and
+    // KEEP_APART_NO_ARRANGEMENT, each of which knows its OWN rule's fix
+    // direction is always the same, this code is reached after every
+    // candidate split has already failed for a mix of reasons this search
+    // never isolates -- one candidate can fail on a together-unit too large
+    // for its side (fixed by FEWER groups), another on a keep-apart clique
+    // (fixed by MORE) -- so "more" is not even usually right, let alone
+    // always: measured, 10 boys (6 bound by one together-letter) plus 2
+    // girls needed FEWER groups, not more (counts 2-3 succeeded, 4-6 all
+    // refused while telling the teacher to ask for more). "A different
+    // number" makes no claim about which direction, because the search has
+    // not earned one -- honest in the same spirit as this code's own
+    // groupsRequested (see ERROR_CODES.sexSeparateImpossible's doc comment
+    // in grouping.ts), just about a direction instead of a number.
     SEX_SEPARATE_IMPOSSIBLE: (groupsRequested: number) =>
-      `Boys and girls cannot be kept in separate groups across ${groupsRequested} ${groupsRequested === 1 ? 'group' : 'groups'} while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for more groups, or turn this mode off.`,
+      `Boys and girls cannot be kept in separate groups across ${groupsRequested} ${groupsRequested === 1 ? 'group' : 'groups'} while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for a different number of groups, or turn this mode off.`,
     // Fix round 2. Claims nothing at all, same reasoning as
     // TOGETHER_SEARCH_GAVE_UP/KEEP_APART_SEARCH_GAVE_UP/
     // BOTH_RULES_SEARCH_GAVE_UP above -- carries no data because nothing
@@ -285,6 +316,15 @@ export const en = {
     // grouping.ts for the decision this is the honest wording of.
     PINNED_MIXED_SEX: (names: string[]) =>
       `${names.join(', ')} are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.`,
+    // Whole-branch review, I-2. Carries `students: number[]` -- everyone in
+    // the one merged group, both sexes -- and no `sex` field, unlike
+    // SEX_SPILLOVER above: there is no host side and no spilled side here,
+    // so no one sex is the "right" one to name (see
+    // WARNING_CODES.sexBothTooSmall's doc comment in grouping.ts). Always
+    // >= 2 by construction, like SEX_SEPARATE_SPLITS_UNIT and
+    // TOGETHER_APART_CLASH above, so no singular/plural branch.
+    SEX_BOTH_TOO_SMALL: (names: string[]) =>
+      `${names.join(', ')} were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.`,
   },
 
   themes: {

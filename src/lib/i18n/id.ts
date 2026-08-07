@@ -72,8 +72,12 @@ export const id: Strings = {
   studentNumber: (n: number) => `Siswa ${n}`,
 
   errors: {
+    // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
+    // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA
+    // pemicunya (daftar kosong, atau semua siswa ditandai absen), bukan
+    // hanya yang pertama.
     NO_STUDENTS:
-      'Tambahkan siswa terlebih dahulu — berupa angka atau daftar nama.',
+      'Tambahkan siswa, atau pastikan setidaknya satu di antaranya tidak ditandai absen.',
     TOO_MANY_STUDENTS: (max: number) =>
       `Jumlah siswa itu melebihi batas alat ini. Paling banyak ${max}.`,
     DUPLICATE_NUMBER: (number: number) =>
@@ -149,8 +153,15 @@ export const id: Strings = {
     // memastikan aturan mana yang jadi masalah" sengaja memakai frasa yang
     // SAMA PERSIS dengan BOTH_RULES_NO_ARRANGEMENT di atas -- pola
     // kejujuran yang sama, jadi suaranya juga sama.
+    // Whole-branch review, I-1: lihat komentar pada versi Inggrisnya (en.ts)
+    // untuk alasan lengkap -- dulu menyarankan "minta lebih banyak kelompok"
+    // (satu arah tertentu), padahal arah yang benar tidak selalu diketahui
+    // (bisa jadi justru lebih SEDIKIT kelompok yang dibutuhkan, tergantung
+    // aturan mana yang sebenarnya jadi masalah). Sekarang "jumlah kelompok
+    // yang berbeda" -- jujur soal arah karena pencarian ini memang tidak
+    // membuktikan arah mana yang akan berhasil.
     SEX_SEPARATE_IMPOSSIBLE: (groupsRequested: number) =>
-      `Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam ${groupsRequested} kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta lebih banyak kelompok, atau matikan mode ini.`,
+      `Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam ${groupsRequested} kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta jumlah kelompok yang berbeda, atau matikan mode ini.`,
     // Fix round 2. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
     // lengkap. Tidak ada percabangan tunggal/jamak di sini -- sama seperti
     // ketiga saudaranya (TOGETHER_SEARCH_GAVE_UP dkk.) di atas, Bahasa
@@ -216,6 +227,12 @@ export const id: Strings = {
     // kelompok memang campuran karena guru menguncinya seperti itu.
     PINNED_MIXED_SEX: (names: string[]) =>
       `${names.join(', ')} dikunci bersama dalam satu kelompok, tetapi tidak semuanya berjenis kelamin sama, sehingga kelompok ini tidak dipisahkan berdasarkan jenis kelamin seperti kelompok lainnya. Itu sesuai permintaan kunci kelompoknya, bukan kesalahan yang perlu diperbaiki.`,
+    // Whole-branch review, I-2. Lihat komentar pada versi Inggrisnya (en.ts)
+    // untuk alasan lengkap. Tidak ada bidang `sex` di sini -- tidak ada
+    // pihak yang jadi "tuan rumah" dan tidak ada pihak yang "meluap",
+    // sehingga tidak ada satu jenis kelamin yang tepat untuk disebutkan.
+    SEX_BOTH_TOO_SMALL: (names: string[]) =>
+      `${names.join(', ')} digabungkan menjadi satu kelompok karena jumlah laki-laki maupun perempuan tidak cukup untuk membentuk kelompok sendiri-sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.`,
   },
 
   themes: {

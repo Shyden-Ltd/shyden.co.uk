@@ -14,7 +14,11 @@ import { student, shape, groupOf, seeded } from './factories';
 // file, before this fix, ever piped a `separate`-mode failure through
 // `renderError`, so a structurally-correct error code with a wrong-number
 // or badly-worded sentence would have passed every test in this file.
-import { renderError } from '../../src/lib/i18n';
+// `renderWarning` (whole-branch review, I-5): the same gap existed for
+// WARNINGS -- the pinned describe block and the sex-both-too-small fixture
+// below never rendered one at all before this fix, which is exactly why
+// I-2's contradiction survived per-task review.
+import { renderError, renderWarning } from '../../src/lib/i18n';
 import { en } from '../../src/lib/i18n/en';
 import { id } from '../../src/lib/i18n/id';
 
@@ -135,7 +139,7 @@ describe('the module surface', () => {
     // `result.warnings` on a SUCCESSFUL outcome (warnings only ever
     // accompany `ok: true` -- see GroupingOutcome), then add it here.
     expect(Object.values(WARNING_CODES).sort()).toEqual(
-      ['SEX_SPILLOVER', 'PINNED_MIXED_SEX'].sort(),
+      ['SEX_SPILLOVER', 'PINNED_MIXED_SEX', 'SEX_BOTH_TOO_SMALL'].sort(),
     );
   });
 });
@@ -2829,10 +2833,10 @@ describe('sex mode: separate', () => {
       expect(out.ok).toBe(false);
       if (out.ok) return;
       expect(renderError(out.error, en)).toBe(
-        'Boys and girls cannot be kept in separate groups across 3 groups while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for more groups, or turn this mode off.',
+        'Boys and girls cannot be kept in separate groups across 3 groups while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for a different number of groups, or turn this mode off.',
       );
       expect(renderError(out.error, id)).toBe(
-        'Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam 3 kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta lebih banyak kelompok, atau matikan mode ini.',
+        'Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam 3 kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta jumlah kelompok yang berbeda, atau matikan mode ini.',
       );
     });
   });
@@ -2926,7 +2930,15 @@ describe('sex mode: separate', () => {
   // always has somewhere to go). Under `perGroup`, a size bigger than
   // BOTH sexes' own headcount gives both a floored group count of zero.
   describe('when neither sex has enough for even one group of its own (perGroup only)', () => {
-    it('falls back to one combined group and warns about both sexes', () => {
+    // Whole-branch review, I-2. Before this fix, this test pinned TWO
+    // `sexSpillover` warning objects -- one claiming the boys "joined a
+    // group of girls", the other claiming the girls "joined a group of
+    // boys" -- about the SAME single merged group, and never rendered
+    // either one, so the suite could not see that the two sentences
+    // contradict each other. Now a single `sexBothTooSmall` warning naming
+    // everyone, rendered in both languages, which is what makes the
+    // contradiction visible if it ever comes back.
+    it('falls back to one combined group and warns ONCE, honestly, about both sexes (Fix, I-2)', () => {
       const students = [
         M(1),
         M(2),
@@ -2954,19 +2966,37 @@ describe('sex mode: separate', () => {
       expect(
         out.result.groups[0].map((s) => s.number).sort((a, b) => a - b),
       ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-      const bySex = (sex: 'M' | 'F') =>
-        out.result.warnings.find((w) => w.sex === sex);
-      expect(bySex('M')).toEqual({
-        code: WARNING_CODES.sexSpillover,
-        students: [1, 2, 3, 4, 5, 6],
-        sex: 'M',
-      });
-      expect(bySex('F')).toEqual({
-        code: WARNING_CODES.sexSpillover,
-        students: [7, 8, 9, 10, 11, 12],
-        sex: 'F',
-      });
-      expect(out.result.warnings).toHaveLength(2);
+      // ONE warning, not two -- and it names everyone, boys then girls
+      // (`[...boysIdx, ...girlsIdx]` at the construction site).
+      expect(out.result.warnings).toEqual([
+        {
+          code: WARNING_CODES.sexBothTooSmall,
+          students: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        },
+      ]);
+      // Rendered, not just structural -- a structurally-correct warning
+      // object with two contradictory sentences behind it is exactly what
+      // escaped review before this fix (renderWarning was never called on
+      // this fixture at all). One sentence now, in both languages, naming
+      // the whole roster via the default numbered resolver.
+      const names = Array.from({ length: 12 }, (_, i) =>
+        en.studentNumber(i + 1),
+      );
+      expect(renderWarning(out.result.warnings[0], en)).toBe(
+        'Student 1, Student 2, Student 3, Student 4, Student 5, Student 6, Student 7, Student 8, Student 9, Student 10, Student 11, Student 12 were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.',
+      );
+      expect(renderWarning(out.result.warnings[0], en)).toBe(
+        en.warnings.SEX_BOTH_TOO_SMALL(names),
+      );
+      const idNames = Array.from({ length: 12 }, (_, i) =>
+        id.studentNumber(i + 1),
+      );
+      expect(renderWarning(out.result.warnings[0], id)).toBe(
+        'Siswa 1, Siswa 2, Siswa 3, Siswa 4, Siswa 5, Siswa 6, Siswa 7, Siswa 8, Siswa 9, Siswa 10, Siswa 11, Siswa 12 digabungkan menjadi satu kelompok karena jumlah laki-laki maupun perempuan tidak cukup untuk membentuk kelompok sendiri-sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.',
+      );
+      expect(renderWarning(out.result.warnings[0], id)).toBe(
+        id.warnings.SEX_BOTH_TOO_SMALL(idNames),
+      );
     });
 
     // The neighbouring case that must NOT be confused with the one above:

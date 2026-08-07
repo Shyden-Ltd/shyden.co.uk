@@ -201,6 +201,12 @@ export function renderWarning(
     // WARNING_CODES.pinnedMixedSex's doc comment in grouping.ts.
     case WARNING_CODES.pinnedMixedSex:
       return w.PINNED_MIXED_SEX(warning.students.map(resolveStudent));
+    // Whole-branch review, I-2. Carries `students: number[]`, same resolver
+    // pattern as sexSpillover/pinnedMixedSex above -- no `sex` field to pass
+    // through, see WARNING_CODES.sexBothTooSmall's doc comment in
+    // grouping.ts.
+    case WARNING_CODES.sexBothTooSmall:
+      return w.SEX_BOTH_TOO_SMALL(warning.students.map(resolveStudent));
   }
 }
 

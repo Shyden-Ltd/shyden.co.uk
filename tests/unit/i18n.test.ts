@@ -149,6 +149,7 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   'errors.PINNED_TOO_MANY_GROUPS': [4, 1, 2],
   'warnings.SEX_SPILLOVER': [['Student 7', 'Student 8'], 'M'],
   'warnings.PINNED_MIXED_SEX': [['Student 1', 'Student 4']],
+  'warnings.SEX_BOTH_TOO_SMALL': [['Student 1', 'Student 7']],
 };
 
 describe('locales are complete', () => {
@@ -704,7 +705,7 @@ describe('every engine error can be rendered in every language', () => {
         en,
       );
       expect(msg).toBe(
-        'Boys and girls cannot be kept in separate groups across 4 groups while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for more groups, or turn this mode off.',
+        'Boys and girls cannot be kept in separate groups across 4 groups while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for a different number of groups, or turn this mode off.',
       );
     });
 
@@ -714,7 +715,7 @@ describe('every engine error can be rendered in every language', () => {
         id,
       );
       expect(msg).toBe(
-        'Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam 4 kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta lebih banyak kelompok, atau matikan mode ini.',
+        'Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam 4 kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta jumlah kelompok yang berbeda, atau matikan mode ini.',
       );
     });
 
@@ -1260,6 +1261,14 @@ describe('every engine warning can be rendered in every language', () => {
       code: WARNING_CODES.pinnedMixedSex,
       students: [1, 4],
     },
+    // Whole-branch review, I-2. Carries `students: number[]`, never names,
+    // and no `sex` field (see WARNING_CODES.sexBothTooSmall's doc comment
+    // in grouping.ts) -- there is no host side and no spilled side, so no
+    // one sex is the "right" one to name.
+    SEX_BOTH_TOO_SMALL: {
+      code: WARNING_CODES.sexBothTooSmall,
+      students: [1, 7],
+    },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -1425,6 +1434,87 @@ describe('every engine warning can be rendered in every language', () => {
       expect(msg).not.toContain('Siswa');
       expect(msg).toContain('bukan kesalahan');
     });
+  });
+
+  describe('sex-both-too-small does not contradict itself the way two sexSpillover warnings did (Fix, I-2)', () => {
+    // Whole-branch review, I-2. Carries `students: number[]`, same resolver
+    // pattern as sexSpillover/pinnedMixedSex above. Always >= 2 by
+    // construction (both sexes must have at least one member for this to
+    // fire -- see the call site in grouping.ts), so no singular/plural
+    // branch, like sexSeparateSplitsUnit.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderWarning(
+          { code: WARNING_CODES.sexBothTooSmall, students: [1, 7] },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.warnings.SEX_BOTH_TOO_SMALL([
+            strings.studentNumber(1),
+            strings.studentNumber(7),
+          ]),
+        );
+        expect(msg).toContain(strings.studentNumber(1));
+        expect(msg).toContain(strings.studentNumber(7));
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    // Exact full sentences, both languages -- this code's whole reason to
+    // exist is that TWO sexSpillover warnings about the same merged group
+    // contradicted each other ("joined a group of girls" / "joined a group
+    // of boys", about one group), so a substring check could not tell a
+    // real fix (one honest sentence) from a sentence that merely renders.
+    it('English: a supplied resolver is used in place of the default, names both and blames neither sex', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexBothTooSmall, students: [1, 7] },
+        en,
+        (n) => (n === 1 ? 'Ana' : 'Gita'),
+      );
+      expect(msg).toBe(
+        'Ana, Gita were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.',
+      );
+      expect(msg).not.toContain('Student');
+      expect(msg).toContain('not a mistake');
+      // Never claims either side "joined" a pre-existing group of the
+      // other -- that framing is exactly what made the two old
+      // sexSpillover warnings contradict each other.
+      expect(msg).not.toContain('joined');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexBothTooSmall, students: [1, 7] },
+        id,
+        (n) => (n === 1 ? 'Ana' : 'Gita'),
+      );
+      expect(msg).toBe(
+        'Ana, Gita digabungkan menjadi satu kelompok karena jumlah laki-laki maupun perempuan tidak cukup untuk membentuk kelompok sendiri-sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.',
+      );
+      expect(msg).not.toContain('Siswa');
+      expect(msg).toContain('bukan kesalahan');
+    });
+
+    it.each(locales)(
+      'is not sexSpillover in disguise (%s)',
+      (_name, strings) => {
+        const msg = renderWarning(
+          { code: WARNING_CODES.sexBothTooSmall, students: [1, 7] },
+          strings,
+        );
+        const spilloverAsM = renderWarning(
+          { code: WARNING_CODES.sexSpillover, students: [1, 7], sex: 'M' },
+          strings,
+        );
+        const spilloverAsF = renderWarning(
+          { code: WARNING_CODES.sexSpillover, students: [1, 7], sex: 'F' },
+          strings,
+        );
+        expect(msg).not.toBe(spilloverAsM);
+        expect(msg).not.toBe(spilloverAsF);
+      },
+    );
   });
 });
 
