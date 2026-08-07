@@ -123,6 +123,21 @@ export const id: Strings = {
   groupLabel: (n: number) => `Kelompok ${n}`,
   studentNumber: (n: number) => `Siswa ${n}`,
 
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
+  // "sudah tidak berlaku lagi" ("no longer valid") mengikuti pola yang
+  // sudah umum dipakai pada teks antarmuka berbahasa Indonesia untuk hal
+  // yang kedaluwarsa/basi, sepadan dengan "out of date" pada versi Inggris.
+  staleMode: 'Kelompok ini sudah tidak berlaku lagi — ukuran kelompok berubah.',
+  staleLeftovers:
+    'Kelompok ini sudah tidak berlaku lagi — pilihan siswa tersisa berubah.',
+  // Belum bisa dijangkau dari halaman ini hari ini -- lihat komentar pada
+  // versi Inggrisnya (en.ts) dan `readSexMode` di classroom-groups.ts.
+  staleSexMode:
+    'Kelompok ini sudah tidak berlaku lagi — cara pengelompokan berdasarkan jenis kelamin berubah.',
+  // Belum bisa dijangkau dari halaman ini hari ini -- lihat komentar pada
+  // versi Inggrisnya (en.ts).
+  staleRoster: 'Kelompok ini sudah tidak berlaku lagi — daftar kelas berubah.',
+
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
     // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA

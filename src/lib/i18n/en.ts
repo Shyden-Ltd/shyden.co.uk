@@ -172,6 +172,33 @@ export const en = {
   groupLabel: (n: number) => `Group ${n}`,
   studentNumber: (n: number) => `Student ${n}`,
 
+  // Design spec section 8, "When the class changes after a shuffle". Each
+  // reason names WHAT changed, not merely that something did -- "These
+  // groups are out of date" alone sends a teacher hunting for what they
+  // touched. staleReason (src/lib/staleness.ts) picks exactly one of these
+  // per recompute, in a fixed priority order, so two things changing at
+  // once still reads as ONE clear sentence, not a list.
+  staleMode: 'These groups are out of date — the group size changed.',
+  staleLeftovers:
+    'These groups are out of date — the leftovers choice changed.',
+  // Unreachable from this page today: the two sex switches render (Stage 2,
+  // Task 4) but stay permanently disabled until stage 3 gives them a
+  // roster to enable on -- see classroom-groups.ts's own `readSexMode`.
+  // Defined now, not left for stage 3, because Snapshot's shape (and
+  // staleReason's own branch) already exist -- see that interface's own
+  // doc comment for why a comparison, not a flag, is what lets a later
+  // stage add a trigger by filling in a field rather than hunting down
+  // every place that could clear one.
+  staleSexMode:
+    'These groups are out of date — how boys and girls are grouped changed.',
+  // Unreachable from this page today: `roster` stays '' on both sides of
+  // every comparison until stage 3 builds a real roster to summarise (see
+  // Snapshot's own doc comment). Generic, not per-student ("Dewi is now
+  // marked absent") -- Snapshot compares ONE string, so it can only say a
+  // roster changed, not which fact about it did; stage 3's own roster work
+  // owns deciding whether a finer-grained comparison is worth building.
+  staleRoster: 'These groups are out of date — the class list changed.',
+
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different
     // triggers in grouping.ts -- an empty roster (no count, no names) and a

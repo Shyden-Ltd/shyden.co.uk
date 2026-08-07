@@ -447,6 +447,235 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
   });
 });
 
+// Stage 2, Task 6: staleness (design spec section 8, "When the class
+// changes after a shuffle"). task-6-brief.md's own six tests, corrected the
+// same way Task 1/Task 2/Task 5's own ledger entries already correct this
+// brief's sibling snippets: `getByLabel('How many students?')` matches
+// nothing (the real label is "Number of students"), and
+// `getByLabel('Students per group')` matches the MODE RADIO ("Students per
+// group", `modePerGroup`) rather than the group-size NUMBER FIELD this test
+// actually means to change -- that field's own label is "Students in each
+// group" (`groupSizeLabel`). Playwright's `.fill()` throws outright on a
+// radio input ("Input of type radio cannot be filled"), so the brief's own
+// snippet could not have run as written. The leftovers radio also needs its
+// section OPENED first: Stage 2, Task 4 rehomed it inside
+// `#cg-grouping-body`, which starts collapsed -- the brief's snippet
+// predates that move. `#cg-go` is clicked by id throughout, not by
+// accessible name: its own label changes to "Shuffle again" after the first
+// success (see 'the error clears the stale "Shuffle again" label' above),
+// and once results are stale, `#cg-stale`'s own button carries that SAME
+// name too -- `getByRole('button', { name: 'Shuffle again' })` would then
+// match two elements.
+test.describe('out-of-date groups', () => {
+  const shuffle = async (page: Page) => {
+    await page.getByLabel('Number of students').fill('12');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+  };
+
+  test('changing the group size marks them out of date, naming the change', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await expect(
+      page.getByText('These groups are out of date — the group size changed.'),
+    ).toBeVisible();
+  });
+
+  test('changing the leftovers choice marks them out of date', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.locator('#cg-grouping-toggle').click();
+    await page.getByLabel('Put them all in one group').check();
+    await expect(
+      page.getByText(
+        'These groups are out of date — the leftovers choice changed.',
+      ),
+    ).toBeVisible();
+  });
+
+  // The brief's own snippet also asserted `#cg-results-h` already read
+  // '7B — your groups' at this point. It does not, and confirming that
+  // against the RED baseline (before any staleness code existed) is what
+  // caught it: the heading is written once, at submit
+  // (classroom-groups.ts), and Task 5's own "a changed class name is
+  // picked up on the next shuffle" test already covers that timing
+  // directly. Typing a class name here does not reshuffle, so asserting a
+  // live heading update pins a DIFFERENT, already-false claim that has
+  // nothing to do with whether the change also marks the groups stale --
+  // which is the one thing this test's own name promises.
+  test('the class name does NOT mark them out of date', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Class (optional)').fill('7B');
+    await expect(page.getByText('out of date')).toHaveCount(0);
+  });
+
+  test('the old groups stay visible while stale', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+  });
+
+  test('shuffling clears it', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await page.click('#cg-go');
+    await expect(page.getByText('out of date')).toHaveCount(0);
+  });
+
+  test('undoing the change clears it', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await page.getByLabel('Students in each group').fill('4');
+    await expect(page.getByText('out of date')).toHaveCount(0);
+  });
+
+  // None of the six tests above ever has TWO live changes at once -- the
+  // whole reason staleReason (src/lib/staleness.ts) is a comparison against
+  // a fresh read of the form, rather than a set of flags, is so this stays
+  // correct with no extra code: undoing the higher-priority change does not
+  // clear the notice, it just changes what the notice SAYS, because the
+  // very next recompute finds the leftovers mismatch still live.
+  test('when two things change, undoing one still names the other', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await page.locator('#cg-grouping-toggle').click();
+    await page.getByLabel('Put them all in one group').check();
+    await page.getByLabel('Students in each group').fill('4'); // undoes ONLY the size change
+    await expect(
+      page.getByText(
+        'These groups are out of date — the leftovers choice changed.',
+      ),
+    ).toBeVisible();
+    await expect(page.locator('#cg-results')).toHaveClass(/stale/);
+  });
+
+  test('when two things change, undoing both clears it', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await page.locator('#cg-grouping-toggle').click();
+    await page.getByLabel('Put them all in one group').check();
+    await page.getByLabel('Students in each group').fill('4');
+    await page.getByLabel('Share them out evenly').check();
+    await expect(page.getByText('out of date')).toHaveCount(0);
+    await expect(page.locator('#cg-results')).not.toHaveClass(/stale/);
+  });
+
+  // Pins the WHOLE sentence against the notice's own element, not just that
+  // SOME element on the page contains this text -- getByText above proves
+  // the sentence renders somewhere; this proves it renders exactly here.
+  // toHaveText is an EXACT match, unlike getByText's substring default, so
+  // a dropped trailing space or a second sentence glued on would fail this
+  // without failing the tests above.
+  test('the notice element itself carries the exact sentence', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await expect(page.locator('#cg-stale-text')).toHaveText(
+      'These groups are out of date — the group size changed.',
+    );
+  });
+
+  // Design spec section 8's own "the way out": the badge is not merely a
+  // notice, it is also how a teacher acts on it without scrolling back up
+  // to #cg-go. `form="cg-form"` associates the button to the form despite
+  // sitting outside it in the DOM -- proven here by getting the SAME
+  // reshuffle #cg-go itself would have produced, not by reading the
+  // attribute.
+  test('the notice offers its own way to reshuffle, without hunting for the main button', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await expect(page.locator('#cg-stale')).toBeVisible();
+    await page.locator('#cg-stale button').click();
+    await expect(page.locator('#cg-stale')).toBeHidden();
+    // 12 students at the NEW size (3) => 4 groups. Proves a real reshuffle
+    // happened, not merely that the notice hid itself.
+    await expect(page.locator('#cg-results .group')).toHaveCount(4);
+  });
+
+  // "Dimmed AND badged" (design spec section 8) -- the tests above only
+  // ever prove the cards are still PRESENT, never that anything about their
+  // appearance actually changed. This is the one that would catch a
+  // `.stale` class added to #cg-results with no CSS rule behind it at all.
+  test('the old groups are visually dimmed while stale, not merely still present', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    const before = await page
+      .locator('#cg-results .group')
+      .first()
+      .evaluate((el) => getComputedStyle(el).opacity);
+    await page.getByLabel('Students in each group').fill('3');
+    await expect(page.locator('#cg-results')).toHaveClass(/stale/);
+    const after = await page
+      .locator('#cg-results .group')
+      .first()
+      .evaluate((el) => getComputedStyle(el).opacity);
+    expect(Number(after)).toBeLessThan(Number(before));
+  });
+
+  // CLAUDE.md's binding rules apply to anything this task adds: no
+  // horizontal scroll at 320px in any state, and every interactive target
+  // is >= 44px. The full sweep across every width and every OTHER state on
+  // the page is a later task's own (this task owns staleness, not the
+  // no-scroll rule as a whole) -- this defends the one new element this
+  // task is actually adding.
+  test('the notice fits at 320px with no horizontal scroll, and its button meets the touch-target minimum', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    await expect(page.locator('#cg-stale')).toBeVisible();
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+    const box = await page.locator('#cg-stale button').boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  });
+
+  // "Assert whole rendered sentences, in both locales" (CLAUDE.md) -- every
+  // test above is English-only, and the reason TEXT itself is
+  // locale-varying content (unlike Task 5's own textContent/CSS mechanisms,
+  // which are locale-invariant and deliberately not mirrored -- see that
+  // task's own note in the 'class name and results heading' describe
+  // block above).
+  test('the reason reads in Indonesian, as a whole sentence', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByLabel('Jumlah siswa').fill('12');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+    await page.getByLabel('Siswa dalam setiap kelompok').fill('3');
+    await expect(page.locator('#cg-stale-text')).toHaveText(
+      'Kelompok ini sudah tidak berlaku lagi — ukuran kelompok berubah.',
+    );
+  });
+});
+
 test.describe('site-wide language switching', () => {
   test('the switcher moves between the two versions of the SAME page', async ({
     page,

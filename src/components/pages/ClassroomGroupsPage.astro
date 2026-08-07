@@ -441,6 +441,33 @@ const sexWhyText = sexWhy(roster, t);
            section stay `hidden` regardless (#cg-noscript covers that
            state), so the static default here is never shown on its own. -->
       <h2 id="cg-results-h">{t.resultsHeading}</h2>
+
+      <!-- Stage 2, Task 6 (design spec section 8, "When the class changes
+           after a shuffle"). classroom-groups.ts's `updateStaleness` toggles
+           `hidden` on this whole element and adds `.stale` to #cg-results --
+           see src/lib/staleness.ts for the comparison behind it. Static
+           markup, toggled by the script, the SAME pattern #cg-error and
+           #cg-summary already use (hide/show the ancestor, THEN write the
+           descendant, so a screen reader hears the sentence rather than
+           silence) -- unlike the group cards below, this is a single,
+           fixed-shape region, not one repeated per student, so there is no
+           reason to build it with document.createElement.
+
+           The button sits OUTSIDE <form id="cg-form"> in the DOM, but
+           `form="cg-form"` associates it anyway: clicking it submits the
+           SAME form #cg-go does, through the SAME submit handler, so a
+           reshuffle triggered from here can never behave differently from
+           one triggered from the button up in the form -- one code path,
+           not two that could drift apart. This is the "way out" design spec
+           section 8 asks the badge to carry, reachable without scrolling
+           back up to #cg-go. Reuses `t.again` ("Shuffle again") rather than
+           a new key: it performs the identical action, so it earns the
+           identical label. -->
+      <div class="stale-notice" id="cg-stale" hidden>
+        <p role="status" id="cg-stale-text"></p>
+        <button type="submit" form="cg-form">{t.again}</button>
+      </div>
+
       <p class="summary" id="cg-summary" role="status"></p>
       <div class="tables" id="cg-tables"></div>
     </section>
@@ -519,6 +546,18 @@ const sexWhyText = sexWhy(roster, t);
   #cg-results .who {
     font-weight: 600;
     overflow-wrap: anywhere;
+  }
+  /* `.stale` on #cg-results, toggled by classroom-groups.ts's own
+     `updateStaleness` (design spec section 8: "dimmed and badged"). Only
+     the group CARDS dim here -- the notice above them (static markup,
+     scoped styles above) stays at full contrast, since it is the thing
+     that most needs to stay readable while this is true. Global, not
+     scoped, for the SAME reason every other rule in this block is: `.group`
+     is built with document.createElement, so it never carries Astro's
+     scoping attribute -- see this block's own opening comment, and the
+     screenshot-shaped bug it records. */
+  #cg-results.stale .group {
+    opacity: 0.55;
   }
 </style>
 
@@ -771,7 +810,8 @@ const sexWhyText = sexWhy(roster, t);
   .tool-section-body:not([hidden]) {
     padding-bottom: 1rem;
   }
-  .actions button {
+  .actions button,
+  .stale-notice button {
     min-height: 44px;
     padding: 0.6rem 1.4rem;
     font: inherit;
@@ -793,6 +833,61 @@ const sexWhyText = sexWhy(roster, t);
     border: 1px solid #b3261e;
     color: #8c1d18;
     background: #fdecea;
+  }
+
+  /* Design spec section 4's own "the amber is the same family the page
+     uses for warnings" -- reused here rather than inventing a third
+     palette (the first is --accent, the second is .error's red). Text
+     stays `--ink` rather than an amber tone: the amber itself is
+     decoration ("colour is never the only signal" -- the SENTENCE is the
+     signal), so the words carrying that sentence need to be as legible as
+     anything else on the page, not merely legible enough. Measured
+     16.65:1 against this background, comfortably clear of the 4.5:1 AA
+     floor. Mobile-first column stack; `align-items: flex-start` keeps the
+     button its own width instead of stretching full-bleed, which reads
+     oddly at 320px around one short word. */
+  .stale-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+    max-width: var(--measure);
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #d9a441;
+    background: #fff6e3;
+  }
+  /* `display: flex` above is an AUTHOR rule; the native `[hidden] {
+     display: none }` is only a USER-AGENT default, and author styles win a
+     specificity tie against the UA stylesheet -- so `hidden` alone would
+     leave an empty flex box with visible padding and a border sitting on
+     the page. `[hidden]` on the selector raises this rule's own
+     specificity above the bare class above, restoring the native
+     behaviour. Caught by "the notice offers its own way to reshuffle":
+     classroom-groups.ts sets the `hidden` ATTRIBUTE correctly, but
+     `toBeHidden()` failed with "Received: visible" until this rule existed
+     -- the count-based `getByText` tests could not have caught this, since
+     they do not check visibility at all. */
+  .stale-notice[hidden] {
+    display: none;
+  }
+  .stale-notice p {
+    margin: 0;
+    color: var(--ink);
+  }
+  /* Enhancement only -- the mobile-first column stack above is the base and
+     still works perfectly well here; this just reclaims the wasted width a
+     short sentence plus one button leaves on a wider screen. Same
+     breakpoint .tables already uses below, for one fewer number in the
+     file to keep in sync. */
+  @media (min-width: 560px) {
+    .stale-notice {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
   }
 
   /* A class name is free text with no length limit (design spec section 8:

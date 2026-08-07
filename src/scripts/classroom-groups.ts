@@ -8,7 +8,13 @@
  * exactly the same result — the animation is a presentation of the answer, never
  * the means of producing it.
  */
-import { buildGroups, type Student } from '../lib/grouping';
+import {
+  buildGroups,
+  type Student,
+  type Mode,
+  type Leftovers,
+  type SexMode,
+} from '../lib/grouping';
 import {
   getStrings,
   renderError,
@@ -17,6 +23,7 @@ import {
   type Strings,
 } from '../lib/i18n';
 import { sectionState } from '../lib/sections';
+import { staleReason, type Snapshot } from '../lib/staleness';
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T | null;
@@ -176,6 +183,48 @@ if (form) {
       ) as HTMLInputElement | null
     )?.value ?? '';
 
+  // `mode`/`leftovers`/`sexMode` -- ONE function each, called from every
+  // place that needs the live value (submit, the grouping header, and the
+  // staleness snapshot further down) so none of the three can ever read a
+  // different answer than the others. Two call sites computing the same
+  // fact by hand is how a header ends up disagreeing with reality (see the
+  // fix recorded on #cg-grouping's own header, Task 3) -- the same failure
+  // mode a staleness snapshot built from its OWN separate reads could
+  // reintroduce.
+  //
+  // `readMode` returns the exact shape buildGroups expects, not just the
+  // radio's own value: #cg-size or #cg-groups can change while the radio
+  // itself stays put, and staleReason's own doc comment (src/lib/staleness.ts)
+  // is why the snapshot needs the WHOLE shape, JSON-stringified, in one
+  // comparison rather than the number and the kind compared separately.
+  const readMode = (): Mode =>
+    readRadio('mode') === 'groupCount'
+      ? {
+          kind: 'groupCount',
+          count: Number(($('cg-groups') as HTMLInputElement).value),
+        }
+      : {
+          kind: 'perGroup',
+          size: Number(($('cg-size') as HTMLInputElement).value),
+        };
+  const readLeftovers = (): Leftovers =>
+    readRadio('leftovers') === 'bunch' ? 'bunch' : 'spread';
+  // Hard-coded 'off', on purpose: #cg-sex-mix/#cg-sex-separate render
+  // (Stage 2, Task 4) but stay permanently `disabled` -- src/lib/sexOptions.ts's
+  // `sexWhy` always returns its "no list at all" reason, because there is
+  // no roster on this page until stage 3. A native form already excludes a
+  // disabled control's value from submission; reading `.checked` here would
+  // honour the SAME rule by hand for no behavioural difference (an
+  // unchecked, disabled checkbox reads `false` regardless), so this stays
+  // hard-coded rather than adding a read that can only ever observe the one
+  // value it already has. ONE function, not a literal repeated at every
+  // call site, so the day stage 3 makes this live is a change made here
+  // once, not a hunt through the file for every place 'off' was written by
+  // hand. Pinned by classroom-groups-script.test.ts: the day this stops
+  // returning a hard-coded literal is the day the two sex switches -- and
+  // staleReason's own `staleSexMode` branch below -- become live.
+  const readSexMode = (): SexMode => 'off';
+
   // `leftovers` is the one `ToolState` field a teacher can actually change
   // today: the radios now live inside `#cg-grouping-body` (Stage 2, Task 4
   // rehomed them there, unchanged), and the header must not go on reporting
@@ -189,9 +238,8 @@ if (form) {
   // and nothing can mark the roster dirty until a later stage gives it
   // something to lose -- so the two can never disagree by computing the
   // sentence two different ways. `sexMode` stays `'off'` here for the same
-  // reason it stays `'off'` at submit, below: the two sex switches render
-  // today (also Task 4) but are permanently disabled, so they can never
-  // actually be checked -- see that comment for the rest of the reasoning.
+  // reason `readSexMode` always returns `'off'` -- see that function's own
+  // comment, above, for the rest of the reasoning.
   const groupingStateEl = document.querySelector<HTMLElement>(
     '#cg-grouping .state',
   );
@@ -204,12 +252,70 @@ if (form) {
         together: 0,
         apart: 0,
         rosterSize: 0,
-        sexMode: 'off',
-        leftovers: readRadio('leftovers') === 'bunch' ? 'bunch' : 'spread',
+        sexMode: readSexMode(),
+        leftovers: readLeftovers(),
         dirty: false,
       },
       t,
     ).groupingOptions;
+  };
+
+  // ── staleness ────────────────────────────────────────────────────────────
+  // Design spec section 8. `lastSnapshot` is what the groups ON SCREEN were
+  // actually made from -- set once, at the end of a successful shuffle
+  // (below), and never touched anywhere else. Every input/change event on
+  // the form compares it against a FRESH read of the form (`snapshot()`),
+  // so undoing a change needs no code of its own: the comparison simply
+  // comes back equal again. `null` until the first shuffle, so nothing is
+  // ever reported stale before there is anything on screen to be stale
+  // about. See staleReason's own doc comment (src/lib/staleness.ts) for why
+  // a comparison, not a flag, is the whole point.
+  let lastSnapshot: Snapshot | null = null;
+  const staleNotice = $<HTMLElement>('cg-stale')!;
+  const staleText = $<HTMLParagraphElement>('cg-stale-text')!;
+
+  const snapshot = (): Snapshot => ({
+    mode: JSON.stringify(readMode()),
+    leftovers: readLeftovers(),
+    sexMode: readSexMode(),
+    // Stage 3 fills this once a roster exists to summarise -- '' on both
+    // sides of every comparison is honest until then, and can never read
+    // as falsely stale (see Snapshot's own doc comment).
+    roster: '',
+  });
+
+  const updateStaleness = () => {
+    // No notice before there are groups to be stale (`lastSnapshot` is
+    // still null), and none while the results section itself is hidden --
+    // an error refusal already hides #cg-results (see the submit handler's
+    // failure branch below), which takes this notice out of view with it;
+    // there is nothing useful to compare against a shuffle that did not
+    // happen.
+    const reason =
+      lastSnapshot && !results.hidden
+        ? staleReason(lastSnapshot, snapshot(), t)
+        : null;
+    results.classList.toggle('stale', reason !== null);
+    if (reason === null) {
+      staleNotice.hidden = true;
+      // Not just hidden -- CLEARED. `hidden` takes it out of the a11y tree,
+      // but the text node itself would otherwise still sit in the DOM, and
+      // a query that finds text regardless of visibility (Playwright's own
+      // `getByText`, same as a browser extension or any other DOM-reading
+      // tool) would still report "These groups are out of date" as present
+      // on the page. Caught this exact way: "shuffling clears it" failed
+      // with `getByText('out of date')` still resolving to 1 element,
+      // hidden but not gone, before this line existed.
+      staleText.textContent = '';
+      return;
+    }
+    // Joins the tree before the sentence is written -- same reason
+    // #cg-error/#cg-summary do, see the submit handler's own comment on
+    // announcement ordering. Guarded so an unchanged reason (most
+    // keystrokes, once already stale) does not re-write the same text into
+    // a live region and risk a spurious re-announcement.
+    staleNotice.hidden = false;
+    if (staleText.textContent !== reason) staleText.textContent = reason;
   };
 
   form.addEventListener('change', (e) => {
@@ -217,7 +323,12 @@ if (form) {
     if (target.name === 'mode') showFor('mode', target.value);
     if (target.name === 'naming') showFor('naming', target.value);
     if (target.name === 'leftovers') updateGroupingHeader();
+    updateStaleness();
   });
+  // The brief's own instruction: recompute on every `change` AND `input`
+  // event, so a teacher typing a new group size sees the notice the moment
+  // they type it, not only once the field loses focus.
+  form.addEventListener('input', updateStaleness);
 
   // ── sound (synthesised; the site ships no audio assets by policy) ────────
   let audio: AudioContext | null = null;
@@ -331,33 +442,14 @@ if (form) {
     e.preventDefault();
     errorBox.hidden = true;
 
-    const mode =
-      readRadio('mode') === 'groupCount'
-        ? {
-            kind: 'groupCount' as const,
-            count: Number(($('cg-groups') as HTMLInputElement).value),
-          }
-        : {
-            kind: 'perGroup' as const,
-            size: Number(($('cg-size') as HTMLInputElement).value),
-          };
+    const mode = readMode();
 
     const count = Number(($('cg-count') as HTMLInputElement).value);
     const outcome = buildGroups({
       students: count, // a number until a future stage gives us a roster
       mode,
-      leftovers: readRadio('leftovers') === 'bunch' ? 'bunch' : 'spread',
-      // #cg-sex-mix / #cg-sex-separate render today (Stage 2, Task 4), but
-      // stay permanently `disabled` -- src/lib/sexOptions.ts's `sexWhy`
-      // always returns its "no list at all" reason, because there is no
-      // roster on this page until stage 3. A native form already excludes
-      // a disabled control's value from submission; reading `.checked` here
-      // would honour the SAME rule by hand for no behavioural difference
-      // (an unchecked, disabled checkbox reads `false` regardless), so this
-      // stays hard-coded rather than adding a read that can only ever
-      // observe the one value it already has. Stage 3 is what makes reading
-      // these two meaningful, once a roster exists that can enable them.
-      sexMode: 'off',
+      leftovers: readLeftovers(),
+      sexMode: readSexMode(), // hard-coded 'off' this stage -- see that function's own comment
       pinned: [], // a later stage wires the pins
       random: Math.random,
     });
@@ -412,6 +504,13 @@ if (form) {
     results.hidden = false;
     summary.textContent = t.resultsSummary(groups.length, groups.flat().length);
     goButton.textContent = t.again;
+    // A fresh shuffle is, by definition, made from exactly what the form
+    // says right now -- comparing that against itself returns null, which
+    // is what clears any notice left over from before this shuffle. Set
+    // AFTER results.hidden = false so updateStaleness's own guard sees a
+    // visible section, though staleReason would return null either way.
+    lastSnapshot = snapshot();
+    updateStaleness();
 
     goButton.disabled = true;
     try {
