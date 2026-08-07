@@ -53,6 +53,20 @@ test.describe('classroom group creator', () => {
     await expect(page.locator('#cg-apart')).toHaveCount(0);
   });
 
+  // Two more tests retired along with the keep-apart box (#cg-apart) above
+  // -- both fed `apart`, free text the rewritten engine no longer accepts
+  // (see grouping.ts's GroupingInput). Their SUBJECTS are still alive and
+  // worth reinstating once apart-letters are reachable from the page again:
+  //
+  // - 'explains an impossible keep-apart instead of failing silently':
+  //   KEEP_APART_IMPOSSIBLE names the conflicting students and states how
+  //   many groups they would need (src/lib/i18n/index.ts:113).
+  // - 'an unarrangeable class is explained without accusing anyone':
+  //   KEEP_APART_NO_ARRANGEMENT's promise that a refusal names NOBODY --
+  //   proving no arrangement exists is not the same as blaming a student,
+  //   and a later stage could silently re-break that
+  //   (src/lib/i18n/index.ts:118).
+
   test('splits a class and shows every student exactly once', async ({
     page,
   }) => {
@@ -87,12 +101,25 @@ test.describe('classroom group creator', () => {
     // GroupingInput). Numbered students are the only mode there is until a
     // later stage brings a roster back, so this is the default case, not a
     // fallback from something else.
+    //
+    // Asserts the whole SET of labels, not `.first()`'s: placeBlocks in
+    // grouping.ts shuffles block order with the real, unseeded Math.random
+    // this page wires in, so which student renders first is never
+    // deterministic -- only which four labels appear is. A substring check
+    // (`toContainText('Student')`) would also pass for a malformed label
+    // like "Student NaN" -- Student.number carries no whole/positive
+    // validation on the record path (see the stage-2 ledger) -- so this
+    // pins each full sentence, not a fragment of one.
     await page.goto('/classroom-groups');
     await fill(page, { count: '4', size: '2' });
     await page.click('#cg-go');
-    await expect(page.locator('#cg-results .student').first()).toContainText(
-      'Student',
-    );
+    const labels = await page.locator('#cg-results .student').allTextContents();
+    expect(labels.sort()).toEqual([
+      'Student 1',
+      'Student 2',
+      'Student 3',
+      'Student 4',
+    ]);
   });
 
   test('results are readable with the animation skipped', async ({ page }) => {
@@ -196,12 +223,14 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
   });
 
   test('anonymous students are labelled in Indonesian', async ({ page }) => {
+    // Same whole-set assertion as the English cover above, for the same
+    // reason: render order is genuinely shuffled, and a substring would
+    // also pass for a malformed "Siswa NaN".
     await page.goto('/id/classroom-groups');
     await fill(page, { count: '4', size: '2' });
     await page.click('#cg-go');
-    await expect(page.locator('#cg-results .student').first()).toContainText(
-      'Siswa',
-    );
+    const labels = await page.locator('#cg-results .student').allTextContents();
+    expect(labels.sort()).toEqual(['Siswa 1', 'Siswa 2', 'Siswa 3', 'Siswa 4']);
   });
 
   test('errors are shown in Indonesian, not English', async ({ page }) => {

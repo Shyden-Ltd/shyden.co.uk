@@ -55,15 +55,20 @@ if (form) {
   const t: Strings = getStrings(document.documentElement.lang);
   // The engine's errors (and warnings) carry student NUMBERS, never names --
   // identity is the number, and grouping.ts has no roster to resolve one
-  // from (see Student.number's doc comment there). `renderError` defaults to
-  // exactly this numbered label when no resolver is passed, but wiring one
-  // explicitly -- rather than omitting the argument, as this file used to --
-  // is what lets `label` below and every rendered error share one rule, so
-  // they can never drift apart. Still only the numbered label today: the
-  // paste-names box that used to feed a real name is gone (see the fieldset
-  // removed from ClassroomGroupsPage.astro), and a future roster is what
-  // gives this something better to resolve to.
-  const resolveStudent = (n: number): string => t.studentNumber(n);
+  // from (see Student.number's doc comment there). `roster` is where a
+  // number would resolve to a name; it is empty today because the
+  // paste-names box that used to feed one is gone (see the fieldset removed
+  // from ClassroomGroupsPage.astro) -- stage 3 is what populates it.
+  // `resolveStudent` reads `roster`, falling back to the same numbered label
+  // `renderError` itself defaults to when no resolver is passed at all.
+  // `label` below calls this exact function instead of reading a name of its
+  // own, so there is only ONE place a number becomes display text -- which
+  // is what makes it true, not just intended, that the results grid and
+  // every rendered error can never drift apart: nothing is left that could
+  // resolve the two differently.
+  const roster = new Map<number, string>();
+  const resolveStudent = (n: number): string =>
+    roster.get(n) ?? t.studentNumber(n);
   const errorBox = $<HTMLParagraphElement>('cg-error')!;
   const results = $<HTMLElement>('cg-results')!;
   const summary = $<HTMLParagraphElement>('cg-summary')!;
@@ -175,8 +180,7 @@ if (form) {
   const hueFor = (student: Student) =>
     AVATAR_HUES[student.number % AVATAR_HUES.length];
 
-  const label = (student: Student) =>
-    student.name ?? resolveStudent(student.number);
+  const label = (student: Student) => resolveStudent(student.number);
 
   const render = (groups: Student[][], naming: string, theme: string) => {
     tables.textContent = '';
