@@ -155,6 +155,18 @@ export function renderError(
     // digit (see ERROR_CODES.pinnedInTwoGroups's doc comment).
     case ERROR_CODES.pinnedInTwoGroups:
       return e.PINNED_IN_TWO_GROUPS(resolveStudent(error.number));
+    // Fix round 1, F-1/F-2. Carries three numbers, never a student list --
+    // no resolver needed, unlike most codes above (same shape as
+    // sexSeparateImpossible's single `groupsRequested`, just three fields
+    // instead of one). Replaces the two situations that used to share
+    // `tooManyGroups` on the pinned path -- see
+    // ERROR_CODES.pinnedTooManyGroups's doc comment in grouping.ts.
+    case ERROR_CODES.pinnedTooManyGroups:
+      return e.PINNED_TOO_MANY_GROUPS(
+        error.requestedGroups,
+        error.pinnedGroupCount,
+        error.remainingStudents,
+      );
   }
 }
 

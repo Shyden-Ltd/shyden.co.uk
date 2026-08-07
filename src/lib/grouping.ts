@@ -196,10 +196,20 @@ export const ERROR_CODES = {
    * something the teacher explicitly asked to keep) or silently dropping
    * the together-letter (which would undo something else the teacher
    * explicitly asked for). See the call site in `buildGroups` for exactly
-   * which boundary this checks -- pinned-group-vs-pool. A unit split
-   * between two DIFFERENT pinned groups is a related but distinct gap this
-   * does not cover; see the Task 9 report for why that was reported rather
-   * than built here.
+   * which boundaries this checks -- pinned-group-vs-pool, and (Fix round 1,
+   * F-3) pinned-group-vs-pinned-group: a unit split between two DIFFERENT
+   * pinned groups is the identical contradiction with neither member in
+   * the pool -- each pinned group was being honoured independently, so two
+   * together-lettered students who each ended up pinned into a different
+   * group stayed apart with no error or warning. Reported but not built at
+   * Task 9 (judged a preference unmet, not unsafe); built here by reusing
+   * this same code rather than inventing a second, once the reviewer set
+   * out why that reasoning does not hold -- `together` is a hard
+   * constraint everywhere else in this engine (`togetherUnitTooLarge`,
+   * `sexSeparateSplitsUnit`, and this code's own original pool-vs-pinned
+   * case), and the brief's own rule text was never scoped to the pool: "a
+   * together-unit split across a pinned boundary is refused" -- two pinned
+   * groups is a pinned boundary too. See the Fix round 1 report.
    */
   pinnedSplitsUnit: 'PINNED_SPLITS_UNIT',
   /**
@@ -229,6 +239,46 @@ export const ERROR_CODES = {
    * names them.
    */
   pinnedInTwoGroups: 'PINNED_IN_TWO_GROUPS',
+  /**
+   * Fix round 1, F-1 and F-2 -- the same situation from two directions (see
+   * the Fix round 1 report). Once the pinned groups are set aside,
+   * `mode.count - pinnedGroups.length` groups remain for the POOL to fill.
+   * REPLACES the single check that used to stand at this call site, which
+   * only caught one of the two ways that number can be unusable:
+   *
+   *   - F-2: the pins alone already claim every group `groupCount` mode
+   *     asked for, or more (`pinnedGroups.length >= mode.count`) -- this
+   *     used to report `tooManyGroups` with `maxGroups: sizes.length`, and
+   *     `targetSizes` always returns exactly `mode.count` entries under
+   *     `groupCount` mode, so that "maximum" was ALWAYS the exact number
+   *     the teacher had just typed. "The most you can have is the number
+   *     you asked for" is a tautology, not a fix.
+   *   - F-1: MORE pool groups were asked for than pool students remain to
+   *     fill them (`mode.count - pinnedGroups.length > pool.length`) --
+   *     entirely unguarded before this fix. `targetSizes` does not refuse
+   *     this either: under `groupCount` mode it always returns exactly
+   *     `poolMode.count` entries regardless of `total`, so a `total`
+   *     smaller than that count comes back with one or more ZERO-size
+   *     entries instead of an error (`base` floors to 0, and the leftovers
+   *     pass has nothing left to top them up with) -- `assign` then happily
+   *     seats zero blocks in a zero-capacity group, and the teacher was
+   *     shown a real, empty group on screen. Confirmed reachable, not
+   *     hypothetical: 10 students / groupCount 4 / one pin of 8 leaves a
+   *     pool of 2 for 3 pool groups and returned `ok: true` with one of
+   *     them empty -- see the Fix round 1 report for this and two more
+   *     reachable shapes.
+   *
+   * Both are the SAME situation from the pool's point of view -- "the pins
+   * do not leave room for the groups you asked for" -- so ONE code covers
+   * both directions rather than inventing a second. See the call site in
+   * `buildGroups` for the exact inequality (one check, both directions) and
+   * `tooManyGroups`'s own doc comment for the non-pinned version of this
+   * same idea, which this code does not touch: `tooManyGroups` still fires,
+   * unchanged, for a `groupCount` request that exceeds the WHOLE roster
+   * before any pin is ever considered (checked far earlier in
+   * `buildGroups`, against `present.length`).
+   */
+  pinnedTooManyGroups: 'PINNED_TOO_MANY_GROUPS',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -313,9 +363,15 @@ export type GroupingError =
   | {
       code: typeof ERROR_CODES.pinnedSplitsUnit;
       // Numbers, not names -- same reasoning as every other students-
-      // carrying code above. Always >= 2 by construction: naming the
-      // pinned member(s) sharing the letter plus the pool member outside
-      // the pin needs at least one of each.
+      // carrying code above. Always >= 2 by construction: the unit spans
+      // at least two of the pool/pinned-group REGIONS the pins carve the
+      // roster into (Fix round 1, F-3 added the pinned-vs-pinned shape
+      // alongside Task 9's original pinned-vs-pool one), so it has at
+      // least one member in each of two of them. Every member of the unit
+      // is named, in every region it touches (Fix round 1, F-4) -- not
+      // just one representative pair from the first boundary found, which
+      // used to leave a third (or later) member of the same letter
+      // unnamed.
       students: number[];
     }
   | {
@@ -331,6 +387,21 @@ export type GroupingError =
       // enough to act on, and (unlike a togetherApartClash-style pair)
       // there is no second party to this contradiction to name.
       number: number;
+    }
+  | {
+      code: typeof ERROR_CODES.pinnedTooManyGroups;
+      // All three always present, never optional -- the rendered sentence
+      // (Fix round 1 report) needs every one of them: how many groups were
+      // asked for, how many the pins already claim, and how many students
+      // are left to place into whatever is left. The number of groups the
+      // pool itself still needs (`requestedGroups - pinnedGroupCount`) is
+      // NOT its own field -- it is fully determined by the other two, so
+      // storing it too would be exactly the "bag of optionals" this type's
+      // own doc comment warns against, just with a redundant field instead
+      // of an absent one.
+      requestedGroups: number;
+      pinnedGroupCount: number;
+      remainingStudents: number;
     };
 
 /**
@@ -1779,8 +1850,6 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     }
   }
 
-  const sizes = targetSizes(present.length, mode, leftovers);
-
   // Task 9. Pinned groups are matched by NUMBER against the CURRENT roster,
   // never taken as given: a pin is a snapshot from a previous shuffle, and a
   // student in it may since have been marked absent, renamed, reassigned a
@@ -1870,24 +1939,56 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     }
   }
 
-  // A together-unit that straddles a pinned boundary cannot be honoured: the
-  // pinned group is not being added to, so the other member(s) have nowhere
-  // to go. Silently unpinning would undo something the teacher explicitly
-  // asked to keep, so this is refused with every student it involves named.
-  // (A unit split between two DIFFERENT pinned groups is a related but
-  // distinct gap this does not cover -- reported, not built; see the Task 9
-  // report.)
-  for (const s of pool) {
-    if (s.together === null) continue;
-    const stranded = pinnedGroups
-      .flat()
-      .filter((p) => p.together === s.together);
-    if (stranded.length > 0) {
+  // A together-unit that straddles a pinned BOUNDARY cannot be honoured: no
+  // pinned group is being added to -- pins are left exactly as they are --
+  // so whichever member(s) end up on the other side of the boundary have
+  // nowhere the rule can put them back together. Silently unpinning would
+  // undo something the teacher explicitly asked to keep, so this is
+  // refused with every student the unit involves named.
+  //
+  // Fix round 1, F-3/F-4. A "boundary" is between any two of the REGIONS
+  // the pins carve the present roster into: the pool, and each pinned
+  // group. The original check here only ever compared the pool against the
+  // pinned groups COMBINED, so it caught a unit split pool-vs-pinned but
+  // was blind to the identical contradiction between two DIFFERENT pinned
+  // groups (each honoured independently, so two together-lettered students
+  // who each ended up pinned into a different group stayed apart with
+  // nothing said -- reported, not built, at Task 9; see
+  // ERROR_CODES.pinnedSplitsUnit's doc comment for why that reasoning does
+  // not hold and the Fix round 1 report for the reachable case). Tracking
+  // regions explicitly (not just "pool or not") is what closes that gap
+  // with the SAME code, in the SAME pass: a letter used by members of two
+  // or more distinct regions -- pool+pinned, or pinned+pinned -- is exactly
+  // the contradiction this code exists to refuse.
+  //
+  // Collecting every member before failing (F-4) is what fixes the
+  // original's other defect: it returned as soon as ONE pool member's
+  // letter matched, naming that member and every PINNED member sharing the
+  // letter, but not a SECOND pool member sharing the same letter -- a unit
+  // of {1 pinned, 7 pool, 8 pool} reported `students: [1, 7]` and left 8
+  // unnamed, while the copy claims "only SOME of them are in a pinned
+  // group", implying the rest -- all of them -- are named.
+  const regionsByLetter = new Map<string, Set<string>>();
+  const membersByLetter = new Map<string, Student[]>();
+  const noteLetter = (s: Student, region: string): void => {
+    if (s.together === null) return;
+    const regions = regionsByLetter.get(s.together) ?? new Set<string>();
+    regions.add(region);
+    regionsByLetter.set(s.together, regions);
+    const members = membersByLetter.get(s.together) ?? [];
+    members.push(s);
+    membersByLetter.set(s.together, members);
+  };
+  for (const s of pool) noteLetter(s, 'pool');
+  pinnedGroups.forEach((group, i) => {
+    for (const s of group) noteLetter(s, `pinned:${i}`);
+  });
+  for (const [letter, regions] of regionsByLetter) {
+    if (regions.size > 1) {
+      const members = membersByLetter.get(letter) ?? [];
       return fail({
         code: ERROR_CODES.pinnedSplitsUnit,
-        students: [...stranded.map((p) => p.number), s.number].sort(
-          (a, b) => a - b,
-        ),
+        students: members.map((p) => p.number).sort((a, b) => a - b),
       });
     }
   }
@@ -1901,18 +2002,39 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // `groupCount` mode (`base` floors to 0, but `groupCount` itself is
   // unchanged, so `sizes` comes back as N zeros, not an empty array). See
   // the Task 9 report for the concrete case this closes.
+  //
+  // Checked UNCONDITIONALLY, ahead of the pinnedTooManyGroups guard directly
+  // below -- Fix round 1, F-6: pins can also claim MORE groups than were
+  // requested (`pinnedGroups.length > mode.count`) while still covering the
+  // whole roster, which is brief-sanctioned and must still succeed with no
+  // error or warning. Proven by mutation, not just read: swapping the order
+  // of these two checks turns that case into a wrongful refusal (see the
+  // Fix round 1 report).
   if (pool.length === 0) {
     return succeed(pinnedGroups, warnings);
   }
 
-  // The other half of the degenerate case: the pins alone already claim
-  // every group `groupCount` mode asked for, and students still remain with
-  // nowhere to go. `perGroup` cannot reach this branch -- its group count is
+  // Fix round 1, F-1/F-2 (the same situation from two directions -- see
+  // ERROR_CODES.pinnedTooManyGroups's doc comment for the full reasoning
+  // this replaces, and the Fix round 1 report for the reachable shapes).
+  // `poolGroupsNeeded` is how many groups the POOL itself must fill once
+  // the pinned ones are set aside; valid only when there is at least one
+  // such group AND enough pool students to give every one of them at least
+  // one member. `perGroup` cannot reach this branch: its group count is
   // always re-derived from `pool.length` below, and `targetSizes`'s
   // `Math.max(1, ...)` floor guarantees at least one group for any nonempty
-  // pool, so no analogous contradiction exists for it to report.
-  if (mode.kind === 'groupCount' && pinnedGroups.length >= mode.count) {
-    return fail({ code: ERROR_CODES.tooManyGroups, maxGroups: sizes.length });
+  // pool with every entry `>= 1`, so no analogous contradiction exists for
+  // it to report.
+  if (mode.kind === 'groupCount') {
+    const poolGroupsNeeded = mode.count - pinnedGroups.length;
+    if (poolGroupsNeeded < 1 || poolGroupsNeeded > pool.length) {
+      return fail({
+        code: ERROR_CODES.pinnedTooManyGroups,
+        requestedGroups: mode.count,
+        pinnedGroupCount: pinnedGroups.length,
+        remainingStudents: pool.length,
+      });
+    }
   }
 
   // Everything downstream operates on the POOL, not `present` -- the pinned

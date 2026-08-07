@@ -172,6 +172,24 @@ export const id: Strings = {
     // komentar pada versi Inggrisnya (en.ts).
     PINNED_IN_TWO_GROUPS: (name: string) =>
       `${name} dikunci ke dalam dua kelompok berbeda sekaligus. Satu siswa hanya bisa dikunci ke dalam satu kelompok. Keluarkan dari salah satu kelompok tersebut.`,
+    // Fix round 1, F-1/F-2. Lihat komentar pada versi Inggrisnya (en.ts)
+    // untuk alasan lengkap. Tidak ada percabangan tunggal/jamak di sini --
+    // Bahasa Indonesia tidak mengubah bentuk kata untuk jamak -- tetapi
+    // kalimatnya tetap bercabang menjadi dua arah (kekurangan siswa vs.
+    // kunci yang sudah memakai semua kelompok), karena solusi "lebih
+    // banyak" atau "lebih sedikit" kelompok hanya benar untuk salah satu
+    // arah, tidak keduanya.
+    PINNED_TOO_MANY_GROUPS: (
+      requestedGroups: number,
+      pinnedGroupCount: number,
+      remainingStudents: number,
+    ) => {
+      const opening = `Kunci Anda sudah memakai ${pinnedGroupCount} dari ${requestedGroups} kelompok yang Anda minta, sehingga hanya tersisa ${remainingStudents} siswa`;
+      const poolGroupsNeeded = requestedGroups - pinnedGroupCount;
+      return poolGroupsNeeded <= 0
+        ? `${opening} tanpa kelompok tersisa untuk mereka. Batalkan kunci salah satu kelompok, atau minta lebih banyak kelompok.`
+        : `${opening} — tidak cukup untuk ${poolGroupsNeeded} kelompok yang masih dibutuhkan. Batalkan kunci salah satu kelompok, atau minta lebih sedikit kelompok.`;
+    },
   },
 
   warnings: {

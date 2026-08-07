@@ -222,6 +222,31 @@ export const en = {
     // and no plural form to branch for.
     PINNED_IN_TWO_GROUPS: (name: string) =>
       `${name} is pinned into two different groups at once. A student can only be pinned into one group. Remove them from one of the two.`,
+    // Fix round 1, F-1/F-2. Replaces TOO_MANY_GROUPS on the pinned path --
+    // see ERROR_CODES.pinnedTooManyGroups's doc comment in grouping.ts. The
+    // old sentence here (still TOO_MANY_GROUPS at the time) named a `max`
+    // that, under `groupCount` mode, was ALWAYS the exact number the
+    // teacher had just typed -- a tautology, not a fix (F-2) -- and did not
+    // exist at all for the opposite direction, where MORE pool groups were
+    // asked for than pool students remain to fill them (F-1). Both
+    // directions share the same opening clause (how many of the requested
+    // groups the pins already claim, and how many students that leaves),
+    // then diverge: naming "more" or "fewer" groups as the remedy would be
+    // FALSE in the other direction, so which branch fires is decided by
+    // the sign of `poolGroupsNeeded`, not asserted for both.
+    PINNED_TOO_MANY_GROUPS: (
+      requestedGroups: number,
+      pinnedGroupCount: number,
+      remainingStudents: number,
+    ) => {
+      const groupWord = (n: number) => (n === 1 ? 'group' : 'groups');
+      const studentWord = remainingStudents === 1 ? 'student' : 'students';
+      const opening = `Your pins already fill ${pinnedGroupCount} of the ${requestedGroups} ${groupWord(requestedGroups)} you asked for, which only leaves ${remainingStudents} ${studentWord}`;
+      const poolGroupsNeeded = requestedGroups - pinnedGroupCount;
+      return poolGroupsNeeded <= 0
+        ? `${opening} with no group left for them. Unpin a group, or ask for more groups.`
+        : `${opening} — not enough for the ${poolGroupsNeeded} ${groupWord(poolGroupsNeeded)} still needed. Unpin a group, or ask for fewer groups.`;
+    },
   },
 
   warnings: {

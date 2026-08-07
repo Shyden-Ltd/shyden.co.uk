@@ -212,6 +212,16 @@ describe('every engine error can be rendered in every language', () => {
       code: ERROR_CODES.pinnedInTwoGroups,
       number: 5,
     },
+    // Fix round 1, F-1/F-2. Carries three numbers, always present -- see
+    // ERROR_CODES.pinnedTooManyGroups's doc comment in grouping.ts for why
+    // a derived `poolGroupsNeeded` is not its own field. F-1's own reported
+    // shape: 10 students, groupCount 4, one pin of 8.
+    PINNED_TOO_MANY_GROUPS: {
+      code: ERROR_CODES.pinnedTooManyGroups,
+      requestedGroups: 4,
+      pinnedGroupCount: 1,
+      remainingStudents: 2,
+    },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -933,6 +943,109 @@ describe('every engine error can be rendered in every language', () => {
         'Eko dikunci ke dalam dua kelompok berbeda sekaligus. Satu siswa hanya bisa dikunci ke dalam satu kelompok. Keluarkan dari salah satu kelompok tersebut.',
       );
       expect(msg).not.toContain('Siswa');
+    });
+  });
+
+  describe('pinned-too-many-groups says the true thing in both directions (Fix round 1, F-1/F-2)', () => {
+    // F-1's own reachable shape: an empty-group regression, not a caller
+    // mistake -- MORE pool groups requested than pool students remain.
+    // Exact sentences, both languages: this code's whole reason to exist is
+    // that the OLD message here was a tautology (TOO_MANY_GROUPS's `max`
+    // always equal to the number the teacher had just typed -- F-2), so a
+    // substring check could not tell a real fix from another
+    // wrong-but-plausible sentence.
+    it('English: not enough pool students left, names the shortfall and suggests fewer groups', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 4,
+          pinnedGroupCount: 1,
+          remainingStudents: 2,
+        },
+        en,
+      );
+      expect(msg).toBe(
+        'Your pins already fill 1 of the 4 groups you asked for, which only leaves 2 students — not enough for the 3 groups still needed. Unpin a group, or ask for fewer groups.',
+      );
+    });
+
+    it('Indonesian: the same shape', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 4,
+          pinnedGroupCount: 1,
+          remainingStudents: 2,
+        },
+        id,
+      );
+      expect(msg).toBe(
+        'Kunci Anda sudah memakai 1 dari 4 kelompok yang Anda minta, sehingga hanya tersisa 2 siswa — tidak cukup untuk 3 kelompok yang masih dibutuhkan. Batalkan kunci salah satu kelompok, atau minta lebih sedikit kelompok.',
+      );
+    });
+
+    // The other direction: the pins alone already claim every group asked
+    // for (or more) -- the ONLY shape this call site covered before this
+    // fix (Task 9's original degenerate-case guard). Still this same code,
+    // but now says "more", never a max equal to what was typed.
+    it('English: pins already claim every group requested, suggests more groups instead', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 1,
+          pinnedGroupCount: 1,
+          remainingStudents: 6,
+        },
+        en,
+      );
+      expect(msg).toBe(
+        'Your pins already fill 1 of the 1 group you asked for, which only leaves 6 students with no group left for them. Unpin a group, or ask for more groups.',
+      );
+    });
+
+    it('Indonesian: the same shape', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 1,
+          pinnedGroupCount: 1,
+          remainingStudents: 6,
+        },
+        id,
+      );
+      expect(msg).toBe(
+        'Kunci Anda sudah memakai 1 dari 1 kelompok yang Anda minta, sehingga hanya tersisa 6 siswa tanpa kelompok tersisa untuk mereka. Batalkan kunci salah satu kelompok, atau minta lebih banyak kelompok.',
+      );
+    });
+
+    it('is never the same sentence as plain TOO_MANY_GROUPS at an overlapping max', () => {
+      // Fix round 1, F-2's own bug was TOO_MANY_GROUPS's `max` collapsing
+      // to the number just typed -- a future edit that reused one
+      // implementation for the other would reintroduce exactly that.
+      const pinned = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 1,
+          pinnedGroupCount: 1,
+          remainingStudents: 6,
+        },
+        en,
+      );
+      expect(pinned).not.toBe(en.errors.TOO_MANY_GROUPS(1));
+    });
+
+    it('English: singular "group" when only one was requested, in both places it appears', () => {
+      const msg = renderError(
+        {
+          code: ERROR_CODES.pinnedTooManyGroups,
+          requestedGroups: 1,
+          pinnedGroupCount: 1,
+          remainingStudents: 6,
+        },
+        en,
+      );
+      expect(msg).toContain('1 group ');
+      expect(msg).not.toContain('1 groups');
     });
   });
 });
