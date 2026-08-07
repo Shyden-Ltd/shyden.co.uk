@@ -116,6 +116,33 @@ const sexWhyText = sexWhy(roster, t);
       <fieldset>
         <legend>{t.classHeading}</legend>
 
+        <!-- Stage 2, Task 5. Design spec section 3's top row: "Class
+             (optional) · Students · Split by" -- this field first, matching
+             that order. Optional (section 8: "Blank is fine and nothing is
+             blocked"), so it carries no `required`, no pattern and no
+             `maxlength` -- a class name has no length this page enforces,
+             the same way #cg-count has no roster-shaped limit here either
+             (MAX_ROSTER is stage 3's, and governs the roster table, not
+             this field).
+
+             No `name`, by the same rule as every other typed-text control
+             on this page (see #cg-form's own comment above): a name here
+             would put a teacher's class name in the URL, the history and
+             the access log the moment the submit listener fails to attach.
+             `autocomplete="off"` on top of that -- unlike #cg-count, this
+             field holds free text a teacher typed, and the browser's own
+             autofill memory is a second place it could persist beyond
+             "forgotten when you close the page" (the privacy copy above,
+             section 11) that a `type="number"` field never carries.
+
+             `resultsHeadingText` (src/lib/i18n/index.ts) is the one place
+             this value is ever turned into the results heading; see its own
+             doc comment for why the value it reads is never trimmed. -->
+        <div class="field">
+          <label for="cg-class">{t.classLabel}</label>
+          <input id="cg-class" type="text" autocomplete="off" />
+        </div>
+
         <div class="field">
           <label for="cg-count">{t.studentsLabel}</label>
           <input
@@ -406,6 +433,13 @@ const sexWhyText = sexWhy(roster, t);
          the script must unhide before it writes — a live region that appears
          already-populated is announced by nobody. -->
     <section id="cg-results" aria-labelledby="cg-results-h" hidden>
+      <!-- Build-time default is the UNNAMED form. classroom-groups.ts
+           overwrites this with resultsHeadingText(classInput.value, t) at
+           every submit, through `.textContent` (never `.innerHTML` -- a
+           teacher's typed text is theirs, not markup), before this section
+           is unhidden. A visitor whose script never attaches sees this
+           section stay `hidden` regardless (#cg-noscript covers that
+           state), so the static default here is never shown on its own. -->
       <h2 id="cg-results-h">{t.resultsHeading}</h2>
       <p class="summary" id="cg-summary" role="status"></p>
       <div class="tables" id="cg-tables"></div>
@@ -623,6 +657,22 @@ const sexWhyText = sexWhy(roster, t);
     max-width: var(--measure);
     resize: vertical;
   }
+  /* #cg-class only. Mirrors input[type='number']/select above for box size,
+     border and the 44px touch target, but WITHOUT their appearance reset and
+     custom chevron: a native text field has no spinner to strip and no
+     dropdown to hint at, so painting the same arrow here would show a
+     chevron next to a field that opens nothing. */
+  input[type='text'] {
+    width: 100%;
+    max-width: 22rem;
+    min-height: 44px;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--bg);
+    color: var(--ink);
+  }
   .radios,
   /* Same layout as .radios (a vertical stack with a gap) for the two sex
      switches -- a distinct class because these are independent checkboxes,
@@ -745,6 +795,16 @@ const sexWhyText = sexWhy(roster, t);
     background: #fdecea;
   }
 
+  /* A class name is free text with no length limit (design spec section 8:
+     nothing blocks a blank one; nothing here caps a long one either -- see
+     #cg-class's own comment above). Same treatment as `.who` in the results
+     area's global styles below -- an unbroken long name must wrap rather
+     than push the page wider than the viewport (CLAUDE.md's
+     no-horizontal-scroll rule); ordinary word-wrap cannot help a single
+     token with no spaces. */
+  #cg-results-h {
+    overflow-wrap: anywhere;
+  }
   .tables {
     display: grid;
     grid-template-columns: 1fr;

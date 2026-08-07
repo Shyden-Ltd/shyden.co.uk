@@ -55,6 +55,14 @@ export const en = {
   ],
 
   classHeading: 'Your class',
+  // Design spec section 3's own top-row ordering: "Class (optional) ·
+  // Students · Split by". Stage 2, Task 5. The literal "(optional)" is
+  // pinned by task-5-brief.md's own test (`getByLabel('Class (optional)')`)
+  // -- the field carries no `required`, no pattern and no `maxlength` to
+  // match: design spec section 8 says plainly "Blank is fine and nothing is
+  // blocked", and section 9 says the name a teacher types is never altered
+  // anywhere it is shown.
+  classLabel: 'Class (optional)',
   studentsLabel: 'Number of students',
   studentsHelp: 'Leave the names box empty to use numbered students.',
 
@@ -149,6 +157,14 @@ export const en = {
   needsJs: 'This tool needs JavaScript enabled.',
 
   resultsHeading: 'Your groups',
+  // Heads the results when a class name was given (design spec section 8's
+  // own literal example: "7B — your groups"). The tail stays lowercase
+  // because it continues the sentence the class name started, unlike
+  // `resultsHeading` above -- which IS the whole sentence on its own, and is
+  // therefore capitalised. Composed against the class name exactly as
+  // typed, never trimmed here: see resultsHeadingText's own doc comment
+  // (src/lib/i18n/index.ts) for where the two are combined, and why.
+  resultsHeadingNamed: (className: string) => `${className} — your groups`,
   // English inflects; the tool's own headline case (7 students in groups of
   // 4 is ONE group of 7) hits the singular every time.
   resultsSummary: (groups: number, students: number) =>

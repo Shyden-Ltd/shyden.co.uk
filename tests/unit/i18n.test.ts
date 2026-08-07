@@ -12,6 +12,7 @@ import {
   otherLocale,
   isLocale,
   groupName,
+  resultsHeadingText,
 } from '../../src/lib/i18n';
 import {
   ERROR_CODES,
@@ -131,6 +132,9 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   resultsSummary: [3, 7],
   groupLabel: [2],
   studentNumber: [4],
+  // Stage 2, Task 5. `resultsHeadingNamed` -- resultsHeadingText's sole
+  // caller for a non-blank class name (src/lib/i18n/index.ts).
+  resultsHeadingNamed: ['7B'],
   'errors.TOO_MANY_STUDENTS': [500],
   'errors.DUPLICATE_NUMBER': [5],
   'errors.TOO_MANY_GROUPS': [4],
@@ -1705,6 +1709,80 @@ describe('group names', () => {
     expect(groupName(0, 'themed', 'dinosaurs', en)).toBe('Group 1');
     expect(groupName(0, 'themed', '', en)).toBe('Group 1');
   });
+});
+
+// Stage 2, Task 5. Design spec section 8: "Class name is optional. Blank is
+// fine and nothing is blocked... It heads the results: `7B — your groups`...
+// It is not repeated on every group card." The "not repeated on cards" half
+// is an e2e concern (classroom-groups.spec.ts); this is the pure half,
+// composed in ONE function so the named and unnamed forms cannot drift
+// apart -- the same reason groupName/renderError above live here rather
+// than at their call site.
+describe('the results heading names the class once, or leaves it out entirely', () => {
+  it.each(locales)(
+    'a blank class name gets the plain heading (%s)',
+    (_name, strings) => {
+      expect(resultsHeadingText('', strings)).toBe(strings.resultsHeading);
+    },
+  );
+
+  // Design spec section 8 says a blank name "blocks nothing" -- a teacher
+  // who fat-fingers the space bar has not typed a name any more than a
+  // teacher who typed nothing at all. Distinct from the empty-string case
+  // above: a `className === ''` check with no `.trim()` would treat this
+  // input as non-blank and render " — your groups", a dash with nothing in
+  // front of it.
+  it.each(locales)(
+    'a whitespace-only class name counts as blank too (%s)',
+    (_name, strings) => {
+      expect(resultsHeadingText('   ', strings)).toBe(strings.resultsHeading);
+      expect(resultsHeadingText('\t\n ', strings)).toBe(strings.resultsHeading);
+    },
+  );
+
+  it('a named class heads the results, English', () => {
+    expect(resultsHeadingText('7B', en)).toBe('7B — your groups');
+  });
+
+  it('a named class heads the results, Indonesian', () => {
+    expect(resultsHeadingText('7B', id)).toBe('7B — kelompok Anda');
+  });
+
+  // Design spec section 9: "The class name is made safe for a filename, and
+  // only there... The class name itself is never altered -- not on the
+  // page, not in the `# Class:` line, not in the results heading." That
+  // line is written for stage 4's filename work, but its own words reach
+  // this heading too, so a NON-blank name keeps its own incidental
+  // leading/trailing whitespace -- `.trim()` only decides blankness above,
+  // it never edits what is actually shown. Deliberately corrects
+  // task-5-brief.md's own snippet, which threaded `className.trim()`
+  // through to the named branch as well.
+  it.each(locales)(
+    'a non-blank name keeps its own whitespace, untrimmed (%s)',
+    (_name, strings) => {
+      const msg = resultsHeadingText(' 7B ', strings);
+      expect(msg).toBe(strings.resultsHeadingNamed(' 7B '));
+      expect(msg.startsWith(' 7B ')).toBe(true);
+    },
+  );
+
+  // "A teacher's typed text is theirs" -- resultsHeadingText itself does no
+  // escaping or sanitising of any kind; the DOM-level safety
+  // (classroom-groups.ts writing this through `.textContent`, never
+  // `.innerHTML`) is proven separately, in the e2e suite, where there is an
+  // actual DOM to prove it against. This pins the half that belongs here:
+  // the STRING is threaded through byte-for-byte, so nothing upstream of
+  // the DOM write has already stripped or escaped anything.
+  it.each(locales)(
+    'passes special characters through untouched (%s)',
+    (_name, strings) => {
+      const weird = '<b>7"B</b> & Co / Ltd';
+      expect(resultsHeadingText(weird, strings)).toBe(
+        strings.resultsHeadingNamed(weird),
+      );
+      expect(resultsHeadingText(weird, strings)).toContain(weird);
+    },
+  );
 });
 
 describe('the sentences a teacher reads at the end', () => {

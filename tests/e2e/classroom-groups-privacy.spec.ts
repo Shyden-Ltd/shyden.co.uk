@@ -70,20 +70,28 @@ test.describe('privacy — with JavaScript blocked', () => {
     // notice. With no listener attached, this is a native GET. The
     // paste-names box that used to carry typed names is gone (it fed
     // `students: string[]`, an input shape the rewritten engine no longer
-    // accepts -- see grouping.ts's GroupingInput), so there is currently no
-    // control on this page a class list could even be typed into. What
-    // remains general on purpose, rather than naming fields that do not
-    // exist yet: the query string a native submit produces may contain ONLY
-    // the allow-list, so a `name` added to any future data field -- whatever
-    // roster a later stage brings back included -- fails here the moment it
-    // is added, before it carries anything that looks personal.
+    // accepts -- see grouping.ts's GroupingInput). What remains general on
+    // purpose, rather than naming fields one at a time: the query string a
+    // native submit produces may contain ONLY the allow-list, so a `name`
+    // added to any future data field fails here the moment it is added,
+    // before it carries anything that looks personal.
+    //
+    // Stage 2, Task 5 gave this page its first typed-text control since
+    // that box was removed: #cg-class. It carries no `name` (see that
+    // field's own comment in ClassroomGroupsPage.astro), so the structural
+    // guarantee above already covers it with no change needed -- an unnamed
+    // control cannot be serialised into a form GET at all. Filled here
+    // anyway, with a value distinctive enough to be unmistakable, so the
+    // proof is concrete rather than resting on that guarantee alone.
     await page.fill('#cg-count', '24');
+    await page.fill('#cg-class', 'PrivacyProbeClassName7B');
     await page.click('#cg-go');
 
     const url = new URL(page.url());
     for (const key of url.searchParams.keys()) {
       expect(NON_PERSONAL_NAMES).toContain(key);
     }
+    expect(url.search).not.toContain('PrivacyProbeClassName7B');
   });
 });
 

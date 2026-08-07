@@ -269,10 +269,26 @@ test.describe('classroom groups — mobile-first layout', () => {
     // "students per group" and "how many groups" are never on screen at the
     // same time — and a control that is not displayed measures 0, which is
     // not the same thing as too small.
+    //
+    // Stage 2, Task 5 added `#cg-form input[type="text"]` to this selector
+    // for the new #cg-class field. Honestly: this could not go red before
+    // that field existed, and does not prove much on its own even after --
+    // `small` starts and stays `[]` whether or not #cg-class is measured at
+    // all, which is exactly what happened when this line was added (a
+    // pre-implementation run stayed green, confirmed rather than assumed).
+    // What it DOES buy, from here on, is real: a #cg-class CSS rule that
+    // dropped below 44px would populate `small` and redden `expect(small).
+    // toEqual([])` below, the same as it would for any control this test
+    // already covered. `seen`'s own lower bound was left alone rather than
+    // bumped to "prove" #cg-class was counted -- the real baseline already
+    // includes the three section-toggle buttons inside #cg-form (missed on
+    // a first pass), so it sits comfortably above 5 with or without
+    // #cg-class, and tightening it to track an exact count would make this
+    // test brittle against unrelated future controls for no real gain.
     const measureVisible = () =>
       page
         .locator(
-          '#cg-form select, #cg-form button, #cg-form input[type="number"]',
+          '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"]',
         )
         .evaluateAll((els) =>
           els
@@ -293,7 +309,7 @@ test.describe('classroom groups — mobile-first layout', () => {
     // reporting nothing because it found nothing to look at.
     const seen = await page
       .locator(
-        '#cg-form select, #cg-form button, #cg-form input[type="number"]',
+        '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"]',
       )
       .evaluateAll(
         (els) =>

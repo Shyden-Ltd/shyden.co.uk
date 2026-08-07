@@ -42,6 +42,8 @@ export const id: Strings = {
   ],
 
   classHeading: 'Kelas Anda',
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
+  classLabel: 'Kelas (opsional)',
   studentsLabel: 'Jumlah siswa',
   studentsHelp: 'Biarkan kotak nama kosong untuk memakai siswa bernomor.',
 
@@ -110,6 +112,12 @@ export const id: Strings = {
   needsJs: 'Alat ini memerlukan JavaScript yang aktif.',
 
   resultsHeading: 'Kelompok Anda',
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap. "Anda"
+  // tetap huruf besar -- kata ganti formal ini selalu dikapitalisasi dalam
+  // Bahasa Indonesia, di posisi mana pun dalam kalimat -- tetapi "kelompok"
+  // huruf kecil karena kalimat ini melanjutkan nama kelas yang mendahuluinya,
+  // bukan memulai kalimat baru.
+  resultsHeadingNamed: (className: string) => `${className} — kelompok Anda`,
   resultsSummary: (groups: number, students: number) =>
     `${groups} kelompok dari ${students} siswa.`,
   groupLabel: (n: number) => `Kelompok ${n}`,

@@ -233,5 +233,35 @@ export function groupName(
   return names[index] ?? strings.groupLabel(index + 1);
 }
 
+/**
+ * The results heading: unnamed groups read "Your groups"; a named class
+ * heads them "<name> — your groups" (design spec section 8). Composed here,
+ * in ONE place, so the named and unnamed forms cannot drift apart -- the
+ * same reason `groupName` and `renderError` above live here rather than at
+ * their call site.
+ *
+ * A blank -- or WHITESPACE-ONLY -- class name counts as none: design spec
+ * section 8 says plainly "Blank is fine and nothing is blocked", and a
+ * teacher who fat-fingers the space bar should not get a heading reading
+ * " — your groups", a dash with nothing in front of it. `.trim()` is used
+ * only to DECIDE that, never to alter what is shown: design spec section 9
+ * is explicit that "the class name itself is never altered -- not on the
+ * page, not in the `# Class:` line, not in the results heading" -- that
+ * section's own filename-safety substitution is deliberately scoped to the
+ * exported filename and nowhere else, so a name a teacher actually typed
+ * (leading/trailing whitespace included) reaches this heading exactly as
+ * typed. This deliberately corrects task-5-brief.md's own snippet, which
+ * threaded `className.trim()` through to the named branch as well as the
+ * blank check.
+ */
+export function resultsHeadingText(
+  className: string,
+  strings: Strings,
+): string {
+  return className.trim() === ''
+    ? strings.resultsHeading
+    : strings.resultsHeadingNamed(className);
+}
+
 export { THEME_KEYS };
 export type { Strings, ThemeKey };

@@ -214,6 +214,184 @@ test.describe('classroom group creator', () => {
   });
 });
 
+// Stage 2, Task 5: the class name, and the results heading it optionally
+// heads (design spec section 8). "Class name is optional. Blank is fine and
+// nothing is blocked... It heads the results: `7B — your groups`... It is
+// not repeated on every group card."
+test.describe('class name and results heading', () => {
+  // Corrected from task-5-brief.md's own snippet, which located the
+  // "not repeated on cards" check at `#cg-groups` -- that id belongs to the
+  // "how many groups" NUMBER INPUT on this page, not the results container
+  // (`#cg-tables`, where the script actually appends group cards) -- the
+  // same class of locator mistake Task 1/Task 2's own ledger entries
+  // already record and correct.
+  test('the class name heads the results, once', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Class (optional)').fill('7B');
+    await fill(page, { count: '9', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText('7B — your groups');
+    await expect(page.locator('#cg-tables').getByText('7B')).toHaveCount(0);
+  });
+
+  // task-5-brief.md's own count (9 students at the page's default group
+  // size, 4) predicted `#cg-groups .group` would have count 3. The engine's
+  // own targetSizes (src/lib/grouping.ts) says otherwise: groupCount =
+  // floor(9/4) = 2, not ceil -- the same "never smaller than the size you
+  // asked for" rule this file already pins above ('never makes a group
+  // smaller than the size asked for'). Confirmed against grouping.test.ts's
+  // own "Derivation: base = floor(9/4) = 2, remainder = 9 - 8 = 1" comment
+  // before writing this, rather than trusting the brief's arithmetic.
+  // Honestly: this passes even before #cg-class exists, since it never
+  // references the field at all -- confirmed, not assumed, by running it
+  // against the untouched page before implementing anything (RED baseline).
+  // It is not decoration, though: it pins the exact branch
+  // resultsHeadingText takes when nothing was typed, which is the same
+  // branch a teacher who never opens the class field exercises on the real
+  // page. What would redden it: a bug in that blank check (e.g. reading
+  // `classInput.value` before it exists, or comparing against `''` without
+  // `.trim()` so a later whitespace-only fix regresses), or the page's own
+  // default group size changing out from under the `.toHaveCount(2)` below.
+  test('a blank class name blocks nothing', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '9', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText('Your groups');
+    await expect(page.locator('#cg-results .group')).toHaveCount(2);
+    await expect(page.locator('#cg-results .student')).toHaveCount(9);
+  });
+
+  // Design spec section 8 says blank "blocks nothing" -- a teacher who
+  // fat-fingers the space bar has not typed a name a class would recognise
+  // as its own either. Distinct from the never-filled case above: this is
+  // the one place the `.trim()` blank-test is proven through the real
+  // control, not just the pure function (tests/unit/i18n.test.ts covers
+  // resultsHeadingText directly).
+  test('a class name of only spaces is treated as no class name', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Class (optional)').fill('   ');
+    await fill(page, { count: '9', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText('Your groups');
+  });
+
+  // Corrected from task-5-brief.md's own `#cg-groups .group h3` locator --
+  // same mistake as above. Filling the class field first is what makes this
+  // a real test of THIS task's own wiring rather than a pin of
+  // stage-3-owned behaviour: a naive implementation that broke
+  // render()/groupName()'s call order while adding the heading write would
+  // show up here. The claim "groups are always numbered" -- i.e. that the
+  // theme picker and the naming radio are gone -- is stage 3's own removal
+  // (design spec section 3, delivery item 3) and is NOT re-tested here;
+  // this only pins that setting a class name does not disturb today's
+  // numbered DEFAULT.
+  test('groups stay numbered when a class name is set', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Class (optional)').fill('7B');
+    await fill(page, { count: '9', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .group h3').first()).toHaveText(
+      'Group 1',
+    );
+  });
+
+  // "A teacher's typed text is theirs" -- the class name reaches the DOM
+  // through `.textContent`, never `.innerHTML` (classroom-groups.ts), the
+  // same rule the results grid already follows for a student's name (see
+  // that file's own comment on `who.textContent = label(student)`). Proven
+  // by a payload that would look completely different if it were EVER
+  // parsed as markup: an `<img>` tag consumed as an element would vanish
+  // from the rendered TEXT and its `onerror` would fire (a dialog opening)
+  // -- so the exact literal string surviving, with no `<img>` ELEMENT ever
+  // created and no dialog raised, is the only way this test can pass.
+  test('a class name is rendered literally, HTML metacharacters included', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    let dialogFired = false;
+    page.on('dialog', (d) => {
+      dialogFired = true;
+      void d.dismiss();
+    });
+    const raw = '<img src=x onerror=alert(1)>7B & "Sons"';
+    await page.getByLabel('Class (optional)').fill(raw);
+    await page.selectOption('#cg-speed', 'skip');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText(
+      `${raw} — your groups`,
+    );
+    await expect(page.locator('#cg-results-h img')).toHaveCount(0);
+    expect(dialogFired).toBe(false);
+  });
+
+  // Design spec section 9: "The class name is made safe for a filename, and
+  // only there... The class name itself is never altered -- not on the
+  // page, not in the `# Class:` line, not in the results heading."
+  // Filenames are stage 4's own scope, but that line's promise about the
+  // results heading is testable now, so it is pinned now rather than left
+  // to whichever task builds the filename. A slash is the design doc's own
+  // example of a filename-unsafe character (`Year 7 / Set B`).
+  test('filename-unsafe characters reach the heading unaltered', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Class (optional)').fill('Year 7 / Set B');
+    await page.selectOption('#cg-speed', 'skip');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText(
+      'Year 7 / Set B — your groups',
+    );
+  });
+
+  // CLAUDE.md's own rule: no horizontal scroll at >= 320px, in any state. A
+  // class name has no length limit (MAX_ROSTER is stage 3's, and governs
+  // the roster, not this field), so an unbroken long name is a real input,
+  // not a contrived one -- ordinary word-wrapping cannot help a single
+  // token with no spaces, which is exactly why this is a genuine check of
+  // `#cg-results-h`'s own `overflow-wrap: anywhere` rather than something
+  // normal text wrapping would already have covered.
+  test('a very long class name does not force the page to scroll sideways', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Class (optional)').fill('x'.repeat(300));
+    await page.selectOption('#cg-speed', 'skip');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toBeVisible();
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  // The class name is read fresh at every submit (classroom-groups.ts), not
+  // captured once -- a second shuffle with a different name in the field
+  // must show the NEW name, not the first one cached. This is about the
+  // correctness of THIS task's own wiring, not the staleness/dimming
+  // behaviour a later task owns (design spec section 8's "when the class
+  // changes after a shuffle") -- nothing here asserts the old groups are
+  // marked out of date, only that the heading itself keeps up.
+  test('a changed class name is picked up on the next shuffle', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    const classField = page.getByLabel('Class (optional)');
+    await classField.fill('7B');
+    await fill(page, { count: '8', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText('7B — your groups');
+
+    await classField.fill('8C');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText('8C — your groups');
+  });
+});
+
 test.describe('classroom group creator — Bahasa Indonesia', () => {
   test('the Indonesian page is genuinely in Indonesian', async ({ page }) => {
     await page.goto('/id/classroom-groups');
@@ -240,6 +418,32 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
     const error = page.locator('#cg-error');
     await expect(error).toBeVisible();
     await expect(error).toContainText('Tambahkan siswa');
+  });
+
+  // Mirrors the English 'class name and results heading' describe block
+  // above -- "assert whole rendered sentences, in both locales" applies
+  // regardless of what task-5-brief.md's own snippet happened to show (it
+  // was English-only).
+  test('the class name heads the results, once', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByLabel('Kelas (opsional)').fill('7B');
+    await fill(page, { count: '9', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText(
+      '7B — kelompok Anda',
+    );
+    await expect(page.locator('#cg-tables').getByText('7B')).toHaveCount(0);
+  });
+
+  // Same honesty note as the English version above: passes before
+  // #cg-class exists too, for the same reason (never references the
+  // field), confirmed against the RED baseline rather than assumed.
+  test('a blank class name blocks nothing', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await fill(page, { count: '9', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results-h')).toHaveText('Kelompok Anda');
+    await expect(page.locator('#cg-results .group')).toHaveCount(2);
   });
 });
 

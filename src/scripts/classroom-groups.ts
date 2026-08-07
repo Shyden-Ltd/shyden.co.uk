@@ -9,7 +9,13 @@
  * the means of producing it.
  */
 import { buildGroups, type Student } from '../lib/grouping';
-import { getStrings, renderError, groupName, type Strings } from '../lib/i18n';
+import {
+  getStrings,
+  renderError,
+  groupName,
+  resultsHeadingText,
+  type Strings,
+} from '../lib/i18n';
 import { sectionState } from '../lib/sections';
 
 const $ = <T extends HTMLElement>(id: string) =>
@@ -125,6 +131,8 @@ if (form) {
     roster.get(n) ?? t.studentNumber(n);
   const errorBox = $<HTMLParagraphElement>('cg-error')!;
   const results = $<HTMLElement>('cg-results')!;
+  const resultsHeadingEl = $<HTMLHeadingElement>('cg-results-h')!;
+  const classInput = $<HTMLInputElement>('cg-class')!;
   const summary = $<HTMLParagraphElement>('cg-summary')!;
   const tables = $<HTMLDivElement>('cg-tables')!;
   const soundToggle = $<HTMLInputElement>('cg-sound')!;
@@ -384,6 +392,19 @@ if (form) {
     const naming = readRadio('naming');
     const theme = ($('cg-theme') as HTMLSelectElement).value;
 
+    // Read fresh at every submit -- never cached -- so a class name typed
+    // or changed between two shuffles is picked up on the next one. Set
+    // through `.textContent`, never `.innerHTML`: a teacher's typed text is
+    // theirs, not markup, the same rule the results grid already follows
+    // for a student's own name below (`who.textContent = label(student)`).
+    // See resultsHeadingText's own doc comment (src/lib/i18n/index.ts) for
+    // why the value is threaded through untrimmed. Written here, alongside
+    // render() and before `results.hidden = false`, because -- like the
+    // group cards `render()` builds -- this is structural content inside a
+    // non-live section, not the `role="status"` region itself; only
+    // `summary` below needs the write-after-reveal ordering that makes a
+    // live-region announcement actually fire.
+    resultsHeadingEl.textContent = resultsHeadingText(classInput.value, t);
     // Text first, animation second — see the note at the top of this file.
     render(groups, naming, theme);
     // Same ordering rule as the error path: the region joins the tree, and
