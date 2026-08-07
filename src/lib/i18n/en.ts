@@ -93,6 +93,36 @@ export const en = {
   speedFast: 'Fast',
   speedSkip: 'Skip the animation',
 
+  // The tool's four collapsible sections (design spec section 3). Only
+  // three carry a heading + state pair here: Sound & animation is the
+  // fourth, and it is not built by this stage -- see sections.ts's own doc
+  // comment on why it has no state string at all, not merely an unbuilt one.
+  sectionStudentsHeading: 'Student details',
+  sectionGroupingHeading: 'Grouping options',
+  sectionImportExportHeading: 'Import / export',
+
+  // Every value below is read ONLY through sectionState (src/lib/sections.ts)
+  // -- never interpolated into a page directly -- so a key here with no
+  // matching branch in that function, or a branch reading a key missing
+  // here, is exactly the drift the whole function exists to prevent. Order
+  // matches the design doc's own progression: none -> named -> +absent ->
+  // +letters, mirrored exactly by sections.test.ts.
+  stateNoneAdded: 'none added',
+  stateNamed: (n: number) => `${n} named`,
+  stateAbsent: (n: number) => `${n} absent`,
+  stateTogether: (n: number) => `${n} together`,
+  stateApart: (n: number) => `${n} apart`,
+  // The roster exists but nothing else is true of it yet: everyone present,
+  // nobody named, no letters set. Distinct from `stateNoneAdded` (no roster
+  // at all) -- see sections.ts's own fallback branch.
+  stateAdded: (n: number) => `${n} added`,
+  stateNone: 'none',
+  stateMixed: 'mixed by sex',
+  stateSeparated: 'separated by sex',
+  stateBunched: 'leftovers in one group',
+  stateNothingToSave: 'nothing to save yet',
+  stateUnsaved: 'unsaved changes — export to keep them',
+
   makeGroups: 'Make Groups',
   again: 'Shuffle again',
   needsJs: 'This tool needs JavaScript enabled.',

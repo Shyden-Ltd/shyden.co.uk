@@ -71,6 +71,25 @@ export const id: Strings = {
   speedFast: 'Cepat',
   speedSkip: 'Lewati animasi',
 
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap --
+  // "Detail siswa" mengikuti spesifikasi desain bagian 3 secara eksplisit.
+  sectionStudentsHeading: 'Detail siswa',
+  sectionGroupingHeading: 'Opsi pengelompokan',
+  sectionImportExportHeading: 'Impor / ekspor',
+
+  stateNoneAdded: 'tidak ada yang ditambahkan',
+  stateNamed: (n: number) => `${n} diberi nama`,
+  stateAbsent: (n: number) => `${n} tidak hadir`,
+  stateTogether: (n: number) => `${n} disatukan`,
+  stateApart: (n: number) => `${n} dipisahkan`,
+  stateAdded: (n: number) => `${n} ditambahkan`,
+  stateNone: 'tidak ada',
+  stateMixed: 'dicampur berdasarkan jenis kelamin',
+  stateSeparated: 'dipisah berdasarkan jenis kelamin',
+  stateBunched: 'sisa dalam satu kelompok',
+  stateNothingToSave: 'belum ada yang perlu disimpan',
+  stateUnsaved: 'perubahan belum disimpan — ekspor untuk menyimpannya',
+
   makeGroups: 'Buat Kelompok',
   again: 'Acak lagi',
   needsJs: 'Alat ini memerlukan JavaScript yang aktif.',

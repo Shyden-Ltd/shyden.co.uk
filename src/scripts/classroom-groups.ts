@@ -83,6 +83,28 @@ if (form) {
     });
   }
 
+  // ── the tool's three built collapsible sections ─────────────────────────
+  // Student details, Grouping options, Import / export. Same reason this is
+  // wired here, ahead of `reduceMotion`'s throw site below, as #cg-howto's
+  // own toggle just above: a mid-module failure further down must not be
+  // able to leave any section header un-openable. Unlike #cg-howto, nothing
+  // here is read from or written to `remember` -- design doc section 11
+  // names exactly two UI preferences allowed to persist (the how-to
+  // collapsed state, and a later print panel), and these are not one of
+  // them, so every visit starts collapsed with no localStorage involved.
+  // Sound & animation is not in this list: see ClassroomGroupsPage.astro's
+  // own comment on why that section is not built yet.
+  for (const id of ['cg-students', 'cg-grouping', 'cg-io']) {
+    const toggle = $<HTMLButtonElement>(`${id}-toggle`);
+    const body = $<HTMLElement>(`${id}-body`);
+    if (!toggle || !body) continue;
+    toggle.addEventListener('click', () => {
+      const opening = body.hidden;
+      body.hidden = !opening;
+      toggle.setAttribute('aria-expanded', String(opening));
+    });
+  }
+
   const t: Strings = getStrings(document.documentElement.lang);
   // The engine's errors (and warnings) carry student NUMBERS, never names --
   // identity is the number, and grouping.ts has no roster to resolve one

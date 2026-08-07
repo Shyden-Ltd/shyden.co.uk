@@ -150,6 +150,13 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   'warnings.SEX_SPILLOVER': [['Student 7', 'Student 8'], 'M'],
   'warnings.PINNED_MIXED_SEX': [['Student 1', 'Student 4']],
   'warnings.SEX_BOTH_TOO_SMALL': [['Student 1', 'Student 7']],
+  // Stage 2, Task 3. The Student details header's counted state fragments --
+  // see sections.ts's own sectionState, the sole caller of all five.
+  stateNamed: [24],
+  stateAbsent: [2],
+  stateTogether: [2],
+  stateApart: [1],
+  stateAdded: [24],
 };
 
 describe('locales are complete', () => {

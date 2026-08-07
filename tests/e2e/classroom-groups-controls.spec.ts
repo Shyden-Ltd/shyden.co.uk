@@ -498,3 +498,179 @@ test.describe('How to use — Indonesian', () => {
     ).toBeHidden();
   });
 });
+
+// Stage 2, Task 3's own RED tests (S-01…S-10, L-10, L-11). Same collapsible
+// pattern as How to use above, for the same reason recorded there: a bare
+// <button> has no heading role, so each toggle is wrapped in an <h2> —
+// matching #cg-howto's own level, since these three are its siblings in the
+// page's outline, not a level beneath it. Unlike How to use, these start
+// COLLAPSED (design spec section 2: the tool is collapsed by default, and
+// opening it is a deliberate act) and are never written to localStorage
+// (section 11 names only the how-to state and a later print panel as the
+// UI preferences allowed to persist).
+//
+// Only three of the four sections exist yet. Sound & animation is not
+// built here — see ClassroomGroupsPage.astro's own comment on the id
+// collision that would cause with the existing sound checkbox — so no test
+// below references #cg-sound.
+test.describe("the tool's collapsible sections", () => {
+  test('every header reports its own state', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await expect(page.locator('#cg-students .state')).toHaveText('none added');
+    await expect(page.locator('#cg-grouping .state')).toHaveText('none');
+    await expect(page.locator('#cg-io .state')).toHaveText(
+      'nothing to save yet',
+    );
+  });
+
+  // The middot joining the label to the state is a real text node (an Astro
+  // expression, `{' · '}`), never template whitespace relying on two nodes
+  // sharing a line — so the whole button must read as one sentence, the
+  // same promise rendered-text.spec.ts holds every other sentence on this
+  // site to. This also covers S-10 (the section is named "Student details",
+  // never "Customise students").
+  test('each header is the whole rendered sentence, not just its state fragment', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await expect(page.locator('#cg-students-toggle')).toHaveText(
+      'Student details · none added',
+    );
+    await expect(page.locator('#cg-grouping-toggle')).toHaveText(
+      'Grouping options · none',
+    );
+    await expect(page.locator('#cg-io-toggle')).toHaveText(
+      'Import / export · nothing to save yet',
+    );
+  });
+
+  test('sections sit two-by-two on a laptop and stacked on a phone', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const a = (await page.locator('#cg-students').boundingBox())!;
+    const b = (await page.locator('#cg-grouping').boundingBox())!;
+    expect(b.y).toBeCloseTo(a.y, 0); // same row
+    await page.setViewportSize({ width: 320, height: 800 });
+    const c = (await page.locator('#cg-students').boundingBox())!;
+    const d = (await page.locator('#cg-grouping').boundingBox())!;
+    expect(d.y).toBeGreaterThan(c.y); // stacked
+  });
+
+  test('each section is reachable by heading, and starts collapsed', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    for (const [id, label] of [
+      ['cg-students', 'Student details'],
+      ['cg-grouping', 'Grouping options'],
+      ['cg-io', 'Import / export'],
+    ] as const) {
+      // getByRole's name match is a substring by default, so this also
+      // matches the full "label · state" text — see the dedicated
+      // whole-sentence test above for the exact string pinned.
+      await expect(
+        page.getByRole('heading', { name: label, level: 2 }),
+      ).toBeVisible();
+      await expect(page.locator(`#${id}-body`)).toBeHidden();
+      await expect(page.locator(`#${id}-toggle`)).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
+    }
+  });
+
+  // A control that only ever opens, or only ever closes, is a trap — the
+  // same proof the How to use fix round added above (see that describe
+  // block's own comment), adapted here for a body with no sentence of its
+  // own to search for: all three of these sections render nothing at all
+  // in the body until a later stage fills them in (see the markup's own
+  // comment on why). So "content the user would actually see returning" is
+  // the body genuinely re-entering the page's rendered layout — checked
+  // with toBeVisible()/toBeHidden(), which read computed layout (the body
+  // carries `padding-bottom` only while unhidden, so an empty div still has
+  // real, non-zero size to detect), never the aria-expanded STRING alone.
+  // Three clicks, not two: these sections start CLOSED (opposite of How to
+  // use's default-open), so proving a genuine REOPEN — not just the first
+  // close — needs open, close, open again.
+  for (const id of ['cg-students', 'cg-grouping', 'cg-io']) {
+    test(`${id}: a second opening genuinely re-shows the section, not merely an attribute flipping back`, async ({
+      page,
+    }) => {
+      await page.goto('/classroom-groups');
+      const toggle = page.locator(`#${id}-toggle`);
+      const body = page.locator(`#${id}-body`);
+
+      await expect(body).toBeHidden();
+
+      await toggle.click(); // open
+      await expect(body).toBeVisible();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+      await toggle.click(); // close
+      await expect(body).toBeHidden();
+      await expect(toggle).toBeVisible(); // the header itself is never hidden
+
+      await toggle.click(); // reopen
+      await expect(body).toBeVisible();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    });
+  }
+});
+
+test.describe("the tool's collapsible sections — Indonesian", () => {
+  test('every header reports its own state', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await expect(page.locator('#cg-students .state')).toHaveText(
+      'tidak ada yang ditambahkan',
+    );
+    await expect(page.locator('#cg-grouping .state')).toHaveText('tidak ada');
+    await expect(page.locator('#cg-io .state')).toHaveText(
+      'belum ada yang perlu disimpan',
+    );
+  });
+
+  test('each header is the whole rendered sentence, not just its state fragment', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await expect(page.locator('#cg-students-toggle')).toHaveText(
+      'Detail siswa · tidak ada yang ditambahkan',
+    );
+    await expect(page.locator('#cg-grouping-toggle')).toHaveText(
+      'Opsi pengelompokan · tidak ada',
+    );
+    await expect(page.locator('#cg-io-toggle')).toHaveText(
+      'Impor / ekspor · belum ada yang perlu disimpan',
+    );
+  });
+
+  test('each section is reachable by heading, and starts collapsed', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    for (const [id, label] of [
+      ['cg-students', 'Detail siswa'],
+      ['cg-grouping', 'Opsi pengelompokan'],
+      ['cg-io', 'Impor / ekspor'],
+    ] as const) {
+      await expect(
+        page.getByRole('heading', { name: label, level: 2 }),
+      ).toBeVisible();
+      await expect(page.locator(`#${id}-body`)).toBeHidden();
+    }
+  });
+
+  test('a second opening genuinely re-shows the section', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    const toggle = page.locator('#cg-grouping-toggle');
+    const body = page.locator('#cg-grouping-body');
+    await toggle.click();
+    await expect(body).toBeVisible();
+    await toggle.click();
+    await expect(body).toBeHidden();
+    await toggle.click();
+    await expect(body).toBeVisible();
+  });
+});

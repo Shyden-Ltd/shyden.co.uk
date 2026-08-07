@@ -4,6 +4,7 @@ import { getStrings, THEME_KEYS, type Locale } from '../../lib/i18n';
 // The engine owns the ceiling. Hard-coding a second number here is how the
 // field comes to advertise one limit while the tool enforces another.
 import { MAX_STUDENTS } from '../../lib/grouping';
+import { sectionState, type ToolState } from '../../lib/sections';
 
 interface Props {
   lang: Locale;
@@ -14,6 +15,32 @@ const t = getStrings(lang);
 // `themes` while rendering from `themeNames` is how one gains a key the other
 // lacks and the option ships with no label.
 const themes = THEME_KEYS;
+
+// The three built collapsible sections' headers (Student details, Grouping
+// options, Import / export — Sound & animation carries no state string at
+// all, see sections.ts) report this state from the moment the page loads,
+// computed at build time through the one function that also has a unit test
+// pinning it against both locale tables. Every field but `leftovers` stays
+// at this default for the whole of this stage: no roster exists yet
+// (`rosterSize`/`named`/`absent`/`together`/`apart`), the sex switches are
+// not wired until Grouping options gets its own task, and nothing can mark
+// the roster `dirty` until a later stage gives it something to lose.
+// `leftovers` mirrors the radio group's own default further down (`checked`
+// on `spread`) — that control has not moved into `#cg-grouping` yet, and
+// wiring this header to follow it live if a teacher changes it before then
+// is left for the task that gives the two a shared home, so a header never
+// promises to track a control it is not yet standing next to.
+const initialToolState: ToolState = {
+  named: 0,
+  absent: 0,
+  together: 0,
+  apart: 0,
+  rosterSize: 0,
+  sexMode: 'off',
+  leftovers: 'spread',
+  dirty: false,
+};
+const sectionStrings = sectionState(initialToolState, t);
 ---
 
 <BaseLayout
@@ -193,6 +220,100 @@ const themes = THEME_KEYS;
           </select>
         </div>
       </fieldset>
+
+      <!-- The tool's four collapsible sections (design spec section 3):
+           Student details, Grouping options, Import / export and Sound &
+           animation. Only three exist here — Sound & animation stays where
+           it already is, in the fieldset above, because its existing
+           checkbox already holds `id="cg-sound"`; a fourth section sharing
+           that id with the wrapper would be a duplicate id, and renaming
+           the checkbox ripples into three other e2e spec files that are not
+           this task's to change. A later task owns giving sound its own
+           section and making that rename.
+
+           Same control as #cg-howto above, deliberately: a bare toggle
+           button loses the heading role the old markup had (see that
+           section's own comment), so every one of these wraps its button in
+           an <h2> too — the same level, since these are siblings of #cg-howto
+           and #cg-results in the page's outline, not a step beneath them.
+           The heading carries the level, the button carries the click,
+           `aria-expanded` and `aria-controls`. Collapsed by default — unlike
+           #cg-howto — because design spec section 2's rule is that
+           everything in the tool starts collapsed and opening is a
+           deliberate act; #cg-howto is the page's own summary, not part of
+           the tool, which is why it alone defaults open. Also unlike
+           #cg-howto, the collapsed state here is never written to
+           localStorage: section 11 names exactly two UI preferences allowed
+           to persist (the how-to collapsed state, and a later print panel)
+           and this is not one of them, so every visit starts collapsed.
+
+           Each button's own text is the label, a literal `{' · '}` (an
+           expression, not template whitespace — see CLAUDE.md's own
+           whitespace-seam rule), then the state span — so the DOM text is
+           the real, whole sentence design spec section 3 shows
+           ("Student details · none added"), not a separator relying on
+           surrounding whitespace to survive reformatting.
+
+           Both `cg-students` and `cg-io` are rendered with no body content
+           at all, not a "coming soon" placeholder: that text would ship to
+           production if a later stage slipped. `cg-grouping`'s body is
+           equally empty here — the leftovers radios below still belong to
+           the top-level form until the task that rehomes them, and until
+           then this section's own header state is computed from that
+           control's default value, not read from it live (see the
+           frontmatter comment on `initialToolState` above). -->
+      <div class="tool-sections">
+        <section id="cg-students" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-students-toggle"
+              aria-expanded="false"
+              aria-controls="cg-students-body"
+            >
+              {t.sectionStudentsHeading}{' · '}<span class="state"
+                >{sectionStrings.studentDetails}</span
+              >
+            </button>
+          </h2>
+          <div id="cg-students-body" class="tool-section-body" hidden></div>
+        </section>
+
+        <section id="cg-grouping" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-grouping-toggle"
+              aria-expanded="false"
+              aria-controls="cg-grouping-body"
+            >
+              {t.sectionGroupingHeading}{' · '}<span class="state"
+                >{sectionStrings.groupingOptions}</span
+              >
+            </button>
+          </h2>
+          <div id="cg-grouping-body" class="tool-section-body" hidden></div>
+        </section>
+
+        <section id="cg-io" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-io-toggle"
+              aria-expanded="false"
+              aria-controls="cg-io-body"
+            >
+              {t.sectionImportExportHeading}{' · '}<span class="state"
+                >{sectionStrings.importExport}</span
+              >
+            </button>
+          </h2>
+          <div id="cg-io-body" class="tool-section-body" hidden></div>
+        </section>
+      </div>
 
       <p class="actions">
         <button type="submit" id="cg-go">{t.makeGroups}</button>
@@ -444,6 +565,66 @@ const themes = THEME_KEYS;
   .switch input {
     width: 1.15rem;
     height: 1.15rem;
+  }
+  /* Mobile-first: one column, stacked -- design spec section 3's
+     "Arrangement B" is the ENHANCEMENT, not the base. `auto` rows (not a
+     fixed height) so an empty body and a later, filled one can sit in the
+     same grid without one dictating the other's height. */
+  .tool-sections {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    margin: 0.25rem 0;
+  }
+  @media (min-width: 768px) {
+    .tool-sections {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .tool-section {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 1rem;
+  }
+  /* Same reasoning as .howto-heading above: the <h2> is for its role, not
+     its box. */
+  .tool-section-heading {
+    margin: 0;
+  }
+  /* Deliberately the SAME rule set as .howto-toggle above, not a rewrite --
+     see this section's own comment in the markup on why these share one
+     pattern. */
+  .tool-section-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.75rem 0;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    text-align: left;
+    cursor: pointer;
+  }
+  .tool-section-toggle::before {
+    content: '▸ ';
+    display: inline-block;
+    transition: transform 150ms ease-out;
+  }
+  .tool-section-toggle[aria-expanded='true']::before {
+    transform: rotate(90deg);
+  }
+  /* Regular weight against the label's bold, so the fixed name and the
+     part that actually changes read as visually distinct. */
+  .tool-section-toggle .state {
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+  .tool-section-body:not([hidden]) {
+    padding-bottom: 1rem;
   }
   .actions button {
     min-height: 44px;

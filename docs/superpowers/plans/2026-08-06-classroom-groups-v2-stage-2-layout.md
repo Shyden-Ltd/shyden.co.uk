@@ -458,9 +458,15 @@ Add every `state*` key to both locale files. The counted ones are functions: `st
 
 - [ ] **Step 4: Render the four sections**
 
-Replace the current section markup with four `<details>`-shaped blocks sharing one component pattern — id, heading, `<span class="state">`, body — for `cg-students`, `cg-grouping`, `cg-io`, `cg-sound`. Grid two-by-two at ≥768px via CSS grid; stacked below.
+**Corrected during implementation.** This step originally said "four `<details>`-shaped blocks", and Task 4/Task 7 below originally located them with `page.locator('#cg-grouping summary')` — a native `<details><summary>`. That is a SECOND collapsible pattern on this page: `#cg-howto` (Task 2) already had one, and Task 2's own fix round found a real defect in it — a bare `<button>` toggle loses the heading role the old markup had, so a screen-reader user can no longer reach the section by heading navigation. The fix there was `<h2><button aria-expanded aria-controls>`, not `<details>`. Two accessible patterns for the same kind of control on one page is how the second one ships with the first one's already-fixed defect. Use the SAME pattern `#cg-howto` uses, not `<details>` — same heading level (`<h2>`, matching `#cg-howto` and `#cg-results-h`, checked against the page's own usage rather than assumed), same `aria-expanded`/`aria-controls` wiring, same "only the body ever gets `hidden`, the toggle never hides itself" rule. Task 4 and Task 7 below are corrected to match (their `summary` locators would otherwise match nothing).
+
+One component pattern — id, heading, `<span class="state">`, body — for `cg-students`, `cg-grouping`, `cg-io`, `cg-sound`. Grid two-by-two at ≥768px via CSS grid; stacked below.
 
 `cg-students` and `cg-io` render an empty body plus a "coming in a later stage" — **no.** Render them **collapsed with their state string and no body content at all**; a body that says "not built yet" would ship to production if a stage slipped. Stage 3 and stage 4 fill them.
+
+**`cg-grouping` is ALSO empty at the end of this task, not just the two above** — Task 4 below is what moves the leftovers fieldset in, and its own RED prediction ("3 failed — the section is empty and the leftovers radios still sit in the top-level form") already says so; this step should not be read as asking for that move too.
+
+**`cg-sound` is not built by this task at all — corrected, with a reason.** The existing sound/speed fieldset already has a live, tested checkbox at `id="cg-sound"` (five e2e assertions across `classroom-groups.spec.ts`, `classroom-groups-controls.spec.ts` and `classroom-groups-privacy.spec.ts` use it). A fourth section sharing that literal id with its wrapper is a duplicate id; giving the wrapper a different id would contradict the id this whole task's tests, and Task 7's own `#cg-sound` reference below, depend on. The only fix is renaming the checkbox, which ripples into those three spec files and `tests/dev/dev-sanity.spec.ts` (`#cg-speed`) — out of this task's own file list and untested by anything this task or Task 4 actually asserts (no traceability row below names a Sound & animation state string; `sectionState`'s own interface returns three fields, not four). Left for whichever task finally gives sound its own section and makes that rename deliberately, rather than as a side effect of this one.
 
 - [ ] **Step 5: Write the e2e assertions**
 
@@ -517,7 +523,7 @@ slips."
 test.describe('Grouping options', () => {
   test('holds both sex switches and the leftovers choice', async ({ page }) => {
     await page.goto('/classroom-groups');
-    await page.locator('#cg-grouping summary').click();
+    await page.locator('#cg-grouping-toggle').click();
     await expect(page.getByLabel('Mix boys and girls evenly')).toBeVisible();
     await expect(page.getByLabel('Keep boys and girls separate')).toBeVisible();
     await expect(page.getByText('If students are left over')).toBeVisible();
@@ -526,14 +532,14 @@ test.describe('Grouping options', () => {
 
   test('both switches are off by default', async ({ page }) => {
     await page.goto('/classroom-groups');
-    await page.locator('#cg-grouping summary').click();
+    await page.locator('#cg-grouping-toggle').click();
     await expect(page.getByLabel('Mix boys and girls evenly')).not.toBeChecked();
     await expect(page.getByLabel('Keep boys and girls separate')).not.toBeChecked();
   });
 
   test('with no list at all, both are disabled and say why', async ({ page }) => {
     await page.goto('/classroom-groups');
-    await page.locator('#cg-grouping summary').click();
+    await page.locator('#cg-grouping-toggle').click();
     await expect(page.getByLabel('Mix boys and girls evenly')).toBeDisabled();
     await expect(page.getByText(
       'Add your students in Student details and set M or F for each to use these.'
@@ -792,6 +798,13 @@ rather than finding every place that sets a flag."
 
 - [ ] **Step 1: Write the tests**
 
+> **`cg-sound` does not exist yet.** Task 3's own Step 4 (corrected) explains why: the existing
+> sound/speed fieldset's checkbox already holds `id="cg-sound"`, and giving the fourth section's
+> wrapper the same id would be a duplicate; the rename needed to avoid that touches three other
+> e2e spec files, out of Task 3's scope. The `for (const id of ['cg-grouping', 'cg-sound'])` loop
+> below needs either `cg-sound` built first (by whichever task ends up doing that rename) or
+> `'cg-sound'` dropped from the list — this is not something Task 3 could resolve on its own.
+
 ```ts
 const WIDTHS = [320, 375, 768, 1280];
 
@@ -815,7 +828,7 @@ for (const width of WIDTHS) {
     };
     await check('collapsed');
     for (const id of ['cg-grouping', 'cg-sound']) {
-      await page.locator(`#${id} summary`).click();
+      await page.locator(`#${id}-toggle`).click();
       await check(id);
     }
     await page.getByLabel('How many students?').fill('120');
