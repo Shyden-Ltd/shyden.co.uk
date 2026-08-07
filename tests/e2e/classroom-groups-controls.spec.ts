@@ -86,6 +86,12 @@ test.describe('the controls that had no tests', () => {
         els.map((e) => e.querySelectorAll('.student').length),
       );
 
+    // Stage 2, Task 4 moved the leftovers radios into #cg-grouping-body,
+    // which starts collapsed (`hidden`) -- Playwright's `check` waits for
+    // its target to be visible, so a hidden radio times out rather than
+    // being checked. Opening the section first is the same thing a teacher
+    // has to do; it is not a workaround.
+    await page.locator('#cg-grouping-toggle').click();
     await page.check('input[name="leftovers"][value="bunch"]');
     await page.click('#cg-go');
     const bunchSizes = await page
@@ -228,6 +234,32 @@ test.describe('classroom groups — mobile-first layout', () => {
   // test exercised on `.who` in ClassroomGroupsPage.astro's global styles is
   // still in place; a later stage that reintroduces a named roster should
   // also reintroduce this test against it.
+
+  // L-05/L-06 (test traceability matrix). "No horizontal scroll... in any
+  // state" was untested for an OPEN section until now: all three sections
+  // Task 3 built had empty bodies, and an empty div cannot overflow.
+  // #cg-grouping is the first to hold real content (two switches, the
+  // why-paragraph, the leftovers radios) -- the first place this claim can
+  // actually be checked rather than merely stated. Two widths, not the full
+  // four: 320px is the tightest (mobile-first floor) and 768px is where
+  // `.tool-sections` switches to two columns, so #cg-grouping's open
+  // content sits in a narrower column than the full viewport -- a distinct
+  // geometry worth its own check.
+  for (const width of [320, 768]) {
+    test(`no horizontal scroll with Grouping options open, at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/classroom-groups');
+      await page.locator('#cg-grouping-toggle').click();
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
+  }
 
   test('every control meets the 44px touch target', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 900 });
@@ -544,15 +576,22 @@ test.describe("the tool's collapsible sections", () => {
     );
   });
 
-  // F-1, task-3-fix-report.md. `leftovers` is the one ToolState field
-  // already live on this page today -- the radios still sit in the
-  // top-level form (Task 4 moves them into #cg-grouping itself), but a
-  // teacher can choose "put them all in one group" long before that move
-  // happens, and the header must not go on reporting "none" once they have.
+  // F-1, task-3-fix-report.md, and Stage 2 Task 4. The header-follows-radio
+  // wiring was built BEFORE the radio had a home -- `updateGroupingHeader`
+  // in classroom-groups.ts delegates on `#cg-form`'s own `change` event and
+  // queries `input[name="leftovers"]:checked` scoped to the whole form, so
+  // moving the radios into #cg-grouping-body needed no code change there at
+  // all, only this test's interaction: the radio now starts inside a
+  // collapsed section, so it must be opened before it can be checked, the
+  // same as any other control a teacher reaches by opening the section
+  // first. The guarantee this test proves -- the header cannot go on
+  // reporting "none" once a teacher has chosen "put them all in one group"
+  // -- is unchanged by where the control lives.
   test('the grouping header follows the leftovers choice, live', async ({
     page,
   }) => {
     await page.goto('/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
     await page.check('input[name="leftovers"][value="bunch"]');
     await expect(page.locator('#cg-grouping-toggle')).toHaveText(
       'Grouping options · leftovers in one group',
@@ -661,11 +700,13 @@ test.describe("the tool's collapsible sections — Indonesian", () => {
     );
   });
 
-  // Mirrors the English suite's own leftovers-follows-live test.
+  // Mirrors the English suite's own leftovers-follows-live test, including
+  // the section-open step that test's own comment explains.
   test('the grouping header follows the leftovers choice, live', async ({
     page,
   }) => {
     await page.goto('/id/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
     await page.check('input[name="leftovers"][value="bunch"]');
     await expect(page.locator('#cg-grouping-toggle')).toHaveText(
       'Opsi pengelompokan · sisa dalam satu kelompok',
@@ -698,5 +739,173 @@ test.describe("the tool's collapsible sections — Indonesian", () => {
     await expect(body).toBeHidden();
     await toggle.click();
     await expect(body).toBeVisible();
+  });
+});
+
+// Stage 2, Task 4: the two sex switches, and the leftovers control rehomed
+// into #cg-grouping-body (task-4-brief.md's Step 3 -- markup, `name`
+// attribute and all four locale keys unchanged, only its parent). Design
+// spec section 6.
+//
+// There is no roster until stage 3 -- #cg-students-body is still empty (see
+// ClassroomGroupsPage.astro's own comment) -- so this page is permanently in
+// ONE of the three branches design spec section 6 describes for the
+// switches' disabled state: "no list at all". The other two -- named-count
+// when some students being grouped have no sex set, and re-disabling when an
+// absence is unticked -- are built into `sexWhy` (src/lib/sexOptions.ts) and
+// proven directly against synthetic rosters in tests/unit/sexOptions.test.ts
+// (including G-04, that an absent unset student does not count), but are NOT
+// reachable from this page yet. Nothing below claims they are.
+test.describe('Grouping options', () => {
+  test('holds both sex switches and the leftovers choice', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeVisible();
+    await expect(page.getByLabel('Keep boys and girls separate')).toBeVisible();
+    await expect(page.getByText('If students are left over')).toBeVisible();
+    await expect(page.getByLabel('Share them out evenly')).toBeChecked();
+  });
+
+  test('both switches are off by default', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      page.getByLabel('Mix boys and girls evenly'),
+    ).not.toBeChecked();
+    await expect(
+      page.getByLabel('Keep boys and girls separate'),
+    ).not.toBeChecked();
+  });
+
+  test('with no list at all, both are disabled and say why', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeDisabled();
+    await expect(
+      page.getByLabel('Keep boys and girls separate'),
+    ).toBeDisabled();
+    await expect(
+      page.getByText(
+        'Add your students in Student details and set M or F for each to use these.',
+      ),
+    ).toBeVisible();
+  });
+
+  // Design spec section 6: "Both are DISABLED unless every student being
+  // grouped has M or F" -- ONE condition governing both switches, not two
+  // independent ones. Both pointing at the same `aria-describedby` is what
+  // would catch a copy-paste that gave each switch its own, silently
+  // diverging reason element.
+  test('both switches point at the same reason', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(page.getByLabel('Mix boys and girls evenly')).toHaveAttribute(
+      'aria-describedby',
+      'cg-sex-why',
+    );
+    await expect(
+      page.getByLabel('Keep boys and girls separate'),
+    ).toHaveAttribute('aria-describedby', 'cg-sex-why');
+  });
+
+  // The existing 44px sweep ('every control meets the 44px touch target',
+  // above) deliberately measures only `select`, `button` and
+  // `input[type="number"]` -- it has never covered #cg-sound or these two
+  // switches. Scoped here rather than widening that query, so this task's
+  // addition cannot change what that test already proves. The LABEL is
+  // measured, not the raw checkbox: `.switch`'s 44px min-height is on the
+  // label, because the whole row is the tap target, the same as every
+  // radio label on this page.
+  test('the two sex switches meet the 44px touch target once open', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    const heights = await page
+      .locator('#cg-sex-mix, #cg-sex-separate')
+      .evaluateAll((els) =>
+        els.map((el) => el.closest('label')!.getBoundingClientRect().height),
+      );
+    expect(heights).toHaveLength(2);
+    expect(heights.every((h) => h >= 44)).toBe(true);
+  });
+
+  // The brief's own Step 4: the spillover message cannot be driven through
+  // the page until stage 3 supplies a roster fixture (there is no control
+  // anywhere on this page yet that can give a student a sex). `fixme`, not
+  // `skip`: a plain skip reports nothing and nobody would notice if this
+  // silently kept not applying forever. `fixme` is the honest middle
+  // ground -- it names the gap in every run's summary, permanently, until
+  // someone deletes it.
+  //
+  // Correcting the brief's own stated reason: `test.fixme(title, body)` does
+  // NOT run the body and does not fail the moment it starts passing --
+  // Playwright's own docs are explicit that a declared fixme test is simply
+  // not run at all (same execution as `.skip`, a different label for
+  // humans reading the report). It will not turn red by itself the day
+  // stage 3 lands. What DOES make this visible is the traceability matrix
+  // row this task ticks as "owed" (G-11, docs/superpowers/plans/
+  // 2026-08-06-classroom-groups-v2-test-traceability.md) -- that is the
+  // actual mechanism, not this annotation. `fixme` is still the right
+  // marker over `skip`: it is unambiguous, in the test file itself, that
+  // this is known-incomplete rather than not-applicable.
+  test.fixme('a separate-mode spillover warning renders, naming who', async ({
+    page,
+  }) => {
+    // Stage 3 fixture: a roster with an odd mix of M/F, sexMode
+    // 'separate', driven through #cg-grouping's (by then real) sex
+    // switch -- assert the rendered warning names the spilled students,
+    // per WARNING_CODES.sexSpillover / SEX_SPILLOVER. G-11 in the
+    // traceability matrix.
+  });
+});
+
+// The brief's own three tests above were only ever written in English;
+// "assert whole rendered sentences, in both locales" (CLAUDE.md) applies
+// regardless of what the brief's snippet happened to show.
+test.describe('Grouping options — Indonesian', () => {
+  test('holds both sex switches and the leftovers choice', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeVisible();
+    await expect(
+      page.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
+    ).toBeVisible();
+    await expect(page.getByText('Jika ada siswa tersisa')).toBeVisible();
+    await expect(page.getByLabel('Bagikan merata')).toBeChecked();
+  });
+
+  test('both switches are off by default', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).not.toBeChecked();
+    await expect(
+      page.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
+    ).not.toBeChecked();
+  });
+
+  test('with no list at all, both are disabled and say why', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeDisabled();
+    await expect(
+      page.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
+    ).toBeDisabled();
+    await expect(
+      page.getByText(
+        'Tambahkan siswa Anda di bagian Detail siswa dan atur L atau P untuk masing-masing agar bisa memakai opsi ini.',
+      ),
+    ).toBeVisible();
   });
 });

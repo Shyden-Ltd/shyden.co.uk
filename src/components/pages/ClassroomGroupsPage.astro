@@ -3,8 +3,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getStrings, THEME_KEYS, type Locale } from '../../lib/i18n';
 // The engine owns the ceiling. Hard-coding a second number here is how the
 // field comes to advertise one limit while the tool enforces another.
-import { MAX_STUDENTS } from '../../lib/grouping';
+import { MAX_STUDENTS, type Student } from '../../lib/grouping';
 import { sectionState, type ToolState } from '../../lib/sections';
+import { sexWhy } from '../../lib/sexOptions';
 
 interface Props {
   lang: Locale;
@@ -22,17 +23,17 @@ const themes = THEME_KEYS;
 // computed at build time through the one function that also has a unit test
 // pinning it against both locale tables. Every field but `leftovers` stays
 // at this default for the whole of this stage: no roster exists yet
-// (`rosterSize`/`named`/`absent`/`together`/`apart`), the sex switches are
-// not wired until Grouping options gets its own task, and nothing can mark
-// the roster `dirty` until a later stage gives it something to lose.
-// `leftovers` mirrors the radio group's own default further down (`checked`
-// on `spread`) for this build-time render only. `classroom-groups.ts` keeps
-// the rendered header live from there: its own `change` listener calls this
-// same `sectionState` again whenever the leftovers radio changes, and
-// rewrites `#cg-grouping .state` — so the header cannot go on reporting
-// "none" once a teacher has picked "put them all in one group", even though
-// that control has not physically moved into `#cg-grouping` itself yet
-// (Task 4 does that move).
+// (`rosterSize`/`named`/`absent`/`together`/`apart`), `sexMode` stays `'off'`
+// because the two sex switches (rendered inside `#cg-grouping-body` below,
+// Stage 2 Task 4) are permanently `disabled` for the same reason (see
+// `sexWhyText` below), and nothing can mark the roster `dirty` until a later
+// stage gives it something to lose. `leftovers` mirrors the radio group's
+// own default further down (`checked` on `spread`) for this build-time
+// render only. `classroom-groups.ts` keeps the rendered header live from
+// there: its own `change` listener calls this same `sectionState` again
+// whenever the leftovers radio changes, and rewrites `#cg-grouping .state`
+// — so the header cannot go on reporting "none" once a teacher has picked
+// "put them all in one group".
 const initialToolState: ToolState = {
   named: 0,
   absent: 0,
@@ -44,6 +45,20 @@ const initialToolState: ToolState = {
   dirty: false,
 };
 const sectionStrings = sectionState(initialToolState, t);
+
+// The two sex switches' disabled reason (design spec section 6), computed
+// once at build time exactly like `initialToolState` above -- there is no
+// roster on this page until stage 3 (`#cg-students-body` below renders
+// nothing), so `roster` is `null` for the whole of this stage and there is
+// no event anywhere on the page that could ever change it. `sexWhy` always
+// returns its "no list at all" message here as a result; the other two
+// messages it can produce are real and unit-tested (tests/unit/
+// sexOptions.test.ts) but unreachable from this page today. Whichever task
+// wires Student details' roster is what turns this into a live value
+// classroom-groups.ts recomputes on change, the same way
+// `updateGroupingHeader` already does for the leftovers radio below.
+const roster: Student[] | null = null;
+const sexWhyText = sexWhy(roster, t);
 ---
 
 <BaseLayout
@@ -158,23 +173,6 @@ const sectionStrings = sectionState(initialToolState, t);
             value="6"
           />
         </div>
-
-        <div class="field">
-          <span class="label" id="cg-left-label">{t.leftoversLabel}</span>
-          <div class="radios" role="radiogroup" aria-labelledby="cg-left-label">
-            <label
-              ><input type="radio" name="leftovers" value="spread" checked />{
-                t.leftoversSpread
-              }</label
-            >
-            <label
-              ><input type="radio" name="leftovers" value="bunch" />{
-                t.leftoversBunch
-              }</label
-            >
-          </div>
-          <p class="help">{t.leftoversHelp}</p>
-        </div>
       </fieldset>
 
       <fieldset>
@@ -257,14 +255,17 @@ const sectionStrings = sectionState(initialToolState, t);
            ("Student details · none added"), not a separator relying on
            surrounding whitespace to survive reformatting.
 
-           Both `cg-students` and `cg-io` are rendered with no body content
-           at all, not a "coming soon" placeholder: that text would ship to
-           production if a later stage slipped. `cg-grouping`'s body is
-           equally empty here — the leftovers radios below still belong to
-           the top-level form until the task that rehomes them, and until
-           then this section's own header state is computed from that
-           control's default value, not read from it live (see the
-           frontmatter comment on `initialToolState` above). -->
+           `cg-students` and `cg-io` are rendered with no body content at
+           all, not a "coming soon" placeholder: that text would ship to
+           production if a later stage slipped. `cg-grouping`'s body is the
+           first of the three to hold real content (Stage 2, Task 4): the
+           two sex switches (design spec section 6) and the leftovers
+           choice, rehomed here from the fieldset above unchanged — same
+           markup, same `name` attribute, same four locale keys, still live
+           today. Its header's own state is read LIVE from that radio the
+           moment it changes (see classroom-groups.ts's own comment on
+           `updateGroupingHeader`), unaffected by where the radio physically
+           sits, because the listener delegates on `#cg-form` itself. -->
       <div class="tool-sections">
         <section id="cg-students" class="tool-section">
           <h2 class="tool-section-heading">
@@ -297,7 +298,71 @@ const sectionStrings = sectionState(initialToolState, t);
               >
             </button>
           </h2>
-          <div id="cg-grouping-body" class="tool-section-body" hidden></div>
+          <div id="cg-grouping-body" class="tool-section-body" hidden>
+            <!-- Both switches are governed by ONE condition (design spec
+                 section 6: "disabled unless every student being grouped has
+                 M or F"), so they share ONE disabled state and ONE reason
+                 paragraph rather than each carrying its own -- two call
+                 sites computing the same fact is how a header disagreeing
+                 with reality happens elsewhere on this page (see the fix
+                 recorded on #cg-grouping's own header, above). `sexWhyText`
+                 is `null` for "enabled" (see sexOptions.ts's own doc
+                 comment on why), so `disabled={sexWhyText !== null}` and
+                 `hidden={sexWhyText === null}` read directly off the one
+                 value -- never a bare disabled control with nothing next to
+                 it explaining why. -->
+            <div class="field">
+              <div class="switches">
+                <label class="switch"
+                  ><input
+                    type="checkbox"
+                    id="cg-sex-mix"
+                    disabled={sexWhyText !== null}
+                    aria-describedby="cg-sex-why"
+                  /><span>{t.sexMixLabel}</span></label
+                >
+                <label class="switch"
+                  ><input
+                    type="checkbox"
+                    id="cg-sex-separate"
+                    disabled={sexWhyText !== null}
+                    aria-describedby="cg-sex-why"
+                  /><span>{t.sexSeparateLabel}</span></label
+                >
+              </div>
+              <p class="why" id="cg-sex-why" hidden={sexWhyText === null}>
+                {sexWhyText}
+              </p>
+            </div>
+
+            <!-- Rehomed from the "How to split them" fieldset above,
+                 unchanged: same markup, same `name="leftovers"`, same four
+                 locale keys (leftoversLabel/Spread/Bunch/Help). It works
+                 today and this task is only about where it lives. -->
+            <div class="field">
+              <span class="label" id="cg-left-label">{t.leftoversLabel}</span>
+              <div
+                class="radios"
+                role="radiogroup"
+                aria-labelledby="cg-left-label"
+              >
+                <label
+                  ><input
+                    type="radio"
+                    name="leftovers"
+                    value="spread"
+                    checked
+                  />{t.leftoversSpread}</label
+                >
+                <label
+                  ><input type="radio" name="leftovers" value="bunch" />{
+                    t.leftoversBunch
+                  }</label
+                >
+              </div>
+              <p class="help">{t.leftoversHelp}</p>
+            </div>
+          </div>
         </section>
 
         <section id="cg-io" class="tool-section">
@@ -516,7 +581,14 @@ const sectionStrings = sectionState(initialToolState, t);
     font-weight: 600;
     margin-bottom: 0.35rem;
   }
-  .help {
+  /* `.why` (the sex switches' disabled reason) is visually identical to
+     `.help` -- both explain a control -- but kept a distinct class because
+     it is semantically different: `.help` is optional context, `.why` is
+     THE stated reason a control cannot be used right now, present exactly
+     while that is true (see the markup's own comment on `hidden={sexWhyText
+     === null}`). */
+  .help,
+  .why {
     color: var(--ink-soft);
     font-size: 0.9rem;
     margin: 0.35rem 0 0;
@@ -551,7 +623,11 @@ const sectionStrings = sectionState(initialToolState, t);
     max-width: var(--measure);
     resize: vertical;
   }
-  .radios {
+  .radios,
+  /* Same layout as .radios (a vertical stack with a gap) for the two sex
+     switches -- a distinct class because these are independent checkboxes,
+     not a radio group, and reusing `.radios` would misname that. */
+  .switches {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -568,6 +644,22 @@ const sectionStrings = sectionState(initialToolState, t);
   .switch input {
     width: 1.15rem;
     height: 1.15rem;
+  }
+  /* Disabled state for a `.switch` (the sex switches; #cg-sound is never
+     disabled, so this never applies to it). The label text drops to
+     `--ink-soft` -- the SAME colour `.help`/`.why` already use elsewhere on
+     this page, not a new one, and independently checked here: 6.37:1
+     against `--bg`, comfortably above the 4.5:1 AA floor for normal text.
+     Deliberately NOT the `opacity: 0.6` this page uses for a disabled
+     button (`.actions button:disabled`) -- measured, that treatment drops
+     `--ink-soft` to roughly 2.67:1, well under AA. A disabled control still
+     needs a readable contrast ratio; this is that check, not an
+     assumption. */
+  .switch input:disabled {
+    cursor: not-allowed;
+  }
+  .switch input:disabled + span {
+    color: var(--ink-soft);
   }
   /* Mobile-first: one column, stacked -- design spec section 3's
      "Arrangement B" is the ENHANCEMENT, not the base. `auto` rows (not a

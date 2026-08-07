@@ -64,6 +64,27 @@ export const en = {
   modeGroupCount: 'Number of groups',
   groupSizeLabel: 'Students in each group',
   groupCountLabel: 'How many groups',
+
+  // Design spec section 6 ("Grouping by sex"), read by src/lib/sexOptions.ts
+  // (`sexWhy`), the one function that decides why the two switches below
+  // are disabled -- so its messages live together here rather than
+  // scattered by call site. `sexWhyNoList` and `sexWhyUnset` are both
+  // reachable and unit-tested against synthetic rosters today
+  // (tests/unit/sexOptions.test.ts); only `sexWhyNoList` is reachable from
+  // the page itself, because there is no roster until stage 3 -- see
+  // ClassroomGroupsPage.astro's own comment on `#cg-students-body`.
+  sexMixLabel: 'Mix boys and girls evenly',
+  sexSeparateLabel: 'Keep boys and girls separate',
+  sexWhyNoList:
+    'Add your students in Student details and set M or F for each to use these.',
+  // The literal approved copy (design spec section 6) at unset=3,
+  // grouped=22. Branches "has"/"have" and "student"/"students" for
+  // grammaticality at the edges -- id.ts needs neither branch: Bahasa
+  // Indonesia does not inflect for plural (see every sibling comment on
+  // this in this file's own `errors` table).
+  sexWhyUnset: (unset: number, grouped: number) =>
+    `${unset} of the ${grouped} ${grouped === 1 ? 'student' : 'students'} being grouped ${unset === 1 ? 'has' : 'have'} no sex set. Open Student details and set M or F for them to use these.`,
+
   leftoversLabel: 'If students are left over',
   leftoversSpread: 'Share them out evenly',
   leftoversBunch: 'Put them all in one group',

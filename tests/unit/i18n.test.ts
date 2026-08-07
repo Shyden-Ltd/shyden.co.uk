@@ -157,6 +157,9 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   stateTogether: [2],
   stateApart: [1],
   stateAdded: [24],
+  // Stage 2, Task 4. src/lib/sexOptions.ts's `sexWhy`, its sole caller.
+  // (3, 22) matches design spec section 6's own approved copy verbatim.
+  sexWhyUnset: [3, 22],
 };
 
 describe('locales are complete', () => {

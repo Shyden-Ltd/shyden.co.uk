@@ -168,17 +168,22 @@ if (form) {
       ) as HTMLInputElement | null
     )?.value ?? '';
 
-  // `leftovers` is the one `ToolState` field already live on this page: the
-  // radios still sit in the top-level form (Task 4 moves them into
-  // `#cg-grouping` itself), but a teacher can change one long before that
-  // move happens, and the header must not go on reporting "none" once they
-  // have. Calls the SAME `sectionState` that produced the header's
-  // build-time text (see ClassroomGroupsPage.astro's own `initialToolState`)
-  // with every other field left at that same default -- no roster exists
-  // yet, the sex switches are not wired until Grouping options gets its own
-  // task, and nothing can mark the roster dirty until a later stage gives it
+  // `leftovers` is the one `ToolState` field a teacher can actually change
+  // today: the radios now live inside `#cg-grouping-body` (Stage 2, Task 4
+  // rehomed them there, unchanged), and the header must not go on reporting
+  // "none" once one is chosen. This listener needed NO change for that
+  // move: it delegates on `#cg-form`'s own `change` event and
+  // `readRadio` queries `input[name="leftovers"]:checked` scoped to the
+  // whole form, neither of which cares how deep the radio sits inside it.
+  // Calls the SAME `sectionState` that produced the header's build-time
+  // text (see ClassroomGroupsPage.astro's own `initialToolState`) with
+  // every other field left at that same default -- no roster exists yet,
+  // and nothing can mark the roster dirty until a later stage gives it
   // something to lose -- so the two can never disagree by computing the
-  // sentence two different ways.
+  // sentence two different ways. `sexMode` stays `'off'` here for the same
+  // reason it stays `'off'` at submit, below: the two sex switches render
+  // today (also Task 4) but are permanently disabled, so they can never
+  // actually be checked -- see that comment for the rest of the reasoning.
   const groupingStateEl = document.querySelector<HTMLElement>(
     '#cg-grouping .state',
   );
@@ -334,7 +339,17 @@ if (form) {
       students: count, // a number until a future stage gives us a roster
       mode,
       leftovers: readRadio('leftovers') === 'bunch' ? 'bunch' : 'spread',
-      sexMode: 'off', // Task 4 wires the switches
+      // #cg-sex-mix / #cg-sex-separate render today (Stage 2, Task 4), but
+      // stay permanently `disabled` -- src/lib/sexOptions.ts's `sexWhy`
+      // always returns its "no list at all" reason, because there is no
+      // roster on this page until stage 3. A native form already excludes
+      // a disabled control's value from submission; reading `.checked` here
+      // would honour the SAME rule by hand for no behavioural difference
+      // (an unchecked, disabled checkbox reads `false` regardless), so this
+      // stays hard-coded rather than adding a read that can only ever
+      // observe the one value it already has. Stage 3 is what makes reading
+      // these two meaningful, once a roster exists that can enable them.
+      sexMode: 'off',
       pinned: [], // a later stage wires the pins
       random: Math.random,
     });
@@ -361,9 +376,9 @@ if (form) {
     // A success can still carry `warnings` -- e.g. "two girls ended up in a
     // group of boys" -- see grouping.ts's own module doc. Read here, not
     // dropped silently, but not yet rendered anywhere on the page: `sexMode`
-    // is hardcoded 'off' just above until Task 4 wires the sex switches, so
-    // this array is always empty today regardless. Task 4 is what gives it
-    // somewhere to appear.
+    // stays `'off'` above (see that comment), so this array is always empty
+    // today regardless. G-11 (test traceability matrix) is owed to stage 3,
+    // which is what would give `sexMode` a way to ever be anything else.
     const { groups, warnings } = outcome.result;
     void warnings;
     const naming = readRadio('naming');

@@ -51,6 +51,21 @@ export const id: Strings = {
   modeGroupCount: 'Jumlah kelompok',
   groupSizeLabel: 'Siswa dalam setiap kelompok',
   groupCountLabel: 'Berapa banyak kelompok',
+
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap. "L"
+  // dan "P" (bukan "M"/"F") mengikuti konvensi bagian 9 (CSV) dokumen
+  // desain: nilai jenis kelamin pada halaman Indonesia memakai singkatan
+  // Indonesia, sama seperti pada CSV Indonesia.
+  sexMixLabel: 'Campur siswa laki-laki dan perempuan secara merata',
+  sexSeparateLabel: 'Pisahkan siswa laki-laki dan perempuan',
+  sexWhyNoList:
+    'Tambahkan siswa Anda di bagian Detail siswa dan atur L atau P untuk masing-masing agar bisa memakai opsi ini.',
+  // Tidak ada percabangan tunggal/jamak di sini -- sama seperti SEX_NEEDS_
+  // ALL_SET dan yang lainnya di bawah, Bahasa Indonesia tidak mengubah
+  // bentuk kata untuk jamak.
+  sexWhyUnset: (unset: number, grouped: number) =>
+    `${unset} dari ${grouped} siswa yang dikelompokkan belum memiliki jenis kelamin. Buka Detail siswa dan atur L atau P untuk mereka agar bisa memakai opsi ini.`,
+
   leftoversLabel: 'Jika ada siswa tersisa',
   leftoversSpread: 'Bagikan merata',
   leftoversBunch: 'Masukkan semuanya ke satu kelompok',

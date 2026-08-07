@@ -1,0 +1,150 @@
+import { describe, it, expect } from 'vitest';
+import { sexWhy } from '../../src/lib/sexOptions';
+import { en } from '../../src/lib/i18n/en';
+import { id } from '../../src/lib/i18n/id';
+import { student } from './factories';
+
+describe('sexWhy — why the two sex switches are disabled', () => {
+  it('says so with its own wording when there is no list at all', () => {
+    expect(sexWhy(null, en)).toBe(
+      'Add your students in Student details and set M or F for each to use these.',
+    );
+  });
+
+  // Design spec section 4: emptying the list returns to the no-list state,
+  // not a third state of its own -- `roster: []` must read exactly like
+  // `roster: null`, not fall through to the count branch below (which
+  // would report "0 of the 0 students...", true but useless).
+  it('treats an empty list the same as no list at all', () => {
+    expect(sexWhy([], en)).toBe(sexWhy(null, en));
+  });
+
+  it('is enabled once every student being grouped has a sex', () => {
+    const roster = [
+      student({ number: 1, sex: 'M' }),
+      student({ number: 2, sex: 'F' }),
+    ];
+    expect(sexWhy(roster, en)).toBeNull();
+  });
+
+  it('names the count when some students being grouped have no sex set', () => {
+    const roster = [
+      student({ number: 1, sex: 'M' }),
+      student({ number: 2, sex: null }),
+      student({ number: 3, sex: null }),
+    ];
+    // 2 unset of 3 grouped -- the same shape design spec section 6's own
+    // approved copy demonstrates with different numbers (3 of 22).
+    expect(sexWhy(roster, en)).toBe(
+      '2 of the 3 students being grouped have no sex set. Open Student ' +
+        'details and set M or F for them to use these.',
+    );
+  });
+
+  // G-04 (test traceability matrix). The rule this whole function exists to
+  // prove: an absent student with no sex set must not hold the switches
+  // shut, because they are not being placed into anything. If `absent`
+  // were not filtered out of `grouped` before `unset` is computed from it,
+  // this would report "1 of the 2 ... have no sex set" instead of enabling
+  // the switches.
+  it('does not count an absent student with no sex set against the total (G-04)', () => {
+    const roster = [
+      student({ number: 1, sex: 'M' }),
+      student({ number: 2, sex: null, absent: true }),
+    ];
+    expect(sexWhy(roster, en)).toBeNull();
+  });
+
+  // The mirror of the test above, proving the filter is by `absent`, not by
+  // `sex` -- a mutant that filtered on `sex === null` instead of `absent`
+  // could still pass the test above by coincidence, but not this one.
+  it('excludes an absent student from the grouped count even when they do have a sex', () => {
+    const withAbsentSexed = sexWhy(
+      [
+        student({ number: 1, sex: null }),
+        student({ number: 2, sex: 'F', absent: true }),
+      ],
+      en,
+    );
+    const withoutThem = sexWhy([student({ number: 1, sex: null })], en);
+    expect(withAbsentSexed).toBe(withoutThem);
+    expect(withAbsentSexed).toBe(
+      '1 of the 1 student being grouped has no sex set. Open Student ' +
+        'details and set M or F for them to use these.',
+    );
+  });
+
+  // Singular grammar: "1 ... student ... has", not "1 ... students ...
+  // have". Design spec section 6's own example only ever shows the plural
+  // (3 of 22), so the singular branch is otherwise unproven.
+  it('branches singular/plural in English at exactly one unset of one grouped', () => {
+    expect(sexWhy([student({ number: 1, sex: null })], en)).toBe(
+      '1 of the 1 student being grouped has no sex set. Open Student ' +
+        'details and set M or F for them to use these.',
+    );
+  });
+
+  // The two branches (unset-count "has"/"have", grouped-count
+  // "student"/"students") are independent -- this pins them at DIFFERENT
+  // values (unset=1, grouped=3) so a mutant that tied both to the same
+  // number cannot pass both this test and the one above by accident.
+  it('combines presence and sex correctly across a mixed roster', () => {
+    const roster = [
+      student({ number: 1, sex: 'M' }), // present, set
+      student({ number: 2, sex: 'F' }), // present, set
+      student({ number: 3, sex: null }), // present, unset
+      student({ number: 4, sex: null, absent: true }), // absent, unset -- excluded
+      student({ number: 5, sex: 'M', absent: true }), // absent, set -- excluded
+    ];
+    expect(sexWhy(roster, en)).toBe(
+      '1 of the 3 students being grouped has no sex set. Open Student ' +
+        'details and set M or F for them to use these.',
+    );
+  });
+
+  // Vacuous truth, not a bug: "every student being grouped has M or F" is
+  // true of an empty set of students being grouped, the same way
+  // `[].every(...)` is `true`. A roster that exists but is 100% absent
+  // enables the switches -- there is nobody for them to misapply to, and
+  // Make Groups already refuses separately (NO_STUDENTS) regardless of
+  // sexMode.
+  it('is enabled, not disabled, when a roster exists but everyone on it is absent', () => {
+    const roster = [
+      student({ number: 1, sex: null, absent: true }),
+      student({ number: 2, sex: null, absent: true }),
+    ];
+    expect(sexWhy(roster, en)).toBeNull();
+  });
+
+  it('produces the Indonesian no-list wording from the Indonesian table', () => {
+    expect(sexWhy(null, id)).toBe(
+      'Tambahkan siswa Anda di bagian Detail siswa dan atur L atau P ' +
+        'untuk masing-masing agar bisa memakai opsi ini.',
+    );
+  });
+
+  // Bahasa Indonesia does not inflect for plural (same reasoning as every
+  // sibling comment on this in en.ts/id.ts's own `errors` table), so this
+  // has no singular/plural counterpart to pin the way the English tests
+  // above do.
+  it('produces the Indonesian unset-count wording', () => {
+    const roster = [
+      student({ number: 1, sex: 'M' }),
+      student({ number: 2, sex: null }),
+      student({ number: 3, sex: null }),
+    ];
+    expect(sexWhy(roster, id)).toBe(
+      '2 dari 3 siswa yang dikelompokkan belum memiliki jenis kelamin. ' +
+        'Buka Detail siswa dan atur L atau P untuk mereka agar bisa ' +
+        'memakai opsi ini.',
+    );
+  });
+
+  it('does not count an absent student against the total, in Indonesian too (G-04)', () => {
+    const roster = [
+      student({ number: 1, sex: 'M' }),
+      student({ number: 2, sex: null, absent: true }),
+    ];
+    expect(sexWhy(roster, id)).toBeNull();
+  });
+});

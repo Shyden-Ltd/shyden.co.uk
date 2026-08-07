@@ -180,17 +180,17 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| G-01 | Both switches are **off by default** | P | ☐ |
-| G-02 | Both live in the **Grouping options** section | P | ☐ |
-| G-03 | Disabled unless every student **being grouped** has M or F | P | ☐ |
-| G-04 | **An absent student with no sex does not disable them** | U+P | ☐ |
-| G-05 | Disabled message names the count: "3 of the 22 students being grouped…" | P | ☐ |
-| G-06 | A **separate message** covers having no list at all | P | ☐ |
-| G-07 | Unticking an absence re-disables them **with its own message naming the student** | P | ☐ |
+| G-01 | Both switches are **off by default** | P | ✓ |
+| G-02 | Both live in the **Grouping options** section | P | ✓ |
+| G-03 | Disabled unless every student **being grouped** has M or F | U+P* | ✓* |
+| G-04 | **An absent student with no sex does not disable them** | U+P* | ✓* |
+| G-05 | Disabled message names the count: "3 of the 22 students being grouped…" | U+P* | ✓* |
+| G-06 | A **separate message** covers having no list at all | P | ✓ |
+| G-07 | Unticking an absence re-disables them **with its own message naming the student** | P | ☐ owed — stage 3 |
 | G-08 | Mix spreads M and F evenly | U | ☐ |
 | G-09 | Mix does the best it can when the numbers do not divide | U | ☐ |
 | G-10 | Separate makes single-sex groups when the numbers divide | U | ☐ |
-| G-11 | Separate **warns and names** who lands in a group of the other sex | U+P | ☐ |
+| G-11 | Separate **warns and names** who lands in a group of the other sex | U+P | ☐ P half owed — stage 3 |
 | G-12 | A together-unit spanning both sexes is refused under separate | U | ☐ |
 | G-13 | …and allowed under mix and under off | U | ☐ |
 | G-14 | `sexMode: 'off'` is a complete no-op | U | ☐ |
@@ -198,7 +198,31 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | G-16 | Leftovers **bunch** puts the remainder in one group | U | ☐ |
 | G-17 | A spare student in a together unit goes where the unit goes | U | ☐ |
 | G-18 | Bunch never builds a leftover group violating an apart letter | U | ☐ |
-| G-19 | Both leftovers options render and work in both locales | P | ☐ |
+| G-19 | Both leftovers options render and work in both locales | P | ✓ |
+
+**Stage 2, Task 4 status** (rows marked `*` above): the two switches and the
+leftovers control are built (`ClassroomGroupsPage.astro`, `#cg-grouping-body`)
+and `sexWhy` (`src/lib/sexOptions.ts`) implements the full disabled-reason
+rule G-03/G-04/G-05 describe, proven exhaustively at the unit level against
+synthetic rosters (`tests/unit/sexOptions.test.ts`, 12 tests, including G-04's
+absent-exclusion and the vacuous all-absent case) — their suite is corrected
+here from `P` to `U+P` because that unit coverage now exists. At the page
+level there is no roster until stage 3 (`#cg-students-body` is still empty),
+so the *only* branch a real browser can reach today is "no list at all" —
+`sexWhyNoList`, G-06's own row, asserted end-to-end in both locales. The
+"some students being grouped have no sex set" instance G-05 names, and the
+enabled↔disabled *transition* G-03/G-04 describe, are real and tested at the
+unit level but **not reachable from the page this stage**; ticked `✓*` on
+that basis, not because a browser has been driven through them — see
+`tests/e2e/classroom-groups-controls.spec.ts`'s own `Grouping options`
+describe block for the exact split. G-07's distinct, name-specific message
+("Dewi is back…") was deliberately not built: it needs to know WHICH
+control's toggle caused an enabled→disabled transition, which requires
+Student details' absence checkbox (stage 3) to exist — see `sexOptions.ts`'s
+own doc comment. G-11's page half is the brief's own owed item (Step 4): the
+spillover warning cannot be driven through the page without a roster fixture;
+`tests/e2e/classroom-groups-controls.spec.ts` carries it as `test.fixme`, not
+`test.skip`, so it stays named in every run's summary until stage 3 closes it.
 
 ## K · Partial reshuffle — stages 1 and 2
 
