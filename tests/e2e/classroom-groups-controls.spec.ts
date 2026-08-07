@@ -333,6 +333,27 @@ test.describe('How to use', () => {
     ).toBeVisible();
   });
 
+  // A control that hides itself is a trap. The test above only proves the
+  // header survives being collapsed once -- it never proves the content
+  // comes back. Click again and look for the actual sentence returning,
+  // not just an attribute flipping.
+  test('clicking the toggle a second time reopens both parts', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    const toggle = page.getByRole('button', { name: 'How to use' });
+    await toggle.click();
+    await toggle.click();
+    await expect(
+      page.getByText(
+        'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Say how many students are in your class.'),
+    ).toBeVisible();
+  });
+
   test('the collapsed state survives a reload', async ({ page }) => {
     await page.goto('/classroom-groups');
     await page.getByRole('button', { name: 'How to use' }).click();
@@ -358,6 +379,25 @@ test.describe('How to use', () => {
     // stage 5 adds four print preferences and would break a test that is
     // not about printing.
     expect(Object.keys(stored).every((k) => k.startsWith('cg-'))).toBe(true);
+  });
+
+  // The old markup was a real <h2>; the toggle rewrite dropped it to a bare
+  // <button>, which a screen reader can no longer find by heading
+  // navigation. Assert the role and level a screen-reader user would land
+  // on, not a tag count, and confirm the click still works with the
+  // heading restored.
+  test('the section is reachable by heading, and the toggle still works', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await expect(
+      page.getByRole('heading', { name: 'How to use', level: 2 }),
+    ).toBeVisible();
+    const toggle = page.getByRole('button', { name: 'How to use' });
+    await toggle.click();
+    await expect(
+      page.getByText('Say how many students are in your class.'),
+    ).toBeHidden();
   });
 });
 
@@ -402,6 +442,25 @@ test.describe('How to use — Indonesian', () => {
     ).toBeVisible();
   });
 
+  // Mirrors the English suite's own reopen test -- a control that hides
+  // itself is a trap, in every language this page ships.
+  test('clicking the toggle a second time reopens both parts', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    const toggle = page.getByRole('button', { name: 'Cara menggunakan' });
+    await toggle.click();
+    await toggle.click();
+    await expect(
+      page.getByText(
+        'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Masukkan jumlah siswa di kelas Anda.'),
+    ).toBeVisible();
+  });
+
   test('the collapsed state survives a reload', async ({ page }) => {
     await page.goto('/id/classroom-groups');
     await page.getByRole('button', { name: 'Cara menggunakan' }).click();
@@ -422,5 +481,20 @@ test.describe('How to use — Indonesian', () => {
     expect(Object.values(stored).join(' ')).not.toContain('12');
     expect(Object.keys(stored)).toContain('cg-howto-collapsed');
     expect(Object.keys(stored).every((k) => k.startsWith('cg-'))).toBe(true);
+  });
+
+  // Mirrors the English suite's own heading-reachability test.
+  test('the section is reachable by heading, and the toggle still works', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await expect(
+      page.getByRole('heading', { name: 'Cara menggunakan', level: 2 }),
+    ).toBeVisible();
+    const toggle = page.getByRole('button', { name: 'Cara menggunakan' });
+    await toggle.click();
+    await expect(
+      page.getByText('Masukkan jumlah siswa di kelas Anda.'),
+    ).toBeHidden();
   });
 });

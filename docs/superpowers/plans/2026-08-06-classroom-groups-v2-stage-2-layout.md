@@ -241,15 +241,19 @@ Expected: 5 failed — `#cg-howto` does not exist; the how-to is currently a sec
 
 In the Astro page, above `<form id="cg-form">`:
 
+A bare `<button>` carries no heading role, so wrap it in an `<h2>` — matching this page's own `#cg-results-h` and glory-points' `#how-to-heading` — or a screen-reader user loses heading navigation to this section (a stage-2 review caught this snippet shipping without it).
+
 ```astro
 <section id="cg-howto" class="howto">
-  <button
-    type="button"
-    class="howto-toggle"
-    id="cg-howto-toggle"
-    aria-expanded="true"
-    aria-controls="cg-howto-body"
-  >{t.howToHeading}</button>
+  <h2>
+    <button
+      type="button"
+      class="howto-toggle"
+      id="cg-howto-toggle"
+      aria-expanded="true"
+      aria-controls="cg-howto-body"
+    >{t.howToHeading}</button>
+  </h2>
   <div id="cg-howto-body" class="howto-body">
     <p>{t.howToWhat}</p>
     <ol>{t.howToSteps.map((s) => <li>{s}</li>)}</ol>

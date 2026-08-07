@@ -35,17 +35,22 @@ const themes = THEME_KEYS;
          only what it does) and how to use it. Collapsed, #cg-howto-toggle
          itself stays on screen and un-hidden -- a control that hides itself
          is a trap -- and only #cg-howto-body, the content it discloses, ever
-         gets `hidden`. -->
+         gets `hidden`. A bare <button> has no heading role, so it is wrapped
+         in an <h2> here -- matching #cg-results-h below and glory-points'
+         own #how-to-heading -- so heading navigation still finds this
+         section; the button alone carries the click. -->
     <section id="cg-howto" class="howto">
-      <button
-        type="button"
-        class="howto-toggle"
-        id="cg-howto-toggle"
-        aria-expanded="true"
-        aria-controls="cg-howto-body"
-      >
-        {t.howToHeading}
-      </button>
+      <h2 class="howto-heading">
+        <button
+          type="button"
+          class="howto-toggle"
+          id="cg-howto-toggle"
+          aria-expanded="true"
+          aria-controls="cg-howto-body"
+        >
+          {t.howToHeading}
+        </button>
+      </h2>
       <div id="cg-howto-body" class="howto-body">
         <p>{t.howToWhat}</p>
         <ol>
@@ -313,6 +318,12 @@ const themes = THEME_KEYS;
   .howto {
     max-width: var(--measure);
     margin-bottom: 1.5rem;
+  }
+  /* The <h2> wrapper exists for its heading role, not its box -- zero its
+     margin so the button's own 44px row is still the whole visual header,
+     unchanged from before the wrap. */
+  .howto-heading {
+    margin: 0;
   }
   /* Reset to plain text so this reads as a header, not a native button --
      full width and 44px tall, per CLAUDE.md's touch-target rule, so the
