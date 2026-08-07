@@ -34,6 +34,112 @@ const ok = (input: GroupingInput) => {
   return out.result;
 };
 
+// Task 11, the final sweep. The brief this describe block was drafted from
+// listed 4 runtime exports and 14 error codes -- both counts are stale: the
+// tasks that actually ran added codes and an export the plan never named.
+// The three checklists below are built from what `grouping.ts` really
+// exports today, not copied from the brief, and are re-derivable by anyone:
+// `grep -n "^export " src/lib/grouping.ts` for the surface, `grep -c
+// "^  [a-zA-Z]*:" src/lib/grouping.ts` inside `ERROR_CODES`/`WARNING_CODES`
+// for the codes.
+describe('the module surface', () => {
+  it('exports nothing that nothing uses', () => {
+    // FAILS when a runtime export is added to or removed from grouping.ts
+    // without this list changing -- type-only exports (Student, Mode,
+    // Leftovers, SexMode, GroupingInput, ErrorCode, GroupingError,
+    // GroupingWarning, GroupingOutcome) are erased at build time and never
+    // appear in `Object.keys`, so they are correctly absent here by
+    // construction, not by omission.
+    //
+    // A new entry belongs in this array ONLY if something outside
+    // grouping.ts actually reaches it -- a page script, or (like
+    // `weaveBySex` below) a test that cannot otherwise prove a guarantee
+    // through the public `buildGroups` surface. Add the export AND a
+    // one-line reason next to it, the way `weaveBySex` has one, so the next
+    // person does not have to re-derive why it is public.
+    //
+    // If this fails because an export appears here that NOTHING in src/ or
+    // tests/ actually calls: that is dead code. Delete the export from
+    // grouping.ts, not the entry here -- do not just widen the list to make
+    // the test pass.
+    expect(Object.keys(grouping).sort()).toEqual(
+      [
+        'ERROR_CODES',
+        'MAX_STUDENTS',
+        'WARNING_CODES',
+        'buildGroups',
+        // Exported ONLY so 'weaveBySex never drops a block, whatever `sex`
+        // holds' below can call it directly. `buildGroups`'s own public
+        // surface cannot exercise this guarantee with bad data: the
+        // unset-sex guard (ERROR_CODES.sexNeedsAllSet) refuses every
+        // off-domain `sex` value before `mix` ever reaches this function,
+        // so there is no roster shape that reaches it through `buildGroups`
+        // alone. See weaveBySex's own doc comment in grouping.ts. A
+        // deliberate test-only export, not an accident -- if a future
+        // change makes `buildGroups` able to exercise it directly, remove
+        // the export and this entry together.
+        'weaveBySex',
+      ].sort(),
+    );
+  });
+
+  it('has a test that reaches every error code', () => {
+    // A code with no test is a message a teacher could see that nobody has
+    // ever read. Kept as a checklist that fails when a code is added --
+    // or removed -- without this list changing.
+    //
+    // grep is NOT proof that a code is covered: a code named in an
+    // expected-value table or an i18n sample is not the same as a code
+    // `buildGroups` has actually been made to RETURN. When this fails on a
+    // genuinely new code: write a test that drives `buildGroups` to
+    // PRODUCE it (see 'apart letters -- three cliques whose sizes and
+    // capacities collide' below for the shape of test that does this for a
+    // code with no small hand-picked fixture), THEN add the code here. When
+    // it fails because a code was deleted: remove it from here and grep the
+    // whole file for its old name -- a leftover test still asserting on a
+    // retired code would silently stop testing anything real.
+    expect(Object.values(ERROR_CODES).sort()).toEqual(
+      [
+        'NO_STUDENTS',
+        'TOO_MANY_STUDENTS',
+        'DUPLICATE_NUMBER',
+        'INVALID_GROUP_SIZE',
+        'INVALID_GROUP_COUNT',
+        'TOO_MANY_GROUPS',
+        'TOGETHER_APART_CLASH',
+        'TOGETHER_UNIT_TOO_LARGE',
+        'TOGETHER_NO_ARRANGEMENT',
+        'TOGETHER_SEARCH_GAVE_UP',
+        'KEEP_APART_IMPOSSIBLE',
+        'KEEP_APART_NO_ARRANGEMENT',
+        'KEEP_APART_SEARCH_GAVE_UP',
+        'BOTH_RULES_NO_ARRANGEMENT',
+        'BOTH_RULES_SEARCH_GAVE_UP',
+        'SEX_NEEDS_ALL_SET',
+        'SEX_SEPARATE_SPLITS_UNIT',
+        'SEX_SEPARATE_IMPOSSIBLE',
+        'SEX_SEPARATE_SEARCH_GAVE_UP',
+        'PINNED_SPLITS_UNIT',
+        'PINNED_APART_CLASH',
+        'PINNED_IN_TWO_GROUPS',
+        'PINNED_TOO_MANY_GROUPS',
+      ].sort(),
+    );
+  });
+
+  it('has a test that reaches every warning code', () => {
+    // Same rule, same failure-mode guidance as the error-code checklist
+    // immediately above -- applied to WARNING_CODES, which the brief this
+    // block was drafted from did not check at all. When this fails: write a
+    // test proving `buildGroups` actually returns the new code inside
+    // `result.warnings` on a SUCCESSFUL outcome (warnings only ever
+    // accompany `ok: true` -- see GroupingOutcome), then add it here.
+    expect(Object.values(WARNING_CODES).sort()).toEqual(
+      ['SEX_SPILLOVER', 'PINNED_MIXED_SEX'].sort(),
+    );
+  });
+});
+
 describe('buildGroups — the worked examples from the design spec', () => {
   it.each([
     // students, mode,                          leftovers, expected shape
@@ -1457,6 +1563,73 @@ describe('apart letters — exhausting the search budget is never reported as "n
     // (matches the SEARCH_NODE_CAP comment in grouping.ts, which has the
     // full sweep this input was drawn from).
     expect(out.error).toEqual({ code: ERROR_CODES.keepApartSearchGaveUp });
+  });
+});
+
+// Task 11, the final sweep. KEEP_APART_NO_ARRANGEMENT -- the sibling of the
+// gave-up code just above, for when the search runs to genuine exhaustion
+// rather than hitting SEARCH_NODE_CAP -- had a hand-built fixture in
+// i18n.test.ts's SAMPLES table (rendering coverage: does the sentence come
+// out right when given this shape of data) but no producer anywhere in
+// THIS file: confirmed absent by grep across the whole suite before this
+// test was added. A sample is not proof of reachability -- see this
+// describe block's own name and Correction 2 of the Task 11 brief.
+//
+// The shape: three apart-letters, X and Y sized 3 each and Z sized 2 (8
+// students), into groupCount 3 with leftovers 'bunch' -- sizes [4, 2, 2]
+// (base 2, remainder 2, all bunched into slot 0 by `targetSizes`). X and Y
+// are each a clique of exactly 3, matching the group count exactly (3 is
+// NOT greater than 3), so the fast `keepApartImpossible` clique gate does
+// not fire for either -- the same boundary the "clique-equals-group-count"
+// case in task-8b-report.md's own sweep sits at. Each clique of 3 needs one
+// member in EVERY one of the 3 groups (nobody may share a group with their
+// own letter), so the two size-2 groups are already full from X and Y
+// alone before Z is even considered. Z's own 2 members still need two
+// DIFFERENT groups, and only the one size-4 group has spare room left,
+// which can hold at most one of them -- the other has nowhere to go. No
+// arrangement fits, and nothing here is oversized enough to trip
+// `togetherUnitTooLarge` (there are no together-letters at all) or the
+// clique gate, so this is a search-space question, not a capacity or
+// clique one -- exactly what distinguishes KEEP_APART_NO_ARRANGEMENT from
+// its sibling codes.
+//
+// Verified empirically before trusting the arithmetic above, not instead of
+// it: a throwaway probe (`tests/unit/_scratch.test.ts`, never committed)
+// ran this exact roster/mode through the real engine and printed the
+// result. Swept across 8 seeds below, not asserted once -- this is a
+// mathematical impossibility (the counting argument above holds regardless
+// of which order the search tries things in), so every seed must agree; a
+// seed-dependent result would mean the reasoning above is wrong, not that
+// one seed got unlucky. All 8 resolve in low single-digit milliseconds,
+// nowhere near SEARCH_NODE_CAP -- no budget needs lowering here, unlike the
+// gave-up test above.
+describe('apart letters — three cliques whose sizes and capacities collide, not just one oversized clique', () => {
+  it('proves no arrangement exists, not merely that the search gave up', () => {
+    const students = [
+      ...['X', 'Y'].flatMap((letter, li) =>
+        Array.from({ length: 3 }, (_, i) =>
+          student({ number: li * 3 + i + 1, apart: letter }),
+        ),
+      ),
+      student({ number: 7, apart: 'Z' }),
+      student({ number: 8, apart: 'Z' }),
+    ];
+    for (const seed of [1, 2, 3, 7, 42, 99, 123, 999]) {
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 3 },
+          leftovers: 'bunch',
+          random: seeded(seed),
+        }),
+      );
+      expect(out.ok, `seed ${seed}`).toBe(false);
+      if (out.ok) continue;
+      expect(out.error, `seed ${seed}`).toEqual({
+        code: ERROR_CODES.keepApartNoArrangement,
+        groupsTried: 3,
+      });
+    }
   });
 });
 
@@ -3117,6 +3290,16 @@ describe('pinned groups', () => {
     );
     expect(out.ok).toBe(true);
     if (!out.ok) return;
+    // Task 11 sweep: the reviewer's own named gap (task-9-report.md) --
+    // membership and the flat count alone do not prove the POOL was sized
+    // to `mode.count - pinnedGroups.length` (2 groups here) rather than
+    // `mode.count` unreduced (3): a mutant that drops the reduction still
+    // seats everyone, still leaves group 1 as [1, 2, 3] untouched, and still
+    // sums to 9 -- it only shows up as a FOURTH group in the output. The
+    // `separate`/`mix` pin-threading tests below happen to catch that
+    // mutant too, but this is the test whose own name claims the guarantee,
+    // so it should not need a sibling test to actually prove it.
+    expect(out.result.groups).toHaveLength(3);
     const first = out.result.groups.find((g) => g.some((s) => s.number === 1));
     expect(first?.map((s) => s.number).sort((a, b) => a - b)).toEqual([
       1, 2, 3,

@@ -55,7 +55,46 @@ const deepStrings = (value: unknown, path = ''): Array<[string, string]> => {
     return Object.entries(value).flatMap(([k, v]) =>
       deepStrings(v, path ? `${path}.${k}` : k),
     );
-  return []; // functions are covered by the rendered-sentence tests below
+  // A function contributes NOTHING here -- not a key, not a value, not a
+  // string to compare. `deepFunctions` below is the walk that actually
+  // reaches these (most of `errors`/`warnings`, and the three top-level
+  // formatters); "the rendered-sentence tests below" cover only that they
+  // produce SOME sentence-shaped string, never that the Indonesian one
+  // differs from the English one -- see Task 11's "every parameterised
+  // message is actually translated" test for the check that closes that
+  // gap. This function is named for what it collects, not for what covers
+  // the rest, so this comment used to overclaim; it no longer does.
+  return [];
+};
+
+/**
+ * Every function-valued leaf, addressed by the same dotted path `deepKeys`
+ * and `deepStrings` use — `errors.KEEP_APART_NO_ARRANGEMENT`, `groupLabel`,
+ * and so on.
+ *
+ * `deepStrings` only collects `typeof value === 'string'`, so a function —
+ * most of `errors`/`warnings` (every message with a number, a name list or
+ * a letter substituted in — the ones carrying the most detail, and the
+ * majority of the table by count) plus `resultsSummary`/`groupLabel`/
+ * `studentNumber` — is invisible to it: no key, no value, nothing to
+ * compare. Paste `en`'s own `KEEP_APART_NO_ARRANGEMENT` function into
+ * `id.ts` verbatim and every `deepStrings`-based check above stays green,
+ * because there is no STRING there to catch it. This walk exists so the
+ * "genuinely translated" promise reaches these too.
+ */
+const deepFunctions = (
+  value: unknown,
+  path = '',
+): Array<[string, (...args: never[]) => unknown]> => {
+  if (typeof value === 'function')
+    return [[path, value as (...args: never[]) => unknown]];
+  if (Array.isArray(value))
+    return value.flatMap((v, i) => deepFunctions(v, `${path}[${i}]`));
+  if (value && typeof value === 'object')
+    return Object.entries(value).flatMap(([k, v]) =>
+      deepFunctions(v, path ? `${path}.${k}` : k),
+    );
+  return [];
 };
 
 /**
@@ -68,6 +107,49 @@ const ALLOWED_IDENTICAL = new Set([
   'themes.planets[3]', // Mars
   'themes.planets[6]', // Uranus
 ]);
+
+/**
+ * One representative call per parameterised (function-valued) locale entry,
+ * keyed by the same dotted path `deepFunctions` reports.
+ *
+ * Different functions take different argument shapes (a name list, a single
+ * number, three numbers, a sex literal — `Strings` has no one signature), so
+ * there is no generic way to invoke "the next function found"; each entry
+ * here is deliberate, matching the codebase's existing SAMPLES-table
+ * convention below rather than a clever generic guess. `names` arguments use
+ * plain resolved-looking strings ('Student 1', not a raw number) because
+ * that is what these functions actually receive at runtime — `renderError`/
+ * `renderWarning` resolve every number through `resolveStudent` before the
+ * locale function ever sees it (see index.ts) — and a probe should call the
+ * function with the same SHAPE of argument its real caller does.
+ *
+ * A path with no entry here is reported by the test below, not silently
+ * skipped — see its own comment for why "no probe" must fail loudly rather
+ * than pass by omission.
+ */
+const FUNCTION_PROBES: Record<string, unknown[]> = {
+  resultsSummary: [3, 7],
+  groupLabel: [2],
+  studentNumber: [4],
+  'errors.TOO_MANY_STUDENTS': [500],
+  'errors.DUPLICATE_NUMBER': [5],
+  'errors.TOO_MANY_GROUPS': [4],
+  'errors.TOGETHER_APART_CLASH': [['Student 1', 'Student 2']],
+  'errors.TOGETHER_UNIT_TOO_LARGE': ['Q', 6, 4],
+  'errors.TOGETHER_NO_ARRANGEMENT': [3],
+  'errors.KEEP_APART_IMPOSSIBLE': [['Student 1', 'Student 2'], 2],
+  'errors.KEEP_APART_NO_ARRANGEMENT': [3],
+  'errors.BOTH_RULES_NO_ARRANGEMENT': [2],
+  'errors.SEX_NEEDS_ALL_SET': [['Student 3']],
+  'errors.SEX_SEPARATE_SPLITS_UNIT': [['Student 1', 'Student 2']],
+  'errors.SEX_SEPARATE_IMPOSSIBLE': [3],
+  'errors.PINNED_SPLITS_UNIT': [['Student 1', 'Student 7']],
+  'errors.PINNED_APART_CLASH': [['Student 1', 'Student 2']],
+  'errors.PINNED_IN_TWO_GROUPS': ['Student 1'],
+  'errors.PINNED_TOO_MANY_GROUPS': [4, 1, 2],
+  'warnings.SEX_SPILLOVER': [['Student 7', 'Student 8'], 'M'],
+  'warnings.PINNED_MIXED_SEX': [['Student 1', 'Student 4']],
+};
 
 describe('locales are complete', () => {
   it('Indonesian defines every key English defines, at every depth', () => {
@@ -96,6 +178,51 @@ describe('locales are complete', () => {
       .map(([k]) => k);
 
     expect(identical.filter((k) => !ALLOWED_IDENTICAL.has(k))).toEqual([]);
+  });
+
+  // Task 11, the final sweep. Logged in progress.md against Task 6's own
+  // report: this walk skips every function-valued entry (see
+  // `deepStrings`'s own comment above), and most of `errors`/`warnings` —
+  // the parameterised messages, which carry the most detail of anything in
+  // either locale — are functions. Closes that gap the same way the test
+  // above closes it for plain strings: call both locales' copy of the SAME
+  // function with the SAME arguments, and require the output to differ.
+  it('every parameterised message is actually translated, not copied English, when called with the same arguments', () => {
+    const idByPath = new Map(deepFunctions(id));
+    const missingProbe: string[] = [];
+    const identical: string[] = [];
+
+    for (const [path, enFn] of deepFunctions(en)) {
+      const args = FUNCTION_PROBES[path];
+      // A function this repo added with no entry in FUNCTION_PROBES above
+      // is UNTESTED by this check, not exempt from it -- failing here, not
+      // silently skipping, is what makes that visible. Fix: add one
+      // representative call for the new path to FUNCTION_PROBES, using
+      // arguments shaped like what `renderError`/`renderWarning` actually
+      // pass (see that table's own comment).
+      if (!args) {
+        missingProbe.push(path);
+        continue;
+      }
+      const idFn = idByPath.get(path);
+      // idFn's absence would mean `id` is missing a key `en` has -- already
+      // caught by "Indonesian defines every key English defines" above, so
+      // this only needs to not crash; the `!idFn` branch keeps `identical`
+      // honestly reporting a real difference, not a thrown TypeError, if
+      // that other test's own failure is what brought you here.
+      const enOut = enFn(...(args as never[]));
+      const idOut = idFn ? idFn(...(args as never[])) : undefined;
+      if (enOut === idOut) identical.push(path);
+    }
+
+    // A function silently skipped is a translation nobody checked -- same
+    // failure mode `deepStrings` already had, now caught instead of hidden.
+    expect(missingProbe).toEqual([]);
+    // English text called with Indonesian's own function and getting back
+    // the SAME string means id.ts's copy was never actually written --
+    // fix by translating that path's function body in id.ts, the same
+    // remedy as the plain-string check above.
+    expect(identical).toEqual([]);
   });
 
   it('and the list of exceptions has no dead entries', () => {
@@ -790,10 +917,29 @@ describe('every engine error can be rendered in every language', () => {
       // sentence" check above only looks at sentence SHAPE, so it would not
       // notice renderError threading the wrong number through. This is the
       // dedicated check that does, matching the precedent set by the
-      // together-unit-too-large test above rather than by
-      // KEEP_APART_NO_ARRANGEMENT, which has no dedicated test at all.
+      // together-unit-too-large test above -- and, since Task 11's sweep,
+      // by KEEP_APART_NO_ARRANGEMENT's own dedicated check directly below,
+      // which did not exist when this comment was first written.
       const msg = renderError(
         { code: ERROR_CODES.togetherNoArrangement, groupsTried: 3 },
+        strings,
+      );
+      expect(msg).toContain('3');
+    },
+  );
+
+  // Task 11, the final sweep. Named directly by the comment above (before
+  // this task) and by task-4-report.md's own F-1(b) section: this sibling
+  // code had a SAMPLES entry (the generic "renders every code" check above)
+  // but, unlike TOGETHER_NO_ARRANGEMENT just above, no test confirming
+  // `renderError` actually threads `groupsTried` through rather than, say,
+  // hardcoding a number or dropping it. Same idiom as that test, same
+  // number, deliberately, so a reader can compare the two side by side.
+  it.each(locales)(
+    'the keep-apart-no-arrangement message names how many groups were tried (%s)',
+    (_name, strings) => {
+      const msg = renderError(
+        { code: ERROR_CODES.keepApartNoArrangement, groupsTried: 3 },
         strings,
       );
       expect(msg).toContain('3');
