@@ -861,7 +861,7 @@ with one option. Groups are always numbered."
 
 ## Task 9: The sex switches come alive, and the last stage-2 debts
 
-**Files:** `classroom-groups.ts`, locales, `classroom-groups-controls.spec.ts`
+**Files:** `classroom-groups.ts`, locales, `classroom-groups-controls.spec.ts`, `tests/unit/classroom-groups-script.test.ts` (delete — see Step 2)
 **Traceability:** G-03, G-04, G-07, G-11, A-11…A-18 (through the page), E-05…E-11
 
 - [ ] **Step 1: Write the failing tests**
@@ -927,9 +927,11 @@ for (const [label, act] of [
 
 - [ ] **Step 2: Run, watch fail, implement**
 
-Wire `sexWhy` (stage 2 Task 4) to the live roster, render `warnings` from the engine outcome, and **remove the `test.fixme`** from stage 2's spillover case.
+Wire `sexWhy` (stage 2 Task 4) to the live roster, render `warnings` from the engine outcome, and **delete the whole `test.fixme(...)` block** — title, comment and all — for stage 2's spillover case, from `classroom-groups-controls.spec.ts`. Step 1's own `'separate mode warns and names who lands in a group of the other sex'` test above is its real replacement; nothing should be left behind.
 
-> `test.fixme` fails the run when it starts passing. That is the point — it is how this debt announced itself rather than sitting green.
+> CORRECTED (review finding F-2): `test.fixme` does **not** fail the run when it starts passing — Playwright's own docs are explicit that a declared fixme test is simply never run at all, the same as `.skip`. Stripping only the `.fixme` off `test.fixme('a separate-mode spillover warning renders, naming who', async ({ page }) => { /* … */ })` and leaving its comment-only body untouched would produce a real `test()` with zero assertions, which always passes and proves nothing — do not do that. Delete the whole block instead; do not "unfixme" it.
+>
+> Until this step lands, the actual forcing function is `tests/unit/classroom-groups-script.test.ts` — it pins `sexMode: 'off'` as the literal `classroom-groups.ts` feeds to `buildGroups` at submit. Wiring `sexWhy` to a live roster here is exactly the change that makes `sexMode` stop being that hard-coded literal, so that pinned test goes red as part of this step, on purpose. Delete it too once this lands; its job is done.
 
 - [ ] **Step 3: Full run across all projects, then commit**
 

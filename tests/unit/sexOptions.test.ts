@@ -3,6 +3,7 @@ import { sexWhy } from '../../src/lib/sexOptions';
 import { en } from '../../src/lib/i18n/en';
 import { id } from '../../src/lib/i18n/id';
 import { student } from './factories';
+import type { Student } from '../../src/lib/grouping';
 
 describe('sexWhy — why the two sex switches are disabled', () => {
   it('says so with its own wording when there is no list at all', () => {
@@ -146,5 +147,35 @@ describe('sexWhy — why the two sex switches are disabled', () => {
       student({ number: 2, sex: null, absent: true }),
     ];
     expect(sexWhy(roster, id)).toBeNull();
+  });
+
+  // F-3 (review). The type says `sex: 'M' | 'F' | null` -- never
+  // `undefined` -- but nothing in this repo or in CI enforces that
+  // (CLAUDE.md: "no type checker anywhere"), and stage 3 builds this roster
+  // by reading the DOM, where a field the type promises is never missing
+  // can still arrive `undefined` in practice. The `student()` factory above
+  // cannot produce this shape (`Partial<Student>` still means "if given,
+  // `sex` is `'M' | 'F' | null`"), so this is a hand-built object with a
+  // cast, reaching past the type the same way a real DOM read could. A
+  // strict `sex === null` check treats this student as SET and enables the
+  // switches -- fail OPEN on the one guarantee this module exists to
+  // provide. `!s.sex` must fail CLOSED instead: this roster keeps them
+  // disabled, the same as an explicit `null` does.
+  it('treats an undefined sex as unset, not as set (fails closed, not open)', () => {
+    const withUndefinedSex = {
+      number: 1,
+      name: null,
+      sex: undefined,
+      absent: false,
+      together: null,
+      apart: null,
+    } as unknown as Student;
+    expect(sexWhy([withUndefinedSex], en)).toBe(
+      sexWhy([student({ number: 1, sex: null })], en),
+    );
+    // Guards against a vacuous pass -- a mutant that made sexWhy always
+    // return null would satisfy the equality above by both sides agreeing
+    // on the wrong answer.
+    expect(sexWhy([withUndefinedSex], en)).not.toBeNull();
   });
 });

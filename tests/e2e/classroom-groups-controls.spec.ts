@@ -637,17 +637,23 @@ test.describe("the tool's collapsible sections", () => {
 
   // A control that only ever opens, or only ever closes, is a trap — the
   // same proof the How to use fix round added above (see that describe
-  // block's own comment), adapted here for a body with no sentence of its
-  // own to search for: all three of these sections render nothing at all
-  // in the body until a later stage fills them in (see the markup's own
-  // comment on why). So "content the user would actually see returning" is
-  // the body genuinely re-entering the page's rendered layout — checked
-  // with toBeVisible()/toBeHidden(), which read computed layout (the body
-  // carries `padding-bottom` only while unhidden, so an empty div still has
-  // real, non-zero size to detect), never the aria-expanded STRING alone.
-  // Three clicks, not two: these sections start CLOSED (opposite of How to
-  // use's default-open), so proving a genuine REOPEN — not just the first
-  // close — needs open, close, open again.
+  // block's own comment), adapted here for a shared loop across three
+  // bodies that no longer all hold the same thing. `cg-students` and
+  // `cg-io` still render nothing at all in the body (see the markup's own
+  // comment on why), so for those two "content the user would actually see
+  // returning" is the body genuinely re-entering the page's rendered
+  // layout — checked with toBeVisible()/toBeHidden(), which read computed
+  // layout (the body carries `padding-bottom` only while unhidden, so an
+  // empty div still has real, non-zero size to detect), never the
+  // aria-expanded STRING alone. `cg-grouping` is no longer one of the empty
+  // two: Stage 2, Task 4 moved the two sex switches and the leftovers
+  // choice into its body, so its reopen here is proven by the same
+  // computed-layout check but is no longer resting on an empty div's
+  // padding alone — the dedicated 'Grouping options' describe block below
+  // asserts its actual content directly. Three clicks, not two: these
+  // sections start CLOSED (opposite of How to use's default-open), so
+  // proving a genuine REOPEN — not just the first close — needs open,
+  // close, open again.
   for (const id of ['cg-students', 'cg-grouping', 'cg-io']) {
     test(`${id}: a second opening genuinely re-shows the section, not merely an attribute flipping back`, async ({
       page,
@@ -759,21 +765,39 @@ test.describe("the tool's collapsible sections — Indonesian", () => {
 test.describe('Grouping options', () => {
   test('holds both sex switches and the leftovers choice', async ({ page }) => {
     await page.goto('/classroom-groups');
+    // F-1 (review): the headline claim of this task is that these controls
+    // live INSIDE Grouping options, not merely that they turn up somewhere
+    // on the page after a click. Proven in both directions: hidden BEFORE
+    // the section opens (checked against the whole page, not the section
+    // body -- a control moved anywhere else on the page would still
+    // satisfy a body-scoped hidden check, since a locator matching zero
+    // elements passes toBeHidden()), then visible AND scoped to
+    // `#cg-grouping-body` once it does. Proven directly, not by citing a
+    // session note: temporarily moving this markup back to the top-level
+    // "How to split them" fieldset reddens both halves above, with a real
+    // hidden/visible mismatch and no crash -- confirmed, then reverted.
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeHidden();
+    await expect(page.getByText('If students are left over')).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
     await page.locator('#cg-grouping-toggle').click();
-    await expect(page.getByLabel('Mix boys and girls evenly')).toBeVisible();
-    await expect(page.getByLabel('Keep boys and girls separate')).toBeVisible();
-    await expect(page.getByText('If students are left over')).toBeVisible();
-    await expect(page.getByLabel('Share them out evenly')).toBeChecked();
+    await expect(body.getByLabel('Mix boys and girls evenly')).toBeVisible();
+    await expect(body.getByLabel('Keep boys and girls separate')).toBeVisible();
+    await expect(body.getByText('If students are left over')).toBeVisible();
+    await expect(body.getByLabel('Share them out evenly')).toBeChecked();
   });
 
   test('both switches are off by default', async ({ page }) => {
     await page.goto('/classroom-groups');
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
     await page.locator('#cg-grouping-toggle').click();
     await expect(
-      page.getByLabel('Mix boys and girls evenly'),
+      body.getByLabel('Mix boys and girls evenly'),
     ).not.toBeChecked();
     await expect(
-      page.getByLabel('Keep boys and girls separate'),
+      body.getByLabel('Keep boys and girls separate'),
     ).not.toBeChecked();
   });
 
@@ -781,13 +805,16 @@ test.describe('Grouping options', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
     await page.locator('#cg-grouping-toggle').click();
-    await expect(page.getByLabel('Mix boys and girls evenly')).toBeDisabled();
+    await expect(body.getByLabel('Mix boys and girls evenly')).toBeDisabled();
     await expect(
-      page.getByLabel('Keep boys and girls separate'),
+      body.getByLabel('Keep boys and girls separate'),
     ).toBeDisabled();
     await expect(
-      page.getByText(
+      body.getByText(
         'Add your students in Student details and set M or F for each to use these.',
       ),
     ).toBeVisible();
@@ -800,13 +827,16 @@ test.describe('Grouping options', () => {
   // diverging reason element.
   test('both switches point at the same reason', async ({ page }) => {
     await page.goto('/classroom-groups');
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
     await page.locator('#cg-grouping-toggle').click();
-    await expect(page.getByLabel('Mix boys and girls evenly')).toHaveAttribute(
+    await expect(body.getByLabel('Mix boys and girls evenly')).toHaveAttribute(
       'aria-describedby',
       'cg-sex-why',
     );
     await expect(
-      page.getByLabel('Keep boys and girls separate'),
+      body.getByLabel('Keep boys and girls separate'),
     ).toHaveAttribute('aria-describedby', 'cg-sex-why');
   });
 
@@ -817,14 +847,23 @@ test.describe('Grouping options', () => {
   // addition cannot change what that test already proves. The LABEL is
   // measured, not the raw checkbox: `.switch`'s 44px min-height is on the
   // label, because the whole row is the tap target, the same as every
-  // radio label on this page.
+  // radio label on this page. The id locator is ALSO scoped to
+  // `#cg-grouping-body` (F-1, review): an id selector is unique regardless
+  // of parent, so this is the one test in this describe block where
+  // scoping is not already implied by getByLabel/getByText -- without it,
+  // moving the switches anywhere else on the page would still measure the
+  // same two elements and this test would never notice they had left
+  // Grouping options.
   test('the two sex switches meet the 44px touch target once open', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 375, height: 900 });
     await page.goto('/classroom-groups');
+    await expect(page.locator('#cg-sex-mix')).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
     await page.locator('#cg-grouping-toggle').click();
-    const heights = await page
+    const heights = await body
       .locator('#cg-sex-mix, #cg-sex-separate')
       .evaluateAll((els) =>
         els.map((el) => el.closest('label')!.getBoundingClientRect().height),
@@ -848,10 +887,21 @@ test.describe('Grouping options', () => {
   // humans reading the report). It will not turn red by itself the day
   // stage 3 lands. What DOES make this visible is the traceability matrix
   // row this task ticks as "owed" (G-11, docs/superpowers/plans/
-  // 2026-08-06-classroom-groups-v2-test-traceability.md) -- that is the
-  // actual mechanism, not this annotation. `fixme` is still the right
-  // marker over `skip`: it is unambiguous, in the test file itself, that
-  // this is known-incomplete rather than not-applicable.
+  // 2026-08-06-classroom-groups-v2-test-traceability.md) -- that is one
+  // mechanism, not this annotation. A second, code-level one now exists too
+  // (F-2, review): tests/unit/classroom-groups-script.test.ts pins
+  // `sexMode: 'off'` as the literal `classroom-groups.ts` feeds to
+  // `buildGroups` at submit, and goes red -- automatically, in every `npm
+  // run test:unit`, no traceability doc required -- the moment stage 3
+  // makes that literal live, which is exactly when this fixme becomes
+  // actionable. `fixme` is still the right marker over `skip`: it is
+  // unambiguous, in the test file itself, that this is known-incomplete
+  // rather than not-applicable. Its body stays comments-only rather than a
+  // stub with assertions that would always pass: a fixme body that cannot
+  // yet exercise anything real is a debt marker, but a REAL test with zero
+  // assertions is worse than no test at all -- it always passes, under a
+  // name claiming coverage that does not exist (see that unit test's own
+  // doc comment for the fuller reasoning).
   test.fixme('a separate-mode spillover warning renders, naming who', async ({
     page,
   }) => {
@@ -869,25 +919,39 @@ test.describe('Grouping options', () => {
 test.describe('Grouping options — Indonesian', () => {
   test('holds both sex switches and the leftovers choice', async ({ page }) => {
     await page.goto('/id/classroom-groups');
-    await page.locator('#cg-grouping-toggle').click();
+    // Same placement proof as the English describe block above (F-1,
+    // review): hidden before the section opens, then visible and scoped
+    // to `#cg-grouping-body` once it does.
     await expect(
       page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeHidden();
+    await expect(page.getByText('Jika ada siswa tersisa')).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      body.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
     ).toBeVisible();
     await expect(
-      page.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
+      body.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
     ).toBeVisible();
-    await expect(page.getByText('Jika ada siswa tersisa')).toBeVisible();
-    await expect(page.getByLabel('Bagikan merata')).toBeChecked();
+    await expect(body.getByText('Jika ada siswa tersisa')).toBeVisible();
+    await expect(body.getByLabel('Bagikan merata')).toBeChecked();
   });
 
   test('both switches are off by default', async ({ page }) => {
     await page.goto('/id/classroom-groups');
-    await page.locator('#cg-grouping-toggle').click();
     await expect(
       page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      body.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
     ).not.toBeChecked();
     await expect(
-      page.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
+      body.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
     ).not.toBeChecked();
   });
 
@@ -895,15 +959,20 @@ test.describe('Grouping options — Indonesian', () => {
     page,
   }) => {
     await page.goto('/id/classroom-groups');
-    await page.locator('#cg-grouping-toggle').click();
     await expect(
       page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeHidden();
+
+    const body = page.locator('#cg-grouping-body');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      body.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
     ).toBeDisabled();
     await expect(
-      page.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
+      body.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
     ).toBeDisabled();
     await expect(
-      page.getByText(
+      body.getByText(
         'Tambahkan siswa Anda di bagian Detail siswa dan atur L atau P untuk masing-masing agar bisa memakai opsi ini.',
       ),
     ).toBeVisible();

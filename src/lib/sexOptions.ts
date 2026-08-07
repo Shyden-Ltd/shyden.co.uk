@@ -53,7 +53,20 @@ import type { Strings } from './i18n';
 export const sexWhy = (roster: Student[] | null, t: Strings): string | null => {
   if (roster === null || roster.length === 0) return t.sexWhyNoList;
   const grouped = roster.filter((s) => !s.absent);
-  const unset = grouped.filter((s) => s.sex === null);
+  // `!s.sex`, not `s.sex === null`: the type says `'M' | 'F' | null`, but
+  // there is no type checker anywhere in this repo or in CI (CLAUDE.md), and
+  // stage 3 builds this roster by reading the DOM -- a field the type
+  // promises is never missing can still arrive `undefined` in practice (a
+  // student row rendered without its sex control wired yet, a form field
+  // read before its listener attaches). A strict `=== null` treats that
+  // `undefined` as SET, which fails OPEN on exactly the guarantee this
+  // module exists to provide -- it would enable the switches for a roster
+  // that does not actually have M or F for everyone. `!s.sex` treats
+  // anything falsy (`null`, `undefined`, and an empty string, though the
+  // type admits none of the last) as unset, the same fail-closed shape
+  // grouping.ts's own `.filter((s) => s.sex !== 'M' && s.sex !== 'F')`
+  // already uses for the identical question elsewhere in this codebase.
+  const unset = grouped.filter((s) => !s.sex);
   if (unset.length === 0) return null;
   return t.sexWhyUnset(unset.length, grouped.length);
 };
