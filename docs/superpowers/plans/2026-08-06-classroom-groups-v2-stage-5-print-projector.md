@@ -501,7 +501,7 @@ test('the reveal plays on the board', async ({ page }) => {
 
 test('the Sound & animation switch suppresses it', async ({ page }) => {
   await page.goto('/classroom-groups');
-  await page.locator('#cg-sound summary').click();
+  await page.locator('#cg-sound-toggle').click();
   await page.getByLabel('Skip').check();
   await withGroups(page);
   await page.getByRole('button', { name: 'Full screen' }).click();
@@ -525,7 +525,7 @@ test.describe('all three refuse while the groups are out of date', () => {
 
   test('Export groups refuses, and says why', async ({ page }) => {
     await goStale(page);
-    await page.locator('#cg-io summary').click();
+    await page.locator('#cg-io-toggle').click();
     await page.getByRole('button', { name: 'Export groups' }).click();
     await expect(page.getByText(
       'These groups are out of date. Shuffle again before saving them.')).toBeVisible();

@@ -466,7 +466,7 @@ One component pattern — id, heading, `<span class="state">`, body — for `cg-
 
 **`cg-grouping` is ALSO empty at the end of this task, not just the two above** — Task 4 below is what moves the leftovers fieldset in, and its own RED prediction ("3 failed — the section is empty and the leftovers radios still sit in the top-level form") already says so; this step should not be read as asking for that move too.
 
-**`cg-sound` is not built by this task at all — corrected, with a reason.** The existing sound/speed fieldset already has a live, tested checkbox at `id="cg-sound"` (five e2e assertions across `classroom-groups.spec.ts`, `classroom-groups-controls.spec.ts` and `classroom-groups-privacy.spec.ts` use it). A fourth section sharing that literal id with its wrapper is a duplicate id; giving the wrapper a different id would contradict the id this whole task's tests, and Task 7's own `#cg-sound` reference below, depend on. The only fix is renaming the checkbox, which ripples into those three spec files and `tests/dev/dev-sanity.spec.ts` (`#cg-speed`) — out of this task's own file list and untested by anything this task or Task 4 actually asserts (no traceability row below names a Sound & animation state string; `sectionState`'s own interface returns three fields, not four). Left for whichever task finally gives sound its own section and makes that rename deliberately, rather than as a side effect of this one.
+**`cg-sound` is not built by this task at all — corrected, with a reason.** The existing sound/speed fieldset already has a live, tested checkbox at `id="cg-sound"` (five e2e assertions across `classroom-groups.spec.ts`, `classroom-groups-controls.spec.ts` and `classroom-groups-privacy.spec.ts` use it). A fourth section sharing that literal id with its wrapper is a duplicate id, but a different id would not itself fix the real problem: that fieldset already renders `<legend>{t.playbackHeading}</legend>` — "Sound and animation" — with every control inside it already visible. An empty `cg-sound`-shaped shell wrapped around or beside it, whatever id it used (`cg-sound`, `cg-playback`, anything), would put a *second* "Sound and animation" heading on the page for content the fieldset already shows in full — worse than not building it. The real fix folds the existing fieldset into the same `<h2><button>` pattern the other three sections use, removing its `<legend>` rather than merely renaming its checkbox; that still ripples into those three spec files and `tests/dev/dev-sanity.spec.ts` (`#cg-speed`), out of this task's own file list and untested by anything this task or Task 4 actually asserts (no traceability row below names a Sound & animation state string; `sectionState`'s own interface returns three fields, not four). Left for whichever task finally gives sound its own section and makes that restructuring deliberately, rather than as a side effect of this one.
 
 - [ ] **Step 5: Write the e2e assertions**
 
@@ -798,12 +798,13 @@ rather than finding every place that sets a flag."
 
 - [ ] **Step 1: Write the tests**
 
-> **`cg-sound` does not exist yet.** Task 3's own Step 4 (corrected) explains why: the existing
-> sound/speed fieldset's checkbox already holds `id="cg-sound"`, and giving the fourth section's
-> wrapper the same id would be a duplicate; the rename needed to avoid that touches three other
-> e2e spec files, out of Task 3's scope. The `for (const id of ['cg-grouping', 'cg-sound'])` loop
-> below needs either `cg-sound` built first (by whichever task ends up doing that rename) or
-> `'cg-sound'` dropped from the list — this is not something Task 3 could resolve on its own.
+> **`cg-sound` does not exist yet, and will not by the time this task runs either.** Task 3's own
+> Step 4 (corrected) explains why: it is not just an id collision with the existing sound/speed
+> fieldset's checkbox, but that fieldset already rendering the section's whole heading and
+> content — building the real fourth section is a restructuring, not a rename, and is left for its
+> own task. The loop below covers `cg-grouping` only. The matching no-scroll and 44px coverage for
+> `cg-sound` is not dropped — it is carried as owed work in this doc's own Self-review, under
+> Linkage out, until whichever task finally builds that section picks it up.
 
 ```ts
 const WIDTHS = [320, 375, 768, 1280];
@@ -827,7 +828,7 @@ for (const width of WIDTHS) {
       expect(over, label).toBeLessThanOrEqual(0);
     };
     await check('collapsed');
-    for (const id of ['cg-grouping', 'cg-sound']) {
+    for (const id of ['cg-grouping']) {
       await page.locator(`#${id}-toggle`).click();
       await check(id);
     }
@@ -931,4 +932,4 @@ exactly how this page shipped three sentences that said the wrong thing."
 
 **Type consistency** — `ToolState` and `sectionState` in T3 are what T4's `sexWhy` and T6's `Snapshot` read from; `Snapshot.roster` is `string` in T6 and stage 3 fills it with a serialised roster rather than changing its type.
 
-**Linkage out** — stage 3 must: fill `Snapshot.roster`, un-`fixme` the G-11 spillover test, replace `students: count` with the roster, and fill the `cg-students` body. Each is named in the task that leaves it.
+**Linkage out** — stage 3 must: fill `Snapshot.roster`, un-`fixme` the G-11 spillover test, replace `students: count` with the roster, and fill the `cg-students` body. Each is named in the task that leaves it. Sound & animation's own fourth section is a fifth debt this stage leaves, but not stage 3's: checked against stage 3's own plan, which names exactly four; stage 5's Task 6 already assumes `cg-sound` exists as a collapsible without claiming to build it. Owed, to whichever stage finally does: folding the existing sound/speed fieldset into the shared `<h2><button>` pattern (Task 3's own Step 4 has the reason a bare rename cannot), the checkbox rename that ripples into three e2e spec files plus `tests/dev/dev-sanity.spec.ts`, and the no-scroll/44px coverage Task 7 above skips for it.

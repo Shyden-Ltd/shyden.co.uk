@@ -111,10 +111,43 @@ describe('section header states', () => {
     ).toBe('24 diberi nama · 2 tidak hadir');
   });
 
+  // Mirrors the English "adds the letters, in a fixed order" test above.
+  // Without this, `id.stateTogether` and `id.stateApart` are never pinned
+  // anywhere: i18n.test.ts's own probe for them only checks the Indonesian
+  // output is non-blank and differs from English, not that it says the
+  // right thing -- a mutant that swapped the two (English "together" text
+  // in the Indonesian "apart" slot, or the reverse) would pass every test
+  // that existed before this one.
+  it('adds the letters, in a fixed order, in Indonesian too', () => {
+    expect(
+      sectionState(
+        {
+          ...empty,
+          rosterSize: 24,
+          named: 24,
+          absent: 2,
+          together: 2,
+          apart: 1,
+        },
+        id,
+      ).studentDetails,
+    ).toBe('24 diberi nama · 2 tidak hadir · 2 disatukan · 1 dipisahkan');
+  });
+
+  // Mirrors the English "falls back to a plain count..." test above. Same
+  // reason: `id.stateAdded` is otherwise never pinned to its actual text,
+  // only checked non-blank and non-identical-to-English by i18n.test.ts.
+  it('falls back to a plain count in Indonesian too', () => {
+    expect(sectionState({ ...empty, rosterSize: 24 }, id).studentDetails).toBe(
+      '24 ditambahkan',
+    );
+  });
+
   // The state strings are the whole point of this function, and a unit test
   // is the only thing that can pin one against a locale file -- an e2e test
-  // can only ever sample one language at a time. The Indonesian check above
-  // covers `studentDetails`; these two close the same gap for the other two
+  // can only ever sample one language at a time. The two Indonesian checks
+  // above pin every branch of `studentDetails`, including the fallback and
+  // the two letter counts; these two close the same gap for the other two
   // returned fields, in both languages, so every branch of the function is
   // proven against BOTH locale tables, not just English.
   it('reports grouping options in Indonesian', () => {

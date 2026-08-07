@@ -251,7 +251,7 @@ import { expect, type Page } from '@playwright/test';
 
 export const openRoster = async (page: Page, path = '/classroom-groups') => {
   await page.goto(path);
-  await page.locator('#cg-students summary').click();
+  await page.locator('#cg-students-toggle').click();
   await page.getByRole('button', { name: /Add student|Tambah siswa/ }).click();
 };
 
@@ -299,7 +299,7 @@ import { openRoster, addSeveral, buildRoster } from './helpers';
 
   await page.goto('/classroom-groups');
   await page.getByLabel('How many students?').fill('6');
-  await page.locator('#cg-students summary').click();
+  await page.locator('#cg-students-toggle').click();
   await page.getByRole('button', { name: 'Add student' }).click();
 };
 
@@ -688,7 +688,7 @@ test('Add several refuses a number that would cross the limit, saying how many a
 test('Student details refuses to open above 100, leaving the count alone', async ({ page }) => {
   await page.goto('/classroom-groups');
   await page.getByLabel('How many students?').fill('300');
-  await page.locator('#cg-students summary').click();
+  await page.locator('#cg-students-toggle').click();
   await expect(page.getByText(
     'Student details holds up to 100 students. Lower the number to list this class individually.'
   )).toBeVisible();
@@ -724,14 +724,14 @@ alone so the teacher can still shuffle 500 anonymously."
 test('typeable with no list; a read-out with one', async ({ page }) => {
   await page.goto('/classroom-groups');
   await expect(page.getByLabel('How many students?')).toBeEditable();
-  await page.locator('#cg-students summary').click();
+  await page.locator('#cg-students-toggle').click();
   await page.getByRole('button', { name: 'Add student' }).click();
   await expect(page.getByLabel('How many students?')).not.toBeEditable();
 });
 
 test('the reason is rendered, not implied', async ({ page }) => {
   await page.goto('/classroom-groups');
-  await page.locator('#cg-students summary').click();
+  await page.locator('#cg-students-toggle').click();
   await page.getByRole('button', { name: 'Add student' }).click();
   await expect(page.getByText(
     'Set by your list. Add or remove students in Student details to change it.'
@@ -977,7 +977,7 @@ test('a reload loses the roster', async ({ page }) => {
   await openRoster(page);
   await buildRoster(page, [['F', 'Ana']]);
   await page.reload();
-  await page.locator('#cg-students summary').click();
+  await page.locator('#cg-students-toggle').click();
   await expect(page.locator('.cg-student')).toHaveCount(0);
 });
 

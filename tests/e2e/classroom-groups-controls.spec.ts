@@ -544,6 +544,21 @@ test.describe("the tool's collapsible sections", () => {
     );
   });
 
+  // F-1, task-3-fix-report.md. `leftovers` is the one ToolState field
+  // already live on this page today -- the radios still sit in the
+  // top-level form (Task 4 moves them into #cg-grouping itself), but a
+  // teacher can choose "put them all in one group" long before that move
+  // happens, and the header must not go on reporting "none" once they have.
+  test('the grouping header follows the leftovers choice, live', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.check('input[name="leftovers"][value="bunch"]');
+    await expect(page.locator('#cg-grouping-toggle')).toHaveText(
+      'Grouping options · leftovers in one group',
+    );
+  });
+
   test('sections sit two-by-two on a laptop and stacked on a phone', async ({
     page,
   }) => {
@@ -643,6 +658,17 @@ test.describe("the tool's collapsible sections — Indonesian", () => {
     );
     await expect(page.locator('#cg-io-toggle')).toHaveText(
       'Impor / ekspor · belum ada yang perlu disimpan',
+    );
+  });
+
+  // Mirrors the English suite's own leftovers-follows-live test.
+  test('the grouping header follows the leftovers choice, live', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.check('input[name="leftovers"][value="bunch"]');
+    await expect(page.locator('#cg-grouping-toggle')).toHaveText(
+      'Opsi pengelompokan · sisa dalam satu kelompok',
     );
   });
 

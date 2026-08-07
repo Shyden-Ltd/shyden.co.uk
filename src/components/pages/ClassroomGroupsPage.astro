@@ -26,10 +26,13 @@ const themes = THEME_KEYS;
 // not wired until Grouping options gets its own task, and nothing can mark
 // the roster `dirty` until a later stage gives it something to lose.
 // `leftovers` mirrors the radio group's own default further down (`checked`
-// on `spread`) — that control has not moved into `#cg-grouping` yet, and
-// wiring this header to follow it live if a teacher changes it before then
-// is left for the task that gives the two a shared home, so a header never
-// promises to track a control it is not yet standing next to.
+// on `spread`) for this build-time render only. `classroom-groups.ts` keeps
+// the rendered header live from there: its own `change` listener calls this
+// same `sectionState` again whenever the leftovers radio changes, and
+// rewrites `#cg-grouping .state` — so the header cannot go on reporting
+// "none" once a teacher has picked "put them all in one group", even though
+// that control has not physically moved into `#cg-grouping` itself yet
+// (Task 4 does that move).
 const initialToolState: ToolState = {
   named: 0,
   absent: 0,

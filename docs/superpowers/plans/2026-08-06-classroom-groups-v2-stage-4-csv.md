@@ -525,7 +525,7 @@ import { buildRoster, rosterOf, upload, downloadText, downloadName, todayISO } f
 
 test('a bad file changes nothing on screen, and lists every problem', async ({ page }) => {
   await rosterOf(page, 3);
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   await upload(page, 'bad.csv',
     'number,name,sex\n1,Ana,F\n2,Budi,Male\n1,Citra,F\n');
   await expect(page.getByText('Row 2 — sex \'Male\' not understood. Use M, F, or leave blank.')).toBeVisible();
@@ -535,7 +535,7 @@ test('a bad file changes nothing on screen, and lists every problem', async ({ p
 
 test('importing over a roster always warns, even when the counts match', async ({ page }) => {
   await rosterOf(page, 3);
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   await upload(page, 'three.csv', 'number\n1\n2\n3\n');
   await expect(page.getByText(
     'This will replace your current class list — 3 students, 3 named.')).toBeVisible();
@@ -544,7 +544,7 @@ test('importing over a roster always warns, even when the counts match', async (
 
 test('the export button appears for groups only once groups exist', async ({ page }) => {
   await rosterOf(page, 6);
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   await expect(page.getByRole('button', { name: 'Export groups' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Make groups' }).click();
   await expect(page.getByRole('button', { name: 'Export groups' })).toBeVisible();
@@ -552,7 +552,7 @@ test('the export button appears for groups only once groups exist', async ({ pag
 
 test('the template is the roster once there is one', async ({ page }) => {
   await buildRoster(page, [['F', 'Ana'], ['M', 'Budi']]);
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   const text = await downloadText(page, 'Download template');
   expect(text).toContain('1,Ana,F,,,');
   expect(text).toContain('2,Budi,M,,,');
@@ -562,7 +562,7 @@ test('the template is the roster once there is one', async ({ page }) => {
 
 test('the template with no roster is example COMMENT rows only', async ({ page }) => {
   await page.goto('/classroom-groups');
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   const text = await downloadText(page, 'Download template');
   expect(text).toContain('# 1,Ana,F,,A,');
   // every non-header line is a comment, so importing it unedited adds nobody
@@ -573,7 +573,7 @@ test('the template with no roster is example COMMENT rows only', async ({ page }
 test('the filename carries the class and the date', async ({ page }) => {
   await rosterOf(page, 2);
   await page.getByLabel('Class (optional)').fill('7B');
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   const name = await downloadName(page, 'Export class list');
   expect(name).toMatch(/^7B-class-list-\d{4}-\d{2}-\d{2}\.csv$/);
 });
@@ -581,7 +581,7 @@ test('the filename carries the class and the date', async ({ page }) => {
 test('a class name with a slash still produces a usable filename', async ({ page }) => {
   await rosterOf(page, 2);
   await page.getByLabel('Class (optional)').fill('Year 7 / Set B');
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   const name = await downloadName(page, 'Export class list');
   expect(name).toBe(`Year-7-Set-B-class-list-${todayISO()}.csv`);
   // and the class name itself is untouched
@@ -592,7 +592,7 @@ test('a class name with a slash still produces a usable filename', async ({ page
 test('exporting clears the unsaved-changes warning', async ({ page }) => {
   // The other half of stage 3's `dirty` rule: setRoster(next, { saved: true }).
   await rosterOf(page, 3);
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   await expect(page.locator('#cg-io .state')).toHaveText('unsaved changes — export to keep them');
   await downloadName(page, 'Export class list');
   await expect(page.locator('#cg-io .state')).toHaveText('nothing to save yet');
@@ -600,7 +600,7 @@ test('exporting clears the unsaved-changes warning', async ({ page }) => {
 
 test('a successful import clears it too', async ({ page }) => {
   await page.goto('/classroom-groups');
-  await page.locator('#cg-io summary').click();
+  await page.locator('#cg-io-toggle').click();
   await upload(page, 'ok.csv', 'number,name\n1,Ana\n2,Budi\n');
   await expect(page.locator('.cg-student')).toHaveCount(2);
   await expect(page.locator('#cg-io .state')).toHaveText('nothing to save yet');
@@ -647,7 +647,7 @@ test.describe('exporting in both languages', () => {
   ] as const) {
     test(`works starting from ${from}`, async ({ page, context }) => {
       await buildRosterAtPath(page, from, [['F', 'Ana'], ['M', 'Budi']]);
-      await page.locator('#cg-io summary').click();
+      await page.locator('#cg-io-toggle').click();
 
       const [download, newPage] = await Promise.all([
         page.waitForEvent('download'),
@@ -672,7 +672,7 @@ test.describe('exporting in both languages', () => {
 
   test('nothing is written to storage and nothing is in a URL', async ({ page, context }) => {
     await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
-    await page.locator('#cg-io summary').click();
+    await page.locator('#cg-io-toggle').click();
     const [, newPage] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
@@ -689,7 +689,7 @@ test.describe('exporting in both languages', () => {
 
   test('the source keeps the roster until the new tab acknowledges', async ({ page, context }) => {
     await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
-    await page.locator('#cg-io summary').click();
+    await page.locator('#cg-io-toggle').click();
     const [, newPage] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
@@ -703,7 +703,7 @@ test.describe('exporting in both languages', () => {
   test('a blocked tab is reported and the roster is kept', async ({ page, context }) => {
     await context.addInitScript(() => { window.open = () => null; });
     await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
-    await page.locator('#cg-io summary').click();
+    await page.locator('#cg-io-toggle').click();
     await page.getByRole('button', { name: /both languages/ }).click();
     await expect(page.getByText(
       'The second tab could not be opened. Your class list is still here — allow pop-ups and try again.'

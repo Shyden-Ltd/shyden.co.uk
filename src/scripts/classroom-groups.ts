@@ -10,6 +10,7 @@
  */
 import { buildGroups, type Student } from '../lib/grouping';
 import { getStrings, renderError, groupName, type Strings } from '../lib/i18n';
+import { sectionState } from '../lib/sections';
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T | null;
@@ -167,10 +168,42 @@ if (form) {
       ) as HTMLInputElement | null
     )?.value ?? '';
 
+  // `leftovers` is the one `ToolState` field already live on this page: the
+  // radios still sit in the top-level form (Task 4 moves them into
+  // `#cg-grouping` itself), but a teacher can change one long before that
+  // move happens, and the header must not go on reporting "none" once they
+  // have. Calls the SAME `sectionState` that produced the header's
+  // build-time text (see ClassroomGroupsPage.astro's own `initialToolState`)
+  // with every other field left at that same default -- no roster exists
+  // yet, the sex switches are not wired until Grouping options gets its own
+  // task, and nothing can mark the roster dirty until a later stage gives it
+  // something to lose -- so the two can never disagree by computing the
+  // sentence two different ways.
+  const groupingStateEl = document.querySelector<HTMLElement>(
+    '#cg-grouping .state',
+  );
+  const updateGroupingHeader = () => {
+    if (!groupingStateEl) return;
+    groupingStateEl.textContent = sectionState(
+      {
+        named: 0,
+        absent: 0,
+        together: 0,
+        apart: 0,
+        rosterSize: 0,
+        sexMode: 'off',
+        leftovers: readRadio('leftovers') === 'bunch' ? 'bunch' : 'spread',
+        dirty: false,
+      },
+      t,
+    ).groupingOptions;
+  };
+
   form.addEventListener('change', (e) => {
     const target = e.target as HTMLInputElement;
     if (target.name === 'mode') showFor('mode', target.value);
     if (target.name === 'naming') showFor('naming', target.value);
+    if (target.name === 'leftovers') updateGroupingHeader();
   });
 
   // ── sound (synthesised; the site ships no audio assets by policy) ────────
