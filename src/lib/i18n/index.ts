@@ -1,6 +1,11 @@
 import { en, THEME_KEYS, type Strings, type ThemeKey } from './en';
 import { id } from './id';
-import { ERROR_CODES, type GroupingError } from '../grouping';
+import {
+  ERROR_CODES,
+  type GroupingError,
+  WARNING_CODES,
+  type GroupingWarning,
+} from '../grouping';
 
 /** English first: it is the default and lives at the unprefixed route. */
 export const LOCALES = ['en', 'id'] as const;
@@ -123,6 +128,35 @@ export function renderError(
     // the same fix (resolve each one through `resolveStudent` first).
     case ERROR_CODES.sexNeedsAllSet:
       return e.SEX_NEEDS_ALL_SET(error.students.map(resolveStudent));
+  }
+}
+
+/**
+ * Turn an engine warning into a sentence in the page's language.
+ *
+ * Mirrors `renderError` exactly, for the same reason: the engine returns a
+ * code plus data, never prose, and `students` carries numbers (identity is
+ * the number, see `Student.number` in grouping.ts) that this function
+ * resolves through the same `resolveStudent` parameter renderError uses,
+ * defaulting the same way -- a caller that forgets a resolver still gets
+ * "Student 7, Student 8 …", never bare digits.
+ *
+ * Task 8a. `sexSpillover` is the only code WARNING_CODES defines, and
+ * nothing in grouping.ts emits it yet -- see the doc comment on
+ * WARNING_CODES.sexSpillover there. This renderer exists anyway, ahead of a
+ * real caller, so Task 8b's placement work lands against a channel that is
+ * already tested and translated rather than inventing one under time
+ * pressure alongside the harder placement logic.
+ */
+export function renderWarning(
+  warning: GroupingWarning,
+  strings: Strings,
+  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber(n),
+): string {
+  const w = strings.warnings;
+  switch (warning.code) {
+    case WARNING_CODES.sexSpillover:
+      return w.SEX_SPILLOVER(warning.students.map(resolveStudent), warning.sex);
   }
 }
 

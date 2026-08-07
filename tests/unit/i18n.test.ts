@@ -5,6 +5,7 @@ import {
   LOCALES,
   getStrings,
   renderError,
+  renderWarning,
   localisePath,
   localeFromPath,
   toolPath,
@@ -12,7 +13,12 @@ import {
   isLocale,
   groupName,
 } from '../../src/lib/i18n';
-import { ERROR_CODES, type GroupingError } from '../../src/lib/grouping';
+import {
+  ERROR_CODES,
+  WARNING_CODES,
+  type GroupingError,
+  type GroupingWarning,
+} from '../../src/lib/grouping';
 import { siteEn, siteId } from '../../src/lib/i18n/site';
 
 const locales = [
@@ -570,6 +576,142 @@ describe('every engine error can be rendered in every language', () => {
       expect(msg).toContain('3');
     },
   );
+});
+
+describe('every engine warning can be rendered in every language', () => {
+  /**
+   * One realistic warning per code, mirroring SAMPLES above.
+   *
+   * Task 8a. `sexSpillover` is the only code WARNING_CODES defines, and
+   * nothing in grouping.ts emits it yet -- Task 8b's separate-mode
+   * placement is the first caller (see the doc comment on
+   * WARNING_CODES.sexSpillover in grouping.ts). That does not excuse the
+   * renderer from having a real sample here: the parity check below would
+   * not notice a code with no sample any more than the error one would.
+   */
+  const WARNING_SAMPLES: Record<string, GroupingWarning> = {
+    SEX_SPILLOVER: {
+      code: WARNING_CODES.sexSpillover,
+      students: [7, 8],
+      sex: 'F',
+    },
+  };
+
+  it('every code the engine can return has a sample here', () => {
+    expect(Object.keys(WARNING_SAMPLES).sort()).toEqual(
+      Object.values(WARNING_CODES).sort(),
+    );
+  });
+
+  it.each(locales)(
+    '%s renders every code as a real sentence',
+    (_n, strings) => {
+      for (const [code, warning] of Object.entries(WARNING_SAMPLES)) {
+        const msg = renderWarning(warning, strings);
+        expect(msg).not.toContain(code); // no raw code leaking through
+        expect(msg).toMatch(/^\S.*[.!?]$/);
+        expect(msg[0]).toBe(msg[0].toUpperCase());
+      }
+    },
+  );
+
+  describe('sex-spillover resolves student numbers to names', () => {
+    // Task 8a. Carries `students: number[]`, exactly like the error codes
+    // above, and must go through the same resolver -- a teacher reading
+    // "7, 8 have joined..." instead of "Gita, Hani have joined..." is the
+    // same regression the resolver parameter exists to prevent there.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderWarning(
+          { code: WARNING_CODES.sexSpillover, students: [7, 8], sex: 'F' },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.warnings.SEX_SPILLOVER(
+            [strings.studentNumber(7), strings.studentNumber(8)],
+            'F',
+          ),
+        );
+        expect(msg).toContain(strings.studentNumber(7));
+        expect(msg).toContain(strings.studentNumber(8));
+        // A bare digit with no word around it is exactly the bug this
+        // default exists to prevent.
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    it('English default reads "Student 7, Student 8 …", not bare digits', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexSpillover, students: [7, 8], sex: 'F' },
+        en,
+      );
+      expect(msg).toContain('Student 7, Student 8');
+    });
+
+    it('Indonesian default reads "Siswa 7, Siswa 8 …", not bare digits', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexSpillover, students: [7, 8], sex: 'F' },
+        id,
+      );
+      expect(msg).toContain('Siswa 7, Siswa 8');
+    });
+
+    // Girls short: sex: 'F' names the spilled students, so the message must
+    // say they joined a group of BOYS. Also checks the "not a mistake"
+    // reassurance the brief requires -- the message must not read as if the
+    // teacher did something wrong.
+    it('English: a supplied resolver is used in place of the default, names who spilled and where they landed', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexSpillover, students: [7, 8], sex: 'F' },
+        en,
+        (n) => (n === 7 ? 'Gita' : 'Hani'),
+      );
+      expect(msg).toBe(
+        'Gita, Hani have joined a group of boys because there were not enough girls to make a group of their own. That is simply how the numbers divided, not a mistake to fix.',
+      );
+      expect(msg).not.toContain('Student');
+      expect(msg).toContain('not a mistake');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexSpillover, students: [7, 8], sex: 'F' },
+        id,
+        (n) => (n === 7 ? 'Gita' : 'Hani'),
+      );
+      expect(msg).toBe(
+        'Gita, Hani bergabung dengan kelompok laki-laki karena jumlah perempuan tidak cukup untuk membentuk kelompok sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.',
+      );
+      expect(msg).not.toContain('Siswa');
+      expect(msg).toContain('bukan kesalahan');
+    });
+
+    // The other direction: boys short this time (sex: 'M'), and a single
+    // spilled student -- English inflects for singular ("has", not "have"),
+    // unlike the two-student case above.
+    it('English names a single spilled student with singular grammar, boys short this time', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexSpillover, students: [9], sex: 'M' },
+        en,
+        () => 'Ivan',
+      );
+      expect(msg).toBe(
+        'Ivan has joined a group of girls because there were not enough boys to make a group of their own. That is simply how the numbers divided, not a mistake to fix.',
+      );
+    });
+
+    it('Indonesian reads the same shape with one student, since Indonesian does not inflect for plural', () => {
+      const msg = renderWarning(
+        { code: WARNING_CODES.sexSpillover, students: [9], sex: 'M' },
+        id,
+        () => 'Ivan',
+      );
+      expect(msg).toBe(
+        'Ivan bergabung dengan kelompok perempuan karena jumlah laki-laki tidak cukup untuk membentuk kelompok sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.',
+      );
+    });
+  });
 });
 
 describe('site-wide copy is fully translated', () => {

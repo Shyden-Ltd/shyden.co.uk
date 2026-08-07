@@ -11,6 +11,12 @@
  * message has to be composed by the locale layer. Returning
  * `{ code, students, groupsNeeded }` also lets the Indonesian page name the
  * conflicting children, which string concatenation in English could not.
+ *
+ * A successful outcome can still carry something worth telling the teacher --
+ * `result.warnings`, same CODE-plus-data shape as errors, rendered the same
+ * way (see `renderWarning` in src/lib/i18n/index.ts). "Here are your groups,
+ * and two students ended up with the other sex" is a success, not a refusal,
+ * so it does not belong in GroupingError.
  */
 
 export interface Student {
@@ -82,13 +88,24 @@ export const ERROR_CODES = {
   /** Proves NOTHING: the search hit its budget with both kinds of rule live. */
   bothRulesSearchGaveUp: 'BOTH_RULES_SEARCH_GAVE_UP',
   /**
-   * A guard, not a feature. Stage 2 disables the mix switch until every
-   * student being grouped already has a sex, so this should be unreachable
-   * from the real page -- it exists because this module is the pure logic
-   * and must not trust its caller. Scoped to `mix` only: `separate` does
-   * not read `sex` yet (Task 8 owns it) and must stay byte-identical to
-   * today, when this code did not exist at all. See the call site in
-   * buildGroups for why it is checked where it is.
+   * A guard, not a feature. Stage 2 disables the mix and separate switches
+   * until every student being grouped already has a sex, so this should be
+   * unreachable from the real page -- it exists because this module is the
+   * pure logic and must not trust its caller. Scoped to `sexMode !== 'off'`
+   * (`mix` and `separate` alike) as of Task 8a, widened from `mix` only:
+   * Task 7 scoped it narrower because at the time `separate` did not read
+   * `sex` anywhere in this file, and refusing a roster over a field a mode
+   * never consulted would have been a real regression (an executable
+   * tripwire test existed for exactly this in grouping.test.ts; Task 8a
+   * updates it rather than deleting it -- see "sex mode: mix"'s
+   * now-refuses test for the history). Task 8a widens the predicate
+   * deliberately, ahead of Task 8b's separate-mode PLACEMENT landing: an
+   * unset sex is equally unusable input for `separate` as for `mix`, so
+   * refusing it now means Task 8b does not also have to remember to add
+   * this guard once it wires `sex` into `separate`'s placement. `off`
+   * alone stays unguarded -- it is the one mode that genuinely never reads
+   * `sex`, at any point in this file, today or after Task 8b. See the call
+   * site in buildGroups for why it is checked where it is.
    */
   sexNeedsAllSet: 'SEX_NEEDS_ALL_SET',
 } as const;
@@ -153,8 +170,45 @@ export type GroupingError =
       students: number[];
     };
 
+/**
+ * A successful outcome can still carry something worth telling the teacher
+ * -- see the module doc comment. Same CODE-plus-data shape as ERROR_CODES,
+ * for the same reason: a plain code, never rendered prose, so the locale
+ * layer (`renderWarning` in src/lib/i18n/index.ts) is the one place a
+ * sentence gets composed.
+ *
+ * `sexSpillover` is defined here but NOTHING IN THIS MODULE EMITS IT YET.
+ * Task 8a builds the channel -- this type, the outcome shape below, the
+ * renderer, the copy in both locales -- ahead of the placement logic that
+ * will actually push a warning through it. Separate-mode placement
+ * (`splitBySex`, the per-sex group allocation, the spill, and the
+ * `warnings.push(...)` call that would fire this code) is Task 8b's scope;
+ * until it lands, `separate` places exactly as `off` does (see the comment
+ * at buildGroups's unset-sex guard, and the "places exactly like off" test
+ * in grouping.test.ts's "sex mode: separate" block) and this array is
+ * always empty. The member exists now so Task 8b extends a channel that is
+ * already tested, translated and wired through renderWarning, rather than
+ * inventing one from scratch alongside the harder placement work.
+ */
+export const WARNING_CODES = {
+  sexSpillover: 'SEX_SPILLOVER',
+} as const;
+
+/**
+ * A warning and exactly the data its message needs -- same reasoning as
+ * GroupingError above. `sex` is the sex of the NAMED students, not of the
+ * group they landed in: the message needs to say both "you joined a group
+ * of the other sex" and "there were not enough of your own", and the
+ * spilled side's sex alone is enough data to derive both halves.
+ */
+export type GroupingWarning = {
+  code: typeof WARNING_CODES.sexSpillover;
+  students: number[];
+  sex: 'M' | 'F';
+};
+
 export type GroupingOutcome =
-  | { ok: true; result: { groups: Student[][] } }
+  | { ok: true; result: { groups: Student[][]; warnings: GroupingWarning[] } }
   | { ok: false; error: GroupingError };
 
 /**
@@ -240,6 +294,11 @@ const SEARCH_NODE_CAP = 200_000;
 export const MAX_STUDENTS = 500;
 
 const fail = (error: GroupingError): GroupingOutcome => ({ ok: false, error });
+
+const succeed = (
+  groups: Student[][],
+  warnings: GroupingWarning[],
+): GroupingOutcome => ({ ok: true, result: { groups, warnings } });
 
 /**
  * How many students were asked for, WITHOUT building them.
@@ -557,11 +616,13 @@ function assign(
  * not by the assumption the pre-fix code rested on). In practice `rest` is
  * unreachable from `mix`'s own call site specifically: `weaveBySex` only
  * ever runs after buildGroups's unset-sex guard has confirmed every
- * PRESENT student's `sex` is exactly `'M'` or `'F'`. A future caller that
- * does not carry that guarantee — Task 8's `separate`, which the doc
- * comment on `ERROR_CODES.sexNeedsAllSet` notes does not get the guard —
- * gets a `weaveBySex` that cannot silently lose or misfile whatever it is
- * handed, guard or no guard.
+ * PRESENT student's `sex` is exactly `'M'` or `'F'`. That guard covers
+ * `separate` too as of Task 8a (see `ERROR_CODES.sexNeedsAllSet`'s doc
+ * comment) — but `weaveBySex` itself is not what makes that safe: it is
+ * written to survive a caller that carries no such guarantee at all, guard
+ * widened, guard narrow, or no caller-side guard whatsoever, as when a test
+ * calls it directly. See the "never drops a block, whatever `sex` holds"
+ * test in grouping.test.ts, which does exactly that.
  *
  * WHY A RATIO MERGE, not straight alternation. `indices` must already be
  * shuffled — this only sorts them into the boy, girl and rest lists,
@@ -626,13 +687,16 @@ function assign(
  * EXPORTED, unlike every other helper in this module, for exactly one
  * reason (Fix round 1, F-2): its total-partition guarantee -- every index in
  * `indices` lands in exactly one of `boys`, `girls`, `rest` -- has to hold
- * for ANY caller, including one that does not carry buildGroups's unset-sex
- * guard (Task 8's `separate`). Today `mix` is the only caller, and the guard
- * now refuses every off-domain `sex` before it can reach this function, so
- * there is no path through `buildGroups` left to exercise that guarantee
- * with bad data -- proving it as a property of THIS function, not of
- * `buildGroups`'s current callers, needs a direct call. See the "never
- * drops a block, whatever `sex` holds" test in grouping.test.ts.
+ * for ANY caller, not just the ones reachable through `buildGroups` today.
+ * `mix` is the only caller `buildGroups` actually has (`placeBlocks` weaves
+ * only when `sexMode === 'mix'`; `separate` still takes the plain shuffled
+ * order even after Task 8a widened the unset-sex guard to cover it too --
+ * see `ERROR_CODES.sexNeedsAllSet`'s doc comment), and that guard refuses
+ * every off-domain `sex` before `mix` can reach this function, so there is
+ * no path through `buildGroups` left to exercise the guarantee with bad
+ * data -- proving it as a property of THIS function, not of `buildGroups`'s
+ * current callers, needs a direct call. See the "never drops a block,
+ * whatever `sex` holds" test in grouping.test.ts.
  */
 export function weaveBySex(
   blocks: Block[],
@@ -683,10 +747,13 @@ export function weaveBySex(
  * that is still shuffled underneath, so variety survives (proven in
  * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
  * "Singleton-block shapes") exactly as it did before this task. `sexMode`
- * values other than `mix` (`off`, and `separate` until Task 8) take this
- * same shuffled order unchanged, so this task is additive: it can only
- * ever add a branch `mix` reaches, never touch what `off` or `separate`
- * compute (confirmed byte-identical against the pre-Task-7 engine; see
+ * values other than `mix` (`off`, and `separate` -- still true after Task
+ * 8a, which widened the unset-sex guard elsewhere in this file but left
+ * this function untouched; only Task 8b's placement work would change
+ * this) take this same shuffled order unchanged, so this task is additive:
+ * it can only ever add a branch `mix` reaches, never touch what `off` or
+ * `separate` compute (confirmed byte-identical against the pre-Task-7
+ * engine; see
  * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
  * "mix: byte-identical under off and separate").
  *
@@ -790,30 +857,37 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // where `sex` is actually consumed (`placeBlocks`'s weave).
   //
   // That ordering is deliberate, not just "as early as it can be". This
-  // guard is a caller-contract violation -- stage 2 disables the mix switch
-  // until every student being grouped already has a sex, so a real teacher
-  // cannot reach it -- while an invalid group count, too many groups, and a
-  // together/apart clash are things a teacher genuinely types. Even so, it
-  // fires FIRST: duplicateNumber and noStudents do not spend effort
-  // validating a request's SHAPE when the roster's DATA is not even usable
-  // yet, and this guard is the same kind of check -- "can I trust what I
-  // was handed" -- just conditioned on `sexMode` the way invalidGroupSize is
-  // conditioned on `mode.kind`. A non-page caller (a test, a future
-  // integration) that violates the contract gets told about ITS mistake
-  // first, on the same footing its other data mistakes already are, rather
-  // than being sent on a detour through mode/rule errors that are moot the
-  // moment this module cannot honour the setting it was asked to run under.
+  // guard is a caller-contract violation -- stage 2 disables the mix and
+  // separate switches until every student being grouped already has a sex,
+  // so a real teacher cannot reach it -- while an invalid group count, too
+  // many groups, and a together/apart clash are things a teacher genuinely
+  // types. Even so, it fires FIRST: duplicateNumber and noStudents do not
+  // spend effort validating a request's SHAPE when the roster's DATA is not
+  // even usable yet, and this guard is the same kind of check -- "can I
+  // trust what I was handed" -- just conditioned on `sexMode` the way
+  // invalidGroupSize is conditioned on `mode.kind`. A non-page caller (a
+  // test, a future integration) that violates the contract gets told about
+  // ITS mistake first, on the same footing its other data mistakes already
+  // are, rather than being sent on a detour through mode/rule errors that
+  // are moot the moment this module cannot honour the setting it was asked
+  // to run under.
   //
-  // Scoped to `sexMode === 'mix'`, deliberately narrower than the brief's
-  // own `!== 'off'` (written before this task split `mix` and `separate`
-  // into separate work): `separate` does not read `sex` at all yet (Task 8
-  // owns it), and must stay byte-identical to today, when this guard did
-  // not exist and nothing about `sexMode` was read -- see
+  // Scoped to `sexMode !== 'off'` as of Task 8a -- `mix` AND `separate`,
+  // widened from `mix` only. Task 7 scoped it narrower because at the time
+  // `separate` did not read `sex` anywhere in this file, so refusing a
+  // `separate` roster over a field that mode never consulted would have
+  // been a pure regression; see
   // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
   // "mix: byte-identical under off and separate" for the measurement that
-  // pins that. `!== 'off'` would refuse `separate`
-  // rosters that succeed today, which is exactly the regression that
-  // measurement exists to catch.
+  // pinned `separate`'s output as unaffected by `mix`'s existence. That
+  // measurement is about PLACEMENT, not this guard, and stays true today:
+  // Task 8a does not touch `placeBlocks`, so `separate` still places
+  // exactly as `off` does for any roster this guard now lets through (see
+  // the "places exactly like off" test in grouping.test.ts's "sex mode:
+  // separate" block). What changed is only which rosters get that far.
+  // Task 8a widens the predicate deliberately, ahead of Task 8b's
+  // separate-mode placement landing -- see `ERROR_CODES.sexNeedsAllSet`'s
+  // doc comment for the full reasoning and the tripwire test this flips.
   //
   // Fix round 1, F-2: reads `!== 'M' && !== 'F'`, not `=== null`. The old
   // check closed exactly one hole -- a `sex` of literally `null` -- and left
@@ -829,10 +903,10 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // one student in a 6-student roster returned five. See
   // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
   // "What slipped through before the fix" for the reproduction. This check
-  // is the door, not one
-  // hole in it: anything that is not exactly `'M'` or `'F'` is refused here,
-  // by name, before it can reach the weave at all.
-  if (input.sexMode === 'mix') {
+  // is the door, not one hole in it: anything that is not exactly `'M'` or
+  // `'F'` is refused here, by name, before it can reach the weave (or, as
+  // of Task 8a, `separate`'s own future placement) at all.
+  if (input.sexMode === 'mix' || input.sexMode === 'separate') {
     const unset = present
       .filter((s) => s.sex !== 'M' && s.sex !== 'F')
       .map((s) => s.number);
@@ -1054,12 +1128,13 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     placed.map((_, i) => i),
     random,
   );
-  return {
-    ok: true,
-    result: {
-      groups: slots.map((i) =>
-        placed[i].flatMap((b) => blocks[b].map((j) => present[j])),
-      ),
-    },
-  };
+  // No sexMode branches to an empty list yet -- WARNING_CODES.sexSpillover
+  // is unreachable until Task 8b's separate-mode placement lands (see its
+  // doc comment above). Every success from this build carries `[]`.
+  return succeed(
+    slots.map((i) =>
+      placed[i].flatMap((b) => blocks[b].map((j) => present[j])),
+    ),
+    [],
+  );
 }

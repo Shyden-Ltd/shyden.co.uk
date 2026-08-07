@@ -138,6 +138,16 @@ export const id: Strings = {
       `${names.join(', ')} belum memiliki jenis kelamin, jadi mode ini tidak bisa dijalankan sampai jenis kelamin semua siswa terisi. Isi jenis kelamin untuk mereka, atau matikan mode ini.`,
   },
 
+  warnings: {
+    // Task 8a. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+    // lengkap. Tidak ada percabangan tunggal/jamak di sini -- sama seperti
+    // SEX_NEEDS_ALL_SET di atas, Bahasa Indonesia tidak mengubah bentuk
+    // kata untuk jamak, jadi satu kalimat ini benar untuk satu siswa maupun
+    // lebih.
+    SEX_SPILLOVER: (names: string[], sex: 'M' | 'F') =>
+      `${names.join(', ')} bergabung dengan kelompok ${sex === 'M' ? 'perempuan' : 'laki-laki'} karena jumlah ${sex === 'M' ? 'laki-laki' : 'perempuan'} tidak cukup untuk membentuk kelompok sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.`,
+  },
+
   themes: {
     animals: [
       'Harimau',

@@ -1783,14 +1783,26 @@ describe('sex mode: mix', () => {
     expect(out.ok).toBe(true);
   });
 
-  // Correction 2: `separate` must stay byte-identical to today's behaviour,
-  // where sexMode is not read at all -- Task 8 owns turning it into a real
-  // mode. If the guard below were written as `!== 'off'` (the brief's own
-  // wording, written before this task split `mix` and `separate` into
-  // separate work), this exact input would flip from ok:true to a refusal,
-  // which is precisely the kind of change Correction 2 requires proving did
-  // NOT happen. Scoping the guard to `=== 'mix'` is what keeps this true.
-  it('leaves separate as a no-op — Task 8 owns it, and this stays byte-identical to off until then', () => {
+  // HISTORICAL TRIPWIRE, DELIBERATELY FLIPPED BY TASK 8A. Task 7 scoped the
+  // unset-sex guard to `sexMode === 'mix'` rather than the brief's own
+  // `!== 'off'`, because at the time `separate` did not read `sex` anywhere
+  // in this file -- refusing a `separate` roster over a field that mode
+  // never consulted would have been a pure regression, and this test
+  // existed to prove that regression did NOT happen.
+  //
+  // Task 8a is the deliberate widening Task 7 always meant to hand off (see
+  // `ERROR_CODES.sexNeedsAllSet`'s doc comment in grouping.ts): the guard
+  // now covers `separate` too, ahead of Task 8b's placement work landing.
+  // So the specific claim this test pinned -- that THIS EXACT input
+  // succeeds under `separate` -- is now the wrong thing to guarantee. The
+  // assertion is flipped in place rather than the test deleted: the
+  // history of why `separate` was ever exempt is worth keeping on record,
+  // reusing the same input, in the same spot, rather than vanishing
+  // silently. The surviving half of the old guarantee -- that PLACEMENT
+  // under `separate` is still untouched -- is pinned separately, in the
+  // "sex mode: separate" describe block below, on a roster this guard does
+  // not refuse.
+  it('separate now refuses when a student being grouped has no sex set, same as mix', () => {
     const out = buildGroups(
       base({
         students: [M(1), F(2), student({ number: 3 })],
@@ -1798,7 +1810,12 @@ describe('sex mode: mix', () => {
         sexMode: 'separate',
       }),
     );
-    expect(out.ok).toBe(true);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toEqual({
+      code: ERROR_CODES.sexNeedsAllSet,
+      students: [3],
+    });
   });
 
   // Correction 1: `sexOf` reads only the block's FIRST present-order member
@@ -2137,5 +2154,99 @@ describe('sex mode: mix', () => {
         students: [3],
       });
     });
+  });
+});
+
+// Task 8a: the warnings channel. GroupingOutcome's success arm gains
+// `warnings`, alongside `groups`. Nothing in this module emits one yet --
+// WARNING_CODES.sexSpillover is defined but unreachable through
+// buildGroups until Task 8b's separate-mode placement lands (see the doc
+// comment on WARNING_CODES in grouping.ts) -- so every success this suite
+// can currently produce, across every sexMode, must carry an empty list.
+describe('the warnings channel', () => {
+  it.each(['off', 'mix', 'separate'] as const)(
+    'every current success carries an empty warnings list (sexMode: %s)',
+    (sexMode) => {
+      const M = (number: number) => student({ number, sex: 'M' });
+      const F = (number: number) => student({ number, sex: 'F' });
+      const out = buildGroups(
+        base({
+          students: [M(1), M(2), F(3), F(4)],
+          mode: { kind: 'groupCount', count: 2 },
+          sexMode,
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      // The exact shape, not just an empty array wherever a caller happened
+      // to look -- a stray extra key on `result` has no type checker to
+      // catch it in this repo (see the module doc), so it is checked here.
+      expect(Object.keys(out.result).sort()).toEqual(['groups', 'warnings']);
+      expect(out.result.warnings).toEqual([]);
+    },
+  );
+});
+
+// Task 8a widens the unset-sex guard to cover `separate` (see the flipped
+// tripwire in "sex mode: mix", 'separate now refuses when a student being
+// grouped has no sex set, same as mix'). This block pins the other half of
+// that task: everything Task 8a did NOT touch. `splitBySex`,
+// `sexSeparateSplitsUnit` and the spillover warning itself are Task 8b's
+// placement work, not this one's -- see WARNING_CODES.sexSpillover's doc
+// comment in grouping.ts.
+describe('sex mode: separate', () => {
+  const M = (number: number) => student({ number, sex: 'M' });
+  const F = (number: number) => student({ number, sex: 'F' });
+
+  // The surviving half of the old "leaves separate as a no-op" guarantee:
+  // once every PRESENT student's sex is set, so the widened guard has
+  // nothing to refuse, `separate`'s PLACEMENT is still untouched by this
+  // task. `placeBlocks` branches on `sexMode` for exactly one thing (the
+  // `mix` weave), so `off` and `separate` still consume `random` in the
+  // identical sequence and take the identical plain-shuffled order.
+  //
+  // Swept across seeds rather than trusting one to happen to agree,
+  // matching this file's own standing objection to single-seed proof
+  // elsewhere ("NOT A LUCKY SEED"). An uneven 3-boy/5-girl roster is used
+  // deliberately: it is a shape where `mix`'s weave would visibly reorder
+  // blocks, so it is also a shape where an accidental weave creeping into
+  // `separate` (the mistake this test exists to catch, should a future
+  // change wire one in prematurely) would show up as a mismatch rather
+  // than hide behind a coincidence.
+  //
+  // NOT RED BEFORE IMPLEMENTATION, in the `.groups` half specifically --
+  // and that is correct, not a decoration. This task does not touch
+  // `placeBlocks`, so `off` and `separate` already place identically before
+  // ANY of Task 8a's production code lands; only the `.warnings` half is
+  // new behaviour and fails first. The `.groups` half exists to prove Task
+  // 8a's guard widening did NOT quietly also touch placement -- proven by
+  // mutation, not by this early pass: temporarily weaving `separate` too
+  // (`sexMode === 'mix' || sexMode === 'separate'` at the `placeBlocks`
+  // call site) reddens it, confirmed and reverted while this task was
+  // implemented.
+  it('places exactly like off, seed for seed, and never warns, once every present student has a sex', () => {
+    const students = [M(1), M(2), M(3), F(4), F(5), F(6), F(7), F(8)];
+    for (let seed = 1; seed <= 20; seed++) {
+      const off = ok(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'off',
+          random: seeded(seed),
+        }),
+      );
+      const separate = ok(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'separate',
+          random: seeded(seed),
+        }),
+      );
+      expect(separate.groups.map((g) => g.map((s) => s.number))).toEqual(
+        off.groups.map((g) => g.map((s) => s.number)),
+      );
+      expect(separate.warnings).toEqual([]);
+    }
   });
 });

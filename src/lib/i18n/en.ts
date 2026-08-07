@@ -161,6 +161,21 @@ export const en = {
       `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} no sex set, so this mode cannot run until every student does. Set a sex for ${names.length === 1 ? 'them' : 'each of them'}, or turn it off.`,
   },
 
+  warnings: {
+    // Task 8a. Carries `students: number[]` (never names -- same resolver
+    // pattern as the errors above) and `sex: 'M' | 'F'`, the sex of the
+    // NAMED students, not of the group they joined -- that one fact is
+    // enough to phrase both halves of the sentence: which group they ended
+    // up in, and which sex ran short. Nothing emits this code yet (Task 8a
+    // is the channel; Task 8b's separate-mode placement is the first
+    // caller) -- see WARNING_CODES.sexSpillover's doc comment in
+    // grouping.ts. Six boys and two girls not dividing evenly is
+    // arithmetic, not a mistake, so unlike every error above this carries
+    // no remedy: there is nothing to fix.
+    SEX_SPILLOVER: (names: string[], sex: 'M' | 'F') =>
+      `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} joined a group of ${sex === 'M' ? 'girls' : 'boys'} because there were not enough ${sex === 'M' ? 'boys' : 'girls'} to make a group of their own. That is simply how the numbers divided, not a mistake to fix.`,
+  },
+
   themes: {
     animals: [
       'Tigers',
