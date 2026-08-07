@@ -230,34 +230,31 @@ const sexWhyText = sexWhy(roster, t);
         </div>
       </fieldset>
 
-      <fieldset>
-        <legend>{t.playbackHeading}</legend>
-        <div class="field">
-          <label class="switch"
-            ><input id="cg-sound" type="checkbox" checked /><span
-              id="cg-sound-text">{t.soundOn}</span
-            ></label
-          >
-        </div>
-        <div class="field">
-          <label for="cg-speed">{t.speedLabel}</label>
-          <select id="cg-speed">
-            <option value="normal">{t.speedNormal}</option>
-            <option value="fast">{t.speedFast}</option>
-            <option value="skip">{t.speedSkip}</option>
-          </select>
-        </div>
-      </fieldset>
-
       <!-- The tool's four collapsible sections (design spec section 3):
            Student details, Grouping options, Import / export and Sound &
-           animation. Only three exist here — Sound & animation stays where
-           it already is, in the fieldset above, because its existing
-           checkbox already holds `id="cg-sound"`; a fourth section sharing
-           that id with the wrapper would be a duplicate id, and renaming
-           the checkbox ripples into three other e2e spec files that are not
-           this task's to change. A later task owns giving sound its own
-           section and making that rename.
+           animation, in that order (the spec's own "Student details ·
+           Grouping options · Import / export · Sound & animation").
+
+           Sound & animation is the last of the four to be built (Stage 2,
+           Task 7). Until now it stayed where it already was, a plain
+           `<fieldset><legend>{t.playbackHeading}</legend>...` right above
+           this block: its existing checkbox already held `id="cg-sound"`,
+           so a fourth section sharing that literal id with its own wrapper
+           would have been a duplicate id, and that fieldset already
+           rendered the section's whole heading and content on its own —
+           an empty `cg-sound`-shaped shell wrapped around or beside it
+           would have put a SECOND "Sound and animation" heading on the
+           page for content already shown in full. The real fix, done here:
+           the fieldset and its `<legend>` are gone; its two controls moved
+           unchanged into `#cg-sound-body` below; and the checkbox that used
+           to hold `id="cg-sound"` is renamed `cg-sound-check`, freeing
+           `cg-sound` for this section's own wrapper — the same id every
+           other section here uses for its own (`cg-students`, `cg-grouping`,
+           `cg-io`). The rename ripples into every e2e spec file that
+           clicked or read the old id — classroom-groups.spec.ts,
+           classroom-groups-controls.spec.ts, classroom-groups-privacy.spec.ts,
+           classroom-groups-announcements.spec.ts and
+           tests/dev/dev-sanity.spec.ts — all updated alongside this file.
 
            Same control as #cg-howto above, deliberately: a bare toggle
            button loses the heading role the old markup had (see that
@@ -275,24 +272,34 @@ const sexWhyText = sexWhy(roster, t);
            to persist (the how-to collapsed state, and a later print panel)
            and this is not one of them, so every visit starts collapsed.
 
-           Each button's own text is the label, a literal `{' · '}` (an
-           expression, not template whitespace — see CLAUDE.md's own
-           whitespace-seam rule), then the state span — so the DOM text is
-           the real, whole sentence design spec section 3 shows
-           ("Student details · none added"), not a separator relying on
-           surrounding whitespace to survive reformatting.
+           Each of the first three buttons' own text is the label, a literal
+           `{' · '}` (an expression, not template whitespace — see
+           CLAUDE.md's own whitespace-seam rule), then the state span — so
+           the DOM text is the real, whole sentence design spec section 3
+           shows ("Student details · none added"), not a separator relying
+           on surrounding whitespace to survive reformatting. `cg-sound`'s
+           button carries none of that: `sectionState` (src/lib/sections.ts)
+           returns exactly three fields, not four — pinned by
+           tests/unit/sections.test.ts — because sound and speed are
+           simple, always-visible preferences, not data a teacher could
+           lose by collapsing the section. So this one button is the label
+           alone, with no middot and no `.state` span to leave empty or
+           invent a value for.
 
            `cg-students` and `cg-io` are rendered with no body content at
            all, not a "coming soon" placeholder: that text would ship to
-           production if a later stage slipped. `cg-grouping`'s body is the
-           first of the three to hold real content (Stage 2, Task 4): the
-           two sex switches (design spec section 6) and the leftovers
-           choice, rehomed here from the fieldset above unchanged — same
-           markup, same `name` attribute, same four locale keys, still live
-           today. Its header's own state is read LIVE from that radio the
-           moment it changes (see classroom-groups.ts's own comment on
-           `updateGroupingHeader`), unaffected by where the radio physically
-           sits, because the listener delegates on `#cg-form` itself. -->
+           production if a later stage slipped. `cg-grouping`'s body holds
+           the two sex switches (design spec section 6) and the leftovers
+           choice, rehomed here from the fieldset above unchanged (Stage 2,
+           Task 4) — same markup, same `name` attribute, same four locale
+           keys, still live today. Its header's own state is read LIVE from
+           that radio the moment it changes (see classroom-groups.ts's own
+           comment on `updateGroupingHeader`), unaffected by where the radio
+           physically sits, because the listener delegates on `#cg-form`
+           itself. `cg-sound`'s body holds the two controls the removed
+           fieldset above used to: same markup, same behaviour, and the same
+           ids apart from the checkbox rename this section's own opening
+           comment explains. -->
       <div class="tool-sections">
         <section id="cg-students" class="tool-section">
           <h2 class="tool-section-heading">
@@ -407,6 +414,37 @@ const sexWhyText = sexWhy(roster, t);
             </button>
           </h2>
           <div id="cg-io-body" class="tool-section-body" hidden></div>
+        </section>
+
+        <section id="cg-sound" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-sound-toggle"
+              aria-expanded="false"
+              aria-controls="cg-sound-body"
+            >
+              {t.sectionSoundHeading}
+            </button>
+          </h2>
+          <div id="cg-sound-body" class="tool-section-body" hidden>
+            <div class="field">
+              <label class="switch"
+                ><input id="cg-sound-check" type="checkbox" checked /><span
+                  id="cg-sound-text">{t.soundOn}</span
+                ></label
+              >
+            </div>
+            <div class="field">
+              <label for="cg-speed">{t.speedLabel}</label>
+              <select id="cg-speed">
+                <option value="normal">{t.speedNormal}</option>
+                <option value="fast">{t.speedFast}</option>
+                <option value="skip">{t.speedSkip}</option>
+              </select>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -576,24 +614,41 @@ const sexWhyText = sexWhy(roster, t);
 </style>
 
 <style>
+  /* This block's margins/gaps/padding (`.wrap`, `h1`, `.lead`, `.privacy`,
+     `.howto`, and further down `form`/`fieldset`/`.field`/`.tool-sections`/
+     `.tool-section-toggle`) are tighter than an earlier pass shipped --
+     Stage 2, Task 7's own vertical-fit measurement (classroom-groups.spec.ts,
+     "the no-scroll rule, measured") found the collapsed page 1348px too tall
+     at 320px. This pass recovered 245px of that (2148px -> 1903px) with no
+     change to any touch target (every `min-height: 44px` is untouched) and
+     no content removed. It is kept regardless of that test's own
+     `test.fixme`: real savings, even short of the full target, are still
+     real savings, and every value below is still comfortably legible. What
+     closes the remaining gap is out of this task's scope -- see that test's
+     own comment for the numbers and the reason. */
   .wrap {
     max-width: var(--maxw);
     margin: 0 auto;
-    padding: 3rem var(--space);
+    padding: 1.5rem var(--space) 3rem;
+  }
+  h1 {
+    margin: 0 0 0.5rem;
   }
   .lead {
+    margin: 0 0 0.5rem;
     font-size: 1.15rem;
     color: var(--ink-soft);
     max-width: var(--measure);
   }
   .privacy {
+    margin: 0;
     color: var(--ink-soft);
     max-width: var(--measure);
     font-size: 0.95rem;
   }
   .howto {
     max-width: var(--measure);
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.75rem;
   }
   /* The <h2> wrapper exists for its heading role, not its box -- zero its
      margin so the button's own 44px row is still the whole visual header,
@@ -643,13 +698,13 @@ const sexWhyText = sexWhy(roster, t);
 
   form {
     display: grid;
-    gap: 1.25rem;
-    margin: 2rem 0;
+    gap: 0.75rem;
+    margin: 1rem 0;
   }
   fieldset {
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 1rem;
+    padding: 0.75rem;
     margin: 0;
   }
   legend {
@@ -657,7 +712,7 @@ const sexWhyText = sexWhy(roster, t);
     padding: 0 0.35rem;
   }
   .field {
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
   }
   .field:last-child {
     margin-bottom: 0;
@@ -748,8 +803,8 @@ const sexWhyText = sexWhy(roster, t);
     width: 1.15rem;
     height: 1.15rem;
   }
-  /* Disabled state for a `.switch` (the sex switches; #cg-sound is never
-     disabled, so this never applies to it). The label text drops to
+  /* Disabled state for a `.switch` (the sex switches; #cg-sound-check is
+     never disabled, so this never applies to it). The label text drops to
      `--ink-soft` -- the SAME colour `.help`/`.why` already use elsewhere on
      this page, not a new one, and independently checked here: 6.37:1
      against `--bg`, comfortably above the 4.5:1 AA floor for normal text.
@@ -771,7 +826,7 @@ const sexWhyText = sexWhy(roster, t);
   .tool-sections {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 0.5rem;
     margin: 0.25rem 0;
   }
   @media (min-width: 768px) {
@@ -797,7 +852,7 @@ const sexWhyText = sexWhy(roster, t);
     align-items: center;
     width: 100%;
     min-height: 44px;
-    padding: 0.75rem 0;
+    padding: 0.25rem 0;
     font: inherit;
     font-size: 1rem;
     font-weight: 700;

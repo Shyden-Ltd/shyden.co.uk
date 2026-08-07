@@ -63,6 +63,23 @@ test.describe('privacy — with JavaScript blocked', () => {
     });
   }
 
+  // M-10 (stage-2 traceability matrix; design spec section 13's own "The
+  // no-JS message is unchanged... the new sections do not each need their
+  // own"). Stage 2, Task 7 folded Sound & animation into the tool's fourth
+  // collapsible section -- proving the SAME single notice still covers it
+  // is what keeps this row honestly ticked, rather than assumed true
+  // because it was true of the first three. What would redden this: a
+  // second `<noscript>` added anywhere on the page, e.g. one guarding the
+  // new section specifically -- exactly the mistake this row exists to
+  // catch, since without script NONE of the four sections can be opened at
+  // all and one notice already says why.
+  test('one notice still covers all four sections, not one each', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await expect(page.locator('noscript')).toHaveCount(1);
+  });
+
   test('submitting cannot put a class list in the URL', async ({ page }) => {
     await page.goto('/classroom-groups');
 
@@ -154,6 +171,8 @@ test.describe('privacy — when storage is unavailable', () => {
     await page.goto('/classroom-groups');
     await page.fill('#cg-count', '8');
     await page.fill('#cg-size', '4');
+    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7.
+    await page.locator('#cg-sound-toggle').click();
     await page.selectOption('#cg-speed', 'skip');
     await page.click('#cg-go');
 
@@ -164,8 +183,9 @@ test.describe('privacy — when storage is unavailable', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
-    await expect(page.locator('#cg-sound')).toBeChecked();
-    await page.uncheck('#cg-sound');
+    await page.locator('#cg-sound-toggle').click();
+    await expect(page.locator('#cg-sound-check')).toBeChecked();
+    await page.uncheck('#cg-sound-check');
     // The label still tracks the control — the write failed, silently and
     // correctly, without breaking the widget.
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound off');

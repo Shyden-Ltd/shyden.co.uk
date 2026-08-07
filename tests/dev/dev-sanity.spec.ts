@@ -24,6 +24,8 @@ test('the Classroom Group Creator loads on dev', async ({ page }) => {
   // If the bundle 404s after a partial deploy, this is where it shows.
   await page.fill('#cg-count', '8');
   await page.fill('#cg-size', '4');
+  // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7.
+  await page.locator('#cg-sound-toggle').click();
   await page.selectOption('#cg-speed', 'skip');
   await page.click('#cg-go');
   await expect(page.locator('#cg-results .student')).toHaveCount(8);

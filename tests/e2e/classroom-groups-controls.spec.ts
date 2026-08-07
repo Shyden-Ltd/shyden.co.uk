@@ -17,6 +17,16 @@ const makeGroups = async (
 ) => {
   await page.fill('#cg-count', count);
   await page.fill('#cg-size', size);
+  // Stage 2, Task 7 folded Sound & animation into the tool's fourth
+  // collapsible section -- #cg-speed now lives in #cg-sound-body, which
+  // starts collapsed, so it has to be open before `selectOption` can act on
+  // it (same reasoning as the leftovers radios inside #cg-grouping-body,
+  // Stage 2 Task 4). Idempotent: this helper can run more than once per
+  // test, and a second click would close what the first one opened.
+  const soundBody = page.locator('#cg-sound-body');
+  if (await soundBody.isHidden()) {
+    await page.locator('#cg-sound-toggle').click();
+  }
   await page.selectOption('#cg-speed', 'skip');
   await page.click('#cg-go');
 };
@@ -66,6 +76,12 @@ test.describe('the controls that had no tests', () => {
     await page.check('input[name="mode"][value="groupCount"]');
     await page.fill('#cg-count', '30');
     await page.fill('#cg-groups', '10');
+    // Stage 2, Task 7: #cg-speed sits inside #cg-sound-body, which starts
+    // collapsed. This test calls selectOption directly rather than through
+    // the makeGroups() helper (which already opens the section), so it needs
+    // its own click -- missed in the first pass of the Task 7 sweep, since
+    // every OTHER direct #cg-speed call site in this file was updated.
+    await page.locator('#cg-sound-toggle').click();
     await page.selectOption('#cg-speed', 'skip');
     await page.click('#cg-go');
 
@@ -111,11 +127,17 @@ test.describe('the controls that had no tests', () => {
     // Only toBeChecked was asserted — the visible words were not, so the
     // label could have said the opposite of the control.
     await page.goto('/classroom-groups');
+    // Stage 2, Task 7: the checkbox now lives inside #cg-sound-body, and
+    // every visit starts collapsed (design spec section 11 names only the
+    // how-to state and a later print panel as UI preferences allowed to
+    // persist) -- so it has to be reopened after the reload below too.
+    await page.locator('#cg-sound-toggle').click();
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound on');
-    await page.uncheck('#cg-sound');
+    await page.uncheck('#cg-sound-check');
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound off');
     await page.reload();
-    await expect(page.locator('#cg-sound')).not.toBeChecked();
+    await page.locator('#cg-sound-toggle').click();
+    await expect(page.locator('#cg-sound-check')).not.toBeChecked();
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound off');
   });
 
@@ -124,6 +146,8 @@ test.describe('the controls that had no tests', () => {
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/classroom-groups');
+    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7.
+    await page.locator('#cg-sound-toggle').click();
     // A default, not a lock — the teacher can still turn it back on.
     await expect(page.locator('#cg-speed')).toHaveValue('skip');
   });
@@ -252,6 +276,48 @@ test.describe('classroom groups — mobile-first layout', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/classroom-groups');
       await page.locator('#cg-grouping-toggle').click();
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
+  }
+
+  // Stage 2, Task 7: Sound & animation is the SECOND section to hold real
+  // content (the sound checkbox and the speed select), so it earns the same
+  // check the loop above gave Grouping options, for the same two widths and
+  // the same reason (320px is the mobile-first floor; 768px is where
+  // `.tool-sections` becomes two columns, a distinct geometry).
+  for (const width of [320, 768]) {
+    test(`no horizontal scroll with Sound & animation open, at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/classroom-groups');
+      await page.locator('#cg-sound-toggle').click();
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
+  }
+
+  // Design spec section 13: "no horizontal page scroll at any of those four
+  // widths, in any state" -- "with results shown" was the one reachable
+  // state nothing above checked. A hundred students maximises the number of
+  // group cards and avatars actually on screen, the real-content analogue
+  // of the long-class-name check elsewhere in this file.
+  for (const width of [320, 768]) {
+    test(`no horizontal scroll with results shown, at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/classroom-groups');
+      await makeGroups(page, '120', '4');
       const overflow = await page.evaluate(
         () =>
           document.documentElement.scrollWidth -
@@ -557,10 +623,15 @@ test.describe('How to use — Indonesian', () => {
 // (section 11 names only the how-to state and a later print panel as the
 // UI preferences allowed to persist).
 //
-// Only three of the four sections exist yet. Sound & animation is not
-// built here — see ClassroomGroupsPage.astro's own comment on the id
-// collision that would cause with the existing sound checkbox — so no test
-// below references #cg-sound.
+// Only three of the four sections existed when this block was first
+// written. Stage 2, Task 7 folded Sound & animation in as the fourth --
+// see ClassroomGroupsPage.astro's own comment on how the id collision with
+// the existing sound checkbox was resolved (the checkbox is now
+// #cg-sound-check; the section wrapper, its toggle and its body hold
+// #cg-sound/#cg-sound-toggle/#cg-sound-body) -- but its state string is
+// still deliberately absent (sections.ts's own doc comment on why), so it
+// is not part of the loops below, which all assert a `.state` span or a
+// `label · state` sentence neither of which this section has.
 test.describe("the tool's collapsible sections", () => {
   test('every header reports its own state', async ({ page }) => {
     await page.goto('/classroom-groups');

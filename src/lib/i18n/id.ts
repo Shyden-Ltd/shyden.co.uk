@@ -80,7 +80,6 @@ export const id: Strings = {
   themeLabel: 'Tema',
   themeNames: { animals: 'Hewan', colours: 'Warna', planets: 'Planet' },
 
-  playbackHeading: 'Suara dan animasi',
   soundOn: 'Suara aktif',
   soundOff: 'Suara mati',
   speedLabel: 'Kecepatan',
@@ -90,9 +89,13 @@ export const id: Strings = {
 
   // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap --
   // "Detail siswa" mengikuti spesifikasi desain bagian 3 secara eksplisit.
+  // "Suara dan animasi" adalah teks yang sama yang sebelumnya dipakai
+  // `playbackHeading` pada legenda fieldset lama -- dipindah, bukan
+  // diterjemahkan ulang, saat Tugas 7 Tahap 2 memberinya bagian sendiri.
   sectionStudentsHeading: 'Detail siswa',
   sectionGroupingHeading: 'Opsi pengelompokan',
   sectionImportExportHeading: 'Impor / ekspor',
+  sectionSoundHeading: 'Suara dan animasi',
 
   stateNoneAdded: 'tidak ada yang ditambahkan',
   stateNamed: (n: number) => `${n} diberi nama`,

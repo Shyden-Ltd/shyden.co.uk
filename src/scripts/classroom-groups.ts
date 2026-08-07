@@ -97,18 +97,23 @@ if (form) {
     });
   }
 
-  // ── the tool's three built collapsible sections ─────────────────────────
-  // Student details, Grouping options, Import / export. Same reason this is
-  // wired here, ahead of `reduceMotion`'s throw site below, as #cg-howto's
-  // own toggle just above: a mid-module failure further down must not be
-  // able to leave any section header un-openable. Unlike #cg-howto, nothing
-  // here is read from or written to `remember` -- design doc section 11
-  // names exactly two UI preferences allowed to persist (the how-to
-  // collapsed state, and a later print panel), and these are not one of
-  // them, so every visit starts collapsed with no localStorage involved.
-  // Sound & animation is not in this list: see ClassroomGroupsPage.astro's
-  // own comment on why that section is not built yet.
-  for (const id of ['cg-students', 'cg-grouping', 'cg-io']) {
+  // ── the tool's four collapsible sections ────────────────────────────────
+  // Student details, Grouping options, Import / export, Sound & animation
+  // (the fourth folded in by Stage 2, Task 7 -- see
+  // ClassroomGroupsPage.astro's own comment on the restructuring). Same
+  // reason this is wired here, ahead of `reduceMotion`'s throw site below,
+  // as #cg-howto's own toggle just above: a mid-module failure further down
+  // must not be able to leave any section header un-openable. Unlike
+  // #cg-howto, nothing here is read from or written to `remember` -- design
+  // doc section 11 names exactly two UI preferences allowed to persist (the
+  // how-to collapsed state, and a later print panel), and these are not one
+  // of them, so every visit starts collapsed with no localStorage involved.
+  // This loop only opens and closes the SECTION -- `cg-sound`'s own checkbox
+  // and its remembered on/off state are separate, wired further down under
+  // "settings", the same separation `cg-grouping`'s section toggle here and
+  // its leftovers-radio listener (`updateGroupingHeader`, further down)
+  // already have.
+  for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
     const toggle = $<HTMLButtonElement>(`${id}-toggle`);
     const body = $<HTMLElement>(`${id}-body`);
     if (!toggle || !body) continue;
@@ -142,11 +147,21 @@ if (form) {
   const classInput = $<HTMLInputElement>('cg-class')!;
   const summary = $<HTMLParagraphElement>('cg-summary')!;
   const tables = $<HTMLDivElement>('cg-tables')!;
-  const soundToggle = $<HTMLInputElement>('cg-sound')!;
+  // 'cg-sound' now names the collapsible SECTION (wired in the loop above,
+  // ClassroomGroupsPage.astro's own comment has the reasoning) -- the
+  // checkbox itself is 'cg-sound-check'.
+  const soundToggle = $<HTMLInputElement>('cg-sound-check')!;
   const soundText = $<HTMLSpanElement>('cg-sound-text')!;
   const speedSelect = $<HTMLSelectElement>('cg-speed')!;
   const goButton = $<HTMLButtonElement>('cg-go')!;
 
+  // A localStorage KEY, not a DOM id -- deliberately left as the literal
+  // 'cg-sound' rather than renamed alongside the checkbox above: a teacher
+  // who already muted sound before this task has that preference stored
+  // under this exact string, and changing it would silently reset them to
+  // the default (sound ON) the next time they load the page. The two
+  // namespaces only ever coincided by accident; nothing requires them to
+  // match.
   const SOUND_KEY = 'cg-sound';
   const reduceMotion = window.matchMedia?.(
     '(prefers-reduced-motion: reduce)',

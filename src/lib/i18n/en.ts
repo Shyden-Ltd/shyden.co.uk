@@ -114,7 +114,6 @@ export const en = {
     planets: 'Planets',
   } satisfies Record<ThemeKey, string>,
 
-  playbackHeading: 'Sound and animation',
   soundOn: 'Sound on',
   soundOff: 'Sound off',
   speedLabel: 'Speed',
@@ -122,13 +121,19 @@ export const en = {
   speedFast: 'Fast',
   speedSkip: 'Skip the animation',
 
-  // The tool's four collapsible sections (design spec section 3). Only
-  // three carry a heading + state pair here: Sound & animation is the
-  // fourth, and it is not built by this stage -- see sections.ts's own doc
-  // comment on why it has no state string at all, not merely an unbuilt one.
+  // The tool's four collapsible sections (design spec section 3), in the
+  // spec's own order: Student details, Grouping options, Import / export,
+  // Sound & animation (Stage 2, Task 7 -- see ClassroomGroupsPage.astro's
+  // own comment on the restructuring that gave it a real section, folding
+  // in what used to be a plain fieldset here under `playbackHeading`).
+  // Sound & animation carries no `· state` half of its own -- see
+  // sections.ts's own doc comment on why `sectionState` returns three
+  // fields, not four -- so this is the whole button label for that one,
+  // with nothing to join it to.
   sectionStudentsHeading: 'Student details',
   sectionGroupingHeading: 'Grouping options',
   sectionImportExportHeading: 'Import / export',
+  sectionSoundHeading: 'Sound and animation',
 
   // Every value below is read ONLY through sectionState (src/lib/sections.ts)
   // -- never interpolated into a page directly -- so a key here with no

@@ -93,6 +93,11 @@ test.describe('screen-reader announcements', () => {
     await page.goto('/classroom-groups');
     await page.fill('#cg-count', '8');
     await page.fill('#cg-size', '4');
+    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7. This
+    // click is on #cg-sound-toggle, an element `recordOperations` above
+    // never instruments (it only wraps cg-error/cg-results/cg-summary), so
+    // opening the section here cannot add a spurious entry to `__ops`.
+    await page.locator('#cg-sound-toggle').click();
     await page.selectOption('#cg-speed', 'skip');
     await page.click('#cg-go');
     await expect(page.locator('#cg-summary')).toHaveText(

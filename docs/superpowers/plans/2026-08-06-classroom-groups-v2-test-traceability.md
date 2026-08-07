@@ -31,10 +31,10 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| L-01 | Collapsed default fits without vertical scrolling at 320px | P | ☐ |
-| L-02 | …at 375px | P | ☐ |
-| L-03 | …at 768px | P | ☐ |
-| L-04 | …at 1280px | P | ☐ |
+| L-01 | Collapsed default fits without vertical scrolling at 320px — measured, not met: `test.fixme` in classroom-groups.spec.ts (Stage 2, Task 7) records the real numbers and why closing it needs a denser "top row" field layout, out of that task's scope | P | ☐ |
+| L-02 | …at 375px — same `test.fixme`, same reason | P | ☐ |
+| L-03 | …at 768px — same `test.fixme`, same reason | P | ☐ |
+| L-04 | …at 1280px — same `test.fixme`, same reason | P | ☐ |
 | L-05 | **No horizontal page scroll at any of those four widths, in any state** | P | ☐ |
 | L-06 | …including with Student details open and a 100-student roster loaded — **stage 3**, not stage 2: the section has no body until then | P | ☐ |
 | L-07 | Expanding a section is allowed to scroll vertically — this is not a failure | P | ☐ |
