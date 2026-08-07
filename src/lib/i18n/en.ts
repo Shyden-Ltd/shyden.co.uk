@@ -159,6 +159,17 @@ export const en = {
     // singular/plural rather than assuming a list.
     SEX_NEEDS_ALL_SET: (names: string[]) =>
       `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} no sex set, so this mode cannot run until every student does. Set a sex for ${names.length === 1 ? 'them' : 'each of them'}, or turn it off.`,
+    // Task 8b. Carries `students: number[]`, never names -- same resolver
+    // pattern as TOGETHER_APART_CLASH above. `names.length` is always >= 2
+    // by construction (a together-unit spanning both sexes needs at least
+    // one of each), so, like TOGETHER_APART_CLASH and KEEP_APART_IMPOSSIBLE,
+    // this never branches for singular/plural. Stays abstract at "sex"
+    // rather than naming "boys"/"girls" -- same choice as SEX_NEEDS_ALL_SET
+    // above, its closer sibling (both are guard-style refusals about the
+    // `sex` field itself, not about a group a teacher is looking at, unlike
+    // SEX_SPILLOVER).
+    SEX_SEPARATE_SPLITS_UNIT: (names: string[]) =>
+      `${names.join(', ')} are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.`,
   },
 
   warnings: {
@@ -166,12 +177,11 @@ export const en = {
     // pattern as the errors above) and `sex: 'M' | 'F'`, the sex of the
     // NAMED students, not of the group they joined -- that one fact is
     // enough to phrase both halves of the sentence: which group they ended
-    // up in, and which sex ran short. Nothing emits this code yet (Task 8a
-    // is the channel; Task 8b's separate-mode placement is the first
-    // caller) -- see WARNING_CODES.sexSpillover's doc comment in
-    // grouping.ts. Six boys and two girls not dividing evenly is
-    // arithmetic, not a mistake, so unlike every error above this carries
-    // no remedy: there is nothing to fix.
+    // up in, and which sex ran short. Task 8a built this channel first and
+    // Task 8b's separate-mode placement is what emits it -- see
+    // WARNING_CODES.sexSpillover's doc comment in grouping.ts. Six boys and
+    // two girls not dividing evenly is arithmetic, not a mistake, so unlike
+    // every error above this carries no remedy: there is nothing to fix.
     SEX_SPILLOVER: (names: string[], sex: 'M' | 'F') =>
       `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} joined a group of ${sex === 'M' ? 'girls' : 'boys'} because there were not enough ${sex === 'M' ? 'boys' : 'girls'} to make a group of their own. That is simply how the numbers divided, not a mistake to fix.`,
   },

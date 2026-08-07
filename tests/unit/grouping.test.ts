@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildGroups,
   ERROR_CODES,
+  WARNING_CODES,
   MAX_STUDENTS,
   type GroupingInput,
   type Mode,
@@ -2158,11 +2159,13 @@ describe('sex mode: mix', () => {
 });
 
 // Task 8a: the warnings channel. GroupingOutcome's success arm gains
-// `warnings`, alongside `groups`. Nothing in this module emits one yet --
-// WARNING_CODES.sexSpillover is defined but unreachable through
-// buildGroups until Task 8b's separate-mode placement lands (see the doc
-// comment on WARNING_CODES in grouping.ts) -- so every success this suite
-// can currently produce, across every sexMode, must carry an empty list.
+// `warnings`, alongside `groups`. Task 8a itself never emitted one --
+// WARNING_CODES.sexSpillover was defined but unreachable through
+// buildGroups until Task 8b's separate-mode placement (below) landed. This
+// specific roster (2 boys, 2 girls, 2 groups) still carries an empty list
+// under every sexMode even after Task 8b: it divides evenly, so `separate`
+// has nobody to spill. A roster that DOES spill is covered in "sex mode:
+// separate" below, where `warnings` is no longer always `[]`.
 describe('the warnings channel', () => {
   it.each(['off', 'mix', 'separate'] as const)(
     'every current success carries an empty warnings list (sexMode: %s)',
@@ -2187,66 +2190,448 @@ describe('the warnings channel', () => {
   );
 });
 
-// Task 8a widens the unset-sex guard to cover `separate` (see the flipped
+// Task 8a widened the unset-sex guard to cover `separate` (see the flipped
 // tripwire in "sex mode: mix", 'separate now refuses when a student being
-// grouped has no sex set, same as mix'). This block pins the other half of
-// that task: everything Task 8a did NOT touch. `splitBySex`,
-// `sexSeparateSplitsUnit` and the spillover warning itself are Task 8b's
-// placement work, not this one's -- see WARNING_CODES.sexSpillover's doc
-// comment in grouping.ts.
+// grouped has no sex set, same as mix') and built the warnings channel
+// ahead of time. Task 8b (this block) is the placement work itself:
+// `sexSeparateSplitsUnit`, splitting each sex's blocks and running the
+// existing machinery once per side, the proportional group-count
+// allocation under `groupCount`, the spill, and the warning it emits.
+//
+// `separate` no longer places "exactly like off" -- that was Task 8a's
+// deliberate placeholder (see its own now-superseded test, replaced here),
+// not a guarantee this task keeps. The byte-identical guarantee that DOES
+// still hold -- `off` and `mix` are unaffected by any of this -- is
+// verified separately; see the report for the method and case count (a
+// one-off before/after diff, not a permanent test here, because a test
+// cannot diff itself against "the code before this commit").
 describe('sex mode: separate', () => {
   const M = (number: number) => student({ number, sex: 'M' });
   const F = (number: number) => student({ number, sex: 'F' });
 
-  // The surviving half of the old "leaves separate as a no-op" guarantee:
-  // once every PRESENT student's sex is set, so the widened guard has
-  // nothing to refuse, `separate`'s PLACEMENT is still untouched by this
-  // task. `placeBlocks` branches on `sexMode` for exactly one thing (the
-  // `mix` weave), so `off` and `separate` still consume `random` in the
-  // identical sequence and take the identical plain-shuffled order.
-  //
-  // Swept across seeds rather than trusting one to happen to agree,
-  // matching this file's own standing objection to single-seed proof
-  // elsewhere ("NOT A LUCKY SEED"). An uneven 3-boy/5-girl roster is used
-  // deliberately: it is a shape where `mix`'s weave would visibly reorder
-  // blocks, so it is also a shape where an accidental weave creeping into
-  // `separate` (the mistake this test exists to catch, should a future
-  // change wire one in prematurely) would show up as a mismatch rather
-  // than hide behind a coincidence.
-  //
-  // NOT RED BEFORE IMPLEMENTATION, in the `.groups` half specifically --
-  // and that is correct, not a decoration. This task does not touch
-  // `placeBlocks`, so `off` and `separate` already place identically before
-  // ANY of Task 8a's production code lands; only the `.warnings` half is
-  // new behaviour and fails first. The `.groups` half exists to prove Task
-  // 8a's guard widening did NOT quietly also touch placement -- proven by
-  // mutation, not by this early pass: temporarily weaving `separate` too
-  // (`sexMode === 'mix' || sexMode === 'separate'` at the `placeBlocks`
-  // call site) reddens it, confirmed and reverted while this task was
-  // implemented.
-  it('places exactly like off, seed for seed, and never warns, once every present student has a sex', () => {
-    const students = [M(1), M(2), M(3), F(4), F(5), F(6), F(7), F(8)];
-    for (let seed = 1; seed <= 20; seed++) {
-      const off = ok(
+  describe('a together-unit spanning both sexes is a contradiction under separate', () => {
+    // Ana and Budi are bound together (letter A) but marked different
+    // sexes -- single-sex groups and "these two are one unit" cannot both
+    // be honoured, so this is refused before placement runs, not resolved
+    // by picking a side silently.
+    it('refuses a together-unit that spans both sexes', () => {
+      const out = buildGroups(
         base({
-          students,
-          mode: { kind: 'groupCount', count: 3 },
-          sexMode: 'off',
-          random: seeded(seed),
-        }),
-      );
-      const separate = ok(
-        base({
-          students,
-          mode: { kind: 'groupCount', count: 3 },
+          students: [
+            student({ number: 1, name: 'Ana', sex: 'F', together: 'A' }),
+            student({ number: 2, name: 'Budi', sex: 'M', together: 'A' }),
+            M(3),
+            F(4),
+          ],
+          mode: { kind: 'groupCount', count: 2 },
           sexMode: 'separate',
-          random: seeded(seed),
         }),
       );
-      expect(separate.groups.map((g) => g.map((s) => s.number))).toEqual(
-        off.groups.map((g) => g.map((s) => s.number)),
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.sexSeparateSplitsUnit,
+        students: [1, 2],
+      });
+    });
+
+    // The same roster is fine under the OTHER two modes: `mix` places boys
+    // and girls together on purpose, and `off` does not look at sex at
+    // all, so a together-block spanning both sexes is not a contradiction
+    // for either. This proves the new check is scoped to `separate`, not
+    // leaking into the other two -- it does not go red before
+    // implementation (neither mode is touched by this task), so it is a
+    // scoping guard against a future regression, not a feature pin.
+    it('allows that same mixed unit under mix, and under off', () => {
+      for (const sexMode of ['mix', 'off'] as const) {
+        const out = buildGroups(
+          base({
+            students: [
+              student({ number: 1, sex: 'F', together: 'A' }),
+              student({ number: 2, sex: 'M', together: 'A' }),
+              M(3),
+              F(4),
+            ],
+            mode: { kind: 'groupCount', count: 2 },
+            sexMode,
+          }),
+        );
+        expect(out.ok, `sexMode ${sexMode}`).toBe(true);
+      }
+    });
+  });
+
+  describe('perGroup: each sex forms its own groups of the requested size', () => {
+    it('makes single-sex groups when the numbers divide', () => {
+      const out = buildGroups(
+        base({
+          students: [M(1), M(2), M(3), M(4), F(5), F(6), F(7), F(8)],
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+        }),
       );
-      expect(separate.warnings).toEqual([]);
-    }
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      for (const g of out.result.groups) {
+        expect(new Set(g.map((s) => s.sex)).size).toBe(1);
+      }
+      expect(out.result.warnings).toEqual([]);
+    });
+
+    // Six boys and two girls into groups of 4: the boys make one group and
+    // the girls cannot make one of their own, so the two girls join the
+    // boys' single group and are named in a warning. Also pins the
+    // resulting shape (one group of all eight), not just the warning --
+    // the brief's own append-style description ("join the smallest
+    // resulting group") reduces to "the only group" when the host side has
+    // just one.
+    it('warns and names who lands in a group of the other sex', () => {
+      const out = buildGroups(
+        base({
+          students: [M(1), M(2), M(3), M(4), M(5), M(6), F(7), F(8)],
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(1);
+      expect(
+        out.result.groups[0].map((s) => s.number).sort((a, b) => a - b),
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(out.result.warnings).toEqual([
+        { code: WARNING_CODES.sexSpillover, students: [7, 8], sex: 'F' },
+      ]);
+    });
+
+    // An all-boys roster: girls simply have no members, which is not a
+    // spill (nobody was left out of a group of their own -- there is no
+    // "their own" to compare against). Regression guard for the fix noted
+    // in the report: a side with a genuine allocation of zero groups
+    // because it has zero MEMBERS must not be confused with a side that
+    // has members but too few of them.
+    it('a roster that is entirely one sex places with no warning', () => {
+      const out = buildGroups(
+        base({
+          students: [M(1), M(2), M(3), M(4)],
+          mode: { kind: 'perGroup', size: 2 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(2);
+      expect(out.result.warnings).toEqual([]);
+    });
+  });
+
+  describe('groupCount: the requested total is allocated between the sexes proportionally by headcount', () => {
+    // The task's own worked example: 12 boys and 8 girls asked for 4
+    // groups. Single-sex groups sized independently per side (12/5 and 8/5)
+    // would want 3 boy-groups and 2 girl-groups -- five, not four. The
+    // teacher typed 4, so 4 is what they get: largest-remainder allocation
+    // by headcount gives boys 2.4 -> 2 and girls 1.6 -> 2 (girls' larger
+    // fractional remainder claims the rounding unit), summing to exactly
+    // 4. Every group single-sex, nobody spills.
+    it('splits 2-and-2 by headcount share, not 3-and-2 by an independently sized per-sex group count', () => {
+      const students = [
+        ...Array.from({ length: 12 }, (_, i) => M(i + 1)),
+        ...Array.from({ length: 8 }, (_, i) => F(i + 13)),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 4 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.warnings).toEqual([]);
+      expect(shape(out.result.groups)).toEqual([6, 6, 4, 4]);
+      for (const g of out.result.groups) {
+        expect(new Set(g.map((s) => s.sex)).size).toBe(1);
+      }
+    });
+
+    // The allocation must sum to exactly what was typed, on every split --
+    // not just the one worked example above. This is the property largest-
+    // remainder exists to guarantee (plain rounding of each side
+    // independently can under- or over-shoot the total). It does NOT go
+    // red before implementation: today's `separate` (== `off`) also always
+    // returns exactly `mode.count` groups, because `off` never splits by
+    // sex in the first place, so the group COUNT this asserts is trivially
+    // right for a reason that has nothing to do with sex. It is kept
+    // anyway because it is the most direct check of the "sums exactly"
+    // claim, and it is the guarantee the report cites; "splits 2-and-2..."
+    // above and the spill test below are what actually distinguish this
+    // implementation from the old placeholder.
+    it('the allocated group counts always sum to exactly the number requested, swept across many splits', () => {
+      const combos: Array<[boys: number, girls: number, count: number]> = [
+        [12, 8, 4],
+        [1, 99, 50],
+        [1, 99, 1],
+        [33, 17, 10],
+        [5, 5, 3],
+        [1, 1, 1],
+        [7, 93, 25],
+        [50, 50, 20],
+        [3, 97, 40],
+        [19, 81, 33],
+      ];
+      for (const [boys, girls, count] of combos) {
+        const students = [
+          ...Array.from({ length: boys }, (_, i) => M(i + 1)),
+          ...Array.from({ length: girls }, (_, i) => F(i + 1 + boys)),
+        ];
+        const label = `boys=${boys} girls=${girls} count=${count}`;
+        const out = buildGroups(
+          base({
+            students,
+            mode: { kind: 'groupCount', count },
+            sexMode: 'separate',
+            random: seeded(1),
+          }),
+        );
+        expect(out.ok, label).toBe(true);
+        if (!out.ok) continue;
+        expect(out.result.groups.length, label).toBe(count);
+      }
+    });
+
+    // A concrete spill under `groupCount`, not just `perGroup`: 28 boys and
+    // 2 girls asked for 5 groups. Girls' proportional share (5 * 2/30 =
+    // 0.33) floors to zero, so they spill into the boys' 5 groups -- the
+    // SAME rule as the perGroup spill above, just reached via the
+    // allocation instead of a direct size comparison (see the report for
+    // why one rule serves both).
+    it('spills the smaller sex when its proportional share floors to zero groups', () => {
+      const students = [
+        ...Array.from({ length: 28 }, (_, i) => M(i + 1)),
+        F(29),
+        F(30),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 5 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(5);
+      expect(out.result.warnings).toEqual([
+        { code: WARNING_CODES.sexSpillover, students: [29, 30], sex: 'F' },
+      ]);
+    });
+
+    // A together-unit sized for its OWN side's largest group, but bigger
+    // than the WHOLE ROSTER's -- proves togetherUnitTooLarge is checked
+    // per side under `separate`, not against the whole-roster `sizes` the
+    // way `off`/`mix` use. 33 boys and 17 girls asked for 10 groups: raw
+    // shares are 6.6 and 3.4, both floors (6 and 3) sum to 9, leaving one
+    // group to allocate; boys' fractional remainder (0.6) is the larger of
+    // the two, and the one leftover group goes to whichever fraction is
+    // LARGER, so boys claims it -- 7-and-3, not 6-and-4. Girls' own sizing
+    // at count 3 (targetSizes(17, {count:3}, 'spread')) is [6, 6, 5] -- a
+    // largest group of 6 -- while the whole roster's sizing at count 10
+    // (targetSizes(50, {count:10})) is ten groups of 5, largest 5. A
+    // together-block of exactly 6 girls fits the former and would be
+    // wrongly refused by the latter.
+    it("checks a together-unit against its OWN side's largest group, not the whole roster's", () => {
+      const students = [
+        ...Array.from({ length: 33 }, (_, i) => M(i + 1)),
+        student({ number: 34, sex: 'F' as const, together: 'Z' }),
+        student({ number: 35, sex: 'F' as const, together: 'Z' }),
+        student({ number: 36, sex: 'F' as const, together: 'Z' }),
+        student({ number: 37, sex: 'F' as const, together: 'Z' }),
+        student({ number: 38, sex: 'F' as const, together: 'Z' }),
+        student({ number: 39, sex: 'F' as const, together: 'Z' }),
+        ...Array.from({ length: 11 }, (_, i) => F(i + 40)),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 10 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      const host = groupOf(out.result.groups, 34);
+      for (const n of [35, 36, 37, 38, 39]) {
+        expect(host?.some((s) => s.number === n)).toBe(true);
+      }
+    });
+  });
+
+  // Reachable only under `perGroup` -- see the report for the proof that
+  // largest-remainder allocation under `groupCount` can never give BOTH
+  // sides zero groups while both have members (the single leftover group
+  // always has somewhere to go). Under `perGroup`, a size bigger than
+  // BOTH sexes' own headcount gives both a floored group count of zero.
+  describe('when neither sex has enough for even one group of its own (perGroup only)', () => {
+    it('falls back to one combined group and warns about both sexes', () => {
+      const students = [
+        M(1),
+        M(2),
+        M(3),
+        M(4),
+        M(5),
+        M(6),
+        F(7),
+        F(8),
+        F(9),
+        F(10),
+        F(11),
+        F(12),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'perGroup', size: 10 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(1);
+      expect(
+        out.result.groups[0].map((s) => s.number).sort((a, b) => a - b),
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      const bySex = (sex: 'M' | 'F') =>
+        out.result.warnings.find((w) => w.sex === sex);
+      expect(bySex('M')).toEqual({
+        code: WARNING_CODES.sexSpillover,
+        students: [1, 2, 3, 4, 5, 6],
+        sex: 'M',
+      });
+      expect(bySex('F')).toEqual({
+        code: WARNING_CODES.sexSpillover,
+        students: [7, 8, 9, 10, 11, 12],
+        sex: 'F',
+      });
+      expect(out.result.warnings).toHaveLength(2);
+    });
+
+    // The neighbouring case that must NOT be confused with the one above:
+    // one sex is entirely absent, and the other is too small for the
+    // requested size. Both sides still compute an allocation of zero
+    // groups (the same condition that triggers the fallback above), but
+    // there is no OTHER sex for anyone to have "spilled" into -- this is
+    // just an undersized single-sex group, exactly what `off` would do
+    // with the same roster. No warning: nobody's outcome changed because
+    // of their sex. Does not go red before implementation -- old
+    // `separate` (== `off`) already produces this exact shape, since
+    // there is only one possible group either way; it pins the fix
+    // described in the report (a naive "both allocations are zero" check,
+    // without also requiring both sexes to have members, would have
+    // wrongly warned a same-sex roster about a sex that is not there).
+    it('a lone sex too small for the requested size places with no warning -- there is no other sex to have joined', () => {
+      const out = buildGroups(
+        base({
+          students: [M(1), M(2), M(3)],
+          mode: { kind: 'perGroup', size: 10 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.groups).toHaveLength(1);
+      expect(
+        out.result.groups[0].map((s) => s.number).sort((a, b) => a - b),
+      ).toEqual([1, 2, 3]);
+      expect(out.result.warnings).toEqual([]);
+    });
+  });
+
+  // The apart-rule hole the brief leaves silent: placing each sex
+  // independently makes a cross-sex apart-conflict satisfied for free,
+  // EXCEPT for a spilled student, who joins the other sex's placement and
+  // can be seated next to someone they must be kept apart from if that
+  // conflict is not carried into the spill. See the report for the full
+  // reasoning; these two tests are the evidence it holds.
+  describe('the apart-rule at the spill boundary', () => {
+    // Twelve boys (three groups of four) and two girls who must spill.
+    // Multiple destination groups exist, so there is a real choice of
+    // where the spill lands, not just one forced slot -- M1 and F13 are
+    // marked apart, and across every seed the search must route around
+    // that, never seat them together by chance.
+    //
+    // Does not go red before implementation FOR A SUBTLE REASON worth
+    // recording: old `separate` (== `off`) already enforces apart-letters
+    // for the whole roster, sex-blind, so M1 and F13 were never seated
+    // together under the old code either -- just via a completely
+    // different mechanism (one placement pass over everyone) than the one
+    // this task builds (independent per-side placement, with the conflict
+    // carried across at the spill). Mutation evidence in the report proves
+    // THIS implementation's own carrying-across is what this test is
+    // actually pinned on, not a coincidence inherited from the old code.
+    it('never seats a spilled student beside someone they must be kept apart from, swept across seeds', () => {
+      const students = [
+        student({ number: 1, sex: 'M', apart: 'X' }),
+        ...Array.from({ length: 11 }, (_, i) => M(i + 2)), // M2..M12
+        student({ number: 13, sex: 'F', apart: 'X' }),
+        F(14),
+      ];
+      for (let seed = 1; seed <= 30; seed++) {
+        const out = buildGroups(
+          base({
+            students,
+            mode: { kind: 'perGroup', size: 4 },
+            sexMode: 'separate',
+            random: seeded(seed),
+          }),
+        );
+        expect(out.ok, `seed ${seed}`).toBe(true);
+        if (!out.ok) continue;
+        const g1 = groupOf(out.result.groups, 1);
+        expect(g1, `seed ${seed}`).not.toBeUndefined();
+        expect(
+          g1?.some((s) => s.number === 13),
+          `seed ${seed}`,
+        ).toBe(false);
+      }
+    });
+
+    // Four boys fill the one group their own size allows exactly (size 4,
+    // 4 boys); one girl must spill, and that group is the ONLY group there
+    // is -- so however she is routed, she lands beside every boy, and one
+    // of them (M1) is exactly who she must be kept apart from. No
+    // arrangement can honour the rule, so it must be REPORTED, not
+    // silently ignored: reuses the same keepApartImpossible vocabulary
+    // `off`/`mix` already use for "an exhaustive check proved this
+    // impossible", now reached from the per-side search instead of the
+    // whole-roster one.
+    //
+    // Also does not go red before implementation, for the same reason as
+    // the sibling case immediately above: with only one group possible
+    // either way, old `separate` (== `off`) already refuses this input via
+    // its own whole-roster clique check. Mutation evidence in the report
+    // shows this test's OWN per-side clique check firing, not a
+    // hand-me-down from `off`'s.
+    it('reports, not silently ignores, when the apart-rule cannot be honoured even after spilling', () => {
+      const students = [
+        student({ number: 1, sex: 'M', apart: 'X' }),
+        M(2),
+        M(3),
+        M(4),
+        student({ number: 5, sex: 'F', apart: 'X' }),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error.code).toBe(ERROR_CODES.keepApartImpossible);
+      if (out.error.code !== ERROR_CODES.keepApartImpossible) return;
+      expect(new Set(out.error.students)).toEqual(new Set([1, 5]));
+      expect(out.error.groupsNeeded).toBe(2);
+    });
   });
 });

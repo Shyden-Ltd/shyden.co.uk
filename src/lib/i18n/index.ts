@@ -128,6 +128,10 @@ export function renderError(
     // the same fix (resolve each one through `resolveStudent` first).
     case ERROR_CODES.sexNeedsAllSet:
       return e.SEX_NEEDS_ALL_SET(error.students.map(resolveStudent));
+    // Task 8b. Carries `students: number[]`, exactly like the codes above --
+    // same reason (identity is the number) and the same fix.
+    case ERROR_CODES.sexSeparateSplitsUnit:
+      return e.SEX_SEPARATE_SPLITS_UNIT(error.students.map(resolveStudent));
   }
 }
 
@@ -141,12 +145,12 @@ export function renderError(
  * defaulting the same way -- a caller that forgets a resolver still gets
  * "Student 7, Student 8 …", never bare digits.
  *
- * Task 8a. `sexSpillover` is the only code WARNING_CODES defines, and
- * nothing in grouping.ts emits it yet -- see the doc comment on
- * WARNING_CODES.sexSpillover there. This renderer exists anyway, ahead of a
- * real caller, so Task 8b's placement work lands against a channel that is
- * already tested and translated rather than inventing one under time
- * pressure alongside the harder placement logic.
+ * Task 8a. `sexSpillover` is the only code WARNING_CODES defines. Task 8a
+ * built this renderer ahead of a real caller -- see the doc comment on
+ * WARNING_CODES.sexSpillover there -- so Task 8b's separate-mode placement
+ * work landed against a channel that was already tested and translated
+ * rather than inventing one under time pressure alongside the harder
+ * placement logic.
  */
 export function renderWarning(
   warning: GroupingWarning,

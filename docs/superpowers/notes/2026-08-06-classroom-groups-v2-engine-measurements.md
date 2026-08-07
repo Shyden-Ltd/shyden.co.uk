@@ -596,9 +596,21 @@ decision honestly, beyond the case that motivated it:
 
 ## mix: byte-identical under off and separate
 
+**SUPERSEDED for `separate` by Task 8b.** This section's claim held while
+`separate` was Task 8a's deliberate placeholder (placing exactly like
+`off`); Task 8b replaced `separate`'s placement with its own per-sex logic,
+so `separate` no longer places like `off` in general (that was always the
+point of the change -- see task-8b-report.md, not cited here since
+`.superpowers/sdd/…/task-N-report.md` files are gitignored). The
+measurement below is kept as a historical record of what was true at the
+time, not a current guarantee. The claim that IS still current --
+`off` and `mix` are unaffected by any of Task 8b's changes -- is verified
+in "off and mix: byte-identical after Task 8b" further down.
+
 Sex-based mixing only changes behaviour when the mode is `mix`; the `off`
 and `separate` modes must be unaffected, byte-for-byte, both before this
-feature existed and after every later change to it.
+feature existed and after every later change to it -- true as stated,
+for the period up to and including Task 8a.
 
 ### Original measurement
 
@@ -778,3 +790,57 @@ special-casing `null`:
   input index lands in exactly one output list, never zero, never two"
   guarantee can be proven directly, independent of whether `buildGroups`'s
   guard is what happens to be protecting it today.
+
+---
+
+## off and mix: byte-identical after Task 8b
+
+Task 8b rewrote `separate`'s placement entirely (see "mix: byte-identical
+under off and separate" above, now superseded for `separate`). `off` and
+`mix` must be completely unaffected -- neither one's code path was meant
+to change at all, and the changes needed to make that true by
+CONSTRUCTION, not just by testing: `buildGroups` now branches to a new,
+separate function (`buildSeparateGroups`) the instant `sexMode ===
+'separate'` is seen, immediately before the block of code `off`/`mix` run
+(the two-pass `placeBlocks` call and its failure attribution), so every
+statement `off` and `mix` execute is textually identical, in the identical
+order, to the commit before this task (`b7cf318`). The two guards added
+earlier in `buildGroups` (scoping `togetherUnitTooLarge` and the keep-apart
+clique pre-check to `sexMode !== 'separate'`) are the only other change on
+the shared path, and for `off`/`mix` that condition is always true, so
+those two checks run unconditionally, exactly as before.
+
+### Method
+
+A standalone script (`npx tsx`, not part of the repo or committed) imports
+`buildGroups` from two copies of `src/lib/grouping.ts`: one from `git show
+b7cf318:src/lib/grouping.ts` (Task 8a's final state, immediately before
+this task), one the working tree as this task left it. For every case, it
+builds a FRESH `random` closure per engine (a shared, stateful closure
+across both calls was tried first and produced spurious mismatches --
+recorded here so nobody repeats the mistake investigating a future
+regression) and compares `JSON.stringify({ok, groups} | {ok, error})`,
+plus asserts the new `warnings` field is `[]` on every success (`off` and
+`mix` must never populate it -- only `separate`'s spill does).
+
+### Cases
+
+10 roster/mode shapes × 2 sexModes (`off`, `mix`) × 20 seeds = **400
+cases**:
+
+- Two bare counts (`perGroup`, `groupCount`) and a single-student edge case.
+- A together/apart-letter roster at two different group modes.
+- A together/apart-letter roster with absences.
+- A 60-student together/apart-letter roster at `groupCount: 12`.
+- An 11-student roster exercising uneven leftover spread.
+- The 105-student six-clique shape from "apart letters: structural passes,
+  sweeps, and their mutation proofs" above (sized 20/19/18/17/16/15 into 20
+  groups) -- the most sensitive witness available to any change in how the
+  placement order is built, since it sits right at `SEARCH_NODE_CAP`.
+- An 18-student roster mixing valid and off-domain `sex` values (`undefined`,
+  `''`, `'m'`, `0`, `'male'`) with an absent student -- stresses the exact
+  values the widened unset-sex guard (Task 8a) cares about; `mix` refuses
+  this identically old vs new (compared via the `error` field, same as any
+  other case), `off` succeeds identically (it never reads `sex`).
+
+**Result: 400 of 400 cases byte-identical, 0 mismatches.**

@@ -108,6 +108,17 @@ export const ERROR_CODES = {
    * site in buildGroups for why it is checked where it is.
    */
   sexNeedsAllSet: 'SEX_NEEDS_ALL_SET',
+  /**
+   * Task 8b. A together-letter unit whose members are not all the same
+   * sex is a contradiction under `separate`: single-sex groups and "these
+   * students are one unit, wherever it lands" cannot both be honoured, so
+   * it is refused before placement runs rather than resolved by silently
+   * placing the whole unit on one side. See the call site in buildGroups
+   * for exactly where, and `sexOf`'s note in weaveBySex for why picking a
+   * side is fine under `mix` (which never claims single-sex groups) but
+   * not here.
+   */
+  sexSeparateSplitsUnit: 'SEX_SEPARATE_SPLITS_UNIT',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -168,6 +179,13 @@ export type GroupingError =
       // and the engine has no roster to format a display string from.
       // renderError's resolver parameter is what turns these into words.
       students: number[];
+    }
+  | {
+      code: typeof ERROR_CODES.sexSeparateSplitsUnit;
+      // Numbers, not names -- same reasoning as every other students-
+      // carrying code above. Always >= 2 by construction: a together-unit
+      // needs at least one member of each sex to trip this.
+      students: number[];
     };
 
 /**
@@ -177,18 +195,16 @@ export type GroupingError =
  * layer (`renderWarning` in src/lib/i18n/index.ts) is the one place a
  * sentence gets composed.
  *
- * `sexSpillover` is defined here but NOTHING IN THIS MODULE EMITS IT YET.
- * Task 8a builds the channel -- this type, the outcome shape below, the
- * renderer, the copy in both locales -- ahead of the placement logic that
- * will actually push a warning through it. Separate-mode placement
- * (`splitBySex`, the per-sex group allocation, the spill, and the
- * `warnings.push(...)` call that would fire this code) is Task 8b's scope;
- * until it lands, `separate` places exactly as `off` does (see the comment
- * at buildGroups's unset-sex guard, and the "places exactly like off" test
- * in grouping.test.ts's "sex mode: separate" block) and this array is
- * always empty. The member exists now so Task 8b extends a channel that is
- * already tested, translated and wired through renderWarning, rather than
- * inventing one from scratch alongside the harder placement work.
+ * `sexSpillover` is the only code this defines. Task 8a built the channel
+ * -- this type, the outcome shape below, the renderer, the copy in both
+ * locales -- ahead of the placement logic that would push a warning
+ * through it, so that Task 8b's separate-mode placement (`buildSeparateGroups`,
+ * `allocateSexGroups`, the spill, and the `warnings.push(...)` call that
+ * actually fires this code) landed against a channel that was already
+ * tested, translated and wired through renderWarning, rather than
+ * inventing one from scratch alongside the harder placement work. `off`
+ * and `mix` never populate this list -- only `separate`'s spill does (see
+ * `buildSeparateGroups`).
  */
 export const WARNING_CODES = {
   sexSpillover: 'SEX_SPILLOVER',
@@ -690,8 +706,12 @@ function assign(
  * for ANY caller, not just the ones reachable through `buildGroups` today.
  * `mix` is the only caller `buildGroups` actually has (`placeBlocks` weaves
  * only when `sexMode === 'mix'`; `separate` still takes the plain shuffled
- * order even after Task 8a widened the unset-sex guard to cover it too --
- * see `ERROR_CODES.sexNeedsAllSet`'s doc comment), and that guard refuses
+ * order -- true when this was written for Task 8a's placeholder placement,
+ * and still true after Task 8b's real separate-mode placement landed:
+ * `buildSeparateGroups` calls `placeBlocks` with `sexMode: 'separate'`, per
+ * side, which takes the exact same unwoven branch it always did; see
+ * `ERROR_CODES.sexNeedsAllSet`'s doc comment for the guard history), and
+ * that guard refuses
  * every off-domain `sex` before `mix` can reach this function, so there is
  * no path through `buildGroups` left to exercise the guarantee with bad
  * data -- proving it as a property of THIS function, not of `buildGroups`'s
@@ -747,15 +767,18 @@ export function weaveBySex(
  * that is still shuffled underneath, so variety survives (proven in
  * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
  * "Singleton-block shapes") exactly as it did before this task. `sexMode`
- * values other than `mix` (`off`, and `separate` -- still true after Task
- * 8a, which widened the unset-sex guard elsewhere in this file but left
- * this function untouched; only Task 8b's placement work would change
- * this) take this same shuffled order unchanged, so this task is additive:
- * it can only ever add a branch `mix` reaches, never touch what `off` or
- * `separate` compute (confirmed byte-identical against the pre-Task-7
- * engine; see
+ * values other than `mix` take this same shuffled order unchanged in THIS
+ * function -- true for `off` at every call this function has ever had, and
+ * true for `separate` too, though what "a call" means for `separate`
+ * changed under Task 8b: this function itself is untouched (still exactly
+ * one `sexMode === 'mix'` branch), but `buildSeparateGroups` now calls it
+ * once PER SIDE rather than `buildGroups` calling it once for the whole
+ * roster (see `buildSeparateGroups`, and the SEARCH_NODE_CAP paragraph
+ * below for what that costs). None of that touches what `off` computes --
+ * confirmed byte-identical, see the report for Task 8b and
  * docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
- * "mix: byte-identical under off and separate").
+ * "mix: byte-identical under off and separate" for Task 7's own original
+ * measurement of this function in isolation.
  *
  * If pass 1 runs to completion WITHOUT giving up, that is already a complete
  * proof that no arrangement exists at this group count: `assign` is an
@@ -790,6 +813,21 @@ export function weaveBySex(
  * only happens on an input that defeats first-fit-decreasing outright (see
  * the "gave up" test in grouping.test.ts, where every block is the same
  * size so pass 2's sort cannot help); every other input pays for one pass.
+ *
+ * Task 8b: under `separate`, THIS function is called up to twice more —
+ * once per side that gets its own placement attempt, from
+ * `buildSeparateGroups` via `placeSexSide` — and each of those calls is
+ * everything above, independently: its own shuffled order, its own
+ * possible pass 2, its own SEARCH_NODE_CAP budget per pass. The cap is PER
+ * SIDE, exactly like it is per pass — a side that gives up spends only its
+ * own budget; it neither borrows from nor lends to the other side's. So
+ * the true worst case under `separate` is up to 2 (sides) * 2 (passes) = 4
+ * * SEARCH_NODE_CAP nodes on a single `buildGroups` call, twice the 2 *
+ * SEARCH_NODE_CAP worst case above for one `placeBlocks` call, and reached
+ * only if BOTH sides independently hit the rare shape that defeats
+ * first-fit-decreasing outright, in the same call. `off` and `mix` are
+ * unaffected: they still call this function exactly once, so their worst
+ * case is still 2 * SEARCH_NODE_CAP, unchanged by any of this.
  */
 function placeBlocks(
   blocks: Block[],
@@ -815,6 +853,388 @@ function placeBlocks(
     .slice()
     .sort((a, b) => blocks[b].length - blocks[a].length);
   return assign(ffdOrder, blocks, sizes, adj);
+}
+
+/**
+ * Task 8b: how many groups each sex gets under `separate`.
+ *
+ * `perGroup`: independent per side -- floor(own headcount / size), the same
+ * arithmetic `targetSizes` uses for the group count, WITHOUT its
+ * `Math.max(1, ...)` floor. That clamp exists so the whole roster always
+ * gets at least one group; a SIDE that cannot fill even one group of the
+ * requested size must be allowed to compute to zero, because zero is
+ * exactly the spill signal (see the call site in `buildSeparateGroups`).
+ *
+ * `groupCount`: the number the teacher typed is fixed. It is allocated
+ * between the two sides proportionally by headcount, using the largest-
+ * remainder method, so the parts sum to EXACTLY that number rather than
+ * independently rounding each side and risking a total that over- or
+ * undershoots it (the problem the task brief's own worked example names:
+ * 12 boys and 8 girls asked for 4 groups must split as 4, not as whatever
+ * sizing each side's own together-block arithmetic would separately want).
+ *
+ * With only two sides there is at most ONE whole group left over after
+ * both floors are taken: the two fractional remainders are each in [0, 1)
+ * and sum to a whole number (the two raw shares already sum to exactly
+ * `mode.count`, an integer, and floor(x) + frac(x) = x for each), and a
+ * sum of two numbers each < 1 that is itself a whole number can only be 0
+ * or 1. So a single comparison decides where it goes -- not a general
+ * largest-remainder loop over N buckets, because N is always 2 here. A tie
+ * goes to boys, arbitrarily but deterministically.
+ */
+function allocateSexGroups(
+  boysCount: number,
+  girlsCount: number,
+  mode: Mode,
+): { boys: number; girls: number } {
+  if (mode.kind === 'perGroup') {
+    return {
+      boys: Math.floor(boysCount / mode.size),
+      girls: Math.floor(girlsCount / mode.size),
+    };
+  }
+  const total = mode.count;
+  const sum = boysCount + girlsCount; // present.length, always > 0 here
+  const rawBoys = (boysCount / sum) * total;
+  const rawGirls = (girlsCount / sum) * total;
+  const boysFloor = Math.floor(rawBoys);
+  const girlsFloor = Math.floor(rawGirls);
+  const remainder = total - boysFloor - girlsFloor; // always 0 or 1, see above
+  const girlsWinsRemainder =
+    remainder > 0 && rawGirls - girlsFloor > rawBoys - boysFloor;
+  return {
+    boys: boysFloor + (remainder > 0 && !girlsWinsRemainder ? 1 : 0),
+    girls: girlsFloor + (girlsWinsRemainder ? 1 : 0),
+  };
+}
+
+/**
+ * Task 8b: sizes for a FIXED group count, spread by the ordinary
+ * `leftovers` rule (thin wrapper over `targetSizes` with a synthesised
+ * `groupCount` mode).
+ *
+ * Reused for two different totals in `buildSeparateGroups`: a side's OWN
+ * headcount at its OWN allocated group count (see `ownSizes`'s
+ * `groupCount` branch), and a side's headcount PLUS whatever spilled onto
+ * it, STILL at that side's own allocated group count -- the spill is
+ * spread across the host's groups the exact same way an ordinary remainder
+ * already is, rather than by any new rule invented for this. Never called
+ * with `groupCount` of zero -- that is the spill case itself, handled
+ * separately, and `targetSizes` does not do anything meaningful with a
+ * zero group count (empty `sizes`, silently).
+ */
+function sizesForCount(
+  total: number,
+  groupCount: number,
+  leftovers: Leftovers,
+): number[] {
+  return targetSizes(
+    total,
+    { kind: 'groupCount', count: groupCount },
+    leftovers,
+  );
+}
+
+/**
+ * Task 8b: a non-spilling side's own sizes.
+ *
+ * Under `perGroup`, the SAME size applied to just this side's headcount --
+ * there is no total to reconcile against, unlike `groupCount`, so each
+ * side computes its own group count independently, exactly as the task
+ * brief describes. Under `groupCount`, this side's OWN allocated count
+ * (see `allocateSexGroups`) via `sizesForCount`. Never called with an
+ * allocation of zero; see `sizesForCount`'s doc comment for why.
+ */
+function ownSizes(
+  sideCount: number,
+  allocated: number,
+  mode: Mode,
+  leftovers: Leftovers,
+): number[] {
+  return mode.kind === 'perGroup'
+    ? targetSizes(sideCount, mode, leftovers)
+    : sizesForCount(sideCount, allocated, leftovers);
+}
+
+/**
+ * Task 8b: restrict a block-indexed conflict adjacency to a subset of
+ * blocks, and reindex it to the subset's own local numbering.
+ *
+ * `assign` reads `adj[b]` for whatever block indices appear in `order`, so
+ * placing only a SUBSET of the roster's blocks (one sex's own blocks, plus
+ * whichever blocks spilled onto this side) needs an adjacency array
+ * indexed the same way its own local `blocks` array is, not the global
+ * one. This is also where a cross-sex apart-conflict at the spill boundary
+ * gets carried across correctly: a spilled block's conflicts with the
+ * host's own blocks are real entries in `globalAdj`, and they survive
+ * reindexing here exactly like any other conflict does, because nothing
+ * about this function singles sex out -- it only ever asks "is the OTHER
+ * end of this conflict also in the subset being placed together." A
+ * conflict to a block OUTSIDE the subset is dropped, not lost: that block
+ * is never placed in this call, so it can never be seated next to anyone
+ * here either way.
+ */
+function localAdjacency(
+  globalAdj: Set<number>[],
+  subset: number[], // global block indices; subset[i] becomes local index i
+): Set<number>[] {
+  const localOf = new Map(subset.map((g, i) => [g, i]));
+  return subset.map((g) => {
+    const local = new Set<number>();
+    for (const other of globalAdj[g]) {
+      const i = localOf.get(other);
+      if (i !== undefined) local.add(i);
+    }
+    return local;
+  });
+}
+
+/**
+ * Task 8b: run the SAME placement machinery `buildGroups` runs once,
+ * globally, for `off` and `mix` -- the together-unit-too-large check, the
+ * keep-apart clique fast path, the two-pass search, and its failure
+ * attribution -- against ONE subset of blocks and its own local sizes and
+ * adjacency.
+ *
+ * This is a DELIBERATE duplication of that logic, not an extraction of it
+ * into a function both paths share. `off` and `mix` must stay byte-
+ * identical to how they behaved before this task (see the report for the
+ * verification), and the safest way to guarantee that is to leave every
+ * line of their existing path untouched rather than route it through a
+ * newly-shared function that a future change to `separate`'s own needs
+ * could perturb. The duplication is a few dozen lines of validation and
+ * attribution, not the search itself -- `placeBlocks`, `assign` and
+ * `largestMutualConflict` are all called exactly as they already exist,
+ * unmodified.
+ *
+ * Called once per side when neither sex spills, once for a host side plus
+ * whatever spilled onto it, or once for the whole roster in the fallback
+ * where NEITHER side has enough for a group of its own -- see the call
+ * site in `buildSeparateGroups` for all three shapes.
+ */
+function placeSexSide(
+  localBlocks: Block[],
+  localSizes: number[],
+  localAdj: Set<number>[],
+  present: Student[],
+  random: () => number,
+): { ok: true; groups: number[][] } | { ok: false; error: GroupingError } {
+  const largestGroup = Math.max(...localSizes);
+  for (const block of localBlocks) {
+    if (block.length > largestGroup) {
+      return {
+        ok: false,
+        error: {
+          code: ERROR_CODES.togetherUnitTooLarge,
+          letter: present[block[0]].together as string,
+          unit: block.length,
+          groupSize: largestGroup,
+        },
+      };
+    }
+  }
+
+  const apartInPlay = localAdj.some((conflicts) => conflicts.size > 0);
+  if (apartInPlay) {
+    const clique = largestMutualConflict(localAdj);
+    if (clique.length > localSizes.length) {
+      return {
+        ok: false,
+        error: {
+          code: ERROR_CODES.keepApartImpossible,
+          students: clique.map((b) => {
+            const holder = localBlocks[b].find(
+              (i) => present[i].apart !== null,
+            );
+            return present[holder ?? localBlocks[b][0]].number;
+          }),
+          groupsNeeded: clique.length,
+        },
+      };
+    }
+  }
+
+  const { groups: placed, gaveUp } = placeBlocks(
+    localBlocks,
+    localSizes,
+    localAdj,
+    random,
+    present,
+    'separate',
+  );
+
+  if (placed === null) {
+    const togetherInPlay = localBlocks.some((block) => block.length > 1);
+    if (togetherInPlay && apartInPlay) {
+      return {
+        ok: false,
+        error: gaveUp
+          ? { code: ERROR_CODES.bothRulesSearchGaveUp }
+          : {
+              code: ERROR_CODES.bothRulesNoArrangement,
+              groupsTried: localSizes.length,
+            },
+      };
+    }
+    if (togetherInPlay) {
+      return {
+        ok: false,
+        error: gaveUp
+          ? { code: ERROR_CODES.togetherSearchGaveUp }
+          : {
+              code: ERROR_CODES.togetherNoArrangement,
+              groupsTried: localSizes.length,
+            },
+      };
+    }
+    return {
+      ok: false,
+      error: gaveUp
+        ? { code: ERROR_CODES.keepApartSearchGaveUp }
+        : {
+            code: ERROR_CODES.keepApartNoArrangement,
+            groupsTried: localSizes.length,
+          },
+    };
+  }
+
+  return { ok: true, groups: placed };
+}
+
+/**
+ * Task 8b: separate-mode placement.
+ *
+ * Each sex runs the existing machinery on its own blocks (`placeSexSide`),
+ * sized either independently (`perGroup`) or by a proportional share of
+ * the requested total (`groupCount`, see `allocateSexGroups`), and
+ * concatenates. A sex with an allocation of zero groups spills into the
+ * other's -- merged into ONE placement attempt together, so the apart-rule
+ * adjacency between a spilled block and the host's own blocks is checked
+ * by the SAME constrained search that already checks it for the host's
+ * own blocks, not bolted on afterwards (see `localAdjacency`, and the
+ * report for the full reasoning on why this matters).
+ *
+ * `sizes`, computed by the caller from the WHOLE roster, is used here only
+ * as the fallback for the rare case where NEITHER sex can have a group of
+ * its own (only reachable under `perGroup` -- see `allocateSexGroups`'s
+ * doc comment for the proof that `groupCount`'s largest-remainder always
+ * gives the one leftover group to some side when both have members).
+ * Every other branch computes its own, per-attempt sizes.
+ */
+function buildSeparateGroups(
+  present: Student[],
+  blocks: Block[],
+  adj: Set<number>[],
+  sizes: number[],
+  mode: Mode,
+  leftovers: Leftovers,
+  random: () => number,
+): GroupingOutcome {
+  const sexOfBlock = (b: number): 'M' | 'F' =>
+    present[blocks[b][0]].sex as 'M' | 'F';
+  const boysIdx = blocks.map((_, i) => i).filter((i) => sexOfBlock(i) === 'M');
+  const girlsIdx = blocks.map((_, i) => i).filter((i) => sexOfBlock(i) === 'F');
+  const headcount = (idx: number[]) =>
+    idx.reduce((n, b) => n + blocks[b].length, 0);
+  const boysCount = headcount(boysIdx);
+  const girlsCount = headcount(girlsIdx);
+
+  const { boys: boysGroups, girls: girlsGroups } = allocateSexGroups(
+    boysCount,
+    girlsCount,
+    mode,
+  );
+
+  const spillWarning = (idx: number[], sex: 'M' | 'F'): GroupingWarning => ({
+    code: WARNING_CODES.sexSpillover,
+    students: idx.flatMap((b) => blocks[b].map((i) => present[i].number)),
+    sex,
+  });
+
+  const attempts: Array<{ idx: number[]; sizes: number[] }> = [];
+  const warnings: GroupingWarning[] = [];
+
+  if (boysGroups === 0 && girlsGroups === 0) {
+    // Neither sex has enough of its own kind for even one group at this
+    // size. There is no "other side's groups" for anyone to join, so this
+    // falls back to exactly what `off` would do with this roster: one
+    // placement, sized from the WHOLE roster. Warn about a sex only when
+    // the OTHER sex actually has members too -- if one sex is entirely
+    // absent, this is not a spill at all, just an ordinary undersized
+    // single-sex group (same shape `off` would produce with the same
+    // roster; see the "lone sex too small" test in grouping.test.ts).
+    attempts.push({ idx: blocks.map((_, i) => i), sizes });
+    if (boysCount > 0 && girlsCount > 0) {
+      warnings.push(spillWarning(boysIdx, 'M'));
+      warnings.push(spillWarning(girlsIdx, 'F'));
+    }
+  } else if (girlsCount > 0 && girlsGroups === 0) {
+    // Girls spill into boys' groups. Sized from boys' OWN headcount, then
+    // re-sized to fit the spill on top, spread across boys' groups the
+    // same way an ordinary leftover student already is -- see
+    // `sizesForCount`'s doc comment for why this is not simply
+    // `boysCount + girlsCount` at boys' own size/count.
+    const combined = sizesForCount(
+      boysCount + girlsCount,
+      boysGroups,
+      leftovers,
+    );
+    attempts.push({ idx: [...boysIdx, ...girlsIdx], sizes: combined });
+    warnings.push(spillWarning(girlsIdx, 'F'));
+  } else if (boysCount > 0 && boysGroups === 0) {
+    const combined = sizesForCount(
+      boysCount + girlsCount,
+      girlsGroups,
+      leftovers,
+    );
+    attempts.push({ idx: [...girlsIdx, ...boysIdx], sizes: combined });
+    warnings.push(spillWarning(boysIdx, 'M'));
+  } else {
+    // Neither sex spills: each gets its own, fully independent attempt.
+    if (boysCount > 0) {
+      attempts.push({
+        idx: boysIdx,
+        sizes: ownSizes(boysCount, boysGroups, mode, leftovers),
+      });
+    }
+    if (girlsCount > 0) {
+      attempts.push({
+        idx: girlsIdx,
+        sizes: ownSizes(girlsCount, girlsGroups, mode, leftovers),
+      });
+    }
+  }
+
+  const resultGroups: Student[][] = [];
+  for (const attempt of attempts) {
+    const localBlocks = attempt.idx.map((b) => blocks[b]);
+    const localAdj = localAdjacency(adj, attempt.idx);
+    const outcome = placeSexSide(
+      localBlocks,
+      attempt.sizes,
+      localAdj,
+      present,
+      random,
+    );
+    if (!outcome.ok) return fail(outcome.error);
+    for (const g of outcome.groups) {
+      resultGroups.push(
+        g.flatMap((b) => localBlocks[b].map((i) => present[i])),
+      );
+    }
+  }
+
+  // Same randomised display order `off`/`mix` already apply to their own
+  // result (see the comment at buildGroups's own call to `shuffled`), just
+  // over the concatenation of every attempt's groups here.
+  const slots = shuffled(
+    resultGroups.map((_, i) => i),
+    random,
+  );
+  return succeed(
+    slots.map((i) => resultGroups[i]),
+    warnings,
+  );
 }
 
 export function buildGroups(input: GroupingInput): GroupingOutcome {
@@ -879,15 +1299,20 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // been a pure regression; see
   // docs/superpowers/notes/2026-08-06-classroom-groups-v2-engine-measurements.md,
   // "mix: byte-identical under off and separate" for the measurement that
-  // pinned `separate`'s output as unaffected by `mix`'s existence. That
-  // measurement is about PLACEMENT, not this guard, and stays true today:
-  // Task 8a does not touch `placeBlocks`, so `separate` still places
-  // exactly as `off` does for any roster this guard now lets through (see
-  // the "places exactly like off" test in grouping.test.ts's "sex mode:
-  // separate" block). What changed is only which rosters get that far.
-  // Task 8a widens the predicate deliberately, ahead of Task 8b's
-  // separate-mode placement landing -- see `ERROR_CODES.sexNeedsAllSet`'s
-  // doc comment for the full reasoning and the tripwire test this flips.
+  // pinned `separate`'s output as unaffected by `mix`'s existence at the
+  // time (Task 7). That measurement is about PLACEMENT, not this guard --
+  // this guard's own widening (Task 8a) changed only which rosters get
+  // past it, still true today. What is NOT true today: `separate`'s
+  // PLACEMENT itself. Task 8a widened this predicate deliberately AHEAD OF
+  // Task 8b's separate-mode placement landing, precisely so Task 8b would
+  // not also have to remember to add this guard once `sex` was wired into
+  // `separate`'s own logic -- see `ERROR_CODES.sexNeedsAllSet`'s doc
+  // comment for the full reasoning and the tripwire test that flips. Task
+  // 8b has since landed: `separate` no longer places like `off` for a
+  // roster that spills (see `buildSeparateGroups`), so a roster this guard
+  // lets through today can end up placed very differently under the two
+  // modes -- this guard only ever decided whether `sex` was usable data at
+  // all, never what would be done with it.
   //
   // Fix round 1, F-2: reads `!== 'M' && !== 'F'`, not `=== null`. The old
   // check closed exactly one hole -- a `sex` of literally `null` -- and left
@@ -937,6 +1362,30 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   const sizes = targetSizes(present.length, mode, leftovers);
   const blocks = buildBlocks(present);
 
+  // Task 8b. A together-unit spanning both sexes is a contradiction under
+  // `separate`: single-sex groups and "these students are one unit,
+  // wherever it lands" cannot both be honoured, so it is refused here,
+  // before placement runs, rather than resolved by silently placing the
+  // whole unit on one side (see ERROR_CODES.sexSeparateSplitsUnit's doc
+  // comment). Checked as soon as `blocks` exists -- the earliest point it
+  // can be, and ahead of togetherApartClash below: a unit whose very
+  // premise is broken under this sexMode is a more fundamental problem
+  // than one that also happens to self-conflict on apart-letters. Every
+  // present student's sex is already guaranteed to be exactly 'M' or 'F'
+  // by the guard above (`sexMode !== 'off'` includes `separate`), so
+  // `sexes` can only ever be size 1 or 2, never contain `null`.
+  if (input.sexMode === 'separate') {
+    for (const block of blocks) {
+      const sexes = new Set(block.map((i) => present[i].sex));
+      if (sexes.size > 1) {
+        return fail({
+          code: ERROR_CODES.sexSeparateSplitsUnit,
+          students: block.map((i) => present[i].number),
+        });
+      }
+    }
+  }
+
   // Caught here rather than left to the placer. The search would fail on a
   // self-conflicting block and report "no arrangement exists" -- true, and
   // the wrong sentence: the teacher asked for something impossible, not for
@@ -964,15 +1413,26 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // Checked against the LARGEST group, because that is the only one a big unit
   // could fit in. Comparing against the smallest would refuse arrangements
   // that are perfectly possible.
-  const largestGroup = Math.max(...sizes);
-  for (const block of blocks) {
-    if (block.length > largestGroup) {
-      return fail({
-        code: ERROR_CODES.togetherUnitTooLarge,
-        letter: present[block[0]].together as string,
-        unit: block.length,
-        groupSize: largestGroup,
-      });
+  //
+  // Scoped to `sexMode !== 'separate'` (Task 8b): once each sex is placed
+  // against its OWN sizes rather than these whole-roster ones, `sizes` is
+  // the wrong basis for this check under `separate` -- a side's own
+  // largest group can be smaller OR larger than the whole roster's, once
+  // the requested group count is allocated between the sexes unevenly
+  // (see `allocateSexGroups`). `separate` runs this identical check
+  // itself, per placement attempt, against that attempt's own sizes --
+  // see `placeSexSide`.
+  if (input.sexMode !== 'separate') {
+    const largestGroup = Math.max(...sizes);
+    for (const block of blocks) {
+      if (block.length > largestGroup) {
+        return fail({
+          code: ERROR_CODES.togetherUnitTooLarge,
+          letter: present[block[0]].together as string,
+          unit: block.length,
+          groupSize: largestGroup,
+        });
+      }
     }
   }
 
@@ -997,7 +1457,18 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
   // each other about what "in play" means.
   const apartInPlay = adj.some((conflicts) => conflicts.size > 0);
 
-  if (apartInPlay) {
+  // Scoped to `sexMode !== 'separate'` (Task 8b), same reasoning as the
+  // togetherUnitTooLarge guard above: `sizes.length` here is the WHOLE
+  // roster's group count, the wrong basis once each sex is placed against
+  // its own, separately-sized attempt. A clique entirely within one sex's
+  // blocks needs comparing against THAT side's own group count, not the
+  // whole roster's -- and a clique spanning both sexes does not need
+  // `clique.length` groups under `separate` at all, since two blocks of
+  // different sexes are never seated together unless one of them spills
+  // (see the report for the full reasoning). `separate` runs this
+  // identical clique check itself, per placement attempt, against that
+  // attempt's own local adjacency and sizes -- see `placeSexSide`.
+  if (input.sexMode !== 'separate' && apartInPlay) {
     const clique = largestMutualConflict(adj);
     if (clique.length > sizes.length) {
       return fail({
@@ -1029,6 +1500,23 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
         groupsNeeded: clique.length,
       });
     }
+  }
+
+  // Task 8b. `separate` branches away here, before the single whole-roster
+  // placement below: it places each sex's own blocks separately and
+  // concatenates, which is a different shape of work entirely (see
+  // `buildSeparateGroups`) -- everything from here to the end of this
+  // function is `off` and `mix` only, unchanged by this task.
+  if (input.sexMode === 'separate') {
+    return buildSeparateGroups(
+      present,
+      blocks,
+      adj,
+      sizes,
+      mode,
+      leftovers,
+      random,
+    );
   }
 
   // Two-pass placement -- see `placeBlocks`. Pass 1 is the shuffled order,
@@ -1128,9 +1616,11 @@ export function buildGroups(input: GroupingInput): GroupingOutcome {
     placed.map((_, i) => i),
     random,
   );
-  // No sexMode branches to an empty list yet -- WARNING_CODES.sexSpillover
-  // is unreachable until Task 8b's separate-mode placement lands (see its
-  // doc comment above). Every success from this build carries `[]`.
+  // This is `off`/`mix`'s own success path -- `separate` returned via
+  // `buildSeparateGroups` above and never reaches here. Neither `off` nor
+  // `mix` ever populates WARNING_CODES.sexSpillover (see its doc comment),
+  // so every success on THIS path carries `[]`; `buildSeparateGroups` is
+  // the only place a non-empty warnings list is ever built.
   return succeed(
     slots.map((i) =>
       placed[i].flatMap((b) => blocks[b].map((j) => present[j])),

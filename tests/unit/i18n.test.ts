@@ -174,6 +174,14 @@ describe('every engine error can be rendered in every language', () => {
     // branch to get right, unlike the two codes above whose student lists
     // are always >= 2 by construction.
     SEX_NEEDS_ALL_SET: { code: ERROR_CODES.sexNeedsAllSet, students: [3] },
+    // Task 8b. Carries `students: number[]`, never names -- same resolver
+    // pattern as TOGETHER_APART_CLASH above. Always >= 2 by construction (a
+    // together-unit spanning both sexes needs at least one of each), unlike
+    // SEX_NEEDS_ALL_SET above.
+    SEX_SEPARATE_SPLITS_UNIT: {
+      code: ERROR_CODES.sexSeparateSplitsUnit,
+      students: [1, 2],
+    },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -450,6 +458,74 @@ describe('every engine error can be rendered in every language', () => {
     });
   });
 
+  describe('sex-separate-splits-unit resolves student numbers to names', () => {
+    // Task 8b. Carries `students: number[]`, exactly like
+    // TOGETHER_APART_CLASH above, and must go through the same resolver --
+    // a teacher reading "1, 2 are marked..." instead of "Ana, Budi are
+    // marked..." is the same regression the resolver parameter exists to
+    // prevent there.
+    it.each(locales)(
+      'falls back to the numbered label when no resolver is supplied (%s)',
+      (_name, strings) => {
+        const msg = renderError(
+          { code: ERROR_CODES.sexSeparateSplitsUnit, students: [1, 2] },
+          strings,
+        );
+        expect(msg).toBe(
+          strings.errors.SEX_SEPARATE_SPLITS_UNIT([
+            strings.studentNumber(1),
+            strings.studentNumber(2),
+          ]),
+        );
+        expect(msg).toContain(strings.studentNumber(1));
+        expect(msg).toContain(strings.studentNumber(2));
+        expect(msg).not.toMatch(/^\d+, \d+ /);
+      },
+    );
+
+    it('English default reads "Student 1, Student 2 …", not bare digits', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateSplitsUnit, students: [1, 2] },
+        en,
+      );
+      expect(msg).toContain('Student 1, Student 2');
+    });
+
+    it('Indonesian default reads "Siswa 1, Siswa 2 …", not bare digits', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateSplitsUnit, students: [1, 2] },
+        id,
+      );
+      expect(msg).toContain('Siswa 1, Siswa 2');
+    });
+
+    it('English: a supplied resolver is used in place of the default, names the pair and both remedies', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 2: 'Budi' };
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateSplitsUnit, students: [1, 2] },
+        en,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Budi are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
+      );
+      expect(msg).not.toContain('Student');
+    });
+
+    it('Indonesian: a supplied resolver is used in place of the default', () => {
+      const byNumber: Record<number, string> = { 1: 'Ana', 2: 'Budi' };
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateSplitsUnit, students: [1, 2] },
+        id,
+        (n) => byNumber[n],
+      );
+      expect(msg).toBe(
+        'Ana, Budi ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.',
+      );
+      expect(msg).not.toContain('Siswa');
+    });
+  });
+
   describe('both together- and apart-letters are live at once', () => {
     // Correction 2: the two single-rule codes have OPPOSITE remedies, so
     // guessing between them when both rules are live sends the teacher the
@@ -582,12 +658,13 @@ describe('every engine warning can be rendered in every language', () => {
   /**
    * One realistic warning per code, mirroring SAMPLES above.
    *
-   * Task 8a. `sexSpillover` is the only code WARNING_CODES defines, and
-   * nothing in grouping.ts emits it yet -- Task 8b's separate-mode
-   * placement is the first caller (see the doc comment on
-   * WARNING_CODES.sexSpillover in grouping.ts). That does not excuse the
-   * renderer from having a real sample here: the parity check below would
-   * not notice a code with no sample any more than the error one would.
+   * Task 8a. `sexSpillover` is the only code WARNING_CODES defines.
+   * When this sample was written, nothing in grouping.ts emitted it yet --
+   * Task 8b's separate-mode placement, which landed later, is the first
+   * caller (see the doc comment on WARNING_CODES.sexSpillover in
+   * grouping.ts). That did not excuse the renderer from having a real
+   * sample here even then: the parity check below would not notice a code
+   * with no sample any more than the error one would.
    */
   const WARNING_SAMPLES: Record<string, GroupingWarning> = {
     SEX_SPILLOVER: {

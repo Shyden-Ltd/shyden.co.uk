@@ -136,6 +136,12 @@ export const id: Strings = {
     // satu kalimat ini benar untuk satu siswa maupun lebih.
     SEX_NEEDS_ALL_SET: (names: string[]) =>
       `${names.join(', ')} belum memiliki jenis kelamin, jadi mode ini tidak bisa dijalankan sampai jenis kelamin semua siswa terisi. Isi jenis kelamin untuk mereka, atau matikan mode ini.`,
+    // Task 8b. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+    // lengkap. Tidak ada percabangan tunggal/jamak di sini -- sama seperti
+    // TOGETHER_APART_CLASH di atas, Bahasa Indonesia tidak mengubah bentuk
+    // kata untuk jamak.
+    SEX_SEPARATE_SPLITS_UNIT: (names: string[]) =>
+      `${names.join(', ')} ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.`,
   },
 
   warnings: {

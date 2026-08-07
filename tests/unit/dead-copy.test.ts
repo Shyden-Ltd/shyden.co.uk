@@ -62,13 +62,14 @@ describe('every translated string reaches a page', () => {
   });
 
   // Task 8a. Same check, same reasoning, for the warnings channel:
-  // WARNING_CODES.sexSpillover is defined and translated in both locales
-  // before anything in grouping.ts emits one (Task 8b's separate-mode
-  // placement is the first caller -- see WARNING_CODES.sexSpillover's doc
-  // comment in grouping.ts), and that gap is exactly what would let warning
-  // copy rot unnoticed the way error copy cannot: a translated key that
-  // renderWarning forgets to switch on would still pass every other check
-  // in this file, same as an error code would.
+  // WARNING_CODES.sexSpillover was defined and translated in both locales
+  // BEFORE anything in grouping.ts emitted one (Task 8b's separate-mode
+  // placement, which landed later, is the first caller -- see
+  // WARNING_CODES.sexSpillover's doc comment in grouping.ts). That gap is
+  // exactly what would let warning copy rot unnoticed the way error copy
+  // cannot: a translated key that renderWarning forgets to switch on would
+  // still pass every other check in this file, same as an error code
+  // would.
   it('every warning code the copy defines is rendered by renderWarning', () => {
     const renderer = readFileSync('src/lib/i18n/index.ts', 'utf8');
     const unused = Object.keys(en.warnings).filter(
