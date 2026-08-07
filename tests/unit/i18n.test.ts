@@ -182,6 +182,13 @@ describe('every engine error can be rendered in every language', () => {
       code: ERROR_CODES.sexSeparateSplitsUnit,
       students: [1, 2],
     },
+    // Fix round 1, F-2. Carries `groupsRequested: number`, never names --
+    // no resolver involved, unlike every other code in this table that
+    // carries `students`.
+    SEX_SEPARATE_IMPOSSIBLE: {
+      code: ERROR_CODES.sexSeparateImpossible,
+      groupsRequested: 4,
+    },
   };
 
   it('every code the engine can return has a sample here', () => {
@@ -524,6 +531,52 @@ describe('every engine error can be rendered in every language', () => {
       );
       expect(msg).not.toContain('Siswa');
     });
+  });
+
+  describe('sex-separate-impossible names no rule and no side (Fix round 1, F-2)', () => {
+    // Exact full sentences, both languages -- this code's whole reason to
+    // exist is that a teacher must never read a number they did not type,
+    // so its copy gets the same word-for-word scrutiny
+    // sex-separate-splits-unit's did above, not just a substring check.
+    it('English reads the exact sentence, naming the requested count and both remedies, no rule', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateImpossible, groupsRequested: 4 },
+        en,
+      );
+      expect(msg).toBe(
+        'Boys and girls cannot be kept in separate groups across 4 groups while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for more groups, or turn this mode off.',
+      );
+    });
+
+    it('Indonesian reads the exact sentence', () => {
+      const msg = renderError(
+        { code: ERROR_CODES.sexSeparateImpossible, groupsRequested: 4 },
+        id,
+      );
+      expect(msg).toBe(
+        'Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam 4 kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta lebih banyak kelompok, atau matikan mode ini.',
+      );
+    });
+
+    it.each(locales)(
+      'is not a together/apart code in disguise, at a groupsTried value those codes also use (%s)',
+      (_name, strings) => {
+        // Fix round 1, F-7 precedent (BOTH_RULES_NO_ARRANGEMENT's own test
+        // above): the risk is not "renders empty", it is "collapses into a
+        // sibling code's exact wording" -- same groupsTried/groupsRequested
+        // value (3) as the together/apart/both-rules samples elsewhere in
+        // this file, so a copy-paste that reused one of THEIR strings would
+        // be caught here, not hidden by picking a number nothing else uses.
+        const msg = renderError(
+          { code: ERROR_CODES.sexSeparateImpossible, groupsRequested: 3 },
+          strings,
+        );
+        expect(msg).toContain('3');
+        expect(msg).not.toBe(strings.errors.TOGETHER_NO_ARRANGEMENT(3));
+        expect(msg).not.toBe(strings.errors.KEEP_APART_NO_ARRANGEMENT(3));
+        expect(msg).not.toBe(strings.errors.BOTH_RULES_NO_ARRANGEMENT(3));
+      },
+    );
   });
 
   describe('both together- and apart-letters are live at once', () => {

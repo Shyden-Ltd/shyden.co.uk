@@ -142,6 +142,15 @@ export const id: Strings = {
     // kata untuk jamak.
     SEX_SEPARATE_SPLITS_UNIT: (names: string[]) =>
       `${names.join(', ')} ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.`,
+    // Fix round 1, F-2. Lihat komentar pada versi Inggrisnya (en.ts) untuk
+    // alasan lengkap. Tidak ada percabangan tunggal/jamak di sini -- sama
+    // seperti KEEP_APART_NO_ARRANGEMENT di atas, Bahasa Indonesia tidak
+    // mengubah bentuk kata untuk jamak. Kalimat "Pencarian ini tidak bisa
+    // memastikan aturan mana yang jadi masalah" sengaja memakai frasa yang
+    // SAMA PERSIS dengan BOTH_RULES_NO_ARRANGEMENT di atas -- pola
+    // kejujuran yang sama, jadi suaranya juga sama.
+    SEX_SEPARATE_IMPOSSIBLE: (groupsRequested: number) =>
+      `Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam ${groupsRequested} kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta lebih banyak kelompok, atau matikan mode ini.`,
   },
 
   warnings: {

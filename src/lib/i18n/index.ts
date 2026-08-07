@@ -132,6 +132,11 @@ export function renderError(
     // same reason (identity is the number) and the same fix.
     case ERROR_CODES.sexSeparateSplitsUnit:
       return e.SEX_SEPARATE_SPLITS_UNIT(error.students.map(resolveStudent));
+    // Fix round 1, F-2. Carries `groupsRequested: number`, never a student
+    // list -- no resolver needed, unlike every other `separate`-mode code
+    // above.
+    case ERROR_CODES.sexSeparateImpossible:
+      return e.SEX_SEPARATE_IMPOSSIBLE(error.groupsRequested);
   }
 }
 

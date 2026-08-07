@@ -170,6 +170,25 @@ export const en = {
     // SEX_SPILLOVER).
     SEX_SEPARATE_SPLITS_UNIT: (names: string[]) =>
       `${names.join(', ')} are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.`,
+    // Fix round 1, F-2. Carries `groupsRequested: number` -- the number the
+    // TEACHER typed, never a side's own smaller allocation (see the doc
+    // comment on ERROR_CODES.sexSeparateImpossible for the defect that
+    // substitution was). Reached only once every way of splitting that
+    // number between boys and girls has been tried and failed
+    // (`allocationCandidates`), so, like BOTH_RULES_NO_ARRANGEMENT, this
+    // does not guess which rule is to blame -- it names neither a rule nor
+    // a side, only the two remedies. Branches for singular/plural even
+    // though this code cannot currently fire with `groupsRequested === 1`
+    // (the search only runs at `groupsRequested >= 2` -- see
+    // `allocationCandidates`) -- same defensive choice this file already
+    // makes for TOGETHER_NO_ARRANGEMENT/KEEP_APART_NO_ARRANGEMENT/
+    // BOTH_RULES_NO_ARRANGEMENT's own `groupsTried`, which are equally
+    // unreachable at 1 in practice and still branch, rather than
+    // SEX_SEPARATE_SPLITS_UNIT's `names.length >= 2`, which is provable by
+    // TYPE/construction rather than by a runtime argument about when the
+    // engine happens to call this.
+    SEX_SEPARATE_IMPOSSIBLE: (groupsRequested: number) =>
+      `Boys and girls cannot be kept in separate groups across ${groupsRequested} ${groupsRequested === 1 ? 'group' : 'groups'} while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for more groups, or turn this mode off.`,
   },
 
   warnings: {

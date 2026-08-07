@@ -119,6 +119,29 @@ export const ERROR_CODES = {
    * not here.
    */
   sexSeparateSplitsUnit: 'SEX_SEPARATE_SPLITS_UNIT',
+  /**
+   * Fix round 1, F-2. `allocationCandidates` (see its doc comment, next to
+   * `allocateSexGroups`) tries every way of dividing the requested
+   * `groupCount` between the two sexes that could not possibly leave
+   * either side with an empty group, starting with the fairest
+   * (proportional-by-headcount) and working outward -- and every one
+   * failed. The rules genuinely cannot be honoured at this group count, no
+   * matter how it is split between boys and girls.
+   *
+   * Reported on its own rather than through whichever single-sex code the
+   * LAST candidate happened to fail with (`togetherUnitTooLarge`,
+   * `keepApartImpossible`, and so on): that code would carry a
+   * SIDE-scoped number ("you need at least 3 groups") that flatly
+   * contradicts the number the teacher actually typed once several
+   * different splits have all been tried and rejected -- see the call
+   * site in `buildSeparateGroups` for the concrete input this replaces,
+   * and blame a specific rule the search has, collectively, not actually
+   * isolated: a DIFFERENT candidate might have failed on a different rule
+   * entirely. Same honesty pattern as `bothRulesNoArrangement`: names no
+   * rule and no side, because after exhausting every split the engine
+   * genuinely does not know which one is the problem.
+   */
+  sexSeparateImpossible: 'SEX_SEPARATE_IMPOSSIBLE',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -186,6 +209,18 @@ export type GroupingError =
       // carrying code above. Always >= 2 by construction: a together-unit
       // needs at least one member of each sex to trip this.
       students: number[];
+    }
+  | {
+      code: typeof ERROR_CODES.sexSeparateImpossible;
+      // The number the teacher actually typed (`mode.count`), never a
+      // side's own smaller allocation -- that substitution is the exact
+      // defect this code exists to fix (see its ERROR_CODES doc comment).
+      // Only ever constructed from `mode.count` at the one call site in
+      // `buildSeparateGroups`, which only runs once `mode.kind ===
+      // 'groupCount'` is already known (control flow narrows it there --
+      // no cast needed, unlike a `students` list this module cannot prove
+      // non-empty by construction).
+      groupsRequested: number;
     };
 
 /**
@@ -295,6 +330,12 @@ export type GroupingOutcome =
  * gaveUp=true/found=false, and pass 2's order verified byte-identical to
  * pass 1's. Both passes are genuinely defeated on that input, matching the
  * two-pass docstring's own "rare input that defeats both" case above.
+ *
+ * Fix round 1, F-1: this budget is now spent once per CANDIDATE allocation
+ * `buildSeparateGroups`'s search tries under `separate`/`groupCount`, not
+ * once per side/pass only -- see the accounting and acceptability judgment
+ * in `placeBlocks`'s own doc comment, and the candidate-bounding reasoning
+ * in `allocationCandidates`'s.
  */
 const SEARCH_NODE_CAP = 200_000;
 
@@ -828,6 +869,27 @@ export function weaveBySex(
  * first-fit-decreasing outright, in the same call. `off` and `mix` are
  * unaffected: they still call this function exactly once, so their worst
  * case is still 2 * SEARCH_NODE_CAP, unchanged by any of this.
+ *
+ * Fix round 1, F-1: under `separate` with `mode.kind === 'groupCount'`,
+ * `buildSeparateGroups` can now try several CANDIDATE splits of the
+ * requested group count between the two sexes (see `allocationCandidates`),
+ * not just the one proportional guess — and each candidate it tries pays
+ * the full "up to 4 * SEARCH_NODE_CAP" cost above independently, exactly as
+ * if it were the only one. With up to `count - 1` candidates possible (see
+ * `allocationCandidates`'s doc comment for why it is usually far fewer —
+ * bounded by each side's own headcount too, not just `count - 1`), the true
+ * worst case for one `buildGroups` call under `separate` grows to
+ * `(candidates tried) * 4 * SEARCH_NODE_CAP` — at the 500-student ceiling,
+ * as much as roughly 499 * 800,000 ≈ 4*10^8 nodes. Judged acceptable, not
+ * papered over: see `allocationCandidates`'s doc comment for the full
+ * reasoning (the common path — including the input that motivated this fix
+ * — resolves in one or two candidates; only an input BOTH large enough to
+ * offer that many candidates AND adversarially shaped to defeat
+ * first-fit-decreasing at every one of them approaches the theoretical
+ * ceiling, and even then the search always terminates, bounded, rather than
+ * hanging). `perGroup` is untouched by this — see `allocateSexGroups`'s own
+ * doc comment for why no search applies there — so its worst case is still
+ * exactly the 4 * SEARCH_NODE_CAP figure above, unchanged.
  */
 function placeBlocks(
   blocks: Block[],
@@ -881,6 +943,11 @@ function placeBlocks(
  * or 1. So a single comparison decides where it goes -- not a general
  * largest-remainder loop over N buckets, because N is always 2 here. A tie
  * goes to boys, arbitrarily but deterministically.
+ *
+ * Fix round 1, F-1: this is a single guess, not a search -- it is the
+ * FAIREST split, not the only one that can work, and `buildSeparateGroups`
+ * no longer stops here on failure. See `allocationCandidates`, directly
+ * below, for what tries next and why this one still goes first.
  */
 function allocateSexGroups(
   boysCount: number,
@@ -906,6 +973,103 @@ function allocateSexGroups(
     boys: boysFloor + (remainder > 0 && !girlsWinsRemainder ? 1 : 0),
     girls: girlsFloor + (girlsWinsRemainder ? 1 : 0),
   };
+}
+
+/**
+ * Fix round 1, F-1. `allocateSexGroups` makes exactly one guess under
+ * `groupCount` -- the fairest one, by headcount share -- with no fallback:
+ * a request that guess cannot satisfy was refused even when some OTHER way
+ * of splitting the same total between the two sexes would have worked. The
+ * reviewer's concrete case: 12 boys and 8 girls asked for 4 groups, 5 girls
+ * bound together. Proportional gives 2-and-2; the 5-strong unit does not
+ * fit a group of 4 (8 girls / 2 groups), so the old code refused. 3-and-1
+ * (boys claim 3 groups; girls get ONE group of all 8, which holds the unit
+ * easily) satisfies every rule the teacher stated -- the engine just never
+ * looked for it.
+ *
+ * This turns that single guess into an ORDERED LIST of candidates for
+ * `buildSeparateGroups` to try in turn, stopping at the first that
+ * actually places. Only called once `mode.kind === 'groupCount'` is
+ * already established (see the call site) -- under `perGroup` each side's
+ * group count is independently and uniquely determined by its own
+ * headcount and the fixed group SIZE (see `allocateSexGroups`'s own doc
+ * comment: "no total to reconcile"), so there is no allocation CHOICE to
+ * search over, and this function is not involved at all.
+ *
+ * WHY PROPORTIONAL FIRST, not simply searching for any feasible split: it
+ * is the fairest arrangement by headcount whenever it works, and it is
+ * also, right now, THE answer for every `separate`/`groupCount` input that
+ * already succeeds -- this fix must not change any of those (see the
+ * report's before/after verification). Trying it first and returning the
+ * instant it succeeds is what GUARANTEES that: an input that succeeds on
+ * the first candidate reaches `placeSexSide` with the exact same
+ * arguments, in the exact same order, consuming the exact same sequence of
+ * `random()` calls, as it did before this function existed -- nothing
+ * about `buildSeparateGroups`'s own placement code changes, only how many
+ * times it might now be invited to try again after a failure.
+ *
+ * `proportional` is always safe to try -- meaning it can never itself
+ * request more groups for a side than that side has students, the exact
+ * failure mode the headcount bound below exists to keep every OTHER
+ * candidate from causing (see next paragraph): given the upstream
+ * `mode.count <= boysCount + girlsCount` guarantee (`buildGroups`'s
+ * `tooManyGroups` check), `rawBoys = boysCount * mode.count / (boysCount +
+ * girlsCount) <= boysCount` always, so `boysFloor <= boysCount`, and the
+ * one way that could still be pushed over by the largest-remainder's +1 --
+ * `rawBoys` landing exactly ON the integer `boysCount` while STILL
+ * claiming the remainder -- cannot happen either: `rawBoys == boysCount`
+ * (with `girlsCount > 0`) forces `mode.count == boysCount + girlsCount`
+ * exactly, which forces `rawGirls == girlsCount` too, which leaves no
+ * remainder to award at all. Girls symmetrically.
+ *
+ * WHY BOUNDED BY EACH SIDE'S OWN HEADCOUNT for every OTHER candidate, not
+ * the full `[1, count - 1]` range "count - 1 ways to divide" describes in
+ * the abstract: a candidate that hands a side more groups than it has
+ * students would size some of that side's groups to zero
+ * (`targetSizes`'s `base` floors to 0 once `groupCount` exceeds `total`)
+ * -- not a refusal, an EMPTY group silently appearing in the teacher's
+ * results, a worse defect than the one this fix exists to close. So the
+ * candidate range is `[max(1, count - girlsCount), min(count - 1,
+ * boysCount)]` -- `girlsCount` is what floors it from below (a boys count
+ * any lower would over-allocate girls), `boysCount` is what caps it from
+ * above -- a SUBSET of "count - 1 ways", never more, so "at most count -
+ * 1" still holds. In a lopsided roster (say 3 boys, 97 girls, 50 groups)
+ * this collapses the real search space to just a handful of candidates,
+ * not 49 -- most of the theoretical range would over-allocate the smaller
+ * side, and is never even generated. See `placeBlocks`'s doc comment for
+ * what this bound means for SEARCH_NODE_CAP's worst case, and why the
+ * worst case is judged acceptable despite growing.
+ *
+ * Ties at equal distance (`proportional.boys - d` and `proportional.boys +
+ * d` both in range) are tried fewer-boys-first -- an arbitrary but
+ * deterministic and stated order, exactly as arbitrary as
+ * `allocateSexGroups`'s own "a tie goes to boys". Correctness does not
+ * depend on the direction (both are tried before anything at distance `d +
+ * 1` either way), only reproducibility does.
+ */
+function allocationCandidates(
+  boysCount: number,
+  girlsCount: number,
+  mode: Mode & { kind: 'groupCount' },
+): Array<{ boys: number; girls: number }> {
+  const proportional = allocateSexGroups(boysCount, girlsCount, mode);
+  // No second side to divide WITH: a side with zero members has nothing an
+  // alternate split could give it, and the proportional result already
+  // reduces to "everything to the other side" on its own (see
+  // `allocateSexGroups`) -- not a search question.
+  if (boysCount === 0 || girlsCount === 0) return [proportional];
+
+  const total = mode.count;
+  const minBoys = Math.max(1, total - girlsCount);
+  const maxBoys = Math.min(total - 1, boysCount);
+  const candidates = [proportional];
+  for (let d = 1; d < total; d++) {
+    for (const boys of [proportional.boys - d, proportional.boys + d]) {
+      if (boys < minBoys || boys > maxBoys) continue;
+      candidates.push({ boys, girls: total - boys });
+    }
+  }
+  return candidates;
 }
 
 /**
@@ -1105,14 +1269,14 @@ function placeSexSide(
  * Task 8b: separate-mode placement.
  *
  * Each sex runs the existing machinery on its own blocks (`placeSexSide`),
- * sized either independently (`perGroup`) or by a proportional share of
- * the requested total (`groupCount`, see `allocateSexGroups`), and
- * concatenates. A sex with an allocation of zero groups spills into the
- * other's -- merged into ONE placement attempt together, so the apart-rule
- * adjacency between a spilled block and the host's own blocks is checked
- * by the SAME constrained search that already checks it for the host's
- * own blocks, not bolted on afterwards (see `localAdjacency`, and the
- * report for the full reasoning on why this matters).
+ * sized either independently (`perGroup`) or by a share of the requested
+ * total (`groupCount`), and concatenates. A sex with an allocation of zero
+ * groups spills into the other's -- merged into ONE placement attempt
+ * together, so the apart-rule adjacency between a spilled block and the
+ * host's own blocks is checked by the SAME constrained search that already
+ * checks it for the host's own blocks, not bolted on afterwards (see
+ * `localAdjacency`, and the report for the full reasoning on why this
+ * matters).
  *
  * `sizes`, computed by the caller from the WHOLE roster, is used here only
  * as the fallback for the rare case where NEITHER sex can have a group of
@@ -1120,6 +1284,25 @@ function placeSexSide(
  * doc comment for the proof that `groupCount`'s largest-remainder always
  * gives the one leftover group to some side when both have members).
  * Every other branch computes its own, per-attempt sizes.
+ *
+ * Fix round 1, F-1/F-2. `attemptSplit`, below, is everything this function
+ * used to do unconditionally for the ONE split `allocateSexGroups`
+ * computed: build whichever shape of `attempts` that (boysGroups,
+ * girlsGroups) pair calls for (spill, or one attempt per side), place each
+ * through `placeSexSide`, and report success or the first failure. It is
+ * now parameterised so it can be asked about more than one split.
+ *
+ * `perGroup` still asks it about exactly one -- there is no allocation
+ * CHOICE to search over there (see `allocateSexGroups`), so a failure is
+ * reported directly, unchanged from before this fix. `groupCount` asks
+ * `allocationCandidates` for an ordered list and tries each in turn,
+ * stopping at the first success; if every candidate fails, `perGroup`-style
+ * direct reporting is still correct when only one candidate existed to try
+ * (no ambiguity, so no reason to withhold which side/rule failed) --
+ * `candidates.length === 1` is what distinguishes that from a genuine
+ * multi-candidate exhaustion, which reports `sexSeparateImpossible`
+ * instead (see its own doc comment for why naming a side or a rule would
+ * be dishonest once several different splits have all been tried).
  */
 function buildSeparateGroups(
   present: Student[],
@@ -1139,102 +1322,161 @@ function buildSeparateGroups(
   const boysCount = headcount(boysIdx);
   const girlsCount = headcount(girlsIdx);
 
-  const { boys: boysGroups, girls: girlsGroups } = allocateSexGroups(
-    boysCount,
-    girlsCount,
-    mode,
-  );
-
   const spillWarning = (idx: number[], sex: 'M' | 'F'): GroupingWarning => ({
     code: WARNING_CODES.sexSpillover,
     students: idx.flatMap((b) => blocks[b].map((i) => present[i].number)),
     sex,
   });
 
-  const attempts: Array<{ idx: number[]; sizes: number[] }> = [];
-  const warnings: GroupingWarning[] = [];
+  // Fix round 1: the branching below is UNCHANGED from before this fix --
+  // same four cases, same warnings, same `sizesForCount`/`ownSizes` calls
+  // -- only now reusable per candidate rather than run once. Returns the
+  // RAW result groups, pre-shuffle: the display-order shuffle happens once,
+  // outside this function, only for whichever candidate actually wins (see
+  // the loop below) -- doing it in here instead would spend a `random()`
+  // call on every FAILED candidate too, and the first candidate this is
+  // ever asked about is the proportional one, so that would change what
+  // today's already-succeeding inputs consume before this fix existed.
+  const attemptSplit = (
+    boysGroups: number,
+    girlsGroups: number,
+  ):
+    | { ok: true; groups: Student[][]; warnings: GroupingWarning[] }
+    | { ok: false; error: GroupingError } => {
+    const attempts: Array<{ idx: number[]; sizes: number[] }> = [];
+    const warnings: GroupingWarning[] = [];
 
-  if (boysGroups === 0 && girlsGroups === 0) {
-    // Neither sex has enough of its own kind for even one group at this
-    // size. There is no "other side's groups" for anyone to join, so this
-    // falls back to exactly what `off` would do with this roster: one
-    // placement, sized from the WHOLE roster. Warn about a sex only when
-    // the OTHER sex actually has members too -- if one sex is entirely
-    // absent, this is not a spill at all, just an ordinary undersized
-    // single-sex group (same shape `off` would produce with the same
-    // roster; see the "lone sex too small" test in grouping.test.ts).
-    attempts.push({ idx: blocks.map((_, i) => i), sizes });
-    if (boysCount > 0 && girlsCount > 0) {
-      warnings.push(spillWarning(boysIdx, 'M'));
+    if (boysGroups === 0 && girlsGroups === 0) {
+      // Neither sex has enough of its own kind for even one group at this
+      // size. There is no "other side's groups" for anyone to join, so
+      // this falls back to exactly what `off` would do with this roster:
+      // one placement, sized from the WHOLE roster. Warn about a sex only
+      // when the OTHER sex actually has members too -- if one sex is
+      // entirely absent, this is not a spill at all, just an ordinary
+      // undersized single-sex group (same shape `off` would produce with
+      // the same roster; see the "lone sex too small" test in
+      // grouping.test.ts).
+      attempts.push({ idx: blocks.map((_, i) => i), sizes });
+      if (boysCount > 0 && girlsCount > 0) {
+        warnings.push(spillWarning(boysIdx, 'M'));
+        warnings.push(spillWarning(girlsIdx, 'F'));
+      }
+    } else if (girlsCount > 0 && girlsGroups === 0) {
+      // Girls spill into boys' groups. Sized from boys' OWN headcount,
+      // then re-sized to fit the spill on top, spread across boys' groups
+      // the same way an ordinary leftover student already is -- see
+      // `sizesForCount`'s doc comment for why this is not simply
+      // `boysCount + girlsCount` at boys' own size/count.
+      const combined = sizesForCount(
+        boysCount + girlsCount,
+        boysGroups,
+        leftovers,
+      );
+      attempts.push({ idx: [...boysIdx, ...girlsIdx], sizes: combined });
       warnings.push(spillWarning(girlsIdx, 'F'));
+    } else if (boysCount > 0 && boysGroups === 0) {
+      const combined = sizesForCount(
+        boysCount + girlsCount,
+        girlsGroups,
+        leftovers,
+      );
+      attempts.push({ idx: [...girlsIdx, ...boysIdx], sizes: combined });
+      warnings.push(spillWarning(boysIdx, 'M'));
+    } else {
+      // Neither sex spills: each gets its own, fully independent attempt.
+      if (boysCount > 0) {
+        attempts.push({
+          idx: boysIdx,
+          sizes: ownSizes(boysCount, boysGroups, mode, leftovers),
+        });
+      }
+      if (girlsCount > 0) {
+        attempts.push({
+          idx: girlsIdx,
+          sizes: ownSizes(girlsCount, girlsGroups, mode, leftovers),
+        });
+      }
     }
-  } else if (girlsCount > 0 && girlsGroups === 0) {
-    // Girls spill into boys' groups. Sized from boys' OWN headcount, then
-    // re-sized to fit the spill on top, spread across boys' groups the
-    // same way an ordinary leftover student already is -- see
-    // `sizesForCount`'s doc comment for why this is not simply
-    // `boysCount + girlsCount` at boys' own size/count.
-    const combined = sizesForCount(
-      boysCount + girlsCount,
-      boysGroups,
-      leftovers,
-    );
-    attempts.push({ idx: [...boysIdx, ...girlsIdx], sizes: combined });
-    warnings.push(spillWarning(girlsIdx, 'F'));
-  } else if (boysCount > 0 && boysGroups === 0) {
-    const combined = sizesForCount(
-      boysCount + girlsCount,
-      girlsGroups,
-      leftovers,
-    );
-    attempts.push({ idx: [...girlsIdx, ...boysIdx], sizes: combined });
-    warnings.push(spillWarning(boysIdx, 'M'));
-  } else {
-    // Neither sex spills: each gets its own, fully independent attempt.
-    if (boysCount > 0) {
-      attempts.push({
-        idx: boysIdx,
-        sizes: ownSizes(boysCount, boysGroups, mode, leftovers),
-      });
-    }
-    if (girlsCount > 0) {
-      attempts.push({
-        idx: girlsIdx,
-        sizes: ownSizes(girlsCount, girlsGroups, mode, leftovers),
-      });
-    }
-  }
 
-  const resultGroups: Student[][] = [];
-  for (const attempt of attempts) {
-    const localBlocks = attempt.idx.map((b) => blocks[b]);
-    const localAdj = localAdjacency(adj, attempt.idx);
-    const outcome = placeSexSide(
-      localBlocks,
-      attempt.sizes,
-      localAdj,
-      present,
+    const resultGroups: Student[][] = [];
+    for (const attempt of attempts) {
+      const localBlocks = attempt.idx.map((b) => blocks[b]);
+      const localAdj = localAdjacency(adj, attempt.idx);
+      const outcome = placeSexSide(
+        localBlocks,
+        attempt.sizes,
+        localAdj,
+        present,
+        random,
+      );
+      if (!outcome.ok) return { ok: false, error: outcome.error };
+      for (const g of outcome.groups) {
+        resultGroups.push(
+          g.flatMap((b) => localBlocks[b].map((i) => present[i])),
+        );
+      }
+    }
+    return { ok: true, groups: resultGroups, warnings };
+  };
+
+  // Runs the winning candidate's raw groups through the same randomised
+  // display-order shuffle `off`/`mix` apply to their own result (see the
+  // comment at buildGroups's own call to `shuffled`) and succeeds. The one
+  // and only place this function calls `shuffled`.
+  const finish = (attempt: {
+    groups: Student[][];
+    warnings: GroupingWarning[];
+  }): GroupingOutcome => {
+    const slots = shuffled(
+      attempt.groups.map((_, i) => i),
       random,
     );
-    if (!outcome.ok) return fail(outcome.error);
-    for (const g of outcome.groups) {
-      resultGroups.push(
-        g.flatMap((b) => localBlocks[b].map((i) => present[i])),
-      );
-    }
+    return succeed(
+      slots.map((i) => attempt.groups[i]),
+      attempt.warnings,
+    );
+  };
+
+  if (mode.kind === 'perGroup') {
+    const { boys, girls } = allocateSexGroups(boysCount, girlsCount, mode);
+    const attempt = attemptSplit(boys, girls);
+    return attempt.ok ? finish(attempt) : fail(attempt.error);
   }
 
-  // Same randomised display order `off`/`mix` already apply to their own
-  // result (see the comment at buildGroups's own call to `shuffled`), just
-  // over the concatenation of every attempt's groups here.
-  const slots = shuffled(
-    resultGroups.map((_, i) => i),
-    random,
-  );
-  return succeed(
-    slots.map((i) => resultGroups[i]),
-    warnings,
-  );
+  // mode.kind === 'groupCount': the search (Fix round 1, F-1). Proportional
+  // first (`allocationCandidates`'s own first entry), then progressively
+  // less-fair splits, stopping at the first that places.
+  const candidates = allocationCandidates(boysCount, girlsCount, mode);
+  let lastError: GroupingError | undefined;
+  for (const { boys, girls } of candidates) {
+    const attempt = attemptSplit(boys, girls);
+    if (attempt.ok) return finish(attempt);
+    lastError = attempt.error;
+  }
+
+  // Every candidate failed. Exactly one candidate tried (one side absent,
+  // or fewer than 2 groups requested -- see `allocationCandidates`) means
+  // there was no ambiguity to search: report that one attempt's own
+  // honest error directly, exactly as this function always has. More than
+  // one means several different ways of splitting the SAME requested total
+  // between the two sexes were all tried and all rejected -- naming any
+  // one of their individual errors would carry a side-scoped number that
+  // contradicts what the teacher actually typed, and blame a rule the
+  // search has, collectively, not isolated (see
+  // ERROR_CODES.sexSeparateImpossible's doc comment).
+  // `as GroupingError`, not `?? ...`: `candidates` always has >= 1 entry
+  // (`allocationCandidates` always includes `proportional`), and the loop
+  // above only reaches this line after every candidate's iteration set
+  // `lastError` without returning -- so it is never actually `undefined`
+  // here. `| undefined` is only in `lastError`'s own type because nothing
+  // in this module's types can express "set at least once by the time a
+  // loop over a non-empty array finishes" (see the module doc: no type
+  // checker enforces this repo's guarantees, a runtime one has to).
+  if (candidates.length === 1) return fail(lastError as GroupingError);
+  return fail({
+    code: ERROR_CODES.sexSeparateImpossible,
+    groupsRequested: mode.count,
+  });
 }
 
 export function buildGroups(input: GroupingInput): GroupingOutcome {

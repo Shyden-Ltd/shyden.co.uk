@@ -10,6 +10,13 @@ import {
 } from '../../src/lib/grouping';
 import * as grouping from '../../src/lib/grouping';
 import { student, shape, groupOf, seeded } from './factories';
+// Fix round 1, F-2: closing the reviewer's named gap -- nothing in this
+// file, before this fix, ever piped a `separate`-mode failure through
+// `renderError`, so a structurally-correct error code with a wrong-number
+// or badly-worded sentence would have passed every test in this file.
+import { renderError } from '../../src/lib/i18n';
+import { en } from '../../src/lib/i18n/en';
+import { id } from '../../src/lib/i18n/id';
 
 const base = (over: Partial<GroupingInput> = {}): GroupingInput => ({
   students: 22,
@@ -2310,6 +2317,15 @@ describe('sex mode: separate', () => {
     // in the report: a side with a genuine allocation of zero groups
     // because it has zero MEMBERS must not be confused with a side that
     // has members but too few of them.
+    //
+    // Fix round 1, F-3: recorded here, not just in the report, that this
+    // does NOT go red before implementation -- `off` already produces this
+    // exact shape for an all-one-sex roster (no sex-based branch in
+    // `buildSeparateGroups` has anything to DO when the other sex has zero
+    // members: every warning gate in that function is conditioned on both
+    // sexes having members), so this test was an early pass, not a proof
+    // the feature works. It is kept as the regression guard the comment
+    // above describes.
     it('a roster that is entirely one sex places with no warning', () => {
       const out = buildGroups(
         base({
@@ -2439,6 +2455,16 @@ describe('sex mode: separate', () => {
     // (targetSizes(50, {count:10})) is ten groups of 5, largest 5. A
     // together-block of exactly 6 girls fits the former and would be
     // wrongly refused by the latter.
+    //
+    // Fix round 1, F-3: recorded here, not just in the report, that this
+    // test never went through a RED phase at all -- it was added AFTER
+    // implementation, once reasoning through "each side's own sizes can
+    // diverge from the whole roster's" surfaced the gap the comment above
+    // describes. It is proven by mutation instead: removing the
+    // `sexMode !== 'separate'` guard on the pre-existing whole-roster
+    // `togetherUnitTooLarge` check reddens this test (the 6-girl unit gets
+    // wrongly refused against the whole roster's largest group of 5), with
+    // a genuine wrong-value failure, never a crash.
     it("checks a together-unit against its OWN side's largest group, not the whole roster's", () => {
       const students = [
         ...Array.from({ length: 33 }, (_, i) => M(i + 1)),
@@ -2463,6 +2489,110 @@ describe('sex mode: separate', () => {
       for (const n of [35, 36, 37, 38, 39]) {
         expect(host?.some((s) => s.number === n)).toBe(true);
       }
+    });
+
+    // Fix round 1, F-1. The reviewer's own counter-example to a single
+    // proportional guess, and the case that motivated turning
+    // `allocateSexGroups` into a search: 12 boys, 8 girls (5 of them bound
+    // together), 4 groups requested. Proportional gives 2-and-2; 8 girls
+    // over 2 groups is sizes [4, 4], and the 5-strong unit does not fit
+    // either -- the OLD code refused here (confirmed against the pre-fix
+    // engine as part of the report's before/after verification). 3-and-1
+    // -- boys claim 3 groups of 4, girls get ONE group of all 8, which
+    // holds the unit easily -- satisfies every rule the teacher stated,
+    // and `allocationCandidates` finds it at distance 1 from proportional.
+    // Proven by mutation, not just this test passing: see the report.
+    it('finds 3-and-1 when proportional 2-and-2 would refuse a together-unit, instead of refusing (Fix round 1, F-1)', () => {
+      const students = [
+        ...Array.from({ length: 12 }, (_, i) => M(i + 1)),
+        ...Array.from({ length: 5 }, (_, i) =>
+          student({ number: i + 13, sex: 'F', together: 'Z' }),
+        ),
+        F(18),
+        F(19),
+        F(20),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 4 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.warnings).toEqual([]);
+      expect(shape(out.result.groups)).toEqual([8, 4, 4, 4]);
+      const girlUnit = groupOf(out.result.groups, 13);
+      for (const n of [13, 14, 15, 16, 17]) {
+        expect(girlUnit?.some((s) => s.number === n)).toBe(true);
+      }
+      for (const g of out.result.groups) {
+        expect(new Set(g.map((s) => s.sex)).size).toBe(1);
+      }
+    });
+  });
+
+  // Fix round 1, F-2. Every candidate `allocationCandidates` offers fails:
+  // six boys who must all be kept apart from each other need six groups,
+  // and no split of 3 requested groups between the sexes ever gives boys
+  // more than 2 (see `allocationCandidates`'s own headcount bound). This
+  // is the genuinely impossible remainder F-1's search does not rescue --
+  // and it must not lie about why, the way a side-scoped
+  // `keepApartImpossible` ("you need at least 6 groups") would once
+  // several different splits have already been tried and rejected: the
+  // teacher typed 3, not 6, and no single split is "the" reason every one
+  // of them failed.
+  describe('when every allocation fails: reports sexSeparateImpossible, not a side-scoped number (Fix round 1, F-2)', () => {
+    const sixBoysMutuallyApart = [
+      student({ number: 1, sex: 'M' as const, apart: 'X' }),
+      student({ number: 2, sex: 'M' as const, apart: 'X' }),
+      student({ number: 3, sex: 'M' as const, apart: 'X' }),
+      student({ number: 4, sex: 'M' as const, apart: 'X' }),
+      student({ number: 5, sex: 'M' as const, apart: 'X' }),
+      student({ number: 6, sex: 'M' as const, apart: 'X' }),
+      F(7),
+      F(8),
+      F(9),
+      F(10),
+      F(11),
+      F(12),
+    ];
+
+    it("reports the number the teacher typed, not any side's own allocation", () => {
+      const out = buildGroups(
+        base({
+          students: sixBoysMutuallyApart,
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.sexSeparateImpossible,
+        groupsRequested: 3,
+      });
+    });
+
+    // The assertion is on the SENTENCE, not the code -- a wrong number
+    // reaching a teacher is exactly what this finding is about.
+    it('renders the exact sentence naming the typed count and both remedies, in both languages', () => {
+      const out = buildGroups(
+        base({
+          students: sixBoysMutuallyApart,
+          mode: { kind: 'groupCount', count: 3 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(renderError(out.error, en)).toBe(
+        'Boys and girls cannot be kept in separate groups across 3 groups while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for more groups, or turn this mode off.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Laki-laki dan perempuan tidak bisa tetap berada di kelompok terpisah dalam 3 kelompok sekaligus memenuhi aturan Anda yang lain. Pencarian ini tidak bisa memastikan aturan mana yang jadi masalah, jadi coba salah satu perbaikan ini: minta lebih banyak kelompok, atau matikan mode ini.',
+      );
     });
   });
 
@@ -2632,6 +2762,190 @@ describe('sex mode: separate', () => {
       if (out.error.code !== ERROR_CODES.keepApartImpossible) return;
       expect(new Set(out.error.students)).toEqual(new Set([1, 5]));
       expect(out.error.groupsNeeded).toBe(2);
+    });
+  });
+
+  // Fix round 1: a gap this task's OWN verification found (not the
+  // reviewer's, and not named in the brief) -- `allocationCandidates`
+  // bounds every alternate split to each side's own headcount (see its
+  // doc comment) specifically so a candidate can never hand a side more
+  // groups than it has students. Nothing pinned that bound: mutating it
+  // away (widening the range to the full, naive `[1, count - 1]`) passes
+  // every other test in this file unchanged, and produces a REAL, silent
+  // defect on the input below -- `ok: true` with six of ten groups empty
+  // (three boys spread thin across the girls'-together-block-driven need
+  // for nine boy-groups) -- proven directly, not assumed, before this test
+  // was written.
+  describe('allocationCandidates never proposes a split that would empty a group (Fix round 1, mutation-found gap)', () => {
+    // 3 boys, no rules. 20 girls, 15 of them bound together -- that block
+    // only fits a group of >= 15, which only ONE split gives girls (all 20
+    // in a single group, i.e. girlsGroups = 1); every other girlsGroups
+    // value shrinks the largest possible group below 15. girlsGroups = 1
+    // needs boysGroups = 9 -- nine groups for three boys, six of them
+    // necessarily empty. The naive, unbounded range would try exactly this
+    // candidate (it IS one of the "count - 1 ways to divide"); the
+    // headcount bound excludes it, so this must be refused, not silently
+    // "succeed" with empty groups in the output.
+    it('refuses rather than producing empty groups, when the only fit needs a side to exceed its own headcount', () => {
+      const students = [
+        M(1),
+        M(2),
+        M(3),
+        ...Array.from({ length: 15 }, (_, i) =>
+          student({ number: i + 4, sex: 'F', together: 'Z' }),
+        ),
+        F(19),
+        F(20),
+        F(21),
+        F(22),
+        F(23),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'groupCount', count: 10 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.error).toEqual({
+        code: ERROR_CODES.sexSeparateImpossible,
+        groupsRequested: 10,
+      });
+    });
+  });
+
+  // Fix round 1: closes the gap the reviewer named -- before this fix,
+  // nothing in this file ever piped a `separate`-mode failure through
+  // `renderError`. Every refusal above was checked structurally (code,
+  // `students`, `groupsNeeded`) but never as the sentence a teacher
+  // actually reads -- and a wrong number reaching a teacher is exactly
+  // what these findings are about, so the assertion here is on the
+  // sentence, not the code. `sexSeparateImpossible`'s own rendered-message
+  // test lives with the rest of F-2's coverage above; the two here cover
+  // the other refusal shapes `separate` can still produce.
+  describe('rendered messages: separate-mode refusals read correctly, in both languages (Fix round 1)', () => {
+    it('sex-separate-splits-unit renders the pair and both remedies, in both languages', () => {
+      const out = buildGroups(
+        base({
+          students: [
+            student({ number: 1, name: 'Ana', sex: 'F', together: 'A' }),
+            student({ number: 2, name: 'Budi', sex: 'M', together: 'A' }),
+            M(3),
+            F(4),
+          ],
+          mode: { kind: 'groupCount', count: 2 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(renderError(out.error, en)).toBe(
+        'Student 1, Student 2 are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
+      );
+      expect(renderError(out.error, id)).toBe(
+        'Siswa 1, Siswa 2 ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.',
+      );
+    });
+
+    // `perGroup`, unlike `groupCount`, has no single "number the teacher
+    // asked for" to contradict -- the teacher stated a SIZE, and this
+    // side-scoped `groupsNeeded: 2` is an honest, un-ambiguous fact about
+    // the one attempt that was ever possible here (see the report). This
+    // test is what shows that: the rendered sentence is correct as-is,
+    // nothing about this refusal needed F-2's fix.
+    it('keep-apart-impossible at the spill boundary renders correctly under perGroup, in both languages', () => {
+      const students = [
+        student({ number: 1, sex: 'M', apart: 'X' }),
+        M(2),
+        M(3),
+        M(4),
+        student({ number: 5, sex: 'F', apart: 'X' }),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'perGroup', size: 4 },
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      const enMsg = renderError(out.error, en);
+      expect(enMsg).toBe(
+        'Student 1, Student 5 all need to be kept apart from each other, so you would need at least 2 groups. Either make more groups or remove one of the rules.',
+      );
+      const idMsg = renderError(out.error, id);
+      expect(idMsg).toBe(
+        'Siswa 1, Siswa 5 semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal 2 kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.',
+      );
+    });
+  });
+
+  // Fix round 1, F-4. The spill's sizing threads `leftovers` through
+  // (`sizesForCount` in `buildSeparateGroups`), but every existing spill
+  // test above uses the default `'spread'` -- `'bunch'` was never
+  // exercised under `separate` at all. No defect found; this closes the
+  // gap.
+  describe("leftovers: 'bunch' is exercised at the spill, not just 'spread' (Fix round 1, F-4)", () => {
+    // 12 boys, 2 girls, groups of 4: boys make exactly 3 groups (12/4),
+    // girls spill (2/4 floors to 0). `combined = sizesForCount(14, 3,
+    // leftovers)` -- base 4 each, remainder 2 -- is where 'bunch' and
+    // 'spread' actually diverge: with only 2 left over, a SINGLE-group
+    // remainder (as every other spill test in this file happens to use)
+    // cannot tell them apart at all ('spread' round-robins one leftover
+    // into slot 0 exactly like 'bunch' does; they only disagree once the
+    // remainder is 2 or more). Asserts the SIZE distribution only, not
+    // which physical group the spilled girls land in -- `combined`'s sizes
+    // are a pure function of (total, groupCount, leftovers), so this shape
+    // is the same on every seed, but WHICH of the 14 same-cost,
+    // conflict-free blocks fills the larger group is a first-fit-over-a-
+    // shuffle question this test does not need to, and should not, pin.
+    it("bunch: [6, 4, 4], not spread's [5, 5, 4], on the identical roster", () => {
+      const students = [
+        ...Array.from({ length: 12 }, (_, i) => M(i + 1)),
+        F(13),
+        F(14),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'perGroup', size: 4 },
+          leftovers: 'bunch',
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(shape(out.result.groups)).toEqual([6, 4, 4]);
+      expect(out.result.warnings).toEqual([
+        { code: WARNING_CODES.sexSpillover, students: [13, 14], sex: 'F' },
+      ]);
+    });
+
+    // The contrasting case, same roster: 'spread' round-robins the
+    // 2-student remainder across two DIFFERENT groups instead of piling
+    // both into one. Confirms the fixture above actually distinguishes the
+    // two `leftovers` values rather than producing the same shape either
+    // way.
+    it("contrasts with 'spread' on the identical roster", () => {
+      const students = [
+        ...Array.from({ length: 12 }, (_, i) => M(i + 1)),
+        F(13),
+        F(14),
+      ];
+      const out = buildGroups(
+        base({
+          students,
+          mode: { kind: 'perGroup', size: 4 },
+          leftovers: 'spread',
+          sexMode: 'separate',
+        }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(shape(out.result.groups)).toEqual([5, 5, 4]);
     });
   });
 });
