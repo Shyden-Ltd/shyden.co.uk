@@ -39,6 +39,41 @@ const fill = async (
   await page.selectOption('#cg-speed', opts.speed ?? 'skip');
 };
 
+/**
+ * Playwright cannot hear a sound effect, so the wiring tests below assert
+ * the one thing that IS observable: whether `classroom-groups.ts` created
+ * an `AudioContext` at all, and how many. This subclasses the REAL
+ * `AudioContext` -- every constructed instance still calls `super(...)`,
+ * so the actual Web Audio implementation underneath is exactly what
+ * ships; nothing here is a fake standing in for it, only an added counter.
+ * Installed via `addInitScript` so it is in place before
+ * `classroom-groups.ts`'s module code (which creates its AudioContext
+ * lazily, on first effect) ever runs.
+ */
+const installAudioContextCounter = (page: Page) =>
+  page.addInitScript(() => {
+    const w = window as Window & {
+      __cgAudioContexts?: number;
+      webkitAudioContext?: typeof AudioContext;
+    };
+    w.__cgAudioContexts = 0;
+    const RealAudioContext = window.AudioContext ?? w.webkitAudioContext;
+    if (!RealAudioContext) return; // no Web Audio support at all -- nothing to count
+    class CountingAudioContext extends RealAudioContext {
+      constructor(...args: ConstructorParameters<typeof AudioContext>) {
+        super(...args);
+        w.__cgAudioContexts = (w.__cgAudioContexts ?? 0) + 1;
+      }
+    }
+    window.AudioContext = CountingAudioContext;
+    if (w.webkitAudioContext) w.webkitAudioContext = CountingAudioContext;
+  });
+
+const audioContextCount = (page: Page) =>
+  page.evaluate(
+    () => (window as Window & { __cgAudioContexts?: number }).__cgAudioContexts,
+  );
+
 test.describe('classroom group creator', () => {
   // Stage 2, Task 1's own RED tests. The brief's literal snippet used
   // `getByLabel('How many students?')` and `#cg-groups .group` — neither
@@ -172,6 +207,37 @@ test.describe('classroom group creator', () => {
     // Auto-retries until the deal finishes — no timing bet.
     await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
     await expect(page.locator('#cg-go')).toBeEnabled();
+  });
+
+  test('with sound muted, running the animation creates no AudioContext at all', async ({
+    page,
+  }) => {
+    await installAudioContextCounter(page);
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '6', size: '3', speed: 'fast' });
+    // Sound is ON by default (operator decision) -- mute it before the run.
+    await page.uncheck('#cg-sound-check');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
+    expect(await audioContextCount(page)).toBe(0);
+  });
+
+  test('with sound on, two animation runs share exactly one AudioContext', async ({
+    page,
+  }) => {
+    await installAudioContextCounter(page);
+    await page.goto('/classroom-groups');
+    // Sound stays ON (the default) for this one.
+    await fill(page, { count: '4', size: '2', speed: 'fast' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .student.dealt')).toHaveCount(4);
+    expect(await audioContextCount(page)).toBe(1);
+
+    // Shuffle again -- a second effect run must REUSE the context that
+    // already exists, not open a second one.
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .student.dealt')).toHaveCount(4);
+    expect(await audioContextCount(page)).toBe(1);
   });
 
   test('splits by number of groups, not just by group size', async ({

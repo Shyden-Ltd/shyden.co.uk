@@ -16,6 +16,30 @@ import {
   type SexMode,
 } from '../lib/grouping';
 import {
+  envelopeTotalS,
+  landFrequency,
+  doneFrequencies,
+  LAND_PEAK_GAIN,
+  LAND_PARTIALS,
+  LAND_ENVELOPE,
+  LAND_LOWPASS,
+  LAND_TRANSIENT,
+  SHUFFLE_PEAK_GAIN,
+  SHUFFLE_ENVELOPE,
+  SHUFFLE_FILTER,
+  DONE_PEAK_GAIN,
+  DONE_PARTIALS,
+  DONE_ENVELOPE,
+  DONE_STAGGER_S,
+  MASTER_GAIN,
+  MASTER_LOWPASS_HZ,
+  FAST_STEP_S,
+  NORMAL_STEP_S,
+  type Envelope,
+  type PartialTone,
+  type FilterSweep,
+} from '../lib/sfx';
+import {
   getStrings,
   renderError,
   groupName,
@@ -381,42 +405,241 @@ if (form) {
   form.addEventListener('input', updateStaleness);
 
   // ── sound (synthesised; the site ships no audio assets by policy) ────────
+  // Everything that SHAPES these three effects -- the pentatonic scale,
+  // the envelopes, the filter sweeps, the chord and its stagger, every
+  // gain -- is pure data in src/lib/sfx.ts, unit-tested there
+  // (tests/unit/sfx.test.ts) with no AudioContext in sight. Everything
+  // below this comment is wiring only: it turns those numbers into nodes
+  // and schedules them, exactly the split CLAUDE.md asks for.
   let audio: AudioContext | null = null;
-  const tone = (
-    freq: number,
-    durationMs: number,
-    type: OscillatorType = 'sine',
-    gain = 0.05,
-  ) => {
+  let master: GainNode | null = null;
+
+  /**
+   * Creates the AudioContext and its master bus lazily, on first use --
+   * exactly once, same as before this task (see the "reuses it" e2e test
+   * in classroom-groups.spec.ts). Every voice below connects to `master`,
+   * never straight to `audio.destination`: `master` itself feeds a
+   * gentle master lowpass first, "so nothing is harsh" (the brief's own
+   * words) across all three effects at once, not per-effect.
+   */
+  const ensureAudio = (): { ctx: AudioContext; master: GainNode } => {
+    if (!audio || !master) {
+      audio = new (window.AudioContext ?? (window as any).webkitAudioContext)();
+      const lowpass = audio.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = MASTER_LOWPASS_HZ;
+      lowpass.Q.value = 0.707; // flat/Butterworth -- "gentle", no resonant peak
+      lowpass.connect(audio.destination);
+      master = audio.createGain();
+      master.gain.value = MASTER_GAIN;
+      master.connect(lowpass);
+    }
+    return { ctx: audio, master };
+  };
+
+  /** A fresh, short buffer of white noise -- generated in memory from
+   *  Math.random(), never fetched or bundled, so this stays inside "the
+   *  site ships no audio assets" however many times it runs. Reused by
+   *  both shuffle's whoosh and land's contact click. */
+  const noiseBuffer = (ctx: AudioContext, durationS: number): AudioBuffer => {
+    const length = Math.max(1, Math.round(ctx.sampleRate * durationS));
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    return buffer;
+  };
+
+  /**
+   * attack -> decay -> release, ramped on the GainParam of whichever node
+   * the caller built -- scheduled entirely against `startTime` (always an
+   * `audio.currentTime`-derived value; see sfx.shuffle/land/done below),
+   * never `setTimeout`. `0.0001` is the floor every ramp starts and ends
+   * on: `exponentialRampToValueAtTime` requires a strictly positive
+   * target, so the true "silence" a browser could give us is not
+   * representable -- 0.0001 relative to gains in the 0.03-0.05 range is
+   * roughly -50dB below an already-quiet peak, inaudible under any real
+   * classroom's ambient noise. Returns the envelope's own total duration
+   * so the caller knows when to `.stop()` its node.
+   */
+  const FLOOR_GAIN = 0.0001;
+  const applyEnvelope = (
+    gainParam: AudioParam,
+    peakGain: number,
+    envelope: Envelope,
+    startTime: number,
+  ): number => {
+    const totalS = envelopeTotalS(envelope);
+    gainParam.setValueAtTime(FLOOR_GAIN, startTime);
+    gainParam.exponentialRampToValueAtTime(
+      peakGain,
+      startTime + envelope.attackS,
+    );
+    gainParam.exponentialRampToValueAtTime(
+      Math.max(FLOOR_GAIN, peakGain * envelope.sustainLevel),
+      startTime + envelope.attackS + envelope.decayS,
+    );
+    gainParam.exponentialRampToValueAtTime(FLOOR_GAIN, startTime + totalS);
+    return totalS;
+  };
+
+  /**
+   * A sine fundamental plus its partials -- one oscillator per
+   * PartialTone, sharing one envelope shape and one optional lowpass
+   * sweep (land's cutoff fall; `done` passes none, so its chord stays
+   * bright through its own long release). Used by both `land` (with
+   * LAND_LOWPASS) and `done` (without).
+   */
+  const scheduleTone = (
+    freqHz: number,
+    partials: readonly PartialTone[],
+    peakGain: number,
+    envelope: Envelope,
+    startTime: number,
+    lowpass?: FilterSweep,
+  ): void => {
+    const { ctx, master: bus } = ensureAudio();
+    for (const partial of partials) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freqHz * partial.ratio;
+      osc.detune.value = partial.detuneCents;
+
+      const gain = ctx.createGain();
+      const totalS = applyEnvelope(
+        gain.gain,
+        peakGain * partial.gain,
+        envelope,
+        startTime,
+      );
+
+      let out: AudioNode = osc;
+      if (lowpass) {
+        const filter = ctx.createBiquadFilter();
+        filter.type = lowpass.kind;
+        filter.Q.value = lowpass.q;
+        filter.frequency.setValueAtTime(lowpass.startHz, startTime);
+        filter.frequency.exponentialRampToValueAtTime(
+          lowpass.endHz,
+          startTime + totalS,
+        );
+        osc.connect(filter);
+        out = filter;
+      }
+      out.connect(gain).connect(bus);
+      osc.start(startTime);
+      osc.stop(startTime + totalS + 0.02); // a little past the ramp's own end
+    }
+  };
+
+  /**
+   * Filtered noise -- shuffle's whoosh and land's contact click are both
+   * one of these, differing only in which FilterSweep and Envelope they
+   * carry. A plain two-point sweep (FilterSweep.peakHz left undefined)
+   * moves straight from startHz to endHz; a three-point one (shuffle's)
+   * passes through peakHz at peakAtS first -- "sweeps up and back down".
+   */
+  const scheduleFilteredNoise = (
+    peakGain: number,
+    envelope: Envelope,
+    startTime: number,
+    filter: FilterSweep,
+  ): void => {
+    const { ctx, master: bus } = ensureAudio();
+    const totalS = envelopeTotalS(envelope);
+
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(ctx, totalS);
+
+    const biquad = ctx.createBiquadFilter();
+    biquad.type = filter.kind;
+    biquad.Q.value = filter.q;
+    biquad.frequency.setValueAtTime(filter.startHz, startTime);
+    if (filter.peakHz !== undefined && filter.peakAtS !== undefined) {
+      biquad.frequency.exponentialRampToValueAtTime(
+        filter.peakHz,
+        startTime + filter.peakAtS,
+      );
+    }
+    biquad.frequency.exponentialRampToValueAtTime(
+      filter.endHz,
+      startTime + totalS,
+    );
+
+    const gain = ctx.createGain();
+    applyEnvelope(gain.gain, peakGain, envelope, startTime);
+
+    src.connect(biquad).connect(gain).connect(bus);
+    src.start(startTime);
+    src.stop(startTime + totalS + 0.02);
+  };
+
+  /** Sound only plays when the toggle is checked, and audio is decoration:
+   *  a browser refusing any part of this must never break the tool. Same
+   *  guard, same comment intent, as the single `tone()` helper this
+   *  replaces. */
+  const play = (effect: () => void): void => {
     if (!soundToggle.checked) return;
     try {
-      audio ??= new (
-        window.AudioContext ?? (window as any).webkitAudioContext
-      )();
-      const osc = audio.createOscillator();
-      const vol = audio.createGain();
-      osc.type = type;
-      osc.frequency.value = freq;
-      vol.gain.value = gain;
-      // Short fade so each blip ends cleanly instead of clicking.
-      vol.gain.exponentialRampToValueAtTime(
-        0.0001,
-        audio.currentTime + durationMs / 1000,
-      );
-      osc.connect(vol).connect(audio.destination);
-      osc.start();
-      osc.stop(audio.currentTime + durationMs / 1000);
+      effect();
     } catch {
       // Audio is decoration. If the browser refuses, the tool still works.
     }
   };
+
   const sfx = {
-    shuffle: () => tone(180, 220, 'triangle', 0.04),
-    land: (i: number) => tone(420 + (i % 6) * 40, 90, 'square', 0.03),
-    done: () => {
-      tone(660, 160);
-      setTimeout(() => tone(880, 260), 120);
-    },
+    // A card-riffle whoosh: filtered noise only, no pitched oscillator at
+    // all -- see SHUFFLE_FILTER's own doc comment in sfx.ts for the sweep.
+    shuffle: () =>
+      play(() => {
+        const { ctx } = ensureAudio();
+        const startTime = ctx.currentTime;
+        scheduleFilteredNoise(
+          SHUFFLE_PEAK_GAIN,
+          SHUFFLE_ENVELOPE,
+          startTime,
+          SHUFFLE_FILTER,
+        );
+      }),
+    // A warm mallet/marimba pluck, pitched from the pentatonic scale and
+    // stepping upward with the group index (landFrequency), plus a very
+    // short noise transient at the same onset for the sense of contact.
+    land: (i: number) =>
+      play(() => {
+        const { ctx } = ensureAudio();
+        const startTime = ctx.currentTime;
+        scheduleTone(
+          landFrequency(i),
+          LAND_PARTIALS,
+          LAND_PEAK_GAIN,
+          LAND_ENVELOPE,
+          startTime,
+          LAND_LOWPASS,
+        );
+        scheduleFilteredNoise(
+          LAND_PEAK_GAIN * LAND_TRANSIENT.gain,
+          LAND_TRANSIENT.envelope,
+          startTime,
+          LAND_TRANSIENT.filter,
+        );
+      }),
+    // A soft resolving bell chord -- every note scheduled against THIS
+    // SAME audio-clock startTime, offset by DONE_STAGGER_S, never by
+    // setTimeout. That is the fix for the old second note, which used to
+    // drift under load and could land after the animation had finished.
+    done: () =>
+      play(() => {
+        const { ctx } = ensureAudio();
+        const startTime = ctx.currentTime;
+        doneFrequencies().forEach((freq, j) => {
+          scheduleTone(
+            freq,
+            DONE_PARTIALS,
+            DONE_PEAK_GAIN,
+            DONE_ENVELOPE,
+            startTime + DONE_STAGGER_S[j],
+          );
+        });
+      }),
   };
 
   // ── rendering ───────────────────────────────────────────────────────────
@@ -477,7 +700,11 @@ if (form) {
       cards.forEach((c) => c.classList.add('dealt'));
       return;
     }
-    const step = speed === 'fast' ? 45 : 110;
+    // FAST_STEP_S/NORMAL_STEP_S live in sfx.ts, not here, so LAND_ENVELOPE's
+    // total decay time and this step can be compared in one place
+    // (sfx.test.ts) instead of trusting a hand-copied 45/110 to stay in
+    // sync with whatever this line actually uses.
+    const step = (speed === 'fast' ? FAST_STEP_S : NORMAL_STEP_S) * 1000;
     sfx.shuffle();
     for (let i = 0; i < cards.length; i++) {
       cards[i].classList.add('dealt');
