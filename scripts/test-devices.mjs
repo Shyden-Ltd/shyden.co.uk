@@ -51,7 +51,15 @@
  *    always runs, via `finally` and a signal handler -- see `cleanup()`.
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -63,6 +71,61 @@ const IOS_SESSION_MARKER_FILE = path.join(
   TEST_RESULTS_DIR,
   'ios-session-marker.json',
 );
+
+// ── the live dashboard (task 6) ─────────────────────────────────────────
+//
+// scripts/dashboard.mjs is a SEPARATE process, spawned detached so it
+// outlives this one ("keep the server alive after the run so the final
+// state stays readable" -- task brief step 2). Everything here is
+// artifact files on disk, the same mechanism this file already uses for
+// ios-mode.json / ios-session-marker.json: this script writes small JSON
+// facts the dashboard polls for, and points each test child at its own
+// JSONL file via env vars the two reporters
+// (tests/reporters/jsonl-reporter.ts, tests/reporters/jsonl-vitest.ts)
+// read. None of this can affect a test outcome -- see this file's own
+// startDashboard() for the "never throws, only warns" contract.
+//
+// DASHBOARD_STATE_DIR is deliberately its OWN directory, NOT a path under
+// TEST_RESULTS_DIR -- proven live, not assumed: `npx playwright test`
+// recursively WIPES its entire `outputDir` (default: test-results/,
+// neither playwright.config.ts nor playwright.device.config.ts overrides
+// it) at the start of every invocation, unconditionally, not scoped to its
+// own artifacts. Desktop and Android are two CONCURRENT such invocations
+// sharing that one directory; a first version of this file put the jsonl
+// files there too, and a real run showed the predictable result --
+// desktop's and iOS's jsonl files were silently never written (an early
+// write racing a sibling's startup wipe permanently disables that
+// reporter instance, per its own "log once, then go quiet" failure mode),
+// and even the pre-existing per-group `*-report.json` files and
+// `ios-mode.json` were gone by the end of the run, though harmlessly so
+// FOR THOSE, because each is read immediately after its own write, in the
+// same async continuation, before any later wipe has a chance to land --
+// timing this file's existing logic already depended on, whether or not
+// that dependency was ever named before now. That narrower, pre-existing
+// exposure (nothing this task introduced) is left alone rather than
+// fixed here -- moving Playwright's own outputDir, or session.ts's own
+// artifact location, is a bigger, separate change than "add a dashboard."
+// A live, long-running, cross-process tail (what the dashboard
+// fundamentally is) cannot rely on that same lucky timing, so its own
+// files live somewhere Playwright has no reason to ever touch.
+const DASHBOARD_PORT = 4322;
+const DASHBOARD_STATE_DIR = path.join(ROOT, 'dashboard-state');
+const DASHBOARD_GROUPS_FILE = path.join(DASHBOARD_STATE_DIR, 'groups.json');
+const DASHBOARD_FINAL_FILE = path.join(DASHBOARD_STATE_DIR, 'final.json');
+const DASHBOARD_LOG_FILE = path.join(DASHBOARD_STATE_DIR, 'dashboard.log');
+const DASHBOARD_JSONL_FILE = {
+  desktop: path.join(DASHBOARD_STATE_DIR, 'desktop.jsonl'),
+  android: path.join(DASHBOARD_STATE_DIR, 'android.jsonl'),
+  ios: path.join(DASHBOARD_STATE_DIR, 'ios.jsonl'),
+};
+// Kept in sync with scripts/dashboard.mjs's own REPORT_INDEX -- that file
+// checks for `<dir>/index.html` under these exact two directories to show
+// a report link. Only desktop/android are Playwright; iOS is a Vitest
+// run and has no HTML report to link to.
+const REPORT_DIR = {
+  desktop: path.join(ROOT, 'playwright-report', 'desktop'),
+  android: path.join(ROOT, 'playwright-report', 'android'),
+};
 
 // ── small generic helpers ──────────────────────────────────────────────
 
@@ -225,6 +288,128 @@ async function waitForHttpOk(url, { timeoutMs, describe }) {
       }
     },
     { timeoutMs, describe },
+  );
+}
+
+/**
+ * In-memory map, mirrored to DASHBOARD_GROUPS_FILE on every write. An
+ * in-memory object mutated synchronously (never read-modify-write off
+ * disk) is what makes this race-free against runAndroidGroup and
+ * runIosGroup each writing their own key independently -- there is no
+ * window where one write can clobber the other's, because there is no
+ * read step to race against.
+ */
+const dashboardGroupsState = {};
+function writeDashboardNotRun(name, reason) {
+  dashboardGroupsState[name] = { notRun: { reason } };
+  try {
+    writeFileSync(DASHBOARD_GROUPS_FILE, JSON.stringify(dashboardGroupsState));
+  } catch (error) {
+    process.stderr.write(
+      `warning: failed to write the dashboard's not-run marker for "${name}": ${error.message} -- the ` +
+        'dashboard (if running) may not show this group as NOT RUN; the test run itself is unaffected.\n',
+    );
+  }
+}
+
+/**
+ * Writes the authoritative end-of-run verdict for the dashboard to
+ * override its own live-tallied counts with -- see the call sites' own
+ * comments. Best-effort and silent-but-visible on failure, same
+ * discipline as writeDashboardNotRun: this is reporting about a run that
+ * has (in the success path) already fully completed, so a failure here
+ * must never be allowed to look like a test failure.
+ */
+function writeDashboardFinal(payload) {
+  try {
+    writeFileSync(DASHBOARD_FINAL_FILE, JSON.stringify(payload));
+  } catch (error) {
+    process.stderr.write(
+      `warning: failed to write the dashboard's final-state artifact: ${error.message} -- the dashboard ` +
+        '(if running) may keep showing live-tallied counts instead of the authoritative result; the ' +
+        'terminal summary below (and the exit code) are unaffected.\n',
+    );
+  }
+}
+
+/**
+ * Starts scripts/dashboard.mjs as an independent, detached process -- see
+ * this file's own "the live dashboard" module comment for why it must
+ * outlive this script. HARD requirement (task brief step 3): a dashboard
+ * that fails to start, or throws once running, must never fail this run --
+ * every failure path here WARNS and returns, never throws.
+ *
+ * stdio goes to a FILE, not a pipe: a piped child that is meant to
+ * outlive its parent gets EPIPE the moment the parent's own file
+ * descriptors close on exit -- the standard, documented reason a
+ * `detached: true` child that must survive needs `stdio` pointed at
+ * something other than 'pipe'. It also keeps the dashboard's own console
+ * output out of the three-child interleaved terminal stream this whole
+ * feature exists to make readable in the first place.
+ */
+async function startDashboard() {
+  process.stdout.write('==> Starting the live dashboard...\n');
+  let logFd;
+  try {
+    logFd = openSync(DASHBOARD_LOG_FILE, 'w');
+  } catch (error) {
+    process.stderr.write(
+      `==> Dashboard failed to start (could not open ${path.relative(ROOT, DASHBOARD_LOG_FILE)}): ` +
+        `${error.message} -- continuing WITHOUT the live dashboard; the run itself is unaffected.\n`,
+    );
+    return;
+  }
+
+  let child;
+  try {
+    child = spawn('node', ['scripts/dashboard.mjs'], {
+      cwd: ROOT,
+      env: process.env,
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+    });
+  } finally {
+    closeSync(logFd); // the child holds its own duplicated fd; this process's copy is no longer needed
+  }
+  child.unref(); // must not keep this process's event loop alive, and must not die when this process exits
+
+  let exitedEarly = null;
+  child.once('error', (err) => {
+    exitedEarly = { message: `failed to start: ${err.message}` };
+  });
+  child.once('exit', (code, signal) => {
+    if (!exitedEarly)
+      exitedEarly = {
+        message: `exited early (code ${code}, signal ${signal})`,
+      };
+  });
+
+  try {
+    await waitUntil(
+      async () => {
+        if (exitedEarly) throw new Error(exitedEarly.message);
+        try {
+          const response = await fetch(`http://localhost:${DASHBOARD_PORT}/`);
+          return response.ok ? true : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      {
+        timeoutMs: 10_000,
+        describe: `the dashboard to answer on :${DASHBOARD_PORT}`,
+      },
+    );
+  } catch (error) {
+    process.stderr.write(
+      `==> Dashboard failed to start: ${error.message} -- continuing WITHOUT the live dashboard; the ` +
+        `run itself is unaffected. See ${path.relative(ROOT, DASHBOARD_LOG_FILE)} for details.\n`,
+    );
+    return;
+  }
+
+  process.stdout.write(
+    `\n${'='.repeat(70)}\n  DASHBOARD:  http://localhost:${DASHBOARD_PORT}/\n${'='.repeat(70)}\n\n`,
   );
 }
 
@@ -394,7 +579,7 @@ function isIosPresent() {
  * ran) -- measured directly before being trusted: this exact invocation
  * reported `stats.skipped: 47` here, matching both the human-readable
  * "Total: 47 tests" line it printed and Task 2's independently hand-counted
- * figure (task-2-report.md).
+ * figure.
  */
 async function countEmulatedViewportExclusions() {
   const outFile = path.join(TEST_RESULTS_DIR, 'emulated-viewport-count.json');
@@ -473,13 +658,36 @@ async function runDesktopGroup() {
       'playwright',
       'test',
       '--config=playwright.config.ts',
-      '--reporter=list,json',
+      // list,json: unchanged from before this task -- terminal output and
+      // the JSON summary this script itself reads are exactly as they
+      // were. html + the jsonl reporter are ADDITIONS for the dashboard
+      // only (task brief step 3: "keep the existing --reporter=list,json
+      // behaviour alongside the new one"). Neither playwright.config.ts
+      // nor playwright.device.config.ts needed a change to support this --
+      // Playwright's CLI resolves a non-built-in reporter id via
+      // `path.resolve(process.cwd(), id)` (node_modules/playwright/lib/cli/testActions.js,
+      // `resolveReporter`), so a relative path on this same flag is enough;
+      // measured directly against this exact invocation shape before being
+      // trusted, not assumed.
+      '--reporter=list,json,html,./tests/reporters/jsonl-reporter.ts',
     ],
     {
       env: {
         ...process.env,
         PW_REUSE_SERVER: '1',
         PLAYWRIGHT_JSON_OUTPUT_NAME: reportFile,
+        DASHBOARD_JSONL_FILE: DASHBOARD_JSONL_FILE[name],
+        DASHBOARD_GROUP: name,
+        // Both env vars the html reporter itself already supports --
+        // verified in node_modules/playwright/lib/runner/index.js
+        // (`reportFolderFromEnv`, `getHtmlReportOptionProcessEnv`) rather
+        // than assumed. A distinct per-group output dir is load-bearing:
+        // desktop and android run CONCURRENTLY, and both would otherwise
+        // write to the same default playwright-report/ folder at once.
+        // `never` stops the html reporter auto-opening a browser tab --
+        // disruptive mid-run, and no part of the brief asked for it.
+        PLAYWRIGHT_HTML_OUTPUT_DIR: REPORT_DIR[name],
+        PLAYWRIGHT_HTML_OPEN: 'never',
       },
     },
   );
@@ -499,6 +707,7 @@ async function runAndroidGroup(excludedByDesign) {
     process.stdout.write(
       `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
     );
+    writeDashboardNotRun(name, presence.reason);
     return {
       name,
       status: 'not-run',
@@ -518,13 +727,19 @@ async function runAndroidGroup(excludedByDesign) {
       'playwright',
       'test',
       '--config=playwright.device.config.ts',
-      '--reporter=list,json',
+      // See runDesktopGroup's identical comment: html + jsonl-reporter are
+      // additive, list+json are unchanged, no config file needed a change.
+      '--reporter=list,json,html,./tests/reporters/jsonl-reporter.ts',
     ],
     {
       env: {
         ...process.env,
         PW_REUSE_SERVER: '1',
         PLAYWRIGHT_JSON_OUTPUT_NAME: reportFile,
+        DASHBOARD_JSONL_FILE: DASHBOARD_JSONL_FILE[name],
+        DASHBOARD_GROUP: name,
+        PLAYWRIGHT_HTML_OUTPUT_DIR: REPORT_DIR[name],
+        PLAYWRIGHT_HTML_OPEN: 'never',
       },
     },
   );
@@ -547,6 +762,7 @@ async function runIosGroup() {
     process.stdout.write(
       `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
     );
+    writeDashboardNotRun(name, presence.reason);
     return {
       name,
       status: 'not-run',
@@ -576,8 +792,25 @@ async function runIosGroup() {
       '--reporter=verbose',
       '--reporter=json',
       `--outputFile.json=${reportFile}`,
+      // Additive, same as the two Playwright groups' jsonl reporter --
+      // verbose+json are unchanged. The leading "./" is load-bearing, not
+      // decorative: vitest's own CLI-to-config resolution
+      // (node_modules/vitest/dist/chunks/coverage.DM_a_rWm.js, the block
+      // starting "// ./reporter.js || ../reporter.js, but not
+      // .reporters/reporter.js") only treats a --reporter value as a file
+      // path when it matches /^\.\.?\//; a bare path is treated as a
+      // reporter NAME and fails to resolve. Measured, not assumed -- see
+      // tests/reporters/jsonl-vitest.ts's own module doc. No change to
+      // vitest.ios.config.ts needed.
+      '--reporter=./tests/reporters/jsonl-vitest.ts',
     ],
-    { env: { ...process.env } },
+    {
+      env: {
+        ...process.env,
+        DASHBOARD_JSONL_FILE: DASHBOARD_JSONL_FILE[name],
+        DASHBOARD_GROUP: name,
+      },
+    },
   );
   const durationMs = Date.now() - startedAt;
 
@@ -795,9 +1028,54 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 
 async function main() {
   mkdirSync(TEST_RESULTS_DIR, { recursive: true });
+  mkdirSync(DASHBOARD_STATE_DIR, { recursive: true });
+
+  // A stale FINAL/not-run artifact left over from a previous run must not
+  // bleed into this one -- proven live while building this feature: with
+  // the dashboard already open and a previous run's dashboard-final.json
+  // still on disk, a brand-new run's very first tick re-applied the OLD
+  // run's authoritative pass/fail numbers on top of the new run's
+  // freshly-reset live counts, which would show a run that has barely
+  // started as though it had already finished failed. The three JSONL
+  // files are NOT cleared here -- each reporter truncates its own at the
+  // top of its own run (see their module docs), and clearing them before
+  // that would race harmlessly with nothing; clearing the two small
+  // whole-file JSON artifacts here, before the dashboard is even started,
+  // is what actually matters.
+  //
+  // IOS_MODE_FILE belongs in this same early clear, for the identical
+  // reason -- also proven live, not reasoned about in the abstract:
+  // runIosGroup() already deletes it, but only once IT runs, which is
+  // AFTER the build, the preview-server start and the
+  // @emulated-viewport count -- tens of seconds after the dashboard is
+  // already up and rendering. Watched happening on a real run: the iOS
+  // card showed dom-dispatch mode banner while its own badge still read
+  // "pending", because the file on disk was still the PREVIOUS run's.
+  // Harmless in substance on THIS device (the mode has been stable), but
+  // exactly the shape of claim design doc s5a exists to forbid --
+  // attributing a mode to a run before that run's own canary has decided
+  // it. Cleared here, before the dashboard starts, so a pending iOS card
+  // never carries a mode banner that isn't this run's own.
+  for (const file of [
+    DASHBOARD_GROUPS_FILE,
+    DASHBOARD_FINAL_FILE,
+    IOS_MODE_FILE,
+  ]) {
+    if (existsSync(file)) unlinkSync(file);
+  }
+  for (const key of Object.keys(dashboardGroupsState))
+    delete dashboardGroupsState[key];
+
   const startedAt = Date.now();
 
   try {
+    // Started FIRST, before anything else -- task brief step 2: "Print
+    // the dashboard URL prominently before any group starts". Never
+    // throws; a dashboard that fails to start only warns (see its own
+    // doc) and the rest of this run proceeds exactly as it would without
+    // it.
+    await startDashboard();
+
     // MUST run before anything else, not only in the end-of-run `cleanup()`
     // below. Measured directly: `startIosSession` (session.ts) clears its
     // OWN marker file unconditionally the moment it is called, so this
@@ -876,12 +1154,22 @@ async function main() {
 
     await cleanup();
 
+    // The SAME `groups` array the summary table below prints and the exit
+    // code below is computed from -- not a re-derivation. This is what
+    // guarantees the dashboard's own final numbers can never disagree with
+    // (let alone look rosier than) what the terminal and the exit code
+    // say; see scripts/dashboard.mjs's own doc on why this file, once
+    // present, overrides its live-tallied counts rather than merely
+    // informing them.
+    writeDashboardFinal({ aborted: null, groups });
+
     printSummaryTable(groups, Date.now() - startedAt);
     const anyBad = groups.some((g) => g.status !== 'passed');
     process.exitCode = anyBad ? 1 : 0;
   } catch (fatal) {
     process.stderr.write(`\nABORTED: ${fatal.message}\n\n`);
     process.exitCode = 1;
+    writeDashboardFinal({ aborted: fatal.message, groups: null });
     await cleanup();
   }
 }

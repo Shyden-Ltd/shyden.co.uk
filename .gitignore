@@ -10,6 +10,13 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Dashboard state (scripts/dashboard.mjs) -- deliberately OUTSIDE test-results/:
+# Playwright's default outputDir behaviour recursively wipes that whole
+# directory at the start of EVERY invocation, and desktop + android are
+# concurrent Playwright invocations sharing it -- proven live (task 6) to
+# destroy files written there by anything meant to survive the whole run.
+dashboard-state/
+
 # Cloudflare / wrangler local state
 .wrangler/
 
