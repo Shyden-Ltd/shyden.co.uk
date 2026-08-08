@@ -464,7 +464,7 @@ export function buildVoicePlan(params: {
  *  had neither), so this is not read from the brief -- there is no stated
  *  absolute level for the new architecture, only the relative numbers
  *  above and the envelope timings. */
-export const LAND_PEAK_GAIN = 0.5;
+export const LAND_PEAK_GAIN = 0.14;
 
 /** The brief's own number: how much of a `land` voice's post-pan signal
  *  feeds the shared reverb send. */
@@ -517,7 +517,7 @@ export const DONE_RELEASE_S = 0.9;
 /** A reasoned default, same reasoning as LAND_PEAK_GAIN -- slightly under
  *  land's own peak because four of these notes sum together (staggered,
  *  but still overlapping for most of their release). */
-export const DONE_PEAK_GAIN = 0.4;
+export const DONE_PEAK_GAIN = 0.12;
 
 /** The brief's own number: the longest reverb send of the three effects --
  *  "an arrival" gets the most space to resolve into. Checked against
@@ -588,7 +588,7 @@ export const SHUFFLE_GRAIN_BOUNDS = {
 /** A reasoned default: each grain's own peak, kept modest because up to 22
  *  of them can overlap -- the brief gives the grain COUNT and FILTER
  *  bounds, not an absolute per-grain gain. */
-export const SHUFFLE_GRAIN_PEAK_GAIN = 0.16;
+export const SHUFFLE_GRAIN_PEAK_GAIN = 0.055;
 
 export const SHUFFLE_REVERB_SEND = 0.12;
 
@@ -702,7 +702,7 @@ export function admitVoice<T>(
  *  with no flat region, so it never produces the hard-edged harmonic
  *  spray a digital clip (a literal min/max) does, while still taming the
  *  loudest instants of several overlapping voices. */
-export const SATURATOR_DRIVE = 1.6;
+export const SATURATOR_DRIVE = 1.1;
 
 /** Odd, so the curve has an exact centre sample at x=0 -- see
  *  generateSaturatorCurve's own "curve(0) is exactly 0" test. */
@@ -843,7 +843,7 @@ export function generateReverbImpulseResponse(
  *  effect's voices happen to land in phase, never loud enough alone to
  *  make anything quieter than intended. A reasoned default, same
  *  reasoning as LAND_PEAK_GAIN. */
-export const MASTER_GAIN = 0.8;
+export const MASTER_GAIN = 0.45;
 
 /** Strips DC offset and sub-bass rumble no real content in this file ever
  *  occupies -- the lowest thing this file produces is a `land`/`done` sub
@@ -866,11 +866,11 @@ export const MASTER_LOWPASS_HZ = 9000;
  *  source. Reasoned defaults: the brief specifies the node's presence and
  *  position in the chain, not its parameters. */
 export const MASTER_COMPRESSOR = {
-  thresholdDb: -18,
+  thresholdDb: -10,
   kneeDb: 6,
-  ratio: 3,
+  ratio: 2,
   attackS: 0.003,
-  releaseS: 0.25,
+  releaseS: 0.18,
 } as const;
 
 /** A structural unity trim on the shared reverb return, after the
@@ -879,4 +879,4 @@ export const MASTER_COMPRESSOR = {
  *  convolver's own output level mathematically at generation time (see
  *  that constant's own doc comment), not an arbitrary "sounds about
  *  right" guess this file has no basis to make. */
-export const REVERB_RETURN_GAIN = 1;
+export const REVERB_RETURN_GAIN = 0.5;
