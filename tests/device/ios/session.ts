@@ -13,6 +13,13 @@
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
+import {
+  createInteraction,
+  describeInteractionMode,
+  detectInteractionMode,
+  type Interaction,
+  type InteractionMode,
+} from './interaction';
 import { waitFor, WebDriver, type WebElement } from './webdriver';
 
 const DEV_SERVER_PORT = 4321;
@@ -319,6 +326,15 @@ export interface DeviceSession {
   readonly driver: WebDriver;
   readonly baseUrl: string;
   readonly device: IosDevice;
+  /**
+   * Design doc s5a: decided once per run by a canary, never assumed.
+   * `interaction.mode` carries the same value -- both are exposed because
+   * journeys read `interaction` to act, and the mode alone is what a
+   * report/log line needs to name.
+   */
+  readonly mode: InteractionMode;
+  /** click/type/clear, mode-agnostic -- see interaction.ts. Journeys call only this, never `driver` directly for input. */
+  readonly interaction: Interaction;
   /** Navigates to `path` on the real server and waits for the page to be interactive. */
   navigateToPath(path: string): Promise<void>;
   /** ALWAYS call this, in a `finally` -- see this file's module doc. */
@@ -328,7 +344,8 @@ export interface DeviceSession {
 /**
  * Runs every precondition in the order the task brief lists them (cheapest,
  * most-likely-to-fail first: no value starting safaridriver if there is no
- * device to ask), then returns a session ready for journeys to drive.
+ * device to ask), then the design doc s5a canary, then returns a session
+ * ready for journeys to drive.
  */
 export async function startIosSession(): Promise<DeviceSession> {
   const device = findIosDevice(); // 1: device present
@@ -353,12 +370,33 @@ export async function startIosSession(): Promise<DeviceSession> {
     throw error;
   }
 
+  let mode: InteractionMode;
+  try {
+    mode = await detectInteractionMode(driver); // design doc s5a: the canary
+  } catch (error) {
+    await driver.deleteSession().catch(() => {});
+    child.kill();
+    throw error;
+  }
+  // HARD requirement (design doc s5a): "The mode is named in the suite's
+  // output... a DOM-dispatch run is never reported as though taps were
+  // taps." Logged the moment it is known, before any journey runs, so it
+  // is the first thing visible about this run regardless of which test
+  // the reader scrolls to.
+  // eslint-disable-next-line no-console -- this is the required, deliberate mode announcement, not incidental debug output
+  console.log(
+    `\n${'='.repeat(70)}\n${describeInteractionMode(mode)}\n${'='.repeat(70)}\n`,
+  );
+  const interaction = createInteraction(driver, mode);
+
   const baseUrl = `http://${lanIp}:${DEV_SERVER_PORT}`;
 
   return {
     driver,
     baseUrl,
     device,
+    mode,
+    interaction,
 
     async navigateToPath(path: string): Promise<void> {
       await driver.navigate(`${baseUrl}${path}`);
