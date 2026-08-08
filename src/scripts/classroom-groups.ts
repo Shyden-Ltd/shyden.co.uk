@@ -78,6 +78,20 @@ if (form) {
   // collapsed/expanded state is a UI preference, never class data, so it
   // goes through the same try/catch-wrapped `remember` the sound toggle
   // below also uses -- see H-07 in the stage-2 traceability table.
+  //
+  // Collapsed by DEFAULT since design spec section 2's operator ruling 2
+  // (2026-08-08). '0' is the only stored value that means "a teacher left
+  // this open"; absent (nothing stored yet) or '1' both mean collapsed --
+  // which is why the read below is `!== '0'` rather than `=== '1'`: the
+  // same key, the same two written values, just a different answer for
+  // "nothing stored yet". ClassroomGroupsPage.astro's own inline script
+  // reads this exact key the exact same way, synchronously, before this
+  // deferred module has even loaded -- see that script's own comment for
+  // why a deferred module cannot prevent the first-paint flash on its own.
+  // The call below is therefore usually a no-op against DOM state that
+  // inline script already set; it stays as the source of truth for
+  // anywhere that inline script could not run (its own try/catch covers
+  // when that is).
   const HOWTO_KEY = 'cg-howto-collapsed';
   const howToToggle = $<HTMLButtonElement>('cg-howto-toggle');
   const howToBody = $<HTMLElement>('cg-howto-body');
@@ -89,7 +103,7 @@ if (form) {
       howToBody.hidden = isCollapsed;
       howToToggle.setAttribute('aria-expanded', String(!isCollapsed));
     };
-    applyHowTo(remember.read(HOWTO_KEY) === '1');
+    applyHowTo(remember.read(HOWTO_KEY) !== '0');
     howToToggle.addEventListener('click', () => {
       const next = !howToBody.hidden;
       applyHowTo(next);

@@ -420,9 +420,33 @@ test.describe('How to use', () => {
     await expect(form.locator('#cg-howto')).toHaveCount(0);
   });
 
-  test('holds both parts and is open by default', async ({ page }) => {
+  // Reverses design spec section 3's original "open by default" -- section
+  // 2's operator ruling 2 (2026-08-08) collapses it, because measurement
+  // showed it was ~310px of a phone screen, the single biggest saving
+  // toward the tool fitting one. The header stays visible and operable
+  // regardless -- a control that hides itself is a trap.
+  test('holds both parts and is collapsed by default', async ({ page }) => {
     await page.goto('/classroom-groups');
+    await expect(
+      page.getByRole('button', { name: 'How to use' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'How to use' }),
+    ).toHaveAttribute('aria-expanded', 'false');
     // The whole sentence, and it must name WHO and WHY -- not just what.
+    await expect(
+      page.getByText(
+        'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+      ),
+    ).toBeHidden();
+    await expect(
+      page.getByText('Say how many students are in your class.'),
+    ).toBeHidden();
+  });
+
+  test('clicking the toggle opens both parts', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.getByRole('button', { name: 'How to use' }).click();
     await expect(
       page.getByText(
         'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
@@ -431,27 +455,16 @@ test.describe('How to use', () => {
     await expect(
       page.getByText('Say how many students are in your class.'),
     ).toBeVisible();
-  });
-
-  test('both parts collapse together, and the header survives', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await page.getByRole('button', { name: 'How to use' }).click();
-    await expect(
-      page.getByText('Say how many students are in your class.'),
-    ).toBeHidden();
-    await expect(page.getByText('Built for teachers, by Shyden.')).toBeHidden();
     await expect(
       page.getByRole('button', { name: 'How to use' }),
     ).toBeVisible();
   });
 
-  // A control that hides itself is a trap. The test above only proves the
-  // header survives being collapsed once -- it never proves the content
-  // comes back. Click again and look for the actual sentence returning,
-  // not just an attribute flipping.
-  test('clicking the toggle a second time reopens both parts', async ({
+  // A control that only ever opens is a trap too. The test above only
+  // proves a first click reveals the content -- it never proves it can be
+  // put away again. Click a second time and look for the actual sentences
+  // leaving, not just an attribute flipping back.
+  test('clicking the toggle a second time closes both parts again', async ({
     page,
   }) => {
     await page.goto('/classroom-groups');
@@ -462,22 +475,28 @@ test.describe('How to use', () => {
       page.getByText(
         'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
       ),
-    ).toBeVisible();
+    ).toBeHidden();
     await expect(
       page.getByText('Say how many students are in your class.'),
-    ).toBeVisible();
+    ).toBeHidden();
+    await expect(toggle).toBeVisible();
   });
 
-  test('the collapsed state survives a reload', async ({ page }) => {
+  // "Collapse it, reload, still collapsed" would now be vacuous -- collapsed
+  // is the default, so that would pass even with persistence completely
+  // unwired. The test that actually proves the state round-trips through
+  // localStorage is the other direction: open it, reload, and it must still
+  // be open.
+  test('the opened state survives a reload', async ({ page }) => {
     await page.goto('/classroom-groups');
     await page.getByRole('button', { name: 'How to use' }).click();
     await page.reload();
     await expect(
       page.getByText('Say how many students are in your class.'),
-    ).toBeHidden();
+    ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'How to use' }),
-    ).toBeVisible();
+    ).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('only the preference is stored, never class data', async ({ page }) => {
@@ -511,7 +530,7 @@ test.describe('How to use', () => {
     await toggle.click();
     await expect(
       page.getByText('Say how many students are in your class.'),
-    ).toBeHidden();
+    ).toBeVisible();
   });
 });
 
@@ -528,8 +547,29 @@ test.describe('How to use — Indonesian', () => {
     await expect(form.locator('#cg-howto')).toHaveCount(0);
   });
 
-  test('holds both parts and is open by default', async ({ page }) => {
+  // Mirrors the English suite's own default-state test -- see that describe
+  // block's own comment for the ruling behind the reversal.
+  test('holds both parts and is collapsed by default', async ({ page }) => {
     await page.goto('/id/classroom-groups');
+    await expect(
+      page.getByRole('button', { name: 'Cara menggunakan' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Cara menggunakan' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    await expect(
+      page.getByText(
+        'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+      ),
+    ).toBeHidden();
+    await expect(
+      page.getByText('Masukkan jumlah siswa di kelas Anda.'),
+    ).toBeHidden();
+  });
+
+  test('clicking the toggle opens both parts', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByRole('button', { name: 'Cara menggunakan' }).click();
     await expect(
       page.getByText(
         'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
@@ -538,27 +578,14 @@ test.describe('How to use — Indonesian', () => {
     await expect(
       page.getByText('Masukkan jumlah siswa di kelas Anda.'),
     ).toBeVisible();
-  });
-
-  test('both parts collapse together, and the header survives', async ({
-    page,
-  }) => {
-    await page.goto('/id/classroom-groups');
-    await page.getByRole('button', { name: 'Cara menggunakan' }).click();
-    await expect(
-      page.getByText('Masukkan jumlah siswa di kelas Anda.'),
-    ).toBeHidden();
-    await expect(
-      page.getByText('Dibuat untuk para guru, oleh Shyden.'),
-    ).toBeHidden();
     await expect(
       page.getByRole('button', { name: 'Cara menggunakan' }),
     ).toBeVisible();
   });
 
-  // Mirrors the English suite's own reopen test -- a control that hides
-  // itself is a trap, in every language this page ships.
-  test('clicking the toggle a second time reopens both parts', async ({
+  // Mirrors the English suite's own close-again test -- a control that only
+  // ever opens is a trap too, in every language this page ships.
+  test('clicking the toggle a second time closes both parts again', async ({
     page,
   }) => {
     await page.goto('/id/classroom-groups');
@@ -569,22 +596,26 @@ test.describe('How to use — Indonesian', () => {
       page.getByText(
         'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
       ),
-    ).toBeVisible();
+    ).toBeHidden();
     await expect(
       page.getByText('Masukkan jumlah siswa di kelas Anda.'),
-    ).toBeVisible();
+    ).toBeHidden();
+    await expect(toggle).toBeVisible();
   });
 
-  test('the collapsed state survives a reload', async ({ page }) => {
+  // Mirrors the English suite's own reload test -- see that describe
+  // block's own comment for why the meaningful direction is now "opened",
+  // not "collapsed".
+  test('the opened state survives a reload', async ({ page }) => {
     await page.goto('/id/classroom-groups');
     await page.getByRole('button', { name: 'Cara menggunakan' }).click();
     await page.reload();
     await expect(
       page.getByText('Masukkan jumlah siswa di kelas Anda.'),
-    ).toBeHidden();
+    ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Cara menggunakan' }),
-    ).toBeVisible();
+    ).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('only the preference is stored, never class data', async ({ page }) => {
@@ -609,7 +640,7 @@ test.describe('How to use — Indonesian', () => {
     await toggle.click();
     await expect(
       page.getByText('Masukkan jumlah siswa di kelas Anda.'),
-    ).toBeHidden();
+    ).toBeVisible();
   });
 });
 
@@ -738,9 +769,11 @@ test.describe("the tool's collapsible sections", () => {
   // computed-layout check but is no longer resting on an empty div's
   // padding alone — the dedicated 'Grouping options' describe block below
   // asserts its actual content directly. Three clicks, not two: these
-  // sections start CLOSED (opposite of How to use's default-open), so
-  // proving a genuine REOPEN — not just the first close — needs open,
-  // close, open again.
+  // sections start CLOSED — the same default How to use now has too
+  // (design spec section 2's operator ruling 2) — but unlike that describe
+  // block's own dedicated pair of tests (one click opens, a second closes
+  // again), this shared loop proves a genuine SECOND opening specifically,
+  // which needs open, close, open again to reach.
   for (const id of ['cg-students', 'cg-grouping', 'cg-io']) {
     test(`${id}: a second opening genuinely re-shows the section, not merely an attribute flipping back`, async ({
       page,

@@ -90,19 +90,63 @@ const sexWhyText = sexWhy(roster, t);
           type="button"
           class="howto-toggle"
           id="cg-howto-toggle"
-          aria-expanded="true"
+          aria-expanded="false"
           aria-controls="cg-howto-body"
         >
           {t.howToHeading}
         </button>
       </h2>
-      <div id="cg-howto-body" class="howto-body">
+      <!-- Collapsed by DEFAULT since design spec section 2's operator ruling
+           2 (2026-08-08) -- reverses this section's original expanded-by-
+           default (section 3). Measured at ~310px on a phone, and section 2
+           calls it the single biggest saving toward the tool fitting one
+           screen. `hidden` here IS the default, not a state JS applies after
+           load -- matching every other collapsible section on this page
+           (#cg-students/#cg-grouping/#cg-io/#cg-sound below all render
+           `hidden` in their own markup too), so a visitor whose script never
+           runs, or fails before reaching this section, sees exactly what a
+           visitor whose script works fully sees on a first visit: collapsed,
+           with the header still there to open it. -->
+      <div id="cg-howto-body" class="howto-body" hidden>
         <p>{t.howToWhat}</p>
         <ol>
           {t.howToSteps.map((step) => <li>{step}</li>)}
         </ol>
       </div>
     </section>
+
+    <!-- A returning teacher who has opened How to use before must not see it
+         render collapsed and then jump open a moment later -- the same
+         markup-says-one-thing-script-says-another flash design spec section
+         2 flags. classroom-groups.ts is a deferred `type="module"` (Astro
+         hoists/bundles every plain `<script>` in a `.astro` file that way),
+         so it does not run until after the browser has already parsed, and
+         typically painted, everything above it -- too late to avoid that
+         jump. This runs synchronously, in document order, right after the
+         elements it touches -- `is:inline` is required, or Astro would defer
+         it exactly the same way. Reads the identical key classroom-groups.ts
+         reads (`cg-howto-collapsed`), the identical way -- see that file's
+         own comment on `HOWTO_KEY` for the full '0'/'1'/absent semantics.
+         Wrapped in try/catch for the same reason its `remember` helper is:
+         Safari's "Block all cookies", a partitioned context or an MDM
+         profile throws SecurityError on the mere act of reading
+         localStorage, and this runs before that module exists to catch it.
+         Caught, it falls through to the default already rendered above --
+         collapsed -- which is a safe, working state either way. -->
+    <script is:inline>
+      (function () {
+        try {
+          if (localStorage.getItem('cg-howto-collapsed') === '0') {
+            var body = document.getElementById('cg-howto-body');
+            var toggle = document.getElementById('cg-howto-toggle');
+            if (body) body.hidden = false;
+            if (toggle) toggle.setAttribute('aria-expanded', 'true');
+          }
+        } catch {
+          // Left collapsed -- the safe, already-rendered default.
+        }
+      })();
+    </script>
 
     <!-- No `name` on any control that holds something a teacher typed. A form
          with no `action` submits to its OWN url as a GET, so a `name` here

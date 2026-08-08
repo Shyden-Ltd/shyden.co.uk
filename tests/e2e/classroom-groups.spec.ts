@@ -948,75 +948,95 @@ test.describe('site-wide language switching', () => {
 // what happened. Recorded so a reader does not go looking for a test that
 // was never meant to exist.
 test.describe('the no-scroll rule, measured', () => {
-  const WIDTHS = [320, 375, 768, 1280];
+  // Ruling 1 (design spec section 2, "Amended 2026-08-08" -- an operator
+  // ruling made after the numbers below were first measured): "fits one
+  // screen" is judged against the TOOL, not the whole document. The tool is
+  // the span from the top of #cg-howto (How to use) down to the bottom of
+  // #cg-go (the Make groups button) -- the site-wide header and footer
+  // (BaseLayout.astro's <Header>/<Footer>, rendered unconditionally on
+  // every page this site has) sit outside that span and are excluded: a
+  // page cannot be held to a budget it does not control, and shrinking
+  // either one just for this page would make it inconsistent with every
+  // other page that carries them.
+  //
+  // Measured DIRECTLY off the two elements that bound the tool --
+  // `#cg-howto`'s own `getBoundingClientRect().top` to `#cg-go`'s own
+  // `.bottom` -- never by subtracting an estimated header/footer height from
+  // `document.documentElement.scrollHeight`. That subtraction was this
+  // block's own earlier approach and left an unexplained ~55-65px residual
+  // at every width (see this file's git history); direct measurement is
+  // the tool's real rendered extent, not a sum of parts chosen by hand.
+  //
+  // Each width is paired with its OWN real device height (design spec
+  // section 2's own measurement table), not a uniform 800px for all four --
+  // an iPhone SE is 568px tall, not 800, and a budget that does not exist
+  // on the device is not a budget.
+  //
+  // Ruling 2, same amendment: How to use collapsed by default (reversing
+  // section 3's original expanded-by-default) is now the tool's actual
+  // landing state, so reaching "the collapsed default" needs no click here
+  // any more -- the previous version of this loop clicked "How to use"
+  // first because collapsing it was the only way to reach a state the page
+  // did not start in.
+  //
+  // Measured before (How to use expanded -- the state this task's own
+  // Ruling 2 changes) and after (collapsed -- what ships), tool-boundary
+  // method both times so the comparison isolates what Ruling 2 alone
+  // bought:
+  //
+  //   width x height   tool before   tool after   saved   budget    after vs budget
+  //   320x568          1312px        987px        325px   568px     419px OVER
+  //   375x667          1260px        986px        274px   667px     319px OVER
+  //   768x1024         849px         652px        197px   1024px    372px to spare
+  //   1280x800         849px         652px        197px   800px     148px to spare
+  //
+  // 768px and 1280px already fit -- comfortably, not on a technicality --
+  // and are un-`fixme`'d below. 320px and 375px recovered roughly a quarter
+  // of what they were over by, and are still over: both stay `fixme`,
+  // measured, not guessed, not weakened, not deleted.
+  //
+  // What is left at 320/375px: the naming/theme picker fieldset ("Name the
+  // groups") is the last always-visible bordered box below the top row --
+  // design spec section 12 marks it removed, but that removal is stage 3's,
+  // not built yet, and it is real, currently-uncounted headroom this task
+  // did not touch because removing it is not this task's call to make.
+  // Short of that, only an operator decision to trim the hero copy
+  // (h1/lead/privacy), the collapsed section headers' own density, or the
+  // How to use copy itself (ruled unchanged, section 2) would move these
+  // two numbers again.
+  const VIEWPORTS = [
+    { width: 320, height: 568, fits: false }, // iPhone SE
+    { width: 375, height: 667, fits: false }, // iPhone 8
+    { width: 768, height: 1024, fits: true }, // iPad
+    { width: 1280, height: 800, fits: true }, // laptop
+  ];
 
-  for (const width of WIDTHS) {
-    // #cg-howto starts expanded (design spec section 3), and collapsing it
-    // is "the single biggest saving on the page" per that same section --
-    // so the collapsed DEFAULT this test measures is the state a teacher
-    // reaches by closing it, not the state they land on. getByRole's name
-    // match is a substring, but nothing else on this page is named "How to
-    // use", so the click is unambiguous.
-    //
-    // `fixme`, not a passing assertion, and not deleted -- measured, not
-    // guessed. History: 2148px scrollHeight at 320px against an 800px
-    // budget when this file first measured it; a CSS-tightening pass
-    // (form/fieldset/field/tool-section spacing, h1/lead/privacy margins)
-    // recovered 245px (-> 1903px, 1103px short at 320px, 724px short at
-    // 768/1280px). Building the "Top row" design spec section 3 describes
-    // -- Class/Students/Split-by in one compact row instead of the two
-    // bordered `<fieldset>`s (`classHeading`/`groupsHeading`) Stage 2 Tasks
-    // 1 and 5 shipped, stacked -- recovered a further 97px at 320/375px
-    // (chrome removed; still one column at these widths) and 301px at
-    // 768/1280px (chrome removed AND the row goes three-across). See
-    // ClassroomGroupsPage.astro's own comment on `.top-row` for the
-    // touch-target arithmetic behind that layout and why it stacks below
-    // 768px regardless. No touch-target or content lost either pass.
-    // Measured again, same method, all four widths:
-    //
-    //   width    scrollHeight   overflow (800px budget)
-    //   320px    1806px         1006px short
-    //   375px    1753px         953px short
-    //   768px    1223px         423px short
-    //   1280px   1223px         423px short
-    //
-    // Still short everywhere, so still `fixme` everywhere -- not weakened,
-    // not deleted. Of that remaining height, the site-wide header (69px at
-    // every width) and footer (267px at 320px, 244px at 375px, 198px at
-    // 768/1280px -- BaseLayout.astro renders both unconditionally, and
-    // neither is this task's to touch) are not the whole story: subtract
-    // both and the tool's OWN content -- the always-visible hero
-    // (h1/lead/privacy), the collapsed How-to toggle, this row, the
-    // still-live "Name the groups" fieldset (design spec section 12 marks
-    // it removed, but that removal is stage 3's, not built yet) and the
-    // four collapsed sections -- still comes to 1470px/1440px/956px/956px,
-    // which is itself 670px/640px/156px/156px over an 800px budget at
-    // 320/375/768/1280px. So a smaller header and footer alone would not
-    // close this at any width, and at 768/1280px the tool's own remaining
-    // content is now the SMALLER of the two shares.
-    //
-    // What would force a revisit: stage 3 removing the naming radio/theme
-    // picker (design spec section 12) drops the one remaining always-visible
-    // bordered fieldset below this row -- real, uncounted headroom this
-    // task did not touch because removing it is not this task's call to
-    // make. Short of that, only an operator decision to trim the hero copy,
-    // the site-wide footer, or how the four collapsed sections themselves
-    // are sized would move these numbers again. Recorded here, with the
-    // numbers, rather than silently loosened or dropped, so the
-    // traceability row (L-01..L-04) reads "owed, with a reason and a
-    // measurement" and the next task that touches this page's layout
-    // inherits the real target instead of rediscovering it.
-    test.fixme(`collapsed default fits without vertical scrolling at ${width}px`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width, height: 800 });
-      await page.goto('/classroom-groups');
-      await page.getByRole('button', { name: 'How to use' }).click();
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollHeight - window.innerHeight,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
-    });
+  for (const { width, height, fits } of VIEWPORTS) {
+    // `test.fixme` for the two that still do not fit -- tracked, not
+    // hidden; `test` for the two that now genuinely pass. One body, so the
+    // passing and failing cases can never drift into checking two
+    // different things.
+    const run = fits ? test : test.fixme;
+    run(
+      `the tool fits without scrolling at ${width}x${height}`,
+      async ({ page }) => {
+        await page.setViewportSize({ width, height });
+        await page.goto('/classroom-groups');
+        const { toolHeight, budget } = await page.evaluate(() => {
+          const top = document
+            .getElementById('cg-howto')!
+            .getBoundingClientRect().top;
+          const bottom = document
+            .getElementById('cg-go')!
+            .getBoundingClientRect().bottom;
+          return {
+            toolHeight: Math.round(bottom - top),
+            budget: window.innerHeight,
+          };
+        });
+        expect(toolHeight).toBeLessThanOrEqual(budget);
+      },
+    );
   }
 
   // L-08. The brief's own literal query measured only what page LOAD
