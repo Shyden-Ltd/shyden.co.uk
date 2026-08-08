@@ -9,4 +9,4 @@
 - **Accent `#0A7D66`** is the AA floor — never lighten it without re-checking contrast.
 - **Fonts self-hosted** via `@fontsource`. No external CDN / no third-party requests.
 - **Tests:** `npm run test:unit` (Vitest), `npm run test:e2e` (Playwright, 5 projects), `npm test` (both).
-- **Owed:** real mobile-device browser gauntlet before launch (web work is device-verified too).
+- **Real-device gauntlet:** `npm run test:devices` builds once and runs the emulated suite, real Android Chrome (over CDP) and real iOS Safari (over WebDriver) concurrently against that one build. It does **not** run in CI — CI has no phones, so this is a local, pre-release gate only. It does **not** cover Brave or Firefox on Android — neither exposes a way to drive them at all. And it proves exactly **one** iOS engine: every iOS browser is WKWebView, so "every iOS browser" here means one engine wearing different shells, not real cross-engine coverage.

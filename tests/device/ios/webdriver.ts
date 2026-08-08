@@ -299,6 +299,36 @@ export class WebDriver {
     })) as T;
   }
 
+  /**
+   * `execute/async` (W3C WebDriver s16.3, "Execute Async Script"). Same wire
+   * envelope as `executeScript` above -- `script` + `args` -- except the
+   * driver appends one extra argument, a callback function, as
+   * `arguments[arguments.length - 1]`; the script's result is whatever value
+   * that callback is eventually called with. This exists because
+   * `execute/sync` cannot express anything that does not complete
+   * synchronously: a script there returns before a `fetch()` it merely
+   * started has resolved, so there is no way to observe that promise's
+   * outcome through it.
+   *
+   * Measured live against this session, not assumed from spec text (this
+   * driver already has one prior case of safaridriver deviating from a
+   * generic W3C reading -- see `ELEMENT_KEY`'s own comment): a trivial
+   * `callback(42)` round-trips correctly, and a real cross-origin
+   * `fetch(url, { mode: 'no-cors' })` genuinely distinguishes an address the
+   * device can reach from one it cannot (resolves vs. times out), proven in
+   * both directions against real and deliberately-wrong addresses. See
+   * session.ts's `resolveReachableBaseUrl`, the only caller.
+   */
+  async executeAsyncScript<T = unknown>(
+    script: string,
+    args: unknown[] = [],
+  ): Promise<T> {
+    return (await wireRequest('POST', this.sessionUrl('/execute/async'), {
+      script,
+      args,
+    })) as T;
+  }
+
   /** Base64-encoded PNG (W3C WebDriver s19.1). */
   async screenshot(): Promise<string> {
     const value = await wireRequest('GET', this.sessionUrl('/screenshot'));
