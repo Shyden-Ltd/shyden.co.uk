@@ -248,6 +248,32 @@ const sexWhyText = sexWhy(roster, t);
             aria-describedby="cg-count-help"
           />
           <p class="help" id="cg-count-help">{t.studentsHelp}</p>
+          <!-- Stage 3, Task 7 (design spec section 4, "The Students box --
+               an input, then a read-out"). Ships HIDDEN, matching every
+               visit's real build-time state: no roster exists until a
+               script runs and a teacher adds a row, so `disabled` never
+               ships on #cg-count either -- both are classroom-groups.ts's
+               own job, live, from `updateStudentsBox`, wired through the
+               same `onRosterChanged` hook `updateIoHeader`/
+               `updateStudentsHeader` already use. `.why`, not `.help` --
+               the SAME class `#cg-sex-why` above already uses, for the
+               identical reason (see that markup's own comment): this is
+               not optional context, it is THE stated reason a control
+               cannot be used right now, present exactly while that is
+               true. `#cg-count-help` is swapped OUT the instant this
+               swaps in, never shown alongside it -- "Students are
+               anonymous and numbered" stops being true the moment a
+               roster can hold a real name, so showing it beside a reason
+               that contradicts it would be worse than showing neither.
+               `aria-describedby` is kept in step with whichever paragraph
+               is actually showing (updateStudentsBox rewrites it too),
+               rather than listing both ids unconditionally: browsers
+               disagree on whether a HIDDEN node's text still reaches the
+               accessible description when merely referenced by id, and
+               this does not gamble on it. -->
+          <p class="why" id="cg-count-locked" hidden>
+            {t.studentsLockedReason}
+          </p>
         </div>
 
         <!-- The third top-row column: "Split by (per group / number of
@@ -1290,7 +1316,8 @@ const sexWhyText = sexWhy(roster, t);
   .cg-add-student,
   .cg-add-several,
   .cg-add-confirm,
-  .cg-remove-student {
+  .cg-remove-student,
+  .cg-clear-roster {
     min-height: 44px;
     padding: 0.5rem 0.9rem;
     font: inherit;
@@ -1318,13 +1345,42 @@ const sexWhyText = sexWhy(roster, t);
   }
   /* Slightly smaller and quieter than the two ADD buttons above -- an
      established, lower-emphasis action, not a peer of "+ Add student"/
-     "+ Add several…", which is why it is not in the shared rule above. */
-  .cg-remove-student {
+     "+ Add several…", which is why it is not in the shared rule above.
+     `.cg-clear-roster` ("Clear all", Stage 3, Task 7) shares this same
+     lower-emphasis treatment rather than the bold ADD styling: it is a
+     peer of Remove in how rarely it is reached for and how destructive it
+     is, not a peer of "+ Add student"/"+ Add several…". */
+  .cg-remove-student,
+  .cg-clear-roster {
     min-height: 44px;
     padding: 0.35rem 0.7rem;
     font-size: 0.85rem;
     font-weight: 400;
     color: var(--ink-soft);
+  }
+  /* A real, measured cross-browser gap, caught only because all five
+     Playwright projects were run, not just chromium -- the same category
+     of finding Stage 3, Tasks 2 and 4 already caught once each (a WebKit
+     `min-height` miss on the roster's own `<select>`s; `box-shadow` never
+     painting on `display: table-row`). `.cg-remove-student` shares every
+     rule above with `.cg-clear-roster` and measures a clean 44px on
+     Firefox -- it sits inside a `<td>`, plain table-cell layout. Firefox
+     alone rendered `.cg-clear-roster` at 43.999969482421875px: one
+     thousandth of a pixel short of the 44px floor, `box-sizing:
+     border-box` already set (tokens.css) and not the cause. The one real
+     difference is layout context -- `.cg-clear-roster` is a flex ITEM of
+     `.cg-roster-toolbar` (`flex-wrap: wrap` + `gap`), sitting exactly AT
+     its own `min-height` boundary with no natural content height to push
+     it past that boundary the way the bolder Add buttons' own larger
+     padding does -- and Firefox's flex layout rounds that boundary a
+     hair short here, where Chromium/WebKit do not. A whole extra pixel of
+     headroom is imperceptible next to a 44px sibling and comfortably
+     clears any subpixel rounding this or a future layout tweak could
+     introduce -- overrides the shared 44px above by equal specificity,
+     later in source order, rather than raising it for `.cg-remove-student`
+     too, which already measures cleanly and has no reason to change. */
+  .cg-clear-roster {
+    min-height: 45px;
   }
   .cg-add-several-inline {
     display: inline-flex;

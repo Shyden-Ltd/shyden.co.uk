@@ -330,3 +330,22 @@ export function rosterOpenProblem(
     ? t.rosterOpenRefusedMessage(MAX_ROSTER)
     : null;
 }
+
+/**
+ * Whether `#cg-count` ("Number of students") must stop being typeable and
+ * become a read-out instead -- design spec section 4, "The Students box —
+ * an input, then a read-out": "Two things could claim to know how big the
+ * class is: the box and the list... they are never both in charge... The
+ * moment a list exists, the box becomes a read-out." True the instant the
+ * roster holds even one student -- deliberately blind to MAX_ROSTER,
+ * absence, names or anything else about the roster's CONTENTS, unlike
+ * every other predicate in this file. That is what finally closes X-08
+ * ("there is no way to type the box past MAX_ROSTER with a list present"):
+ * Task 6 already made sure neither add path could ever push a roster past
+ * the ceiling; this is the other half, and it closes it more strongly than
+ * the letter of X-08 asks for -- a box that cannot be typed into AT ALL
+ * can never disagree with a list that exists, at any size, so there is
+ * nothing left to check "past MAX_ROSTER" specifically.
+ */
+export const studentsBoxLocked = (roster: readonly Student[]): boolean =>
+  roster.length > 0;

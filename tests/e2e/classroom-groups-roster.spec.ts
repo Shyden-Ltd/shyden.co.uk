@@ -502,14 +502,29 @@ test.describe('headers follow the roster, live', () => {
   // Task 1's own Step 3b test 2, deferred there because `openRoster` did
   // not exist yet -- picked up here now that it does. Test 1 of that same
   // step ("nothing to save yet" on load) is already covered by Stage 2's
-  // classroom-groups-controls.spec.ts; test 3 ("Clear all" → nothing to
-  // save) still cannot run before a later task builds "Clear all" -- see
-  // this task's own report for that gap, carried forward again rather than
-  // silently dropped.
+  // classroom-groups-controls.spec.ts.
   test('any roster change makes it unsaved', async ({ page }) => {
     await openRoster(page);
     await expect(page.locator('#cg-io .state')).toHaveText(
       'unsaved changes — export to keep them',
+    );
+  });
+
+  // Task 1's own Step 3b test 3, carried forward rather than lost: it
+  // appeared in NEITHER Task 1's nor Task 2's own test list (both read in
+  // full at the time -- see task-1-report.md and progress.md), because
+  // "Clear all" did not exist until this task builds it (design spec
+  // section 4, "Emptying the list"). It lands here now that it does.
+  test('clearing the roster returns it to nothing to save', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await expect(page.locator('#cg-io .state')).toHaveText(
+      'unsaved changes — export to keep them',
+    );
+    await page.getByRole('button', { name: 'Clear all' }).click();
+    await expect(page.locator('#cg-io .state')).toHaveText(
+      'nothing to save yet',
     );
   });
 });
@@ -905,6 +920,138 @@ test.describe('removing a student', () => {
   });
 });
 
+// Stage 3, Task 7 (design spec section 4, "The Students box -- an input,
+// then a read-out"). Two things could have claimed to know the class size
+// -- #cg-count and the roster -- and design spec section 4 resolves the
+// mismatch by never letting both be in charge: the box is the input with no
+// list, and becomes an untypeable read-out the instant one exists.
+// task-7-brief.md's own Step 1 snippet used
+// `page.getByLabel('How many students?')` throughout -- the same recurring
+// mistake Tasks 1, 2, 5 and 6 already documented and corrected in this
+// suite and its siblings; the real label is "Number of students"
+// (`studentsLabel` in en.ts). Corrected here the same way, not reproduced
+// verbatim.
+test.describe('the Students box becomes a read-out', () => {
+  test('typeable with no list; a read-out with one', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await expect(page.getByLabel('Number of students')).toBeEditable();
+    await page.locator('#cg-students-toggle').click();
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await expect(page.getByLabel('Number of students')).not.toBeEditable();
+  });
+
+  test('the reason is rendered, not implied', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-students-toggle').click();
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await expect(
+      page.getByText(
+        'Set by your list. Add or remove students in Student details to change it.',
+      ),
+    ).toBeVisible();
+  });
+
+  // The brief's own literal count (23, giving 24 total) is NOT used here --
+  // #cg-count's own build-time markup ships `value="24"` (ClassroomGroupsPage.astro),
+  // so a roster that lands on exactly 24 would pass this test's `toHaveValue`
+  // checks even with NO implementation at all: the box's own untouched
+  // static default already reads "24" before a single line of this task's
+  // own code exists. Run against the page before implementing, to confirm
+  // that is not hypothetical: it is not. 30 (29 + the one `openRoster`
+  // already adds) shares nothing with that default, so passing here
+  // actually requires the box's value to have been SET from the roster,
+  // not merely left alone.
+  test('emptying the list makes it typeable again, keeping the number', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 29);
+    await expect(page.getByLabel('Number of students')).toHaveValue('30');
+    await page.getByRole('button', { name: 'Clear all' }).click();
+    await expect(page.getByLabel('Number of students')).toBeEditable();
+    await expect(page.getByLabel('Number of students')).toHaveValue('30');
+  });
+
+  // Same correction, same reason -- see the comment on the test just above.
+  test('marking a student absent does not move it', async ({ page }) => {
+    await openRoster(page);
+    await addSeveral(page, 29);
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await expect(page.getByLabel('Number of students')).toHaveValue('30');
+    await expect(page.locator('#cg-roster-count')).toHaveText(
+      '30 students · 29 here · 1 absent',
+    );
+  });
+
+  test('no sequence of operations makes the box disagree with the list', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    for (const n of [5, 3, 11]) await addSeveral(page, n);
+    await page
+      .locator('.cg-student')
+      .nth(2)
+      .getByRole('button', { name: 'Remove' })
+      .click();
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    const rows = await page.locator('.cg-student').count();
+    await expect(page.getByLabel('Number of students')).toHaveValue(
+      String(rows),
+    );
+  });
+
+  // Not in the brief -- X-08 ("there is no way to type the box past
+  // MAX_ROSTER with a list present") was only HALF closed by Task 6, which
+  // made neither add path able to push the roster past 100; this task's own
+  // job is the other half, the box becoming untypeable at all. Proving that
+  // holds AT the ceiling, not merely below it, is what actually closes
+  // X-08 rather than leaving it true only by the accident of every other
+  // test here using a small roster.
+  test('even at the roster ceiling, the box is still a read-out, never typeable past it', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 99); // 100 total -- MAX_ROSTER
+    await expect(page.getByLabel('Number of students')).not.toBeEditable();
+    await expect(page.getByLabel('Number of students')).toHaveValue('100');
+  });
+
+  // Not in the brief -- every other interactive control this table adds
+  // gets its own measured touch-target test (see 'the Remove button meets
+  // the 44px touch target'), so Clear all does too rather than trusting it
+  // by inspection because it shares a CSS class with one that is measured.
+  test('the Clear all button meets the 44px touch target', async ({ page }) => {
+    await openRoster(page);
+    const box = await page
+      .getByRole('button', { name: 'Clear all' })
+      .boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  });
+
+  // Not in the brief -- design spec section 4's own example shows exactly
+  // ONE explanatory line under a locked box ("Set by your list..."), and
+  // `studentsHelp` ("Students are anonymous and numbered") stops being true
+  // the moment a roster can hold a real name -- showing both at once would
+  // show a teacher a claim this task's own change makes false.
+  test('the anonymous-count help text steps aside for the reason, and returns once the list is gone', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await expect(
+      page.getByText('Students are anonymous and numbered'),
+    ).toBeVisible();
+    await page.locator('#cg-students-toggle').click();
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await expect(
+      page.getByText('Students are anonymous and numbered'),
+    ).toBeHidden();
+    await page.getByRole('button', { name: 'Clear all' }).click();
+    await expect(
+      page.getByText('Students are anonymous and numbered'),
+    ).toBeVisible();
+  });
+});
+
 test.describe('Indonesian', () => {
   // Mirrors 'the table has seven columns, in order...', above -- the
   // seventh header's own text is 'Hapus' (rosterRemove, id.ts), the exact
@@ -1057,6 +1204,31 @@ test.describe('Indonesian', () => {
       .getByRole('button', { name: 'Hapus' })
       .click();
     await expect(page.locator('.cg-student')).toHaveCount(2);
+  });
+
+  // Mirrors 'typeable with no list; a read-out with one' / 'the reason is
+  // rendered, not implied' / 'emptying the list...' above, in one test --
+  // Stage 3, Task 7's own copy (studentsLockedReason, rosterClearAll) in
+  // Indonesian. 'Hapus semua' is scoped to nothing here (no `.cg-student`
+  // row locator), unlike the per-row 'Hapus' button just above -- Clear all
+  // lives in the toolbar, not any one row, so the two never collide even
+  // though 'Hapus' is a literal substring of 'Hapus semua'.
+  test('the Students box becomes a read-out, and Hapus semua returns it, in Indonesian', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await expect(page.getByLabel('Jumlah siswa')).toBeEditable();
+    await page.locator('#cg-students-toggle').click();
+    await page.getByRole('button', { name: 'Tambah siswa' }).click();
+    await expect(page.getByLabel('Jumlah siswa')).not.toBeEditable();
+    await expect(
+      page.getByText(
+        'Ditentukan oleh daftar Anda. Tambah atau hapus siswa di Detail siswa untuk mengubahnya.',
+      ),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Hapus semua' }).click();
+    await expect(page.getByLabel('Jumlah siswa')).toBeEditable();
+    await expect(page.getByLabel('Jumlah siswa')).toHaveValue('1');
   });
 });
 

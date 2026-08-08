@@ -81,6 +81,16 @@ export interface RosterHandlers {
    * action, never mid-keystroke.
    */
   onRemove: (next: Student[]) => void;
+  /**
+   * "Clear all" -- design spec section 4, "Emptying the list": empties the
+   * whole roster in one action, returning `#cg-count` (classroom-groups.ts's
+   * own `updateStudentsBox`) to being typeable again while it keeps
+   * reporting the number it last held. Needs no `next` argument, unlike
+   * every other handler here -- the result of clearing a roster is always
+   * the same empty array, whatever it held a moment ago, so there is
+   * nothing for a caller to compute and pass in.
+   */
+  onClearAll: () => void;
 }
 
 /** A new, unnamed, unlettered, present student — the shape both `onAdd` and
@@ -234,6 +244,23 @@ function buildToolbar(
 
   inline.append(howMany, confirmButton, roomMessage);
   wrap.append(addButton, severalButton, inline);
+
+  // "Clear all" -- design spec section 4, "Emptying the list... Clearing a
+  // list of 24 leaves 24 in the box, so nothing jumps and nothing is
+  // lost." Gated on the SAME live `getRoster()` accessor every other
+  // roster-size decision in this function already reads, rather than a
+  // second boolean threaded through both of `buildToolbar`'s own call
+  // sites: the EMPTY-roster call site (`renderRoster`'s own early return,
+  // below) always hands this `() => []`, so `getRoster().length` is
+  // always 0 there and this button never appears -- there is nothing
+  // destructive to offer on a roster that is already empty. Never
+  // disabled, unlike `addButton`/`severalButton` below: nothing about
+  // MAX_ROSTER stops a teacher clearing the roster, at any size.
+  if (getRoster().length > 0) {
+    const clearButton = button(t.rosterClearAll, 'cg-clear-roster');
+    clearButton.addEventListener('click', () => handlers.onClearAll());
+    wrap.appendChild(clearButton);
+  }
 
   // Design spec section 4, "Adding a row at 100": both controls disabled,
   // AND the limit stated — never a bare disabled control with nothing

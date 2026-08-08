@@ -10,6 +10,7 @@ import {
   rosterRoomProblem,
   rosterWarnings,
   serialiseForCompare,
+  studentsBoxLocked,
 } from '../../src/lib/roster';
 import * as roster from '../../src/lib/roster';
 import { student } from './factories';
@@ -34,7 +35,37 @@ describe('the module surface', () => {
       'rosterRoomProblem',
       'rosterWarnings',
       'serialiseForCompare',
+      'studentsBoxLocked',
     ]);
+  });
+});
+
+// Stage 3, Task 7 (design spec section 4, "The Students box -- an input,
+// then a read-out"). The only fact that decides whether #cg-count can still
+// be typed into: whether a roster exists at all. Deliberately blind to
+// MAX_ROSTER, absence, names or anything else about the roster's CONTENTS --
+// this is what closes X-08 ("there is no way to type the box past
+// MAX_ROSTER with a list present") more strongly than the letter of that
+// requirement asks for: a box that cannot be typed into AT ALL can never
+// disagree with a list that exists, at any size.
+describe('studentsBoxLocked', () => {
+  it('is false on an empty roster -- the box stays the input', () => {
+    expect(studentsBoxLocked([])).toBe(false);
+  });
+
+  it('is true the moment even one student exists', () => {
+    expect(studentsBoxLocked([student({ number: 1 })])).toBe(true);
+  });
+
+  // Not just true at one size -- true regardless of it, including AT
+  // MAX_ROSTER's own ceiling. A mutant that swapped `> 0` for a bounds
+  // check tied to MAX_ROSTER would still pass the test above but fail this
+  // one.
+  it('stays true at any roster size, including MAX_ROSTER', () => {
+    const full = Array.from({ length: MAX_ROSTER }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(studentsBoxLocked(full)).toBe(true);
   });
 });
 

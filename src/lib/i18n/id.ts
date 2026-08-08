@@ -63,6 +63,14 @@ export const id: Strings = {
   // mesin Tugas 1.
   studentsHelp:
     'Siswa bersifat anonim dan diberi nomor — Siswa 1, Siswa 2, dan seterusnya.',
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap --
+  // ditampilkan MENGGANTIKAN studentsHelp di atas, bukan di sampingnya.
+  // Terjemahan implementer sendiri, bukan teks yang disetujui secara
+  // harfiah (dokumen desain hanya mengutip versi Inggris untuk kalimat
+  // ini) -- REVIEW SURFACE, sama seperti catatan Tugas 4, 5 dan 6 pada
+  // berkas ini.
+  studentsLockedReason:
+    'Ditentukan oleh daftar Anda. Tambah atau hapus siswa di Detail siswa untuk mengubahnya.',
 
   modeLabel: 'Bagi berdasarkan',
   modePerGroup: 'Siswa per kelompok',
@@ -169,6 +177,8 @@ export const id: Strings = {
   rosterRoomMessage: (room: number) =>
     `Masih ada ruang untuk ${room} siswa lagi.`,
   rosterRemove: 'Hapus',
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
+  rosterClearAll: 'Hapus semua',
 
   stateNoneAdded: 'tidak ada yang ditambahkan',
   stateNamed: (n: number) => `${n} diberi nama`,

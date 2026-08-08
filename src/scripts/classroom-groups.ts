@@ -25,6 +25,7 @@ import {
   rosterProblems,
   rosterRoomProblem,
   rosterWarnings,
+  studentsBoxLocked,
 } from '../lib/roster';
 import {
   renderRoster,
@@ -605,16 +606,60 @@ if (form) {
     ).studentDetails;
   };
 
-  // ONE hook, both headers -- the same reasoning `setRoster`'s own doc
-  // comment (above) gives for having a single `onRosterChanged` at all: a
-  // second header that also needs to know "the roster changed" must not
-  // have to be remembered by every future call site.
+  // #cg-count ("Number of students") -- design spec section 4, "The
+  // Students box — an input, then a read-out". `studentsBoxLocked`
+  // (src/lib/roster.ts, unit-tested there) is the ONE fact this depends
+  // on: whether a roster exists at all. `countInput`/`countHelpEl`/
+  // `countLockedEl` are cached consts, matching `rosterProblemEl`/
+  // `rosterWarningEl`/`studentsLimitEl` above -- every one of these is
+  // read AND written on every call, unlike `readCount()`'s own single,
+  // one-shot `$()` lookup.
+  const countInput = $<HTMLInputElement>('cg-count')!;
+  const countHelpEl = $<HTMLParagraphElement>('cg-count-help')!;
+  const countLockedEl = $<HTMLParagraphElement>('cg-count-locked')!;
+  const updateStudentsBox = () => {
+    if (studentsBoxLocked(getRoster())) {
+      // "Reports the list" -- overwritten to the roster's own length on
+      // every call, never whatever a teacher last typed. Guarded, not
+      // unconditional, purely to skip a no-op DOM write on every edit
+      // this fires for that leaves `.length` unchanged (a name, a letter,
+      // marking someone absent) -- `#cg-count` is `disabled` in this
+      // branch, so there is no caret or focus here to protect, unlike the
+      // guards elsewhere in this file that exist for exactly that reason.
+      const value = String(getRoster().length);
+      if (countInput.value !== value) countInput.value = value;
+      countInput.disabled = true;
+      countInput.setAttribute('aria-describedby', 'cg-count-locked');
+      countHelpEl.hidden = true;
+      countLockedEl.hidden = false;
+    } else {
+      // Emptying the list (Clear all, or the last row removed) lands
+      // here. `.value` is deliberately left UNTOUCHED -- the last write
+      // the branch above made, while the list still existed, is still
+      // sitting in it, which is what "keeps the number it was last
+      // reporting" (design spec section 4) actually means: there is no
+      // separate "remembered count" to restore, because nothing ever
+      // overwrote it on the way out.
+      countInput.disabled = false;
+      countInput.setAttribute('aria-describedby', 'cg-count-help');
+      countHelpEl.hidden = false;
+      countLockedEl.hidden = true;
+    }
+  };
+
+  // ONE hook, every header (and now the Students box too) -- the same
+  // reasoning `setRoster`'s own doc comment (above) gives for having a
+  // single `onRosterChanged` at all: anything else that needs to know
+  // "the roster changed" must not have to be remembered by every future
+  // call site.
   onRosterChanged = () => {
     updateIoHeader();
     updateStudentsHeader();
+    updateStudentsBox();
   };
   updateIoHeader();
   updateStudentsHeader();
+  updateStudentsBox();
 
   // ── staleness ────────────────────────────────────────────────────────────
   // Design spec section 8. `lastSnapshot` is what the groups ON SCREEN were
@@ -918,6 +963,18 @@ if (form) {
     // roster.ts) already keep for every OTHER way the roster changes.
     onRemove: (next) => {
       onRosterEdited(next);
+      renderStudentsBody();
+    },
+    // Design spec section 4, "Emptying the list": one action, the whole
+    // roster gone. Same shape as `onRemove` just above -- fold the change
+    // through the SAME `onRosterEdited` every other roster edit already
+    // uses (so `rosterNames`, `dirty`, staleness, validation AND
+    // `updateStudentsBox` all react in one place), then re-render -- just
+    // with `next` fixed at `[]` rather than a filtered array, since
+    // clearing the roster always produces the same empty result whatever
+    // it held a moment ago.
+    onClearAll: () => {
+      onRosterEdited([]);
       renderStudentsBody();
     },
   };

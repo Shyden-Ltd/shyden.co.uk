@@ -105,6 +105,17 @@ export const en = {
   // for another.
   studentsHelp:
     'Students are anonymous and numbered — Student 1, Student 2, and so on.',
+  // Stage 3, Task 7 (design spec section 4, "The Students box — an input,
+  // then a read-out"). The literal approved copy, verbatim: "Underneath it,
+  // in every state, the reason is shown... Never a bare greyed-out box. A
+  // disabled control that does not say why is a defect." Shown in place OF
+  // `studentsHelp` above, never alongside it -- classroom-groups.ts's own
+  // `updateStudentsBox` swaps one for the other, because `studentsHelp`
+  // ("Students are anonymous and numbered") stops being true the moment a
+  // roster can hold a real name, and showing a now-false claim beside the
+  // real reason would be worse than showing neither.
+  studentsLockedReason:
+    'Set by your list. Add or remove students in Student details to change it.',
 
   modeLabel: 'Split by',
   modePerGroup: 'Students per group',
@@ -319,6 +330,14 @@ export const en = {
   // disambiguates which button a test means, the same way `row.getByLabel
   // ('Name')` already does for a field every row also has.
   rosterRemove: 'Remove',
+  // Stage 3, Task 7 (design spec section 4, "Emptying the list"). The one
+  // way a teacher empties a roster in one action rather than removing every
+  // row by hand -- returns #cg-count to being typeable again, keeping the
+  // number it was last reporting (see `studentsLockedReason`, above, and
+  // `updateStudentsBox`, classroom-groups.ts). Only ever rendered once
+  // there is something to clear -- see `buildToolbar`'s own comment,
+  // roster-ui.ts.
+  rosterClearAll: 'Clear all',
 
   // Every value below is read ONLY through sectionState (src/lib/sections.ts)
   // -- never interpolated into a page directly -- so a key here with no
