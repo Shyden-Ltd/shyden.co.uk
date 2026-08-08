@@ -727,7 +727,7 @@ const sexWhyText = sexWhy(roster, t);
     opacity: 0.65;
   }
 
-  /* ── Student details: the roster table (Stage 3, Task 2) ─────────────────
+  /* ── Student details: the roster table (Stage 3, Tasks 2 & 3) ────────────
      GLOBAL, for the SAME reason the results area above is: roster-ui.ts
      builds every element with document.createElement, so none of it
      carries Astro's scoping attribute -- see this block's own opening
@@ -735,60 +735,273 @@ const sexWhyText = sexWhy(roster, t);
      page. Anchored on #cg-roster/.cg-roster-toolbar/.cg-roster-absent-label
      so these generic rules cannot reach any other page.
 
-     Fixed widths on the <col>s, never the inputs -- an input sized by its
-     own content is what makes an empty name box shrink next to a full one
-     (R-10). `table-layout: fixed` is what makes a <col>'s width apply
-     uniformly down its whole column, whatever any one row's content is;
-     without it these widths would only be a hint the browser can override
-     once real content arrives. */
+     Mobile-first (CLAUDE.md: "base CSS is small-screen; enhance up"): the
+     rules immediately below, with NO media query, are the CARD layout --
+     one `.cg-student` per student, six real `<td>`s reflowed with
+     `display: grid` rather than a second DOM shape (roster-ui.ts's own
+     top-of-file comment: "no second render path"). The
+     `@media (min-width: 600px)` block further down is the ENHANCEMENT: it
+     restores the real `<table>`/`<tr>`/`<td>` display values and the
+     `<col>`-driven fixed layout Task 2 shipped, unchanged. Both blocks
+     target the SAME selectors at the SAME specificity on purpose -- see
+     each rule's own comment where that matters -- so the later, scoped
+     declaration wins only once the media query is true, and neither block
+     needs `!important` or a max-width query of its own to stay out of the
+     other's way.
+
+     Design spec section 3's own arithmetic for why a table cannot survive
+     a phone: "six controls at 44px do not fit 304px of usable width -- the
+     name box lands at about 44px, which satisfies the arithmetic and is
+     unusable." F-06/F-07 (no horizontal scroll; the name takes the full
+     remaining width) are what a card layout buys back; F-03/F-04 (same
+     content, same behaviour, both proved on the SAME `.cg-student`
+     elements in both layouts) are what "no second render path" buys. */
   #cg-roster {
+    display: block;
     width: 100%;
     max-width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
+    /* Contains the visually-hidden <thead> below, whose `position:
+       absolute` would otherwise resolve against the page's initial
+       containing block -- harmless once <thead> is `position: static`
+       again at the table breakpoint, so left unconditional rather than
+       toggled. */
+    position: relative;
   }
-  #cg-roster col:nth-child(1) {
-    width: 8%;
-  }
-  #cg-roster col:nth-child(2) {
-    width: 26%;
-  }
-  #cg-roster col:nth-child(3) {
-    width: 14%;
-  }
-  #cg-roster col:nth-child(4) {
-    width: 14%;
-  }
-  #cg-roster col:nth-child(5) {
-    width: 19%;
-  }
-  #cg-roster col:nth-child(6) {
-    width: 19%;
-  }
+  #cg-roster thead,
+  #cg-roster tbody,
+  #cg-roster tfoot,
+  #cg-roster tr,
   #cg-roster th,
   #cg-roster td {
-    padding: 0.4rem 0.35rem;
-    text-align: left;
-    vertical-align: middle;
-    border-bottom: 1px solid var(--border);
+    /* Every table-related display value, overridden to `block` in one
+       place -- not just `#cg-roster` itself -- so nothing here can fall
+       back to an implicit `table-row`/`table-cell` box that some browsers
+       still construct to "fix up" the table model even once an ancestor
+       stops being `display: table`. Cheap insurance against exactly the
+       kind of cross-browser table-rendering inconsistency Task 2's own
+       WebKit `min-height` finding (`#cg-roster input, #cg-roster select`,
+       below) already showed this page cannot simply assume away. */
+    display: block;
   }
-  #cg-roster th {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--ink-soft);
+  #cg-roster thead {
+    /* Visually hidden, not `display: none`: each `<th>`'s text stays in
+       the accessibility tree for anything that still exposes table
+       semantics, while the per-control `aria-label` every input/select
+       already carries (rosterColName/Sex/Absent/Together/Apart, set in
+       buildRow -- roster-ui.ts) is what a screen reader actually announces
+       per field, in EITHER layout. A sighted card reader gets no header
+       row at all -- design spec section 3 describes the card as two lines
+       of controls, not a header plus a card -- so hiding it here rather
+       than leaving it to render as six stacked, unlabelled-looking lines
+       above the first card. `#cg-roster thead th` keeps its own text
+       regardless: `toHaveText` reads `textContent`, which this technique
+       never touches (unlike `display: none`, which would still pass that
+       same assertion but for the wrong reason -- verified by reading
+       Playwright's own `elementText`, not assumed). */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+    padding: 0;
+    margin: -1px;
   }
-  #cg-roster tfoot td {
+  /* One card per student (design spec section 3). `.cg-student` is the
+     SAME `<tr class="cg-student">` roster-ui.ts already builds for the
+     table -- this is the whole of "one renderer, two CSS layouts": no
+     class added, no attribute added, just a different `display` chosen by
+     viewport width.
+
+     GRID, not `flex-wrap`, and not by accident: an earlier version of
+     this rule used `display: flex; flex-wrap: wrap` with Name's own
+     `flex-basis: 0%`, reasoning that Name would simply claim whatever
+     line 1 had left. Measured instead of assumed (this task's own
+     standard) -- it did not. `flex-wrap`'s line-breaking decision runs
+     BEFORE grow/shrink are applied, using each item's flex-BASIS as its
+     hypothetical size; Name's `0%` basis meant it reserved no space
+     during that decision, so Sex and Absent both fit onto "line 1"
+     alongside it before Together/Apart finally overflowed onto a second
+     line -- four items wide, not two, and Name's own eventual share (of
+     THREE flex-grow:1 competitors on that line, not one) measured 14.78px
+     against the 152.4px F-07 needs. A 12-column grid with each `<td>`
+     EXPLICITLY placed has no such heuristic to get wrong: row 1 and row 2
+     are stated outright, not inferred from what happens to fit. */
+  #cg-roster .cg-student {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    align-items: center;
+    gap: 0.4rem 0.5rem;
+    padding: 0.6rem 0.7rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  #cg-roster .cg-student:last-child {
+    margin-bottom: 0;
+  }
+  #cg-roster .cg-student > td {
+    display: block;
+    padding: 0;
     border-bottom: 0;
-    padding-top: 0.6rem;
+    /* A grid item's AUTOMATIC minimum width, like a flex item's, defaults
+       to its own content's min-content size (e.g. a bare `<input>`'s
+       native ~20-character intrinsic width) -- without this override that
+       minimum wins over the explicit column tracks below and the row
+       overflows sideways instead of each cell narrowing to fit. This is
+       what F-06 (no horizontal scroll at 320px, even with 100 students)
+       actually rests on: 100 identical rows either all fit or none do,
+       since they are stacked vertically, not side by side. */
+    min-width: 0;
+  }
+  /* Row 1: # (2 of 12 columns -- narrow; a class register number is
+     rarely more than 3 digits) then Name, spanning every column # did
+     not take. "The name taking the full remaining width" (design spec
+     section 3) is this line, literally, not an emergent side effect of
+     how the other five columns happen to size themselves -- F-07's own
+     test asserts the rendered width directly, not just this comment's
+     arithmetic. */
+  #cg-roster .cg-student > td:nth-child(1) {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+  #cg-roster .cg-student > td:nth-child(2) {
+    grid-column: 3 / 13;
+    grid-row: 1;
+  }
+  /* Row 2: Sex, Absent, Together, Apart, three columns each (12 / 4) --
+     "on the second [line]" (design spec section 3), stated the same
+     explicit way as row 1 rather than left to wrap on its own. Their own
+     WIDTH is not held to the 44px touch-target floor -- only their HEIGHT
+     is (`#cg-roster input, #cg-roster select`'s own `min-height: 44px`,
+     below, unconditional in both layouts) -- matching Task 2's own
+     established reading of CLAUDE.md's touch-target rule for this exact
+     table (see this file's "per-row controls meet the 44px minimum
+     height" test, tests/e2e/classroom-groups-roster.spec.ts): design spec
+     section 3 is explicit that no arrangement of six full-width targets
+     fits a phone at all, which is the whole reason this reflow exists. */
+  #cg-roster .cg-student > td:nth-child(3) {
+    grid-column: 1 / 4;
+    grid-row: 2;
+  }
+  #cg-roster .cg-student > td:nth-child(4) {
+    grid-column: 4 / 7;
+    grid-row: 2;
+  }
+  #cg-roster .cg-student > td:nth-child(5) {
+    grid-column: 7 / 10;
+    grid-row: 2;
+  }
+  #cg-roster .cg-student > td:nth-child(6) {
+    grid-column: 10 / 13;
+    grid-row: 2;
+  }
+
+  /* ── ...and the table, restored, at and above ~600px ──────────────────────
+     Design spec section 3: "The breakpoint is ~600px, and is one of two
+     figures that must be settled on real hardware -- see section 13. It is
+     a starting point, not a decision." Still owed on real hardware
+     (tracked in that section, not repeated here); the value below is that
+     same starting point, unchanged.
+
+     Every selector in this block reappears from the base rules above, at
+     THE SAME SPECIFICITY, so that CSS's own tie-break (later rule in the
+     source wins) is what decides the winner once this media query is
+     true -- not an accident of selector-writing, the mechanism this whole
+     mobile-first split depends on. Where a mobile rule set a property this
+     block does not restate (`gap`, `align-items`, `grid-template-columns`,
+     `grid-column`/`grid-row` on the six columns), it is because that
+     property has no effect once `display` is a table value at all --
+     inert, not forgotten. */
+  @media (min-width: 600px) {
+    #cg-roster {
+      display: table;
+      table-layout: fixed;
+    }
+    #cg-roster col:nth-child(1) {
+      width: 8%;
+    }
+    #cg-roster col:nth-child(2) {
+      width: 26%;
+    }
+    #cg-roster col:nth-child(3) {
+      width: 14%;
+    }
+    #cg-roster col:nth-child(4) {
+      width: 14%;
+    }
+    #cg-roster col:nth-child(5) {
+      width: 19%;
+    }
+    #cg-roster col:nth-child(6) {
+      width: 19%;
+    }
+    #cg-roster thead {
+      display: table-header-group;
+      position: static;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip: auto;
+      white-space: normal;
+      margin: 0;
+    }
+    #cg-roster tbody {
+      display: table-row-group;
+    }
+    #cg-roster tfoot {
+      display: table-footer-group;
+    }
+    #cg-roster tr {
+      display: table-row;
+    }
+    #cg-roster th,
+    #cg-roster td {
+      display: table-cell;
+      padding: 0.4rem 0.35rem;
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--border);
+    }
+    #cg-roster th {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--ink-soft);
+    }
+    #cg-roster tfoot td {
+      border-bottom: 0;
+      padding-top: 0.6rem;
+    }
+    /* Cancels the card's own border/background/padding -- a table row
+       cannot show its own border or background in the separated-borders
+       model this table does not use (`border-collapse: collapse`, above),
+       but resetting explicitly costs nothing and leaves nothing to the
+       collapsing algorithm's own border-conflict resolution to decide. */
+    #cg-roster .cg-student {
+      display: table-row;
+      padding: 0;
+      margin-bottom: 0;
+      border: 0;
+      border-radius: 0;
+      background: none;
+    }
+    #cg-roster .cg-student > td {
+      display: table-cell;
+      padding: 0.4rem 0.35rem;
+      border-bottom: 1px solid var(--border);
+      min-width: auto;
+    }
   }
   /* 44px minimum touch target (CLAUDE.md), matching every other field
-     control on this page -- reachable at ANY width, unlike each <select>'s
-     own WIDTH, which the fixed percentage columns above can legitimately
-     draw narrower than 44px at a phone's own viewport. That narrowing is
-     the exact defect design spec section 3 documents ("six controls at
-     44px do not fit 304px of usable width") and is exactly why a later
-     stage-3 task reflows this same table into one card per student below
-     ~600px -- this task ships the table only, not yet that reflow. */
+     control on this page -- reachable at ANY width, in EITHER layout.
+     Unlike height, WIDTH is not held to that floor here -- see the card
+     rules' own comment on `.cg-student > td:nth-child(3..6)`, above, for
+     why: design spec section 3 shows there is no arrangement of six
+     44px-wide targets that fits a phone at all, which is why the roster
+     reflows to cards instead. */
   #cg-roster input,
   #cg-roster select {
     width: 100%;

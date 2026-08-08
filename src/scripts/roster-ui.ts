@@ -4,20 +4,24 @@
  * ONE renderer, two CSS layouts (design spec section 3, "The roster is a
  * table on a laptop and cards on a phone"). `renderRoster` below builds a
  * single `<table>` whose `<tr class="cg-student">` rows are, structurally,
- * the very thing a later stage-3 task turns into cards below ~600px purely
- * with CSS (`display: block` on the table parts under a media query) — no
- * second render path. If a future change needs a second DOM shape for the
- * card layout, stop: that is exactly the drift F-03/F-04 (design spec
- * section 13, "same content", "same behaviour") exist to catch, because two
- * renderers can each pass their own tests while quietly disagreeing with
- * each other.
+ * the same elements Stage 3, Task 3's own CSS
+ * (ClassroomGroupsPage.astro's `<style is:global>` block, anchored on
+ * `#cg-roster`) turns into cards below ~600px purely with `display: block`
+ * on the table parts under a media query — no second render path. If a
+ * future change needs a second DOM shape for the card layout, stop: that is
+ * exactly the drift F-03/F-04 (design spec section 13, "same content", "same
+ * behaviour") exist to catch, because two renderers can each pass their own
+ * tests while quietly disagreeing with each other.
  *
- * Pure DOM building and event wiring, no state of its own: every render is
- * a function of the `roster` array handed to it (the plan's own
- * Architecture note), and every user edit is reported upward through
- * `handlers` rather than mutating anything here. `classroom-groups.ts` is
- * what owns the roster array and decides when to call this again — see
- * that file's own "── student roster" section.
+ * Pure DOM building and event wiring: every render is a function of the
+ * `roster` array handed to it (the plan's own Architecture note), and every
+ * user edit is reported upward through `handlers` rather than mutating
+ * anything here. `classroom-groups.ts` is what owns the roster array (across
+ * renders) and decides when to call this again — see that file's own
+ * "── student roster" section. The one exception is `renderRoster`'s own
+ * `liveRoster`, which does not survive past the render call that creates
+ * it and exists only to fix a same-render staleness bug — see its own
+ * comment, just above the `tbody` it feeds, for what it fixes and why.
  *
  * `textContent`/`.value`/`document.createElement` throughout, never
  * `innerHTML` with anything interpolated — a teacher's typed name is
@@ -175,12 +179,12 @@ function buildToolbar(t: Strings, handlers: RosterHandlers): HTMLElement {
  * teacher typed would put it in a native GET submission the moment the
  * listener that prevents one fails to attach), so nothing here needs a
  * lookup table to find the element a later change came from — the closure
- * over `index` and `roster` already knows.
+ * over `index` and `getRoster` already knows.
  */
 function buildRow(
   student: Student,
   index: number,
-  roster: readonly Student[],
+  getRoster: () => readonly Student[],
   t: Strings,
   handlers: RosterHandlers,
   togetherLetters: readonly string[],
@@ -203,7 +207,7 @@ function buildRow(
   numberInput.addEventListener('input', () => {
     const n = Math.trunc(Number(numberInput.value));
     if (Number.isFinite(n) && n >= 1) {
-      handlers.onTextChange(patched(roster, index, { number: n }));
+      handlers.onTextChange(patched(getRoster(), index, { number: n }));
     }
   });
   numberTd.appendChild(numberInput);
@@ -225,7 +229,7 @@ function buildRow(
     // rosterCounts's own "an emptied name reads as unnamed" contract
     // (src/lib/roster.ts).
     const value = nameInput.value === '' ? null : nameInput.value;
-    handlers.onTextChange(patched(roster, index, { name: value }));
+    handlers.onTextChange(patched(getRoster(), index, { name: value }));
   });
   nameTd.appendChild(nameInput);
 
@@ -245,7 +249,7 @@ function buildRow(
   sexSelect.addEventListener('change', () => {
     const value =
       sexSelect.value === '' ? null : (sexSelect.value as 'M' | 'F');
-    handlers.onSelectChange(patched(roster, index, { sex: value }));
+    handlers.onSelectChange(patched(getRoster(), index, { sex: value }));
   });
   sexTd.appendChild(sexSelect);
 
@@ -266,7 +270,7 @@ function buildRow(
   absentInput.checked = student.absent;
   absentInput.addEventListener('change', () => {
     handlers.onSelectChange(
-      patched(roster, index, { absent: absentInput.checked }),
+      patched(getRoster(), index, { absent: absentInput.checked }),
     );
   });
   absentLabel.appendChild(absentInput);
@@ -288,7 +292,7 @@ function buildRow(
   togetherSelect.value = student.together ?? '';
   togetherSelect.addEventListener('change', () => {
     const value = togetherSelect.value === '' ? null : togetherSelect.value;
-    handlers.onSelectChange(patched(roster, index, { together: value }));
+    handlers.onSelectChange(patched(getRoster(), index, { together: value }));
   });
   togetherTd.appendChild(togetherSelect);
 
@@ -302,7 +306,7 @@ function buildRow(
   apartSelect.value = student.apart ?? '';
   apartSelect.addEventListener('change', () => {
     const value = apartSelect.value === '' ? null : apartSelect.value;
-    handlers.onSelectChange(patched(roster, index, { apart: value }));
+    handlers.onSelectChange(patched(getRoster(), index, { apart: value }));
   });
   apartTd.appendChild(apartSelect);
 
@@ -377,15 +381,51 @@ export function renderRoster(
   thead.appendChild(headRow);
   table.appendChild(thead);
 
+  // Bug found while adding Stage 3, Task 3's own "editing every field
+  // works" test (task-3-brief.md's own Step 1, verbatim): every row below
+  // is built ONCE, here, and every field's own `patched()` call (buildRow)
+  // used to close directly over THIS render's `roster` array. `onTextChange`
+  // (number/name) deliberately never re-renders -- see `RosterHandlers`'
+  // own doc comment, "avoiding focus/caret theft" -- so that closure went
+  // stale the instant a text edit landed, and the NEXT `change` event on
+  // ANY row (even a different one -- every row built in this same call
+  // shared the identical stale reference) computed ITS OWN patch from that
+  // same stale array, silently reverting every pending text edit back to
+  // what it was when this render began. Reproduced plainly: fill a name,
+  // then pick a sex -- the name reverted to empty, in BOTH the card and the
+  // table layout, proving it was never a layout bug at all.
+  //
+  // `liveRoster` is the one place both wrapped handlers below keep current,
+  // and `getRoster` -- handed to every row via `buildRow`'s own parameter
+  // of the same name -- is what lets a field built in an EARLIER row still
+  // read the LATEST edit, made in a later one or in itself moments before,
+  // rather than the snapshot this render started with. `RosterHandlers`
+  // itself is untouched: `classroom-groups.ts` still receives exactly the
+  // `next: Student[]` it always did, from exactly the same two callbacks --
+  // this is internal bookkeeping, not a change to the public contract.
+  let liveRoster: readonly Student[] = roster;
+  const getRoster = (): readonly Student[] => liveRoster;
+  const liveHandlers: RosterHandlers = {
+    ...handlers,
+    onTextChange: (next) => {
+      liveRoster = next;
+      handlers.onTextChange(next);
+    },
+    onSelectChange: (next) => {
+      liveRoster = next;
+      handlers.onSelectChange(next);
+    },
+  };
+
   const tbody = document.createElement('tbody');
   roster.forEach((student, index) => {
     tbody.appendChild(
       buildRow(
         student,
         index,
-        roster,
+        getRoster,
         t,
-        handlers,
+        liveHandlers,
         togetherLetters,
         apartLetters,
       ),

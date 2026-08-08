@@ -320,3 +320,130 @@ test.describe('Indonesian', () => {
     await expect(page.locator('#cg-results')).toContainText('Siswa 1');
   });
 });
+
+/**
+ * Stage 3, Task 3: the card layout, and proving it is the same thing.
+ * Traceability: F-01, F-03, F-04, F-06, F-07, L-06 (design spec section 13 /
+ * docs/superpowers/plans/2026-08-06-classroom-groups-v2-test-traceability.md).
+ *
+ * task-3-brief.md's own Traceability line also names F-05 ("the absent tint,
+ * stripe and pill all appear on the card, not only the row"). Not claimed
+ * here: the tint/stripe/pill do not exist yet on EITHER shape -- Task 2's own
+ * comment at the top of this file already deferred them to "a later task"
+ * (traceability A-05…A-09), and the traceability matrix's own F-05 row is
+ * still unticked. `.cg-student` being one element in both layouts (this
+ * task's whole point) is what will make F-05 fall out for free the moment a
+ * later task styles absence on it -- no separate card-specific work will be
+ * needed then -- but that is that task's row to tick, not this one's.
+ *
+ * task-3-brief.md's own Step 1 snippet is reproduced below with two
+ * corrections, not verbatim:
+ *  - Every test that calls `page.setViewportSize` is tagged
+ *    `@emulated-viewport`, per this stage's own global-constraints.md
+ *    ("Any test that resizes the viewport must be tagged") -- the brief's
+ *    literal code has no tag, which `tests/unit/viewport-tagging.test.ts`
+ *    (a hard guard, not a style preference) would fail on: a real phone
+ *    cannot resize itself, so an untagged resize test would run, and fail
+ *    for a false reason, on `android-chrome`/`ios-safari`.
+ *  - The "no horizontal scroll" test calls the existing `addSeveral` helper
+ *    (already imported above, already every other test in this file's own
+ *    way of driving "+ Add several…") instead of reproducing its three
+ *    clicks inline, as the brief's own snippet does.
+ */
+const LAYOUTS = [
+  { name: 'cards', width: 320 },
+  { name: 'table', width: 1280 },
+] as const;
+
+for (const { name, width } of LAYOUTS) {
+  test(
+    `${name}: every control is present with the same value`,
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openRoster(page);
+      const row = page.locator('.cg-student').first();
+      await expect(row.getByLabel('Name')).toBeVisible();
+      await expect(row.getByLabel('Sex')).toBeVisible();
+      await expect(row.getByLabel('Absent')).toBeVisible();
+      await expect(row.getByLabel('Together')).toBeVisible();
+      await expect(row.getByLabel('Apart')).toBeVisible();
+    },
+  );
+
+  test(
+    `${name}: editing every field works`,
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openRoster(page);
+      const row = page.locator('.cg-student').first();
+      await row.getByLabel('Name').fill('Ana');
+      await row.getByLabel('Sex').selectOption('F');
+      await row.getByLabel('Together').selectOption('A');
+      await row.getByLabel('Absent').check();
+      await expect(row.getByLabel('Name')).toHaveValue('Ana');
+      await expect(row.getByLabel('Sex')).toHaveValue('F');
+      await expect(row.getByLabel('Together')).toHaveValue('A');
+      await expect(row.getByLabel('Absent')).toBeChecked();
+    },
+  );
+}
+
+// A second, related defect found via the SAME investigation as the loop
+// above's "editing every field works" (task-3-brief.md's own Step 1 test,
+// unmodified): two DIFFERENT rows' own text edits, NEITHER of which
+// re-renders on its own (`RosterHandlers`' own doc comment, roster-ui.ts --
+// "avoiding focus/caret theft"), used to stomp each other, because every
+// row built in one render shared the identical stale `roster` snapshot --
+// the second row's own patch was computed from a base that did not yet
+// know about the first row's edit, discarding it the moment the second
+// landed. Not part of the brief's own Step 1 (which only ever edits one
+// row at a time); added because the fix for the first bug (roster-ui.ts's
+// own `liveRoster`) fixes this one for free, and an unpinned fix is one
+// that can regress silently.
+test('editing two different rows by text, neither of which re-renders on its own, does not lose either', async ({
+  page,
+}) => {
+  await openRoster(page);
+  await addSeveral(page, 1);
+  const rows = page.locator('.cg-student');
+  await rows.nth(0).getByLabel('Name').fill('Ana');
+  await rows.nth(1).getByLabel('Name').fill('Budi');
+  await expect(rows.nth(0).getByLabel('Name')).toHaveValue('Ana');
+  await expect(rows.nth(1).getByLabel('Name')).toHaveValue('Budi');
+});
+
+test(
+  'cards: the name field takes the full remaining width',
+  { tag: '@emulated-viewport' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await openRoster(page);
+    const card = (await page.locator('.cg-student').first().boundingBox())!;
+    const name = (await page
+      .locator('.cg-student')
+      .first()
+      .getByLabel('Name')
+      .boundingBox())!;
+    expect(name.width).toBeGreaterThan(card.width * 0.6);
+  },
+);
+
+// L-06, re-homed from stage 2: that stage could not open Student details
+// because it had no body, so the row was untestable there.
+test(
+  'cards: no horizontal scroll at 320px with 100 students',
+  { tag: '@emulated-viewport' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await openRoster(page);
+    await addSeveral(page, 99);
+    const over = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(over).toBeLessThanOrEqual(0);
+  },
+);
