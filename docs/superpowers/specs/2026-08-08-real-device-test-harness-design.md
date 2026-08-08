@@ -22,10 +22,26 @@ and **not one is reproducible under emulation**:
 |---|---|
 | A backgrounded Android Chrome stops producing frames | Playwright's actionability check waits for a *stable* bounding box, so **every click times out at 30s**. Cause is invisible: the element resolves fine. |
 | `browser.newContext()` is unsupported on real Android Chrome | `Target.createBrowserContext` fails outright. The default Playwright `context` fixture cannot work. |
-| The *Make Groups* button sits **1334px (en) / 1394px (id)** down a **759px** viewport | The real no-scroll gap is **575px / 635px** — far worse than the 419px the emulated 320px profile estimated, and the Indonesian page is 60px worse than the English one. |
+| The *Make Groups* button sits far below the fold on **both** real phones (table below) | The real no-scroll gap is **575–903px** — far worse than the 419px the emulated 320px profile estimated, and Indonesian is worse than English on both devices. |
 | Real Chrome reports `411x759 @ dpr 3.5` | No emulated profile in the config matches this device. |
 
 The last row is the summary of the whole argument: **we have been measuring a phone nobody owns.**
+
+### The no-scroll gap, measured on both real phones
+
+Every figure below came off real hardware on 2026-08-08, with all sections collapsed — the
+page's best case. The rule is that *Make Groups* should be reachable without scrolling.
+
+| Device | Viewport | `#cg-go` top | Gap below fold | en→id penalty |
+|---|---|---|---|---|
+| OnePlus CPH2653, Chrome 150 | 411×759 @ dpr 3.5 | 1334 (en) / 1394 (id) | **575 / 635px** | 60px |
+| iPhone Air, Safari 27 | 420×746 @ dpr 3 | 1527 (en) / 1649 (id) | **781 / 903px** | 122px |
+
+Two things this says that no emulated profile did. The gap is **worse on iOS than Android**
+despite near-identical viewport widths, and the **Indonesian page pays roughly double the
+penalty on iOS** (122px) that it pays on Android (60px) — translation length interacts with
+the layout differently per engine. Stage 3's naming/theme-picker removal recovers ~174px,
+which does not close any of the four cells above.
 
 ## 2. What is physically possible
 
