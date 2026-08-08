@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_ROSTER,
+  availableLetters,
   nextNumber,
   rosterCounts,
   serialiseForCompare,
@@ -17,6 +18,7 @@ describe('the module surface', () => {
   it('exports nothing that nothing uses', () => {
     expect(Object.keys(roster).sort()).toEqual([
       'MAX_ROSTER',
+      'availableLetters',
       'nextNumber',
       'rosterCounts',
       'serialiseForCompare',
@@ -170,5 +172,74 @@ describe('serialiseForCompare', () => {
     const a = [student({ number: 1 })];
     const b = [student({ number: 1 }), student({ number: 2 })];
     expect(serialiseForCompare(a)).not.toBe(serialiseForCompare(b));
+  });
+});
+
+// Design spec section 4, "Together / apart": "chosen from a dropdown that
+// grows as needed (A, then B once A is used, and so on)." Together and
+// apart grow INDEPENDENTLY -- a together "A" and an apart "A" are unrelated
+// domains, so the field a caller asks about is what the highest-used letter
+// is measured against, never both together.
+describe('availableLetters', () => {
+  it('offers just A when nobody has used a letter yet', () => {
+    expect(availableLetters([student({ number: 1 })], 'together')).toEqual([
+      'A',
+    ]);
+  });
+
+  it('is quiet on an empty roster -- still just A, not an empty list', () => {
+    // A blank roster has no highest letter to grow from, so this must not
+    // throw or return [] -- there is always at least one letter to offer
+    // the FIRST student who gets one.
+    expect(availableLetters([], 'together')).toEqual(['A']);
+  });
+
+  it('grows to B once A is used', () => {
+    expect(
+      availableLetters([student({ number: 1, together: 'A' })], 'together'),
+    ).toEqual(['A', 'B']);
+  });
+
+  it('grows to one past the highest letter in use, not just one more than the first', () => {
+    // A mutant that always appended exactly one letter past the FIRST
+    // student's own letter, rather than the highest across the whole
+    // roster, would still pass the test above but fail this one.
+    expect(
+      availableLetters(
+        [
+          student({ number: 1, together: 'A' }),
+          student({ number: 2, together: 'C' }),
+        ],
+        'together',
+      ),
+    ).toEqual(['A', 'B', 'C', 'D']);
+  });
+
+  it('together and apart grow independently', () => {
+    const roster = [
+      student({ number: 1, together: 'A', apart: null }),
+      student({ number: 2, together: null, apart: 'A' }),
+    ];
+    // Both fields have exactly one letter in use, but a mutant that read
+    // BOTH fields into one shared count would grow one of them too far.
+    expect(availableLetters(roster, 'together')).toEqual(['A', 'B']);
+    expect(availableLetters(roster, 'apart')).toEqual(['A', 'B']);
+  });
+
+  it('a student with no letter in this field does not affect the count', () => {
+    expect(
+      availableLetters(
+        [student({ number: 1, together: null }), student({ number: 2 })],
+        'together',
+      ),
+    ).toEqual(['A']);
+  });
+
+  it('never offers a letter past Z', () => {
+    expect(
+      availableLetters([student({ number: 1, together: 'Z' })], 'together'),
+    ).toEqual(
+      Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)),
+    );
   });
 });

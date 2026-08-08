@@ -158,6 +158,53 @@ export const en = {
   sectionImportExportHeading: 'Import / export',
   sectionSoundHeading: 'Sound and animation',
 
+  // Stage 3, Task 2. The roster table (src/scripts/roster-ui.ts) -- column
+  // headers, doubling as each cell's own aria-label so the header a sighted
+  // teacher reads and the name a screen reader announces for that column's
+  // control are the same word, never two independent spellings. Order
+  // matches design spec section 3's own six columns, and the literal test
+  // that pins it (classroom-groups-roster.spec.ts, "the table has the six
+  // columns, in order"). `rosterColNumber` stays the bare glyph "#" in both
+  // languages -- it is a symbol, not English, so it needs no translation
+  // (see i18n.test.ts's own ALLOWED_IDENTICAL for why this is expected, not
+  // an oversight).
+  rosterColNumber: '#',
+  rosterColName: 'Name',
+  rosterColSex: 'Sex',
+  rosterColAbsent: 'Absent',
+  rosterColTogether: 'Together',
+  rosterColApart: 'Apart',
+  // The first option in every Sex/Together/Apart <select> -- "blank
+  // (neutral)" for sex, "no letter" for the two constraints (design spec
+  // section 4). One shared symbol for "nothing chosen" rather than three
+  // separate sentences, and -- like `rosterColNumber` above -- punctuation,
+  // not English, so it is the same character in both languages.
+  rosterUnset: '—',
+  // The <option> VALUE stays the fixed 'M'/'F' the engine's own Student.sex
+  // type uses (grouping.ts) in both languages -- identity a locale must
+  // never change -- only the DISPLAYED text varies; id.ts uses "L"/"P",
+  // matching design spec section 9's own Indonesian sex convention (already
+  // established there for CSV, and carried into this table for the same
+  // reason: a Bahasa Indonesia reader should not have to learn an English
+  // abbreviation to read this column).
+  rosterSexMale: 'M',
+  rosterSexFemale: 'F',
+  // Design spec section 4, "Changing the class size is then a list
+  // operation": the two ways a row is added, and the inline confirm for the
+  // second. The literal leading "+" is the spec's own wording -- kept as
+  // real button text, not CSS-generated content, since a pseudo-element's
+  // own text is inconsistently exposed to assistive tech, and helpers.ts's
+  // `openRoster`/`addSeveral` match these by a REGEX substring, so the "+"
+  // costs nothing there either.
+  rosterAddStudent: '+ Add student',
+  rosterAddSeveral: '+ Add several…',
+  // The inline count field's own label, and the button that confirms it.
+  // `rosterAddConfirm` is matched EXACTLY (`{ name: 'Add', exact: true }`)
+  // by later stages' own tests, precisely so it is never mistaken for
+  // `rosterAddStudent` above, whose text also contains the word "Add".
+  rosterHowMany: 'How many?',
+  rosterAddConfirm: 'Add',
+
   // Every value below is read ONLY through sectionState (src/lib/sections.ts)
   // -- never interpolated into a page directly -- so a key here with no
   // matching branch in that function, or a branch reading a key missing

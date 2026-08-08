@@ -107,6 +107,11 @@ const ALLOWED_IDENTICAL = new Set([
   'themes.planets[1]', // Venus
   'themes.planets[3]', // Mars
   'themes.planets[6]', // Uranus
+  // Stage 3, Task 2. Punctuation/symbols, not English -- "#" and "—" carry
+  // no language of their own, so there is nothing to translate. See these
+  // two keys' own doc comments in en.ts.
+  'rosterColNumber',
+  'rosterUnset',
 ]);
 
 /**

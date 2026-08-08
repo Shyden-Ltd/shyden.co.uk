@@ -396,9 +396,14 @@ const sexWhyText = sexWhy(roster, t);
            alone, with no middot and no `.state` span to leave empty or
            invent a value for.
 
-           `cg-students` and `cg-io` are rendered with no body content at
-           all, not a "coming soon" placeholder: that text would ship to
-           production if a later stage slipped. `cg-grouping`'s body holds
+           `cg-students` and `cg-io` are rendered here with no body content
+           at all, not a "coming soon" placeholder: that text would ship to
+           production if a later stage slipped. Stage 3, Task 2 gives
+           `#cg-students-body` real content -- the roster table -- but
+           entirely CLIENT-SIDE, from classroom-groups.ts's own "── student
+           roster" section (see that file); the markup below is unchanged,
+           still an empty div for the reason above, still true of `cg-io`.
+           `cg-grouping`'s body holds
            the two sex switches (design spec section 6) and the leftovers
            choice, rehomed here from the fieldset above unchanged (Stage 2,
            Task 4) — same markup, same `name` attribute, same four locale
@@ -720,6 +725,178 @@ const sexWhyText = sexWhy(roster, t);
      AA, so it could not have caught this on its own. */
   #cg-results.stale .group {
     opacity: 0.65;
+  }
+
+  /* ── Student details: the roster table (Stage 3, Task 2) ─────────────────
+     GLOBAL, for the SAME reason the results area above is: roster-ui.ts
+     builds every element with document.createElement, so none of it
+     carries Astro's scoping attribute -- see this block's own opening
+     comment for the bug this exact pattern already caused once on this
+     page. Anchored on #cg-roster/.cg-roster-toolbar/.cg-roster-absent-label
+     so these generic rules cannot reach any other page.
+
+     Fixed widths on the <col>s, never the inputs -- an input sized by its
+     own content is what makes an empty name box shrink next to a full one
+     (R-10). `table-layout: fixed` is what makes a <col>'s width apply
+     uniformly down its whole column, whatever any one row's content is;
+     without it these widths would only be a hint the browser can override
+     once real content arrives. */
+  #cg-roster {
+    width: 100%;
+    max-width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  #cg-roster col:nth-child(1) {
+    width: 8%;
+  }
+  #cg-roster col:nth-child(2) {
+    width: 26%;
+  }
+  #cg-roster col:nth-child(3) {
+    width: 14%;
+  }
+  #cg-roster col:nth-child(4) {
+    width: 14%;
+  }
+  #cg-roster col:nth-child(5) {
+    width: 19%;
+  }
+  #cg-roster col:nth-child(6) {
+    width: 19%;
+  }
+  #cg-roster th,
+  #cg-roster td {
+    padding: 0.4rem 0.35rem;
+    text-align: left;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border);
+  }
+  #cg-roster th {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  #cg-roster tfoot td {
+    border-bottom: 0;
+    padding-top: 0.6rem;
+  }
+  /* 44px minimum touch target (CLAUDE.md), matching every other field
+     control on this page -- reachable at ANY width, unlike each <select>'s
+     own WIDTH, which the fixed percentage columns above can legitimately
+     draw narrower than 44px at a phone's own viewport. That narrowing is
+     the exact defect design spec section 3 documents ("six controls at
+     44px do not fit 304px of usable width") and is exactly why a later
+     stage-3 task reflows this same table into one card per student below
+     ~600px -- this task ships the table only, not yet that reflow. */
+  #cg-roster input,
+  #cg-roster select {
+    width: 100%;
+    /* Safari ignores `min-height` on a native `menulist`/number control --
+       the SAME quirk this file's own scoped `input[type='number'],
+       textarea, select` rule (further down) already found and fixed for
+       the top-of-form fields, measured there at 25px tall on WebKit against
+       Chromium's correct 44px. Found again here, independently, by this
+       task's own cross-browser run (webkit and mobile-safari both failed
+       "per-row controls meet the 44px minimum height" at 24px before this
+       rule existed) -- confirmed rather than assumed to still apply just
+       because it was true once, since these are different elements built a
+       different way (document.createElement, not Astro JSX) under a
+       different, GLOBAL stylesheet. `appearance: none` is what makes
+       `min-height` take effect at all; the drawn arrow below is what keeps
+       a `<select>` still looking like one once the native chrome is gone. */
+    appearance: none;
+    -webkit-appearance: none;
+    min-height: 44px;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 0.95rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--surface);
+    color: var(--ink);
+  }
+  #cg-roster select {
+    padding-right: 1.6rem;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23444' stroke-width='2' stroke-linecap='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.4rem center;
+    background-size: 0.65rem;
+  }
+  #cg-roster input[type='checkbox'] {
+    width: 1.3rem;
+    height: 1.3rem;
+    min-height: 0;
+  }
+  /* The checkbox's real tap target -- the SAME whole-row-is-the-target
+     pattern `.switch`/`.radios label` already use elsewhere on this page
+     (this file's own scoped styles, further down), just not reachable from
+     there since nothing built by document.createElement carries Astro's
+     scoping attribute (this block's own opening comment). */
+  .cg-roster-absent-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+  .cg-roster-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .cg-add-student,
+  .cg-add-several,
+  .cg-add-confirm {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .cg-add-several-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  /* Same specificity fix `.stale-notice[hidden]` already needed further
+     down (its own comment has the full reasoning): `display: inline-flex`
+     above is an AUTHOR rule and wins a specificity tie against the
+     `[hidden] { display: none }` the user-agent stylesheet supplies, so
+     without this the "how many?" field would still occupy visible space
+     while `hidden`. */
+  .cg-add-several-inline[hidden] {
+    display: none;
+  }
+  .cg-add-several-inline input {
+    width: 5rem;
+    min-height: 44px;
+    box-sizing: border-box;
+    font: inherit;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--surface);
+    color: var(--ink);
+  }
+  /* Once at least one student exists, this same field sits inside
+     #cg-roster's own <tfoot> (the toolbar is rendered there, "inline in
+     the table footer" -- roster-ui.ts's own comment on why). `#cg-roster
+     input` above is an ID selector (specificity 1,0,1) and would otherwise
+     beat the class selector just above (0,1,1), stretching this small
+     quantity field to the FULL cell width the instant a roster exists --
+     caught by eye, not by any assertion (no test here checks this field's
+     width), while checking the fix for the OTHER cross-browser 44px defect
+     this block's own comment records. Matched with equal specificity
+     (1,1,1) so it wins regardless of which context the field is rendered
+     in. */
+  #cg-roster .cg-add-several-inline input {
+    width: 5rem;
   }
 </style>
 

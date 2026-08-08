@@ -88,3 +88,34 @@ export const serialiseForCompare = (roster: Student[]): string =>
     )
     .sort()
     .join('|');
+
+/**
+ * Which letters a together/apart `<select>` should offer — design spec
+ * section 4: "chosen from a dropdown that grows as needed (A, then B once A
+ * is used, and so on)." Always starts at `['A']`, even on an empty roster,
+ * so there is a letter for the first student who gets one; grows to one
+ * PAST whichever letter is currently the highest in use for `field`,
+ * never past `Z` (26 is far more letters than any real class needs, and it
+ * keeps the return value finite regardless of what a future import feeds
+ * this).
+ *
+ * `together` and `apart` grow independently — a "together A" and an "apart
+ * A" are unrelated domains (one is a unit, the other a mutual-separation
+ * set), so `field` selects which of the two a given call is measuring.
+ * `readonly` because this only ever reads the roster, the same contract
+ * `getRoster()` (classroom-groups.ts) already returns.
+ */
+export const availableLetters = (
+  roster: readonly Student[],
+  field: 'together' | 'apart',
+): string[] => {
+  let highest = 0; // 0 = none in use yet; A=1, B=2, … Z=26
+  for (const s of roster) {
+    const letter = s[field];
+    if (!letter) continue;
+    const code = letter.toUpperCase().charCodeAt(0) - 64;
+    if (code > highest) highest = code;
+  }
+  const count = Math.min(26, highest + 1);
+  return Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i));
+};

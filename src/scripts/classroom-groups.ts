@@ -15,8 +15,14 @@ import {
   type Mode,
   type Leftovers,
   type SexMode,
+  MAX_STUDENTS,
 } from '../lib/grouping';
-import { serialiseForCompare } from '../lib/roster';
+import { serialiseForCompare, nextNumber, rosterCounts } from '../lib/roster';
+import {
+  renderRoster,
+  anonymousStudent,
+  type RosterHandlers,
+} from './roster-ui';
 import {
   envelopeTotalS,
   landVoicePlan,
@@ -556,8 +562,45 @@ if (form) {
       t,
     ).importExport;
   };
-  onRosterChanged = updateIoHeader;
+
+  // `#cg-students`'s own header. Nothing before this task wired
+  // `sectionState`'s `.studentDetails` half live, so the header would
+  // otherwise go on reading its build-time "none added" forever, even once
+  // a roster exists -- exactly the "collapsing never means forgetting" rule
+  // design spec section 3 states for every one of these headers, and a real
+  // gap the plan's own per-task traceability lines never assigned to any
+  // task. Picked up here, alongside the roster table this task is what
+  // first gives something to report. Reuses `rosterCounts` (src/lib/
+  // roster.ts, unit-tested there) rather than recomputing the four counts
+  // by hand -- the same "one function" reasoning `updateGroupingHeader`/
+  // `updateIoHeader` already rest on.
+  const studentsStateEl = document.querySelector<HTMLElement>(
+    '#cg-students .state',
+  );
+  const updateStudentsHeader = () => {
+    if (!studentsStateEl) return;
+    studentsStateEl.textContent = sectionState(
+      {
+        ...rosterCounts(roster),
+        rosterSize: roster.length,
+        sexMode: readSexMode(),
+        leftovers: readLeftovers(),
+        dirty,
+      },
+      t,
+    ).studentDetails;
+  };
+
+  // ONE hook, both headers -- the same reasoning `setRoster`'s own doc
+  // comment (above) gives for having a single `onRosterChanged` at all: a
+  // second header that also needs to know "the roster changed" must not
+  // have to be remembered by every future call site.
+  onRosterChanged = () => {
+    updateIoHeader();
+    updateStudentsHeader();
+  };
   updateIoHeader();
+  updateStudentsHeader();
 
   // ── staleness ────────────────────────────────────────────────────────────
   // Design spec section 8. `lastSnapshot` is what the groups ON SCREEN were
@@ -625,6 +668,81 @@ if (form) {
   // event, so a teacher typing a new group size sees the notice the moment
   // they type it, not only once the field loses focus.
   form.addEventListener('input', updateStaleness);
+
+  // ── student roster (Student details' table) ─────────────────────────────
+  // Design spec sections 3/4. `renderRoster` (roster-ui.ts) is a pure
+  // function of the CURRENT roster -- called again only when the roster's
+  // STRUCTURE changes (a row added), never on a single field's own edit. A
+  // field edit writes straight into the roster array via `setRoster` (and,
+  // for a name, into `rosterNames` too) with NO re-render:
+  // `RosterHandlers.onTextChange`'s own doc comment (roster-ui.ts) is why --
+  // rebuilding the table mid-keystroke would tear down the very input a
+  // teacher is typing into, stealing focus and the caret position.
+  // `onSelectChange` (sex, absent, either letter) DOES re-render, safely,
+  // since a native `change` event never fires mid-keystroke -- and it is
+  // what makes a newly-used together/apart letter's successor appear in
+  // every OTHER row's own dropdown the moment it is used, not only the row
+  // it was set on (`availableLetters`, src/lib/roster.ts, is recomputed
+  // from the whole roster on every render).
+  const studentsBody = $<HTMLElement>('cg-students-body');
+
+  /** The one place a per-field roster edit becomes real. `setRoster`'s own
+   *  `onRosterChanged` hook (above) keeps `dirty`, `#cg-io` and
+   *  `#cg-students` in sync; this additionally keeps `rosterNames` -- the
+   *  number-to-name lookup `resolveStudent` reads, above -- in exact sync
+   *  with it, rebuilt fresh from the given roster rather than patched, so
+   *  it can never drift from what the roster array actually says.
+   *  `updateStaleness` is called explicitly rather than relied on purely
+   *  through event bubbling (every field this section wires lives inside
+   *  #cg-form, whose own `input`/`change` listeners just above already call
+   *  it too, for free, on every one of these same events) -- a harmless
+   *  second call, and one that keeps this function correct standing on its
+   *  own rather than depending on where in the DOM its caller happens to
+   *  sit. */
+  const onRosterEdited = (next: Student[]) => {
+    setRoster(next);
+    rosterNames.clear();
+    for (const s of next) if (s.name) rosterNames.set(s.number, s.name);
+    updateStaleness();
+  };
+
+  const renderStudentsBody = () => {
+    if (studentsBody) {
+      renderRoster(studentsBody, getRoster(), t, rosterHandlers);
+    }
+  };
+
+  const rosterHandlers: RosterHandlers = {
+    onTextChange: onRosterEdited,
+    onSelectChange: (next) => {
+      onRosterEdited(next);
+      renderStudentsBody();
+    },
+    onAdd: () => {
+      const next = [...getRoster()];
+      next.push(anonymousStudent(nextNumber(next)));
+      setRoster(next);
+      updateStaleness();
+      renderStudentsBody();
+    },
+    onAddSeveral: (count) => {
+      const next = [...getRoster()];
+      // A safety ceiling, not the MAX_ROSTER=100 refusal-with-message a
+      // later task owns (naming how many rows are free) -- a pathological
+      // value typed into "How many?" must not be free to allocate without
+      // bound and hang the tab, the same reasoning MAX_STUDENTS's own doc
+      // comment (grouping.ts) gives for the Students box itself.
+      const room = Math.max(0, MAX_STUDENTS - next.length);
+      for (let i = 0; i < Math.min(count, room); i++) {
+        next.push(anonymousStudent(nextNumber(next)));
+      }
+      setRoster(next);
+      updateStaleness();
+      renderStudentsBody();
+    },
+  };
+
+  renderStudentsBody();
 
   // ── sound (six real CC0 samples; synthesis is the fallback) ─────────────
   // src/assets/sfx/ ships six mastered CC0 recordings -- shuffle.m4a,

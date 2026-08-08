@@ -104,6 +104,25 @@ export const id: Strings = {
   sectionImportExportHeading: 'Impor / ekspor',
   sectionSoundHeading: 'Suara dan animasi',
 
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
+  rosterColNumber: '#',
+  rosterColName: 'Nama',
+  rosterColSex: 'Jenis kelamin',
+  rosterColAbsent: 'Tidak hadir',
+  rosterColTogether: 'Bersama',
+  rosterColApart: 'Terpisah',
+  rosterUnset: '—',
+  // Nilai <option> tetap 'M'/'F' (tipe Student.sex milik mesinnya,
+  // grouping.ts) sama seperti versi Inggris -- hanya TEKS yang tampil yang
+  // berbeda, mengikuti konvensi jenis kelamin Indonesia yang sudah dipakai
+  // bagian 9 (CSV) dokumen desain.
+  rosterSexMale: 'L',
+  rosterSexFemale: 'P',
+  rosterAddStudent: '+ Tambah siswa',
+  rosterAddSeveral: '+ Tambah beberapa…',
+  rosterHowMany: 'Berapa?',
+  rosterAddConfirm: 'Tambah',
+
   stateNoneAdded: 'tidak ada yang ditambahkan',
   stateNamed: (n: number) => `${n} diberi nama`,
   stateAbsent: (n: number) => `${n} tidak hadir`,
