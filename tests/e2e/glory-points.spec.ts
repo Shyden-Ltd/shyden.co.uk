@@ -135,28 +135,34 @@ test.describe('glory points — touch targets ≥ 44×44px (WCAG / mobile-first)
     expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
   };
 
-  test('mobile: attribution link, input and submit button are ≥44px', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 375, height: 800 });
-    await page.goto('/glory-points');
-    await atLeast44(page.locator('a[href="https://yeetalkapp.com/"]'));
-    await atLeast44(page.locator('#glory-input'));
-    await atLeast44(page.locator('#glory-submit'));
-  });
+  test(
+    'mobile: attribution link, input and submit button are ≥44px',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 800 });
+      await page.goto('/glory-points');
+      await atLeast44(page.locator('a[href="https://yeetalkapp.com/"]'));
+      await atLeast44(page.locator('#glory-input'));
+      await atLeast44(page.locator('#glory-submit'));
+    },
+  );
 });
 
 test.describe('glory points — mobile-first layout', () => {
   for (const width of [320, 375, 768, 1280]) {
-    test(`no horizontal scroll at ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto('/glory-points');
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
-    });
+    test(
+      `no horizontal scroll at ${width}px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/glory-points');
+        const overflow = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+      },
+    );
   }
 });

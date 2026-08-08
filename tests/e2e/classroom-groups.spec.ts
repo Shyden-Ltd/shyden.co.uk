@@ -396,23 +396,25 @@ test.describe('class name and results heading', () => {
   // token with no spaces, which is exactly why this is a genuine check of
   // `#cg-results-h`'s own `overflow-wrap: anywhere` rather than something
   // normal text wrapping would already have covered.
-  test('a very long class name does not force the page to scroll sideways', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 900 });
-    await page.goto('/classroom-groups');
-    await page.getByLabel('Class (optional)').fill('x'.repeat(300));
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
-    await page.click('#cg-go');
-    await expect(page.locator('#cg-results-h')).toBeVisible();
-    const overflow = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
-  });
+  test(
+    'a very long class name does not force the page to scroll sideways',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 900 });
+      await page.goto('/classroom-groups');
+      await page.getByLabel('Class (optional)').fill('x'.repeat(300));
+      await page.locator('#cg-sound-toggle').click();
+      await page.selectOption('#cg-speed', 'skip');
+      await page.click('#cg-go');
+      await expect(page.locator('#cg-results-h')).toBeVisible();
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    },
+  );
 
   // The class name is read fresh at every submit (classroom-groups.ts), not
   // captured once -- a second shuffle with a different name in the field
@@ -871,23 +873,25 @@ test.describe('out-of-date groups', () => {
   // the page is a later task's own (this task owns staleness, not the
   // no-scroll rule as a whole) -- this defends the one new element this
   // task is actually adding.
-  test('the notice fits at 320px with no horizontal scroll, and its button meets the touch-target minimum', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 900 });
-    await page.goto('/classroom-groups');
-    await shuffle(page);
-    await page.getByLabel('Students in each group').fill('3');
-    await expect(page.locator('#cg-stale')).toBeVisible();
-    const overflow = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
-    const box = await page.locator('#cg-stale button').boundingBox();
-    expect(box?.height).toBeGreaterThanOrEqual(44);
-  });
+  test(
+    'the notice fits at 320px with no horizontal scroll, and its button meets the touch-target minimum',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 900 });
+      await page.goto('/classroom-groups');
+      await shuffle(page);
+      await page.getByLabel('Students in each group').fill('3');
+      await expect(page.locator('#cg-stale')).toBeVisible();
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+      const box = await page.locator('#cg-stale button').boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+    },
+  );
 
   // "Assert whole rendered sentences, in both locales" (CLAUDE.md) -- every
   // test above is English-only, and the reason TEXT itself is
@@ -1208,26 +1212,54 @@ test.describe('the no-scroll rule, measured', () => {
     { width: 1280, height: 800, fits: false }, // laptop -- see table above
   ];
 
+  const measureFit = async (page: Page) => {
+    await page.goto('/classroom-groups');
+    const { bottom, budget } = await page.evaluate(() => ({
+      bottom: Math.round(
+        document.getElementById('cg-go')!.getBoundingClientRect().bottom,
+      ),
+      budget: window.innerHeight,
+    }));
+    expect(bottom).toBeLessThanOrEqual(budget);
+  };
+
   for (const { width, height, fits } of VIEWPORTS) {
     // `test.fixme` for the three that still do not fit -- tracked, not
-    // hidden; `test` for the one that genuinely passes. One body, so the
-    // passing and failing cases can never drift into checking two
-    // different things.
-    const run = fits ? test : test.fixme;
-    run(
-      `the tool fits without scrolling at ${width}x${height}`,
-      async ({ page }) => {
-        await page.setViewportSize({ width, height });
-        await page.goto('/classroom-groups');
-        const { bottom, budget } = await page.evaluate(() => ({
-          bottom: Math.round(
-            document.getElementById('cg-go')!.getBoundingClientRect().bottom,
-          ),
-          budget: window.innerHeight,
-        }));
-        expect(bottom).toBeLessThanOrEqual(budget);
-      },
-    );
+    // hidden; `test` for the one that genuinely passes. Written as an
+    // explicit if/else, each branch opening with a literal `test(`/
+    // `test.fixme(` token immediately followed by its own inline title --
+    // rather than the earlier `const run = fits ? test : test.fixme;
+    // run(title, ...)` indirection -- so a source scanner that attributes a
+    // viewport call to its enclosing test by looking for exactly that
+    // literal shape (tests/unit/viewport-tagging.test.ts, and any reader
+    // grepping for `test(`) can find this declaration at all: neither an
+    // aliased callee nor a title passed by variable reference is visible to
+    // a scan like that -- tests/unit/viewport-tagging.test.ts's own
+    // "aliased callee" synthetic test proves what that scan sees instead
+    // (an actionable finding, not silence). `measureFit` above is the one
+    // body the passing and failing cases still share, so they cannot drift
+    // into checking two different things -- only the trivial two-line
+    // wrapper that resizes the page and picks which registration function
+    // to call is duplicated, and it carries no assertion of its own.
+    if (fits) {
+      test(
+        `the tool fits without scrolling at ${width}x${height}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height });
+          await measureFit(page);
+        },
+      );
+    } else {
+      test.fixme(
+        `the tool fits without scrolling at ${width}x${height}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height });
+          await measureFit(page);
+        },
+      );
+    }
   }
 
   // The table above, and the `fits` flags it feeds, are hand-maintained --
@@ -1244,26 +1276,31 @@ test.describe('the no-scroll rule, measured', () => {
   // or one that starts failing while marked `true`. Either failure means
   // the table above is stale and needs updating by hand, the same way it
   // was written.
-  test('the declared fits table matches what the page actually does', async ({
-    page,
-  }) => {
-    const actual: Record<string, boolean> = {};
-    for (const { width, height } of VIEWPORTS) {
-      await page.setViewportSize({ width, height });
-      await page.goto('/classroom-groups');
-      const { bottom, budget } = await page.evaluate(() => ({
-        bottom: Math.round(
-          document.getElementById('cg-go')!.getBoundingClientRect().bottom,
-        ),
-        budget: window.innerHeight,
-      }));
-      actual[`${width}x${height}`] = bottom <= budget;
-    }
-    const declared = Object.fromEntries(
-      VIEWPORTS.map(({ width, height, fits }) => [`${width}x${height}`, fits]),
-    );
-    expect(actual).toEqual(declared);
-  });
+  test(
+    'the declared fits table matches what the page actually does',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      const actual: Record<string, boolean> = {};
+      for (const { width, height } of VIEWPORTS) {
+        await page.setViewportSize({ width, height });
+        await page.goto('/classroom-groups');
+        const { bottom, budget } = await page.evaluate(() => ({
+          bottom: Math.round(
+            document.getElementById('cg-go')!.getBoundingClientRect().bottom,
+          ),
+          budget: window.innerHeight,
+        }));
+        actual[`${width}x${height}`] = bottom <= budget;
+      }
+      const declared = Object.fromEntries(
+        VIEWPORTS.map(({ width, height, fits }) => [
+          `${width}x${height}`,
+          fits,
+        ]),
+      );
+      expect(actual).toEqual(declared);
+    },
+  );
 
   // L-08. The brief's own literal query measured only what page LOAD
   // already shows -- nothing inside any of the four sections is on screen
@@ -1308,36 +1345,38 @@ test.describe('the no-scroll rule, measured', () => {
   // on: the label for a radio/checkbox, the element itself for everything
   // else. It can still fail for real: any control whose min-height/padding
   // regresses below 44px, radio/checkbox label included, still shows up.
-  test('every interactive target is at least 44px, collapsed and with every section open', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 900 });
-    await page.goto('/classroom-groups');
-    for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
-      await page.locator(`#${id}-toggle`).click();
-    }
-    const small = await page.evaluate(() =>
-      [
-        ...document.querySelectorAll(
-          'button, input, select, textarea, summary, a',
-        ),
-      ]
-        .map((el) => {
-          const isBoxControl =
-            el instanceof HTMLInputElement &&
-            (el.type === 'radio' || el.type === 'checkbox');
-          const target = isBoxControl ? (el.closest('label') ?? el) : el;
-          return {
-            tag: el.tagName,
-            id: el.id,
-            r: target.getBoundingClientRect(),
-          };
-        })
-        .filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
-        .map(({ tag, id }) => `${tag}#${id}`),
-    );
-    expect(small).toEqual([]);
-  });
+  test(
+    'every interactive target is at least 44px, collapsed and with every section open',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 900 });
+      await page.goto('/classroom-groups');
+      for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
+        await page.locator(`#${id}-toggle`).click();
+      }
+      const small = await page.evaluate(() =>
+        [
+          ...document.querySelectorAll(
+            'button, input, select, textarea, summary, a',
+          ),
+        ]
+          .map((el) => {
+            const isBoxControl =
+              el instanceof HTMLInputElement &&
+              (el.type === 'radio' || el.type === 'checkbox');
+            const target = isBoxControl ? (el.closest('label') ?? el) : el;
+            return {
+              tag: el.tagName,
+              id: el.id,
+              r: target.getBoundingClientRect(),
+            };
+          })
+          .filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
+          .map(({ tag, id }) => `${tag}#${id}`),
+      );
+      expect(small).toEqual([]);
+    },
+  );
 
   // L-09. The accent colour is the AA floor by design ("never lighten
   // without re-checking contrast", CLAUDE.md) -- this computes the REAL

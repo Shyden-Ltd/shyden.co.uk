@@ -30,7 +30,17 @@ export default defineConfig({
       // under its own playwright.dev.config.ts; running it here would mix that
       // environment's assertions into a local-build run). Measured by running
       // `--list` against the denylist version, not assumed.
-      testMatch: [/tests\/e2e\/.*\.spec\.ts$/, /tests\/device\/real-device\.spec\.ts$/],
+      testMatch: [
+        /tests\/e2e\/.*\.spec\.ts$/,
+        /tests\/device\/real-device\.spec\.ts$/,
+      ],
+      // A real phone has one screen: `page.setViewportSize`/`test.use({ viewport })`
+      // would "succeed" against CDP and report numbers describing nothing physical
+      // (see tests/unit/viewport-tagging.test.ts, which is what keeps every such
+      // test actually carrying this tag). Scoped to this project alone -- the
+      // preflight project runs exactly one setup file that never touches the
+      // viewport, and must not be affected by a grep option meant for the suite.
+      grepInvert: /@emulated-viewport/,
     },
   ],
 });
