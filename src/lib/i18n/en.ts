@@ -205,6 +205,32 @@ export const en = {
   rosterHowMany: 'How many?',
   rosterAddConfirm: 'Add',
 
+  // Stage 3, Task 4 (design spec section 4, "Absence"). Two lines rendered
+  // "under the table" by renderRoster (roster-ui.ts) once the roster is
+  // non-empty -- NOT part of the `state*` group below, which feeds only the
+  // collapsed Student-details HEADER (sectionState); these feed the table's
+  // own footer instead, so they live with the rest of this `roster*` group.
+  //
+  // `rosterAbsentPill` is the pill text beside the tick -- lowercase, the
+  // design doc's own literal example ("a small pill reading `absent`") --
+  // distinct from `rosterColAbsent` above, the column HEADING, which is
+  // capitalised.
+  rosterAbsentPill: 'absent',
+  // The permanent consequence line: present "whether or not anyone is
+  // marked" (design spec section 4), so a plain string, not a function --
+  // nothing about it varies with the roster's own state. The literal
+  // approved wording, verbatim.
+  rosterAbsentConsequence:
+    'Students marked absent are not included when groups are made.',
+  // The live count line underneath it -- design spec section 4's own
+  // example: "24 students · 22 here · 2 absent". English inflects
+  // (`resultsSummary`'s own identical reasoning, above) for the leading
+  // noun; "here"/"absent" are used predicatively and never pluralise, the
+  // same as `stateAbsent`/`stateTogether` below never branch on their own
+  // count.
+  rosterCountLine: (total: number, here: number, absent: number) =>
+    `${total} ${total === 1 ? 'student' : 'students'} · ${here} here · ${absent} absent`,
+
   // Every value below is read ONLY through sectionState (src/lib/sections.ts)
   // -- never interpolated into a page directly -- so a key here with no
   // matching branch in that function, or a branch reading a key missing

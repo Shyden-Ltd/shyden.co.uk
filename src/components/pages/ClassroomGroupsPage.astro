@@ -900,6 +900,73 @@ const sexWhyText = sexWhy(roster, t);
     grid-row: 2;
   }
 
+  /* ── absence: a tint, a stripe and a pill (Stage 3, Task 4) ───────────────
+     Design spec section 4: "the row is tinted instead" -- three signals,
+     none of them colour alone (A-05..A-09). `.is-absent` is added to the
+     SAME `.cg-student` <tr> both layouts share (roster-ui.ts's `buildRow`),
+     so a student marked absent looks identical in a card and in a table
+     row; `.cg-absent-pill` is a plain child element built beside the tick
+     (`buildRow`, roster-ui.ts) with no layout dependency of its own, so it
+     needs no separate card/table treatment.
+
+     `color` is set alongside `background`, deliberately -- this repo's own
+     working rule (CLAUDE.md), restated verbatim in this task's own brief:
+     "This repo has already shipped an unreadable panel that way, and a
+     mockup in this project's own brainstorm did it again." #1a1a1a on
+     #fff6e3 measures ~18.7:1, far past the 4.5:1 AA floor -- this is a
+     TINT, not a grey-out (A-09): every field in the row stays exactly as
+     legible as an ordinary one, which is also why nothing here touches
+     `#cg-roster input`/`select`'s own colour -- each control already paints
+     its own opaque `--surface` background over this tint and needs no
+     override to stay readable.
+
+     The stripe cannot be ONE rule for both layouts, and this is the one
+     place in this block where that is a real finding, not a stylistic
+     choice: `box-shadow` does not paint on a `display: table-row` box in
+     Chromium, Firefox or WebKit -- table rows are "internal table boxes"
+     outside normal box-shadow painting, the same category of table-specific
+     rendering gap this file's own WebKit `min-height` finding (above)
+     already caught once, just on the opposite property. Below the
+     breakpoint `.cg-student` is a real block/grid box (not a table part at
+     all), so the shadow below paints on it directly and runs the CARD'S OWN
+     FULL HEIGHT, both grid rows. Porting the identical selector into the
+     table breakpoint unchanged would not merely fail to paint there (which
+     would at least be visible in testing) -- it would SEEM to work if
+     tested against the wrong element: measured against `.cg-student` itself
+     rather than a real table-cell, this rule would still just as silently
+     not paint. The table breakpoint below moves the shadow onto the FIRST
+     `<td>` instead, a real `table-cell`, which always renders at its row's
+     own full height by construction (every cell in one `<tr>` shares the
+     row's height) -- restoring a stripe that runs the whole row regardless
+     of which layout is showing. */
+  #cg-roster .cg-student.is-absent {
+    background: #fff6e3;
+    color: #1a1a1a;
+    box-shadow: inset 3px 0 0 #d9a441;
+  }
+  /* Beside the tick (design spec section 4), a sibling of the checkbox
+     inside `.cg-roster-absent-label`'s own flex row (roster-ui.ts's
+     `buildRow`) -- so `justify-content: center` on that label centres tick
+     and pill together, as one group, rather than needing layout rules of
+     its own. Anchored on #cg-roster like every other roster rule in this
+     block, even though the class name alone is already distinctive: this
+     element only ever exists inside the table (buildRow is the sole place
+     that creates it), so scoping it the same way as the rest of this block
+     costs nothing and keeps the "anchored on #cg-roster" claim this block's
+     own opening comment makes actually true of every rule in it. */
+  #cg-roster .cg-absent-pill {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 99px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    background: #8a6a10;
+    color: #fff;
+  }
+
   /* ── ...and the table, restored, at and above ~600px ──────────────────────
      Design spec section 3: "The breakpoint is ~600px, and is one of two
      figures that must be settled on real hardware -- see section 13. It is
@@ -994,6 +1061,22 @@ const sexWhyText = sexWhy(roster, t);
       border-bottom: 1px solid var(--border);
       min-width: auto;
     }
+    /* The stripe, moved onto the first real table-cell -- see the base
+       `.cg-student.is-absent` rule's own comment, above, for why
+       `box-shadow` cannot paint on `.cg-student` once it is a table-row.
+       Every `<td>` in one `<tr>` renders at that row's own full height by
+       construction, so this still runs the whole row, not just one cell --
+       unlike the base rule's own selector, which (ported here unchanged)
+       would only ever cover row 1 of the CARD grid (# and Name), never row
+       2 (Sex/Absent/Together/Apart). The base rule's own `box-shadow` stays
+       declared on `.cg-student.is-absent` at this width too -- inert, not
+       forgotten, the same "properties this block does not restate have no
+       effect once display is a table value" convention this file's own
+       opening comment already states for `gap`/`align-items`/
+       `grid-column`/`grid-row`. */
+    #cg-roster .cg-student.is-absent > td:first-child {
+      box-shadow: inset 3px 0 0 #d9a441;
+    }
   }
   /* 44px minimum touch target (CLAUDE.md), matching every other field
      control on this page -- reachable at ANY width, in EITHER layout.
@@ -1052,6 +1135,29 @@ const sexWhyText = sexWhy(roster, t);
     align-items: center;
     justify-content: center;
     min-height: 44px;
+  }
+  /* The consequence line and the live count line underneath the table
+     (design spec section 4; roster-ui.ts's own `renderRoster`, right after
+     `container.appendChild(table)`). Both are real `<p>` siblings AFTER
+     `</table>`, never table content, so they get their OWN anchors rather
+     than an `#cg-roster` descendant selector: `#cg-roster-count` by id,
+     `.cg-roster-consequence` by its `cg-` prefixed class name -- the same
+     "scope by distinctive naming, not by nesting" pattern
+     `.cg-roster-toolbar`/`.cg-roster-absent-label` just above already use,
+     for the identical reason (roster-ui.ts builds every one of these with
+     `document.createElement`, so nothing here carries Astro's own scoping
+     attribute -- see this block's own opening comment). Same visual
+     treatment as `.help`/`.why` elsewhere on this page (the scoped style
+     block, further down) -- explanatory text under a control, not a
+     warning -- restated here rather than reached from there, since a
+     scoped selector cannot match an element with no scoping attribute
+     either. */
+  #cg-roster-count,
+  .cg-roster-consequence {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    margin: 0.6rem 0 0;
+    max-width: var(--measure);
   }
   .cg-roster-toolbar {
     display: flex;

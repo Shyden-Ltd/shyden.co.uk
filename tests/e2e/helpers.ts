@@ -34,6 +34,23 @@ export const addSeveral = async (page: Page, howMany: number) => {
   await page.getByRole('button', { name: /^Add$|^Tambah$/ }).click();
 };
 
+/**
+ * Marks the FIRST roster row absent -- `openRoster` already adds one
+ * student (its own "Add student" click), so this only needs to tick that
+ * row's own Absent box. Stage 3, Task 4's own state-setup helper, placed
+ * HERE rather than as a local `const` inside the spec file (task-4-brief.md's
+ * own Step 1 snippet defines it locally): this file's own header comment
+ * says plainly "Stage 3, 4 and 5 all need one [fixture]" and "every helper
+ * lives here and is imported, never redefined in a suite" -- and stage 5
+ * (the print panel, which prints an `Absent` column) is a real second
+ * consumer-to-be, not a hypothetical one, so the same rule that already
+ * governs `openRoster`/`addSeveral` applies to this one too.
+ */
+export const markAbsent = async (page: Page) => {
+  await openRoster(page);
+  await page.locator('.cg-student').first().getByLabel('Absent').check();
+};
+
 export const setSex = async (page: Page, row: number, sex: 'M' | 'F') =>
   page
     .locator('.cg-student')

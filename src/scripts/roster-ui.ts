@@ -29,7 +29,7 @@
  * (`classroom-groups.ts`'s own `render()`, `who.textContent = label(student)`).
  */
 import type { Student } from '../lib/grouping';
-import { availableLetters } from '../lib/roster';
+import { availableLetters, rosterCounts } from '../lib/roster';
 import type { Strings } from '../lib/i18n';
 
 export interface RosterHandlers {
@@ -192,6 +192,15 @@ function buildRow(
 ): HTMLTableRowElement {
   const tr = document.createElement('tr');
   tr.className = 'cg-student';
+  // Design spec section 4: "the row is tinted instead" -- a tint, a stripe
+  // and the pill built into `absentLabel` below, ALL keyed off this one
+  // class rather than three independent checks, so the three signals can
+  // never disagree with each other about whether a given row is absent.
+  // `.is-absent`'s own CSS (ClassroomGroupsPage.astro) is what turns this
+  // into the tint and (at the table breakpoint) the stripe; see that
+  // block's own comment for why the stripe needs a SECOND rule at that
+  // breakpoint rather than this class alone.
+  if (student.absent) tr.classList.add('is-absent');
 
   // # — the number. Editable (design spec section 4: "The teacher may
   // override them"); identity is the number everywhere else in this
@@ -274,6 +283,26 @@ function buildRow(
     );
   });
   absentLabel.appendChild(absentInput);
+  // The pill: "beside the tick" (design spec section 4), so it is a
+  // sibling of `absentInput` inside the SAME flex label -- not a separate
+  // element elsewhere in the row, and not merely `hidden` when the student
+  // is present. Built only when actually absent, matching every other
+  // per-row element this module builds fresh each render: `onSelectChange`
+  // (the only handler this checkbox fires) always re-renders (see
+  // `RosterHandlers`' own doc comment), so there is never a stale pill to
+  // clean up on the way back to present. Text stays fixed ('absent'/
+  // 'tidak hadir', never "away" -- design spec section 4's own "wording is
+  // uniform" rule), independent of the checkbox's own accessible name
+  // (`t.rosterColAbsent`, set via `aria-label` above, which wins the
+  // accessible-name computation regardless of what other text sits inside
+  // the same wrapping <label>), so this adds no second, competing name for
+  // the checkbox itself.
+  if (student.absent) {
+    const pill = document.createElement('span');
+    pill.className = 'cg-absent-pill';
+    pill.textContent = t.rosterAbsentPill;
+    absentLabel.appendChild(pill);
+  }
   absentTd.appendChild(absentLabel);
 
   // Together / Apart — a letter each, from a dropdown that grows as needed
@@ -447,4 +476,45 @@ export function renderRoster(
   table.appendChild(tfoot);
 
   container.appendChild(table);
+
+  // Design spec section 4: "A permanent line under the table states the
+  // consequence, whether or not anyone is marked... The count line then
+  // reports it." Both are real <p> siblings AFTER </table> -- neither is
+  // table content, so neither can live inside it -- which is also why
+  // their own CSS (ClassroomGroupsPage.astro) is anchored on #cg-roster-count
+  // and .cg-roster-consequence directly rather than on any #cg-roster
+  // descendant selector.
+  //
+  // "Under the table" only ever means "once the table exists": this
+  // whole branch is already gated on `roster.length > 0` (the empty-roster
+  // early return, above), matching classroom-groups-roster.spec.ts's own
+  // "the consequence line is there before anyone is marked" test, which
+  // opens the roster (one student, present) rather than starting from a
+  // wholly empty list.
+  const consequence = document.createElement('p');
+  consequence.className = 'cg-roster-consequence';
+  consequence.textContent = t.rosterAbsentConsequence;
+  container.appendChild(consequence);
+
+  // `rosterCounts` (src/lib/roster.ts, unit-tested there) is the ONE place
+  // "how many are absent" is computed -- the same function
+  // updateStudentsHeader (classroom-groups.ts) already calls for the
+  // collapsed header's own "· N absent" fragment, so the header and this
+  // line can never disagree about the count. `here` is the one piece
+  // neither that function nor this module had a name for yet: always
+  // `roster.length - absent`, computed inline rather than promoted into
+  // roster.ts's own pinned export list (tests/unit/roster.test.ts's "the
+  // module surface" test) for a single subtraction with no branch of its
+  // own to unit-test independently of `rosterCounts.absent`, which already
+  // is.
+  const countLine = document.createElement('p');
+  countLine.id = 'cg-roster-count';
+  countLine.className = 'cg-roster-count';
+  const { absent } = rosterCounts(roster);
+  countLine.textContent = t.rosterCountLine(
+    roster.length,
+    roster.length - absent,
+    absent,
+  );
+  container.appendChild(countLine);
 }

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { openRoster, addSeveral } from './helpers';
+import { openRoster, addSeveral, markAbsent } from './helpers';
 
 /**
  * Stage 3, Task 2: the roster table. Traceability: R-01, R-02, R-09, R-10,
@@ -187,6 +187,185 @@ test.describe('absence', () => {
   });
 });
 
+/**
+ * Stage 3, Task 4: absence, rendered. Traceability: A-05…A-10, A-19, A-20,
+ * and F-05 (the tint/stripe/pill on the CARD, not just the row) -- handed
+ * to this task explicitly by Task 3's own carried-forward note, since
+ * `.cg-student` is the one element both layouts share and neither task 2
+ * nor task 3 could style it. A-01…A-04 are already proven above (Task 2's
+ * own 'absence' describe block, immediately before this one) -- not
+ * reproduced here.
+ *
+ * task-4-brief.md's own Step 1 snippet is reproduced below with real
+ * differences, not verbatim:
+ *  - Its own first test, 'nothing in the row is disabled', duplicates
+ *    Task 2's 'nothing in the row is disabled by ticking it' immediately
+ *    above -- identical assertions, same four labels. Design spec section
+ *    13's own rule ("the existing suites are extended, not duplicated")
+ *    is why it is not reproduced a second time under a second title.
+ *  - `markAbsent` is defined in tests/e2e/helpers.ts, not locally, per
+ *    that file's own header rule -- see its own doc comment there.
+ *  - The count-line test replaces the brief's own three inline clicks with
+ *    `addSeveral`, the established correction this file's own Task 3
+ *    section already made once for the identical reason.
+ *  - Every test that resizes the viewport carries `@emulated-viewport`
+ *    (global-constraints.md; tests/unit/viewport-tagging.test.ts is a hard
+ *    guard on it), which the brief's own snippet does not carry on any of
+ *    its tests -- none of the brief's own six actually resize the
+ *    viewport, so none needed it; the tag only appears below on the tests
+ *    THIS task adds beyond the brief.
+ *
+ * Three tests below are not in the brief at all, added because the parent
+ * task explicitly named the risk they cover:
+ *  - the card/table parity loop -- proving F-05 on BOTH layouts, not
+ *    assuming the shared `.cg-student` selector makes it automatic;
+ *  - the pill's own AA contrast, computed from live styles the same way
+ *    classroom-groups.spec.ts's own accent-colour test already does,
+ *    rather than trusting the hex pair by eye;
+ *  - a no-horizontal-scroll check at 320px WITH the pill actually
+ *    rendered -- the existing 100-student check (Task 3, above) never
+ *    marks anyone absent, so it never exercises the one extra element this
+ *    task adds to the tightest column on the narrowest layout.
+ */
+test.describe('an absent student', () => {
+  test('and every field can still be edited', async ({ page }) => {
+    await markAbsent(page);
+    const row = page.locator('.cg-student').first();
+    await row.getByLabel('Name').fill('Dewi');
+    await row.getByLabel('Sex').selectOption('F');
+    await expect(row.getByLabel('Name')).toHaveValue('Dewi');
+    await expect(row.getByLabel('Sex')).toHaveValue('F');
+  });
+
+  test('is tinted, striped and labelled', async ({ page }) => {
+    await markAbsent(page);
+    const row = page.locator('.cg-student').first();
+    await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
+    await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
+  });
+
+  test('is still readable with colour removed', async ({ page }) => {
+    await markAbsent(page);
+    await page.addStyleTag({
+      content: 'html { filter: grayscale(1) !important }',
+    });
+    await expect(
+      page.locator('.cg-student').first().getByLabel('Absent'),
+    ).toBeChecked();
+    await expect(
+      page.locator('.cg-student').first().locator('.cg-absent-pill'),
+    ).toHaveText('absent');
+  });
+
+  test('the consequence line is there before anyone is marked', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await expect(
+      page.getByText(
+        'Students marked absent are not included when groups are made.',
+      ),
+    ).toBeVisible();
+  });
+
+  test('the count line reads students, here and absent', async ({ page }) => {
+    await openRoster(page);
+    await addSeveral(page, 23);
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await page.locator('.cg-student').nth(1).getByLabel('Absent').check();
+    await expect(page.locator('#cg-roster-count')).toHaveText(
+      '24 students · 22 here · 2 absent',
+    );
+  });
+
+  test('the word is never "away", anywhere', async ({ page }) => {
+    await markAbsent(page);
+    await page.getByRole('button', { name: 'Make groups' }).click();
+    await expect(page.locator('body')).not.toContainText(/\baway\b/);
+  });
+
+  // F-05: the SAME `.cg-student` (roster-ui.ts's whole "one renderer, two
+  // CSS layouts" point) must carry the tint, the stripe and the pill in
+  // BOTH shapes, not only the one Task 2 happened to build against first.
+  // The stripe assertion is loose on purpose (`not.toBe('none')`, not an
+  // exact rgb/inset string): box-shadow's computed-style text format is
+  // not identical across the five engines this task was told to check
+  // (the same "WebKit lies" caution the brief itself raises about
+  // min-height applies just as well to trusting one engine's own
+  // serialisation of a shadow), and the two layouts deliberately paint the
+  // stripe on two DIFFERENT elements (see ClassroomGroupsPage.astro's own
+  // comment on `.cg-student.is-absent` for why box-shadow cannot paint on
+  // a `display: table-row` box at all), so a single exact string could
+  // never describe both correctly.
+  for (const { name, width } of [
+    { name: 'cards', width: 320 },
+    { name: 'table', width: 1280 },
+  ] as const) {
+    test(
+      `${name}: absence carries the tint, the stripe and the pill -- same element as the table`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await markAbsent(page);
+        const row = page.locator('.cg-student').first();
+        await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
+        await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
+        const stripeTarget = width < 600 ? row : row.locator('td').first();
+        const boxShadow = await stripeTarget.evaluate(
+          (el) => getComputedStyle(el).boxShadow,
+        );
+        expect(boxShadow, `${name} stripe`).not.toBe('none');
+      },
+    );
+  }
+
+  // L-09-shaped, mirroring classroom-groups.spec.ts's own "the accent
+  // colour still meets the WCAG AA contrast floor" test: computes the REAL
+  // painted contrast from live computed styles rather than trusting the
+  // #8a6a10/#fff hex pair by eye. "Any tint you add must keep text on it
+  // at AA" (this task's own constraint) applies to the pill's own
+  // background just as much as the row's.
+  test('the pill text meets the WCAG AA contrast floor', async ({ page }) => {
+    await markAbsent(page);
+    const contrast = await page
+      .locator('.cg-absent-pill')
+      .first()
+      .evaluate((el) => {
+        const style = getComputedStyle(el);
+        const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
+        const [ir, ig, ib] = nums(style.color);
+        const [br, bg, bb] = nums(style.backgroundColor);
+        const lin = (c: number) => {
+          const s = c / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = (r: number, g: number, b: number) =>
+          0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+        const textLum = luminance(ir, ig, ib);
+        const bgLum = luminance(br, bg, bb);
+        const lighter = Math.max(textLum, bgLum);
+        const darker = Math.min(textLum, bgLum);
+        return (lighter + 0.05) / (darker + 0.05);
+      });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test(
+    'cards: no horizontal scroll at 320px once a student is marked absent',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 900 });
+      await markAbsent(page);
+      const over = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(over).toBeLessThanOrEqual(0);
+    },
+  );
+});
+
 // T-06 -- claimed by no task's own traceability line (checked: it appears
 // only in the plan's stage-level rollup, docs/superpowers/plans/2026-08-06-
 // classroom-groups-v2-stage-3-student-details.md line 13), yet Task 2 is
@@ -318,6 +497,29 @@ test.describe('Indonesian', () => {
     await openRoster(page, '/id/classroom-groups');
     await page.getByRole('button', { name: 'Buat Kelompok' }).click();
     await expect(page.locator('#cg-results')).toContainText('Siswa 1');
+  });
+
+  // Mirrors 'the count line reads students, here and absent', above --
+  // task-4-brief.md's own instruction ("Mirror the last two on /id/").
+  test('the count line reads siswa, hadir and tidak hadir', async ({
+    page,
+  }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await addSeveral(page, 23);
+    await page.locator('.cg-student').first().getByLabel('Tidak hadir').check();
+    await page.locator('.cg-student').nth(1).getByLabel('Tidak hadir').check();
+    await expect(page.locator('#cg-roster-count')).toHaveText(
+      '24 siswa · 22 hadir · 2 tidak hadir',
+    );
+  });
+
+  // Mirrors 'the word is never "away", anywhere', above -- same guard
+  // against a stray, untranslated English word, run on the Indonesian page.
+  test('the word is never "away", anywhere', async ({ page }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await page.locator('.cg-student').first().getByLabel('Tidak hadir').check();
+    await page.getByRole('button', { name: 'Buat Kelompok' }).click();
+    await expect(page.locator('body')).not.toContainText(/\baway\b/);
   });
 });
 

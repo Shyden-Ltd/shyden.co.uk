@@ -169,6 +169,12 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   // Stage 2, Task 4. src/lib/sexOptions.ts's `sexWhy`, its sole caller.
   // (3, 22) matches design spec section 6's own approved copy verbatim.
   sexWhyUnset: [3, 22],
+  // Stage 3, Task 4. renderRoster's own live count line (roster-ui.ts),
+  // rendered under the table. (24, 22, 2) matches design spec section 4's
+  // own literal example verbatim, the same example
+  // classroom-groups-roster.spec.ts's own "the count line reads students,
+  // here and absent" test pins.
+  rosterCountLine: [24, 22, 2],
 };
 
 describe('locales are complete', () => {

@@ -123,6 +123,18 @@ export const id: Strings = {
   rosterHowMany: 'Berapa?',
   rosterAddConfirm: 'Tambah',
 
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
+  rosterAbsentPill: 'tidak hadir',
+  rosterAbsentConsequence:
+    'Siswa yang ditandai tidak hadir tidak disertakan saat kelompok dibuat.',
+  // "hadir" ("present"/"in attendance") dipakai untuk "here" -- lawan kata
+  // alami dari "tidak hadir" yang sudah dipakai di seluruh halaman ini,
+  // bukan terjemahan harfiah "di sini". Bahasa Indonesia tidak mengubah
+  // bentuk kata untuk jamak, jadi tidak ada percabangan tunggal/jamak di
+  // sini seperti pada versi Inggrisnya.
+  rosterCountLine: (total: number, here: number, absent: number) =>
+    `${total} siswa · ${here} hadir · ${absent} tidak hadir`,
+
   stateNoneAdded: 'tidak ada yang ditambahkan',
   stateNamed: (n: number) => `${n} diberi nama`,
   stateAbsent: (n: number) => `${n} tidak hadir`,
