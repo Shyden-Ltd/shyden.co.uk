@@ -777,9 +777,16 @@ export interface ReverbIR {
 }
 
 /**
- * Generates a stereo impulse response entirely in code -- satisfying the
- * site's "no audio assets, no third-party requests" policy for the one
- * effect (reverb) that would conventionally use a recorded IR. Per sample:
+ * Generates a stereo impulse response entirely in code. This whole file is
+ * now the FALLBACK path: src/assets/sfx/ ships six real, mastered CC0
+ * samples for shuffle/land/done (provenance and licence in that directory's
+ * own CREDITS.md), and classroom-groups.ts's own "sound" section plays one
+ * of those whenever it is ready, reaching the synthesis this file describes
+ * only when it is not (not decoded yet, a failed fetch, or a browser that
+ * cannot decode AAC). A fallback that itself depended on a fetched or
+ * bundled recording for the one effect (reverb) that would conventionally
+ * use a recorded IR would defeat the point of having one -- it needs to
+ * keep working precisely when a real asset could not be reached. Per sample:
  * a one-pole lowpass (REVERB_LOWPASS_HZ) applied to noise, multiplied by
  * the exponential decay envelope (reverbEnvelopeGain). The two channels
  * are DELIBERATELY only slightly decorrelated -- each is a blend of one

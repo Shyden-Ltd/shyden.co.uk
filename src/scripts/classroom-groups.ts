@@ -48,6 +48,18 @@ import {
 } from '../lib/i18n';
 import { sectionState } from '../lib/sections';
 import { staleReason, type Snapshot } from '../lib/staleness';
+import { landAssetIndex, SFX_ASSET_GAIN } from '../lib/sfxAssets';
+// Six real, mastered CC0 samples (src/assets/sfx/CREDITS.md has provenance
+// and licence) -- imported through Vite so a missing file fails the BUILD,
+// not a 404 nobody notices at runtime, and so each becomes a content-hashed,
+// same-origin URL string with no code here needing to know or care what
+// that hash is. See the "── sound" section below for how each is used.
+import shuffleAssetUrl from '../assets/sfx/shuffle.m4a';
+import land1AssetUrl from '../assets/sfx/land-1.m4a';
+import land2AssetUrl from '../assets/sfx/land-2.m4a';
+import land3AssetUrl from '../assets/sfx/land-3.m4a';
+import land4AssetUrl from '../assets/sfx/land-4.m4a';
+import doneAssetUrl from '../assets/sfx/done.m4a';
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T | null;
@@ -205,6 +217,74 @@ if (form) {
     '(prefers-reduced-motion: reduce)',
   ).matches;
 
+  // ── sound asset network prefetch ────────────────────────────────────────
+  // Declared here, ahead of "── settings" below, purely because that section
+  // is the first thing that needs to CALL prefetchSoundAssets (on load, if
+  // sound is already wanted) -- top-to-bottom module evaluation means a
+  // `const` used before its own declaration line throws, so this cannot sit
+  // in its more natural home alongside the rest of the sound machinery
+  // further down ("── sound") without moving that whole section earlier
+  // too. Deliberately network-only: nothing here ever touches AudioContext,
+  // which is what keeps this able to run at PAGE LOAD without changing WHEN
+  // the lazily-created AudioContext itself first appears -- see the "shares
+  // exactly one AudioContext"/"creates no AudioContext at all" e2e tests
+  // (classroom-groups.spec.ts), both about the CONTEXT specifically, both
+  // unaffected by a plain fetch() happening or not. Decoding (which does
+  // need one) stays down in "── sound", triggered only from inside an
+  // actual effect call -- exactly where AudioContext creation already
+  // happened before this task.
+  const landAssetUrls: readonly string[] = [
+    land1AssetUrl,
+    land2AssetUrl,
+    land3AssetUrl,
+    land4AssetUrl,
+  ];
+  const allSfxAssetUrls: readonly string[] = [
+    shuffleAssetUrl,
+    ...landAssetUrls,
+    doneAssetUrl,
+  ];
+
+  /** Resolved bytes per URL, or `null` once a fetch has failed -- fetched at
+   *  most once per URL regardless of how many times ensureBytesLoading is
+   *  called, because both triggers below (on load, on toggle-on) can
+   *  legitimately fire for the SAME urls in one page visit. */
+  const assetBytes = new Map<string, Promise<ArrayBuffer | null>>();
+
+  const ensureBytesLoading = (url: string): Promise<ArrayBuffer | null> => {
+    let pending = assetBytes.get(url);
+    if (!pending) {
+      pending = fetch(url)
+        .then((response) => (response.ok ? response.arrayBuffer() : null))
+        .catch(() => null); // offline, blocked, or any other fetch failure
+      assetBytes.set(url, pending);
+    }
+    return pending;
+  };
+
+  /**
+   * "Sound is known to be wanted", per the brief, is two triggers:
+   *
+   * - on load, only if a real effect could actually fire at the settings
+   *   this page loaded with (checked AND not `skip` -- `speed === 'skip'`
+   *   never calls sfx.shuffle/land/done at all, see animate() below, so
+   *   prefetching for it would spend a phone's data for nothing a
+   *   reduced-motion visitor was promised they would not pay);
+   * - at the moment the toggle is switched ON, unconditionally -- a
+   *   deliberate asymmetry: an active click is the visitor naming their own
+   *   intent, worth six small requests (52KB total, CREDITS.md) regardless
+   *   of the CURRENT speed selection, where the passive page-load trigger
+   *   has to honour the stronger, explicit "downloads nothing" promise a
+   *   reduced-motion visitor is owed.
+   *
+   * Both call sites are further down (the on-load one at the end of
+   * "── settings", after reduceMotion has had its chance to force `skip`;
+   * the toggle-on one inside soundToggle's own `change` listener).
+   */
+  const prefetchSoundAssets = (): void => {
+    for (const url of allSfxAssetUrls) ensureBytesLoading(url);
+  };
+
   // ── settings ────────────────────────────────────────────────────────────
   // Sound defaults ON (operator decision). A stored preference wins, so a
   // teacher who muted it once is not surprised again on their next lesson.
@@ -217,11 +297,23 @@ if (form) {
   soundToggle.addEventListener('change', () => {
     remember.write(SOUND_KEY, soundToggle.checked ? 'on' : 'off');
     syncSoundLabel();
+    // "at the moment the toggle is switched on" -- the second of the two
+    // prefetch triggers (see prefetchSoundAssets's own doc comment above).
+    if (soundToggle.checked) prefetchSoundAssets();
   });
 
   // A device asking for reduced motion gets the result without the show, but
   // the teacher can still opt back in — it is a default, not a lock.
   if (reduceMotion) speedSelect.value = 'skip';
+
+  // The first of the two prefetch triggers: sound already wanted AND an
+  // effect could actually fire at the settings this page loaded with.
+  // Placed after the reduceMotion line immediately above, not before it,
+  // because it has to read speedSelect.value AFTER that line has had its
+  // chance to force it to 'skip'.
+  if (soundToggle.checked && speedSelect.value !== 'skip') {
+    prefetchSoundAssets();
+  }
 
   // ── conditional fields ──────────────────────────────────────────────────
   const showFor = (attr: string, value: string) => {
@@ -404,15 +496,31 @@ if (form) {
   // they type it, not only once the field loses focus.
   form.addEventListener('input', updateStaleness);
 
-  // ── sound (synthesised; the site ships no audio assets by policy) ────────
-  // Everything that SHAPES these three effects -- the inharmonic partials,
+  // ── sound (six real CC0 samples; synthesis is the fallback) ─────────────
+  // src/assets/sfx/ ships six mastered CC0 recordings -- shuffle.m4a,
+  // land-1..4.m4a, done.m4a; provenance and licence in that directory's own
+  // CREDITS.md -- imported above through Vite so a missing file fails the
+  // BUILD, not a 404 nobody notices at runtime. That is now the PRIMARY
+  // path for all three effects. Synthesis (src/lib/sfx.ts, unchanged by
+  // this task) is the FALLBACK: it plays instead, per sound, whenever the
+  // matching sample is not decoded YET (so the very first shuffle, fired
+  // before prefetching has had time to finish, is never silent), a fetch
+  // failed, or decodeAudioData rejected (a browser with no AAC support) --
+  // see sampleFor below. Both paths share the same lazily-created
+  // AudioContext/destination -- see ensureAudio below -- so which one
+  // played on a given call is invisible to anything outside this block.
+  //
+  // Everything that SHAPES the SYNTH fallback -- the inharmonic partials,
   // the envelopes, the scale and chord, the grain cloud, the reverb IR's
   // own generation, every gain -- is pure data/functions in src/lib/sfx.ts,
   // unit-tested there (tests/unit/sfx.test.ts) with no AudioContext in
-  // sight. Everything below this comment is wiring only: it turns those
-  // numbers into real Web Audio nodes and schedules them, exactly the
-  // split CLAUDE.md asks for. The signal chain, per voice, then the shared
-  // master bus:
+  // sight; the REAL samples' own role→file manifest, round-robin and gain
+  // are pure data/functions in src/lib/sfxAssets.ts, unit-tested there
+  // (tests/unit/sfxAssets.test.ts) the same way. Everything below this
+  // comment is wiring only, exactly the split CLAUDE.md asks for. The synth
+  // signal chain, per voice, then the shared master bus (the real samples
+  // do NOT run through this -- they are already mastered; see
+  // sampleFor/playSample below):
   //
   //   voice ─┬─ partials: 3 oscillators, independent gain+pitch envelope
   //          ├─ transient: a short noise burst through a resonant bandpass
@@ -477,12 +585,14 @@ if (form) {
       master.gain.value = MASTER_GAIN;
       master.connect(highpass);
 
-      // The reverb IR is GENERATED, never fetched or bundled -- the site's
-      // own "no audio assets" policy applies to this effect too. Its
-      // level is fixed mathematically at generation time (see
-      // REVERB_NORMALIZE_PEAK's own doc comment in sfx.ts), so
-      // `normalize` is turned OFF here: Web Audio's own auto-normalise
-      // would re-scale it a second, uncontrolled time on top of that.
+      // The reverb IR is GENERATED, never fetched or bundled -- this send
+      // only ever colours the SYNTH fallback (see this block's own header
+      // comment on when that plays instead of a real sample), so there was
+      // never a recording for it to use in the first place. Its level is
+      // fixed mathematically at generation time (see REVERB_NORMALIZE_PEAK's
+      // own doc comment in sfx.ts), so `normalize` is turned OFF here: Web
+      // Audio's own auto-normalise would re-scale it a second, uncontrolled
+      // time on top of that.
       const ir = generateReverbImpulseResponse(
         ctx.sampleRate,
         ensureVariationRng(),
@@ -504,10 +614,10 @@ if (form) {
   };
 
   /** A fresh buffer of white noise -- generated in memory from
-   *  Math.random(), never fetched or bundled, so this stays inside "the
-   *  site ships no audio assets" however many times it runs. Reused by
-   *  every noise-based layer: land's transient, shuffle's grains, done's
-   *  riser. */
+   *  Math.random(), never fetched or bundled. Reused by every noise-based
+   *  layer of the SYNTH FALLBACK specifically: land's transient, shuffle's
+   *  grains, done's riser -- the real samples (see sampleFor/playSample
+   *  below) need none of this. */
   const noiseBuffer = (ctx: AudioContext, durationS: number): AudioBuffer => {
     const length = Math.max(1, Math.round(ctx.sampleRate * durationS));
     const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
@@ -707,13 +817,87 @@ if (form) {
     }
   };
 
+  /** Decoded AudioBuffer per URL, populated lazily -- see sampleFor below.
+   *  Absence covers all three of the brief's fallback triggers identically:
+   *  not decoded yet, a fetch that failed, or a decodeAudioData rejection --
+   *  there is deliberately no separate "failed" state to check, because
+   *  every one of those is "fall back to synthesis for THIS call" alike. */
+  const decodedSamples = new Map<string, AudioBuffer>();
+  /** Which URLs have ever had a decode ATTEMPTED, so a call that finds "not
+   *  ready yet" does not restart the same decode on every subsequent call
+   *  while the first attempt is still in flight (or has already failed). */
+  const decodeAttempted = new Set<string>();
+
+  /**
+   * Synchronous readiness check: returns the decoded buffer if (and only
+   * if) it is ready RIGHT NOW, so a caller never has to await anything or
+   * schedule a setTimeout to find out -- exactly what lets shuffle()/land()/
+   * done() below decide, on every call, without blocking or delaying that
+   * call by even one tick. If nothing is ready yet, kicks off
+   * (fire-and-forget) whatever work is still needed -- awaiting the bytes
+   * this file's own prefetch may already have started, or starting them
+   * itself if nothing did -- so a LATER call within the same shuffle, or the
+   * next shuffle entirely, has a real chance of finding it ready. Never
+   * throws and never leaves an unhandled rejection: audio is decoration,
+   * per `play` above -- the same guarantee, just reached a different way,
+   * since this runs outside `play`'s own try/catch (fire-and-forget, not
+   * awaited by anything `play` wraps).
+   */
+  const sampleFor = (url: string): AudioBuffer | undefined => {
+    const ready = decodedSamples.get(url);
+    if (ready) return ready;
+    if (!decodeAttempted.has(url)) {
+      decodeAttempted.add(url);
+      void (async () => {
+        try {
+          const bytes = await ensureBytesLoading(url);
+          if (!bytes) return; // fetch failed -- stays absent, forever synth
+          const { ctx } = ensureAudio();
+          const buffer = await ctx.decodeAudioData(bytes);
+          decodedSamples.set(url, buffer);
+        } catch {
+          // decodeAudioData rejected -- e.g. a browser with no AAC support.
+          // Stays absent from decodedSamples; every future call for this
+          // URL keeps using the synth fallback, silently and correctly.
+        }
+      })();
+    }
+    return undefined;
+  };
+
+  /** Plays an already-decoded real sample: BufferSource → gain →
+   *  destination, straight to the shared AudioContext's own destination,
+   *  deliberately NOT through the synth's master/reverb/compressor bus --
+   *  these files are already mastered (src/assets/sfx/CREDITS.md); running
+   *  a finished recording through processing built for raw oscillators
+   *  would only recolour it. Still the SAME lazily-created AudioContext as
+   *  the synth path (ensureAudio's own cache), which is what keeps it true
+   *  that only one AudioContext ever exists regardless of which path a
+   *  given call actually took. */
+  const playSample = (buffer: AudioBuffer, gain: number): void => {
+    const { ctx } = ensureAudio();
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = gain;
+    source.connect(gainNode).connect(ctx.destination);
+    source.start(ctx.currentTime);
+  };
+
   const sfx = {
-    // A granular riffle: 16-22 independently-filtered noise grains over a
-    // soft arch, plus one onset thump -- see shuffleGrainPlans' own doc
+    // The real recording, if ready (shuffle.m4a); otherwise a granular
+    // riffle SYNTH FALLBACK: 16-22 independently-filtered noise grains over
+    // a soft arch, plus one onset thump -- see shuffleGrainPlans' own doc
     // comment in sfx.ts for why this reads as discrete objects in motion
     // rather than one continuous whoosh.
     shuffle: () =>
       play(() => {
+        const sample = sampleFor(shuffleAssetUrl);
+        if (sample) {
+          playSample(sample, SFX_ASSET_GAIN.shuffle);
+          return;
+        }
+
         const { ctx, master: bus, reverbConvolver: convolver } = ensureAudio();
         const startTime = ctx.currentTime;
         const rng = ensureVariationRng();
@@ -764,24 +948,40 @@ if (form) {
         subOsc.start(startTime);
         subOsc.stop(startTime + SHUFFLE_SUB.durationS + 0.02);
       }),
-    // A soft, weighted struck voice -- inharmonic partials, a contact
+    // The real recording, if ready -- round-robin over the four land-*.m4a
+    // takes (landAssetIndex, src/lib/sfxAssets.ts) so two consecutive
+    // groups never land on the same one. Otherwise a SYNTH FALLBACK: a
+    // soft, weighted struck voice -- inharmonic partials, a contact
     // transient and a falling sub -- pitched from the pentatonic scale and
     // stepping with the group index. See scheduleVoice's own doc comment.
     land: (i: number) =>
       play(() => {
+        const sample = sampleFor(landAssetUrls[landAssetIndex(i)]);
+        if (sample) {
+          playSample(sample, SFX_ASSET_GAIN.land);
+          return;
+        }
+
         const { ctx } = ensureAudio();
         const startTime = ctx.currentTime;
         admitAndTrack(
           scheduleVoice(landVoicePlan(i, ensureVariationRng()), startTime),
         );
       }),
-    // A riser swelling into a sus2/add9 cluster, each note the same
+    // The real recording, if ready (done.m4a); otherwise a SYNTH FALLBACK:
+    // a riser swelling into a sus2/add9 cluster, each note the same
     // struck-voice architecture as `land`, staggered and stretched to a
     // much longer release -- "an arrival, not a snap-off". Every note
     // scheduled against THIS SAME audio-clock startTime, offset by
     // DONE_STAGGER_S, never by setTimeout.
     done: () =>
       play(() => {
+        const sample = sampleFor(doneAssetUrl);
+        if (sample) {
+          playSample(sample, SFX_ASSET_GAIN.done);
+          return;
+        }
+
         const { ctx, master: bus, reverbConvolver: convolver } = ensureAudio();
         const startTime = ctx.currentTime;
         const rng = ensureVariationRng();

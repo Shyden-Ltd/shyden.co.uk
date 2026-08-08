@@ -1,5 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
+import { readdirSync } from 'node:fs';
+import { join, relative, sep, basename } from 'node:path';
 
 /**
  * Every assertion is web-first (auto-retrying). No fixed waits: the tool deals
@@ -73,6 +75,34 @@ const audioContextCount = (page: Page) =>
   page.evaluate(
     () => (window as Window & { __cgAudioContexts?: number }).__cgAudioContexts,
   );
+
+/** Every audio request this page could ever legitimately make matches this --
+ *  used both to prove "none happened" and to prove "the ones that did are
+ *  ours". A trailing query string is tolerated (Vite's own content-hashed
+ *  filenames never carry one, but a URL match should not depend on that). */
+const AUDIO_URL_PATTERN = /\.m4a(?:\?|$)/;
+
+/** Walks `dist/` (the just-built output `playwright.config.ts`'s own
+ *  webServer produces before any test runs) and returns every `.m4a` file
+ *  found, as full filesystem paths -- not hardcoded to `dist/_astro/`
+ *  specifically, so this stays correct if Vite's own asset directory ever
+ *  changes. Mirrors baseurl-guard.spec.ts's own recursive file-walk. */
+function listM4aFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listM4aFiles(full));
+    else if (entry.name.endsWith('.m4a')) out.push(full);
+  }
+  return out;
+}
+
+/** A filesystem path under `dist/` -> the URL path the built site actually
+ *  serves it at, e.g. `dist/_astro/shuffle.AbC123.m4a` -> `/_astro/shuffle.
+ *  AbC123.m4a`. `sep`-split/rejoined so this is correct on any platform,
+ *  not just one that happens to use `/` as its own path separator. */
+const distPathToUrlPath = (fullPath: string): string =>
+  '/' + relative('dist', fullPath).split(sep).join('/');
 
 test.describe('classroom group creator', () => {
   // Stage 2, Task 1's own RED tests. The brief's literal snippet used
@@ -238,6 +268,158 @@ test.describe('classroom group creator', () => {
     await page.click('#cg-go');
     await expect(page.locator('#cg-results .student.dealt')).toHaveCount(4);
     expect(await audioContextCount(page)).toBe(1);
+  });
+
+  // Task 9: the operator picked sound set C, six real CC0 files at
+  // src/assets/sfx/ (provenance and licence in that directory's own
+  // CREDITS.md), imported through Vite in classroom-groups.ts's own "sound"
+  // section. The five tests below are what actually protect that: the
+  // files really ship and really serve; sound-off and reduced-motion really
+  // download nothing (the CLAUDE.md/third-party-requests promise, asserted
+  // rather than assumed); sound-on requests really are ours, same-origin;
+  // and the tool really keeps working when every one of those requests is
+  // blocked -- the one that stands in for a browser that cannot decode AAC.
+  test('all six sound assets are reachable from the built site and appear in dist/', async ({
+    page,
+  }) => {
+    const files = listM4aFiles(join('dist'));
+    // A silent guard that found zero files would pass for the wrong reason
+    // -- prove the walk actually found the build output before trusting the
+    // loop below proves anything about it (same reasoning as
+    // baseurl-guard.spec.ts's own "found none, which means this guard's own
+    // file-walk is broken" check).
+    expect(
+      files.length,
+      'expected to find .m4a files under dist/ (a fresh build should always ' +
+        'produce them); found none, which means this walk is broken, not ' +
+        'that the six sound assets are missing',
+    ).toBeGreaterThan(0);
+
+    for (const role of [
+      'shuffle',
+      'land-1',
+      'land-2',
+      'land-3',
+      'land-4',
+      'done',
+    ]) {
+      const pattern = new RegExp(`^${role}\\.[\\w-]+\\.m4a$`);
+      const matches = files.filter((f) => pattern.test(basename(f)));
+      expect(
+        matches,
+        `expected exactly one built asset for "${role}" in dist/, found: [${matches.join(', ')}]`,
+      ).toHaveLength(1);
+
+      const urlPath = distPathToUrlPath(matches[0]);
+      const response = await page.request.get(urlPath);
+      expect(
+        response.ok(),
+        `GET ${urlPath} was not reachable from the built site (status ${response.status()})`,
+      ).toBe(true);
+      expect((await response.body()).length).toBeGreaterThan(0);
+    }
+  });
+
+  test('with sound off, a full shuffle fetches no audio at all', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-sound-toggle').click();
+    await page.uncheck('#cg-sound-check');
+
+    const audioRequests: string[] = [];
+    page.on('request', (r) => {
+      if (AUDIO_URL_PATTERN.test(r.url())) audioRequests.push(r.url());
+    });
+
+    // The reload is what matters: classroom-groups.ts's own "sound asset
+    // network prefetch" section reads the REMEMBERED preference at MODULE
+    // LOAD time, which only a fresh load (not a same-page uncheck) can
+    // exercise -- see that section's own doc comment.
+    await page.reload();
+    await page.locator('#cg-sound-toggle').click();
+    await expect(page.locator('#cg-sound-check')).not.toBeChecked();
+
+    await fill(page, { count: '6', size: '3', speed: 'fast' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
+    expect(audioRequests).toEqual([]);
+  });
+
+  test('with sound on, the audio requests that happen are exactly ours and same-origin', async ({
+    page,
+  }) => {
+    const audioRequests: string[] = [];
+    page.on('request', (r) => {
+      if (AUDIO_URL_PATTERN.test(r.url())) audioRequests.push(r.url());
+    });
+
+    // Sound stays ON (the default) and speed stays 'normal' (not 'skip') --
+    // the on-load prefetch trigger fires for all six purely from loading the
+    // page, with no form interaction at all.
+    await page.goto('/classroom-groups');
+
+    expect(audioRequests).toHaveLength(6);
+    const pageOrigin = new URL(page.url()).origin;
+    for (const url of audioRequests) {
+      // The CLAUDE.md/no-third-party-requests promise, asserted directly --
+      // the origin, not just that six requests happened to fire.
+      expect(new URL(url).origin).toBe(pageOrigin);
+    }
+  });
+
+  test.describe('a reduced-motion visitor', () => {
+    test('downloads no audio at all', async ({ page }) => {
+      const audioRequests: string[] = [];
+      page.on('request', (r) => {
+        if (AUDIO_URL_PATTERN.test(r.url())) audioRequests.push(r.url());
+      });
+
+      // `page.emulateMedia`, not `test.use({ reducedMotion: 'reduce' })`:
+      // verified by hand that the declarative context option does not
+      // reliably reach `window.matchMedia` reads against this project's
+      // static, prerendered pages, while this imperative call -- issued
+      // before `goto`, same as every other emulateMedia call needs to
+      // precede the navigation whose script reads it -- does.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.goto('/classroom-groups');
+      // Sound stays ON (untouched, the default) -- speed is forced to
+      // 'skip' by classroom-groups.ts's own reduceMotion handling, which
+      // predates this task. What is new here: that now also has to mean
+      // zero downloads, not just zero sound -- a real bandwidth promise on
+      // a phone (see classroom-groups.ts's own "sound asset network
+      // prefetch" section).
+      await expect(page.locator('#cg-speed')).toHaveValue('skip');
+      await page.fill('#cg-count', '6');
+      await page.click('#cg-go');
+      await expect(page.locator('#cg-results .student')).toHaveCount(6);
+      expect(audioRequests).toEqual([]);
+    });
+  });
+
+  test('the fallback plays through a full shuffle when every audio request is blocked', async ({
+    page,
+  }) => {
+    // Simulates both "still downloading" (forever, in this test's case) and
+    // "a browser that cannot decode AAC" identically -- classroom-groups.ts's
+    // own sampleFor treats a blocked fetch and a rejected decodeAudioData
+    // the same way, so proving the fetch-failure branch proves the
+    // mechanism both real-world causes fall back through.
+    await page.route('**/*.m4a', (route) => route.abort());
+
+    const pageErrors: string[] = [];
+    page.on('pageerror', (err) => pageErrors.push(String(err)));
+
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '6', size: '3', speed: 'fast' });
+    await page.click('#cg-go');
+
+    // Same assertions "the animation deals every card and settles" already
+    // makes for the unblocked case -- the point here is that blocking every
+    // audio request changes nothing about this outcome.
+    await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
+    await expect(page.locator('#cg-go')).toBeEnabled();
+    expect(pageErrors).toEqual([]);
   });
 
   test('splits by number of groups, not just by group size', async ({
