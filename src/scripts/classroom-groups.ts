@@ -1,9 +1,10 @@
 /**
  * Classroom Group Creator — DOM wiring, animation and sound.
  *
- * Per the repo's working agreement, the logic lives in src/lib/grouping.ts and
- * this file only drives the page. It computes the arrangement FIRST, writes it
- * into the DOM as real text, and only then animates. That ordering is what
+ * Per the repo's working agreement, the logic lives in src/lib/grouping.ts
+ * and src/lib/roster.ts, and this file only drives the page. It computes
+ * the arrangement FIRST, writes it into the DOM as real text, and only
+ * then animates. That ordering is what
  * makes "skip the animation", a screen reader, and a finished deal all expose
  * exactly the same result — the animation is a presentation of the answer, never
  * the means of producing it.
@@ -15,6 +16,7 @@ import {
   type Leftovers,
   type SexMode,
 } from '../lib/grouping';
+import { serialiseForCompare } from '../lib/roster';
 import {
   envelopeTotalS,
   landVoicePlan,
@@ -63,6 +65,88 @@ import doneAssetUrl from '../assets/sfx/done.m4a';
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T | null;
+
+// ── the roster ────────────────────────────────────────────────────────────
+// One array, module scope, never persisted -- declared here, ahead of the
+// `if (form)` guard below, for two reasons. First, stage 4 imports
+// getRoster/setRoster regardless of whether #cg-form exists on whatever
+// page pulls this module in -- a top-level `export function` cannot live
+// inside a block anyway. Second, neither function touches the DOM itself;
+// only the notification callback they invoke does that, and it is
+// registered from inside the guard, below, once the element it needs is
+// known to exist.
+let roster: Student[] = [];
+
+/**
+ * What the roster looked like the last time it was saved. Export and
+ * import (stage 4; neither exists yet) both call
+ * `setRoster(next, { saved: true })` to update this and clear `dirty`.
+ * Starts equal to `roster` -- both empty -- which is what keeps `dirty`
+ * false on load: with nothing yet to lose, there is nothing to differ
+ * from.
+ */
+let lastSaved: Student[] = [];
+
+/**
+ * Design spec section 11: the Import/export header reads "unsaved changes
+ * — export to keep them" the moment a teacher has changed anything, and
+ * "nothing to save yet" otherwise (`sectionState`, src/lib/sections.ts).
+ * Stage 2 declared this field on `ToolState` and could never make it true,
+ * because a roster is what gets lost and there was no roster -- this is
+ * where it becomes real.
+ *
+ * A COMPARISON against `lastSaved`, not a flag that only ever turns on --
+ * the same reasoning `staleReason`'s own doc comment (staleness.ts) gives
+ * for why staleness is a comparison too: adding a student and then
+ * removing that same student must read as nothing to save again, not stay
+ * stuck warning about a change that no longer exists.
+ */
+let dirty = false;
+
+/**
+ * Set from inside the `if (form)` guard below, the moment #cg-io's own
+ * header element is known to exist. `setRoster` calls it unconditionally
+ * on every change; a page that never wired it (or a bare import, e.g. a
+ * future test that never runs the guarded setup) simply gets no DOM
+ * write, which is correct rather than a crash.
+ */
+let onRosterChanged: (() => void) | null = null;
+
+/** Stage 4 reads this to export the roster, and to know what to diff an
+ *  import against. `readonly` in the type only -- `setRoster`, immediately
+ *  below, is what has to change; see ITS doc comment for why an accessor
+ *  pair exists here at all rather than an exported `let`. */
+export function getRoster(): readonly Student[] {
+  return roster;
+}
+
+/**
+ * The ONLY way the roster changes. Every future call site -- a later
+ * task's "Add student", remove, "Add several", "Clear all", stage 4's
+ * import -- routes through this one function rather than assigning
+ * `roster` directly. An exported `let` would give a second reference that
+ * could drift from the one the renderer reads, and nothing would catch
+ * that; one setter instead gives `dirty` and the re-render a single place
+ * to hang off, so neither can be forgotten by a new call site.
+ *
+ * `dirty` becomes true exactly when the roster is non-empty AND differs
+ * from the last saved copy -- content, not just presence, per that
+ * variable's own doc comment above. `{ saved: true }` is how export and
+ * import (stage 4) mark the CURRENT roster as the new baseline and clear
+ * the flag; nothing in this stage ever passes it, since neither exists
+ * yet.
+ */
+export function setRoster(next: Student[], opts?: { saved?: boolean }): void {
+  roster = next;
+  if (opts?.saved) {
+    lastSaved = next;
+    dirty = false;
+  } else {
+    dirty =
+      next.length > 0 && JSON.stringify(next) !== JSON.stringify(lastSaved);
+  }
+  onRosterChanged?.();
+}
 
 const form = $<HTMLFormElement>('cg-form');
 if (form) {
@@ -177,20 +261,25 @@ if (form) {
   const t: Strings = getStrings(document.documentElement.lang);
   // The engine's errors (and warnings) carry student NUMBERS, never names --
   // identity is the number, and grouping.ts has no roster to resolve one
-  // from (see Student.number's doc comment there). `roster` is where a
-  // number would resolve to a name; it is empty today because the
-  // paste-names box that used to feed one is gone (see the fieldset removed
-  // from ClassroomGroupsPage.astro) -- stage 3 is what populates it.
-  // `resolveStudent` reads `roster`, falling back to the same numbered label
-  // `renderError` itself defaults to when no resolver is passed at all.
-  // `label` below calls this exact function instead of reading a name of its
-  // own, so there is only ONE place a number becomes display text -- which
-  // is what makes it true, not just intended, that the results grid and
-  // every rendered error can never drift apart: nothing is left that could
-  // resolve the two differently.
-  const roster = new Map<number, string>();
+  // from (see Student.number's doc comment there). `rosterNames` is where a
+  // number would resolve to a name; it is empty today because nothing yet
+  // populates it -- Student details' table (a later task) is what will,
+  // each time a name is typed. Named `rosterNames` rather than `roster`
+  // now that this module also holds a real roster ARRAY of that name (see
+  // getRoster/setRoster above, declared ahead of this `if (form)` guard):
+  // a number-to-name lookup and the Student[] records it would be derived
+  // from are different things, and this is exactly the task where the two
+  // would otherwise collide.
+  // `resolveStudent` reads `rosterNames`, falling back to the same numbered
+  // label `renderError` itself defaults to when no resolver is passed at
+  // all. `label` below calls this exact function instead of reading a name
+  // of its own, so there is only ONE place a number becomes display text --
+  // which is what makes it true, not just intended, that the results grid
+  // and every rendered error can never drift apart: nothing is left that
+  // could resolve the two differently.
+  const rosterNames = new Map<number, string>();
   const resolveStudent = (n: number): string =>
-    roster.get(n) ?? t.studentNumber(n);
+    rosterNames.get(n) ?? t.studentNumber(n);
   const errorBox = $<HTMLParagraphElement>('cg-error')!;
   const results = $<HTMLElement>('cg-results')!;
   const resultsHeadingEl = $<HTMLHeadingElement>('cg-results-h')!;
@@ -378,21 +467,27 @@ if (form) {
   const readCount = (): number =>
     Number(($('cg-count') as HTMLInputElement).value);
 
-  // `roster` is what the class list currently IS. Stage 2 has no
-  // per-student data yet -- #cg-count is the page's only population
-  // control, so reading it here is not a stand-in for a future roster
-  // snapshot, it already IS one, the same way `readMode` already returns
-  // the exact shape `buildGroups` expects rather than a placeholder for a
-  // richer shape later. JSON.stringify'd at this call site, the same way
-  // `readMode` stringifies its own shape just above, so the result is
-  // always a primitive `snapshot()`'s comparison can compare by VALUE --
-  // see staleReason's own `assertComparable` (src/lib/staleness.ts), which
-  // throws if a future call site ever skips this and hands it something
-  // that is not already a string. Stage 3 extends THIS function to fold
-  // real per-student fields into the same returned object, rather than
-  // adding a second field to Snapshot or a second machine alongside this
-  // one -- see Snapshot's own doc comment for why.
-  const readRoster = (): string => JSON.stringify({ count: readCount() });
+  // `roster` (module scope, declared ahead of this `if (form)` guard) is
+  // what the class list currently IS. With a roster present,
+  // `serialiseForCompare` (src/lib/roster.ts) is authoritative: everything
+  // about it that could change who ends up with whom, folded into one
+  // string, the NAME deliberately excluded -- see that function's own doc
+  // comment for why a rename must not mark the groups out of date. With no
+  // roster -- still the only case this stage can actually reach, since
+  // nothing yet populates one -- #cg-count remains the sole population
+  // control, exactly as stage 2 left it: this branch is that same
+  // behaviour, unchanged, which is what keeps "changing the number of
+  // students marks them out of date" (classroom-groups.spec.ts) passing.
+  // JSON.stringify'd in that branch, the same way `readMode` stringifies
+  // its own shape above, so the result is always a primitive `snapshot()`'s
+  // comparison can compare by VALUE -- see staleReason's own
+  // `assertComparable` (src/lib/staleness.ts), which throws if a future
+  // call site ever skips this and hands it something that is not already a
+  // string.
+  const readRoster = (): string =>
+    roster.length > 0
+      ? serialiseForCompare(roster)
+      : JSON.stringify({ count: readCount() });
 
   // `leftovers` is the one `ToolState` field a teacher can actually change
   // today: the radios now live inside `#cg-grouping-body` (Stage 2, Task 4
@@ -428,6 +523,41 @@ if (form) {
       t,
     ).groupingOptions;
   };
+
+  // `#cg-io`'s own header -- the Import/export section's collapsed-state
+  // text. Same shape as `updateGroupingHeader` just above: `sectionState`
+  // returns three fields, this one only ever reads `.importExport`, so
+  // every field it does not need is a placeholder -- design spec section
+  // 11's rule ("unsaved changes — export to keep them" / "nothing to save
+  // yet") depends on nothing but `dirty`. Registering this as
+  // `onRosterChanged` (module scope, above) is what turns `dirty` from a
+  // private variable nobody could observe into the real, rendered header
+  // stage 2 declared but could never set. Called once now, matching
+  // `syncSoundLabel()`'s own pattern further down in "── settings", so the
+  // header stays provably in sync with `dirty`'s starting value -- today
+  // always `false`, the same default the Astro build already rendered
+  // (`initialToolState.dirty`, ClassroomGroupsPage.astro), so this call is
+  // a same-text no-op until a later task gives `setRoster` its first real
+  // caller.
+  const ioStateEl = document.querySelector<HTMLElement>('#cg-io .state');
+  const updateIoHeader = () => {
+    if (!ioStateEl) return;
+    ioStateEl.textContent = sectionState(
+      {
+        named: 0,
+        absent: 0,
+        together: 0,
+        apart: 0,
+        rosterSize: 0,
+        sexMode: 'off',
+        leftovers: 'spread',
+        dirty,
+      },
+      t,
+    ).importExport;
+  };
+  onRosterChanged = updateIoHeader;
+  updateIoHeader();
 
   // ── staleness ────────────────────────────────────────────────────────────
   // Design spec section 8. `lastSnapshot` is what the groups ON SCREEN were
@@ -1106,7 +1236,13 @@ if (form) {
 
     const count = readCount();
     const outcome = buildGroups({
-      students: count, // a number until a future stage gives us a roster
+      // The roster takes over the moment it is non-empty; `count` is the
+      // fallback for the (still common, this stage) case where a teacher
+      // never opens Student details at all. `roster` here is the SAME
+      // module-scope array getRoster/setRoster manage -- see their own
+      // doc comment above -- so this can never read a different roster
+      // than the one a later stage's table renders or exports.
+      students: roster.length > 0 ? roster : count,
       mode,
       leftovers: readLeftovers(),
       sexMode: readSexMode(), // hard-coded 'off' this stage -- see that function's own comment
