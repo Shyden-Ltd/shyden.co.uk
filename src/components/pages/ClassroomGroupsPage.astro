@@ -431,6 +431,25 @@ const sexWhyText = sexWhy(roster, t);
             </button>
           </h2>
           <div id="cg-students-body" class="tool-section-body" hidden></div>
+          <!-- Stage 3, Task 6 (design spec section 4: "Opening Student
+               details with the count above 100 -- the section refuses to
+               open and says why... The count itself is left alone.").
+               A THIRD static sibling, the same shape as #cg-roster-problem/
+               #cg-roster-warning just below: never rebuilt by renderRoster,
+               so it survives whatever #cg-students-body currently holds --
+               which, in the one moment this fires, is nothing at all, since
+               classroom-groups.ts's own #cg-students-toggle listener never
+               calls renderStudentsBody() when refusing. Placed BEFORE the
+               body, not after, so a screen reader reaches "here is why" in
+               the same order a sighted teacher would look for it: right
+               where the content they expected to see would otherwise be.
+               role="alert" -- a refusal, the same reason #cg-roster-problem
+               below is one -- and reuses .error verbatim, exactly as that
+               element already does, since this is STATIC markup (unlike
+               everything roster-ui.ts builds with document.createElement)
+               and therefore genuinely carries Astro's own scoping
+               attribute. -->
+          <p class="error" id="cg-students-limit" role="alert" hidden></p>
           <!-- Stage 3, Task 5 (design spec section 4: a duplicate number
                or a together/apart clash is "refused in the table, as it
                is typed" -- caught by rosterProblems, src/lib/roster.ts).
@@ -933,6 +952,25 @@ const sexWhyText = sexWhy(roster, t);
     grid-column: 10 / 13;
     grid-row: 2;
   }
+  /* Remove (Stage 3, Task 6; design spec section 4: "Removing a row
+     removes the student.") -- its OWN row, spanning every column, rather
+     than squeezed into row 1 or row 2 alongside the six fields already
+     there: section 3's own arithmetic already proved neither existing row
+     has room left for a seventh 44px control, and this is the only
+     placement that adds height instead of contesting width from Name or
+     any of the four row-2 fields -- section 2's "expanding is allowed to
+     scroll" rule is what makes that height free to add here, since
+     Student details only ever grows inside an EXPANDED section.
+     Right-aligned (a trailing action, read last) -- this rule is NOT
+     overridden at the table breakpoint below, and wins there too: it is
+     MORE specific than that breakpoint's own generic `#cg-roster td {
+     text-align: left }`, which is also the desired result in a table (the
+     last column of a row is a conventional home for a row-level action). */
+  #cg-roster .cg-student > td:nth-child(7) {
+    grid-column: 1 / 13;
+    grid-row: 3;
+    text-align: right;
+  }
 
   /* ── absence: a tint, a stripe and a pill (Stage 3, Task 4) ───────────────
      Design spec section 4: "the row is tinted instead" -- three signals,
@@ -1022,23 +1060,39 @@ const sexWhyText = sexWhy(roster, t);
       display: table;
       table-layout: fixed;
     }
+    /* Seven columns, not six, as of Stage 3, Task 6 -- Remove earns its
+       own (col 7), so the original six (col 1-2, unchanged since Task 2)
+       are each scaled down by the same 90% factor to make room, keeping
+       the same relative proportions to one another (8:26:14:14:19:19,
+       still, just scaled) while the total still sums to exactly 100%:
+       7 + 23 + 13 + 13 + 17 + 17 + 10 = 100. */
     #cg-roster col:nth-child(1) {
-      width: 8%;
+      width: 7%;
     }
     #cg-roster col:nth-child(2) {
-      width: 26%;
+      width: 23%;
     }
     #cg-roster col:nth-child(3) {
-      width: 14%;
+      width: 13%;
     }
     #cg-roster col:nth-child(4) {
-      width: 14%;
+      width: 13%;
     }
     #cg-roster col:nth-child(5) {
-      width: 19%;
+      width: 17%;
     }
     #cg-roster col:nth-child(6) {
-      width: 19%;
+      width: 17%;
+    }
+    /* Remove's own column -- see the CARD layout's own nth-child(7) rule,
+       above, for why this control gets a column but no matching <th>
+       (roster-ui.ts's own renderRoster never builds one). A table row
+       with fewer <th> cells than the table's own column count is valid --
+       every browser this repo tests simply leaves that one position blank
+       in the header row, which is what happens here: six headings, seven
+       columns, the seventh's own header-row cell rendering empty. */
+    #cg-roster col:nth-child(7) {
+      width: 10%;
     }
     #cg-roster thead {
       display: table-header-group;
@@ -1201,7 +1255,8 @@ const sexWhyText = sexWhy(roster, t);
   }
   .cg-add-student,
   .cg-add-several,
-  .cg-add-confirm {
+  .cg-add-confirm,
+  .cg-remove-student {
     min-height: 44px;
     padding: 0.5rem 0.9rem;
     font: inherit;
@@ -1212,10 +1267,59 @@ const sexWhyText = sexWhy(roster, t);
     border-radius: 6px;
     cursor: pointer;
   }
+  /* Design spec section 4, "Adding a row at 100": both add controls
+     disable at the limit -- matching `.actions button:disabled`'s own
+     visual language (the SCOPED style block, further down) rather than
+     inventing a second one, but restated GLOBAL here for the identical
+     reason every other rule in this block is: buildToolbar (roster-ui.ts)
+     builds both buttons by document.createElement, so neither carries
+     Astro's own scoping attribute. Remove is never disabled by this rule
+     -- nothing about MAX_ROSTER stops a teacher removing a row, even at
+     the ceiling; a class already full is exactly when removing one first
+     matters most. */
+  .cg-add-student:disabled,
+  .cg-add-several:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  /* Slightly smaller and quieter than the two ADD buttons above -- an
+     established, lower-emphasis action, not a peer of "+ Add student"/
+     "+ Add several…", which is why it is not in the shared rule above. */
+  .cg-remove-student {
+    min-height: 44px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
   .cg-add-several-inline {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+  }
+  /* The two refusals `buildToolbar` (roster-ui.ts) can render: "Adding a
+     row at 100" (a STANDING fact once the roster reaches MAX_ROSTER) and
+     "+ Add several…"'s own crossing-the-limit refusal (a TRANSIENT
+     response to one confirm click) -- same severity, same visual family,
+     so one class covers both rather than inventing a second. Duplicates
+     .error's own colours (the SCOPED style block, further down) rather
+     than sharing the class, for the identical reason .roster-warning
+     duplicates .stale-notice's amber instead of sharing it, just below --
+     a scoped selector cannot match an element built by
+     document.createElement, which carries no scoping attribute at all.
+     `margin: 0` -- both call sites append this into a flex/inline-flex
+     parent of their own (.cg-roster-toolbar / .cg-add-several-inline,
+     both `gap`-spaced already), so a <p>'s own default block margin would
+     only double up on spacing the parent already provides. */
+  .cg-roster-limit-message {
+    margin: 0;
+    padding: 0.5rem 0.8rem;
+    max-width: var(--measure);
+    border-radius: 6px;
+    border: 1px solid #b3261e;
+    color: #8c1d18;
+    background: #fdecea;
+    font-size: 0.9rem;
   }
   /* Same specificity fix `.stale-notice[hidden]` already needed further
      down (its own comment has the full reasoning): `display: inline-flex`

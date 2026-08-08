@@ -181,6 +181,12 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   rosterDuplicateMessage: [5, 'Eko'],
   rosterClashMessage: [['Ana', 'Budi']],
   rosterGapWarning: [[4, 6, 7]],
+  // Stage 3, Task 6. rosterOpenProblem/rosterAtLimit's own sole callers
+  // (src/lib/roster.ts, roster-ui.ts) -- always called with MAX_ROSTER
+  // itself, so 100 is the only argument either is ever probed with.
+  rosterOpenRefusedMessage: [100],
+  rosterAtLimitMessage: [100],
+  rosterRoomMessage: [10],
 };
 
 describe('locales are complete', () => {

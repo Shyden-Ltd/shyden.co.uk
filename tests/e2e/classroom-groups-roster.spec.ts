@@ -633,6 +633,244 @@ test.describe('validation as it is typed', () => {
   });
 });
 
+/**
+ * Stage 3, Task 6: adding, removing, and the two limits. Traceability:
+ * R-08, B-06…B-09, X-02…X-06, X-08 (design spec section 4 /
+ * test-traceability.md).
+ *
+ * task-6-brief.md's own Step 1 snippet is reproduced below with corrections
+ * and additions, not verbatim:
+ *  - Its own "Student details refuses to open above 100" test uses
+ *    `page.getByLabel('How many students?')` -- that label does not exist
+ *    on this page. The field's real accessible name is "Number of
+ *    students" (`studentsLabel` in en.ts) -- the SAME correction
+ *    classroom-groups.spec.ts and classroom-groups-controls.spec.ts each
+ *    already made once for the identical brief mistake (see either file's
+ *    own comment recording it).
+ *  - B-09 ("Removing a row lowers it") is named by this task's own
+ *    traceability line but is not exercised by any of the brief's five
+ *    given tests at all -- picked up below in its own describe block,
+ *    along with the identity question this task's own brief was explicit
+ *    is not to be answered by assumption: removing a student must not
+ *    renumber the others (design spec section 4's "gaps allowed... a
+ *    number belongs to a student, not a position").
+ *  - R-08's own traceability line names the design spec's literal example
+ *    (1, 2, 3, 5 -> 6, a real GAP), which the brief's own "a new student
+ *    takes one past the highest" test does not quite reproduce (it sets
+ *    ONE student's number to 5 without first creating the 1/2/3 that make
+ *    it a genuine gap rather than merely a highest value) -- reproduced
+ *    literally as a second, additional test.
+ */
+test.describe('adding, removing, and the two limits', () => {
+  test('Add several is inline — no dialog', async ({ page }) => {
+    await openRoster(page);
+    page.on('dialog', () => {
+      throw new Error('a dialog was opened');
+    });
+    await page.getByRole('button', { name: 'Add several' }).click();
+    await expect(page.getByLabel('How many?')).toBeVisible();
+  });
+
+  test('a new student takes one past the highest', async ({ page }) => {
+    await openRoster(page);
+    await page.locator('.cg-student').first().getByLabel('#').fill('5');
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await expect(
+      page.locator('.cg-student').nth(1).getByLabel('#'),
+    ).toHaveValue('6');
+  });
+
+  // Not in the brief -- R-08's own literal example (design spec section 4,
+  // "Numbers": "With 1, 2, 3 and 5 on the list the next student is 6, not
+  // 4"), proving a REAL gap is not filled before a fresh highest.
+  test('a new student takes one past the highest even across a real gap — 1, 2, 3, 5 then Add student gives 6', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 3); // rows #1, 2, 3, 4
+    await page.locator('.cg-student').nth(3).getByLabel('#').fill('5'); // now 1, 2, 3, 5 -- a real gap at 4
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await expect(
+      page.locator('.cg-student').nth(4).getByLabel('#'),
+    ).toHaveValue('6');
+  });
+
+  test('both add controls disable at 100, stating the limit', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 99);
+    await expect(
+      page.getByRole('button', { name: 'Add student' }),
+    ).toBeDisabled();
+    await expect(
+      page.getByText('Student details holds up to 100 students.'),
+    ).toBeVisible();
+  });
+
+  // Not in the brief -- the OTHER add control must state the limit too,
+  // proven independently rather than assumed from "Add student" above:
+  // both are disabled by the SAME `rosterAtLimit` check (roster-ui.ts's
+  // buildToolbar), but that is an implementation fact, not something this
+  // suite is entitled to take on faith.
+  test('Add several also disables at 100', async ({ page }) => {
+    await openRoster(page);
+    await addSeveral(page, 99);
+    await expect(
+      page.getByRole('button', { name: 'Add several' }),
+    ).toBeDisabled();
+  });
+
+  test('Add several refuses a number that would cross the limit, saying how many are free', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 89);
+    await page.getByRole('button', { name: 'Add several' }).click();
+    await page.getByLabel('How many?').fill('20');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(
+      page.getByText('There is room for 10 more students.'),
+    ).toBeVisible();
+    await expect(page.locator('.cg-student')).toHaveCount(90);
+  });
+
+  // Corrected from the brief's own `getByLabel('How many students?')` --
+  // see this describe block's own header comment.
+  test('Student details refuses to open above 100, leaving the count alone', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Number of students').fill('300');
+    await page.locator('#cg-students-toggle').click();
+    await expect(
+      page.getByText(
+        'Student details holds up to 100 students. Lower the number to list this class individually.',
+      ),
+    ).toBeVisible();
+    await expect(page.locator('#cg-roster')).toHaveCount(0);
+    await expect(page.getByLabel('Number of students')).toHaveValue('300');
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeEnabled();
+  });
+
+  // Not in the brief -- the refusal is a COMPARISON, not a one-way latch,
+  // the same "comparison, not a flag" shape every other guard on this page
+  // already keeps (dirty, staleReason, updateRosterValidation). Lowering
+  // the count and clicking again must actually open the section, not stay
+  // refused over a fact that is no longer true.
+  test('lowering the count and reopening actually opens Student details', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Number of students').fill('300');
+    await page.locator('#cg-students-toggle').click();
+    await expect(
+      page.getByText('Student details holds up to 100 students.'),
+    ).toBeVisible();
+    await page.getByLabel('Number of students').fill('50');
+    await page.locator('#cg-students-toggle').click();
+    await expect(
+      page.getByRole('button', { name: 'Add student' }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Student details holds up to 100 students.'),
+    ).toBeHidden();
+  });
+});
+
+// B-09 ("Removing a row lowers it") and this task's own carried-forward
+// risk: "make sure a pending, uncommitted text edit is not silently
+// discarded when a row is added or removed elsewhere" (this task's own
+// brief). None of these are in task-6-brief.md's own Step 1 snippet at all.
+test.describe('removing a student', () => {
+  test('removes the row and lowers the roster', async ({ page }) => {
+    await openRoster(page);
+    await addSeveral(page, 2); // three rows: 1, 2, 3
+    await expect(page.locator('.cg-student')).toHaveCount(3);
+    await page
+      .locator('.cg-student')
+      .nth(1)
+      .getByRole('button', { name: 'Remove' })
+      .click();
+    await expect(page.locator('.cg-student')).toHaveCount(2);
+  });
+
+  // Identity is the number (this stage's own global constraint): removing
+  // a student must not renumber the others. Removing the MIDDLE student of
+  // 1, 2, 3 must leave 1 and 3 — a gap — never silently renumber the
+  // survivor down to 2, which would quietly hand student #3's own together/
+  // apart letters (or a future pin) to a different child.
+  test('does not renumber the remaining students', async ({ page }) => {
+    await openRoster(page);
+    await addSeveral(page, 2); // three rows: 1, 2, 3
+    await page
+      .locator('.cg-student')
+      .nth(1)
+      .getByRole('button', { name: 'Remove' })
+      .click();
+    const rows = page.locator('.cg-student');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0).getByLabel('#')).toHaveValue('1');
+    await expect(rows.nth(1).getByLabel('#')).toHaveValue('3');
+  });
+
+  // The exact shape of bug this task's own brief named as a real risk: a
+  // pending, uncommitted text edit on a DIFFERENT row (never itself
+  // re-rendered — RosterHandlers.onTextChange's own doc comment,
+  // roster-ui.ts) must survive a removal elsewhere in the table, not be
+  // silently discarded by a stale render-time snapshot.
+  test('removing one row does not discard an uncommitted text edit on another', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 2); // three rows: 1, 2, 3
+    const rows = page.locator('.cg-student');
+    await rows.nth(0).getByLabel('Name').fill('Ana');
+    await rows.nth(1).getByRole('button', { name: 'Remove' }).click();
+    await expect(page.locator('.cg-student')).toHaveCount(2);
+    await expect(
+      page.locator('.cg-student').first().getByLabel('Name'),
+    ).toHaveValue('Ana');
+  });
+
+  // Removing a row re-enables the add controls the moment the roster drops
+  // back under the limit — the same "comparison, not a one-way latch"
+  // shape design spec section 4's own refusals already keep elsewhere.
+  test('removing a row at the limit re-enables the add controls', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 99); // 100 rows -- at the limit
+    await expect(
+      page.getByRole('button', { name: 'Add student' }),
+    ).toBeDisabled();
+    await page
+      .locator('.cg-student')
+      .first()
+      .getByRole('button', { name: 'Remove' })
+      .click();
+    await expect(page.locator('.cg-student')).toHaveCount(99);
+    await expect(
+      page.getByRole('button', { name: 'Add student' }),
+    ).toBeEnabled();
+    await expect(
+      page.getByText('Student details holds up to 100 students.'),
+    ).toBeHidden();
+  });
+
+  test('the Remove button meets the 44px touch target', async ({ page }) => {
+    await openRoster(page);
+    const box = await page
+      .locator('.cg-student')
+      .first()
+      .getByRole('button', { name: 'Remove' })
+      .boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  });
+});
+
 test.describe('Indonesian', () => {
   test('the table has the six columns, translated', async ({ page }) => {
     await openRoster(page, '/id/classroom-groups');
@@ -719,6 +957,66 @@ test.describe('Indonesian', () => {
     await expect(
       page.getByRole('button', { name: 'Buat Kelompok' }),
     ).toBeEnabled();
+  });
+
+  // Stage 3, Task 6's own i18n requirement. Mirrors 'Student details
+  // refuses to open above 100, leaving the count alone', above.
+  test('Student details refuses to open above 100, in Indonesian', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByLabel('Jumlah siswa').fill('300');
+    await page.locator('#cg-students-toggle').click();
+    await expect(
+      page.getByText(
+        'Detail siswa menampung hingga 100 siswa. Turunkan angkanya untuk mendaftar kelas ini satu per satu.',
+      ),
+    ).toBeVisible();
+    await expect(page.locator('#cg-roster')).toHaveCount(0);
+    await expect(page.getByLabel('Jumlah siswa')).toHaveValue('300');
+    await expect(
+      page.getByRole('button', { name: 'Buat Kelompok' }),
+    ).toBeEnabled();
+  });
+
+  // Mirrors 'both add controls disable at 100, stating the limit', above.
+  test('both add controls disable at 100, in Indonesian', async ({ page }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await addSeveral(page, 99);
+    await expect(
+      page.getByRole('button', { name: 'Tambah siswa' }),
+    ).toBeDisabled();
+    await expect(
+      page.getByText('Detail siswa menampung hingga 100 siswa.'),
+    ).toBeVisible();
+  });
+
+  // Mirrors 'Add several refuses a number that would cross the limit...',
+  // above.
+  test('Add several refuses a number that would cross the limit, in Indonesian', async ({
+    page,
+  }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await addSeveral(page, 89);
+    await page.getByRole('button', { name: 'Tambah beberapa' }).click();
+    await page.getByLabel('Berapa?').fill('20');
+    await page.getByRole('button', { name: 'Tambah', exact: true }).click();
+    await expect(
+      page.getByText('Masih ada ruang untuk 10 siswa lagi.'),
+    ).toBeVisible();
+    await expect(page.locator('.cg-student')).toHaveCount(90);
+  });
+
+  // Mirrors 'removes the row and lowers the roster', above.
+  test('removing a row lowers the roster, in Indonesian', async ({ page }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await addSeveral(page, 2);
+    await page
+      .locator('.cg-student')
+      .nth(1)
+      .getByRole('button', { name: 'Hapus' })
+      .click();
+    await expect(page.locator('.cg-student')).toHaveCount(2);
   });
 });
 

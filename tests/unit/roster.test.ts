@@ -3,8 +3,11 @@ import {
   MAX_ROSTER,
   availableLetters,
   nextNumber,
+  rosterAtLimit,
   rosterCounts,
+  rosterOpenProblem,
   rosterProblems,
+  rosterRoomProblem,
   rosterWarnings,
   serialiseForCompare,
 } from '../../src/lib/roster';
@@ -24,11 +27,167 @@ describe('the module surface', () => {
       'MAX_ROSTER',
       'availableLetters',
       'nextNumber',
+      'rosterAtLimit',
       'rosterCounts',
+      'rosterOpenProblem',
       'rosterProblems',
+      'rosterRoomProblem',
       'rosterWarnings',
       'serialiseForCompare',
     ]);
+  });
+});
+
+// Stage 3, Task 6 (design spec section 4, "Two size limits, not one" /
+// "Adding a row at 100"). The two ROSTER-side outcomes MAX_ROSTER has:
+// `rosterAtLimit` gates `+ Add student`/`+ Add several…`'s own `disabled`
+// (roster-ui.ts's buildToolbar); `rosterRoomProblem`, below, is the other
+// -- refusing a BATCH that would cross the ceiling even while under it.
+// `rosterOpenProblem`, further below, is the THIRD outcome (opening
+// Student details with no list yet, over a too-high count) -- a different
+// question again, so it gets its own describe block.
+describe('rosterAtLimit', () => {
+  it('is false below the limit', () => {
+    const full = Array.from({ length: 99 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterAtLimit(full)).toBe(false);
+  });
+
+  it('is true exactly at the limit', () => {
+    const full = Array.from({ length: 100 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterAtLimit(full)).toBe(true);
+  });
+
+  // Not reachable through this stage's own UI (both add controls are
+  // disabled at exactly 100, and `+ Add several…`'s own refusal --
+  // `rosterRoomProblem` -- never lets a batch land the roster past it
+  // either), but pinned anyway: a future caller (a CSV import over 100
+  // rows, say) must not read an over-full roster as merely "not at the
+  // limit".
+  it('is true past the limit', () => {
+    const over = Array.from({ length: 101 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterAtLimit(over)).toBe(true);
+  });
+
+  it('is false on an empty roster', () => {
+    expect(rosterAtLimit([])).toBe(false);
+  });
+});
+
+describe('rosterRoomProblem', () => {
+  it('is quiet when the whole batch fits with room to spare', () => {
+    expect(rosterRoomProblem([student({ number: 1 })], 5, en)).toBeNull();
+  });
+
+  // The boundary itself: exactly filling the remaining room is NOT a
+  // refusal -- "would CROSS it" (design spec section 4), not "would reach
+  // it". A mutant that used `<` instead of `<=` for the fits-check would
+  // fail this by refusing a batch that lands EXACTLY on 100.
+  it('is quiet when the batch exactly fills the remaining room', () => {
+    const roster90 = Array.from({ length: 90 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterRoomProblem(roster90, 10, en)).toBeNull();
+  });
+
+  it('refuses a batch that would cross the limit, naming how many rows are free', () => {
+    const roster90 = Array.from({ length: 90 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterRoomProblem(roster90, 20, en)).toBe(
+      'There is room for 10 more students.',
+    );
+  });
+
+  // One past the boundary -- the smallest possible refusal, distinguishing
+  // this from a mutant that only refuses a batch far larger than the room.
+  it('refuses a batch that is just one over the room', () => {
+    const roster90 = Array.from({ length: 90 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterRoomProblem(roster90, 11, en)).toBe(
+      'There is room for 10 more students.',
+    );
+  });
+
+  // English inflects (this file's established convention, e.g.
+  // rosterCountLine/rosterGapWarning) -- exactly one free row needs its own
+  // grammatical branch: "1 more student", never "1 more students".
+  it('uses singular grammar for exactly one free row', () => {
+    const roster99 = Array.from({ length: 99 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterRoomProblem(roster99, 2, en)).toBe(
+      'There is room for 1 more student.',
+    );
+  });
+
+  it('is quiet on an empty roster requesting fewer than MAX_ROSTER', () => {
+    expect(rosterRoomProblem([], 50, en)).toBeNull();
+  });
+
+  // Already at the ceiling -- design spec section 4's own point that
+  // `+ Add several…` "refuses a number that would cross it" applies even
+  // to the smallest possible request once there is no room left at all.
+  // (Unreachable through the page's own UI, since both add controls are
+  // already `disabled` by `rosterAtLimit` at this point -- pinned at the
+  // unit level regardless, since nothing here enforces that precondition.)
+  it('refuses even a single student once already at the limit', () => {
+    const roster100 = Array.from({ length: 100 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    expect(rosterRoomProblem(roster100, 1, en)).toBe(
+      'There is room for 0 more students.',
+    );
+  });
+
+  it('renders in Indonesian too, not a copy of the English sentence', () => {
+    const roster90 = Array.from({ length: 90 }, (_, i) =>
+      student({ number: i + 1 }),
+    );
+    const msg = rosterRoomProblem(roster90, 20, id);
+    expect(msg).toContain('10');
+    expect(msg).not.toContain('There is room');
+  });
+});
+
+// Design spec section 4: "Opening Student details with the count above 100
+// -- the section refuses to open and says why... The count itself is left
+// alone." Reachable only with NO roster yet (`rosterLength === 0`) --
+// `rosterAtLimit`, above, is what governs a roster that already exists.
+describe('rosterOpenProblem', () => {
+  it('is quiet when there is no roster and the count is within the limit', () => {
+    expect(rosterOpenProblem(0, 24, en)).toBeNull();
+  });
+
+  // The boundary: exactly 100 is not "above" it.
+  it('is quiet when there is no roster and the count is exactly at the limit', () => {
+    expect(rosterOpenProblem(0, 100, en)).toBeNull();
+  });
+
+  it('refuses when there is no roster and the count is above the limit', () => {
+    expect(rosterOpenProblem(0, 300, en)).toBe(
+      'Student details holds up to 100 students. Lower the number to ' +
+        'list this class individually.',
+    );
+  });
+
+  // A roster already exists -- a different question than the bare count,
+  // and one `rosterAtLimit` answers instead. A mutant that dropped the
+  // `rosterLength === 0` half of the guard would refuse this too.
+  it('is quiet once a roster already exists, regardless of the count', () => {
+    expect(rosterOpenProblem(1, 300, en)).toBeNull();
+  });
+
+  it('renders in Indonesian too, not a copy of the English sentence', () => {
+    const msg = rosterOpenProblem(0, 300, id);
+    expect(msg).toContain('100');
+    expect(msg).not.toContain('Student details holds up');
   });
 });
 

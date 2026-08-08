@@ -285,6 +285,41 @@ export const en = {
         : `Numbers ${joinAnd(missing.map(String))} are`
     } missing. That is fine if those children have left — open Student details to check.`,
 
+  // Stage 3, Task 6 (design spec section 4, "Two size limits, not one").
+  // Three refusals, three sentences, deliberately NOT sharing one message:
+  // each names the SAME limit but a DIFFERENT remedy, because a different
+  // fact is true in each case.
+  //
+  // `rosterOpenRefusedMessage` — the approved copy (design spec section 4)
+  // verbatim: "the section refuses to open and says why... Lower the
+  // number to list this class individually" is the only remedy that makes
+  // sense here, because there is no list yet, only a count.
+  rosterOpenRefusedMessage: (max: number) =>
+    `Student details holds up to ${max} students. Lower the number to list this class individually.`,
+  // `rosterAtLimitMessage` — a LIST already exists and already holds the
+  // maximum, so "lower the number" is not even a control on screen at this
+  // point (design spec section 4's own "the moment a list exists, the box
+  // becomes a read-out"); the only way out is to remove somebody first.
+  // Shares its OPENING clause with `rosterOpenRefusedMessage` above
+  // (deliberately — both name the same fact) but never its remedy.
+  rosterAtLimitMessage: (max: number) =>
+    `Student details holds up to ${max} students. Remove a student to add another.`,
+  // `rosterRoomMessage` — "+ Add several…" refusing a batch that would
+  // cross the ceiling even from under it, naming exactly how many rows are
+  // free rather than the ceiling itself (the teacher already knows how
+  // many they asked for; what they need is how many will actually fit).
+  // English inflects (this file's established convention, e.g.
+  // `rosterCountLine`) for exactly one free row.
+  rosterRoomMessage: (room: number) =>
+    `There is room for ${room} more ${room === 1 ? 'student' : 'students'}.`,
+  // The per-row "Remove" button (design spec section 4: "Removing a row
+  // removes the student"). Matched EXACTLY the same way `rosterAddConfirm`
+  // already is by later tests, scoped to one `.cg-student` row at a time —
+  // every row carries the identical word, and the row itself is what
+  // disambiguates which button a test means, the same way `row.getByLabel
+  // ('Name')` already does for a field every row also has.
+  rosterRemove: 'Remove',
+
   // Every value below is read ONLY through sectionState (src/lib/sections.ts)
   // -- never interpolated into a page directly -- so a key here with no
   // matching branch in that function, or a branch reading a key missing

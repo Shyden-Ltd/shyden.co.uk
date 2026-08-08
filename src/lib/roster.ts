@@ -26,11 +26,14 @@ import type { Strings } from './i18n';
  * roughly twice the largest real class, so no teacher meets it by
  * accident.
  *
- * Nothing in this file enforces it — opening Student details above the
- * limit, and disabling the two add controls at it, are a later task's job
- * (design spec section 4 states three separate outcomes for exceeding it).
- * Exported now so every call site that eventually needs it imports this
- * one constant rather than each hard-coding `100` by hand.
+ * Three separate outcomes for exceeding it (design spec section 4), each
+ * with its own function below: opening Student details above the limit
+ * with no list yet (`rosterOpenProblem`), the two add controls disabling
+ * once a roster reaches it (`rosterAtLimit`), and `+ Add several…`
+ * refusing a batch that would cross it even from under it
+ * (`rosterRoomProblem`). Importing this one constant, rather than each call
+ * site hard-coding `100` by hand, is what keeps all three (and every
+ * message they drive) certain to agree.
  */
 export const MAX_ROSTER = 100;
 
@@ -257,4 +260,73 @@ export function rosterWarnings(roster: Student[], t: Strings): string[] {
     if (!present.has(n)) missing.push(n);
   }
   return missing.length === 0 ? [] : [t.rosterGapWarning(missing)];
+}
+
+/**
+ * Student details' own hard ceiling reached -- design spec section 4,
+ * "Adding a row at 100": "both `+ Add student` and `+ Add several…` are
+ * disabled and state the limit." A plain boolean gate, unlike
+ * `rosterRoomProblem` below (which also has to say how many rows remain
+ * when a BATCH is requested) -- there is nothing left to count once the
+ * roster already holds the maximum, so the message this drives
+ * (`rosterAtLimitMessage`, en.ts/id.ts) needs no argument of its own.
+ * `>=`, not `===`: nothing in this file lets a roster exceed `MAX_ROSTER`
+ * through its own two add paths, but a caller this module does not control
+ * (a later stage's CSV import, say) must still read an over-full roster as
+ * "at the limit", not merely "not yet at it".
+ */
+export const rosterAtLimit = (roster: readonly Student[]): boolean =>
+  roster.length >= MAX_ROSTER;
+
+/**
+ * Whether Student details has room for `count` MORE students, and if not,
+ * the message naming how many rows actually ARE free -- design spec
+ * section 4: "`+ Add several…` also refuses a number that would cross it,
+ * saying how many rows are free." `null` means the whole batch fits;
+ * a message means it does not -- and the WHOLE batch is refused, never
+ * partially added up to whatever room remains (design spec section 4 says
+ * "refuses a number that would cross it", never "adds as many as will
+ * fit"), so the caller must add all `count` rows or none, on this
+ * function's say-so alone.
+ *
+ * `room` is floored at 0 rather than allowed to go negative: nothing in
+ * this module lets `roster.length` exceed `MAX_ROSTER` in the first place
+ * (`rosterAtLimit`, above, is what the two add controls are `disabled` on),
+ * but a message reading "-3 more" would be nonsense if some future caller
+ * ever handed this an already over-full roster.
+ */
+export function rosterRoomProblem(
+  roster: readonly Student[],
+  count: number,
+  t: Strings,
+): string | null {
+  const room = Math.max(0, MAX_ROSTER - roster.length);
+  return count <= room ? null : t.rosterRoomMessage(room);
+}
+
+/**
+ * Whether Student details should refuse to open right now, and if so, the
+ * message explaining why -- design spec section 4: "Opening Student
+ * details with the count above 100 — the section refuses to open and says
+ * why... The count itself is left alone." Takes `rosterLength` rather than
+ * a roster, deliberately: the one call site (classroom-groups.ts's own
+ * `#cg-students-toggle` handler) already has `getRoster().length` to hand,
+ * and every other function in this file that only ever needs a count, not
+ * a roster to inspect field-by-field, is typed the same lean way.
+ *
+ * Reachable only with NO list yet (`rosterLength === 0`) -- once even one
+ * named row exists, growing the roster past `MAX_ROSTER` is already
+ * impossible (`rosterAtLimit`, above, is what the two add controls are
+ * disabled on), so this asks a DIFFERENT question: not "is the roster
+ * full" but "is the plain COUNT, with no roster built from it yet, already
+ * too big to build one from at all".
+ */
+export function rosterOpenProblem(
+  rosterLength: number,
+  count: number,
+  t: Strings,
+): string | null {
+  return rosterLength === 0 && count > MAX_ROSTER
+    ? t.rosterOpenRefusedMessage(MAX_ROSTER)
+    : null;
 }

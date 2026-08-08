@@ -153,6 +153,23 @@ export const id: Strings = {
   rosterGapWarning: (missing: number[]) =>
     `Daftar kelas Anda tampak belum lengkap. Nomor ${joinDan(missing.map(String))} belum ada. Itu wajar jika siswa tersebut sudah keluar — buka Detail siswa untuk memeriksanya.`,
 
+  // Tugas 6 Tahap 3 (spesifikasi desain bagian 4, "Two size limits, not
+  // one"). Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+  // lengkap mengapa ketiganya berbagi kalimat pembuka yang sama tetapi
+  // tidak pernah solusinya. Terjemahan implementer sendiri, bukan teks
+  // yang disetujui secara harfiah (dokumen desain hanya mengutip versi
+  // Inggris untuk pesan ini) -- REVIEW SURFACE, sama seperti catatan Tugas
+  // 4 dan 5 pada berkas ini.
+  rosterOpenRefusedMessage: (max: number) =>
+    `Detail siswa menampung hingga ${max} siswa. Turunkan angkanya untuk mendaftar kelas ini satu per satu.`,
+  rosterAtLimitMessage: (max: number) =>
+    `Detail siswa menampung hingga ${max} siswa. Hapus satu siswa untuk menambah yang lain.`,
+  // Bahasa Indonesia tidak mengubah bentuk kata untuk jamak, jadi tidak ada
+  // percabangan tunggal/jamak di sini seperti pada versi Inggrisnya.
+  rosterRoomMessage: (room: number) =>
+    `Masih ada ruang untuk ${room} siswa lagi.`,
+  rosterRemove: 'Hapus',
+
   stateNoneAdded: 'tidak ada yang ditambahkan',
   stateNamed: (n: number) => `${n} diberi nama`,
   stateAbsent: (n: number) => `${n} tidak hadir`,

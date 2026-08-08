@@ -15,13 +15,15 @@ import {
   type Mode,
   type Leftovers,
   type SexMode,
-  MAX_STUDENTS,
 } from '../lib/grouping';
 import {
   serialiseForCompare,
   nextNumber,
+  rosterAtLimit,
   rosterCounts,
+  rosterOpenProblem,
   rosterProblems,
+  rosterRoomProblem,
   rosterWarnings,
 } from '../lib/roster';
 import {
@@ -243,12 +245,10 @@ if (form) {
     });
   }
 
-  // ── the tool's four collapsible sections ────────────────────────────────
-  // Student details, Grouping options, Import / export, Sound & animation
-  // (the fourth folded in by Stage 2, Task 7 -- see
-  // ClassroomGroupsPage.astro's own comment on the restructuring). Same
-  // reason this is wired here, ahead of `reduceMotion`'s throw site below,
-  // as #cg-howto's own toggle just above: a mid-module failure further down
+  // ── three of the tool's four collapsible sections ───────────────────────
+  // Grouping options, Import / export, Sound & animation. Same reason this
+  // is wired here, ahead of `reduceMotion`'s throw site below, as
+  // #cg-howto's own toggle just above: a mid-module failure further down
   // must not be able to leave any section header un-openable. Unlike
   // #cg-howto, nothing here is read from or written to `remember` -- design
   // doc section 11 names exactly two UI preferences allowed to persist (the
@@ -259,7 +259,15 @@ if (form) {
   // "settings", the same separation `cg-grouping`'s section toggle here and
   // its leftovers-radio listener (`updateGroupingHeader`, further down)
   // already have.
-  for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
+  //
+  // `cg-students` is deliberately NOT in this list, as of Stage 3, Task 6:
+  // design spec section 4's "Opening Student details with the count above
+  // 100 -- the section refuses to open and says why" needs `readCount()`
+  // and `getRoster()`, neither available yet this early in the module --
+  // wired separately, alongside the rest of the roster's own machinery, in
+  // "── student roster" below (see that section's own `#cg-students-toggle`
+  // listener).
+  for (const id of ['cg-grouping', 'cg-io', 'cg-sound']) {
     const toggle = $<HTMLButtonElement>(`${id}-toggle`);
     const body = $<HTMLElement>(`${id}-body`);
     if (!toggle || !body) continue;
@@ -700,6 +708,49 @@ if (form) {
   const rosterProblemEl = $<HTMLParagraphElement>('cg-roster-problem')!;
   const rosterWarningEl = $<HTMLParagraphElement>('cg-roster-warning')!;
 
+  // Stage 3, Task 6. A THIRD static sibling, the same shape as the two
+  // above (never rebuilt by renderRoster, always in the page's own markup)
+  // -- design spec section 4's "Opening Student details with the count
+  // above 100" refusal. `#cg-students-toggle` itself is pulled out of the
+  // generic 3-section loop above specifically so this can be wired here,
+  // where `readCount`/`getRoster` are already in scope.
+  const studentsToggle = $<HTMLButtonElement>('cg-students-toggle');
+  const studentsLimitEl = $<HTMLParagraphElement>('cg-students-limit')!;
+  if (studentsToggle && studentsBody) {
+    studentsToggle.addEventListener('click', () => {
+      const opening = studentsBody.hidden;
+      // Only ever a refusal on the way IN -- closing an already-open
+      // section has nothing to refuse. Re-evaluated on every click, never
+      // cached: the same "comparison, not a one-way latch" shape every
+      // other guard on this page keeps (updateStaleness, dirty,
+      // updateRosterValidation) -- a teacher who lowers the count and
+      // clicks again must see the section actually open, not stay
+      // refused over a fact that is no longer true.
+      const problem = opening
+        ? rosterOpenProblem(getRoster().length, readCount(), t)
+        : null;
+      if (problem) {
+        if (studentsLimitEl.textContent !== problem) {
+          studentsLimitEl.textContent = problem;
+        }
+        studentsLimitEl.hidden = false;
+        // The section's own open/closed state is untouched: "refuses to
+        // open" means exactly that -- `studentsBody.hidden` and
+        // `aria-expanded` both stay exactly as they were, so a teacher who
+        // has never opened this section still cannot, and one who
+        // impossibly already had it open (count raised past the limit
+        // without ever closing it first) is not forced shut either. Only
+        // this notice appears, explaining why acting on the toggle did
+        // nothing.
+        return;
+      }
+      studentsLimitEl.hidden = true;
+      studentsLimitEl.textContent = '';
+      studentsBody.hidden = !opening;
+      studentsToggle.setAttribute('aria-expanded', String(opening));
+    });
+  }
+
   /**
    * Design spec section 4: a duplicate number or a together/apart clash is
    * "refused in the table, as it is typed" -- BLOCKING, so `goButton`
@@ -788,6 +839,16 @@ if (form) {
       renderStudentsBody();
     },
     onAdd: () => {
+      // Design spec section 4, "Adding a row at 100": `+ Add student` is
+      // `disabled` the instant the roster reaches MAX_ROSTER
+      // (rosterAtLimit, roster-ui.ts's own buildToolbar) -- a disabled
+      // button never fires a click, so this should be unreachable.
+      // Defensive re-check anyway, the same "cheap insurance" reasoning
+      // this call site already gave `nextNumber`'s own invariant, just
+      // below: relying on the disabled attribute silently is exactly the
+      // kind of thing a later change could break without this call site
+      // ever being touched again to notice.
+      if (rosterAtLimit(getRoster())) return;
       const next = [...getRoster()];
       next.push(anonymousStudent(nextNumber(next)));
       setRoster(next);
@@ -798,27 +859,65 @@ if (form) {
       // (rosterWarnings' own doc comment, src/lib/roster.ts) -- this call
       // is therefore a no-op TODAY. Kept anyway, deliberately: relying on
       // that invariant silently is exactly the kind of thing a later
-      // change (a future "remove student", say) could break without this
-      // call site ever being touched again to notice. Cheap at
-      // MAX_ROSTER's own 100-row ceiling, so there is no real cost to
-      // paying for the guarantee outright rather than trusting the proof.
+      // change (removing a student, say -- Stage 3, Task 6, this same
+      // task) could break without this call site ever being touched again
+      // to notice. Cheap at MAX_ROSTER's own 100-row ceiling, so there is
+      // no real cost to paying for the guarantee outright rather than
+      // trusting the proof.
       updateRosterValidation();
       renderStudentsBody();
     },
     onAddSeveral: (count) => {
-      const next = [...getRoster()];
-      // A safety ceiling, not the MAX_ROSTER=100 refusal-with-message a
-      // later task owns (naming how many rows are free) -- a pathological
-      // value typed into "How many?" must not be free to allocate without
-      // bound and hang the tab, the same reasoning MAX_STUDENTS's own doc
-      // comment (grouping.ts) gives for the Students box itself.
-      const room = Math.max(0, MAX_STUDENTS - next.length);
-      for (let i = 0; i < Math.min(count, room); i++) {
+      // Stage 3, Task 6. roster-ui.ts's own `confirm()` (buildToolbar)
+      // already refuses -- via this exact same pure function, on the exact
+      // same roster -- any count that would not fit, and never calls this
+      // handler in that case; see that function's own comment. Defensive
+      // re-check anyway, the identical reasoning `onAdd`'s own guard just
+      // above rests on: cheap, and it is what keeps a future change to
+      // roster-ui.ts's own gate from silently becoming this handler's
+      // problem too. Replaces the OLD `Math.min(count, room)` clamp
+      // against MAX_STUDENTS (a crash-prevention ceiling only, per that
+      // constant's own doc comment in grouping.ts) -- MAX_ROSTER's own
+      // 100-row ceiling is now what bounds this path, and a batch that
+      // does not fit is refused WHOLE, never silently truncated down to
+      // whatever room remained (design spec section 4: "refuses a number
+      // that would cross it", never "adds as many as will fit" -- the
+      // silent clamp this stage owed fixing since Task 2, see MAX_ROSTER's
+      // own doc comment, src/lib/roster.ts).
+      const current = getRoster();
+      if (rosterRoomProblem(current, count, t) !== null) return;
+      const next = [...current];
+      for (let i = 0; i < count; i++) {
         next.push(anonymousStudent(nextNumber(next)));
       }
       setRoster(next);
       updateStaleness();
       updateRosterValidation(); // see onAdd's own comment, just above
+      renderStudentsBody();
+    },
+    // Design spec section 4: "Removing a row removes the student." `next`
+    // arrives ALREADY filtered (roster-ui.ts's own buildRow computed it
+    // from the LIVE roster, not a stale render-time snapshot -- see
+    // RosterHandlers.onRemove's own doc comment there), so this is exactly
+    // `onSelectChange`'s own shape: fold it through the same
+    // `onRosterEdited` every other roster edit already uses (keeping
+    // `rosterNames`, `dirty`, staleness and validation all in sync in ONE
+    // place), then re-render -- a removed row is a discrete action, never
+    // mid-keystroke, so re-rendering costs nothing in focus or caret
+    // position (the identical reasoning `onSelectChange` already rests
+    // on).
+    //
+    // Identity: `next` never renumbers anyone. Every remaining student's
+    // OWN `.number` (and every other field) is untouched -- this is a
+    // plain array filter, not a map that reassigns numbers by position --
+    // so a together/apart letter, or a future pin, keeps meaning exactly
+    // the same student it meant before the removal. Removing #2 from
+    // [#1, #2, #3] leaves [#1, #3], a gap, never a renumbered [#1, #2] --
+    // the same "gaps allowed, a number belongs to a student, not a
+    // position" rule this stage's `nextNumber`/`rosterWarnings` (src/lib/
+    // roster.ts) already keep for every OTHER way the roster changes.
+    onRemove: (next) => {
+      onRosterEdited(next);
       renderStudentsBody();
     },
   };

@@ -29,7 +29,13 @@
  * (`classroom-groups.ts`'s own `render()`, `who.textContent = label(student)`).
  */
 import type { Student } from '../lib/grouping';
-import { availableLetters, rosterCounts } from '../lib/roster';
+import {
+  MAX_ROSTER,
+  availableLetters,
+  rosterAtLimit,
+  rosterCounts,
+  rosterRoomProblem,
+} from '../lib/roster';
 import type { Strings } from '../lib/i18n';
 
 export interface RosterHandlers {
@@ -60,6 +66,21 @@ export interface RosterHandlers {
   onAdd: () => void;
   /** "+ Add several…", confirmed — append `count` new anonymous rows. */
   onAddSeveral: (count: number) => void;
+  /**
+   * "Remove", one per row — design spec section 4: "Removing a row removes
+   * the student." Fired with the roster ALREADY filtered (this row's own
+   * element gone), computed from the LIVE roster (`getRoster()`, threaded
+   * into `buildRow` the same way every field handler already reads it —
+   * see this row's own click listener, below) rather than the snapshot
+   * this render started with, so a pending, uncommitted text edit made to
+   * a DIFFERENT row is not silently discarded the moment this one is
+   * removed — the exact shape of bug Stage 3, Task 3 already found and
+   * fixed for `onTextChange`/`onSelectChange` (see `renderRoster`'s own
+   * `liveRoster` comment, below). Re-renders safely, the same reasoning
+   * `onSelectChange` above already rests on: removing a row is a discrete
+   * action, never mid-keystroke.
+   */
+  onRemove: (next: Student[]) => void;
 }
 
 /** A new, unnamed, unlettered, present student — the shape both `onAdd` and
@@ -111,8 +132,22 @@ const button = (text: string, className: string): HTMLButtonElement => {
  * creates — cheap, and it is what lets the inline "how many?" reveal below
  * always start closed on a fresh render rather than needing to remember
  * whether it was open before.
+ *
+ * `getRoster` (not a plain `roster` array) is what both of this task's own
+ * limit checks read — the LIVE roster, exactly like every field handler in
+ * `buildRow` already reads it, rather than the array this particular
+ * `renderRoster` call started with. For the empty-roster call site
+ * (`renderRoster`'s own early return, below) that is trivially `() => []`
+ * — nothing can go stale about a length of zero — but threading the same
+ * shape through both call sites, rather than a bare `roster` array here
+ * and a live accessor everywhere else, is one fewer thing to get right by
+ * hand later.
  */
-function buildToolbar(t: Strings, handlers: RosterHandlers): HTMLElement {
+function buildToolbar(
+  t: Strings,
+  handlers: RosterHandlers,
+  getRoster: () => readonly Student[],
+): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'cg-roster-toolbar';
 
@@ -136,18 +171,48 @@ function buildToolbar(t: Strings, handlers: RosterHandlers): HTMLElement {
 
   const confirmButton = button(t.rosterAddConfirm, 'cg-add-confirm');
 
+  // "…also refuses a number that would cross it, saying how many rows are
+  // free" (design spec section 4) — right beside the field the teacher is
+  // looking at, so a refused request can be corrected without reopening
+  // anything. Hidden until a refused attempt writes into it; role="alert"
+  // for the identical reason #cg-roster-problem is (classroom-groups.ts) —
+  // this is the same shape of refusal, a keystroke/click caught and
+  // explained immediately, just scoped to THIS control rather than the
+  // whole roster.
+  const roomMessage = document.createElement('p');
+  roomMessage.className = 'cg-roster-limit-message';
+  roomMessage.setAttribute('role', 'alert');
+  roomMessage.hidden = true;
+
   const confirm = () => {
     const count = Math.trunc(Number(howMany.value));
     // A blank, zero, negative or non-numeric field is simply not confirmed
-    // — no rows added, no error shown. The upper bound against a
-    // pathologically large number lives in the HANDLER (classroom-groups.ts,
-    // MAX_STUDENTS) rather than here, alongside the identical safety
-    // reasoning MAX_STUDENTS's own doc comment (grouping.ts) already gives
-    // for the Students box; this module has no opinion on how large is too
-    // large, only on what counts as "a number at all".
-    if (Number.isFinite(count) && count >= 1) {
-      handlers.onAddSeveral(count);
+    // — no rows added, no error shown. This module has no opinion on how
+    // large is too large, only on what counts as "a number at all"; the
+    // real ceiling is `rosterRoomProblem` just below, which is what turns
+    // a pathologically large (or merely too-large-for-the-room) count into
+    // a stated refusal rather than a silent clamp — the debt this stage
+    // owed since Task 2 (see MAX_ROSTER's own doc comment, src/lib/
+    // roster.ts).
+    if (!(Number.isFinite(count) && count >= 1)) return;
+    const problem = rosterRoomProblem(getRoster(), count, t);
+    if (problem) {
+      roomMessage.hidden = false;
+      if (roomMessage.textContent !== problem)
+        roomMessage.textContent = problem;
+      return;
     }
+    // Cleared before handing off — a batch that fits is never announced as
+    // refused, and a stale "There is room for…" from an EARLIER, since-
+    // corrected attempt must not linger once a valid one succeeds. Mostly
+    // redundant with the fresh render `onAddSeveral`'s own success path
+    // triggers (classroom-groups.ts), which throws this whole element away
+    // — kept anyway, the same "cheap insurance" reasoning `onAdd`'s own
+    // defensive limit check (classroom-groups.ts) rests on, in case a
+    // future change ever calls this without re-rendering.
+    roomMessage.hidden = true;
+    roomMessage.textContent = '';
+    handlers.onAddSeveral(count);
   };
   confirmButton.addEventListener('click', confirm);
   // A plain `<input type="number">` inside `#cg-form` implicitly submits
@@ -167,8 +232,27 @@ function buildToolbar(t: Strings, handlers: RosterHandlers): HTMLElement {
     howMany.focus();
   });
 
-  inline.append(howMany, confirmButton);
+  inline.append(howMany, confirmButton, roomMessage);
   wrap.append(addButton, severalButton, inline);
+
+  // Design spec section 4, "Adding a row at 100": both controls disabled,
+  // AND the limit stated — never a bare disabled control with nothing
+  // beside it explaining why (this page's own established rule, e.g.
+  // #cg-sex-why, ClassroomGroupsPage.astro). Computed fresh every render
+  // from the CURRENT roster, never cached, so removing a row — which
+  // always re-renders, see `RosterHandlers.onRemove`'s own doc comment —
+  // re-enables both controls the instant the roster drops back under the
+  // limit, the same "comparison, not a one-way latch" shape this page's
+  // other guards already keep (updateRosterValidation, classroom-groups.ts).
+  if (rosterAtLimit(getRoster())) {
+    addButton.disabled = true;
+    severalButton.disabled = true;
+    const limitMessage = document.createElement('p');
+    limitMessage.className = 'cg-roster-limit-message';
+    limitMessage.textContent = t.rosterAtLimitMessage(MAX_ROSTER);
+    wrap.appendChild(limitMessage);
+  }
+
   return wrap;
 }
 
@@ -339,7 +423,33 @@ function buildRow(
   });
   apartTd.appendChild(apartSelect);
 
-  tr.append(numberTd, nameTd, sexTd, absentTd, togetherTd, apartTd);
+  // Remove — design spec section 4: "Removing a row removes the student."
+  // A SEVENTH cell with NO matching `<th>`, deliberately: the six-column
+  // header row is pinned verbatim by "the table has the six columns, in
+  // order" (classroom-groups-roster.spec.ts), so a genuine action control
+  // earns its own column without earning a matching header cell — see
+  // ClassroomGroupsPage.astro's own comment on `#cg-roster`'s `<colgroup>`
+  // for the rest of the reasoning, and its CSS for why this column gets
+  // its own full-width ROW in the card layout rather than competing with
+  // Name or any of the other five fields for space: design spec section
+  // 3's own arithmetic already proved there is no room left in EITHER of
+  // the card's two existing rows for a seventh control.
+  //
+  // Reads the LIVE roster at the moment of the click (`getRoster()`, the
+  // same accessor every field handler above already closes over), not the
+  // `roster` array this row was built from — the exact protection
+  // `RosterHandlers.onRemove`'s own doc comment names: a pending,
+  // uncommitted edit to a DIFFERENT row (a name or number mid-keystroke,
+  // which never itself re-renders) must still be in the array this filter
+  // runs against, or removing one row would silently discard it.
+  const removeTd = document.createElement('td');
+  const removeButton = button(t.rosterRemove, 'cg-remove-student');
+  removeButton.addEventListener('click', () => {
+    handlers.onRemove(getRoster().filter((_, i) => i !== index));
+  });
+  removeTd.appendChild(removeButton);
+
+  tr.append(numberTd, nameTd, sexTd, absentTd, togetherTd, apartTd, removeTd);
   return tr;
 }
 
@@ -369,7 +479,11 @@ export function renderRoster(
   container.textContent = '';
 
   if (roster.length === 0) {
-    container.appendChild(buildToolbar(t, handlers));
+    // `() => []` rather than a live accessor -- nothing can go stale about
+    // a length of zero, and `getRoster`/`liveRoster` (below) do not exist
+    // yet at this point in the function -- see `buildToolbar`'s own doc
+    // comment on why both call sites still share its shape.
+    container.appendChild(buildToolbar(t, handlers, () => []));
     return;
   }
 
@@ -382,13 +496,16 @@ export function renderRoster(
 
   // Fixed widths live in CSS (ClassroomGroupsPage.astro's own global style
   // block, anchored on #cg-roster — see that block's own comment on why
-  // GLOBAL, not scoped), targeting these six <col>s by position — never on
-  // the inputs themselves. An input sized by its own content is what makes
-  // an empty name box shrink next to a full one (R-10); `table-layout:
-  // fixed` (also in that CSS) is what makes a <col>'s width apply
+  // GLOBAL, not scoped), targeting these SEVEN <col>s by position — never
+  // on the inputs themselves. An input sized by its own content is what
+  // makes an empty name box shrink next to a full one (R-10); `table-
+  // layout: fixed` (also in that CSS) is what makes a <col>'s width apply
   // uniformly down its whole column regardless of any one row's content.
+  // Seven, not six, since Stage 3, Task 6: the seventh is Remove's own
+  // column — see `buildRow`'s own comment on why it earns a <col> but not
+  // a matching <th>.
   const colgroup = document.createElement('colgroup');
-  for (let i = 0; i < 6; i++)
+  for (let i = 0; i < 7; i++)
     colgroup.appendChild(document.createElement('col'));
   table.appendChild(colgroup);
 
@@ -444,6 +561,16 @@ export function renderRoster(
       liveRoster = next;
       handlers.onSelectChange(next);
     },
+    // Stage 3, Task 6. Same reasoning as onTextChange/onSelectChange just
+    // above: kept current here even though a removal always triggers a
+    // fresh `renderRoster` call of its own (see RosterHandlers.onRemove's
+    // own doc comment) -- defensive, matching this pair's own established
+    // "internal bookkeeping" precedent, not a change to the public
+    // contract.
+    onRemove: (next) => {
+      liveRoster = next;
+      handlers.onRemove(next);
+    },
   };
 
   const tbody = document.createElement('tbody');
@@ -469,8 +596,11 @@ export function renderRoster(
   const tfoot = document.createElement('tfoot');
   const footRow = document.createElement('tr');
   const footCell = document.createElement('td');
-  footCell.colSpan = 6;
-  footCell.appendChild(buildToolbar(t, handlers));
+  // 7, not 6: the toolbar still needs to span the WHOLE row, and the row
+  // is now 7 columns wide (Remove's own column, added this task -- see
+  // `buildRow`'s own comment).
+  footCell.colSpan = 7;
+  footCell.appendChild(buildToolbar(t, handlers, getRoster));
   footRow.appendChild(footCell);
   tfoot.appendChild(footRow);
   table.appendChild(tfoot);
