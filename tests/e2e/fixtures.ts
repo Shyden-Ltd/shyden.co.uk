@@ -12,31 +12,60 @@ const CDP_URL = process.env.ANDROID_CDP_URL ?? 'http://127.0.0.1:9222';
 /** HTTP-verb methods this suite wraps on `page.request` (== `context.request`; see below). */
 const REQUEST_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch'] as const;
 
-function relativeLiteralCallPattern(apiPath: string): RegExp {
-  // Matches `<apiPath>(`, then a string/template-literal delimiter whose very next character
-  // is `/` or `.` -- i.e. a relative-looking literal, with no whitespace tolerated between the
-  // call and its first argument's opening delimiter (that would read as a different call
-  // shape). A regex-literal argument (e.g. `toHaveURL(/foo/)`) never opens with a quote
-  // character, so this cannot mistake it for a URL string.
+// Matches a literal's opening content that `new URL(literal, base)` -- the mechanism every API
+// below actually resolves through (`resolveBaseURL` in playwright-core's coreBundle.js) --
+// treats as *already absolute*: a URL scheme (`https:`, `about:`, ...) or a protocol-relative
+// `//`. Anything else, including a bare word with no leading slash at all, is relative and
+// resolves against baseURL identically to a leading-slash path -- `'login'` and `'/login'` are
+// the same case to `new URL()`. An earlier version of this pattern checked for a leading `/` or
+// `.` instead, which is the wrong test: it would have missed exactly the bare-word shape it
+// exists to catch.
+const ABSOLUTE_URL_LOOKAHEAD = '(?:[a-zA-Z][a-zA-Z\\d+.-]*:|//)';
+
+function relativeLiteralCallPattern(apiPath: string, extraAbsolutePrefix?: string): RegExp {
+  // Matches `<apiPath>(`, then a string/template-literal delimiter, with no whitespace
+  // tolerated between the call and the delimiter (that would read as a different call shape),
+  // asserting via lookahead that what follows is NOT absolute. A regex-literal argument (e.g.
+  // `toHaveURL(/foo/)`) never opens with a quote character, so the mandatory delimiter capture
+  // cannot mistake it for a URL string.
   const escaped = apiPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`\\b${escaped}\\(\\s*(['"\`])(\\/|\\.)`, 'g');
+  const absolute = extraAbsolutePrefix
+    ? `(?:${ABSOLUTE_URL_LOOKAHEAD}|${extraAbsolutePrefix})`
+    : ABSOLUTE_URL_LOOKAHEAD;
+  return new RegExp(`\\b${escaped}\\(\\s*(['"\`])(?!${absolute})`, 'g');
+}
+
+function bareIdentifierCallPattern(identifier: string, method: string): RegExp {
+  // For the bare `request` fixture: unlike relativeLiteralCallPattern, this must NOT match a
+  // property-access chain ending in the same identifier -- `page.request.get(` and
+  // `context.request.get(` are already their own rows below and must not double-count here.
+  // The negative lookbehind requires `identifier` not be immediately preceded by a dot, i.e.
+  // it must appear as the bare fixture parameter, not a property of something else.
+  const escapedMethod = method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `(?<!\\.)\\b${identifier}\\.${escapedMethod}\\(\\s*(['"\`])(?!${ABSOLUTE_URL_LOOKAHEAD})`,
+    'g',
+  );
 }
 
 /**
- * Every Playwright API this suite reaches for whose behaviour depends on
- * `browserContext._options.baseURL` -- confirmed by reading Playwright's own source, not
- * assumed: `page.goto`, `page.request.*` and `expect(page).toHaveURL(string)` all read exactly
- * that field (`toHaveURL`: `const baseURL = page.context()._options.baseURL`, in
- * playwright/lib/matchers/expect.js). It is empty for the device's adopted context -- see the
- * `context`/`page` fixtures below -- because that context was never created through
- * `newContext({ baseURL })`.
+ * Every Playwright API this suite reaches for whose behaviour depends on `baseURL` -- confirmed
+ * by reading Playwright's own source, not assumed: `page.goto`, `page.request.*`,
+ * `expect(page).toHaveURL(string)` and `page.route`'s glob matching all read
+ * `browserContext._options.baseURL`, empty for the device's adopted context (see the
+ * `context`/`page` fixtures below, which were never created through `newContext({ baseURL })`).
+ * The bare `request` fixture is the one exception -- Playwright builds it via
+ * `playwright.request.newContext()` (`playwright/lib/index.js`), independently of any
+ * `browser`/`context` override, so it does not automatically share the adopted context's gap;
+ * see its own row for the mechanism and the on-device measurement that confirmed it.
  *
- * `resolved: true` means the fixtures below patch it, so a relative literal is safe on-device.
- * `resolved: false` means they do not, so `tests/e2e/baseurl-guard.spec.ts` fails on a relative
- * literal, naming this row's `api`, rather than the gap surfacing later as a confusing
- * device-only failure with no signpost. This is the single source of truth for both the
- * patches and the guard: add a row here when you add a patch (or when you add a new
- * baseURL-aware call the fixtures do *not* patch), and the two cannot drift apart.
+ * `resolved: true` means a relative literal is safe on-device, whether because the fixtures
+ * below patch it or because it was measured to already work through its own mechanism.
+ * `resolved: false` means `tests/e2e/baseurl-guard.spec.ts` fails on a relative literal, naming
+ * this row's `api`, rather than the gap surfacing later as a confusing device-only failure with
+ * no signpost. This is the single source of truth for the patches and the guard together: add a
+ * row here whenever this suite starts calling a new baseURL-aware API, and the two cannot drift
+ * apart -- an unlisted API is invisible to both.
  */
 export const BASE_URL_AWARE_APIS: ReadonlyArray<{
   readonly api: string;
@@ -67,20 +96,32 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
       'own docs: "page.request ... returns the same instance as browserContext.request"), so ' +
       'patching page.request resolves this call shape too',
   })),
+  ...REQUEST_METHODS.map((method) => ({
+    api: `request.${method} (bare fixture)`,
+    pattern: bareIdentifierCallPattern('request', method),
+    resolved: true,
+    reason:
+      "measured directly on the physical device (tests/device/real-device.spec.ts's " +
+      '"the bare request fixture..." test): Playwright builds the `request` fixture via ' +
+      '`playwright.request.newContext()` (playwright/lib/index.js), a construction path ' +
+      'independent of this file\'s `browser`/`context` overrides entirely, and it resolved a ' +
+      'relative literal correctly with no patch from this file',
+  })),
   {
     api: 'page.route',
-    pattern: relativeLiteralCallPattern('page.route'),
+    pattern: relativeLiteralCallPattern('page.route', '\\*'),
     resolved: false,
     reason:
-      'not patched -- a glob starting with `**` (the one existing call site) matches the ' +
-      'absolute URL regardless of baseURL and so is never flagged, but a plain relative path ' +
-      'would not resolve the same way',
+      'not patched -- a glob starting with `*` (the one existing call site starts `**`) skips ' +
+      'baseURL resolution entirely (`resolveGlobBase`\'s own `!match.startsWith("*")` check in ' +
+      'coreBundle.js), which is why this pattern exempts that shape too; a glob NOT starting ' +
+      'with `*` goes through the same resolveBaseURL joining as goto and would not resolve',
   },
   {
     api: 'context.route',
-    pattern: relativeLiteralCallPattern('context.route'),
+    pattern: relativeLiteralCallPattern('context.route', '\\*'),
     resolved: false,
-    reason: 'not patched, same gap as page.route',
+    reason: 'not patched, same gap and same `*`-prefix exemption as page.route',
   },
   {
     api: 'page.waitForURL',
@@ -118,6 +159,26 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
 const REQUEST_PATCHED = Symbol('shyden-baseurl-request-patch');
 
 /**
+ * Every fixture below that needs `baseURL` calls this instead of trusting it -- a bare `!`
+ * assertion crashes with a generic, unnamed "Cannot read properties of undefined" if it is
+ * ever wrong, and silently falling back to the unresolved URL (what the `goto`/`request`
+ * patches did before this fix) reproduces the exact confusing device-only failure this whole
+ * file exists to prevent, just one level further downstream and with no signpost pointing back
+ * at the real cause. One named assertion, used everywhere, is the file's own "assert the end
+ * state, name the cause" standard applied to itself.
+ */
+function requireBaseURL(baseURL: string | undefined): string {
+  if (!baseURL) {
+    throw new Error(
+      'Real device fixtures need `use.baseURL` set (playwright.device.config.ts sets it to ' +
+        'http://localhost:4321) -- without it there is nothing to resolve a relative URL ' +
+        'against, and Chrome rejects a bare relative string outright.',
+    );
+  }
+  return baseURL;
+}
+
+/**
  * Real-device runs are a separate Playwright invocation with its own config, so the choice
  * is made once, at module load, rather than per test. Desktop keeps `base` verbatim: an
  * override that merely *reproduced* the defaults would be one refactor away from dropping
@@ -141,10 +202,11 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     const context = browser.contexts()[0];
     if (!context) throw new Error('Real device exposed no browser context over CDP.');
 
+    const resolvedBaseURL = requireBaseURL(baseURL);
     const scratch = await context.newPage();
     const cdp = await context.newCDPSession(scratch);
     await cdp.send('Storage.clearDataForOrigin', {
-      origin: new URL(baseURL!).origin,
+      origin: new URL(resolvedBaseURL).origin,
       storageTypes: 'all',
     });
     await cdp.detach();
@@ -159,6 +221,7 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
 
   page: async ({ context, baseURL }, use) => {
     const page = await context.newPage();
+    const resolvedBaseURL = requireBaseURL(baseURL);
 
     // This context was never created via `newContext({ baseURL })` -- Chrome made it, not
     // Playwright, so the server-side `browserContext._options.baseURL` that `page.goto()`
@@ -171,7 +234,7 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     // so specs that pass a full URL are unaffected.
     const rawGoto = page.goto.bind(page);
     page.goto = (async (url: string, options?: Parameters<Page['goto']>[1]) =>
-      rawGoto(baseURL ? new URL(url, baseURL).toString() : url, options)) as Page['goto'];
+      rawGoto(new URL(url, resolvedBaseURL).toString(), options)) as Page['goto'];
 
     // `page.request` has the identical gap, for the identical reason. Wrapped generically
     // over REQUEST_METHODS -- rather than seven hand-written near-duplicates -- so
@@ -181,12 +244,13 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     // not only a URL string, so only string arguments are resolved.
     //
     // BASE_URL_AWARE_APIS documents every other baseURL-aware API this suite could reach for
-    // (`page.route`, `waitForURL`/`waitForRequest`/`waitForResponse`, `toHaveURL`). None is
-    // patched -- none is currently called with a relative literal either (verified: see
-    // BASE_URL_AWARE_APIS's `reason` fields) -- so a relative literal reaching any of them
-    // would misbehave on-device exactly as goto did before this fixture existed.
-    // tests/e2e/baseurl-guard.spec.ts fails the build the moment one is added, rather than
-    // leaving it to be found as a confusing device-only failure.
+    // (the bare `request` fixture, `page.route`, `waitForURL`/`waitForRequest`/
+    // `waitForResponse`, `toHaveURL`). Some are proven safe by their own mechanism, some are
+    // not patched here and not currently called with a relative literal either (verified: see
+    // BASE_URL_AWARE_APIS's `reason` fields) -- so a relative literal reaching any row marked
+    // `resolved: false` would misbehave on-device exactly as goto did before this fixture
+    // existed. tests/e2e/baseurl-guard.spec.ts fails the build the moment one is added, rather
+    // than leaving it to be found as a confusing device-only failure.
     const request = page.request as APIRequestContext & { [REQUEST_PATCHED]?: true };
     if (!request[REQUEST_PATCHED]) {
       // Every wrapped method has the same (url, options?) shape at the JS level even though
@@ -198,8 +262,8 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
         const original = loose[method].bind(request);
         loose[method] = (urlOrRequest: unknown, options?: unknown) =>
           original(
-            baseURL && typeof urlOrRequest === 'string'
-              ? new URL(urlOrRequest, baseURL).toString()
+            typeof urlOrRequest === 'string'
+              ? new URL(urlOrRequest, resolvedBaseURL).toString()
               : urlOrRequest,
             options,
           );
