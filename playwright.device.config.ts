@@ -40,7 +40,20 @@ export default defineConfig({
       // test actually carrying this tag). Scoped to this project alone -- the
       // preflight project runs exactly one setup file that never touches the
       // viewport, and must not be affected by a grep option meant for the suite.
-      grepInvert: /@emulated-viewport/,
+      //
+      // `@requires-isolated-context` is the second, structurally identical exclusion
+      // (tests/unit/isolated-context-tagging.test.ts is what keeps every such test tagged):
+      // `test.use({ javaScriptEnabled: false })` only takes effect on a context Playwright
+      // itself creates fresh. The real device has exactly ONE adopted context for the whole
+      // run (`browser.newContext()` measured to fail against it -- "Protocol error
+      // (Target.createBrowserContext): Failed to create browser context", tests/e2e/fixtures.ts's
+      // own `context` fixture comment), so the option is silently inert: JavaScript keeps
+      // running. classroom-groups-privacy.spec.ts's "privacy — with JavaScript blocked" tests
+      // are excluded here rather than left to fail (or, worse, pass for the wrong reason --
+      // see docs/superpowers/specs/2026-08-08-real-device-test-harness-design.md) for exactly
+      // the same "physically impossible on one real device" reason @emulated-viewport already
+      // covers for the screen.
+      grepInvert: /@emulated-viewport|@requires-isolated-context/,
     },
   ],
 });

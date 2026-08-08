@@ -56,11 +56,15 @@ test.describe('privacy — with JavaScript blocked', () => {
     ['/classroom-groups', 'This tool needs JavaScript enabled.'],
     ['/id/classroom-groups', 'Alat ini memerlukan JavaScript yang aktif.'],
   ] as const) {
-    test(`${path}: says so, in its own language`, async ({ page }) => {
-      await page.goto(path);
-      // Not "a noscript tag exists" — the sentence a visitor actually reads.
-      await expect(page.locator('#cg-noscript')).toHaveText(notice);
-    });
+    test(
+      `${path}: says so, in its own language`,
+      { tag: '@requires-isolated-context' },
+      async ({ page }) => {
+        await page.goto(path);
+        // Not "a noscript tag exists" — the sentence a visitor actually reads.
+        await expect(page.locator('#cg-noscript')).toHaveText(notice);
+      },
+    );
   }
 
   // Code review on this task (I-3): `#cg-howto-body` used to ship `hidden`
@@ -83,13 +87,15 @@ test.describe('privacy — with JavaScript blocked', () => {
       'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
     ],
   ] as const) {
-    test(`${path}: the who-and-why copy is reachable without JavaScript`, async ({
-      page,
-    }) => {
-      await page.goto(path);
-      await expect(page.locator('#cg-howto-body')).toBeVisible();
-      await expect(page.locator('#cg-howto-body > p')).toHaveText(whoAndWhy);
-    });
+    test(
+      `${path}: the who-and-why copy is reachable without JavaScript`,
+      { tag: '@requires-isolated-context' },
+      async ({ page }) => {
+        await page.goto(path);
+        await expect(page.locator('#cg-howto-body')).toBeVisible();
+        await expect(page.locator('#cg-howto-body > p')).toHaveText(whoAndWhy);
+      },
+    );
   }
 
   // M-10 (stage-2 traceability matrix; design spec section 13's own "The
@@ -102,43 +108,49 @@ test.describe('privacy — with JavaScript blocked', () => {
   // new section specifically -- exactly the mistake this row exists to
   // catch, since without script NONE of the four sections can be opened at
   // all and one notice already says why.
-  test('one notice still covers all four sections, not one each', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await expect(page.locator('noscript')).toHaveCount(1);
-  });
+  test(
+    'one notice still covers all four sections, not one each',
+    { tag: '@requires-isolated-context' },
+    async ({ page }) => {
+      await page.goto('/classroom-groups');
+      await expect(page.locator('noscript')).toHaveCount(1);
+    },
+  );
 
-  test('submitting cannot put a class list in the URL', async ({ page }) => {
-    await page.goto('/classroom-groups');
+  test(
+    'submitting cannot put a class list in the URL',
+    { tag: '@requires-isolated-context' },
+    async ({ page }) => {
+      await page.goto('/classroom-groups');
 
-    // A teacher fills the form in and presses the button before noticing the
-    // notice. With no listener attached, this is a native GET. The
-    // paste-names box that used to carry typed names is gone (it fed
-    // `students: string[]`, an input shape the rewritten engine no longer
-    // accepts -- see grouping.ts's GroupingInput). What remains general on
-    // purpose, rather than naming fields one at a time: the query string a
-    // native submit produces may contain ONLY the allow-list, so a `name`
-    // added to any future data field fails here the moment it is added,
-    // before it carries anything that looks personal.
-    //
-    // Stage 2, Task 5 gave this page its first typed-text control since
-    // that box was removed: #cg-class. It carries no `name` (see that
-    // field's own comment in ClassroomGroupsPage.astro), so the structural
-    // guarantee above already covers it with no change needed -- an unnamed
-    // control cannot be serialised into a form GET at all. Filled here
-    // anyway, with a value distinctive enough to be unmistakable, so the
-    // proof is concrete rather than resting on that guarantee alone.
-    await page.fill('#cg-count', '24');
-    await page.fill('#cg-class', 'PrivacyProbeClassName7B');
-    await page.click('#cg-go');
+      // A teacher fills the form in and presses the button before noticing the
+      // notice. With no listener attached, this is a native GET. The
+      // paste-names box that used to carry typed names is gone (it fed
+      // `students: string[]`, an input shape the rewritten engine no longer
+      // accepts -- see grouping.ts's GroupingInput). What remains general on
+      // purpose, rather than naming fields one at a time: the query string a
+      // native submit produces may contain ONLY the allow-list, so a `name`
+      // added to any future data field fails here the moment it is added,
+      // before it carries anything that looks personal.
+      //
+      // Stage 2, Task 5 gave this page its first typed-text control since
+      // that box was removed: #cg-class. It carries no `name` (see that
+      // field's own comment in ClassroomGroupsPage.astro), so the structural
+      // guarantee above already covers it with no change needed -- an unnamed
+      // control cannot be serialised into a form GET at all. Filled here
+      // anyway, with a value distinctive enough to be unmistakable, so the
+      // proof is concrete rather than resting on that guarantee alone.
+      await page.fill('#cg-count', '24');
+      await page.fill('#cg-class', 'PrivacyProbeClassName7B');
+      await page.click('#cg-go');
 
-    const url = new URL(page.url());
-    for (const key of url.searchParams.keys()) {
-      expect(NON_PERSONAL_NAMES).toContain(key);
-    }
-    expect(url.search).not.toContain('PrivacyProbeClassName7B');
-  });
+      const url = new URL(page.url());
+      for (const key of url.searchParams.keys()) {
+        expect(NON_PERSONAL_NAMES).toContain(key);
+      }
+      expect(url.search).not.toContain('PrivacyProbeClassName7B');
+    },
+  );
 });
 
 test.describe('privacy — when the script dies half-way', () => {

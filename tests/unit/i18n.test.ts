@@ -944,8 +944,7 @@ describe('every engine error can be rendered in every language', () => {
   );
 
   // Task 11, the final sweep. Named directly by the comment above (before
-  // this task) and by task-4-report.md's own F-1(b) section: this sibling
-  // code had a SAMPLES entry (the generic "renders every code" check above)
+  // this task): this sibling code had a SAMPLES entry (the generic "renders every code" check above)
   // but, unlike TOGETHER_NO_ARRANGEMENT just above, no test confirming
   // `renderError` actually threads `groupsTried` through rather than, say,
   // hardcoding a number or dropping it. Same idiom as that test, same

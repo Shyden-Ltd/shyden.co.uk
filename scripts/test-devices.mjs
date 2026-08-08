@@ -558,31 +558,39 @@ function isIosPresent() {
   }
 }
 
-// ── one-off discovery: how many tests does @emulated-viewport exclude? ──
+// ── one-off discovery: how many tests does grepInvert exclude by design? ──
 
 /**
- * `android-chrome`'s `grepInvert: /@emulated-viewport/` (playwright.device.config.ts)
- * excludes tagged tests before Playwright's own JSON reporter ever sees them
- * -- they are not "skipped", they are never collected, so the real run's
- * own report has no number for them at all. This asks separately, freshly,
- * every run: `--list --grep=@emulated-viewport` against ANY project sharing
- * android-chrome's `tests/e2e/*.spec.ts` scope directly SELECTS the tagged
- * set (chromium is a convenient, arbitrary choice -- one project, no
- * filtering of its own). `tests/device/real-device.spec.ts`, the one file
- * android-chrome matches that chromium's own testDir does not reach, carries
- * zero @emulated-viewport tags (checked by hand), so restricting this
- * listing to tests/e2e does not undercount.
+ * `android-chrome`'s `grepInvert: /@emulated-viewport|@requires-isolated-context/`
+ * (playwright.device.config.ts) excludes tagged tests before Playwright's own JSON
+ * reporter ever sees them -- they are not "skipped", they are never collected, so the
+ * real run's own report has no number for them at all. This asks separately, freshly,
+ * every run: `--list --grep=<the same pattern>` against ANY project sharing
+ * android-chrome's `tests/e2e/*.spec.ts` scope directly SELECTS the tagged set
+ * (chromium is a convenient, arbitrary choice -- one project, no filtering of its
+ * own). `tests/device/real-device.spec.ts`, the one file android-chrome matches that
+ * chromium's own testDir does not reach, carries neither tag (checked by hand), so
+ * restricting this listing to tests/e2e does not undercount.
  *
- * Never hardcoded: measured live against this exact source tree, every run,
- * so a future test gaining or losing the tag cannot make this number rot.
- * `--list`'s own JSON reporter marks every listed test `skipped` (nothing
- * ran) -- measured directly before being trusted: this exact invocation
- * reported `stats.skipped: 47` here, matching both the human-readable
- * "Total: 47 tests" line it printed and Task 2's independently hand-counted
- * figure.
+ * Two tags, one count, on purpose: both exist for the identical reason (something
+ * this suite's tests need is physically impossible to give them on ONE real device --
+ * a resizable screen, or a fresh per-test browser context) and both are excluded from
+ * the SAME `grepInvert`, so the Android group's own "skipped by design" number must be
+ * their sum to stay honestly self-consistent with what actually ran (see
+ * printSummaryTable / summarizePlaywrightGroup, which add this to Playwright's own
+ * `stats.skipped` for the real run). Splitting them into two separately-reported
+ * numbers was considered and rejected: nothing downstream (the dashboard, this
+ * script's own exit-code logic) currently needs to tell them apart, and a single
+ * `--grep` pattern kept in exact lock-step with the config's own `grepInvert` is one
+ * fewer place for the two to silently drift apart than two separate queries would be.
+ *
+ * Never hardcoded: measured live against this exact source tree, every run, so a
+ * future test gaining or losing either tag cannot make this number rot. `--list`'s own
+ * JSON reporter marks every listed test `skipped` (nothing ran) -- measured directly
+ * before being trusted, not assumed.
  */
-async function countEmulatedViewportExclusions() {
-  const outFile = path.join(TEST_RESULTS_DIR, 'emulated-viewport-count.json');
+async function countExcludedByDesign() {
+  const outFile = path.join(TEST_RESULTS_DIR, 'excluded-by-design-count.json');
   const { code } = await runTagged(
     'discover',
     'npx',
@@ -592,18 +600,19 @@ async function countEmulatedViewportExclusions() {
       '--config=playwright.config.ts',
       '--project=chromium',
       '--list',
-      '--grep=@emulated-viewport',
+      '--grep=@emulated-viewport|@requires-isolated-context',
       '--reporter=json',
     ],
     { env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile } },
   );
   if (code !== 0) {
     throw new Error(
-      'expected `playwright test --list --grep=@emulated-viewport` to exit 0 (it only lists tests, ' +
-        `never runs them) -- got code ${code}. Cannot compute the Android group's skipped-by-design count.`,
+      'expected `playwright test --list --grep=@emulated-viewport|@requires-isolated-context` to exit 0 ' +
+        `(it only lists tests, never runs them) -- got code ${code}. Cannot compute the Android group's ` +
+        'skipped-by-design count.',
     );
   }
-  const report = readJson(outFile, 'the @emulated-viewport discovery listing');
+  const report = readJson(outFile, 'the excluded-by-design discovery listing');
   return report.stats.skipped;
 }
 
@@ -1136,11 +1145,12 @@ async function main() {
     );
 
     process.stdout.write(
-      '==> Counting @emulated-viewport exclusions (static, source-only fact)...\n',
+      '==> Counting excluded-by-design exclusions (static, source-only fact)...\n',
     );
-    const excludedByDesign = await countEmulatedViewportExclusions();
+    const excludedByDesign = await countExcludedByDesign();
     process.stdout.write(
-      `==> ${excludedByDesign} test(s) excluded by @emulated-viewport for the Android group.\n`,
+      `==> ${excludedByDesign} test(s) excluded by design (@emulated-viewport or ` +
+        '@requires-isolated-context) for the Android group.\n',
     );
 
     process.stdout.write(

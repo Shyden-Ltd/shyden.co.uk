@@ -6,6 +6,7 @@ import {
   type Page,
   type APIRequestContext,
 } from '@playwright/test';
+import { ensureChromeForegroundOrRecover } from '../device/chrome-foreground';
 
 const CDP_URL = process.env.ANDROID_CDP_URL ?? 'http://127.0.0.1:9222';
 
@@ -171,6 +172,29 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
 // would wrap the previous test's wrapper again, nesting deeper each time.
 const REQUEST_PATCHED = Symbol('shyden-baseurl-request-patch');
 
+// Structural subset of Playwright's own `Disposable` (playwright-core/types/types.d.ts) --
+// returned by `context.addInitScript`/`page.addInitScript`. Declared locally rather than
+// imported: `@playwright/test`'s re-export chain (-> `playwright/test` -> `playwright-core`)
+// does not surface the type under that name at the package's own top level, and the two-method
+// shape this file actually uses is not worth chasing an import path for.
+interface InitScriptDisposable {
+  dispose(): Promise<void>;
+}
+
+/** Guards the one-time `context.addInitScript` patch below, same role and same reasoning as REQUEST_PATCHED. */
+const INIT_SCRIPT_PATCHED = Symbol('shyden-context-addinitscript-patch');
+
+/**
+ * Reassigned to a fresh array at the TOP of every test's `context` fixture invocation (below)
+ * and drained at the bottom of the same invocation -- the patched `context.addInitScript`
+ * (installed once, the first time any test needs it) always pushes into whichever array is
+ * current, so each test's own disposals stay its own even though the patch itself is installed
+ * only once. Safe as plain module state, not fixture-threaded: real-device runs are always
+ * `workers: 1`, `fullyParallel: false` (playwright.device.config.ts's own comment: "One phone,
+ * one shared context, one localStorage origin"), so exactly one test's array is ever live.
+ */
+let currentTestInitScriptDisposals: InitScriptDisposable[] = [];
+
 /**
  * Every fixture below that needs `baseURL` calls this instead of trusting it -- a bare `!`
  * assertion crashes with a generic, unnamed "Cannot read properties of undefined" if it is
@@ -227,13 +251,72 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     await scratch.close();
     await context.clearCookies();
 
+    // Fresh bucket for THIS test -- see currentTestInitScriptDisposals's own comment for why
+    // plain module state is safe here.
+    currentTestInitScriptDisposals = [];
+    const patchable = context as BrowserContext & {
+      [INIT_SCRIPT_PATCHED]?: true;
+    };
+    if (!patchable[INIT_SCRIPT_PATCHED]) {
+      // `context.addInitScript` is a real Playwright API that returns a `Disposable`
+      // specifically so a caller can undo it (playwright-core's types.d.ts: "Disposable ...
+      // returned ... to allow undoing the corresponding action" / "removes the init script").
+      // No desktop test in this suite has ever needed to call `.dispose()` because Playwright
+      // hands every desktop test a brand-new context -- the init script dies with it, for
+      // free. The real device has exactly ONE adopted context for the WHOLE run
+      // (`browser.newContext()` is unsupported -- see the `browser` fixture above), so without
+      // this, an init script registered by one test has no supported way to be scoped to just
+      // that test: it silently keeps running on every later test's page for the rest of the
+      // run. Measured, not theorised -- reproduced live, in total isolation from the other
+      // ~174 tests: running classroom-groups-privacy.spec.ts's "a mid-module failure still
+      // cannot leak the class list" test (registers a context.addInitScript that makes
+      // `matchMedia` throw) immediately before either "the tool still makes groups" (same
+      // file) or "the mute choice survives a reload" (a DIFFERENT file, 18 tests later in a
+      // full run) reproduces that later test's exact full-run failure signature with nothing
+      // else involved. Disposing every init script a test added, the instant that test ends,
+      // is what a fresh desktop context gives every desktop test for free -- see
+      // docs/superpowers/specs/2026-08-08-real-device-test-harness-design.md for the design
+      // this fixture implements.
+      const rawAddInitScript = context.addInitScript.bind(context) as (
+        script: unknown,
+        arg?: unknown,
+      ) => Promise<InitScriptDisposable>;
+      // Deliberately loosely typed, scoped to just this wrapper (mirrors the `request` patch
+      // below): `addInitScript`'s generic `Arg` parameter does not survive being re-wrapped
+      // through `Parameters<>`/`ReturnType<>` utility types cleanly, and the two shapes this
+      // suite actually calls (a zero-arg function; a function with one plain-object arg) do
+      // not need that generic to be preserved to stay correct at the JS level.
+      context.addInitScript = (async (script: unknown, arg?: unknown) => {
+        const disposable = await rawAddInitScript(script, arg);
+        currentTestInitScriptDisposals.push(disposable);
+        return disposable;
+      }) as BrowserContext['addInitScript'];
+      patchable[INIT_SCRIPT_PATCHED] = true;
+    }
+
     await use(context);
+
+    // Undo every init script THIS test added -- see the patch comment above. Order does not
+    // matter: each disposal only ever removes its own script.
+    for (const disposable of currentTestInitScriptDisposals.splice(0)) {
+      await disposable.dispose().catch(() => {});
+    }
 
     // Leave the context open -- it belongs to the device, not to the test.
     for (const page of context.pages()) await page.close().catch(() => {});
   },
 
-  page: async ({ context, baseURL }, use) => {
+  page: async ({ context, baseURL }, use, testInfo) => {
+    // Chrome losing foreground mid-run is a real, observed failure mode (147 failed / 62
+    // failed in otherwise-clean runs -- see tests/device/chrome-foreground.ts's own module
+    // comment for the evidence and the design doc for the full trail).
+    // android-preflight.setup.ts's own precondition 3 only confirms this ONCE, before the run
+    // starts; this is the re-check, once per test, BEFORE that test's own actions begin, so no
+    // test ever knowingly runs against the wrong foreground app. Cheap (median ~68ms,
+    // measured) when Chrome already holds it, which is every test except a genuine
+    // interruption.
+    await ensureChromeForegroundOrRecover(testInfo.title);
+
     const page = await context.newPage();
     const resolvedBaseURL = requireBaseURL(baseURL);
 
