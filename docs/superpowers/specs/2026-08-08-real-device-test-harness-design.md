@@ -120,6 +120,35 @@ crossed with another environment's URL.
 things only real Safari can prove (100vh behaviour, input zoom on focus, momentum scroll,
 touch target size at real pixel density).
 
+### 5a. Synthetic input does not work on this device, and the suite must say so
+
+Measured 2026-08-08 on this iPhone (iOS 27.0, build `24A5390f`): `safaridriver` accepts
+`element/click`, `element/value` and W3C `actions` and returns **success for all three, while
+none of them has any effect**. Navigation, element location, `element/rect`, `execute/sync`
+and screenshots all work normally.
+
+Ruled out by direct measurement, so nobody repeats them: the device has no passcode
+(`PasswordProtected` = `false`); it is awake (launching Safari via `devicectl` succeeds and
+changes nothing); the page is visible and focused (`visibilityState` `visible`,
+`hasFocus()` true); and it fails identically on a real `https://` page and a `data:` URL.
+A WebDriver screenshot is **not** evidence of an awake device — it captures the page
+viewport, which renders on a sleeping phone.
+
+**The fallback, stated precisely.** Interaction is driven through `execute/sync` by DOM
+dispatch — `el.click()`, and setting `.value` plus firing `input`/`change`. Verified working.
+That runs the app's real handlers inside real WebKit, so it still catches real rendering and
+logic defects on real Safari. It does **not** exercise the touch input path: taps actually
+reaching targets, focus-zoom, momentum scroll.
+
+Therefore:
+
+- A **canary** runs first: click a button, assert the effect. It decides the mode; nothing is
+  assumed.
+- The mode is named in the suite's output and in the runner's summary. A DOM-dispatch run is
+  never reported as though taps were taps.
+- If a later iOS build restores input injection, the canary notices and the suite upgrades
+  itself — and says that it did.
+
 ## 6. Exclusions, made visible
 
 Tests that call `setViewportSize` are meaningless on hardware with one fixed screen — CDP would
