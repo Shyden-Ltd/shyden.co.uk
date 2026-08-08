@@ -133,6 +133,27 @@ test.describe('classroom group creator', () => {
     ]);
   });
 
+  // Task 8, the locale sweep. studentsHelp used to read "Leave the names box
+  // empty to use numbered students." -- the paste-names box it describes was
+  // removed by Task 1's engine rewrite (see 'the paste-names box and the
+  // keep-apart box are gone' above), so this sentence had been describing a
+  // control that no longer exists on the page since stage 2 began. Nothing
+  // pinned its literal text before now, so the drift shipped silently.
+  // Rewritten to state what is actually true today -- every student this
+  // field produces is anonymous and numbered -- matching the exact label
+  // 'numbers students since there is no roster to name them from yet' above
+  // already proves the results themselves carry ("Student 1", "Student 2",
+  // …). Would fail on either the old sentence returning or a typo dropping
+  // "numbered"/"anonymous".
+  test('the help text under Number of students describes what happens now, not the removed names box', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await expect(page.locator('#cg-count-help')).toHaveText(
+      'Students are anonymous and numbered — Student 1, Student 2, and so on.',
+    );
+  });
+
   test('results are readable with the animation skipped', async ({ page }) => {
     // The whole accessibility argument: the answer exists as text regardless
     // of whether anyone watched it being dealt.
@@ -415,6 +436,64 @@ test.describe('class name and results heading', () => {
   });
 });
 
+// Task 8, the locale sweep. Design spec section 3's "Top row: Class
+// (optional) · Students · Split by" -- Stage 2 Tasks 5 and 7 assembled this
+// row out of what used to be two separate fieldsets, but every existing
+// test that touches the mode radios or #cg-groups does it by CSS `value`
+// attribute or by the OTHER field's own label (`groupSizeLabel`), never by
+// these fields' own accessible names. modeLabel/modePerGroup/
+// modeGroupCount/groupCountLabel had never once been asserted as rendered
+// text, in either language -- a wrong or dropped label here would have
+// failed nothing.
+test.describe('the Split by row names its own fields', () => {
+  for (const [path, splitBy, perGroup, groupCountRadio, howMany] of [
+    [
+      '/classroom-groups',
+      'Split by',
+      'Students per group',
+      'Number of groups',
+      'How many groups',
+    ],
+    [
+      '/id/classroom-groups',
+      'Bagi berdasarkan',
+      'Siswa per kelompok',
+      'Jumlah kelompok',
+      'Berapa banyak kelompok',
+    ],
+  ] as const) {
+    test(`the fields are correctly labelled (${path})`, async ({ page }) => {
+      await page.goto(path);
+      // The radiogroup's own name -- an `aria-labelledby` span
+      // (`#cg-mode-label`), the same pattern the leftovers radiogroup
+      // elsewhere on this page already uses. `#cg-mode-label` targeted
+      // directly with `toHaveText` (an EXACT match) rather than
+      // `page.getByText(splitBy)`: a mutation spot-check ('Split by' ->
+      // 'Split by-ish') proved getByText's default SUBSTRING match cannot
+      // catch a suffix tacked onto the real sentence -- it stayed green
+      // against the mutant. The sibling leftovers assertions elsewhere in
+      // this suite (`getByText('Jika ada siswa tersisa')` and its English
+      // counterpart) share that same weakness; out of this task's own
+      // scope to rewrite, recorded in task-8-report.md instead.
+      await expect(page.locator('#cg-mode-label')).toHaveText(splitBy);
+      // { exact: true } on all three: a second mutation spot-check
+      // ('Students per group' -> 'Students per group of frogs') proved
+      // getByLabel's default match is ALSO substring, not just getByText's
+      // -- it resolved the mutated control uniquely and stayed green. Every
+      // other getByLabel call in this file (and its siblings) shares that
+      // same default; recorded in task-8-report.md rather than swept
+      // project-wide, which is well beyond one locale-sweep task.
+      await expect(page.getByLabel(perGroup, { exact: true })).toBeVisible();
+      // #cg-groups ("How many groups") ships `hidden` until "Number of
+      // groups" is chosen -- the same reveal 'splits by number of groups,
+      // not just by group size' already exercises by CSS value, exercised
+      // here by the radio's own accessible name instead.
+      await page.getByLabel(groupCountRadio, { exact: true }).check();
+      await expect(page.getByLabel(howMany, { exact: true })).toBeVisible();
+    });
+  }
+});
+
 test.describe('classroom group creator — Bahasa Indonesia', () => {
   test('the Indonesian page is genuinely in Indonesian', async ({ page }) => {
     await page.goto('/id/classroom-groups');
@@ -432,6 +511,15 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
     await page.click('#cg-go');
     const labels = await page.locator('#cg-results .student').allTextContents();
     expect(labels.sort()).toEqual(['Siswa 1', 'Siswa 2', 'Siswa 3', 'Siswa 4']);
+    // groupLabel's Indonesian output ("Kelompok N") was only ever proven at
+    // the unit level (i18n.test.ts's groupName tests) and, on this page, in
+    // its THEMED form ('themed groups are named from the chosen theme, in
+    // each language', classroom-groups-controls.spec.ts) -- the default,
+    // numbered heading a teacher who never touches naming actually sees had
+    // no e2e assertion in Indonesian at all.
+    await expect(page.locator('#cg-results .group h3').first()).toHaveText(
+      'Kelompok 1',
+    );
   });
 
   test('errors are shown in Indonesian, not English', async ({ page }) => {
@@ -441,6 +529,35 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
     const error = page.locator('#cg-error');
     await expect(error).toBeVisible();
     await expect(error).toContainText('Tambahkan siswa');
+  });
+
+  // Task 8, the locale sweep. Mirrors the English 'the help text under
+  // Number of students…' test above -- studentsHelp's Indonesian copy
+  // described the same removed paste-names box ("Biarkan kotak nama kosong
+  // untuk memakai siswa bernomor.") and had no test in either language.
+  test('the help text under Jumlah siswa reads in Indonesian, as a whole sentence', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await expect(page.locator('#cg-count-help')).toHaveText(
+      'Siswa bersifat anonim dan diberi nomor — Siswa 1, Siswa 2, dan seterusnya.',
+    );
+  });
+
+  // Mirrors the English 'the error clears the stale "Shuffle again" label'
+  // test -- `again` ("Acak lagi") had no Indonesian assertion anywhere.
+  test('the button relabels to Acak lagi after a shuffle, and back to Buat Kelompok on a refusal', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await fill(page, { count: '8', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-go')).toHaveText('Acak lagi');
+
+    await fill(page, { count: '0', size: '4' });
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-error')).toBeVisible();
+    await expect(page.locator('#cg-go')).toHaveText('Buat Kelompok');
   });
 
   // Mirrors the English 'class name and results heading' describe block
@@ -787,6 +904,50 @@ test.describe('out-of-date groups', () => {
     await page.getByLabel('Siswa dalam setiap kelompok').fill('3');
     await expect(page.locator('#cg-stale-text')).toHaveText(
       'Kelompok ini sudah tidak berlaku lagi — ukuran kelompok berubah.',
+    );
+  });
+
+  // Task 8, the locale sweep. Only staleMode (immediately above) had an
+  // Indonesian assertion; staleLeftovers and staleRoster are equally
+  // reachable today (the leftovers radios and #cg-count both work on this
+  // page) but had none. This test also exercises leftoversBunch's own
+  // Indonesian LABEL for the first time anywhere in this suite -- every
+  // other Indonesian leftovers test reaches the "bunch" radio through its
+  // `value` attribute (`input[name="leftovers"][value="bunch"]`), never
+  // through `getByLabel`, so a corrupted or deleted
+  // "Masukkan semuanya ke satu kelompok" string could not have failed
+  // anything before now. `{ exact: true }` because getByLabel's default
+  // match is a substring, not a whole string -- see 'the Split by row
+  // names its own fields' above for the mutation spot-check that found it.
+  test('the leftovers-choice reason reads in Indonesian, as a whole sentence', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByLabel('Jumlah siswa').fill('12');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+    await page.locator('#cg-grouping-toggle').click();
+    await page
+      .getByLabel('Masukkan semuanya ke satu kelompok', { exact: true })
+      .check();
+    await expect(page.locator('#cg-stale-text')).toHaveText(
+      'Kelompok ini sudah tidak berlaku lagi — pilihan siswa tersisa berubah.',
+    );
+  });
+
+  // Mirrors the English 'changing the number of students marks them out of
+  // date' test (C-1 above): the count is this stage's whole roster, so
+  // changing it is staleRoster ("the class list changed"), not cosmetic.
+  test('the class-list reason reads in Indonesian, as a whole sentence', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.getByLabel('Jumlah siswa').fill('12');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .group')).toHaveCount(3);
+    await page.getByLabel('Jumlah siswa').fill('30');
+    await expect(page.locator('#cg-stale-text')).toHaveText(
+      'Kelompok ini sudah tidak berlaku lagi — daftar kelas berubah.',
     );
   });
 });

@@ -54,7 +54,7 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | H-05 | Collapsed state is remembered across a reload | P | ☐ |
 | H-06 | The `▸ How to use` header is present **and operable** when collapsed | P | ☐ |
 | H-07 | The remembered state is `localStorage` only — no class data written | P | ☐ |
-| H-08 | Both parts render in full in **both locales** | P | ☐ |
+| H-08 | Both parts render in full in **both locales** | P | ✓ |
 | H-09 | The raw markup ships unhidden, so the who/why paragraph is **reachable with JavaScript disabled** | P | ☐ |
 
 ## C · Section headers report their state — stage 2
@@ -429,9 +429,9 @@ spillover warning cannot be driven through the page without a roster fixture;
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| M-01 | `rendered-text.spec.ts` seam scan stays green | P | ☐ |
-| M-02 | Every new sentence asserted **whole**, not by fragment | P | ☐ |
-| M-03 | Every new string asserted in **both** locales | P | ☐ |
+| M-01 | `rendered-text.spec.ts` seam scan stays green | P | ✓ |
+| M-02 | Every new sentence asserted **whole**, not by fragment | P | ✓ |
+| M-03 | Every new string asserted in **both** locales | P | ✓ |
 | M-04 | The four existing e2e suites are **extended**, not duplicated | P | ☐ |
 | M-05 | Tests for a removed feature are deleted in the **same stage** that removes it | P | ☐ |
 | M-06 | No `waitForTimeout` anywhere in the new tests | P | ☐ |

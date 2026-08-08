@@ -75,7 +75,20 @@ export const en = {
   // anywhere it is shown.
   classLabel: 'Class (optional)',
   studentsLabel: 'Number of students',
-  studentsHelp: 'Leave the names box empty to use numbered students.',
+  // Task 8, the locale sweep. Used to read "Leave the names box empty to
+  // use numbered students." -- the paste-names box it described was removed
+  // by Task 1's engine rewrite (see classroom-groups.spec.ts's own 'the
+  // paste-names box and the keep-apart box are gone'), so this sentence had
+  // been describing a control absent from the page since stage 2 began.
+  // Rewritten to say what is true today: every student this field produces
+  // is anonymous and numbered, the exact form `studentNumber` below renders
+  // ("Student N"). Not a forward reference to Student details -- that
+  // section's body is still empty (stage 3 fills it; see
+  // ClassroomGroupsPage.astro's own comment on `#cg-students-body`), so a
+  // sentence pointing a teacher there today would trade one broken promise
+  // for another.
+  studentsHelp:
+    'Students are anonymous and numbered — Student 1, Student 2, and so on.',
 
   modeLabel: 'Split by',
   modePerGroup: 'Students per group',

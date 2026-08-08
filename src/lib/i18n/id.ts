@@ -49,7 +49,11 @@ export const id: Strings = {
   // lengkap.
   classLabel: 'Kelas (opsional)',
   studentsLabel: 'Jumlah siswa',
-  studentsHelp: 'Biarkan kotak nama kosong untuk memakai siswa bernomor.',
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap --
+  // kalimat lama menyebut kotak nama yang sudah dihapus bersama rombakan
+  // mesin Tugas 1.
+  studentsHelp:
+    'Siswa bersifat anonim dan diberi nomor — Siswa 1, Siswa 2, dan seterusnya.',
 
   modeLabel: 'Bagi berdasarkan',
   modePerGroup: 'Siswa per kelompok',

@@ -132,6 +132,15 @@ test.describe('the controls that had no tests', () => {
     // how-to state and a later print panel as UI preferences allowed to
     // persist) -- so it has to be reopened after the reload below too.
     await page.locator('#cg-sound-toggle').click();
+    // Task 8, the locale sweep. sectionSoundHeading ("Sound and animation")
+    // had been clicked by id in every file that opens this section, but its
+    // own rendered text had never been asserted anywhere -- this is the
+    // whole button label, with no `· state` half to join it to (see
+    // sections.ts's own doc comment on why sectionState returns three
+    // fields, not four).
+    await expect(page.locator('#cg-sound-toggle')).toHaveText(
+      'Sound and animation',
+    );
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound on');
     await page.uncheck('#cg-sound-check');
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound off');
@@ -139,6 +148,51 @@ test.describe('the controls that had no tests', () => {
     await page.locator('#cg-sound-toggle').click();
     await expect(page.locator('#cg-sound-check')).not.toBeChecked();
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound off');
+  });
+
+  // Task 8, the locale sweep. This whole section (heading, sound label,
+  // speed label) had zero Indonesian e2e coverage -- every existing
+  // interaction with it goes through an id or a selectOption VALUE
+  // ('fast'/'skip'/'normal'), never the page's own words.
+  test('the sound section reads in Indonesian, as whole sentences', async ({
+    page,
+  }) => {
+    await page.goto('/id/classroom-groups');
+    await page.locator('#cg-sound-toggle').click();
+    await expect(page.locator('#cg-sound-toggle')).toHaveText(
+      'Suara dan animasi',
+    );
+    await expect(page.locator('#cg-sound-text')).toHaveText('Suara aktif');
+    await page.uncheck('#cg-sound-check');
+    await expect(page.locator('#cg-sound-text')).toHaveText('Suara mati');
+    // { exact: true }: getByLabel's default match is a substring, not a
+    // whole string -- a mutation spot-check on a sibling test in
+    // classroom-groups.spec.ts ('the Split by row names its own fields')
+    // found this the same way it found getByText's own default.
+    await expect(page.getByLabel('Kecepatan', { exact: true })).toBeVisible();
+  });
+
+  // Mirrors 'the theme picker offers every theme, translated' below: not a
+  // count, since an option whose label went missing renders empty and a
+  // count would not notice. speedNormal is genuinely "Normal" in both
+  // languages (i18n.test.ts's own ALLOWED_IDENTICAL), so this is the only
+  // place that fact is proven against the real page rather than assumed.
+  test('the speed picker offers every option, translated', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-sound-toggle').click();
+    await expect(page.locator('#cg-speed option')).toHaveText([
+      'Normal',
+      'Fast',
+      'Skip the animation',
+    ]);
+
+    await page.goto('/id/classroom-groups');
+    await page.locator('#cg-sound-toggle').click();
+    await expect(page.locator('#cg-speed option')).toHaveText([
+      'Normal',
+      'Cepat',
+      'Lewati animasi',
+    ]);
   });
 
   test('a device asking for less motion gets the answer without the show', async ({
