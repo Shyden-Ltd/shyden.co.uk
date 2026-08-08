@@ -424,16 +424,18 @@ function buildRow(
   apartTd.appendChild(apartSelect);
 
   // Remove — design spec section 4: "Removing a row removes the student."
-  // A SEVENTH cell with NO matching `<th>`, deliberately: the six-column
-  // header row is pinned verbatim by "the table has the six columns, in
-  // order" (classroom-groups-roster.spec.ts), so a genuine action control
-  // earns its own column without earning a matching header cell — see
+  // A SEVENTH cell, with a real (visually-hidden) header of its own — see
+  // this file's own `renderRoster`, the `removeTh`/`removeHeading` built
+  // just above the `<tbody>` this row joins, for the accessibility
+  // reasoning (fix round 1: an EARLIER version of this column had no
+  // matching `<th>` at all, which left the column unlabelled to a screen
+  // reader — corrected, not left, once that was raised). See
   // ClassroomGroupsPage.astro's own comment on `#cg-roster`'s `<colgroup>`
-  // for the rest of the reasoning, and its CSS for why this column gets
-  // its own full-width ROW in the card layout rather than competing with
-  // Name or any of the other five fields for space: design spec section
-  // 3's own arithmetic already proved there is no room left in EITHER of
-  // the card's two existing rows for a seventh control.
+  // for the column-width side of the same change, and its CSS for why this
+  // column gets its own full-width ROW in the card layout rather than
+  // competing with Name or any of the other five fields for space: design
+  // spec section 3's own arithmetic already proved there is no room left
+  // in EITHER of the card's two existing rows for a seventh control.
   //
   // Reads the LIVE roster at the moment of the click (`getRoster()`, the
   // same accessor every field handler above already closes over), not the
@@ -524,6 +526,48 @@ export function renderRoster(
     th.textContent = heading;
     headRow.appendChild(th);
   }
+  // Remove's own header — fix round 1: the first pass at this task left
+  // this column's `<th>` out entirely, reasoning that adding one would
+  // redden a test asserting six columns. That reasoning was backwards --
+  // a test pinning "six" was pinning the OLD column count, not a
+  // requirement anyone chose, and the real cost of leaving it out was an
+  // unlabelled table column: a screen reader building this table's own
+  // headers (table-navigation commands, or the "column N of M" some
+  // readers announce) would find nothing here, or -- worse, depending on
+  // how the header row happens to lay out with one cell short -- borrow
+  // the SIXTH column's name for the SEVENTH cell. Design spec section 4's
+  // own "colour is never the only signal" is exactly the principle this
+  // violated: an unlabelled column is a missing SIGNAL, the identical
+  // defect class every other control on this page already refuses to
+  // ship.
+  //
+  // Visually hidden (`.cg-roster-remove-heading`, ClassroomGroupsPage.astro
+  // -- the SAME clip-based technique #cg-roster thead's own rule already
+  // uses, just applied to one cell's own content rather than a whole row,
+  // and UNCONDITIONALLY rather than only below the table breakpoint):
+  // showing "Remove" as a visible heading above a column of seven
+  // identical "Remove" buttons would only repeat what every row already
+  // says, the same judgement call this repo already made once for the
+  // whole header row on the card layout. The `<th>` element ITSELF stays
+  // an ordinary, unhidden table cell — only its inner span is clipped —
+  // because an absolutely-positioned `<th>` risks being pulled out of the
+  // header ROW's own layout in table mode, where the other six headers
+  // really are visible; hiding the CONTENT instead of the CELL sidesteps
+  // that risk entirely.
+  //
+  // Reuses `t.rosterRemove` -- the exact word every row's own button
+  // already carries -- rather than a second, independent string: one word
+  // for the column, the same word for the control inside it, matching the
+  // doubling-as-accessible-name convention the other six headers already
+  // keep (see this function's own header comment, above the `heading`
+  // loop just above).
+  const removeTh = document.createElement('th');
+  removeTh.scope = 'col';
+  const removeHeading = document.createElement('span');
+  removeHeading.className = 'cg-roster-remove-heading';
+  removeHeading.textContent = t.rosterRemove;
+  removeTh.appendChild(removeHeading);
+  headRow.appendChild(removeTh);
   thead.appendChild(headRow);
   table.appendChild(thead);
 

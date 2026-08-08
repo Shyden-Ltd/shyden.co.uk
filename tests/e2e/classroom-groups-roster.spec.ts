@@ -18,7 +18,25 @@ import { openRoster, addSeveral, markAbsent } from './helpers';
  */
 
 test.describe('the roster table', () => {
-  test('the table has the six columns, in order', async ({ page }) => {
+  // Seven columns, not six, as of Stage 3, Task 6's own fix round: Remove
+  // earns a real header, not a silently unlabelled cell. This title used
+  // to read "the table has the six columns, in order", asserting exactly
+  // six -- that number was pinning the column count as it stood at Task 2,
+  // never a requirement anyone actually chose. When Remove's own column
+  // landed with no `<th>` of its own (reasoned, at the time, as the way to
+  // avoid reddening THIS test), the real defect was a table column with no
+  // accessible name at all -- do not "fix" this back down to six; six was
+  // the bug's own shape, not the contract. The seventh header's own text
+  // ('Remove'/'Hapus') is present in the DOM -- `toHaveText` reads it here
+  // exactly as it reads the other six -- but visually hidden via CSS clip
+  // (ClassroomGroupsPage.astro's own `.cg-roster-remove-heading`): a
+  // screen reader building this table's column headers finds a real name
+  // for every one of the seven, while a sighted teacher never sees a
+  // printed "Remove" heading sitting above a column of seven identical
+  // "Remove" buttons repeating the same word.
+  test('the table has seven columns, in order — the seventh (Remove) has a real header, visually hidden but present', async ({
+    page,
+  }) => {
     await openRoster(page);
     await expect(page.locator('#cg-roster thead th')).toHaveText([
       '#',
@@ -27,7 +45,23 @@ test.describe('the roster table', () => {
       'Absent',
       'Together',
       'Apart',
+      'Remove',
     ]);
+  });
+
+  // The general invariant "the table has seven columns" above pins today.
+  // This is the one that stops it drifting again: derived from the DOM on
+  // BOTH sides (colgroup's own <col> count, thead's own <th> count),
+  // never a hard-coded number, so an eighth column added later without
+  // its own header -- or a header added without its own column -- fails
+  // here regardless of what the actual count turns out to be.
+  test('every column has a header — the header count matches the column count', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    const columnCount = await page.locator('#cg-roster colgroup col').count();
+    const headerCount = await page.locator('#cg-roster thead th').count();
+    expect(headerCount).toBe(columnCount);
   });
 
   test('an unnamed row renders Student N in the results', async ({ page }) => {
@@ -872,7 +906,12 @@ test.describe('removing a student', () => {
 });
 
 test.describe('Indonesian', () => {
-  test('the table has the six columns, translated', async ({ page }) => {
+  // Mirrors 'the table has seven columns, in order...', above -- the
+  // seventh header's own text is 'Hapus' (rosterRemove, id.ts), the exact
+  // word every row's own Remove button already carries.
+  test('the table has seven columns, translated — the seventh (Remove/Hapus) has a real header too', async ({
+    page,
+  }) => {
     await openRoster(page, '/id/classroom-groups');
     await expect(page.locator('#cg-roster thead th')).toHaveText([
       '#',
@@ -881,6 +920,7 @@ test.describe('Indonesian', () => {
       'Tidak hadir',
       'Bersama',
       'Terpisah',
+      'Hapus',
     ]);
   });
 
