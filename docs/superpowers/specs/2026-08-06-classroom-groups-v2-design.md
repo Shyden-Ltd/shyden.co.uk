@@ -28,6 +28,45 @@ teacher expands something, scrolling is expected and fine.**
 That single clarification makes the goal achievable and dictates the design: everything is collapsed
 by default and opening is a deliberate act.
 
+### Amended 2026-08-08, after measurement — the rule is about the tool, not the page furniture
+
+Built and measured, the rule as first written cannot be met, and the reason is not the tool:
+
+| Device | Page total | Screen | Over by | of which header + footer |
+|---|---|---|---|---|
+| iPhone SE 320×568 | 2131px | 568 | 1563 | **336** |
+| iPhone 8 375×667 | 2026px | 667 | 1359 | **313** |
+| iPad 768×1024 | 1420px | 1024 | 396 | **267** |
+| Laptop 1280×800 | 1420px | 800 | 620 | **267** |
+
+The site-wide header and footer take **336px of a 568px phone screen** — 59% of the budget before
+the page renders a single control, and most of that footer is company text this site is obliged to
+carry on every page. It is not this page's to shrink, and shrinking it here alone would make this
+page inconsistent with the rest of the site.
+
+The four collapsed sections, meanwhile, are doing exactly what they were designed to do: **46px
+each, 185px for all four.** The compaction strategy works. What defeats it is everything that is
+not the tool.
+
+**Two operator rulings, 2026-08-08:**
+
+1. **The rule is measured against the tool, not the whole document.** "Fits one screen" means the
+   tool — from the top of `How to use` to the *Make groups* button — fits within the viewport. The
+   site-wide header and footer are excluded, because a page cannot be held to a budget it does not
+   control. The tests measure the tool's own height.
+2. **`How to use` is collapsed by default**, reversing the "expanded by default" in §3. This spec
+   already called collapsing it "the single biggest saving on the page"; measurement put that at
+   **~310px on a phone**, which is the difference between meeting the rule and missing it. The
+   header `▸ How to use` remains, the state is still remembered in `localStorage`, and a teacher
+   who opens it once never sees it closed again.
+
+   The cost is real and accepted: a first-time visitor sees the header rather than the description,
+   so the *who* and the *why* are one tap away rather than immediate. The alternative was a page
+   that scrolls on every phone, which is the defect this rework exists to remove.
+
+**Still owed, and tracked:** the naming/theme picker is marked removed in §12 but still renders, and
+stage 3 owns removing it. It is the last always-visible bordered box below the top row.
+
 ---
 
 ## 3. Layout
@@ -74,7 +113,8 @@ form, because it is the page's summary and description rather than part of the f
 
 2. **How to use it** — the three steps.
 
-- **Expanded by default.** If the teacher collapses it, remember that in `localStorage` and honour it
+- **Collapsed by default** — *amended 2026-08-08; this said "expanded by default" and the reasoning
+  for the reversal is in §2.* If the teacher opens it, remember that in `localStorage` and honour it
   next visit. This is a UI preference, not class data — the roster is never stored.
 - **Collapsed, the header `▸ How to use` remains**, so it can always be opened again. Collapsing it
   is the single biggest saving on the page: today's long intro paragraph and three how-to steps are
