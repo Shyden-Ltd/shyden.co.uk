@@ -431,6 +431,40 @@ const sexWhyText = sexWhy(roster, t);
             </button>
           </h2>
           <div id="cg-students-body" class="tool-section-body" hidden></div>
+          <!-- Stage 3, Task 5 (design spec section 4: a duplicate number
+               or a together/apart clash is "refused in the table, as it
+               is typed" -- caught by rosterProblems, src/lib/roster.ts).
+               Static markup, SIBLINGS of #cg-students-body rather than
+               children built by renderRoster (roster-ui.ts): a text edit
+               deliberately never re-renders the table (that same file's
+               own RosterHandlers doc comment -- rebuilding mid-keystroke
+               would steal the focus and the caret from whoever is typing),
+               so the element this notice writes into has to survive every
+               keystroke untouched. Sitting OUTSIDE #cg-students-body, not
+               inside it, is also why the notice stays visible/announced
+               even if a teacher collapses Student details after creating
+               a problem -- the whole reason "Make groups" is disabled
+               must not go dark along with the section that explains it.
+
+               #cg-roster-problem is BLOCKING (a duplicate/clash) and reuses
+               .error verbatim -- the identical class #cg-error already
+               uses for the engine's own refusals, since this is the same
+               kind of fact caught one keystroke earlier; role="alert" for
+               the same reason, matching classroom-groups-announcements.spec.ts's
+               established "announced accessibly, not just shown" pattern.
+               #cg-roster-warning is NON-blocking (a numbering gap) and
+               gets its own lighter, amber .roster-warning treatment --
+               "the amber is the same family the page uses for warnings"
+               (design spec section 4, already the reasoning for the
+               absence tint) -- and role="status" so it does not interrupt
+               the way an alert does. classroom-groups.ts's own
+               updateRosterValidation is what writes into these, hide/show/
+               write in that order (its own comment has the reasoning) --
+               the same ordering #cg-stale-text below already uses, so a
+               live region here is never announced as already-populated. -->
+          <p class="error" id="cg-roster-problem" role="alert" hidden></p>
+          <p class="roster-warning" id="cg-roster-warning" role="status" hidden>
+          </p>
         </section>
 
         <section id="cg-grouping" class="tool-section">
@@ -1553,6 +1587,34 @@ const sexWhyText = sexWhy(roster, t);
     border: 1px solid #b3261e;
     color: #8c1d18;
     background: #fdecea;
+  }
+  /* #cg-roster-problem/#cg-roster-warning sit directly inside
+     .tool-section (padding: 0 1rem, no vertical padding of its own -- see
+     that rule's own comment), as siblings of #cg-students-body rather than
+     inside it (ClassroomGroupsPage.astro's own comment on the markup has
+     the full reasoning). Margin here, rather than relying on the browser's
+     own default <p> margin, so spacing is explicit and identical whichever
+     of the two is showing. */
+  #cg-roster-problem,
+  .roster-warning {
+    margin: 0.5rem 0 1rem;
+  }
+  /* Design spec section 4's own "the amber is the same family the page
+     uses for warnings" -- these are the SAME border/background hex values
+     .stale-notice already uses (that rule's own comment has the AA
+     contrast measurement, taken once and reused here rather than
+     re-derived), applied to a plain, buttonless notice: a roster gap is a
+     lighter-weight fact than "these groups are out of date", so this skips
+     .stale-notice's flex row entirely. Text stays --ink, not a special
+     amber tone, for the identical reason .is-absent's own tint keeps full
+     contrast rather than becoming a grey-out. */
+  .roster-warning {
+    max-width: var(--measure);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #956b1e;
+    background: #fff6e3;
+    color: var(--ink);
   }
 
   /* Design spec section 4's own "the amber is the same family the page

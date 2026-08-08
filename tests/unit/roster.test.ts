@@ -4,10 +4,14 @@ import {
   availableLetters,
   nextNumber,
   rosterCounts,
+  rosterProblems,
+  rosterWarnings,
   serialiseForCompare,
 } from '../../src/lib/roster';
 import * as roster from '../../src/lib/roster';
 import { student } from './factories';
+import { en } from '../../src/lib/i18n/en';
+import { id } from '../../src/lib/i18n/id';
 
 // Mirrors grouping.test.ts's own "the module surface" test (F-2 there):
 // pins exactly what this module exports, so an addition or a removal has
@@ -21,6 +25,8 @@ describe('the module surface', () => {
       'availableLetters',
       'nextNumber',
       'rosterCounts',
+      'rosterProblems',
+      'rosterWarnings',
       'serialiseForCompare',
     ]);
   });
@@ -241,5 +247,263 @@ describe('availableLetters', () => {
     ).toEqual(
       Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)),
     );
+  });
+});
+
+// Stage 3, Task 5 (design spec section 4, "Numbers" / "Together / apart"):
+// caught as it is TYPED, in the table -- never held back until "Make
+// groups" is pressed. Mirrors the engine's own duplicateNumber/
+// togetherApartClash guards (grouping.ts) on the identical data, one
+// keystroke earlier, in a sentence written for the moment of typing rather
+// than the moment of shuffling.
+describe('rosterProblems', () => {
+  it('finds a duplicate number and names who already holds it', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 5, name: 'Eko' }),
+        student({ number: 5, name: 'Ana' }),
+      ],
+      en,
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0].kind).toBe('duplicate');
+    expect(problems[0].message).toBe(
+      'Number 5 is already used by Eko. Every student needs their own.',
+    );
+  });
+
+  it('finds a together-and-apart clash', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 1, name: 'Ana', together: 'A', apart: 'X' }),
+        student({ number: 2, name: 'Budi', together: 'A', apart: 'X' }),
+      ],
+      en,
+    );
+    expect(problems[0].kind).toBe('clash');
+    expect(problems[0].message).toBe(
+      'Ana and Budi are kept together, so they cannot also be kept apart.',
+    );
+  });
+
+  it('is quiet when the same apart letter is on students not kept together', () => {
+    expect(
+      rosterProblems(
+        [
+          student({ number: 1, together: 'A', apart: 'X' }),
+          student({ number: 2, together: 'A' }),
+          student({ number: 3, apart: 'X' }),
+        ],
+        en,
+      ),
+    ).toEqual([]);
+  });
+
+  it('names an unnamed student as Student N in the message', () => {
+    const problems = rosterProblems(
+      [student({ number: 5 }), student({ number: 5 })],
+      en,
+    );
+    expect(problems[0].message).toContain('Student 5');
+  });
+
+  // Not in the brief -- pins that `students` (what a future caller would
+  // use to locate the affected row, per Problem's own doc comment) carries
+  // the real number involved, for both kinds.
+  it('the duplicate problem names the duplicated number in students', () => {
+    const problems = rosterProblems(
+      [student({ number: 7 }), student({ number: 7 })],
+      en,
+    );
+    expect(problems[0].students).toEqual([7]);
+  });
+
+  it('the clash problem names every clashing number in students', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 1, together: 'A', apart: 'X' }),
+        student({ number: 2, together: 'A', apart: 'X' }),
+      ],
+      en,
+    );
+    expect(problems[0].students).toEqual([1, 2]);
+  });
+
+  // A third row claiming the same number is still ONE fact to fix, not a
+  // second, redundant sentence repeating it. A mutant that reported once
+  // PER REPEAT, rather than once per duplicated NUMBER, would fail this by
+  // returning length 2.
+  it('reports a number used three times only once', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 5, name: 'Eko' }),
+        student({ number: 5, name: 'Ana' }),
+        student({ number: 5, name: 'Budi' }),
+      ],
+      en,
+    );
+    expect(problems).toHaveLength(1);
+  });
+
+  // Two DIFFERENT duplicated numbers are two DIFFERENT facts, and both must
+  // be reported -- distinguishing this from "collapse to one" directly
+  // above.
+  it('reports two different duplicated numbers as two separate problems', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 5 }),
+        student({ number: 5 }),
+        student({ number: 9 }),
+        student({ number: 9 }),
+      ],
+      en,
+    );
+    expect(problems.filter((p) => p.kind === 'duplicate')).toHaveLength(2);
+  });
+
+  // Design spec section 4, "Absence": "Their letters lapse with them...
+  // constrains nobody." A clash that exists only because one holder of the
+  // shared apart-letter is absent must not block a shuffle that would, in
+  // fact, succeed -- mirroring the engine's own togetherApartClash, checked
+  // against the present pool, never the raw roster.
+  it('an absent student holding one side of a clash does not trigger it', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 1, together: 'A', apart: 'X', absent: true }),
+        student({ number: 2, together: 'A', apart: 'X' }),
+      ],
+      en,
+    );
+    expect(problems).toEqual([]);
+  });
+
+  // ...but a duplicate number is still caught even when one holder is
+  // absent -- a register number is still taken while its holder is out
+  // (nextNumber's own doc comment, above, gives the identical reasoning),
+  // and the engine's own duplicateNumber check runs BEFORE its absence
+  // filter for the same reason.
+  it('a duplicate number is still caught when one holder is absent', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 5, name: 'Eko', absent: true }),
+        student({ number: 5, name: 'Ana' }),
+      ],
+      en,
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0].kind).toBe('duplicate');
+  });
+
+  it('is quiet on an empty roster', () => {
+    expect(rosterProblems([], en)).toEqual([]);
+  });
+
+  it('renders the clash message in Indonesian too, not a copy of the English sentence', () => {
+    const problems = rosterProblems(
+      [
+        student({ number: 1, name: 'Ana', together: 'A', apart: 'X' }),
+        student({ number: 2, name: 'Budi', together: 'A', apart: 'X' }),
+      ],
+      id,
+    );
+    expect(problems[0].message).not.toBe(
+      'Ana and Budi are kept together, so they cannot also be kept apart.',
+    );
+    expect(problems[0].message).toContain('Ana');
+    expect(problems[0].message).toContain('Budi');
+  });
+});
+
+describe('rosterWarnings', () => {
+  it('warns about a gap, naming the missing numbers', () => {
+    expect(
+      rosterWarnings(
+        [1, 2, 3, 5, 8].map((n) => student({ number: n })),
+        en,
+      ),
+    ).toEqual([
+      'Your class list looks incomplete. Numbers 4, 6 and 7 are missing. ' +
+        'That is fine if those children have left — open Student details to check.',
+    ]);
+  });
+
+  it('is quiet when the numbers run without gaps', () => {
+    expect(
+      rosterWarnings(
+        [1, 2, 3].map((n) => student({ number: n })),
+        en,
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not treat a roster starting above 1 as a gap', () => {
+    // A class numbered from 101 is a register, not an incomplete list.
+    expect(
+      rosterWarnings(
+        [101, 102].map((n) => student({ number: n })),
+        en,
+      ),
+    ).toEqual([]);
+  });
+
+  // Not in the brief -- English inflects (this file's established
+  // convention elsewhere, e.g. rosterCountLine/resultsSummary), so a SINGLE
+  // missing number needs its own grammatical branch: "Number 3 is missing",
+  // never "Numbers 3 are missing".
+  it('uses singular grammar for exactly one missing number', () => {
+    expect(
+      rosterWarnings(
+        [1, 2, 4].map((n) => student({ number: n })),
+        en,
+      ),
+    ).toEqual([
+      'Your class list looks incomplete. Number 3 is missing. ' +
+        'That is fine if those children have left — open Student details to check.',
+    ]);
+  });
+
+  it('is quiet on an empty roster', () => {
+    expect(rosterWarnings([], en)).toEqual([]);
+  });
+
+  // A single-student roster has no internal range to be missing a number
+  // FROM. This is the exact scenario task-5-brief.md's own e2e snippet got
+  // wrong -- see this task's own report -- so it is pinned here at the unit
+  // level too: filling the only row's number produces no gap, whatever it
+  // is filled with.
+  it('is quiet on a single-student roster, however it is numbered', () => {
+    expect(rosterWarnings([student({ number: 4 })], en)).toEqual([]);
+  });
+
+  it('is quiet when a duplicate, not a gap, is what is wrong', () => {
+    // rosterProblems' own job, not this function's -- a repeated number is
+    // not a missing one.
+    expect(
+      rosterWarnings([student({ number: 1 }), student({ number: 1 })], en),
+    ).toEqual([]);
+  });
+
+  // Absence does not touch the register -- design spec section 4's "their
+  // number is still taken" (nextNumber's own doc comment, above) applies
+  // here too: an absent student's number still closes the gap it would
+  // otherwise leave.
+  it('an absent student still counts as holding their number, closing the gap', () => {
+    expect(
+      rosterWarnings(
+        [1, 2, 3].map((n) => student({ number: n, absent: n === 2 })),
+        en,
+      ),
+    ).toEqual([]);
+  });
+
+  it('renders in Indonesian too, not a copy of the English sentence', () => {
+    const msg = rosterWarnings(
+      [1, 2, 3, 5, 8].map((n) => student({ number: n })),
+      id,
+    )[0];
+    expect(msg).toContain('4');
+    expect(msg).toContain('6');
+    expect(msg).toContain('7');
+    expect(msg).not.toContain('looks incomplete');
   });
 });

@@ -1,5 +1,14 @@
 import type { Strings } from './en';
 
+// "Ana dan Budi" / "4, 6 dan 7" -- lihat komentar pada `joinAnd` di versi
+// Inggrisnya (en.ts) untuk alasan lengkap: dipakai hanya oleh dua pesan
+// validasi roster di bawah (rosterClashMessage, rosterGapWarning), bukan
+// pola gabungan yang dipakai daftar lain di file ini.
+const joinDan = (items: string[]): string =>
+  items.length <= 1
+    ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} dan ${items[items.length - 1]}`;
+
 /**
  * Bahasa Indonesia.
  *
@@ -134,6 +143,15 @@ export const id: Strings = {
   // sini seperti pada versi Inggrisnya.
   rosterCountLine: (total: number, here: number, absent: number) =>
     `${total} siswa · ${here} hadir · ${absent} tidak hadir`,
+
+  // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
+  // "sendiri" ("their own") menutup kalimat sama seperti versi Inggris.
+  rosterDuplicateMessage: (number: number, name: string) =>
+    `Nomor ${number} sudah dipakai oleh ${name}. Setiap siswa harus punya nomornya sendiri.`,
+  rosterClashMessage: (names: string[]) =>
+    `${joinDan(names)} sudah ditandai untuk disatukan, jadi tidak bisa sekaligus dipisahkan.`,
+  rosterGapWarning: (missing: number[]) =>
+    `Daftar kelas Anda tampak belum lengkap. Nomor ${joinDan(missing.map(String))} belum ada. Itu wajar jika siswa tersebut sudah keluar — buka Detail siswa untuk memeriksanya.`,
 
   stateNoneAdded: 'tidak ada yang ditambahkan',
   stateNamed: (n: number) => `${n} diberi nama`,

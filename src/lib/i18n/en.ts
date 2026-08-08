@@ -14,6 +14,22 @@
 export const THEME_KEYS = ['animals', 'colours', 'planets'] as const;
 export type ThemeKey = (typeof THEME_KEYS)[number];
 
+/**
+ * "Ana and Budi" / "4, 6 and 7" -- every item but the last comma-separated,
+ * "and" before the last, no Oxford comma. Used only by the two roster
+ * VALIDATION messages below (`rosterClashMessage`, `rosterGapWarning`) --
+ * every other list in this file (`TOGETHER_APART_CLASH`,
+ * `KEEP_APART_IMPOSSIBLE`, and so on) deliberately keeps its own
+ * established `', '`-only join (see each of their own doc comments), so
+ * this is not a retrofit onto existing copy -- only what the design spec's
+ * own approved sentences for THESE two need ("Ana and Budi…", "Numbers 4, 6
+ * and 7…").
+ */
+const joinAnd = (items: string[]): string =>
+  items.length <= 1
+    ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+
 export const en = {
   title: 'Classroom Group Creator',
   description:
@@ -230,6 +246,44 @@ export const en = {
   // count.
   rosterCountLine: (total: number, here: number, absent: number) =>
     `${total} ${total === 1 ? 'student' : 'students'} · ${here} here · ${absent} absent`,
+
+  // Stage 3, Task 5 (design spec section 4). Both are BLOCKING --
+  // rosterProblems (src/lib/roster.ts) is what "Make groups" is disabled
+  // on -- and both mirror a refusal the ENGINE already makes on the exact
+  // same data (ERROR_CODES.duplicateNumber / .togetherApartClash above),
+  // just caught one keystroke earlier and phrased for the moment of typing
+  // rather than the moment of shuffling: this one names WHO already holds
+  // the number, which DUPLICATE_NUMBER above cannot -- the engine has no
+  // roster to resolve a name from. The approved copy (task-5-brief.md,
+  // verbatim) is a fixed two-part sentence with no singular/plural branch,
+  // because a duplicate always names exactly one prior holder.
+  rosterDuplicateMessage: (number: number, name: string) =>
+    `Number ${number} is already used by ${name}. Every student needs their own.`,
+  // `names` arrives pre-resolved (rosterProblems), the same "the caller
+  // resolves numbers to labels" contract TOGETHER_APART_CLASH above already
+  // keeps. Joined with "and" (joinAnd, above), not TOGETHER_APART_CLASH's
+  // own ", " -- the two sentences are deliberately different wording
+  // (this one is written for the moment of typing, see the comment above),
+  // so sharing one join style between them is not a promise either message
+  // makes; only the literal approved copy is. `names.length` is always >= 2
+  // by construction -- a clash needs at least two holders of the same
+  // apart-letter within one together-block -- so, like
+  // TOGETHER_APART_CLASH, this never branches for singular/plural.
+  rosterClashMessage: (names: string[]) =>
+    `${joinAnd(names)} are kept together, so they cannot also be kept apart.`,
+  // Design spec section 4, "Numbers": "A gap raises a non-blocking warning:
+  // the class list appears to be incomplete, check it by opening Student
+  // details." NON-blocking -- rosterWarnings (src/lib/roster.ts) never
+  // reaches the goButton.disabled check rosterProblems above does. Branches
+  // singular/plural (English inflects, same reasoning as every other
+  // counted message in this file) since a roster can genuinely be missing
+  // exactly one number.
+  rosterGapWarning: (missing: number[]) =>
+    `Your class list looks incomplete. ${
+      missing.length === 1
+        ? `Number ${missing[0]} is`
+        : `Numbers ${joinAnd(missing.map(String))} are`
+    } missing. That is fine if those children have left — open Student details to check.`,
 
   // Every value below is read ONLY through sectionState (src/lib/sections.ts)
   // -- never interpolated into a page directly -- so a key here with no

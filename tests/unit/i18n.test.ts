@@ -175,6 +175,12 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   // classroom-groups-roster.spec.ts's own "the count line reads students,
   // here and absent" test pins.
   rosterCountLine: [24, 22, 2],
+  // Stage 3, Task 5. rosterProblems/rosterWarnings' own sole callers
+  // (src/lib/roster.ts) -- (5, 'Eko') matches task-5-brief.md's own
+  // approved example verbatim.
+  rosterDuplicateMessage: [5, 'Eko'],
+  rosterClashMessage: [['Ana', 'Budi']],
+  rosterGapWarning: [[4, 6, 7]],
 };
 
 describe('locales are complete', () => {

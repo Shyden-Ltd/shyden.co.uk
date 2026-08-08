@@ -17,7 +17,13 @@ import {
   type SexMode,
   MAX_STUDENTS,
 } from '../lib/grouping';
-import { serialiseForCompare, nextNumber, rosterCounts } from '../lib/roster';
+import {
+  serialiseForCompare,
+  nextNumber,
+  rosterCounts,
+  rosterProblems,
+  rosterWarnings,
+} from '../lib/roster';
 import {
   renderRoster,
   anonymousStudent,
@@ -686,6 +692,68 @@ if (form) {
   // from the whole roster on every render).
   const studentsBody = $<HTMLElement>('cg-students-body');
 
+  // Stage 3, Task 5. Static siblings of #cg-students-body, never rebuilt by
+  // renderRoster -- see ClassroomGroupsPage.astro's own comment on this
+  // markup for why. `!` because both are unconditionally in the page's own
+  // markup, the same certainty errorBox/results/staleNotice/staleText
+  // above already rely on.
+  const rosterProblemEl = $<HTMLParagraphElement>('cg-roster-problem')!;
+  const rosterWarningEl = $<HTMLParagraphElement>('cg-roster-warning')!;
+
+  /**
+   * Design spec section 4: a duplicate number or a together/apart clash is
+   * "refused in the table, as it is typed" -- BLOCKING, so `goButton`
+   * itself is what "as it is typed" ultimately has to mean; a gap is
+   * "non-blocking", so it only ever writes a notice, never touches
+   * `disabled`. Both live regions follow the exact hide/show/write order
+   * `updateStaleness` above already established for #cg-stale-text: a live
+   * region that appears already-populated is announced by nobody (this
+   * page's own announcements spec), so the element is unhidden BEFORE the
+   * new sentence is written into it, never after. Guarded the same way
+   * too -- `if (...textContent !== message)` -- so an unchanged reason
+   * across a run of keystrokes does not re-write the same text into a live
+   * region and risk a spurious re-announcement.
+   *
+   * A COMPARISON against the CURRENT roster, not a flag that only ever
+   * turns on -- the same reasoning `dirty` (above) and `staleReason`
+   * (staleness.ts) both rest on: fixing a duplicate must read as fixed
+   * again, not stay stuck disabled over a problem that no longer exists.
+   *
+   * `problems[0]`/`warnings[0]` only, deliberately, mirroring
+   * `staleReason`'s own "picks exactly one... so two things changing at
+   * once still reads as ONE clear sentence, not a list" (staleness.ts) --
+   * the identical shape of decision, made here for the identical reason.
+   */
+  const updateRosterValidation = () => {
+    const currentRoster = [...getRoster()];
+    const problems = rosterProblems(currentRoster, t);
+    const warnings = rosterWarnings(currentRoster, t);
+
+    if (problems.length === 0) {
+      rosterProblemEl.hidden = true;
+      rosterProblemEl.textContent = '';
+    } else {
+      rosterProblemEl.hidden = false;
+      const message = problems[0].message;
+      if (rosterProblemEl.textContent !== message) {
+        rosterProblemEl.textContent = message;
+      }
+    }
+
+    if (warnings.length === 0) {
+      rosterWarningEl.hidden = true;
+      rosterWarningEl.textContent = '';
+    } else {
+      rosterWarningEl.hidden = false;
+      const message = warnings[0];
+      if (rosterWarningEl.textContent !== message) {
+        rosterWarningEl.textContent = message;
+      }
+    }
+
+    goButton.disabled = problems.length > 0;
+  };
+
   /** The one place a per-field roster edit becomes real. `setRoster`'s own
    *  `onRosterChanged` hook (above) keeps `dirty`, `#cg-io` and
    *  `#cg-students` in sync; this additionally keeps `rosterNames` -- the
@@ -704,6 +772,7 @@ if (form) {
     rosterNames.clear();
     for (const s of next) if (s.name) rosterNames.set(s.number, s.name);
     updateStaleness();
+    updateRosterValidation();
   };
 
   const renderStudentsBody = () => {
@@ -723,6 +792,17 @@ if (form) {
       next.push(anonymousStudent(nextNumber(next)));
       setRoster(next);
       updateStaleness();
+      // `nextNumber` always assigns exactly one past the current highest,
+      // so adding a row can neither collide with an existing number nor
+      // change which numbers were already missing below the old highest
+      // (rosterWarnings' own doc comment, src/lib/roster.ts) -- this call
+      // is therefore a no-op TODAY. Kept anyway, deliberately: relying on
+      // that invariant silently is exactly the kind of thing a later
+      // change (a future "remove student", say) could break without this
+      // call site ever being touched again to notice. Cheap at
+      // MAX_ROSTER's own 100-row ceiling, so there is no real cost to
+      // paying for the guarantee outright rather than trusting the proof.
+      updateRosterValidation();
       renderStudentsBody();
     },
     onAddSeveral: (count) => {
@@ -738,11 +818,13 @@ if (form) {
       }
       setRoster(next);
       updateStaleness();
+      updateRosterValidation(); // see onAdd's own comment, just above
       renderStudentsBody();
     },
   };
 
   renderStudentsBody();
+  updateRosterValidation();
 
   // ── sound (six real CC0 samples; synthesis is the fallback) ─────────────
   // src/assets/sfx/ ships six mastered CC0 recordings -- shuffle.m4a,
@@ -1433,7 +1515,15 @@ if (form) {
       // In a finally because a rejection here would otherwise leave the
       // button disabled for good — and a disabled default button also
       // suppresses Enter, so there would be no keyboard way out either.
-      goButton.disabled = false;
+      // Re-derived from the CURRENT roster, not a bare `false`: a teacher
+      // can still edit Student details while the deal animation plays (only
+      // this button, not the form, is disabled during it), so a duplicate
+      // typed in that window must not be silently re-enabled the moment the
+      // animation ends. Recomputing here is what `updateRosterValidation`
+      // (── student roster, above) already does on every roster edit; the
+      // common case -- no roster, or no problem -- reads back `false`,
+      // identical to the line this replaces.
+      updateRosterValidation();
     }
   });
 }

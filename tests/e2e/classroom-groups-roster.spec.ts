@@ -480,6 +480,159 @@ test.describe('headers follow the roster, live', () => {
   });
 });
 
+/**
+ * Stage 3, Task 5: validation as it is typed. Traceability: R-04, R-05,
+ * R-06, T-07 (design spec section 13 / test-traceability.md) -- R-07 and
+ * T-08 (the matching engine-side refusals) are already proven by
+ * grouping.test.ts; this is the PAGE half, catching the identical fact one
+ * keystroke earlier, before the button is ever pressed.
+ *
+ * task-5-brief.md's own Step 3 snippet is reproduced below with one real
+ * correction, not verbatim: its own "a gap warns but does not block" test
+ * fills the FIRST (and, at that point, ONLY) roster row's number to '4' --
+ * a one-student roster has no internal range to be missing a number FROM
+ * (rosterWarnings measures gaps between the roster's own min and max; see
+ * that function's own doc comment in src/lib/roster.ts, and its "does not
+ * treat a roster starting above 1 as a gap" / "is quiet on a single-student
+ * roster" unit tests), so that exact sequence produces no warning at all
+ * under a correct implementation -- confirmed by running it before this fix
+ * existed. Corrected here by adding one more student first, so editing the
+ * SECOND row's number actually opens a gap (1, then 4 -- missing 2 and 3)
+ * rather than merely renumbering the only row that exists.
+ */
+test.describe('validation as it is typed', () => {
+  test('a duplicate number is refused as it is typed', async ({ page }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('1');
+    await expect(page.getByText(/Number 1 is already used/)).toBeVisible();
+    // and before the button is ever pressed
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeDisabled();
+  });
+
+  test('a together-and-apart clash is refused as it is typed', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    const row0 = page.locator('.cg-student').nth(0);
+    const row1 = page.locator('.cg-student').nth(1);
+    await row0.getByLabel('Together').selectOption('A');
+    await row1.getByLabel('Together').selectOption('A');
+    await row0.getByLabel('Apart').selectOption('A');
+    await row1.getByLabel('Apart').selectOption('A');
+    await expect(
+      page.getByText(/are kept together, so they cannot also be kept apart/),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeDisabled();
+  });
+
+  test('a gap warns but does not block', async ({ page }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
+    await expect(page.getByText(/looks incomplete/)).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeEnabled();
+  });
+
+  // R-06 -- "…naming who already holds it" -- proven with a REAL typed
+  // name, not only the "Student N" fallback the first test above exercises
+  // (neither student there is ever named).
+  test('a duplicate names the student who already holds the number, by name', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await page.locator('.cg-student').first().getByLabel('Name').fill('Eko');
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('1');
+    await expect(
+      page.getByText(
+        'Number 1 is already used by Eko. Every student needs their own.',
+      ),
+    ).toBeVisible();
+  });
+
+  // This task's own central risk: a re-render mid-keystroke would steal the
+  // focus and the caret out from under whoever is typing (roster-ui.ts's
+  // own RosterHandlers doc comment). Every test above reads the message
+  // AFTER the triggering edit, which would pass just as well whether or not
+  // a re-render happened in between -- this is the one that actually proves
+  // it did not: the SAME locator handle used to type is asserted still
+  // focused, holding exactly what was typed, once the message is showing.
+  test('the duplicate message appears without stealing focus or the caret from the field being typed in', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    const secondNumber = page.locator('.cg-student').nth(1).getByLabel('#');
+    await secondNumber.fill('1');
+    await expect(page.getByText(/Number 1 is already used/)).toBeVisible();
+    await expect(secondNumber).toBeFocused();
+    await expect(secondNumber).toHaveValue('1');
+  });
+
+  // Errors must be announced accessibly, not just shown -- the same rule
+  // classroom-groups-announcements.spec.ts already proves for #cg-error.
+  // role="alert" is what makes a screen reader interrupt with this the
+  // moment it appears, matching that established pattern rather than a new
+  // one for this notice.
+  test('the duplicate refusal is announced accessibly, not just shown', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('1');
+    await expect(page.locator('#cg-roster-problem')).toHaveAttribute(
+      'role',
+      'alert',
+    );
+    await expect(page.locator('#cg-roster-problem')).toBeVisible();
+  });
+
+  // The gap warning is announced too, but politely (role="status") rather
+  // than as an interruption -- it is a non-blocking notice, not a refusal,
+  // and "Make groups" stays enabled while it shows (proven above).
+  test('the gap warning is announced politely, not as an alert', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
+    await expect(page.locator('#cg-roster-warning')).toHaveAttribute(
+      'role',
+      'status',
+    );
+  });
+
+  // The block is a COMPARISON, not a one-way latch -- the same "a
+  // dirty/stale flag must be able to clear again" philosophy this page
+  // already applies to `dirty` (classroom-groups.ts) and `staleReason`
+  // (staleness.ts). Fixing the duplicate must re-enable the button, not
+  // leave it disabled forever once a problem has ever existed.
+  test('fixing the duplicate re-enables Make groups and clears the message', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    const secondNumber = page.locator('.cg-student').nth(1).getByLabel('#');
+    await secondNumber.fill('1');
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeDisabled();
+    await secondNumber.fill('2');
+    await expect(page.getByText(/Number 1 is already used/)).toBeHidden();
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeEnabled();
+  });
+});
+
 test.describe('Indonesian', () => {
   test('the table has the six columns, translated', async ({ page }) => {
     await openRoster(page, '/id/classroom-groups');
@@ -520,6 +673,52 @@ test.describe('Indonesian', () => {
     await page.locator('.cg-student').first().getByLabel('Tidak hadir').check();
     await page.getByRole('button', { name: 'Buat Kelompok' }).click();
     await expect(page.locator('body')).not.toContainText(/\baway\b/);
+  });
+
+  // Mirrors 'a duplicate number is refused as it is typed', above --
+  // Stage 3, Task 5's own i18n requirement: the refusal is live in both
+  // languages, not only English.
+  test('a duplicate number is refused as it is typed, in Indonesian', async ({
+    page,
+  }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await page.getByRole('button', { name: 'Tambah siswa' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('1');
+    await expect(page.getByText(/Nomor 1 sudah dipakai/)).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Buat Kelompok' }),
+    ).toBeDisabled();
+  });
+
+  // Mirrors 'a together-and-apart clash is refused as it is typed', above.
+  test('a together-and-apart clash is refused as it is typed, in Indonesian', async ({
+    page,
+  }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await page.getByRole('button', { name: 'Tambah siswa' }).click();
+    const row0 = page.locator('.cg-student').nth(0);
+    const row1 = page.locator('.cg-student').nth(1);
+    await row0.getByLabel('Bersama').selectOption('A');
+    await row1.getByLabel('Bersama').selectOption('A');
+    await row0.getByLabel('Terpisah').selectOption('A');
+    await row1.getByLabel('Terpisah').selectOption('A');
+    await expect(
+      page.getByText(/sudah ditandai untuk disatukan/),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Buat Kelompok' }),
+    ).toBeDisabled();
+  });
+
+  // Mirrors 'a gap warns but does not block', above.
+  test('a gap warns but does not block, in Indonesian', async ({ page }) => {
+    await openRoster(page, '/id/classroom-groups');
+    await page.getByRole('button', { name: 'Tambah siswa' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
+    await expect(page.getByText(/tampak belum lengkap/)).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Buat Kelompok' }),
+    ).toBeEnabled();
   });
 });
 
