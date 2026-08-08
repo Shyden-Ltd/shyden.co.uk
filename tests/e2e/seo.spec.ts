@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 test.describe('homepage SEO head', () => {
   test('has title, meta description, canonical and Open Graph', async ({
     page,

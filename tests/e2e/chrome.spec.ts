@@ -1,4 +1,5 @@
-import { test, expect, type Locator } from '@playwright/test';
+import { test, expect } from './fixtures';
+import type { Locator } from '@playwright/test';
 
 test.describe('header + footer', () => {
   test('nav links point to the section anchors in scroll order', async ({

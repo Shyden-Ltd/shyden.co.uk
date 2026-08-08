@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 test('custom 404 renders branded not-found copy', async ({ page }) => {
   const res = await page.goto('/no-such-page-xyz');
   expect(res?.status()).toBe(404);
