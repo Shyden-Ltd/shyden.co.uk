@@ -949,23 +949,50 @@ test.describe('site-wide language switching', () => {
 // was never meant to exist.
 test.describe('the no-scroll rule, measured', () => {
   // Ruling 1 (design spec section 2, "Amended 2026-08-08" -- an operator
-  // ruling made after the numbers below were first measured): "fits one
-  // screen" is judged against the TOOL, not the whole document. The tool is
-  // the span from the top of #cg-howto (How to use) down to the bottom of
-  // #cg-go (the Make groups button) -- the site-wide header and footer
-  // (BaseLayout.astro's <Header>/<Footer>, rendered unconditionally on
-  // every page this site has) sit outside that span and are excluded: a
-  // page cannot be held to a budget it does not control, and shrinking
-  // either one just for this page would make it inconsistent with every
-  // other page that carries them.
+  // ruling made after the numbers below were first measured, and corrected
+  // again after a code review caught what the first version of this block
+  // still got wrong): "fits one screen" means a teacher can see the *Make
+  // groups* button without scrolling. That is a POSITION claim, not a
+  // height claim. This block used to assert a height instead -- "tool
+  // height" (#cg-howto's own top to #cg-go's own bottom) compared to
+  // `window.innerHeight` -- and it was wrong in a way that stayed green: at
+  // 1280x800 the tool's own height (652px) fits comfortably inside 800px,
+  // so the old assertion passed, while `#cg-go` itself rendered at
+  // `.bottom === 881`, 81px below the fold. A height number can be
+  // satisfied by a tool pushed off-screen; a position cannot. What is
+  // asserted below is `#cg-go`'s own `getBoundingClientRect().bottom`
+  // against `window.innerHeight`, at scroll 0 -- direct, and it subsumes
+  // the old height check rather than replacing it with an unrelated one.
   //
-  // Measured DIRECTLY off the two elements that bound the tool --
-  // `#cg-howto`'s own `getBoundingClientRect().top` to `#cg-go`'s own
-  // `.bottom` -- never by subtracting an estimated header/footer height from
-  // `document.documentElement.scrollHeight`. That subtraction was this
-  // block's own earlier approach and left an unexplained ~55-65px residual
-  // at every width (see this file's git history); direct measurement is
-  // the tool's real rendered extent, not a sum of parts chosen by hand.
+  // Ruling 1 also excludes the site-wide header and footer from the budget
+  // this page is judged on -- "a page cannot be held to a budget it does
+  // not control", and BaseLayout's <Header>/<Footer> render unconditionally
+  // on every page this site has. That exclusion never covered this page's
+  // OWN hero: the `h1`/`.lead`/`.privacy` block just above #cg-howto
+  // (ClassroomGroupsPage.astro:70-72). This page's own stylesheet sets that
+  // block's size and spacing, so it is not page furniture and nothing stops
+  // an operator trimming it -- excluding it from the numbers below was
+  // never what the ruling said, even though the old "#cg-howto top to
+  // #cg-go bottom" span happened to exclude it too, as a side effect of
+  // where the span started rather than a decision anyone made about the
+  // hero.
+  //
+  // The position assertion below does not need a "top" to be correct --
+  // `#cg-go`'s own bottom, at scroll 0, already reflects everything
+  // rendered above it: header, hero and tool alike. But the table further
+  // down still reports a page-height figure, for the numbers to mean
+  // something to a reader, and that figure now starts at `#main`
+  // (BaseLayout.astro) rather than `#cg-howto`. `#main` is the first
+  // element below the site header -- it is also the skip-link's own
+  // target, BaseLayout.astro's `<a class="skip-link" href="#main">` -- so
+  // measuring from it counts the hero and excludes the header, exactly
+  // what the ruling asks for. Measured DIRECTLY off real elements' own
+  // `getBoundingClientRect()`, never by subtracting an estimated
+  // header/footer height from `document.documentElement.scrollHeight` --
+  // that subtraction was this block's own earlier approach and left an
+  // unexplained ~55-65px residual at every width (see this file's git
+  // history); direct measurement is the page's real rendered extent, not a
+  // sum of parts chosen by hand.
   //
   // Each width is paired with its OWN real device height (design spec
   // section 2's own measurement table), not a uniform 800px for all four --
@@ -974,46 +1001,54 @@ test.describe('the no-scroll rule, measured', () => {
   //
   // Ruling 2, same amendment: How to use collapsed by default (reversing
   // section 3's original expanded-by-default) is now the tool's actual
-  // landing state, so reaching "the collapsed default" needs no click here
-  // any more -- the previous version of this loop clicked "How to use"
-  // first because collapsing it was the only way to reach a state the page
-  // did not start in.
+  // landing state for a visitor with JavaScript, so reaching "the collapsed
+  // default" needs no click here any more -- the previous version of this
+  // loop clicked "How to use" first because collapsing it was the only way
+  // to reach a state the page did not start in. (A visitor WITHOUT
+  // JavaScript sees it open instead, by design -- ClassroomGroupsPage.astro's
+  // own comment on `#cg-howto-body` has that reasoning. It does not change
+  // what this block measures: every project this suite runs under has
+  // JavaScript enabled.)
   //
-  // Measured before (How to use expanded -- the state this task's own
-  // Ruling 2 changes) and after (collapsed -- what ships), tool-boundary
-  // method both times so the comparison isolates what Ruling 2 alone
-  // bought:
+  // Measured #main-to-#cg-go, the collapsed landing state, honestly:
   //
-  //   width x height   tool before   tool after   saved   budget    after vs budget
-  //   320x568          1312px        987px        325px   568px     419px OVER
-  //   375x667          1260px        986px        274px   667px     319px OVER
-  //   768x1024         849px         652px        197px   1024px    372px to spare
-  //   1280x800         849px         652px        197px   800px     148px to spare
+  //   width x height   #cg-go.bottom   budget    vs budget
+  //   320x568          1395px          568px     827px OVER
+  //   375x667          1365px          667px     698px OVER
+  //   768x1024         881px           1024px    143px to spare
+  //   1280x800         881px           800px     81px OVER
   //
-  // 768px and 1280px already fit -- comfortably, not on a technicality --
-  // and are un-`fixme`'d below. 320px and 375px recovered roughly a quarter
-  // of what they were over by, and are still over: both stay `fixme`,
-  // measured, not guessed, not weakened, not deleted.
+  // 768px fits, comfortably, not on a technicality, and stays un-`fixme`'d
+  // below. 1280x800 does not: the assertion is a position, not a margin,
+  // and 81px past the fold is still past it -- it reads `fits: true` in
+  // this file's git history only because the old height-based check could
+  // not see it. 320px and 375px stay the furthest over by a wide margin,
+  // and stay `fixme`: measured, not guessed, not weakened, not deleted.
   //
-  // What is left at 320/375px: the naming/theme picker fieldset ("Name the
-  // groups") is the last always-visible bordered box below the top row --
-  // design spec section 12 marks it removed, but that removal is stage 3's,
-  // not built yet, and it is real, currently-uncounted headroom this task
-  // did not touch because removing it is not this task's call to make.
-  // Short of that, only an operator decision to trim the hero copy
-  // (h1/lead/privacy), the collapsed section headers' own density, or the
-  // How to use copy itself (ruled unchanged, section 2) would move these
-  // two numbers again.
+  // What is left, at every width still over: the naming/theme picker
+  // fieldset ("Name the groups") is the last always-visible bordered box
+  // below the top row -- design spec section 12 marks it removed, but that
+  // removal is stage 3's, not built yet. Removing it saves a flat 174px at
+  // every width (measured by deleting the live fieldset and re-reading
+  // `#cg-go`'s own bottom -- one fixed-height box leaving the flow, the
+  // same saving regardless of viewport). That alone is enough to bring
+  // 1280x800 back under budget (881 - 174 = 707 <= 800) and to widen
+  // 768x1024's own margin (707 <= 1024, 317 to spare) -- but not enough for
+  // either phone width: 320x568 would still be 653px over, 375x667 still
+  // 524px over. Short of that, only an operator decision to trim the hero
+  // copy (h1/lead/privacy), the collapsed section headers' own density, or
+  // the How to use copy itself (ruled unchanged, section 2) would move the
+  // phone numbers again.
   const VIEWPORTS = [
     { width: 320, height: 568, fits: false }, // iPhone SE
     { width: 375, height: 667, fits: false }, // iPhone 8
     { width: 768, height: 1024, fits: true }, // iPad
-    { width: 1280, height: 800, fits: true }, // laptop
+    { width: 1280, height: 800, fits: false }, // laptop -- see table above
   ];
 
   for (const { width, height, fits } of VIEWPORTS) {
-    // `test.fixme` for the two that still do not fit -- tracked, not
-    // hidden; `test` for the two that now genuinely pass. One body, so the
+    // `test.fixme` for the three that still do not fit -- tracked, not
+    // hidden; `test` for the one that genuinely passes. One body, so the
     // passing and failing cases can never drift into checking two
     // different things.
     const run = fits ? test : test.fixme;
@@ -1022,22 +1057,51 @@ test.describe('the no-scroll rule, measured', () => {
       async ({ page }) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
-        const { toolHeight, budget } = await page.evaluate(() => {
-          const top = document
-            .getElementById('cg-howto')!
-            .getBoundingClientRect().top;
-          const bottom = document
-            .getElementById('cg-go')!
-            .getBoundingClientRect().bottom;
-          return {
-            toolHeight: Math.round(bottom - top),
-            budget: window.innerHeight,
-          };
-        });
-        expect(toolHeight).toBeLessThanOrEqual(budget);
+        const { bottom, budget } = await page.evaluate(() => ({
+          bottom: Math.round(
+            document.getElementById('cg-go')!.getBoundingClientRect().bottom,
+          ),
+          budget: window.innerHeight,
+        }));
+        expect(bottom).toBeLessThanOrEqual(budget);
       },
     );
   }
+
+  // The table above, and the `fits` flags it feeds, are hand-maintained --
+  // written by re-measuring and pasting the numbers in, not computed by
+  // this file. `test.fixme` bodies never run, so if a later change (stage
+  // 3 removing the picker, or anything else) closes the gap at a viewport
+  // still marked `fits: false`, nothing above would notice: the row would
+  // stay silently skipped, describing a bug that is no longer there. A
+  // hand-maintained table nothing ever re-checks is exactly how a
+  // `test.fixme` row outlives the bug it was tracking. This companion test
+  // re-measures all four, unconditionally -- never `fixme`'d -- and fails
+  // the moment reality and the declared `fits` table disagree, in EITHER
+  // direction: a viewport that starts passing while still marked `false`,
+  // or one that starts failing while marked `true`. Either failure means
+  // the table above is stale and needs updating by hand, the same way it
+  // was written.
+  test('the declared fits table matches what the page actually does', async ({
+    page,
+  }) => {
+    const actual: Record<string, boolean> = {};
+    for (const { width, height } of VIEWPORTS) {
+      await page.setViewportSize({ width, height });
+      await page.goto('/classroom-groups');
+      const { bottom, budget } = await page.evaluate(() => ({
+        bottom: Math.round(
+          document.getElementById('cg-go')!.getBoundingClientRect().bottom,
+        ),
+        budget: window.innerHeight,
+      }));
+      actual[`${width}x${height}`] = bottom <= budget;
+    }
+    const declared = Object.fromEntries(
+      VIEWPORTS.map(({ width, height, fits }) => [`${width}x${height}`, fits]),
+    );
+    expect(actual).toEqual(declared);
+  });
 
   // L-08. The brief's own literal query measured only what page LOAD
   // already shows -- nothing inside any of the four sections is on screen

@@ -90,24 +90,36 @@ const sexWhyText = sexWhy(roster, t);
           type="button"
           class="howto-toggle"
           id="cg-howto-toggle"
-          aria-expanded="false"
+          aria-expanded="true"
           aria-controls="cg-howto-body"
         >
           {t.howToHeading}
         </button>
       </h2>
-      <!-- Collapsed by DEFAULT since design spec section 2's operator ruling
-           2 (2026-08-08) -- reverses this section's original expanded-by-
-           default (section 3). Measured at ~310px on a phone, and section 2
-           calls it the single biggest saving toward the tool fitting one
-           screen. `hidden` here IS the default, not a state JS applies after
-           load -- matching every other collapsible section on this page
-           (#cg-students/#cg-grouping/#cg-io/#cg-sound below all render
-           `hidden` in their own markup too), so a visitor whose script never
-           runs, or fails before reaching this section, sees exactly what a
-           visitor whose script works fully sees on a first visit: collapsed,
-           with the header still there to open it. -->
-      <div id="cg-howto-body" class="howto-body" hidden>
+      <!-- EXPANDED in the raw markup -- no `hidden` here, unlike every other
+           collapsible section on this page (#cg-students/#cg-grouping/#cg-io/
+           #cg-sound below all render `hidden` in their own markup). This is
+           the page's own summary and description, not a control: a visitor
+           whose script never runs, or fails before reaching this section,
+           must still be able to read who this tool is for and why it exists
+           (design spec section 3's part 1) -- impossible if `hidden` ships
+           in the HTML at all. A code review caught this: the four sections
+           below have nothing to disclose until a teacher acts, so shipping
+           them `hidden` costs a script-disabled visitor nothing; this
+           section IS the content, so shipping it `hidden` would have cost
+           that visitor the one paragraph answering "who is this for and
+           why".
+
+           Collapsed is still the intended default for everyone else: design
+           spec section 2's operator ruling 2 (2026-08-08) reverses this
+           section's original expanded-by-default (section 3), measured at
+           ~310px on a phone, and section 2 calls it the single biggest
+           saving toward the tool fitting one screen. The script immediately
+           below enforces that default, synchronously, before paint, for
+           every visitor whose script runs -- see its own comment for why a
+           raw-HTML default could not deliver both requirements (no-JS
+           reachability AND a collapsed JS-enabled default) at once. -->
+      <div id="cg-howto-body" class="howto-body">
         <p>{t.howToWhat}</p>
         <ol>
           {t.howToSteps.map((step) => <li>{step}</li>)}
@@ -115,35 +127,47 @@ const sexWhyText = sexWhy(roster, t);
       </div>
     </section>
 
-    <!-- A returning teacher who has opened How to use before must not see it
-         render collapsed and then jump open a moment later -- the same
-         markup-says-one-thing-script-says-another flash design spec section
-         2 flags. classroom-groups.ts is a deferred `type="module"` (Astro
+    <!-- Collapses How to use, synchronously, for every visitor whose script
+         runs. The markup above ships EXPANDED (see its own comment: a
+         script-disabled visitor must still be able to read who this is for
+         and why), so without this, every JavaScript visitor would see the
+         full intro paragraph and three steps on first paint too -- undoing
+         the ~310px design spec section 2's ruling 2 exists to save.
+         classroom-groups.ts is a deferred `type="module"` (Astro
          hoists/bundles every plain `<script>` in a `.astro` file that way),
          so it does not run until after the browser has already parsed, and
          typically painted, everything above it -- too late to avoid that
-         jump. This runs synchronously, in document order, right after the
+         flash. This runs synchronously, in document order, right after the
          elements it touches -- `is:inline` is required, or Astro would defer
-         it exactly the same way. Reads the identical key classroom-groups.ts
-         reads (`cg-howto-collapsed`), the identical way -- see that file's
-         own comment on `HOWTO_KEY` for the full '0'/'1'/absent semantics.
-         Wrapped in try/catch for the same reason its `remember` helper is:
-         Safari's "Block all cookies", a partitioned context or an MDM
-         profile throws SecurityError on the mere act of reading
-         localStorage, and this runs before that module exists to catch it.
-         Caught, it falls through to the default already rendered above --
-         collapsed -- which is a safe, working state either way. -->
+         it exactly the same way.
+
+         Reads the identical key classroom-groups.ts reads
+         (`cg-howto-collapsed`), the identical way -- see that file's own
+         comment on `HOWTO_KEY` for the full '0'/'1'/absent semantics: '0' is
+         the only stored value that means "a teacher left this open";
+         anything else -- '1', absent, or a failed read -- means collapse.
+         `openPreferred` only ever becomes `true` from an explicit '0': a
+         read of '1' or absent, AND a throw, both leave it `false`, so the
+         SAME collapse call below covers all three, rather than duplicating
+         it once inside the try and once in the catch. Safari's "Block all
+         cookies", a partitioned context or an MDM profile all throw
+         SecurityError on the mere act of reading localStorage, and this runs
+         before classroom-groups.ts exists to catch it -- leaving the section
+         uncollapsed on a throw would show the full expanded content through
+         first paint, the exact flash this script exists to prevent. -->
     <script is:inline>
       (function () {
+        var openPreferred = false;
         try {
-          if (localStorage.getItem('cg-howto-collapsed') === '0') {
-            var body = document.getElementById('cg-howto-body');
-            var toggle = document.getElementById('cg-howto-toggle');
-            if (body) body.hidden = false;
-            if (toggle) toggle.setAttribute('aria-expanded', 'true');
-          }
+          openPreferred = localStorage.getItem('cg-howto-collapsed') === '0';
         } catch {
-          // Left collapsed -- the safe, already-rendered default.
+          openPreferred = false;
+        }
+        if (!openPreferred) {
+          var body = document.getElementById('cg-howto-body');
+          var toggle = document.getElementById('cg-howto-toggle');
+          if (body) body.hidden = true;
+          if (toggle) toggle.setAttribute('aria-expanded', 'false');
         }
       })();
     </script>
@@ -340,15 +364,23 @@ const sexWhyText = sexWhy(roster, t);
            an <h2> too — the same level, since these are siblings of #cg-howto
            and #cg-results in the page's outline, not a step beneath them.
            The heading carries the level, the button carries the click,
-           `aria-expanded` and `aria-controls`. Collapsed by default — unlike
-           #cg-howto — because design spec section 2's rule is that
-           everything in the tool starts collapsed and opening is a
-           deliberate act; #cg-howto is the page's own summary, not part of
-           the tool, which is why it alone defaults open. Also unlike
-           #cg-howto, the collapsed state here is never written to
-           localStorage: section 11 names exactly two UI preferences allowed
-           to persist (the how-to collapsed state, and a later print panel)
-           and this is not one of them, so every visit starts collapsed.
+           `aria-expanded` and `aria-controls`. Collapsed by default, the
+           same rendered end state #cg-howto above reaches for a JavaScript
+           visitor — design spec section 2's rule is that everything in the
+           tool starts collapsed and opening is a deliberate act. Unlike
+           #cg-howto, though: these four have no reason to ship expanded in
+           the raw markup, because none of them hold content a visitor needs
+           to read without JavaScript — every one is empty or a control until
+           a teacher opens it, JavaScript or not. #cg-howto alone carries the
+           page's own summary and description, which is why IT alone ships
+           expanded in the HTML and relies on a script to collapse it (see
+           its own comment for the reasoning); these four cost a
+           script-disabled visitor nothing by shipping `hidden` outright.
+           Also unlike #cg-howto, the collapsed state here is never written
+           to localStorage: section 11 names exactly two UI preferences
+           allowed to persist (the how-to collapsed state, and a later print
+           panel) and this is not one of them, so every visit starts
+           collapsed.
 
            Each of the first three buttons' own text is the label, a literal
            `{' · '}` (an expression, not template whitespace — see

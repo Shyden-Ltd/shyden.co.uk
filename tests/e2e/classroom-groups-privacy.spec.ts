@@ -63,6 +63,35 @@ test.describe('privacy — with JavaScript blocked', () => {
     });
   }
 
+  // Code review on this task (I-3): `#cg-howto-body` used to ship `hidden`
+  // in the raw markup, which meant a visitor without JavaScript got the
+  // heading, the lead and the privacy line, and a dead `▸ How to use`
+  // header — the one paragraph naming WHO this is for and WHY it exists
+  // (design spec section 3, part 1) was unreachable. Fixed by shipping that
+  // element unhidden and having the JS-only inline script collapse it
+  // instead (ClassroomGroupsPage.astro's own comment on `#cg-howto-body`
+  // has the full reasoning). `javaScriptEnabled: false` on this describe
+  // block means that script never runs, so the raw markup below is exactly
+  // what a real script-disabled visitor gets — not a proxy for it.
+  for (const [path, whoAndWhy] of [
+    [
+      '/classroom-groups',
+      'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+    ],
+    [
+      '/id/classroom-groups',
+      'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+    ],
+  ] as const) {
+    test(`${path}: the who-and-why copy is reachable without JavaScript`, async ({
+      page,
+    }) => {
+      await page.goto(path);
+      await expect(page.locator('#cg-howto-body')).toBeVisible();
+      await expect(page.locator('#cg-howto-body > p')).toHaveText(whoAndWhy);
+    });
+  }
+
   // M-10 (stage-2 traceability matrix; design spec section 13's own "The
   // no-JS message is unchanged... the new sections do not each need their
   // own"). Stage 2, Task 7 folded Sound & animation into the tool's fourth
@@ -189,5 +218,37 @@ test.describe('privacy — when storage is unavailable', () => {
     // The label still tracks the control — the write failed, silently and
     // correctly, without breaking the widget.
     await expect(page.locator('#cg-sound-text')).toHaveText('Sound off');
+  });
+
+  // Code review on this task (I-3): the raw markup now ships How to use
+  // EXPANDED (see ClassroomGroupsPage.astro's own comment on
+  // `#cg-howto-body`), so the synchronous inline script must actively
+  // collapse it — including when reading the stored preference throws,
+  // this block's own scenario. Checking the state after the page has fully
+  // loaded is not enough to prove that on its own: classroom-groups.ts's
+  // deferred module reads the identical key the identical way, wrapped in
+  // its own try/catch, and would collapse the section a moment later
+  // regardless of what the inline script did — a real safety net, but one
+  // that would mask a mutant that left the inline script's own throw path
+  // doing nothing, at the cost of the exact expanded-then-collapsed flash a
+  // JavaScript-enabled visitor would see and a same-final-state test would
+  // never catch. Blocking the deferred module's own request removes that
+  // net, so what is left standing here is the inline script alone.
+  test('the inline script alone collapses How to use on a storage throw', async ({
+    page,
+  }) => {
+    await page.route('**/_astro/ClassroomGroupsPage*.js', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/javascript',
+        body: '',
+      }),
+    );
+    await page.goto('/classroom-groups');
+    await expect(page.locator('#cg-howto-body')).toBeHidden();
+    await expect(page.locator('#cg-howto-toggle')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
   });
 });

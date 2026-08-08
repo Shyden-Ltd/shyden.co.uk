@@ -50,10 +50,16 @@ not the tool.
 
 **Two operator rulings, 2026-08-08:**
 
-1. **The rule is measured against the tool, not the whole document.** "Fits one screen" means the
-   tool — from the top of `How to use` to the *Make groups* button — fits within the viewport. The
-   site-wide header and footer are excluded, because a page cannot be held to a budget it does not
-   control. The tests measure the tool's own height.
+1. **The rule is measured by whether the *Make groups* button is on screen, not by a height
+   number.** "Fits one screen" means the button's own bottom edge sits at or above the bottom of the
+   viewport at scroll 0 — `#cg-go`'s `getBoundingClientRect().bottom <= window.innerHeight`. A height
+   comparison (a span's own height against the viewport's) can be satisfied by a tool pushed
+   off-screen, which is not "fits"; a position comparison cannot — corrected after a code review
+   measured exactly that case at 1280×800, where the old height comparison passed with the button
+   itself rendering 81px below the fold. The site-wide header and footer are excluded from the budget
+   this page is judged on, because a page cannot be held to a budget it does not control — the page's
+   own hero (`h1` + lead + privacy, immediately above `How to use`) is not excluded, because this page
+   does control it.
 2. **`How to use` is collapsed by default**, reversing the "expanded by default" in §3. This spec
    already called collapsing it "the single biggest saving on the page"; measurement put that at
    **~310px on a phone**, which is the difference between meeting the rule and missing it. The
@@ -723,7 +729,8 @@ scroll; **no horizontal page scroll at any of those widths, in any state, includ
 open**; every interactive target is at least 44px; the roster renders as cards below the breakpoint
 and as the table at and above it, with **the same content and the same behaviour proved in both** —
 including the absent tint, stripe and pill; How to use sits above the form and outside the tool's sections; both its parts collapse
-together under one header; it is open by default and its collapse is remembered across a reload;
+together under one header; it starts collapsed on a first visit with JavaScript, stays reachable
+without JavaScript, and its collapsed state is remembered across a reload once a teacher opens it;
 the `▸ How to use` header is still present and operable when collapsed; each section header reports
 its state in every state; the section is named Student details in both locales.
 

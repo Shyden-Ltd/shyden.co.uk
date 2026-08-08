@@ -351,6 +351,18 @@ test.describe('classroom groups — mobile-first layout', () => {
     // a first pass), so it sits comfortably above 5 with or without
     // #cg-class, and tightening it to track an exact count would make this
     // test brittle against unrelated future controls for no real gain.
+    //
+    // Noted on code review, not a hole: `#cg-speed` (and `#cg-sound-check`)
+    // moved into `#cg-sound-body` in Stage 2, Task 7, which starts
+    // `hidden`, and this test never opens it -- `offsetParent !== null`
+    // below correctly drops both from `small` and from `seen`'s count, the
+    // same as it would for any control inside a collapsed section. Neither
+    // control silently loses coverage overall: classroom-groups.spec.ts's
+    // own "every interactive target is at least 44px, collapsed and with
+    // every section open" test opens all four sections first and measures
+    // everything inside them, `#cg-speed` included. This test's own job is
+    // narrower -- the controls already on screen before a teacher opens
+    // anything -- and #cg-speed simply is not one of those any more.
     const measureVisible = () =>
       page
         .locator(

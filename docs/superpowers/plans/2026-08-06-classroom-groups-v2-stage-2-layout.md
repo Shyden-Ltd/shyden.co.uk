@@ -187,8 +187,17 @@ test.describe('How to use', () => {
     await expect(form.locator('#cg-howto')).toHaveCount(0);
   });
 
-  test('holds both parts and is open by default', async ({ page }) => {
+  // Amended after design spec section 2's operator ruling 2 (2026-08-08):
+  // "expanded by default" reversed to "collapsed by default" once
+  // measurement showed how much of a phone screen the intro paragraph and
+  // three steps cost. A later code review folded in a further amendment:
+  // the raw markup ships EXPANDED regardless (see ClassroomGroupsPage.astro's
+  // own comment on `#cg-howto-body`), so a visitor without JavaScript can
+  // still read the who/why paragraph -- collapsed is what a script running
+  // in THIS test actually produces, opened here before asserting on it.
+  test('holds both parts and starts collapsed', async ({ page }) => {
     await page.goto('/classroom-groups');
+    await page.getByRole('button', { name: 'How to use' }).click();
     // The whole sentence, and it must name WHO and WHY -- not just what.
     await expect(page.getByText(
       'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.'

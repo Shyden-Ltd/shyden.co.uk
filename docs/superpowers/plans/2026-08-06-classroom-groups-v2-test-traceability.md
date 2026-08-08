@@ -31,10 +31,10 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| L-01 | Collapsed default fits without vertical scrolling at 320px — measured, not met: `test.fixme` in classroom-groups.spec.ts (Stage 2, Task 7) records the real numbers and why closing it needs a denser "top row" field layout, out of that task's scope | P | ☐ |
+| L-01 | Collapsed default fits without vertical scrolling at 320px — measured, not met: `test.fixme` in classroom-groups.spec.ts ("the no-scroll rule, measured") records the real numbers; closing it needs more than the top-row and naming-picker savings already banked, out of this stage's scope | P | ☐ |
 | L-02 | …at 375px — same `test.fixme`, same reason | P | ☐ |
-| L-03 | …at 768px — same `test.fixme`, same reason | P | ☐ |
-| L-04 | …at 1280px — same `test.fixme`, same reason | P | ☐ |
+| L-03 | …at 768px — met: not `test.fixme`. `#cg-go`'s own bottom edge sits inside the viewport, with room to spare | P | ☐ |
+| L-04 | …at 1280px — measured, not met: `test.fixme`, but for a different reason than 320/375 — the tool's own content is short enough, but starts far enough down the page (site header + hero) that this short, wide viewport (800px tall) still cuts the button off; the naming/theme picker's own removal (stage 3) is enough to close this one on its own | P | ☐ |
 | L-05 | **No horizontal page scroll at any of those four widths, in any state** | P | ☐ |
 | L-06 | …including with Student details open and a 100-student roster loaded — **stage 3**, not stage 2: the section has no body until then | P | ☐ |
 | L-07 | Expanding a section is allowed to scroll vertically — this is not a failure | P | ☐ |
@@ -50,11 +50,12 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | H-01 | Sits **above the form** and outside the tool's four sections | P | ☐ |
 | H-02 | Holds **both parts** — what this is, and how to use it | P | ☐ |
 | H-03 | Both parts collapse **together**, under one header | P | ☐ |
-| H-04 | **Expanded by default** on a first visit | P | ☐ |
+| H-04 | **Collapsed by default** on a first visit with JavaScript (reversed from "expanded" by design spec §2's operator ruling 2) | P | ☐ |
 | H-05 | Collapsed state is remembered across a reload | P | ☐ |
 | H-06 | The `▸ How to use` header is present **and operable** when collapsed | P | ☐ |
 | H-07 | The remembered state is `localStorage` only — no class data written | P | ☐ |
 | H-08 | Both parts render in full in **both locales** | P | ☐ |
+| H-09 | The raw markup ships unhidden, so the who/why paragraph is **reachable with JavaScript disabled** | P | ☐ |
 
 ## C · Section headers report their state — stage 2
 
@@ -450,7 +451,7 @@ spillover warning cannot be driven through the page without a roster fixture;
 | Area | Rows | Stages |
 |---|---|---|
 | A Layout | 11 | 2 |
-| B How to use | 8 | 2 |
+| B How to use | 9 | 2 |
 | C Section headers | 10 | 2 |
 | D The roster | 12 | 1, 3 |
 | E The roster reflows | 8 | 3 |
@@ -469,13 +470,13 @@ spillover warning cannot be driven through the page without a roster fixture;
 | R Persistence and privacy | 11 | 2, 4, 5 |
 | S Removals | 14 | 3 |
 | T The suite itself | 14 | all |
-| **Total** | **289** | |
+| **Total** | **290** | |
 
 By suite — counted from the table, not estimated:
 
 | Suite | Rows |
 |---|---|
-| Playwright only | 225 |
+| Playwright only | 226 |
 | Vitest only | 52 |
 | Both | 9 |
 | Real device only | 3 |
