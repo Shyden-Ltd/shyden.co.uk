@@ -10,7 +10,15 @@ import {
 const CDP_URL = process.env.ANDROID_CDP_URL ?? 'http://127.0.0.1:9222';
 
 /** HTTP-verb methods this suite wraps on `page.request` (== `context.request`; see below). */
-const REQUEST_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch'] as const;
+const REQUEST_METHODS = [
+  'get',
+  'post',
+  'put',
+  'patch',
+  'delete',
+  'head',
+  'fetch',
+] as const;
 
 // Matches a literal's opening content that `new URL(literal, base)` -- the mechanism every API
 // below actually resolves through (`resolveBaseURL` in playwright-core's coreBundle.js) --
@@ -22,7 +30,10 @@ const REQUEST_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch
 // exists to catch.
 const ABSOLUTE_URL_LOOKAHEAD = '(?:[a-zA-Z][a-zA-Z\\d+.-]*:|//)';
 
-function relativeLiteralCallPattern(apiPath: string, extraAbsolutePrefix?: string): RegExp {
+function relativeLiteralCallPattern(
+  apiPath: string,
+  extraAbsolutePrefix?: string,
+): RegExp {
   // Matches `<apiPath>(`, then a string/template-literal delimiter, with no whitespace
   // tolerated between the call and the delimiter (that would read as a different call shape),
   // asserting via lookahead that what follows is NOT absolute. A regex-literal argument (e.g.
@@ -77,7 +88,8 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
     api: 'page.goto',
     pattern: relativeLiteralCallPattern('page.goto'),
     resolved: true,
-    reason: 'the page fixture resolves the URL against baseURL before calling the real goto',
+    reason:
+      'the page fixture resolves the URL against baseURL before calling the real goto',
   },
   ...REQUEST_METHODS.map((method) => ({
     api: `page.request.${method}`,
@@ -104,7 +116,7 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
       "measured directly on the physical device (tests/device/real-device.spec.ts's " +
       '"the bare request fixture..." test): Playwright builds the `request` fixture via ' +
       '`playwright.request.newContext()` (playwright/lib/index.js), a construction path ' +
-      'independent of this file\'s `browser`/`context` overrides entirely, and it resolved a ' +
+      "independent of this file's `browser`/`context` overrides entirely, and it resolved a " +
       'relative literal correctly with no patch from this file',
   })),
   {
@@ -127,7 +139,8 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
     api: 'page.waitForURL',
     pattern: relativeLiteralCallPattern('page.waitForURL'),
     resolved: false,
-    reason: 'not patched -- no current call site, but reads context baseURL the same way goto does',
+    reason:
+      'not patched -- no current call site, but reads context baseURL the same way goto does',
   },
   {
     api: 'page.waitForRequest',
@@ -200,7 +213,8 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     // shares it -- which means state does not clear itself between tests the way it does
     // for a fresh desktop context.
     const context = browser.contexts()[0];
-    if (!context) throw new Error('Real device exposed no browser context over CDP.');
+    if (!context)
+      throw new Error('Real device exposed no browser context over CDP.');
 
     const resolvedBaseURL = requireBaseURL(baseURL);
     const scratch = await context.newPage();
@@ -234,7 +248,10 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     // so specs that pass a full URL are unaffected.
     const rawGoto = page.goto.bind(page);
     page.goto = (async (url: string, options?: Parameters<Page['goto']>[1]) =>
-      rawGoto(new URL(url, resolvedBaseURL).toString(), options)) as Page['goto'];
+      rawGoto(
+        new URL(url, resolvedBaseURL).toString(),
+        options,
+      )) as Page['goto'];
 
     // `page.request` has the identical gap, for the identical reason. Wrapped generically
     // over REQUEST_METHODS -- rather than seven hand-written near-duplicates -- so
@@ -251,13 +268,18 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     // `resolved: false` would misbehave on-device exactly as goto did before this fixture
     // existed. tests/e2e/baseurl-guard.spec.ts fails the build the moment one is added, rather
     // than leaving it to be found as a confusing device-only failure.
-    const request = page.request as APIRequestContext & { [REQUEST_PATCHED]?: true };
+    const request = page.request as APIRequestContext & {
+      [REQUEST_PATCHED]?: true;
+    };
     if (!request[REQUEST_PATCHED]) {
       // Every wrapped method has the same (url, options?) shape at the JS level even though
       // their TS signatures differ enough (get/post/.../head take `url: string`; fetch takes
       // `urlOrRequest: string | Request`) that a generic loop can't satisfy all seven at once.
       // `loose` is the one deliberately-untyped seam, scoped to just this loop.
-      const loose = request as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+      const loose = request as unknown as Record<
+        string,
+        (...args: unknown[]) => Promise<unknown>
+      >;
       for (const method of REQUEST_METHODS) {
         const original = loose[method].bind(request);
         loose[method] = (urlOrRequest: unknown, options?: unknown) =>

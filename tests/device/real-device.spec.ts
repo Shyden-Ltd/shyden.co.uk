@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { test, expect } from '../e2e/fixtures';
 
-test('the suite is running on the real phone, not an emulated profile', async ({ page }) => {
+test('the suite is running on the real phone, not an emulated profile', async ({
+  page,
+}) => {
   await page.goto('/classroom-groups');
 
   const browserSide = await page.evaluate(() => ({
@@ -72,13 +74,16 @@ test.describe('per-test isolation actually isolates state across back-to-back te
   }) => {
     await page.goto('/classroom-groups');
 
-    await page.evaluate(
-      ({ key, value }) => localStorage.setItem(key, value),
-      { key: PROBE_KEY, value: PROBE_VALUE },
-    );
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, value), {
+      key: PROBE_KEY,
+      value: PROBE_VALUE,
+    });
     // Confirm the write actually landed before the next test trusts its absence -- an "empty"
     // assertion is worthless as proof of clearing if nothing was ever proven present to clear.
-    const written = await page.evaluate((key) => localStorage.getItem(key), PROBE_KEY);
+    const written = await page.evaluate(
+      (key) => localStorage.getItem(key),
+      PROBE_KEY,
+    );
     expect(
       written,
       'expected the probe value to be readable back in the same test that wrote it, before ' +
@@ -86,7 +91,9 @@ test.describe('per-test isolation actually isolates state across back-to-back te
     ).toBe(PROBE_VALUE);
 
     await page.locator('#cg-class').fill('ISOLATION-PROBE-CLASS-NAME');
-    await expect(page.locator('#cg-class')).toHaveValue('ISOLATION-PROBE-CLASS-NAME');
+    await expect(page.locator('#cg-class')).toHaveValue(
+      'ISOLATION-PROBE-CLASS-NAME',
+    );
   });
 
   test('starts with no trace of the previous test (isolation half of the pair)', async ({
@@ -94,11 +101,14 @@ test.describe('per-test isolation actually isolates state across back-to-back te
   }) => {
     await page.goto('/classroom-groups');
 
-    const leaked = await page.evaluate((key) => localStorage.getItem(key), PROBE_KEY);
+    const leaked = await page.evaluate(
+      (key) => localStorage.getItem(key),
+      PROBE_KEY,
+    );
     expect(
       leaked,
-      'expected localStorage to be empty at the start of this test -- the context fixture\'s ' +
-        'Storage.clearDataForOrigin call between tests did not clear the previous test\'s ' +
+      "expected localStorage to be empty at the start of this test -- the context fixture's " +
+        "Storage.clearDataForOrigin call between tests did not clear the previous test's " +
         'value, which means the one-shared-context isolation mechanism this whole device ' +
         'harness depends on does not actually isolate',
     ).toBeNull();

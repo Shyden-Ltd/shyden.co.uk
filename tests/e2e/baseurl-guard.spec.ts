@@ -26,14 +26,16 @@ function lineNumberAt(text: string, index: number): number {
 }
 
 test('every baseURL-aware API call on a relative literal is one the device fixtures actually resolve', () => {
-  const files = SCAN_DIRS.flatMap(listSourceFiles).filter((file) => file !== SELF);
+  const files = SCAN_DIRS.flatMap(listSourceFiles).filter(
+    (file) => file !== SELF,
+  );
 
   // A silent guard that scanned zero files would pass for the wrong reason -- prove the walk
   // actually found the suite before trusting it found nothing wrong with the suite.
   expect(
     files.length,
     `expected to find .ts files under ${SCAN_DIRS.join(', ')}; found none, which means this ` +
-      "guard's own file-walk is broken, not that the suite has nothing to check"
+      "guard's own file-walk is broken, not that the suite has nothing to check",
   ).toBeGreaterThan(0);
 
   const unresolved = BASE_URL_AWARE_APIS.filter((entry) => !entry.resolved);
@@ -50,7 +52,7 @@ test('every baseURL-aware API call on a relative literal is one the device fixtu
             `relative-looking literal, but ${api} is not patched to resolve baseURL on the ` +
             `real-device path (${reason}). Fix: pass an absolute URL, or patch ${api} in ` +
             "tests/e2e/fixtures.ts's page/context fixture the same way page.goto and " +
-            'page.request.* are patched, then flip its BASE_URL_AWARE_APIS row to resolved: true.'
+            'page.request.* are patched, then flip its BASE_URL_AWARE_APIS row to resolved: true.',
         );
       }
     }

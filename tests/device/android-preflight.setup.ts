@@ -36,7 +36,7 @@ test.describe('android device preflight', () => {
     expect(
       devices,
       `expected \`adb devices\` to list exactly one device in state 'device' (unplugged, ` +
-        `offline, or unauthorized otherwise); got: ${JSON.stringify(devices)}`
+        `offline, or unauthorized otherwise); got: ${JSON.stringify(devices)}`,
     ).toEqual([expect.objectContaining({ state: 'device' })]);
   });
 
@@ -45,17 +45,22 @@ test.describe('android device preflight', () => {
     expect(
       power,
       "expected `dumpsys power` to report mWakefulness=Awake -- the phone's screen is " +
-        'asleep; wake it and keep it awake before running the device suite'
+        'asleep; wake it and keep it awake before running the device suite',
     ).toContain('mWakefulness=Awake');
 
     // KeyguardStateMonitor.mIsShowing is Android's own signal for "the lock screen is
     // currently showing". Confirmed present exactly once in `dumpsys window policy` on this
     // device, so a plain substring match is unambiguous.
-    const policy = execFileSync('adb', ['shell', 'dumpsys', 'window', 'policy']).toString();
+    const policy = execFileSync('adb', [
+      'shell',
+      'dumpsys',
+      'window',
+      'policy',
+    ]).toString();
     expect(
       policy,
       'expected KeyguardStateMonitor.mIsShowing=false in `dumpsys window policy` -- the ' +
-        'phone is locked; unlock it before running the device suite'
+        'phone is locked; unlock it before running the device suite',
     ).toContain('mIsShowing=false');
   });
 
@@ -99,17 +104,25 @@ test.describe('android device preflight', () => {
   });
 
   test('4. the Chrome DevTools abstract socket exists', () => {
-    const unixSockets = execFileSync('adb', ['shell', 'cat', '/proc/net/unix']).toString();
+    const unixSockets = execFileSync('adb', [
+      'shell',
+      'cat',
+      '/proc/net/unix',
+    ]).toString();
     expect(
       unixSockets,
       'expected /proc/net/unix to list @chrome_devtools_remote -- Chrome only creates this ' +
         'socket once it is running with USB debugging enabled; the previous precondition ' +
-        'launched Chrome, so its absence here means that launch did not take'
+        'launched Chrome, so its absence here means that launch did not take',
     ).toContain('@chrome_devtools_remote');
   });
 
   test('5. adb forward and reverse tunnels are mapped', () => {
-    execFileSync('adb', ['forward', 'tcp:9222', 'localabstract:chrome_devtools_remote']);
+    execFileSync('adb', [
+      'forward',
+      'tcp:9222',
+      'localabstract:chrome_devtools_remote',
+    ]);
     execFileSync('adb', ['reverse', 'tcp:4321', 'tcp:4321']);
 
     const forwardList = execFileSync('adb', ['forward', '--list']).toString();
@@ -118,13 +131,13 @@ test.describe('android device preflight', () => {
     expect(
       forwardList,
       "expected `adb forward --list` to map tcp:9222 to the device's chrome_devtools_remote " +
-        `socket; got: ${forwardList.trim() || '(empty)'}`
+        `socket; got: ${forwardList.trim() || '(empty)'}`,
     ).toContain('tcp:9222 localabstract:chrome_devtools_remote');
 
     expect(
       reverseList,
       "expected `adb reverse --list` to map tcp:4321 to tcp:4321, so the device's " +
-        `localhost:4321 reaches the Mac's dev server; got: ${reverseList.trim() || '(empty)'}`
+        `localhost:4321 reaches the Mac's dev server; got: ${reverseList.trim() || '(empty)'}`,
     ).toContain('tcp:4321 tcp:4321');
   });
 
@@ -133,14 +146,14 @@ test.describe('android device preflight', () => {
     expect(
       response.ok,
       `expected HTTP 200 from http://127.0.0.1:9222/json/version over the forwarded tunnel; ` +
-        `got HTTP ${response.status}`
+        `got HTTP ${response.status}`,
     ).toBe(true);
 
     const body = await response.json();
     expect(
       body.Browser,
       "expected the CDP /json/version response's 'Browser' field to name Chrome; got: " +
-        JSON.stringify(body)
+        JSON.stringify(body),
     ).toContain('Chrome');
   });
 });
