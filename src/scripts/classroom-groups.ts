@@ -17,27 +17,27 @@ import {
 } from '../lib/grouping';
 import {
   envelopeTotalS,
-  landFrequency,
-  doneFrequencies,
-  LAND_PEAK_GAIN,
-  LAND_PARTIALS,
-  LAND_ENVELOPE,
-  LAND_LOWPASS,
-  LAND_TRANSIENT,
-  SHUFFLE_PEAK_GAIN,
-  SHUFFLE_ENVELOPE,
-  SHUFFLE_FILTER,
-  DONE_PEAK_GAIN,
-  DONE_PARTIALS,
-  DONE_ENVELOPE,
+  landVoicePlan,
+  doneVoicePlans,
+  shuffleGrainPlans,
   DONE_STAGGER_S,
+  DONE_RISER,
+  DONE_REVERB_SEND,
+  SHUFFLE_SUB,
+  SHUFFLE_REVERB_SEND,
   MASTER_GAIN,
+  MASTER_HIGHPASS_HZ,
   MASTER_LOWPASS_HZ,
+  MASTER_COMPRESSOR,
+  REVERB_RETURN_GAIN,
+  generateReverbImpulseResponse,
+  generateSaturatorCurve,
+  createPrng,
+  admitVoice,
   FAST_STEP_S,
   NORMAL_STEP_S,
   type Envelope,
-  type PartialTone,
-  type FilterSweep,
+  type VoicePlan,
 } from '../lib/sfx';
 import {
   getStrings,
@@ -405,42 +405,109 @@ if (form) {
   form.addEventListener('input', updateStaleness);
 
   // ── sound (synthesised; the site ships no audio assets by policy) ────────
-  // Everything that SHAPES these three effects -- the pentatonic scale,
-  // the envelopes, the filter sweeps, the chord and its stagger, every
-  // gain -- is pure data in src/lib/sfx.ts, unit-tested there
-  // (tests/unit/sfx.test.ts) with no AudioContext in sight. Everything
-  // below this comment is wiring only: it turns those numbers into nodes
-  // and schedules them, exactly the split CLAUDE.md asks for.
+  // Everything that SHAPES these three effects -- the inharmonic partials,
+  // the envelopes, the scale and chord, the grain cloud, the reverb IR's
+  // own generation, every gain -- is pure data/functions in src/lib/sfx.ts,
+  // unit-tested there (tests/unit/sfx.test.ts) with no AudioContext in
+  // sight. Everything below this comment is wiring only: it turns those
+  // numbers into real Web Audio nodes and schedules them, exactly the
+  // split CLAUDE.md asks for. The signal chain, per voice, then the shared
+  // master bus:
+  //
+  //   voice ─┬─ partials: 3 oscillators, independent gain+pitch envelope
+  //          ├─ transient: a short noise burst through a resonant bandpass
+  //          └─ sub: a sine with its own falling pitch
+  //                 │
+  //                 ├─ voice gain (ADSR) → saturator (WaveShaper) → panner
+  //                 │        ├─ dry ─────────────────────────────→ master
+  //                 │        └─ send → convolver (synthesised IR) → master
+  //   master → highpass → lowpass → compressor → destination
   let audio: AudioContext | null = null;
   let master: GainNode | null = null;
+  let reverbConvolver: ConvolverNode | null = null;
+  let saturatorCurve: Float32Array | null = null;
+  let variationRng: (() => number) | null = null;
+
+  /** Seeded once, lazily, from `Math.random()` -- fine here, this is Web
+   *  Audio wiring, not the pure module sfx.ts (which the brief explicitly
+   *  forbids `Math.random()` in, so its own output stays reproducible from
+   *  a seed for tests). Threaded through every land()/shuffle()/done()
+   *  call, exactly the way `buildGroups` above is handed `random:
+   *  Math.random` rather than reading it internally. */
+  const ensureVariationRng = (): (() => number) => {
+    if (!variationRng)
+      variationRng = createPrng(Math.floor(Math.random() * 0xffffffff));
+    return variationRng;
+  };
 
   /**
-   * Creates the AudioContext and its master bus lazily, on first use --
-   * exactly once, same as before this task (see the "reuses it" e2e test
-   * in classroom-groups.spec.ts). Every voice below connects to `master`,
-   * never straight to `audio.destination`: `master` itself feeds a
-   * gentle master lowpass first, "so nothing is harsh" (the brief's own
-   * words) across all three effects at once, not per-effect.
+   * Creates the AudioContext, the master bus and the shared reverb
+   * convolver lazily, on first use -- exactly once, same as before this
+   * task (see the "reuses it" e2e test in classroom-groups.spec.ts). Every
+   * voice's DRY signal connects to `master`; every voice's WET send
+   * connects to `reverbConvolver`, which itself feeds back into `master`
+   * -- a shared send/return bus, not one convolver per voice, per the
+   * signal chain above.
    */
-  const ensureAudio = (): { ctx: AudioContext; master: GainNode } => {
-    if (!audio || !master) {
+  const ensureAudio = (): {
+    ctx: AudioContext;
+    master: GainNode;
+    reverbConvolver: ConvolverNode;
+  } => {
+    if (!audio || !master || !reverbConvolver) {
       audio = new (window.AudioContext ?? (window as any).webkitAudioContext)();
-      const lowpass = audio.createBiquadFilter();
+      const ctx = audio;
+
+      const highpass = ctx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = MASTER_HIGHPASS_HZ;
+      const lowpass = ctx.createBiquadFilter();
       lowpass.type = 'lowpass';
       lowpass.frequency.value = MASTER_LOWPASS_HZ;
       lowpass.Q.value = 0.707; // flat/Butterworth -- "gentle", no resonant peak
-      lowpass.connect(audio.destination);
-      master = audio.createGain();
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = MASTER_COMPRESSOR.thresholdDb;
+      compressor.knee.value = MASTER_COMPRESSOR.kneeDb;
+      compressor.ratio.value = MASTER_COMPRESSOR.ratio;
+      compressor.attack.value = MASTER_COMPRESSOR.attackS;
+      compressor.release.value = MASTER_COMPRESSOR.releaseS;
+      highpass.connect(lowpass).connect(compressor).connect(ctx.destination);
+
+      master = ctx.createGain();
       master.gain.value = MASTER_GAIN;
-      master.connect(lowpass);
+      master.connect(highpass);
+
+      // The reverb IR is GENERATED, never fetched or bundled -- the site's
+      // own "no audio assets" policy applies to this effect too. Its
+      // level is fixed mathematically at generation time (see
+      // REVERB_NORMALIZE_PEAK's own doc comment in sfx.ts), so
+      // `normalize` is turned OFF here: Web Audio's own auto-normalise
+      // would re-scale it a second, uncontrolled time on top of that.
+      const ir = generateReverbImpulseResponse(
+        ctx.sampleRate,
+        ensureVariationRng(),
+      );
+      const irBuffer = ctx.createBuffer(2, ir.left.length, ctx.sampleRate);
+      irBuffer.getChannelData(0).set(ir.left);
+      irBuffer.getChannelData(1).set(ir.right);
+      reverbConvolver = ctx.createConvolver();
+      reverbConvolver.normalize = false;
+      reverbConvolver.buffer = irBuffer;
+      const reverbReturn = ctx.createGain();
+      reverbReturn.gain.value = REVERB_RETURN_GAIN;
+      reverbConvolver.connect(reverbReturn);
+      reverbReturn.connect(master);
+
+      saturatorCurve = new Float32Array(generateSaturatorCurve());
     }
-    return { ctx: audio, master };
+    return { ctx: audio, master, reverbConvolver };
   };
 
-  /** A fresh, short buffer of white noise -- generated in memory from
+  /** A fresh buffer of white noise -- generated in memory from
    *  Math.random(), never fetched or bundled, so this stays inside "the
    *  site ships no audio assets" however many times it runs. Reused by
-   *  both shuffle's whoosh and land's contact click. */
+   *  every noise-based layer: land's transient, shuffle's grains, done's
+   *  riser. */
   const noiseBuffer = (ctx: AudioContext, durationS: number): AudioBuffer => {
     const length = Math.max(1, Math.round(ctx.sampleRate * durationS));
     const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
@@ -456,10 +523,8 @@ if (form) {
    * never `setTimeout`. `0.0001` is the floor every ramp starts and ends
    * on: `exponentialRampToValueAtTime` requires a strictly positive
    * target, so the true "silence" a browser could give us is not
-   * representable -- 0.0001 relative to gains in the 0.03-0.05 range is
-   * roughly -50dB below an already-quiet peak, inaudible under any real
-   * classroom's ambient noise. Returns the envelope's own total duration
-   * so the caller knows when to `.stop()` its node.
+   * representable. Returns the envelope's own total duration so the
+   * caller knows when to `.stop()` its node.
    */
   const FLOOR_GAIN = 0.0001;
   const applyEnvelope = (
@@ -471,7 +536,7 @@ if (form) {
     const totalS = envelopeTotalS(envelope);
     gainParam.setValueAtTime(FLOOR_GAIN, startTime);
     gainParam.exponentialRampToValueAtTime(
-      peakGain,
+      Math.max(FLOOR_GAIN, peakGain),
       startTime + envelope.attackS,
     );
     gainParam.exponentialRampToValueAtTime(
@@ -482,101 +547,157 @@ if (form) {
     return totalS;
   };
 
-  /**
-   * A sine fundamental plus its partials -- one oscillator per
-   * PartialTone, sharing one envelope shape and one optional lowpass
-   * sweep (land's cutoff fall; `done` passes none, so its chord stays
-   * bright through its own long release). Used by both `land` (with
-   * LAND_LOWPASS) and `done` (without).
-   */
-  const scheduleTone = (
-    freqHz: number,
-    partials: readonly PartialTone[],
-    peakGain: number,
-    envelope: Envelope,
-    startTime: number,
-    lowpass?: FilterSweep,
-  ): void => {
-    const { ctx, master: bus } = ensureAudio();
-    for (const partial of partials) {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freqHz * partial.ratio;
-      osc.detune.value = partial.detuneCents;
+  /** Everything currently needed to force a voice silent early -- see
+   *  admitAndTrack, which steals the oldest once MAX_POLYPHONY (sfx.ts) is
+   *  exceeded. `sources` covers every oscillator/buffer-source the voice
+   *  started, so stopNow() can stop all of them, not just the audible
+   *  one. */
+  interface VoiceHandle {
+    bodyGain: GainNode;
+    sources: (OscillatorNode | AudioBufferSourceNode)[];
+    stopNow: () => void;
+  }
 
-      const gain = ctx.createGain();
-      const totalS = applyEnvelope(
-        gain.gain,
-        peakGain * partial.gain,
-        envelope,
-        startTime,
-      );
-
-      let out: AudioNode = osc;
-      if (lowpass) {
-        const filter = ctx.createBiquadFilter();
-        filter.type = lowpass.kind;
-        filter.Q.value = lowpass.q;
-        filter.frequency.setValueAtTime(lowpass.startHz, startTime);
-        filter.frequency.exponentialRampToValueAtTime(
-          lowpass.endHz,
-          startTime + totalS,
-        );
-        osc.connect(filter);
-        out = filter;
-      }
-      out.connect(gain).connect(bus);
-      osc.start(startTime);
-      osc.stop(startTime + totalS + 0.02); // a little past the ramp's own end
-    }
-  };
+  /** How long a stolen voice takes to fade to silence, rather than being
+   *  cut instantly -- an instant gain-node cut can click (a discontinuous
+   *  jump in the waveform); a short forced ramp to the floor avoids that
+   *  even when a voice is being stolen well before its own natural
+   *  release would have reached it. */
+  const STEAL_FADE_S = 0.015;
 
   /**
-   * Filtered noise -- shuffle's whoosh and land's contact click are both
-   * one of these, differing only in which FilterSweep and Envelope they
-   * carry. A plain two-point sweep (FilterSweep.peakHz left undefined)
-   * moves straight from startHz to endHz; a three-point one (shuffle's)
-   * passes through peakHz at peakAtS first -- "sweeps up and back down".
+   * Builds one full struck voice (land's own note, or one note of done's
+   * chord) from a resolved VoicePlan -- the signal chain in this section's
+   * own header comment, node for node: 3 partial oscillators + a noise
+   * transient + a falling sub, merged into one voice-gain node (the ADSR),
+   * through the shared saturator curve, through a panner, then split into
+   * a dry path to `master` and a send path (scaled by the plan's own
+   * `reverbSend`) into the shared convolver.
    */
-  const scheduleFilteredNoise = (
-    peakGain: number,
-    envelope: Envelope,
-    startTime: number,
-    filter: FilterSweep,
-  ): void => {
-    const { ctx, master: bus } = ensureAudio();
-    const totalS = envelopeTotalS(envelope);
+  const scheduleVoice = (plan: VoicePlan, startTime: number): VoiceHandle => {
+    const { ctx, master: bus, reverbConvolver: convolver } = ensureAudio();
 
-    const src = ctx.createBufferSource();
-    src.buffer = noiseBuffer(ctx, totalS);
-
-    const biquad = ctx.createBiquadFilter();
-    biquad.type = filter.kind;
-    biquad.Q.value = filter.q;
-    biquad.frequency.setValueAtTime(filter.startHz, startTime);
-    if (filter.peakHz !== undefined && filter.peakAtS !== undefined) {
-      biquad.frequency.exponentialRampToValueAtTime(
-        filter.peakHz,
-        startTime + filter.peakAtS,
-      );
-    }
-    biquad.frequency.exponentialRampToValueAtTime(
-      filter.endHz,
-      startTime + totalS,
+    const bodyGain = ctx.createGain();
+    const bodyTotalS = applyEnvelope(
+      bodyGain.gain,
+      plan.bodyPeakGain,
+      plan.bodyEnvelope,
+      startTime,
     );
 
-    const gain = ctx.createGain();
-    applyEnvelope(gain.gain, peakGain, envelope, startTime);
+    const saturator = ctx.createWaveShaper();
+    saturator.curve = saturatorCurve!; // built above, in ensureAudio, before this can run
+    saturator.oversample = '2x';
 
-    src.connect(biquad).connect(gain).connect(bus);
-    src.start(startTime);
-    src.stop(startTime + totalS + 0.02);
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = plan.pan;
+
+    bodyGain.connect(saturator).connect(panner);
+    panner.connect(bus);
+    const sendGain = ctx.createGain();
+    sendGain.gain.value = plan.reverbSend;
+    panner.connect(sendGain);
+    sendGain.connect(convolver);
+
+    const sources: (OscillatorNode | AudioBufferSourceNode)[] = [];
+
+    for (const partial of plan.partials) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(partial.freqStartHz, startTime);
+      osc.frequency.exponentialRampToValueAtTime(
+        partial.freqEndHz,
+        startTime + partial.pitchGlideS,
+      );
+      const gain = ctx.createGain();
+      applyEnvelope(
+        gain.gain,
+        partial.relativeGain,
+        partial.envelope,
+        startTime,
+      );
+      osc.connect(gain).connect(bodyGain);
+      osc.start(startTime);
+      osc.stop(startTime + bodyTotalS + 0.02);
+      sources.push(osc);
+    }
+
+    const transientTotalS = envelopeTotalS(plan.transient.envelope);
+    const transientSrc = ctx.createBufferSource();
+    transientSrc.buffer = noiseBuffer(ctx, transientTotalS);
+    const bandpass = ctx.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.value = plan.transient.filterCenterHz;
+    bandpass.Q.value = plan.transient.q;
+    const transientGain = ctx.createGain();
+    applyEnvelope(
+      transientGain.gain,
+      plan.transient.relativeGain,
+      plan.transient.envelope,
+      startTime,
+    );
+    transientSrc.connect(bandpass).connect(transientGain).connect(bodyGain);
+    transientSrc.start(startTime);
+    transientSrc.stop(startTime + transientTotalS + 0.02);
+    sources.push(transientSrc);
+
+    const subTotalS = envelopeTotalS(plan.sub.envelope);
+    const subOsc = ctx.createOscillator();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(plan.sub.freqStartHz, startTime);
+    subOsc.frequency.exponentialRampToValueAtTime(
+      plan.sub.freqEndHz,
+      startTime + subTotalS,
+    );
+    const subGain = ctx.createGain();
+    applyEnvelope(
+      subGain.gain,
+      plan.sub.relativeGain,
+      plan.sub.envelope,
+      startTime,
+    );
+    subOsc.connect(subGain).connect(bodyGain);
+    subOsc.start(startTime);
+    subOsc.stop(startTime + subTotalS + 0.02);
+    sources.push(subOsc);
+
+    const stopNow = (): void => {
+      try {
+        const now = ctx.currentTime;
+        bodyGain.gain.cancelScheduledValues(now);
+        bodyGain.gain.setValueAtTime(
+          Math.max(FLOOR_GAIN, bodyGain.gain.value),
+          now,
+        );
+        bodyGain.gain.exponentialRampToValueAtTime(
+          FLOOR_GAIN,
+          now + STEAL_FADE_S,
+        );
+        for (const src of sources) src.stop(now + STEAL_FADE_S + 0.005);
+      } catch {
+        // A stolen voice that goes silent a little abruptly is not worth
+        // breaking the tool over -- same "audio is decoration" reasoning
+        // as `play` below.
+      }
+    };
+
+    return { bodyGain, sources, stopNow };
+  };
+
+  /** MAX_POLYPHONY (sfx.ts) voices at once; the oldest is stolen (faded
+   *  and stopped early) the instant a 9th would otherwise start. Long
+   *  reverb tails (done's release runs to ~0.9s) plus a big class landing
+   *  many groups in a fast run must not pile up an unbounded number of
+   *  simultaneously-ringing voices. */
+  let activeVoices: VoiceHandle[] = [];
+  const admitAndTrack = (handle: VoiceHandle): void => {
+    const { activeVoices: next, stolen } = admitVoice(activeVoices, handle);
+    activeVoices = next;
+    stolen?.stopNow();
   };
 
   /** Sound only plays when the toggle is checked, and audio is decoration:
-   *  a browser refusing any part of this must never break the tool. Same
-   *  guard, same comment intent, as the single `tone()` helper this
-   *  replaces. */
+   *  a browser refusing any part of this must never break the tool. */
   const play = (effect: () => void): void => {
     if (!soundToggle.checked) return;
     try {
@@ -587,57 +708,118 @@ if (form) {
   };
 
   const sfx = {
-    // A card-riffle whoosh: filtered noise only, no pitched oscillator at
-    // all -- see SHUFFLE_FILTER's own doc comment in sfx.ts for the sweep.
+    // A granular riffle: 16-22 independently-filtered noise grains over a
+    // soft arch, plus one onset thump -- see shuffleGrainPlans' own doc
+    // comment in sfx.ts for why this reads as discrete objects in motion
+    // rather than one continuous whoosh.
     shuffle: () =>
       play(() => {
-        const { ctx } = ensureAudio();
+        const { ctx, master: bus, reverbConvolver: convolver } = ensureAudio();
         const startTime = ctx.currentTime;
-        scheduleFilteredNoise(
-          SHUFFLE_PEAK_GAIN,
-          SHUFFLE_ENVELOPE,
-          startTime,
-          SHUFFLE_FILTER,
+        const rng = ensureVariationRng();
+
+        for (const grain of shuffleGrainPlans(rng)) {
+          const grainStart = startTime + grain.onsetS;
+          const grainTotalS = envelopeTotalS(grain.envelope);
+          const src = ctx.createBufferSource();
+          src.buffer = noiseBuffer(ctx, grainTotalS);
+          const bandpass = ctx.createBiquadFilter();
+          bandpass.type = 'bandpass';
+          bandpass.frequency.value = grain.filterCenterHz;
+          bandpass.Q.value = grain.q;
+          const gain = ctx.createGain();
+          applyEnvelope(gain.gain, grain.peakGain, grain.envelope, grainStart);
+          const panner = ctx.createStereoPanner();
+          panner.pan.value = grain.pan;
+          src.connect(bandpass).connect(gain).connect(panner);
+          panner.connect(bus);
+          const sendGain = ctx.createGain();
+          sendGain.gain.value = SHUFFLE_REVERB_SEND;
+          panner.connect(sendGain);
+          sendGain.connect(convolver);
+          src.start(grainStart);
+          src.stop(grainStart + grainTotalS + 0.02);
+        }
+
+        const subOsc = ctx.createOscillator();
+        subOsc.type = 'sine';
+        subOsc.frequency.setValueAtTime(SHUFFLE_SUB.startHz, startTime);
+        subOsc.frequency.exponentialRampToValueAtTime(
+          SHUFFLE_SUB.endHz,
+          startTime + SHUFFLE_SUB.durationS,
         );
+        const subGain = ctx.createGain();
+        applyEnvelope(
+          subGain.gain,
+          SHUFFLE_SUB.gain,
+          {
+            attackS: 0.005,
+            decayS: 0,
+            sustainLevel: 1,
+            releaseS: SHUFFLE_SUB.durationS,
+          },
+          startTime,
+        );
+        subOsc.connect(subGain).connect(bus);
+        subOsc.start(startTime);
+        subOsc.stop(startTime + SHUFFLE_SUB.durationS + 0.02);
       }),
-    // A warm mallet/marimba pluck, pitched from the pentatonic scale and
-    // stepping upward with the group index (landFrequency), plus a very
-    // short noise transient at the same onset for the sense of contact.
+    // A soft, weighted struck voice -- inharmonic partials, a contact
+    // transient and a falling sub -- pitched from the pentatonic scale and
+    // stepping with the group index. See scheduleVoice's own doc comment.
     land: (i: number) =>
       play(() => {
         const { ctx } = ensureAudio();
         const startTime = ctx.currentTime;
-        scheduleTone(
-          landFrequency(i),
-          LAND_PARTIALS,
-          LAND_PEAK_GAIN,
-          LAND_ENVELOPE,
-          startTime,
-          LAND_LOWPASS,
-        );
-        scheduleFilteredNoise(
-          LAND_PEAK_GAIN * LAND_TRANSIENT.gain,
-          LAND_TRANSIENT.envelope,
-          startTime,
-          LAND_TRANSIENT.filter,
+        admitAndTrack(
+          scheduleVoice(landVoicePlan(i, ensureVariationRng()), startTime),
         );
       }),
-    // A soft resolving bell chord -- every note scheduled against THIS
-    // SAME audio-clock startTime, offset by DONE_STAGGER_S, never by
-    // setTimeout. That is the fix for the old second note, which used to
-    // drift under load and could land after the animation had finished.
+    // A riser swelling into a sus2/add9 cluster, each note the same
+    // struck-voice architecture as `land`, staggered and stretched to a
+    // much longer release -- "an arrival, not a snap-off". Every note
+    // scheduled against THIS SAME audio-clock startTime, offset by
+    // DONE_STAGGER_S, never by setTimeout.
     done: () =>
       play(() => {
-        const { ctx } = ensureAudio();
+        const { ctx, master: bus, reverbConvolver: convolver } = ensureAudio();
         const startTime = ctx.currentTime;
-        doneFrequencies().forEach((freq, j) => {
-          scheduleTone(
-            freq,
-            DONE_PARTIALS,
-            DONE_PEAK_GAIN,
-            DONE_ENVELOPE,
-            startTime + DONE_STAGGER_S[j],
-          );
+        const rng = ensureVariationRng();
+
+        const riserTotalS = DONE_RISER.durationS + DONE_RISER.releaseS;
+        const riserSrc = ctx.createBufferSource();
+        riserSrc.buffer = noiseBuffer(ctx, riserTotalS);
+        const riserFilter = ctx.createBiquadFilter();
+        riserFilter.type = 'highpass';
+        riserFilter.Q.value = DONE_RISER.q;
+        riserFilter.frequency.setValueAtTime(DONE_RISER.startHz, startTime);
+        riserFilter.frequency.exponentialRampToValueAtTime(
+          DONE_RISER.endHz,
+          startTime + DONE_RISER.durationS,
+        );
+        const riserGain = ctx.createGain();
+        applyEnvelope(
+          riserGain.gain,
+          DONE_RISER.gain,
+          {
+            attackS: DONE_RISER.durationS,
+            decayS: 0,
+            sustainLevel: 1,
+            releaseS: DONE_RISER.releaseS,
+          },
+          startTime,
+        );
+        riserSrc.connect(riserFilter).connect(riserGain);
+        riserGain.connect(bus);
+        const riserSend = ctx.createGain();
+        riserSend.gain.value = DONE_REVERB_SEND;
+        riserGain.connect(riserSend);
+        riserSend.connect(convolver);
+        riserSrc.start(startTime);
+        riserSrc.stop(startTime + riserTotalS + 0.02);
+
+        doneVoicePlans(rng).forEach((plan, j) => {
+          admitAndTrack(scheduleVoice(plan, startTime + DONE_STAGGER_S[j]));
         });
       }),
   };
@@ -700,10 +882,11 @@ if (form) {
       cards.forEach((c) => c.classList.add('dealt'));
       return;
     }
-    // FAST_STEP_S/NORMAL_STEP_S live in sfx.ts, not here, so LAND_ENVELOPE's
-    // total decay time and this step can be compared in one place
-    // (sfx.test.ts) instead of trusting a hand-copied 45/110 to stay in
-    // sync with whatever this line actually uses.
+    // FAST_STEP_S/NORMAL_STEP_S live in sfx.ts, not here, so
+    // LAND_TRANSIENT_PLUS_BODY_S/LAND_RELEASE_S and this step can be
+    // compared in one place (sfx.test.ts) instead of trusting a
+    // hand-copied 45/110 to stay in sync with whatever this line actually
+    // uses.
     const step = (speed === 'fast' ? FAST_STEP_S : NORMAL_STEP_S) * 1000;
     sfx.shuffle();
     for (let i = 0; i < cards.length; i++) {

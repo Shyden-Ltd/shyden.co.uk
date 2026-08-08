@@ -2,57 +2,62 @@
  * Sound design for the Classroom Group Creator's three effects -- shuffle,
  * land(i), done -- as pure data and pure functions. No `AudioContext`
  * reference anywhere in this file, and nothing here touches `window` or
- * `document`: every export is a number, a readonly array of numbers, or a
- * function of numbers, so Vitest exercises the real synthesiser logic, not
- * a fake standing in for Web Audio (see CLAUDE.md: "logic is pure ... page
- * scripts only wire the DOM"). `src/scripts/classroom-groups.ts` is the
- * only thing that ever turns these numbers into an audio graph.
+ * `document`: every export is a number, a readonly array/object of numbers,
+ * or a function of numbers (and an injected `rng`), so Vitest exercises the
+ * real synthesiser logic, not a fake standing in for Web Audio (see
+ * CLAUDE.md: "logic is pure ... page scripts only wire the DOM").
+ * `src/scripts/classroom-groups.ts` is the only thing that ever turns these
+ * numbers into an audio graph.
  *
- * The three effects share one timbral family, deliberately: `land` and
- * `done` are both built from `TONIC_HZ`, and `done`'s major-triad chord
- * tones (the third and the fifth) are themselves degrees of `land`'s own
- * pentatonic scale -- see doneFrequencies' doc comment for the exact
- * overlap. `shuffle` carries no pitch at all (filtered noise only), so it
- * joins the family through timbre -- soft attack, low-passed, quiet -- not
- * through a shared note.
+ * This is the second attempt at this task. The first shipped a marimba
+ * emulation -- a sine fundamental, HARMONIC partials (2x, 4x -- integer
+ * multiples), everything hard-cut at 34ms -- and was rejected as sounding
+ * like a 1995 soundfont. Two changes fix the actual causes, not the
+ * symptoms:
+ *
+ * 1. Partials are INHARMONIC (ratios 1 : 2.756 : 5.404, a free-free bar's
+ *    real transverse-mode ratios). Integer-multiple overtones are what an
+ *    organ or an early GM soundfont sounds like, because a pure harmonic
+ *    stack has no information in it other than "one pitch" -- the ear
+ *    cannot distinguish it from a single band-limited tone. Non-integer
+ *    ratios are what a physical, resonating MATERIAL sounds like, because
+ *    real materials very rarely vibrate in exact integer relationships
+ *    (a taut string is the one common exception; a bar, a plate or a bell
+ *    is not). This is the single highest-leverage change in this file.
+ * 2. The audible TAIL is no longer truncated to fit the fast animation
+ *    step. Only the TRANSIENT + BODY (see LAND_TRANSIENT_PLUS_BODY_S) has
+ *    to fit inside FAST_STEP_S; the RELEASE (up to LAND_RELEASE_S, far
+ *    longer than the step) is free to ring on and overlap the next note.
+ *    Overlapping tails is what makes a run of notes sound rich rather than
+ *    thin; only overlapping transients reads as muddy, because the
+ *    transient is the only part of the sound carrying onset/rhythm
+ *    information -- the tail carries none.
+ *
+ * A NOTE ON WHAT THIS FILE CANNOT CLAIM: nobody involved in writing this
+ * file has heard it -- there is no audio playback available while editing
+ * source code, and no listening pass happened before this shipped. Every
+ * choice below is justified by an acoustic MECHANISM (what a given ratio,
+ * envelope shape or filter move does to a signal), never by an adjective
+ * like "warm" or "punchy" -- those are claims this file has no basis to
+ * make. Numbers given an exact source (a design brief, a physical
+ * measurement) are pinned as given. Numbers with no stated source (e.g.
+ * absolute gain-staging, the riser's exact Hz range, the saturator's drive
+ * constant) are reasoned engineering defaults, called out as such in their
+ * own doc comments, not claims about how anything sounds.
  */
 
-/** A filter's character. Kept as this project's own three-value union
- *  rather than importing `BiquadFilterType` from lib.dom -- this file has
- *  no DOM dependency, type-level or otherwise, and never will. */
-export type FilterKind = 'lowpass' | 'bandpass' | 'highpass';
-
-/** One additive layer on top of a fundamental: how far away in pitch, as a
- *  frequency RATIO to the fundamental (2 is exactly one octave up,
- *  whatever the fundamental's own pitch is), how loud relative to the
- *  fundamental's own gain (1.0), and how far detuned in cents. Every
- *  partial used by this file keeps `gain < 1` and `detuneCents` at 0 --
- *  "a quieter partial", per the brief, not a chorus effect -- but the
- *  field stays so a future task can add width without a shape change.
- *  Named `PartialTone`, not `Partial`, so importing it can never shadow
- *  TypeScript's own `Partial<T>` utility type in a file that imports both. */
-export interface PartialTone {
-  ratio: number;
-  gain: number;
-  detuneCents: number;
-}
+// ── shared envelope shape ───────────────────────────────────────────────
 
 /**
- * attack -> decay -> (an implicit, zero-length hold at sustainLevel -- see
- * below) -> release. All four fields in seconds except `sustainLevel`,
- * which is a 0..1 fraction of the voice's own peak gain.
- *
- * This is a percussive one-shot envelope, not a held note: nothing in this
- * file ever calls a "note off". So there is no separate hold-duration
- * field -- `decayS` is the time from the attack's peak DOWN to
- * `sustainLevel`, and `releaseS` begins the instant `decayS` ends. Two
- * effects (`SHUFFLE_ENVELOPE`, `LAND_TRANSIENT.envelope`) collapse this to
- * a plain attack-then-release swell by setting `decayS: 0, sustainLevel:
- * 1` -- decay to 100% of peak in zero time is a no-op, which is exactly
- * the simpler shape a noise swell or a click wants. `land` and `done` use
- * the full four-stage shape: a percussive body that drops to a lower
- * level before it rings out is what makes them read as STRUCK rather than
- * merely faded.
+ * attack -> decay -> (an implicit, zero-length hold at sustainLevel) ->
+ * release. All four fields in seconds except `sustainLevel`, a 0..1
+ * fraction of the node's own peak gain. Every percussive one-shot in this
+ * file uses this same shape -- see envelopeTotalS, the one place "how long
+ * does this envelope actually last" is computed, so a scheduling site and
+ * a "does this fit inside N ms" test can never independently drift apart.
+ * `decayS: 0, sustainLevel: 1` collapses this to a plain attack-then-release
+ * swell -- the shape a short click, thump or grain wants, with no separate
+ * body to decay through first.
  */
 export interface Envelope {
   attackS: number;
@@ -61,288 +66,817 @@ export interface Envelope {
   releaseS: number;
 }
 
-/** Attack + decay + release: the wall-clock length of one voice's envelope,
- *  from onset to the floor it releases to. The one arithmetic expression
- *  every voice's `.stop()` time and every "does this fit inside N ms"
- *  test both read from, so they cannot independently drift apart. */
 export const envelopeTotalS = (envelope: Envelope): number =>
   envelope.attackS + envelope.decayS + envelope.releaseS;
 
-/**
- * A filter's cutoff (or, for a bandpass, its centre) moving over time.
- * `startHz` is where it begins; `endHz` is where it ends. `peakHz`/
- * `peakAtS` are both present together, or both absent: present, the sweep
- * is a three-point up-then-down motion (`shuffle`'s "sweeps up and back
- * down") that passes through `peakHz` at `peakAtS` seconds before heading
- * to `endHz`; absent, it is a plain two-point motion straight from
- * `startHz` to `endHz` (`land`'s cutoff, which only ever falls).
- */
-export interface FilterSweep {
-  kind: FilterKind;
-  q: number;
-  startHz: number;
-  endHz: number;
-  peakHz?: number;
-  peakAtS?: number;
-}
+/** The band every NOTE (a land/done fundamental -- not a partial, not the
+ *  transient/sub/grain/riser support layers, which legitimately range wider)
+ *  is asserted to live inside: comfortably brackets D4 (293.66Hz) through
+ *  D5 (587.32Hz, done's octave note), the full range TONIC_HZ, the
+ *  pentatonic scale and the chord ever produce, with real margin either
+ *  side so this stays a meaningful regression check rather than a
+ *  hair's-breadth one. */
+export const AUDIBLE_BAND_HZ = { min: 150, max: 900 } as const;
 
-/**
- * The band every NOTE (not filter cutoff -- see the test file for why
- * those are checked separately) this file produces is asserted to live
- * inside: comfortably within human hearing, and specifically the range a
- * soft classroom tone should occupy -- low enough to stay warm, high
- * enough that a run of `land` notes still reads as a rising phrase rather
- * than a bass rumble.
- */
-export const AUDIBLE_BAND_HZ = { min: 120, max: 2500 } as const;
-
-/**
- * The two dealing paces `classroom-groups.ts`'s `animate()` offers
- * (`skip` plays no sound at all -- see that function). Defined here, not
- * there, and imported back by animate(), so `LAND_ENVELOPE`'s total decay
- * time and the fast step can be compared in ONE place (sfx.test.ts) rather
- * than trusting a hand-copied `45` to stay in sync with whatever `animate`
- * actually uses -- two places computing the same fact is how they end up
- * disagreeing.
- */
+/** The two dealing paces `classroom-groups.ts`'s `animate()` offers
+ *  (`skip` plays no sound at all -- see that function). Defined here, not
+ *  there, so LAND_TRANSIENT_PLUS_BODY_S/LAND_RELEASE_S and the step can be
+ *  compared in ONE place (sfx.test.ts) instead of a hand-copied number
+ *  drifting out of sync with what `animate` actually uses. Unchanged by
+ *  this task -- the brief's own instruction is to keep the timing, replace
+ *  only what decides how much of each note has to fit inside it. */
 export const FAST_STEP_S = 0.045;
 export const NORMAL_STEP_S = 0.11;
 
 // ── the shared tonal centre ─────────────────────────────────────────────
 
-/** G4. The root both `land`'s scale and `done`'s chord are built from --
- *  see the module doc comment for why sharing one root is what makes the
- *  two pitched effects one family rather than two unrelated ones. */
-export const TONIC_HZ = 392;
+/** D4. The root both `land`'s scale and `done`'s chord resolve against --
+ *  one shared tonal centre, not two unrelated pitch systems. */
+export const TONIC_HZ = 293.66;
 
 /** Equal-temperament frequency ratio for a distance of `semitones` (may be
  *  fractional or negative). `semitoneRatio(12) === 2` -- exactly one
- *  octave -- is the identity every pitch calculation below rests on. */
+ *  octave -- is the identity every pitch calculation below, including
+ *  cents-based micro-variation (100 cents = 1 semitone), rests on. */
 export const semitoneRatio = (semitones: number): number =>
   Math.pow(2, semitones / 12);
 
-// ── land(i): a pentatonic mallet pluck ──────────────────────────────────
+// ── land(i): pitch mapping ──────────────────────────────────────────────
+
+/** D minor pentatonic (D F G A C) as semitone offsets from TONIC_HZ: root,
+ *  minor third, fourth, fifth, minor seventh. A minor pentatonic reads as
+ *  calm and neutral -- a MAJOR pentatonic (the brief's own words) is what
+ *  makes an app sound like a toy, because the major third is the single
+ *  most cheerful-reading interval in Western tonality; omitting it (this
+ *  scale has no third at all, major or minor, only the notes either side
+ *  of where one would sit) is what keeps a run of these notes sounding
+ *  neutral rather than either bright or sad. Two of these five notes (D
+ *  itself, and A -- semitone 7) reappear in DONE_CHORD_SEMITONES: the
+ *  chord shares a root and a fifth with the scale a run of `land` notes
+ *  was just playing, so it reads as the run's destination, not an
+ *  unrelated sound arriving on top of it. */
+export const LAND_SCALE_SEMITONES: readonly number[] = [0, 3, 5, 7, 10];
 
 /**
- * G major pentatonic (G A B D E), as semitone offsets from `TONIC_HZ`. A
- * pentatonic scale is built by construction to contain no semitone (one
- * half-step) interval between any two of its degrees -- that absence is
- * exactly what makes ANY subset of it sound consonant together, which
- * matters here because a class can split into any number of groups, i.e.
- * any LENGTH of subset of this scale, and none of them may clash. Checked
- * directly in sfx.test.ts, including the wrap interval back to the octave
- * above (9 -> 12 is 3 semitones, the same as every other gap here) --
- * that wrap is the one interval a naive "check consecutive array entries"
- * test would miss.
- */
-export const SCALE_SEMITONES: readonly number[] = [0, 2, 4, 7, 9];
-
-/**
- * How many octaves above the scale's own the mapping is allowed to climb
- * before it stops climbing and cycles the same top octave instead. 1
- * means two octave "levels" are reachable (0 and 1) -- 10 distinct
- * pitches, G4 to E6 -- and a group index past that wraps back to G5
- * rather than continuing upward. This is the cap that keeps a class split
- * into many groups from ever turning shrill; see `landFrequency`.
- */
-export const LAND_OCTAVE_CAP = 1;
-
-/**
- * Group index -> pitch. `degree` cycles through the 5-note scale;
- * `rawOctave` would climb without bound as `index` grows, so it is
- * clamped to `LAND_OCTAVE_CAP` before it ever reaches the exponent --
- * `octave`, not `rawOctave`, is what `semitoneRatio` actually sees. That
- * is the one line standing between this function and the exact bug the
- * brief names: "an unbounded mapping is the shrillness bug waiting to
- * happen." Negative or fractional input is defensively floored to a
- * non-negative integer -- `animate()`'s own loop index never goes
- * negative, but a pure function should not trust that from outside.
+ * Group index -> fundamental frequency. Cycles every 5 indices -- "wrapping
+ * after one octave" (the brief's own words): index 5 is degree 0 again, at
+ * the SAME octave, not the octave above. That is a deliberately tighter
+ * cap than the previous attempt's two-octave climb: a class splitting into
+ * many groups stays inside one register rather than eventually turning
+ * shrill, without needing a separate cap constant to express "one octave,
+ * always" -- the modulo already says it.
  */
 export function landFrequency(index: number): number {
   const i = Math.max(0, Math.trunc(index));
-  const degree = i % SCALE_SEMITONES.length;
-  const rawOctave = Math.floor(i / SCALE_SEMITONES.length);
-  const octave = Math.min(rawOctave, LAND_OCTAVE_CAP);
-  return TONIC_HZ * semitoneRatio(SCALE_SEMITONES[degree] + octave * 12);
+  const degree = i % LAND_SCALE_SEMITONES.length;
+  return TONIC_HZ * semitoneRatio(LAND_SCALE_SEMITONES[degree]);
 }
 
-/** Kept in the brief's stated 0.03-0.05 range -- this is the FUNDAMENTAL's
- *  own peak; every partial below is a strictly-quieter multiplier on top
- *  of it, never an independent peak of its own. */
-export const LAND_PEAK_GAIN = 0.035;
+/** Roughly -0.35..+0.35 (the brief's own range) -- gentle, not the hard
+ *  stereo extremes shuffle's grains use, because `land` notes are meant to
+ *  read as one instrument stepping through a register, not scattered
+ *  across the room. Cycles in lockstep with landFrequency's own degree, so
+ *  the same pitch always arrives from the same rough direction. */
+export const LAND_PAN_RANGE = 0.35;
 
-/**
- * A sine fundamental plus two quieter partials -- warmth and a little
- * mallet brightness without the harshness a loud upper partial would add.
- * Both partials are harmonic (ratio 2 and 4: one and two octaves up) so
- * they reinforce the fundamental's own pitch rather than smearing it, and
- * `LAND_LOWPASS` below closes over them as the note dies so the brightest
- * content is also the shortest-lived, the way a struck bar actually
- * behaves.
- */
-export const LAND_PARTIALS: readonly PartialTone[] = [
-  { ratio: 1, gain: 1, detuneCents: 0 },
-  { ratio: 2, gain: 0.22, detuneCents: 0 },
-  { ratio: 4, gain: 0.08, detuneCents: 0 },
-];
-
-/**
- * The core numeric claim of this task: this envelope's TOTAL
- * (envelopeTotalS: 0.002 + 0.008 + 0.024 = 0.034s) must stay clear of
- * FAST_STEP_S (0.045s), the closest two `land` notes are ever scheduled --
- * see sfx.test.ts for the assertion and this file's own report for the
- * dB-level reasoning about the release curve. 34ms leaves 11ms (24% of
- * the 45ms step) where the previous note has already reached the release
- * floor before the next note's attack begins, at ANY speed the page
- * offers -- `NORMAL_STEP_S` (110ms) has more than triple that margin.
- */
-export const LAND_ENVELOPE: Envelope = {
-  attackS: 0.002,
-  decayS: 0.008,
-  sustainLevel: 0.3,
-  releaseS: 0.024,
-};
-
-/**
- * The cutoff FALLS as the note decays (brief's own words) -- 6000Hz
- * comfortably clears the highest content this effect ever produces (the
- * ratio-4 partial of the highest capped note, 1318.53 * 4 = 5274Hz) so
- * the attack is not itself dulled, then closes to 1100Hz by the time the
- * envelope releases, muting the partials early and leaving mostly the
- * fundamental ringing -- the "cutoff falls" half of a struck-mallet's
- * actual physics.
- */
-export const LAND_LOWPASS: FilterSweep = {
-  kind: 'lowpass',
-  q: 0.707,
-  startHz: 6000,
-  endHz: 1100,
-};
-
-/** A very short burst of filtered noise laid under `land`'s onset -- "the
- *  sense of contact", brief's words, that a pure sine attack cannot supply
- *  on its own. `gain` is relative to `LAND_PEAK_GAIN`, same convention as
- *  a PartialTone's own gain. The envelope's `decayS: 0, sustainLevel: 1`
- *  is the simple attack-then-release shape (see Envelope's own doc
- *  comment) -- a click has no body to hold, only an onset and a fade. The
- *  filter's `startHz === endHz` is a deliberately flat highpass, not a
- *  sweep: this is a 6ms transient, over before a moving cutoff could be
- *  heard as movement at all. */
-export interface Transient {
-  gain: number;
-  envelope: Envelope;
-  filter: FilterSweep;
+export function landPan(index: number): number {
+  const i = Math.max(0, Math.trunc(index));
+  const degree = i % LAND_SCALE_SEMITONES.length;
+  const span = LAND_SCALE_SEMITONES.length - 1;
+  return -LAND_PAN_RANGE + (degree / span) * (2 * LAND_PAN_RANGE);
 }
-export const LAND_TRANSIENT: Transient = {
+
+// ── the "struck voice" architecture shared by land() and done() ────────
+
+/**
+ * Ratios to the fundamental for the three partials every struck voice
+ * carries. NOT 1:2:4 (harmonic, integer) -- 1 : 2.756 : 5.404, a free-free
+ * bar's real transverse bending-mode ratios. An integer-ratio stack is
+ * indistinguishable, to the ear, from a single filtered tone: every
+ * partial reinforces the same pitch class, so there is no information in
+ * the spectrum beyond "one note". Non-integer ratios put energy at
+ * frequencies that are NOT simple multiples of each other, which is
+ * exactly what makes the ear parse a sound as several modes of one
+ * physical object ringing together -- i.e. a material -- rather than a
+ * synthesiser's single oscillator dressed up with octaves. This is the
+ * literal fix for the first attempt's core defect; see the module doc
+ * comment.
+ */
+export const INHARMONIC_PARTIAL_RATIOS: readonly number[] = [1, 2.756, 5.404];
+
+/** Each partial strictly quieter than the one below it (1.0 : 0.38 : 0.14)
+ *  -- the fundamental carries most of the perceived pitch and loudness,
+ *  the upper partials add colour without competing for it. */
+export const INHARMONIC_PARTIAL_GAINS: readonly number[] = [1.0, 0.38, 0.14];
+
+/** Each partial's OWN decay time, in seconds, shortest as the ratio rises:
+ *  260ms : 120ms : 55ms -- the brief's own numbers, and the second most
+ *  important physical cue after inharmonicity itself. Real struck objects
+ *  lose their high-frequency content fastest (higher modes radiate and
+ *  damp faster than low ones in almost any real material), so a sound
+ *  whose brightest partial dies first reads as something that was
+ *  actually hit, decaying under real material damping -- a synth that
+ *  holds all its partials for the same duration cannot produce this cue at
+ *  all, which is exactly what made the previous attempt cheap regardless
+ *  of which ratios it used. Index-for-index against
+ *  INHARMONIC_PARTIAL_RATIOS. */
+export const LAND_PARTIAL_DECAYS_S: readonly number[] = [0.26, 0.12, 0.055];
+
+/** LAND_PARTIAL_DECAYS_S expressed as fractions of its own longest entry
+ *  (index 0, the fundamental) -- the SHAPE `done` reuses at a longer
+ *  overall release (see buildVoicePlan/doneVoicePlans): scaling every
+ *  partial's decay by the same factor preserves "higher partials decay
+ *  faster" exactly, while stretching the whole voice out. Derived, not
+ *  hand-typed, so it can never drift from LAND_PARTIAL_DECAYS_S itself. */
+export const INHARMONIC_RELATIVE_DECAYS: readonly number[] =
+  LAND_PARTIAL_DECAYS_S.map((s) => s / LAND_PARTIAL_DECAYS_S[0]);
+
+/** land's own overall release: exactly its fundamental's own decay time
+ *  (INHARMONIC_RELATIVE_DECAYS[0] === 1 by construction), so the two are
+ *  never stated as two separately-typed numbers that could disagree. */
+export const LAND_RELEASE_S = LAND_PARTIAL_DECAYS_S[0];
+
+/** Each partial glides down ~7% over its first 60ms (the brief's own
+ *  numbers) -- a STATIC pitch is what reads as synthetic; real struck
+ *  objects drop in pitch immediately after the strike as the initial
+ *  impact energy (which stiffens the material slightly, raising its
+ *  effective frequency for an instant) dissipates into the steady-state
+ *  ringing frequency. Applied identically to every partial: each glides
+ *  down from its own (inharmonic) nominal ratio, so the inharmonicity
+ *  itself is preserved throughout the glide, not just at onset. */
+export const PITCH_DROP_FRACTION = 0.07;
+export const PITCH_GLIDE_S = 0.06;
+
+/** The shared attack every layer of a struck voice uses (partials,
+ *  transient, sub) -- fast enough to read as struck, not instantaneous
+ *  (Web Audio's exponential ramps require a strictly positive duration,
+ *  and 0ms would also click). A reasoned default: the brief gives no
+ *  explicit attack time for the new architecture, only the transient's own
+ *  4ms and the sub's own 70ms. */
+export const VOICE_ATTACK_S = 0.003;
+
+/** The voice-level "gain (ADSR)" merge point's own decay/sustain stage --
+ *  distinct from, and layered ON TOP of, each partial's own independent
+ *  release above. This is what gives a struck voice its percussive BODY:
+ *  a fast drop from the onset peak to a lower level (0.55 of peak) right
+ *  after the strike, before the (longer, per-partial) tail continues from
+ *  there. Without this stage, the note would only ever fade, never
+ *  visibly "settle" the way something actually struck does -- see
+ *  LAND_TRANSIENT_PLUS_BODY_S, which is exactly transient + this settle,
+ *  the part of the sound the fast step has to contain. Reasoned defaults:
+ *  the brief specifies the per-partial decay numbers and calls the merge
+ *  point "voice gain (ADSR)", but does not give this stage's own
+ *  decay/sustain numbers. */
+export const VOICE_BODY_DECAY_S = 0.02;
+export const VOICE_BODY_SUSTAIN_LEVEL = 0.55;
+
+/** 4ms of noise through a resonant bandpass centred ~2.2x the fundamental,
+ *  Q≈6 (the brief's own numbers) -- "the sense of contact" a pure tone
+ *  cannot supply alone. Centring the bandpass on a ratio of the
+ *  fundamental (rather than a fixed Hz) keeps the contact transient's own
+ *  colour tracking the note's own pitch, the same way a real mallet strike
+ *  sounds brighter/darker as the struck object's own pitch changes. Q=6 is
+ *  resonant enough to give the click a hint of its own pitch centre
+ *  (rather than a flat, colourless tap), without being narrow enough to
+ *  ring as a whistle in 4ms -- there is not enough time at Q=6 for a
+ *  resonant bandpass to complete more than a few cycles of ringing. */
+export const LAND_TRANSIENT = {
+  durationS: 0.004,
+  filterRatio: 2.2,
+  q: 6,
   gain: 0.35,
-  envelope: { attackS: 0.001, decayS: 0, sustainLevel: 1, releaseS: 0.006 },
-  filter: { kind: 'highpass', q: 0.9, startHz: 1500, endHz: 1500 },
-};
+} as const;
 
-// ── shuffle(): a filtered-noise whoosh ──────────────────────────────────
+/** The part of a struck voice that MUST fit inside the fastest animation
+ *  step: the transient (4ms) plus the voice-level body's own attack+decay
+ *  settle (VOICE_ATTACK_S + VOICE_BODY_DECAY_S) -- the portion carrying
+ *  onset/rhythm information, i.e. "was a note struck here". Everything
+ *  after this point is RELEASE (up to LAND_RELEASE_S/DONE_RELEASE_S, both
+ *  far longer than FAST_STEP_S -- see that constant), which is free, and
+ *  intended, to ring past the step into the next note: overlapping TAILS
+ *  read as rich; only overlapping TRANSIENTS read as muddy. This is the
+ *  literal fix for the first attempt's other defect -- see the module doc
+ *  comment -- pinned as its own named constant precisely so a future edit
+ *  cannot silently shrink the release back down to fit some new step
+ *  without a test noticing (see sfx.test.ts's "duration ceilings").
+ */
+export const LAND_TRANSIENT_PLUS_BODY_S =
+  LAND_TRANSIENT.durationS + VOICE_ATTACK_S + VOICE_BODY_DECAY_S;
 
-/** Kept in the brief's stated 0.03-0.05 range, same reasoning as
- *  LAND_PEAK_GAIN. */
-export const SHUFFLE_PEAK_GAIN = 0.045;
+/** Sine from 0.5x to 0.38x the fundamental over 70ms, gain 0.30 (the
+ *  brief's own numbers) -- a falling sub gives the strike WEIGHT: a large
+ *  or dense-sounding struck object's initial impact carries low-frequency
+ *  energy well below its own steady-state pitch (the whole body moving,
+ *  not just the mode that determines its ringing pitch), and that energy
+ *  dies out fast as the object settles into its steady ring -- hence a
+ *  short, falling sub layer rather than a sustained bass tone. */
+export const VOICE_SUB = {
+  startRatio: 0.5,
+  endRatio: 0.38,
+  durationS: 0.07,
+  gain: 0.3,
+} as const;
 
-/** Fast attack, soft tail (brief's own words) -- `decayS: 0, sustainLevel:
- *  1` is the plain swell-then-fade shape (see Envelope's own doc comment):
- *  a card-riffle whoosh has one rise and one long fade, no separate
- *  struck body to decay through first. Total 0.348s -- well clear of any
- *  step timing, since this fires once per shuffle, never in a tight
- *  loop the way `land` does. */
-export const SHUFFLE_ENVELOPE: Envelope = {
-  attackS: 0.008,
-  decayS: 0,
-  sustainLevel: 1,
-  releaseS: 0.34,
-};
+// ── micro-variation (drives "repeated triggers must not be identical") ──
 
-/** The bandpass centre sweeps UP from 650Hz to a 2200Hz peak at 0.15s in,
- *  then back DOWN to 480Hz by the envelope's own end (0.348s) -- "sweeps
- *  up and back down", brief's own words, over filtered noise rather than
- *  a pitched oscillator, which is what turns a buzz into a whoosh. Q 1.2
- *  is a broad, gentle band -- narrow enough to sound swept rather than
- *  flat, nowhere near narrow enough to whistle. */
-export const SHUFFLE_FILTER: FilterSweep = {
-  kind: 'bandpass',
-  q: 1.2,
-  startHz: 650,
-  peakHz: 2200,
-  peakAtS: 0.15,
-  endHz: 480,
-};
+/** ±12 cents of pitch, ±6% of gain (the brief's own numbers) -- the
+ *  bounds every struck voice's own onset is nudged within, per trigger.
+ *  Identical repetition is the clearest tell of cheap synthesis: a real
+ *  struck object never hits at literally the same velocity or the same
+ *  contact point twice, so two real strikes are never bit-identical
+ *  either. This is small enough to leave the pentatonic scale and the
+ *  chord clearly recognisable as themselves (12 cents is a small fraction
+ *  of the 100-cent semitone steps between them) while still breaking
+ *  exact repetition. */
+export const MICRO_VARIATION_MAX = {
+  detuneCents: 12,
+  gainFraction: 0.06,
+} as const;
 
-// ── done(): a resolving major-triad bell chord ──────────────────────────
+export interface MicroVariation {
+  detuneCents: number;
+  gainMultiplier: number;
+}
 
-/** Root, major third, fifth, octave -- four notes, the brief's upper
- *  bound. Built in the SAME equal-temperament semitones as `land`'s scale
- *  (see `doneFrequencies`), not a separate just-intonation ratio table,
- *  so the two effects' pitch math is one system, not two. */
-export const DONE_CHORD_SEMITONES: readonly number[] = [0, 4, 7, 12];
+/** `rng` is injected, never read from module state -- see createPrng.
+ *  `rng() === 0` gives the minimum (-12 cents, x0.94 gain); `rng() === 1`
+ *  gives the maximum (+12 cents, x1.06 gain); `rng() === 0.5` gives no
+ *  variation at all (0 cents, x1 gain) -- the midpoint of the PRNG's own
+ *  [0,1) range is deliberately the identity, not an edge case. */
+export function microVariation(rng: () => number): MicroVariation {
+  const spread = rng() * 2 - 1; // -1..1
+  return {
+    detuneCents: spread * MICRO_VARIATION_MAX.detuneCents,
+    gainMultiplier: 1 + spread * MICRO_VARIATION_MAX.gainFraction,
+  };
+}
 
-/** Each note staggered from the effect's own start, in seconds -- "a few
- *  tens of milliseconds" apart (brief's own words): four notes, 40ms
- *  apart, arriving over 120ms total before any of their own (much longer)
- *  releases even begin to matter. Strictly ascending, one entry per
- *  DONE_CHORD_SEMITONES entry -- both checked in sfx.test.ts, since a
- *  length mismatch between this array and the chord would silently drop
- *  a note or read `undefined` at the call site in classroom-groups.ts. */
-export const DONE_STAGGER_S: readonly number[] = [0, 0.04, 0.08, 0.12];
+/**
+ * A small, fast, deterministic PRNG (mulberry32) -- NOT `Math.random()`,
+ * per the brief: every pure export in this file must be reproducible from
+ * a seed alone, with nothing reading the wall clock, so a test can assert
+ * an exact output and a mutation to the algorithm changes that output
+ * predictably. `classroom-groups.ts` seeds one instance (from
+ * `Math.random()`, which is fine there -- it is Web Audio wiring, not this
+ * pure module) and threads it through every effect call, exactly the way
+ * `grouping.ts`'s own `buildGroups` already takes a `random` function as a
+ * parameter rather than calling `Math.random()` internally.
+ */
+export function createPrng(seed: number): () => number {
+  let state = seed >>> 0;
+  return function next(): number {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-/** Kept in the brief's stated 0.03-0.05 range, same reasoning as
- *  LAND_PEAK_GAIN -- applied per note, not to the chord as a whole; four
- *  notes this quiet, staggered in both time and pitch, is what "soft
- *  resolving" sounds like rather than "loud chord". */
-export const DONE_PEAK_GAIN = 0.045;
+// ── the resolved "plan" a struck voice hands to classroom-groups.ts ────
 
-/** A sine fundamental plus ONE quieter partial -- brief's own words, "each
- *  a sine with a quieter partial" (singular) -- simpler than `land`'s two
- *  partials, which is deliberate: a resolving chord wants to sound like a
- *  clean bell, not compete with the mallet-pluck texture `land` already
- *  supplies throughout the same run. */
-export const DONE_PARTIALS: readonly PartialTone[] = [
-  { ratio: 1, gain: 1, detuneCents: 0 },
-  { ratio: 2, gain: 0.15, detuneCents: 0 },
-];
+/** One partial's resolved pitch envelope (start -> end over pitchGlideS)
+ *  and gain envelope, RELATIVE to the voice's own body gain -- the actual
+ *  absolute level is applied once, at the body gain stage, because the two
+ *  gain nodes sit in series (partial gain -> body gain) and Web Audio
+ *  multiplies them, exactly matching the signal chain's own "3 oscillators
+ *  ... -> voice gain (ADSR)" shape. */
+export interface VoicePartialPlan {
+  freqStartHz: number;
+  freqEndHz: number;
+  pitchGlideS: number;
+  relativeGain: number;
+  envelope: Envelope;
+}
 
-/** A LONGER release than `land` (brief's own words: 0.75s against land's
- *  0.024s, over 30x) -- "an arrival, not an alarm": the chord is meant to
- *  ring out and fade slowly once the groups have settled, not snap off
- *  the way a mallet note under a fast deal has to. */
-export const DONE_ENVELOPE: Envelope = {
-  attackS: 0.006,
-  decayS: 0.05,
-  sustainLevel: 0.45,
-  releaseS: 0.75,
-};
+export interface TransientPlan {
+  filterCenterHz: number;
+  q: number;
+  relativeGain: number;
+  envelope: Envelope;
+}
 
-/** `DONE_CHORD_SEMITONES` resolved against the SAME `TONIC_HZ` `land`
- *  reads -- one shared root, per the module doc comment. Two of its four
- *  notes are not incidental to `land`'s own scale: `semitoneRatio(4)`'s
- *  note (the major third) sits between `land`'s 2nd and 3rd scale degrees
- *  and is not itself one of them, but `semitoneRatio(7)` -- the fifth --
- *  IS `SCALE_SEMITONES[3]` exactly, so `done`'s fifth is a note `land`
- *  could also have played moments earlier. That overlap is what makes the
- *  chord sound like the destination the preceding run of pentatonic notes
- *  was heading toward, rather than an unrelated sound arriving on top of
- *  it. */
+export interface SubTonePlan {
+  freqStartHz: number;
+  freqEndHz: number;
+  relativeGain: number;
+  envelope: Envelope;
+}
+
+export interface VoicePlan {
+  fundamentalHz: number;
+  bodyPeakGain: number;
+  bodyEnvelope: Envelope;
+  partials: VoicePartialPlan[];
+  transient: TransientPlan;
+  sub: SubTonePlan;
+  pan: number;
+  reverbSend: number;
+}
+
+/**
+ * Resolves one full struck voice: applies this trigger's own
+ * micro-variation (detune shifts EVERY layer's frequency together, since
+ * they all derive from the one detuned fundamental below -- the transient
+ * and sub stay "the same struck object" as the partials, not a decoupled
+ * layer wobbling independently), then builds the three parallel layers
+ * (partials/transient/sub) and the voice-level body envelope, per the
+ * signal chain in the module doc comment. `overallReleaseS` is the one
+ * parameter that turns this same architecture into either `land` (0.26s)
+ * or `done` (0.9s) -- see doneVoicePlans.
+ */
+export function buildVoicePlan(params: {
+  fundamentalHz: number;
+  peakGain: number;
+  overallReleaseS: number;
+  pan: number;
+  reverbSend: number;
+  rng: () => number;
+}): VoicePlan {
+  const { fundamentalHz, peakGain, overallReleaseS, pan, reverbSend, rng } =
+    params;
+  const variation = microVariation(rng);
+  const detunedHz = fundamentalHz * semitoneRatio(variation.detuneCents / 100);
+
+  const partials: VoicePartialPlan[] = INHARMONIC_PARTIAL_RATIOS.map(
+    (ratio, i) => {
+      const startHz = detunedHz * ratio;
+      return {
+        freqStartHz: startHz,
+        freqEndHz: startHz * (1 - PITCH_DROP_FRACTION),
+        pitchGlideS: PITCH_GLIDE_S,
+        relativeGain: INHARMONIC_PARTIAL_GAINS[i],
+        envelope: {
+          attackS: VOICE_ATTACK_S,
+          decayS: 0,
+          sustainLevel: 1,
+          releaseS: overallReleaseS * INHARMONIC_RELATIVE_DECAYS[i],
+        },
+      };
+    },
+  );
+
+  const transient: TransientPlan = {
+    filterCenterHz: detunedHz * LAND_TRANSIENT.filterRatio,
+    q: LAND_TRANSIENT.q,
+    relativeGain: LAND_TRANSIENT.gain,
+    envelope: {
+      attackS: 0.001,
+      decayS: 0,
+      sustainLevel: 1,
+      releaseS: LAND_TRANSIENT.durationS,
+    },
+  };
+
+  const sub: SubTonePlan = {
+    freqStartHz: detunedHz * VOICE_SUB.startRatio,
+    freqEndHz: detunedHz * VOICE_SUB.endRatio,
+    relativeGain: VOICE_SUB.gain,
+    envelope: {
+      attackS: VOICE_ATTACK_S,
+      decayS: 0,
+      sustainLevel: 1,
+      releaseS: VOICE_SUB.durationS,
+    },
+  };
+
+  return {
+    fundamentalHz: detunedHz,
+    bodyPeakGain: peakGain * variation.gainMultiplier,
+    bodyEnvelope: {
+      attackS: VOICE_ATTACK_S,
+      decayS: VOICE_BODY_DECAY_S,
+      sustainLevel: VOICE_BODY_SUSTAIN_LEVEL,
+      releaseS: overallReleaseS,
+    },
+    partials,
+    transient,
+    sub,
+    pan,
+    reverbSend,
+  };
+}
+
+/** land's own fundamental's ABSOLUTE peak gain, pre-saturation -- every
+ *  partial/transient/sub gain above is a RELATIVE multiplier on top of
+ *  this. A reasoned default: the new signal chain's soft saturator and
+ *  master compressor (see SATURATOR_DRIVE, MASTER_COMPRESSOR) give this
+ *  file more gain-staging headroom than the previous attempt had (which
+ *  had neither), so this is not read from the brief -- there is no stated
+ *  absolute level for the new architecture, only the relative numbers
+ *  above and the envelope timings. */
+export const LAND_PEAK_GAIN = 0.5;
+
+/** The brief's own number: how much of a `land` voice's post-pan signal
+ *  feeds the shared reverb send. */
+export const LAND_REVERB_SEND = 0.18;
+
+export function landVoicePlan(index: number, rng: () => number): VoicePlan {
+  return buildVoicePlan({
+    fundamentalHz: landFrequency(index),
+    peakGain: LAND_PEAK_GAIN,
+    overallReleaseS: LAND_RELEASE_S,
+    pan: landPan(index),
+    reverbSend: LAND_REVERB_SEND,
+    rng,
+  });
+}
+
+// ── done(): a sus2/add9 resolving cluster, with a riser ─────────────────
+
+/** D, E, A, D-an-octave-up, as semitone offsets from the SAME TONIC_HZ
+ *  land's scale reads: root, 2nd/9th, 5th, octave -- a sus2/add9 voicing
+ *  that OMITS the third entirely, so the chord is neither major nor minor,
+ *  "open and modern" (the brief's own words) rather than a plain major
+ *  triad, which is the one chord quality every consumer OS/UI sound of the
+ *  last three decades has already used (a plain major triad is what the
+ *  brief itself names as "Windows XP"). E (semitone 2) does not appear in
+ *  LAND_SCALE_SEMITONES at all -- it is the one note that marks this
+ *  chord as a distinct arrival rather than just another pentatonic degree,
+ *  while the root and the fifth (both shared with the scale) keep it
+ *  recognisably the same tonal family a run of `land` notes was just
+ *  playing. */
+export const DONE_CHORD_SEMITONES: readonly number[] = [0, 2, 7, 12];
+
 export function doneFrequencies(): number[] {
   return DONE_CHORD_SEMITONES.map((s) => TONIC_HZ * semitoneRatio(s));
 }
 
+/** 0 / 35 / 70 / 110ms -- the brief's own numbers, exactly. Strictly
+ *  ascending, one entry per DONE_CHORD_SEMITONES entry (checked in
+ *  sfx.test.ts) -- a length mismatch would silently drop a note or read
+ *  `undefined` at the call site. */
+export const DONE_STAGGER_S: readonly number[] = [0, 0.035, 0.07, 0.11];
+
+/** ~900ms (the brief's own number) -- reuses the exact same struck-voice
+ *  shape as `land` (buildVoicePlan), just stretched: every partial's decay
+ *  scales up in proportion (INHARMONIC_RELATIVE_DECAYS), so "higher
+ *  partials decay faster" still holds, only the whole voice now rings for
+ *  the better part of a second -- "an arrival, not a snap-off". */
+export const DONE_RELEASE_S = 0.9;
+
+/** A reasoned default, same reasoning as LAND_PEAK_GAIN -- slightly under
+ *  land's own peak because four of these notes sum together (staggered,
+ *  but still overlapping for most of their release). */
+export const DONE_PEAK_GAIN = 0.4;
+
+/** The brief's own number: the longest reverb send of the three effects --
+ *  "an arrival" gets the most space to resolve into. Checked against
+ *  LAND_REVERB_SEND/SHUFFLE_REVERB_SEND in sfx.test.ts. */
+export const DONE_REVERB_SEND = 0.28;
+
+/** Every chord note centred (pan 0) -- the brief gives no stereo-spread
+ *  number for `done` (unlike `land`'s explicit -0.35..+0.35), and the
+ *  effect already has the largest reverb send of the three: width comes
+ *  from the shared synthesised space the notes resolve into, not from
+ *  panning them apart, which keeps this file from inventing an unstated
+ *  number where the brief did not give one. */
+export function doneVoicePlans(rng: () => number): VoicePlan[] {
+  return doneFrequencies().map((freqHz) =>
+    buildVoicePlan({
+      fundamentalHz: freqHz,
+      peakGain: DONE_PEAK_GAIN,
+      overallReleaseS: DONE_RELEASE_S,
+      pan: 0,
+      reverbSend: DONE_REVERB_SEND,
+      rng,
+    }),
+  );
+}
+
+/** 120ms of noise through a highpass sweeping upward, swelling into the
+ *  hit (the brief's own description and duration). A rising highpass
+ *  sweep over a swelling envelope is literally the "riser" gesture: it
+ *  moves audible energy from low/broadband toward high/thin as it builds,
+ *  which is the same spectral motion as something accelerating or closing
+ *  distance, and is -- per the brief -- "the most recognisably
+ *  contemporary gesture available" in current UI/trailer sound design.
+ *  startHz/endHz/gain/q/releaseS are reasoned defaults: the brief states
+ *  the duration and the general behaviour, not exact filter bounds. */
+export const DONE_RISER = {
+  durationS: 0.12,
+  startHz: 300,
+  endHz: 6000,
+  gain: 0.25,
+  q: 0.8,
+  releaseS: 0.02,
+} as const;
+
+// ── shuffle(): a granular riffle ─────────────────────────────────────────
+
+export const SHUFFLE_DURATION_S = 0.26;
+
+/** 16-22 grains, each 6-14ms, bandpass centre randomised 900-4200Hz, pan
+ *  randomised across ±0.6 (all the brief's own numbers). Emitting many
+ *  short, independently-filtered noise bursts rather than one filtered
+ *  noise sweep is what makes this read as discrete objects in motion (a
+ *  card riffle) instead of a single continuous whoosh (a PowerPoint
+ *  transition, the brief's own comparison) -- a sweep carries one piece of
+ *  spectral information moving smoothly; a grain cloud carries dozens of
+ *  independent, briefly-glimpsed spectral events, which is what a
+ *  real riffle of many small objects actually is. */
+export const SHUFFLE_GRAIN_BOUNDS = {
+  countMin: 16,
+  countMax: 22,
+  durationMinS: 0.006,
+  durationMaxS: 0.014,
+  filterMinHz: 900,
+  filterMaxHz: 4200,
+  panRange: 0.6,
+  q: 4,
+} as const;
+
+/** A reasoned default: each grain's own peak, kept modest because up to 22
+ *  of them can overlap -- the brief gives the grain COUNT and FILTER
+ *  bounds, not an absolute per-grain gain. */
+export const SHUFFLE_GRAIN_PEAK_GAIN = 0.16;
+
+export const SHUFFLE_REVERB_SEND = 0.12;
+
+export interface GrainPlan {
+  onsetS: number;
+  filterCenterHz: number;
+  q: number;
+  pan: number;
+  peakGain: number;
+  envelope: Envelope;
+}
+
+/**
+ * `count` grains, evenly spaced across SHUFFLE_DURATION_S (16-22, the
+ * brief's own bounds), each independently randomised in duration, filter
+ * centre and pan. Amplitude follows a soft arch -- quiet, loud in the
+ * middle, quiet -- via `sin(pi * positionFraction)`: zero at both ends of
+ * the effect's own timeline, one exactly in the middle, deterministic
+ * given each grain's OWN (evenly-spaced, not randomised) position, so the
+ * arch shape itself is exact and not subject to the same jitter as the
+ * grain's other properties -- a crescendo-decrescendo across the whole
+ * gesture, the way a real riffle swells as more cards are in motion and
+ * tapers as it completes.
+ */
+export function shuffleGrainPlans(rng: () => number): GrainPlan[] {
+  const b = SHUFFLE_GRAIN_BOUNDS;
+  const count = b.countMin + Math.floor(rng() * (b.countMax - b.countMin + 1));
+  const grains: GrainPlan[] = [];
+  for (let i = 0; i < count; i++) {
+    const onsetS = (i / count) * SHUFFLE_DURATION_S;
+    const durationS =
+      b.durationMinS + rng() * (b.durationMaxS - b.durationMinS);
+    const filterCenterHz =
+      b.filterMinHz + rng() * (b.filterMaxHz - b.filterMinHz);
+    const pan = (rng() * 2 - 1) * b.panRange;
+    const arch = Math.sin(Math.PI * (onsetS / SHUFFLE_DURATION_S));
+    const peakGain =
+      SHUFFLE_GRAIN_PEAK_GAIN * (0.15 + 0.85 * Math.max(0, arch));
+    grains.push({
+      onsetS,
+      filterCenterHz,
+      q: b.q,
+      pan,
+      peakGain,
+      envelope: {
+        attackS: durationS * 0.35,
+        decayS: 0,
+        sustainLevel: 1,
+        releaseS: durationS * 0.65,
+      },
+    });
+  }
+  return grains;
+}
+
+/** One sub thump at the shuffle's own onset (the brief's own instruction)
+ *  -- absolute Hz, not a ratio off any fundamental, since shuffle carries
+ *  no pitch at all (see the module doc comment's own reasoning: shuffle
+ *  joins this file's timbral family through texture, not through a shared
+ *  note). Reasoned defaults, same order of magnitude as VOICE_SUB. */
+export const SHUFFLE_SUB = {
+  startHz: 110,
+  endHz: 70,
+  durationS: 0.08,
+  gain: 0.28,
+} as const;
+
+// ── polyphony cap ────────────────────────────────────────────────────────
+
+/** 8 voices, oldest stolen (the brief's own numbers/policy) -- long tails
+ *  (up to DONE_RELEASE_S = 0.9s) plus a big class landing many groups in a
+ *  fast run must not pile up an unbounded number of simultaneously-ringing
+ *  voices. */
+export const MAX_POLYPHONY = 8;
+
+/**
+ * Pure FIFO admission: given the currently-active pool and a new voice,
+ * returns the pool WITH the new voice added, plus whichever voice had to
+ * be stolen (evicted) to stay at or under `maxVoices` -- or `null` if
+ * nothing needed stealing. Deliberately stateless (the caller threads the
+ * pool through, rather than this module holding it) so it can be
+ * exhaustively tested without any notion of time or of what a "voice"
+ * actually is: `classroom-groups.ts` is the only thing that knows how to
+ * actually stop a stolen voice's real Web Audio nodes, this module only
+ * decides WHICH one.
+ */
+export function admitVoice<T>(
+  activeVoices: readonly T[],
+  newVoice: T,
+  maxVoices: number = MAX_POLYPHONY,
+): { activeVoices: T[]; stolen: T | null } {
+  const next = [...activeVoices, newVoice];
+  if (next.length > maxVoices) {
+    const [stolen, ...rest] = next;
+    return { activeVoices: rest, stolen };
+  }
+  return { activeVoices: next, stolen: null };
+}
+
+// ── the soft saturator (WaveShaper curve) ────────────────────────────────
+
+/** tanh's own drive constant -- a reasoned default (the brief names the
+ *  curve shape, "WaveShaper, tanh", not a drive amount). At this drive,
+ *  quiet input is boosted by a small, constant factor (tanh is
+ *  approximately linear near zero, but tanh(k)/k < 1 for k>0, so
+ *  normalising the curve to unity at full scale, as generateSaturatorCurve
+ *  does, boosts everything below full scale slightly), while input
+ *  approaching full scale is compressed toward the curve's own asymptote
+ *  -- i.e. peaks are rounded off rather than sharply clipped. That is what
+ *  a soft saturator is FOR: it is a continuous, odd-symmetric function
+ *  with no flat region, so it never produces the hard-edged harmonic
+ *  spray a digital clip (a literal min/max) does, while still taming the
+ *  loudest instants of several overlapping voices. */
+export const SATURATOR_DRIVE = 1.6;
+
+/** Odd, so the curve has an exact centre sample at x=0 -- see
+ *  generateSaturatorCurve's own "curve(0) is exactly 0" test. */
+export const SATURATOR_CURVE_SAMPLES = 257;
+
+/**
+ * A WaveShaperNode `.curve` array: `tanh(drive * x) / tanh(drive)` sampled
+ * across x = -1..1, normalised so x = ±1 maps to exactly ±1 (unity gain at
+ * full scale -- this curve never makes a full-scale signal LOUDER, only
+ * quieter-than-full-scale signal relatively louder, which is the intended
+ * "gentle glue" character, not a boost). Pure math, no AudioContext: only
+ * the act of assigning this array to a real WaveShaperNode's `.curve`
+ * property is Web Audio, which stays in classroom-groups.ts.
+ */
+export function generateSaturatorCurve(
+  samples: number = SATURATOR_CURVE_SAMPLES,
+): Float64Array {
+  const curve = new Float64Array(samples);
+  const norm = Math.tanh(SATURATOR_DRIVE);
+  for (let i = 0; i < samples; i++) {
+    const x = (i / (samples - 1)) * 2 - 1;
+    curve[i] = Math.tanh(SATURATOR_DRIVE * x) / norm;
+  }
+  return curve;
+}
+
+// ── the synthesised reverb impulse response ──────────────────────────────
+
+/** ~0.9s (the brief's own duration) -- long enough to read as a real,
+ *  if small, room rather than a slap-back, short enough that it has
+ *  fully resolved well before even `done`'s own release (also ~0.9s) has
+ *  finished ringing. */
+export const REVERB_DURATION_S = 0.9;
+
+/** The exponential envelope's own time constant: REVERB_DURATION_S / 5, so
+ *  the tail has decayed to e^-5 (≈0.7%, about -43dB below its own peak) by
+ *  the end of the buffer -- comfortably "near-silence" relative to
+ *  anything else in this file's own gain range, without the buffer needing
+ *  to be any longer than REVERB_DURATION_S to get there. */
+export const REVERB_DECAY_TIME_CONSTANT_S = REVERB_DURATION_S / 5;
+
+/** The exponential decay envelope itself, exposed as its own pure
+ *  function (not inlined into generateReverbImpulseResponse) so its
+ *  monotonicity can be asserted exactly, analytically, rather than only
+ *  inferred statistically from noisy generated samples -- see
+ *  sfx.test.ts. Strictly decreasing for any t2 > t1 >= 0, by construction
+ *  (Math.exp of a strictly decreasing exponent). */
+export const reverbEnvelopeGain = (tS: number): number =>
+  Math.exp(-tS / REVERB_DECAY_TIME_CONSTANT_S);
+
+/** Reverb tails in real spaces lose high-frequency energy fastest (air and
+ *  most real materials absorb highs more than lows), so a bright,
+ *  full-band noise tail reads as an artificial hiss rather than a space.
+ *  A one-pole lowpass at 3200Hz -- well below the master bus's own
+ *  ~9000Hz -- keeps the SYNTHESISED tail dark specifically, distinct from
+ *  (and beneath) the actual voices ringing into it. A reasoned default:
+ *  the brief says "lowpassed so the tail is dark", not an exact cutoff. */
+export const REVERB_LOWPASS_HZ = 3200;
+
+/** The generated buffer's own peak sample, after generation, is scaled to
+ *  land here -- headroom under full scale (1.0), chosen once, mathematically,
+ *  rather than by ear (see the module doc comment: nobody has heard this).
+ *  This is what makes REVERB_RETURN_GAIN a legitimate unity trim rather
+ *  than an arbitrary guess: the IR's own level is fixed at generation
+ *  time, not left for the return gain to compensate for. */
+export const REVERB_NORMALIZE_PEAK = 0.95;
+
+export interface ReverbIR {
+  sampleRateHz: number;
+  left: Float64Array;
+  right: Float64Array;
+}
+
+/**
+ * Generates a stereo impulse response entirely in code -- satisfying the
+ * site's "no audio assets, no third-party requests" policy for the one
+ * effect (reverb) that would conventionally use a recorded IR. Per sample:
+ * a one-pole lowpass (REVERB_LOWPASS_HZ) applied to noise, multiplied by
+ * the exponential decay envelope (reverbEnvelopeGain). The two channels
+ * are DELIBERATELY only slightly decorrelated -- each is a blend of one
+ * SHARED noise source (80%) and its own independent one (20%), not two
+ * fully independent channels. Real stereo room reflections are highly
+ * correlated between the two ears/mics (both are hearing largely the same
+ * reflected sound field, arriving microseconds apart), not statistically
+ * independent processes; more importantly, fully-independent stereo noise
+ * cancels when summed to mono, and this tool is as likely to be heard
+ * through a single phone or laptop speaker as through stereo ones -- a
+ * "slightly" decorrelated tail stays close to mono-safe while still
+ * widening true stereo playback, which is what the brief's own "for
+ * width" is asking for without breaking mono compatibility it never
+ * mentioned but a real classroom device will still expose.
+ */
+export function generateReverbImpulseResponse(
+  sampleRateHz: number,
+  rng: () => number,
+): ReverbIR {
+  const CHANNEL_CORRELATION = 0.8;
+  const length = Math.max(1, Math.round(sampleRateHz * REVERB_DURATION_S));
+  const left = new Float64Array(length);
+  const right = new Float64Array(length);
+
+  const rc = 1 / (2 * Math.PI * REVERB_LOWPASS_HZ);
+  const dt = 1 / sampleRateHz;
+  const alpha = dt / (rc + dt);
+  let lpL = 0;
+  let lpR = 0;
+  let peak = 0;
+
+  for (let n = 0; n < length; n++) {
+    const env = reverbEnvelopeGain(n / sampleRateHz);
+    const shared = rng() * 2 - 1;
+    const independentL = rng() * 2 - 1;
+    const independentR = rng() * 2 - 1;
+    const rawL =
+      CHANNEL_CORRELATION * shared + (1 - CHANNEL_CORRELATION) * independentL;
+    const rawR =
+      CHANNEL_CORRELATION * shared + (1 - CHANNEL_CORRELATION) * independentR;
+    lpL += alpha * (rawL - lpL);
+    lpR += alpha * (rawR - lpR);
+    const l = lpL * env;
+    const r = lpR * env;
+    left[n] = l;
+    right[n] = r;
+    peak = Math.max(peak, Math.abs(l), Math.abs(r));
+  }
+
+  const scale = peak > 0 ? REVERB_NORMALIZE_PEAK / peak : 0;
+  for (let n = 0; n < length; n++) {
+    left[n] *= scale;
+    right[n] *= scale;
+  }
+  return { sampleRateHz, left, right };
+}
+
 // ── the master bus ──────────────────────────────────────────────────────
 
-/** A gentle overall trim on the combined bus, on top of the individual
- *  peak gains above -- headroom for whichever effect's voices happen to
- *  land in phase with each other, never loud enough on its own to make
- *  anything quieter than intended. */
-export const MASTER_GAIN = 0.85;
+/** A gentle overall trim ahead of the compressor -- headroom for whichever
+ *  effect's voices happen to land in phase, never loud enough alone to
+ *  make anything quieter than intended. A reasoned default, same
+ *  reasoning as LAND_PEAK_GAIN. */
+export const MASTER_GAIN = 0.8;
 
-/** "A gentle lowpass on the master bus so nothing is harsh" (brief's own
- *  words) -- comfortably above every fundamental this file ever produces
- *  (land tops out at 1318.53Hz, done at 784Hz; see the "never eats a
- *  real note" test in sfx.test.ts) so it never mutes actual pitch, and
- *  above `SHUFFLE_FILTER`'s own 2200Hz peak too -- its job is smoothing
- *  the top of the band, not reshaping any one effect's own filter work. */
-export const MASTER_LOWPASS_HZ = 4200;
+/** Strips DC offset and sub-bass rumble no real content in this file ever
+ *  occupies -- the lowest thing this file produces is a `land`/`done` sub
+ *  layer bottoming out around 0.38x TONIC_HZ (≈112Hz), comfortably above
+ *  this cutoff, so it trims noise-floor content only, never a real note. */
+export const MASTER_HIGHPASS_HZ = 40;
+
+/** ~9000Hz (the brief's own number) -- "so nothing is harsh" without
+ *  dulling the grain cloud's own randomised centres, which range up to
+ *  SHUFFLE_GRAIN_BOUNDS.filterMaxHz (4200Hz): this sits comfortably above
+ *  that too, so it is a gentle top-end safety rail on the whole bus, not a
+ *  reshaping of any one effect's own filter work. */
+export const MASTER_LOWPASS_HZ = 9000;
+
+/** "Glue" bus compression across up to MAX_POLYPHONY simultaneous struck
+ *  voices plus a grain cloud plus a reverb return -- a moderate ratio and
+ *  a soft knee so it manages the combined level of many overlapping
+ *  sources without audibly pumping on any one of them, the standard role
+ *  of a bus compressor sitting after a mix point rather than on a single
+ *  source. Reasoned defaults: the brief specifies the node's presence and
+ *  position in the chain, not its parameters. */
+export const MASTER_COMPRESSOR = {
+  thresholdDb: -18,
+  kneeDb: 6,
+  ratio: 3,
+  attackS: 0.003,
+  releaseS: 0.25,
+} as const;
+
+/** A structural unity trim on the shared reverb return, after the
+ *  convolver and before the master bus -- unity is a principled choice
+ *  here specifically because REVERB_NORMALIZE_PEAK already fixes the
+ *  convolver's own output level mathematically at generation time (see
+ *  that constant's own doc comment), not an arbitrary "sounds about
+ *  right" guess this file has no basis to make. */
+export const REVERB_RETURN_GAIN = 1;
