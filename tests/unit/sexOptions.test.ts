@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sexWhy } from '../../src/lib/sexOptions';
+import { sexWhy, sexWhyReturning } from '../../src/lib/sexOptions';
 import { en } from '../../src/lib/i18n/en';
 import { id } from '../../src/lib/i18n/id';
 import { student } from './factories';
@@ -177,5 +177,141 @@ describe('sexWhy — why the two sex switches are disabled', () => {
     // return null would satisfy the equality above by both sides agreeing
     // on the wrong answer.
     expect(sexWhy([withUndefinedSex], en)).not.toBeNull();
+  });
+});
+
+/**
+ * G-07, the third message design spec sections 6 and 13 both call for, and
+ * which `sexWhy`'s own doc comment recorded as OWED because a snapshot
+ * cannot express it: "Dewi is back and has no sex set." fires on the moment
+ * un-ticking one student's absence is specifically what CLOSES the switches
+ * -- a TRANSITION, not a state.
+ *
+ * `sexWhy`'s comment predicted the caller "would have to know which control
+ * just fired and pass that in". It does not. The fact the message needs is
+ * "who newly entered the grouped pool without a sex", which is a pure
+ * function of the roster BEFORE and the roster AFTER -- so this stays a
+ * second pure function beside `sexWhy` rather than a parameter threaded
+ * through it, and no call site has to report what the teacher just clicked.
+ * Students are matched across the two snapshots by `number`, the field the
+ * type calls "The identity".
+ *
+ * Returns `null` -- never a string -- whenever the name-specific message
+ * does not apply, so the caller's `sexWhyReturning(...) ?? sexWhy(...)`
+ * reads correctly and cannot accidentally prefer an empty string. Same
+ * reasoning as `sexWhy`'s own null-not-empty-string contract above.
+ */
+describe('sexWhyReturning — the message for the student who just came back', () => {
+  const M = student({ number: 1, sex: 'M' });
+  const F = student({ number: 2, sex: 'F' });
+  /** Dewi, out today, sex never set -- so she holds nothing shut while absent. */
+  const dewiAbsent = student({
+    number: 3,
+    name: 'Dewi',
+    sex: null,
+    absent: true,
+  });
+  const dewiBack = { ...dewiAbsent, absent: false };
+
+  it('names the student whose return is what closed the switches', () => {
+    expect(sexWhyReturning([M, F, dewiAbsent], [M, F, dewiBack], en)).toBe(
+      'Dewi is back and has no sex set. These options need one for every ' +
+        'student being grouped.',
+    );
+  });
+
+  // The precondition is not "somebody came back" -- it is "the switches were
+  // OPEN and this closed them". A roster already shut for a different reason
+  // gets `sexWhy`'s count message, which is the true one: naming Dewi would
+  // tell a teacher to fix one row when two are unset.
+  it('stays out of the way when the switches were already shut', () => {
+    const alsoUnset = student({ number: 4, sex: null });
+    expect(
+      sexWhyReturning(
+        [M, F, alsoUnset, dewiAbsent],
+        [M, F, alsoUnset, dewiBack],
+        en,
+      ),
+    ).toBeNull();
+  });
+
+  it('stays out of the way when the returning student HAS a sex', () => {
+    const budiAbsent = student({
+      number: 3,
+      name: 'Budi',
+      sex: 'M',
+      absent: true,
+    });
+    expect(
+      sexWhyReturning(
+        [M, F, budiAbsent],
+        [M, F, { ...budiAbsent, absent: false }],
+        en,
+      ),
+    ).toBeNull();
+  });
+
+  // Nobody's absence changed at all -- a rename, a letter, a new row. The
+  // switches may well have closed, but not because anyone came back.
+  it('stays out of the way when no absence was lifted', () => {
+    const newRow = student({ number: 3, sex: null });
+    expect(sexWhyReturning([M, F], [M, F, newRow], en)).toBeNull();
+  });
+
+  // Two at once -- "+ Add several" cannot do this, but un-ticking a row
+  // while another is mid-edit can, and a message that names one of two is
+  // worse than the count, which names neither and is true of both.
+  it('defers to the count when two students come back together', () => {
+    const other = student({ number: 4, name: 'Eka', sex: null, absent: true });
+    expect(
+      sexWhyReturning(
+        [M, F, dewiAbsent, other],
+        [M, F, dewiBack, { ...other, absent: false }],
+        en,
+      ),
+    ).toBeNull();
+  });
+
+  // The same numbered fallback `rosterProblems` already uses -- a teacher
+  // who has not typed a name still gets told WHICH row, not a blank space
+  // where a name should be.
+  it('falls back to the numbered label for a student with no name', () => {
+    const unnamed = student({ number: 7, sex: null, absent: true });
+    expect(
+      sexWhyReturning(
+        [M, F, unnamed],
+        [M, F, { ...unnamed, absent: false }],
+        en,
+      ),
+    ).toBe(
+      'Student 7 is back and has no sex set. These options need one for ' +
+        'every student being grouped.',
+    );
+  });
+
+  it('answers in Indonesian too', () => {
+    const message = sexWhyReturning([M, F, dewiAbsent], [M, F, dewiBack], id);
+    expect(message).not.toBeNull();
+    expect(message).not.toBe(
+      sexWhyReturning([M, F, dewiAbsent], [M, F, dewiBack], en),
+    );
+    expect(message).toContain('Dewi');
+  });
+
+  // Fails closed on the same `undefined` the sibling `sexWhy` test above
+  // reaches past the type for: a DOM-built roster can carry it, and treating
+  // it as SET would leave the switches open on a student who has no sex.
+  it('treats an undefined sex as unset, not as set', () => {
+    const undef = {
+      number: 3,
+      name: 'Dewi',
+      sex: undefined,
+      absent: true,
+      together: null,
+      apart: null,
+    } as unknown as Student;
+    expect(
+      sexWhyReturning([M, F, undef], [M, F, { ...undef, absent: false }], en),
+    ).toContain('Dewi');
   });
 });

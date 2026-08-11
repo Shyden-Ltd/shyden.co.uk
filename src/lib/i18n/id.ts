@@ -91,6 +91,12 @@ export const id: Strings = {
   // bentuk kata untuk jamak.
   sexWhyUnset: (unset: number, grouped: number) =>
     `${unset} dari ${grouped} siswa yang dikelompokkan belum memiliki jenis kelamin. Buka Detail siswa dan atur L atau P untuk mereka agar bisa memakai opsi ini.`,
+  // Pesan ketiga (bagian 6 dan 13 dokumen desain): saat menghapus centang
+  // "Tidak hadir" pada SATU siswa itulah yang menutup kedua opsi. Lihat
+  // komentar pada versi Inggrisnya (en.ts). `who` sudah berupa label jadi
+  // (nama yang diketik, atau "Siswa 7"), bukan data mentah.
+  sexWhyReturning: (who: string) =>
+    `${who} sudah hadir kembali dan belum memiliki jenis kelamin. Opsi ini memerlukannya untuk setiap siswa yang dikelompokkan.`,
 
   leftoversLabel: 'Jika ada siswa tersisa',
   leftoversSpread: 'Bagikan merata',

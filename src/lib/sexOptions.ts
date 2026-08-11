@@ -35,20 +35,9 @@ import type { Strings } from './i18n';
  * reports `NO_STUDENTS` regardless of `sexMode` -- see grouping.ts's
  * `ERROR_CODES.noStudents` doc comment on the second of its two triggers.
  *
- * OWED (test traceability matrix, G-07): design spec section 6 and section
- * 13 both call for a THIRD, name-specific message -- "Dewi is back and has
- * no sex set...", distinct from `sexWhyUnset`'s count -- for the moment
- * un-ticking one student's absence is specifically what CLOSES these
- * switches (0 unset -> 1). Deciding when that applies needs the transition
- * itself (was THIS toggle what took `unset` from 0 to 1?), which a roster
- * snapshot cannot recover after the fact -- the caller would have to know
- * which control just fired and pass that in. There is no such caller
- * today: Student details' absence control (stage 3) does not exist on the
- * page yet (see ClassroomGroupsPage.astro's own comment on
- * `#cg-students-body`). Building that parameter now would be guessing at a
- * shape the real caller may not need until it exists. Whichever task wires
- * that control owns adding the locale key and threading the transition it
- * names.
+ * G-07 (the third, name-specific message) is DISCHARGED, in
+ * `sexWhyReturning` below rather than as a parameter here -- this function
+ * stays a pure read of one snapshot. See that function's own doc comment.
  */
 export const sexWhy = (roster: Student[] | null, t: Strings): string | null => {
   if (roster === null || roster.length === 0) return t.sexWhyNoList;
@@ -69,4 +58,59 @@ export const sexWhy = (roster: Student[] | null, t: Strings): string | null => {
   const unset = grouped.filter((s) => !s.sex);
   if (unset.length === 0) return null;
   return t.sexWhyUnset(unset.length, grouped.length);
+};
+
+/**
+ * The name-specific message for the moment ONE student's return is what
+ * closed the switches -- design spec sections 6 and 13's third message,
+ * G-07 in the test traceability matrix. `null` when it does not apply, so
+ * `sexWhyReturning(prev, next, t) ?? sexWhy(next, t)` reads correctly at
+ * the call site and an inapplicable case falls through to the count.
+ *
+ * `sexWhy`'s own comment predicted this would need the caller to say which
+ * control just fired. It does not. The fact the message needs is "who
+ * newly entered the grouped pool without a sex", and that is a pure
+ * function of the roster BEFORE and the roster AFTER -- so this is a second
+ * function taking two snapshots, not a transition parameter threaded
+ * through the first. Nothing on the page has to report what a teacher
+ * clicked, and both functions stay independently unit-testable against
+ * hand-built rosters.
+ *
+ * Deliberately narrow, and each condition earns its place:
+ *
+ * - The switches must have been OPEN before (`sexWhy(previous) === null`).
+ *   A roster already shut for a different reason gets the count instead:
+ *   naming one student when two are unset tells a teacher to fix one row
+ *   and leaves them with the switches still shut and no idea why.
+ * - EXACTLY ONE student may have made the transition. Two at once has no
+ *   honest single name to report, and `sexWhyUnset`'s count is true of
+ *   both.
+ * - That student must have been `absent` before and present after. A new
+ *   row, a rename, or a sex cleared to blank all close the switches too,
+ *   but nobody "is back" -- the message would be a lie about what happened.
+ *
+ * Matched across the two snapshots by `number` -- the field `Student` calls
+ * "The identity". A number that appears twice in `previous` (a duplicate a
+ * teacher is mid-way through fixing) is not special-cased: `find` takes the
+ * first, which at worst produces the count instead of the name.
+ *
+ * `!s.sex` rather than `s.sex === null`, for the identical fail-closed
+ * reason `sexWhy` above gives at length: this roster is built by reading
+ * the DOM, and there is no type checker anywhere in this repo or in CI.
+ */
+export const sexWhyReturning = (
+  previous: Student[],
+  next: Student[],
+  t: Strings,
+): string | null => {
+  if (sexWhy(previous, t) !== null) return null;
+  const returned = next.filter(
+    (s) =>
+      !s.absent &&
+      previous.find((was) => was.number === s.number)?.absent === true,
+  );
+  if (returned.length !== 1) return null;
+  const [who] = returned;
+  if (who.sex) return null;
+  return t.sexWhyReturning(who.name ? who.name : t.studentNumber(who.number));
 };

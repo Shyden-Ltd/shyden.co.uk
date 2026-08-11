@@ -59,10 +59,12 @@ import {
 import {
   getStrings,
   renderError,
+  renderWarning,
   groupName,
   resultsHeadingText,
   type Strings,
 } from '../lib/i18n';
+import { sexWhy, sexWhyReturning } from '../lib/sexOptions';
 import { sectionState } from '../lib/sections';
 import { staleReason, type Snapshot } from '../lib/staleness';
 import { avatarSymbolId } from '../lib/avatars';
@@ -126,7 +128,7 @@ let dirty = false;
  * future test that never runs the guarded setup) simply gets no DOM
  * write, which is correct rather than a crash.
  */
-let onRosterChanged: (() => void) | null = null;
+let onRosterChanged: ((previous: readonly Student[]) => void) | null = null;
 
 /** Stage 4 reads this to export the roster, and to know what to diff an
  *  import against. `readonly` in the type only -- `setRoster`, immediately
@@ -153,6 +155,13 @@ export function getRoster(): readonly Student[] {
  * yet.
  */
 export function setRoster(next: Student[], opts?: { saved?: boolean }): void {
+  // Captured BEFORE the reassignment, and handed to the hook below.
+  // `sexWhyReturning` (src/lib/sexOptions.ts) needs the roster as it was to
+  // tell "Dewi came back" from "Dewi was always here" -- and this is the
+  // only moment in the page's life where both versions exist at once. A
+  // listener trying to recover it afterwards would be reconstructing a
+  // value that was in scope right here and then thrown away.
+  const previous = roster;
   roster = next;
   if (opts?.saved) {
     lastSaved = next;
@@ -161,7 +170,7 @@ export function setRoster(next: Student[], opts?: { saved?: boolean }): void {
     dirty =
       next.length > 0 && JSON.stringify(next) !== JSON.stringify(lastSaved);
   }
-  onRosterChanged?.();
+  onRosterChanged?.(previous);
 }
 
 const form = $<HTMLFormElement>('cg-form');
@@ -307,6 +316,10 @@ if (form) {
   const resultsHeadingEl = $<HTMLHeadingElement>('cg-results-h')!;
   const classInput = $<HTMLInputElement>('cg-class')!;
   const summary = $<HTMLParagraphElement>('cg-summary')!;
+  // Stage 3, Task 9. The <ul> a successful shuffle's own `warnings` render
+  // into -- see the submit handler below, and the element's own comment in
+  // ClassroomGroupsPage.astro for why it is a list rather than a paragraph.
+  const warningsList = $<HTMLUListElement>('cg-warnings')!;
   const tables = $<HTMLDivElement>('cg-tables')!;
   // 'cg-sound' now names the collapsible SECTION (wired in the loop above,
   // ClassroomGroupsPage.astro's own comment has the reasoning) -- the
@@ -465,21 +478,52 @@ if (form) {
         };
   const readLeftovers = (): Leftovers =>
     readRadio('leftovers') === 'bunch' ? 'bunch' : 'spread';
-  // Hard-coded 'off', on purpose: #cg-sex-mix/#cg-sex-separate render
-  // (Stage 2, Task 4) but stay permanently `disabled` -- src/lib/sexOptions.ts's
-  // `sexWhy` always returns its "no list at all" reason, because there is
-  // no roster on this page until stage 3. A native form already excludes a
-  // disabled control's value from submission; reading `.checked` here would
-  // honour the SAME rule by hand for no behavioural difference (an
-  // unchecked, disabled checkbox reads `false` regardless), so this stays
-  // hard-coded rather than adding a read that can only ever observe the one
-  // value it already has. ONE function, not a literal repeated at every
-  // call site, so the day stage 3 makes this live is a change made here
-  // once, not a hunt through the file for every place 'off' was written by
-  // hand. Pinned by classroom-groups-script.test.ts: the day this stops
-  // returning a hard-coded literal is the day the two sex switches -- and
-  // staleReason's own `staleSexMode` branch below -- become live.
-  const readSexMode = (): SexMode => 'off';
+  const sexMix = $<HTMLInputElement>('cg-sex-mix');
+  const sexSeparate = $<HTMLInputElement>('cg-sex-separate');
+  const sexWhyEl = $<HTMLParagraphElement>('cg-sex-why');
+
+  // LIVE as of Stage 3, Task 9. It returned a hard-coded `'off'` from stage
+  // 2 until now, because the two switches were permanently `disabled` --
+  // there was no roster on this page, so `sexWhy` (src/lib/sexOptions.ts)
+  // always returned its "no list at all" reason. Task 2 built the roster,
+  // Task 4 built absence, and `updateSexSwitches` below now opens and
+  // closes them from the live list, so `.checked` finally has something to
+  // say.
+  //
+  // The `disabled` guard is not belt-and-braces. Un-checking on disable
+  // would throw away a teacher's choice every time one student's sex goes
+  // blank mid-edit; keeping it means the switch comes back the way they
+  // left it. But a checked-AND-disabled box must not reach `buildGroups` --
+  // that is exactly the state design spec section 6 exists to forbid ("both
+  // are DISABLED unless every student being grouped has M or F"). So the
+  // check state is remembered in the DOM and ignored here, which is the
+  // same rule a native form already applies to a disabled control's value
+  // at submission.
+  //
+  // `separate` is tested first only to make this a total function. The two
+  // are mutually exclusive by the listener below, so the both-checked state
+  // it would disambiguate cannot actually arise -- and a precedence rule
+  // that CAN be reached is a rule someone has to remember.
+  const readSexMode = (): SexMode => {
+    if (sexSeparate?.checked && !sexSeparate.disabled) return 'separate';
+    if (sexMix?.checked && !sexMix.disabled) return 'mix';
+    return 'off';
+  };
+
+  // "Mix evenly" and "keep separate" are contradictory instructions, and
+  // `SexMode` has no value meaning both -- but stage 2 built them as two
+  // independent checkboxes, so until now nothing stopped a teacher ticking
+  // each. Ticking one clears the other, which is what the pair already
+  // MEANT; the alternative is a precedence rule in `readSexMode` silently
+  // ignoring half of what the page shows as ticked.
+  for (const [one, other] of [
+    [sexMix, sexSeparate],
+    [sexSeparate, sexMix],
+  ] as const) {
+    one?.addEventListener('change', () => {
+      if (one.checked && other) other.checked = false;
+    });
+  }
 
   // #cg-count ("Number of students") -- the same ONE-function reasoning as
   // mode/leftovers/sexMode above. Submit and `readRoster` (below) both need
@@ -648,19 +692,104 @@ if (form) {
     }
   };
 
-  // ONE hook, every header (and now the Students box too) -- the same
-  // reasoning `setRoster`'s own doc comment (above) gives for having a
-  // single `onRosterChanged` at all: anything else that needs to know
-  // "the roster changed" must not have to be remembered by every future
-  // call site.
-  onRosterChanged = () => {
+  /**
+   * Design spec section 6, all three of its branches, live off the roster.
+   *
+   * `sexWhyReturning` first, `sexWhy` second -- see the former's own doc
+   * comment (src/lib/sexOptions.ts) for why the name-specific message is a
+   * separate function taking two snapshots rather than a parameter on the
+   * first. `??`, not `||`: both return `string | null`, and `||` would
+   * treat a legitimately empty message as absent. Neither can return `''`
+   * today; the operator that cannot be wrong is still the one to use.
+   *
+   * BOTH switches take the same state from the same value, in one place --
+   * design spec section 6 gives them one condition, and the markup already
+   * gives them one shared `#cg-sex-why`. Two call sites deciding this
+   * separately is how a control and the sentence explaining it drift apart.
+   *
+   * Deliberately does NOT un-check a switch it disables: see `readSexMode`
+   * above, which ignores a checked-but-disabled box, so the teacher's
+   * choice survives a mid-edit blank sex without ever reaching the engine.
+   */
+  const updateSexSwitches = (previous: readonly Student[]) => {
+    const current = getRoster() as Student[];
+    const why =
+      sexWhyReturning(previous as Student[], current, t) ?? sexWhy(current, t);
+    if (sexMix) sexMix.disabled = why !== null;
+    if (sexSeparate) sexSeparate.disabled = why !== null;
+    if (sexWhyEl) {
+      sexWhyEl.hidden = why === null;
+      sexWhyEl.textContent = why ?? '';
+    }
+  };
+
+  /**
+   * A rename must reach the groups already on screen.
+   *
+   * `serialiseForCompare` (src/lib/roster.ts) deliberately excludes the
+   * name, so typing one onto a student who was already in the shuffle does
+   * NOT mark the groups out of date -- correctly: it changes nothing about
+   * who ended up with whom. But without this, the sheet then goes on saying
+   * "Student 1" with no notice inviting a reshuffle either, which is the
+   * worst of both: the teacher's edit appears to have done nothing at all.
+   *
+   * Re-labels in place from `resolveStudent`, the SAME lookup `render`'s
+   * own `label` uses, rather than re-rendering the cards: a re-render would
+   * rebuild every `<li>` and lose the `.dealt` class the deal animation
+   * sets, so a rename mid-deal would blank the board. The number lives on
+   * the element itself (`data-number`, written by `render`) because the
+   * `Student` objects the shuffle was built from are not kept anywhere
+   * after it finishes -- and re-deriving position from the roster would be
+   * wrong anyway, since the roster's order is not the groups' order.
+   */
+  const relabelResults = () => {
+    for (const el of tables.querySelectorAll<HTMLElement>('.student')) {
+      const number = Number(el.dataset.number);
+      const who = el.querySelector<HTMLElement>('.who');
+      if (!who || !Number.isFinite(number)) continue;
+      const next = resolveStudent(number);
+      if (who.textContent !== next) who.textContent = next;
+    }
+  };
+
+  // ONE hook, every header (and now the Students box, the sex switches and
+  // the rendered groups too) -- the same reasoning `setRoster`'s own doc
+  // comment (above) gives for having a single `onRosterChanged` at all:
+  // anything else that needs to know "the roster changed" must not have to
+  // be remembered by every future call site.
+  onRosterChanged = (previous) => {
+    // FIRST, before anything below reads it. `rosterNames` is the
+    // number-to-name lookup `resolveStudent` answers from, and
+    // `relabelResults` two lines down is one of its readers -- rebuilt
+    // fresh from the roster rather than patched, so it can never drift
+    // from what the roster array actually says.
+    //
+    // It used to be rebuilt in `onRosterEdited`, AFTER its `setRoster`
+    // call. That was already fragile and became a real bug the moment this
+    // hook gained a reader: `setRoster` fires this hook before returning,
+    // so every hook body ran against the PREVIOUS names and a rename
+    // reached the roster, the headers and staleness while the groups on
+    // screen went on saying "Student 1". Moved here, where the one hook
+    // every roster mutation already routes through can keep it true --
+    // exactly the reasoning `setRoster`'s own doc comment gives for the
+    // hook existing at all.
+    rosterNames.clear();
+    for (const s of getRoster()) if (s.name) rosterNames.set(s.number, s.name);
     updateIoHeader();
     updateStudentsHeader();
     updateStudentsBox();
+    updateSexSwitches(previous);
+    relabelResults();
   };
   updateIoHeader();
   updateStudentsHeader();
   updateStudentsBox();
+  // The initial call passes the CURRENT roster as its own "previous": on
+  // first paint nothing has changed yet, and `sexWhyReturning` comparing a
+  // roster against itself finds nobody who came back, which is the truth.
+  // It falls through to `sexWhy`, reproducing exactly the build-time state
+  // ClassroomGroupsPage.astro already rendered.
+  updateSexSwitches(getRoster());
 
   // ── staleness ────────────────────────────────────────────────────────────
   // Design spec section 8. `lastSnapshot` is what the groups ON SCREEN were
@@ -851,11 +980,12 @@ if (form) {
   };
 
   /** The one place a per-field roster edit becomes real. `setRoster`'s own
-   *  `onRosterChanged` hook (above) keeps `dirty`, `#cg-io` and
-   *  `#cg-students` in sync; this additionally keeps `rosterNames` -- the
-   *  number-to-name lookup `resolveStudent` reads, above -- in exact sync
-   *  with it, rebuilt fresh from the given roster rather than patched, so
-   *  it can never drift from what the roster array actually says.
+   *  `onRosterChanged` hook (above) keeps `dirty`, `#cg-io`, `#cg-students`,
+   *  `rosterNames`, the two sex switches and the rendered groups' own
+   *  labels in sync -- Stage 3, Task 9 moved the `rosterNames` rebuild out
+   *  of this function and into that hook, because a hook body that reads
+   *  `rosterNames` runs BEFORE this function's next line (see the hook's own
+   *  comment for the bug that caused).
    *  `updateStaleness` is called explicitly rather than relied on purely
    *  through event bubbling (every field this section wires lives inside
    *  #cg-form, whose own `input`/`change` listeners just above already call
@@ -865,8 +995,6 @@ if (form) {
    *  sit. */
   const onRosterEdited = (next: Student[]) => {
     setRoster(next);
-    rosterNames.clear();
-    for (const s of next) if (s.name) rosterNames.set(s.number, s.name);
     updateStaleness();
     updateRosterValidation();
   };
@@ -1555,6 +1683,12 @@ if (form) {
       group.forEach((student) => {
         const li = document.createElement('li');
         li.className = 'student';
+        // Stage 3, Task 9. The identity, carried on the element, so a
+        // rename after the shuffle can find this row again -- see
+        // `relabelResults`'s own doc comment for why re-rendering the cards
+        // instead would blank a deal in progress. A number, never a name:
+        // nothing a teacher typed goes into an attribute.
+        li.dataset.number = String(student.number);
         li.innerHTML = avatarHtml(student); // see avatarHtml's own doc comment
         const who = document.createElement('span');
         who.className = 'who';
@@ -1606,7 +1740,7 @@ if (form) {
       students: roster.length > 0 ? roster : count,
       mode,
       leftovers: readLeftovers(),
-      sexMode: readSexMode(), // hard-coded 'off' this stage -- see that function's own comment
+      sexMode: readSexMode(), // live as of Stage 3, Task 9 -- see that function
       pinned: [], // a later stage wires the pins
       random: Math.random,
     });
@@ -1630,14 +1764,7 @@ if (form) {
       return;
     }
 
-    // A success can still carry `warnings` -- e.g. "two girls ended up in a
-    // group of boys" -- see grouping.ts's own module doc. Read here, not
-    // dropped silently, but not yet rendered anywhere on the page: `sexMode`
-    // stays `'off'` above (see that comment), so this array is always empty
-    // today regardless. G-11 (test traceability matrix) is owed to stage 3,
-    // which is what would give `sexMode` a way to ever be anything else.
     const { groups, warnings } = outcome.result;
-    void warnings;
 
     // Read fresh at every submit -- never cached -- so a class name typed
     // or changed between two shuffles is picked up on the next one. Set
@@ -1658,6 +1785,34 @@ if (form) {
     // only then is the sentence written into it.
     results.hidden = false;
     summary.textContent = t.resultsSummary(groups.length, groups.flat().length);
+
+    // A success can still carry `warnings` -- "Gita, Sari have joined a
+    // group of boys because there were not enough girls…" -- see
+    // grouping.ts's own module doc. RENDERED as of Stage 3, Task 9 (G-11):
+    // `sexMode` above is live now, so this array can finally be non-empty,
+    // and until this task the script read it only to `void` it.
+    //
+    // EVERY warning, not `warnings[0]`: this is an array because one
+    // shuffle can have more than one true thing to say about it, and
+    // rendering the first would silently drop the rest -- the roster's own
+    // validation box shows one message at a time on purpose, but that is a
+    // teacher mid-keystroke, not a finished result.
+    //
+    // Emptied first, every time: the previous shuffle's warnings are about
+    // groups that no longer exist, and a stale warning under fresh groups
+    // is a lie about them. Written AFTER `results.hidden = false`, the same
+    // ordering `summary` above needs and for the same reason -- a live
+    // region only announces mutations to something already in the
+    // accessibility tree. `.textContent` per item, never `.innerHTML`:
+    // `renderWarning` resolves student numbers into names a teacher typed.
+    warningsList.textContent = '';
+    warningsList.hidden = warnings.length === 0;
+    for (const warning of warnings) {
+      const li = document.createElement('li');
+      li.textContent = renderWarning(warning, t, resolveStudent);
+      warningsList.appendChild(li);
+    }
+
     goButton.textContent = t.again;
     // A fresh shuffle is, by definition, made from exactly what the form
     // says right now -- comparing that against itself returns null, which

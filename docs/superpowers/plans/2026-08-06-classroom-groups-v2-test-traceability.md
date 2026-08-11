@@ -187,11 +187,11 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | G-04 | **An absent student with no sex does not disable them** | U+P* | ✓* |
 | G-05 | Disabled message names the count: "3 of the 22 students being grouped…" | U+P* | ✓* |
 | G-06 | A **separate message** covers having no list at all | P | ✓ |
-| G-07 | Unticking an absence re-disables them **with its own message naming the student** | P | ☐ owed — stage 3 |
+| G-07 | Unticking an absence re-disables them **with its own message naming the student** | U+P | ✓ stage 3 T9 |
 | G-08 | Mix spreads M and F evenly | U | ☐ |
 | G-09 | Mix does the best it can when the numbers do not divide | U | ☐ |
 | G-10 | Separate makes single-sex groups when the numbers divide | U | ☐ |
-| G-11 | Separate **warns and names** who lands in a group of the other sex | U+P | ☐ P half owed — stage 3 |
+| G-11 | Separate **warns and names** who lands in a group of the other sex | U+P | ✓ stage 3 T9 |
 | G-12 | A together-unit spanning both sexes is refused under separate | U | ☐ |
 | G-13 | …and allowed under mix and under off | U | ☐ |
 | G-14 | `sexMode: 'off'` is a complete no-op | U | ☐ |
@@ -248,13 +248,13 @@ spillover warning cannot be driven through the page without a roster fixture;
 | E-02 | It heads the results: `7B — your groups` | P | ☐ |
 | E-03 | It is **not** repeated on every group card | P | ☐ |
 | E-04 | Groups are always numbered | P | ☐ |
-| E-05 | **A rename updates the results and marks nothing stale** | P | ☐ |
-| E-06 | Marking absent marks them out of date | P | ☐ |
-| E-07 | Marking present marks them out of date | P | ☐ |
-| E-08 | Adding a student marks them out of date | P | ☐ |
-| E-09 | Removing a student marks them out of date | P | ☐ |
-| E-10 | Changing a letter marks them out of date | P | ☐ |
-| E-11 | Changing a sex under a sex option marks them out of date | P | ☐ |
+| E-05 | **A rename updates the results and marks nothing stale** | P | ✓ stage 3 T9 |
+| E-06 | Marking absent marks them out of date | P | ✓ stage 3 T9 |
+| E-07 | Marking present marks them out of date | P | ✓ stage 3 T9 |
+| E-08 | Adding a student marks them out of date | P | ✓ stage 3 T9 |
+| E-09 | Removing a student marks them out of date | P | ✓ stage 3 T9 |
+| E-10 | Changing a letter marks them out of date | P | ✓ stage 3 T9 |
+| E-11 | Changing a sex under a sex option marks them out of date | P | ✓ stage 3 T9 |
 | E-12 | Changing group size or leftovers marks them out of date | P | ☐ |
 | E-13 | The badge **states which change did it** | P | ☐ |
 | E-14 | Old groups stay visible, dimmed | P | ☐ |

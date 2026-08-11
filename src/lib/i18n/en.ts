@@ -140,6 +140,17 @@ export const en = {
   // this in this file's own `errors` table).
   sexWhyUnset: (unset: number, grouped: number) =>
     `${unset} of the ${grouped} ${grouped === 1 ? 'student' : 'students'} being grouped ${unset === 1 ? 'has' : 'have'} no sex set. Open Student details and set M or F for them to use these.`,
+  // Design spec sections 6 and 13, the third message: for the moment
+  // un-ticking ONE student's absence is what closes the switches. Read by
+  // `sexWhyReturning` (src/lib/sexOptions.ts) -- see that function's own
+  // doc comment for why it takes two rosters rather than a control name,
+  // and why it defers to `sexWhyUnset` above whenever two students return
+  // together or the switches were already shut. `who` arrives already
+  // labelled (a typed name, or "Student 7"), never a raw field, so this
+  // string is the same shape in both locales and neither has to know the
+  // fallback rule.
+  sexWhyReturning: (who: string) =>
+    `${who} is back and has no sex set. These options need one for every student being grouped.`,
 
   leftoversLabel: 'If students are left over',
   leftoversSpread: 'Share them out evenly',

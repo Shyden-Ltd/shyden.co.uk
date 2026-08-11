@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { addSeveral, buildRoster } from './helpers';
 
 /**
  * The controls the review found reachable from the page and asserted by
@@ -1010,15 +1011,15 @@ test.describe("the tool's collapsible sections — Indonesian", () => {
 // attribute and all four locale keys unchanged, only its parent). Design
 // spec section 6.
 //
-// There is no roster until stage 3 -- #cg-students-body is still empty (see
-// ClassroomGroupsPage.astro's own comment) -- so this page is permanently in
-// ONE of the three branches design spec section 6 describes for the
-// switches' disabled state: "no list at all". The other two -- named-count
-// when some students being grouped have no sex set, and re-disabling when an
-// absence is unticked -- are built into `sexWhy` (src/lib/sexOptions.ts) and
-// proven directly against synthetic rosters in tests/unit/sexOptions.test.ts
-// (including G-04, that an absent unset student does not count), but are NOT
-// reachable from this page yet. Nothing below claims they are.
+// SUPERSEDED by Stage 3, Task 9. This block's own comment used to say the
+// page was permanently stuck in ONE of design spec section 6's three
+// branches -- "no list at all" -- because no control on the page could give
+// a student a sex. That is no longer true: Task 2 built the roster table,
+// Task 4 built absence, and Task 9 wires `sexWhy`/`sexWhyReturning`
+// (src/lib/sexOptions.ts) to the live roster. All THREE branches are now
+// reachable from the page, and the tests below drive each of them through
+// real controls rather than citing the unit tests that prove them against
+// synthetic rosters.
 test.describe('Grouping options', () => {
   test('holds both sex switches and the leftovers choice', async ({ page }) => {
     await page.goto('/classroom-groups');
@@ -1131,44 +1132,167 @@ test.describe('Grouping options', () => {
     },
   );
 
-  // The brief's own Step 4: the spillover message cannot be driven through
-  // the page until stage 3 supplies a roster fixture (there is no control
-  // anywhere on this page yet that can give a student a sex). `fixme`, not
-  // `skip`: a plain skip reports nothing and nobody would notice if this
-  // silently kept not applying forever. `fixme` is the honest middle
-  // ground -- it names the gap in every run's summary, permanently, until
-  // someone deletes it.
+  // Stage 2's `test.fixme('a separate-mode spillover warning renders,
+  // naming who')` stood here. DELETED, whole, per this task's own plan step
+  // -- not "un-fixme'd": its body was comments only, so stripping the
+  // `.fixme` would have produced a real `test()` with zero assertions,
+  // which always passes under a name claiming coverage it does not have.
+  // Its real replacement is `names who landed in a group of the other sex`
+  // below, which drives the message through the page's own controls.
   //
-  // Correcting the brief's own stated reason: `test.fixme(title, body)` does
-  // NOT run the body and does not fail the moment it starts passing --
-  // Playwright's own docs are explicit that a declared fixme test is simply
-  // not run at all (same execution as `.skip`, a different label for
-  // humans reading the report). It will not turn red by itself the day
-  // stage 3 lands. What DOES make this visible is the traceability matrix
-  // row this task ticks as "owed" (G-11, docs/superpowers/plans/
-  // 2026-08-06-classroom-groups-v2-test-traceability.md) -- that is one
-  // mechanism, not this annotation. A second, code-level one now exists too
-  // (F-2, review): tests/unit/classroom-groups-script.test.ts pins
-  // `sexMode: 'off'` as the literal `classroom-groups.ts` feeds to
-  // `buildGroups` at submit, and goes red -- automatically, in every `npm
-  // run test:unit`, no traceability doc required -- the moment stage 3
-  // makes that literal live, which is exactly when this fixme becomes
-  // actionable. `fixme` is still the right marker over `skip`: it is
-  // unambiguous, in the test file itself, that this is known-incomplete
-  // rather than not-applicable. Its body stays comments-only rather than a
-  // stub with assertions that would always pass: a fixme body that cannot
-  // yet exercise anything real is a debt marker, but a REAL test with zero
-  // assertions is worse than no test at all -- it always passes, under a
-  // name claiming coverage that does not exist (see that unit test's own
-  // doc comment for the fuller reasoning).
-  test.fixme('a separate-mode spillover warning renders, naming who', async ({
+  // The stage-2 comment justifying it also described
+  // tests/unit/classroom-groups-script.test.ts as the code-level forcing
+  // function that would redden the day `sexMode` stopped being a hard-coded
+  // `'off'`. That day is today. It did redden, on purpose, and is deleted
+  // too -- its job is done, and a test pinning a literal the product no
+  // longer contains is a test pinning the bug as the contract.
+
+  // G-03. Both switches share ONE condition, so both are asserted every
+  // time: a fix that enabled only the one the test happened to name would
+  // otherwise pass.
+  test('enabled once every student being grouped has a sex', async ({
     page,
   }) => {
-    // Stage 3 fixture: a roster with an odd mix of M/F, sexMode
-    // 'separate', driven through #cg-grouping's (by then real) sex
-    // switch -- assert the rendered warning names the spilled students,
-    // per WARNING_CODES.sexSpillover / SEX_SPILLOVER. G-11 in the
-    // traceability matrix.
+    await buildRoster(page, [
+      ['M', 'Ana'],
+      ['F', 'Budi'],
+    ]);
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeEnabled();
+    await expect(page.getByLabel('Keep boys and girls separate')).toBeEnabled();
+    // The reason paragraph is not merely blank -- it is gone. A visible
+    // empty `.why` box under two enabled switches is its own small defect.
+    await expect(page.locator('#cg-sex-why')).toBeHidden();
+  });
+
+  // G-04 through the page. The unit tests already prove `sexWhy` excludes
+  // absent students; this proves the page hands it a roster where `absent`
+  // is actually set, which is the half a pure-function test cannot reach.
+  test('an absent student with no sex does not disable them', async ({
+    page,
+  }) => {
+    await buildRoster(page, [['M', 'Ana'], ['F', 'Budi'], [null]]);
+    await page.locator('.cg-student').nth(2).getByLabel('Absent').check();
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeEnabled();
+    await expect(page.getByLabel('Keep boys and girls separate')).toBeEnabled();
+  });
+
+  // G-07, the third message, and the whole reason `sexWhyReturning` exists.
+  // Asserted as a WHOLE rendered sentence (CLAUDE.md), not a substring: the
+  // count message would also contain the word "sex".
+  test('unticking that absence disables them again, naming the student', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M', 'Ana'],
+      ['F', 'Budi'],
+      [null, 'Dewi'],
+    ]);
+    const dewi = page.locator('.cg-student').nth(2);
+    await dewi.getByLabel('Absent').check();
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeEnabled();
+
+    await dewi.getByLabel('Absent').uncheck();
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeDisabled();
+    await expect(
+      page.getByLabel('Keep boys and girls separate'),
+    ).toBeDisabled();
+    await expect(
+      page.getByText(
+        'Dewi is back and has no sex set. These options need one for every ' +
+          'student being grouped.',
+      ),
+    ).toBeVisible();
+  });
+
+  // The other half of the same rule: a roster that was ALREADY shut gets
+  // the count, not a name. Without this, an implementation that always
+  // named somebody would pass the test above.
+  test('a roster that was already shut gets the count, not a name', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M', 'Ana'],
+      [null, 'Cahya'],
+      [null, 'Dewi'],
+    ]);
+    await page.locator('.cg-student').nth(2).getByLabel('Absent').check();
+    await page.locator('#cg-grouping-toggle').click();
+    // Cahya alone still holds them shut, so this was never open.
+    await expect(page.getByLabel('Mix boys and girls evenly')).toBeDisabled();
+
+    await page.locator('.cg-student').nth(2).getByLabel('Absent').uncheck();
+    await expect(
+      page.getByText(
+        '2 of the 3 students being grouped have no sex set. Open Student ' +
+          'details and set M or F for them to use these.',
+      ),
+    ).toBeVisible();
+    await expect(page.getByText(/Dewi is back/)).toHaveCount(0);
+  });
+
+  // G-11, and stage 2's fixme discharged. Six boys and two girls, split
+  // four to a group: the two girls cannot make a group of their own, so
+  // they join one of boys and the engine says so.
+  //
+  // The plan's own snippet asserted 'Gita and Hadi are in a group of boys.'
+  // -- a sentence that exists nowhere in this codebase. The real copy is
+  // en.ts's `warnings.SEX_SPILLOVER`, asserted whole below. Its own
+  // resolver turns student NUMBERS into names, so this also proves the
+  // warning channel resolves them the same way the error channel does.
+  test('separate mode names who landed in a group of the other sex', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['F', 'Gita'],
+      ['F', 'Sari'],
+    ]);
+    await page.locator('#cg-grouping-toggle').click();
+    await page.getByLabel('Keep boys and girls separate').check();
+    await page.getByLabel('Students in each group').fill('4');
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(
+      page.getByText(
+        'Gita, Sari have joined a group of boys because there were not ' +
+          'enough girls to make a group of their own. That is simply how ' +
+          'the numbers divided, not a mistake to fix.',
+      ),
+    ).toBeVisible();
+  });
+
+  // The warning must not outlive the shuffle that produced it. Turning
+  // separate mode back off and reshuffling leaves nothing to warn about,
+  // and a stale warning under fresh groups is a lie about them.
+  test('the warning clears on a shuffle that has nothing to warn about', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['F', 'Gita'],
+      ['F', 'Sari'],
+    ]);
+    await page.locator('#cg-grouping-toggle').click();
+    await page.getByLabel('Keep boys and girls separate').check();
+    await page.getByLabel('Students in each group').fill('4');
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.getByText(/have joined a group of boys/)).toBeVisible();
+
+    await page.getByLabel('Keep boys and girls separate').uncheck();
+    await page.getByRole('button', { name: 'Shuffle again' }).first().click();
+    await expect(page.getByText(/have joined a group of boys/)).toHaveCount(0);
   });
 });
 
@@ -1233,6 +1357,78 @@ test.describe('Grouping options — Indonesian', () => {
     await expect(
       body.getByText(
         'Tambahkan siswa Anda di bagian Detail siswa dan atur L atau P untuk masing-masing agar bisa memakai opsi ini.',
+      ),
+    ).toBeVisible();
+  });
+});
+
+// Stage 3, Task 9. The three sex-switch branches, driven through the page in
+// Indonesian too -- CLAUDE.md's "assert whole rendered sentences, in both
+// locales", and the more so here because the Indonesian copy for
+// `sexWhyReturning` is a translation this stage wrote rather than approved
+// spec copy. The roster's own controls carry Indonesian accessible names
+// (`rosterColSex`/`rosterColAbsent` in id.ts), so this cannot reuse the
+// English helpers' label regexes for the parts that differ.
+test.describe('Grouping options, live from the roster — Indonesian', () => {
+  const openRosterId = async (page: import('@playwright/test').Page) => {
+    await page.goto('/id/classroom-groups');
+    await page.locator('#cg-students-toggle').click();
+    await page.getByRole('button', { name: 'Tambah siswa' }).click();
+  };
+
+  test('enabled once every student being grouped has a sex', async ({
+    page,
+  }) => {
+    await openRosterId(page);
+    await addSeveral(page, 1);
+    await page
+      .locator('.cg-student')
+      .nth(0)
+      .getByLabel('Jenis kelamin')
+      .selectOption('M');
+    await page
+      .locator('.cg-student')
+      .nth(1)
+      .getByLabel('Jenis kelamin')
+      .selectOption('F');
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeEnabled();
+    await expect(page.locator('#cg-sex-why')).toBeHidden();
+  });
+
+  test('unticking an absence disables them again, naming the student', async ({
+    page,
+  }) => {
+    await openRosterId(page);
+    await addSeveral(page, 2);
+    await page
+      .locator('.cg-student')
+      .nth(0)
+      .getByLabel('Jenis kelamin')
+      .selectOption('M');
+    await page
+      .locator('.cg-student')
+      .nth(1)
+      .getByLabel('Jenis kelamin')
+      .selectOption('F');
+    const dewi = page.locator('.cg-student').nth(2);
+    await dewi.getByLabel('Nama').fill('Dewi');
+    await dewi.getByLabel('Tidak hadir').check();
+    await page.locator('#cg-grouping-toggle').click();
+    await expect(
+      page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeEnabled();
+
+    await dewi.getByLabel('Tidak hadir').uncheck();
+    await expect(
+      page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeDisabled();
+    await expect(
+      page.getByText(
+        'Dewi sudah hadir kembali dan belum memiliki jenis kelamin. Opsi ini ' +
+          'memerlukannya untuk setiap siswa yang dikelompokkan.',
       ),
     ).toBeVisible();
   });

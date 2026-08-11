@@ -2,6 +2,7 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { readdirSync } from 'node:fs';
 import { join, relative, sep, basename } from 'node:path';
+import { openRoster, addSeveral, buildRoster } from './helpers';
 
 /**
  * Every assertion is web-first (auto-retrying). No fixed waits: the tool deals
@@ -965,6 +966,166 @@ test.describe('out-of-date groups', () => {
     await page.getByLabel('Students in each group').fill('3');
     await page.getByLabel('Students in each group').fill('4');
     await expect(page.getByText('out of date')).toHaveCount(0);
+  });
+
+  // Stage 3, Task 9 (E-05…E-11). Every one of the tests above changes a
+  // control in the FORM. These four change the ROSTER, which reaches
+  // `Snapshot.roster` by a different path -- `serialiseForCompare`
+  // (src/lib/roster.ts) rather than `#cg-count` -- and so is only proven by
+  // driving the roster's own controls.
+  //
+  // Parameterised over the four edits deliberately: each is a separate call
+  // site into `setRoster`, and a wiring that forgot one of them would still
+  // pass a single hand-picked case. `absent` in particular is the one a
+  // reader is most likely to think does not count -- it changes nobody's
+  // membership of the list, only who is placed today, which is exactly why
+  // it changes who ends up with whom.
+  for (const [what, edit] of [
+    [
+      'marking a student absent',
+      (page: Page) =>
+        page.locator('.cg-student').first().getByLabel('Absent').check(),
+    ],
+    [
+      'adding a student',
+      (page: Page) => page.getByRole('button', { name: 'Add student' }).click(),
+    ],
+    [
+      'removing a student',
+      (page: Page) =>
+        page
+          .locator('.cg-student')
+          .first()
+          .getByRole('button', { name: 'Remove' })
+          .click(),
+    ],
+    [
+      'changing a letter',
+      (page: Page) =>
+        page
+          .locator('.cg-student')
+          .first()
+          .getByLabel('Together')
+          .selectOption('A'),
+    ],
+  ] as const) {
+    test(`${what} marks the groups out of date`, async ({ page }) => {
+      await openRoster(page);
+      await addSeveral(page, 11);
+      await page.getByRole('button', { name: 'Make Groups' }).click();
+      await expect(page.locator('#cg-results .group').first()).toBeVisible();
+      await edit(page);
+      await expect(
+        page.getByText(
+          'These groups are out of date — the class list changed.',
+        ),
+      ).toBeVisible();
+    });
+  }
+
+  // E-07, the MIRROR of "marking a student absent" above, and not a
+  // duplicate of it: a wiring that keyed on absence becoming TRUE rather
+  // than on the roster changing at all would pass that one and fail this.
+  // Who is in today's shuffle changed in both directions.
+  test('marking a student present again marks the groups out of date', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, 11);
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+    await page.locator('.cg-student').first().getByLabel('Absent').uncheck();
+    await expect(
+      page.getByText('These groups are out of date — the class list changed.'),
+    ).toBeVisible();
+  });
+
+  // E-11. A sex is the one roster field that changes nothing about who can
+  // go with whom UNTIL a sex option is on -- but `serialiseForCompare`
+  // folds it in unconditionally, so this is stale either way, which is the
+  // safe direction. Set up WITH separate mode on, because that is the case
+  // the row names and the only one where a reader would expect it to
+  // matter.
+  test('changing a sex under a sex option marks the groups out of date', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['F'],
+      ['F'],
+      ['F'],
+      ['F'],
+    ]);
+    await page.locator('#cg-grouping-toggle').click();
+    await page.getByLabel('Keep boys and girls separate').check();
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+    await page
+      .locator('.cg-student')
+      .first()
+      .getByLabel('Sex')
+      .selectOption('F');
+    await expect(
+      page.getByText('These groups are out of date — the class list changed.'),
+    ).toBeVisible();
+  });
+
+  // The sex SWITCH itself, as opposed to a student's sex: `readSexMode` was
+  // a hard-coded `'off'` until Stage 3 Task 9, so `staleReason`'s own
+  // `staleSexMode` branch (src/lib/staleness.ts) has existed since stage 2
+  // with no way to be reached from the page and no end-to-end test. It is
+  // reachable now, and this is that test -- a different SENTENCE from every
+  // other case in this block, so a branch that fell through to
+  // `staleRoster` would fail it.
+  test('turning a sex option on marks the groups out of date, naming the change', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M'],
+      ['M'],
+      ['M'],
+      ['M'],
+      ['F'],
+      ['F'],
+      ['F'],
+      ['F'],
+    ]);
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+    await page.locator('#cg-grouping-toggle').click();
+    await page.getByLabel('Keep boys and girls separate').check();
+    // The literal sentence, not `en.staleSexMode`: importing the locale
+    // would make this pass against whatever the table happens to say,
+    // including a wrong or untranslated value (CLAUDE.md -- "locale files
+    // are a review surface").
+    await expect(
+      page.getByText(
+        'These groups are out of date — how boys and girls are grouped changed.',
+      ),
+    ).toBeVisible();
+  });
+
+  // The counterweight, and the reason `serialiseForCompare` excludes the
+  // name at all (see its own doc comment): a teacher typing a name onto a
+  // student who was already in the shuffle has not changed who ends up with
+  // whom. Asserted in BOTH directions -- no notice, and the new name
+  // actually reaching the groups on screen -- because a mutant that simply
+  // stopped rendering the roster would satisfy the first half alone.
+  test('a rename does not mark the groups out of date', async ({ page }) => {
+    await openRoster(page);
+    await addSeveral(page, 11);
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+    await page.locator('.cg-student').first().getByLabel('Name').fill('Anna');
+    await expect(page.getByText('out of date')).toHaveCount(0);
+    // `#cg-results`, NOT `#cg-groups` -- that id belongs to the "number of
+    // groups" number input. The same correction this suite has already had
+    // to make three times over (see tests/e2e/helpers.ts's own header).
+    await expect(page.locator('#cg-results')).toContainText('Anna');
   });
 
   // None of the six tests above ever has TWO live changes at once -- the
