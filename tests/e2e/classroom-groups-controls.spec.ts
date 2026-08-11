@@ -32,63 +32,61 @@ const makeGroups = async (
 };
 
 test.describe('the controls that had no tests', () => {
-  test('themed groups are named from the chosen theme, in each language', async ({
-    page,
-  }) => {
+  // Stage 3, Task 8 (design spec section 5) removed the theme picker and
+  // the naming radio that revealed it -- three tests used to live here
+  // exercising them directly ("themed groups are named from the chosen
+  // theme, in each language", "the theme picker offers every theme,
+  // translated", "numbering past the end of a theme falls back rather than
+  // repeating"), deleted in the same commit that removes the feature
+  // (design spec section 13's own "tests for a removed feature are deleted
+  // in the same stage that removes it"). These two replace them: proving
+  // the removal itself, and that the numbered default it leaves behind
+  // still works.
+  //
+  // task-8-brief.md's own given snippet for both has three real bugs, each
+  // the SAME recurring shape this stage's own progress ledger already
+  // records more than once (task-6/7's reports: a brief-given label or
+  // selector that does not exist on the real page) -- found by RUNNING
+  // this against the page, not by re-reading the brief harder:
+  //   - `page.getByLabel('Animals')` and
+  //     `page.getByRole('radio', { name: /Numbered|Themed/ })` both return
+  //     ZERO matches on the UNMODIFIED, pre-Task-8 page too -- "Animals" was
+  //     never a <label>, only <option> text inside one; the two naming
+  //     radios' own accessible names are "Group 1, 2, 3…" / "Use a theme",
+  //     neither of which contains the word "Numbered" or "Themed" anywhere.
+  //     Both assertions would have passed whether or not the removal ever
+  //     happened -- decoration, not proof. Replaced with direct, structural
+  //     checks: the naming radio GROUP is gone (`input[name="naming"]`) and
+  //     its own legend text no longer renders anywhere on the page.
+  //   - `page.getByLabel('How many students?')` -- the real label is
+  //     "Number of students" (`studentsLabel`, en.ts). `getByRole('button',
+  //     { name: 'Make groups' })` -- the real button text is "Make Groups",
+  //     capital G (`makeGroups`, en.ts); Playwright's own case-sensitive
+  //     string matching (this file's own `makeGroups` helper reads the
+  //     control by id already, sidestepping both).
+  //   - count=9/size=4 (the brief's own numbers) produces TWO groups, not
+  //     three -- proven by an already-passing sibling test in this suite's
+  //     own family (classroom-groups.spec.ts's "a blank class name blocks
+  //     nothing": `fill(page, { count: '9', size: '4' })` then
+  //     `expect(page.locator('#cg-results .group')).toHaveCount(2)`).
+  //     Replaced with count=12/size=4 -- a clean division (three groups of
+  //     four, no leftover-redistribution ambiguity) that genuinely yields
+  //     three sequentially-numbered groups.
+  test('the theme select and the naming radio are gone', async ({ page }) => {
     await page.goto('/classroom-groups');
-    await page.check('input[name="naming"][value="themed"]');
-    await page.selectOption('#cg-theme', 'animals');
-    await makeGroups(page, '8', '4');
-
-    await expect(page.locator('#cg-results .group h3').first()).toHaveText(
-      'Tigers',
-    );
-
-    await page.goto('/id/classroom-groups');
-    await page.check('input[name="naming"][value="themed"]');
-    await page.selectOption('#cg-theme', 'animals');
-    await makeGroups(page, '8', '4');
-    await expect(page.locator('#cg-results .group h3').first()).toHaveText(
-      'Harimau',
-    );
+    await expect(page.locator('#cg-theme')).toHaveCount(0);
+    await expect(page.locator('input[name="naming"]')).toHaveCount(0);
+    await expect(page.getByText('Name the groups')).toHaveCount(0);
   });
 
-  test('the theme picker offers every theme, translated', async ({ page }) => {
-    await page.goto('/id/classroom-groups');
-    await page.check('input[name="naming"][value="themed"]');
-    // Not a count: an option whose label went missing renders as empty and a
-    // count would not notice.
-    await expect(page.locator('#cg-theme option')).toHaveText([
-      'Hewan',
-      'Warna',
-      'Planet',
+  test('groups are numbered, always', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await makeGroups(page, '12', '4');
+    await expect(page.locator('#cg-results .group h3')).toHaveText([
+      'Group 1',
+      'Group 2',
+      'Group 3',
     ]);
-  });
-
-  test('numbering past the end of a theme falls back rather than repeating', async ({
-    page,
-  }) => {
-    // Eight animal names, ten groups. Two identical group names would leave
-    // the teacher unable to tell two groups apart.
-    await page.goto('/classroom-groups');
-    await page.check('input[name="naming"][value="themed"]');
-    await page.selectOption('#cg-theme', 'animals');
-    await page.check('input[name="mode"][value="groupCount"]');
-    await page.fill('#cg-count', '30');
-    await page.fill('#cg-groups', '10');
-    // Stage 2, Task 7: #cg-speed sits inside #cg-sound-body, which starts
-    // collapsed. This test calls selectOption directly rather than through
-    // the makeGroups() helper (which already opens the section), so it needs
-    // its own click -- missed in the first pass of the Task 7 sweep, since
-    // every OTHER direct #cg-speed call site in this file was updated.
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
-    await page.click('#cg-go');
-
-    const names = await page.locator('#cg-results .group h3').allTextContents();
-    expect(names).toHaveLength(10);
-    expect(new Set(names).size).toBe(10);
-    expect(names).toContain('Group 9');
   });
 
   test('the leftovers choice actually changes the shape', async ({ page }) => {
@@ -247,7 +245,7 @@ test.describe('the results are styled, not just present', () => {
    * circles, and the deal animation never animated. Found on a real phone,
    * where one child's face covered the screen.
    */
-  test('an avatar is a small coloured face, not a full-width black circle', async ({
+  test('an avatar is a small face, not a full-width black circle', async ({
     page,
   }) => {
     await page.goto('/classroom-groups');
@@ -259,13 +257,67 @@ test.describe('the results are styled, not just present', () => {
     expect(box!.width).toBeGreaterThan(20);
     expect(box!.width).toBeLessThan(60);
     expect(Math.abs(box!.width - box!.height)).toBeLessThan(2);
+  });
 
-    // Coloured from --hue. Unstyled SVG paths default to black.
-    const fill = await page
-      .locator('#cg-results .a-bg')
-      .first()
-      .evaluate((el) => getComputedStyle(el).fill);
-    expect(fill).not.toBe('rgb(0, 0, 0)');
+  // Stage 3, Task 8 (design spec section 5) replaced the single grey/hued
+  // silhouette this describe block's own header comment was written against
+  // with three sex-based faces, hand-authored once each as a `<symbol>` and
+  // referenced by `<use>` (src/lib/avatars.ts's own doc comment has the
+  // full "one definition however many appear" reasoning). That changes what
+  // "coloured, not black" actually has to prove, and where:
+  //
+  //   - Colour used to arrive as a `--hue` CSS custom property this page's
+  //     own scoped styles set per student; now it is baked directly into
+  //     each shape's own `fill="…"` attribute inside the `<symbol>`
+  //     (src/lib/avatars.ts), so there is no computed style left to read —
+  //     `getComputedStyle` is not this fill's source of truth any more,
+  //     the attribute is.
+  //   - A `<use>`'s referenced content is cloned into a shadow tree that
+  //     `document.querySelectorAll`/Playwright locators cannot see inside —
+  //     `#cg-results .a-bg` (the old locator) can never resolve to
+  //     anything once colour lives inside a `<symbol>` reached only by
+  //     `<use>`, no matter how the assertion itself is written. Reading the
+  //     DEFINITION's own attribute instead — a real, light-DOM element,
+  //     just never painted on its own — sidesteps that entirely rather
+  //     than gambling on how any given engine resolves computed style for
+  //     content that is never directly rendered.
+  test('each rendered avatar references one of the three defined, coloured faces', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await makeGroups(page, '8', '4');
+
+    // The sprite: exactly three <symbol>s, each a real fill attribute, none
+    // of them black (an unstyled SVG shape with no fill at all defaults to
+    // black -- the exact failure mode the old Astro-scoping bug produced,
+    // see this describe block's own header comment).
+    const defs = await page
+      .locator('.cg-avatar-defs symbol')
+      .evaluateAll((symbols) =>
+        symbols.map((s) => ({
+          id: s.id,
+          fill: s.querySelector('.a-bg')?.getAttribute('fill') ?? null,
+        })),
+      );
+    expect(defs.map((d) => d.id).sort()).toEqual([
+      'avatar-f',
+      'avatar-m',
+      'avatar-n',
+    ]);
+    for (const { fill } of defs) {
+      expect(fill).not.toBeNull();
+      expect(fill).not.toBe('#000');
+      expect(fill).toMatch(/^hsl\(/);
+    }
+
+    // Every rendered instance actually references one of those three --
+    // proving the wiring end to end, not just that the definitions exist.
+    const hrefs = await page
+      .locator('#cg-results .avatar use')
+      .evaluateAll((uses) => uses.map((u) => u.getAttribute('href')));
+    expect(hrefs).toHaveLength(8);
+    const definedIds = new Set(defs.map((d) => `#${d.id}`));
+    for (const href of hrefs) expect(definedIds.has(href ?? '')).toBe(true);
   });
 
   test('a student row lays out beside its avatar', async ({ page }) => {
@@ -398,10 +450,13 @@ test.describe('classroom groups — mobile-first layout', () => {
       await page.setViewportSize({ width: 375, height: 900 });
       await page.goto('/classroom-groups');
 
-      // Measured in BOTH states of the two conditional fieldsets, because
-      // "students per group" and "how many groups" are never on screen at the
-      // same time — and a control that is not displayed measures 0, which is
-      // not the same thing as too small.
+      // Measured in BOTH states of the mode field, because "students per
+      // group" and "how many groups" are never on screen at the same time —
+      // and a control that is not displayed measures 0, which is not the
+      // same thing as too small. Used to also toggle the naming radio's own
+      // conditional theme `<select>` the same way; Stage 3, Task 8 removed
+      // that field along with the radio that revealed it (design spec
+      // section 5), leaving one conditional field, not two.
       //
       // Stage 2, Task 5 added `#cg-form input[type="text"]` to this selector
       // for the new #cg-class field. Honestly: this could not go red before
@@ -447,7 +502,6 @@ test.describe('classroom groups — mobile-first layout', () => {
 
       const small = [...(await measureVisible())];
       await page.check('input[name="mode"][value="groupCount"]');
-      await page.check('input[name="naming"][value="themed"]');
       small.push(...(await measureVisible()));
 
       // And prove the measurement actually saw the fields, rather than

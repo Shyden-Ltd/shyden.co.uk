@@ -1,21 +1,29 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getStrings, THEME_KEYS, type Locale } from '../../lib/i18n';
+import { getStrings, type Locale } from '../../lib/i18n';
 // The engine owns the ceiling. Hard-coding a second number here is how the
 // field comes to advertise one limit while the tool enforces another.
 import { MAX_STUDENTS, type Student } from '../../lib/grouping';
 import { sectionState, type ToolState } from '../../lib/sections';
 import { sexWhy } from '../../lib/sexOptions';
+import { avatarSvg, AVATAR_SEXES } from '../../lib/avatars';
 
 interface Props {
   lang: Locale;
 }
 const { lang } = Astro.props;
 const t = getStrings(lang);
-// The declared list, not Object.keys of one of the two tables — enumerating
-// `themes` while rendering from `themeNames` is how one gains a key the other
-// lacks and the option ships with no label.
-const themes = THEME_KEYS;
+
+// Stage 3, Task 8 (design spec section 5). The three avatar `<symbol>`s,
+// built ONCE, here, at build time -- from the SAME `AVATAR_SEXES` list
+// `avatars.ts`'s own unit tests check against, not a hand-written
+// `['M', 'F', null]` copied a second time into this file (the "declared
+// list can lie" gap `themes`/`THEME_KEYS` risked above until this task
+// removed both). `set:html` below injects this raw, unescaped -- safe
+// because `avatarSvg` never interpolates anything a teacher typed or
+// picked (see that module's own "SECURITY" note); this is no different
+// from writing the same markup by hand directly into this template.
+const avatarDefs = AVATAR_SEXES.map(avatarSvg).join('');
 
 // The three built collapsible sections' headers (Student details, Grouping
 // options, Import / export — Sound & animation carries no state string at
@@ -330,33 +338,17 @@ const sexWhyText = sexWhy(roster, t);
         </div>
       </div>
 
-      <fieldset>
-        <legend>{t.namingLabel}</legend>
-        <div class="field">
-          <div class="radios" role="radiogroup" aria-label={t.namingLabel}>
-            <label
-              ><input type="radio" name="naming" value="numbered" checked />{
-                t.namingNumbered
-              }</label
-            >
-            <label
-              ><input type="radio" name="naming" value="themed" />{
-                t.namingThemed
-              }</label
-            >
-          </div>
-        </div>
-        <div class="field" data-naming="themed" hidden>
-          <label for="cg-theme">{t.themeLabel}</label>
-          <select id="cg-theme">
-            {
-              themes.map((key) => (
-                <option value={key}>{t.themeNames[key]}</option>
-              ))
-            }
-          </select>
-        </div>
-      </fieldset>
+      <!-- The naming radio ("Group 1, 2, 3…" / "Use a theme") and the theme
+           `<select>` it revealed used to sit here -- the last always-visible
+           bordered box below the top row (design spec section 2's own
+           "still owed" note). Stage 3, Task 8 removes both: avatars replace
+           the themes (design spec section 5), and with themes gone the
+           naming radio is a choice with one option, so it goes too. Groups
+           are always numbered now (`groupName`, src/lib/i18n/index.ts).
+           Recovers real vertical space, re-measured in
+           tests/e2e/classroom-groups.spec.ts's own "the no-scroll rule,
+           measured" block -- it helps the page's no-scroll rule (design
+           spec section 2) without closing it. -->
 
       <!-- The tool's four collapsible sections (design spec section 3):
            Student details, Grouping options, Import / export and Sound &
@@ -652,6 +644,36 @@ const sexWhyText = sexWhy(roster, t);
       <noscript><p class="error" id="cg-noscript">{t.needsJs}</p></noscript>
     </form>
 
+    <!-- Stage 3, Task 8 (design spec section 5). The three avatar faces,
+         defined ONCE, here, from `avatarDefs` above -- a sibling of
+         `#cg-results`, deliberately NOT a descendant of it: `#cg-results`
+         ships `hidden` until the first shuffle, and this sprite has to
+         resolve for a `<use>` built inside `#cg-tables` (classroom-
+         groups.ts's own `render()`) the FIRST time a teacher presses
+         "Make groups" -- before `#cg-results` is ever unhidden. Sitting
+         outside it removes any question about whether an ancestor's own
+         `hidden` could affect a same-document `<use>` reference elsewhere.
+
+         Visually hidden (`.cg-avatar-defs`, the scoped styles below) rather
+         than `display: none`: a `<symbol>` is never rendered on its own
+         regardless (the SVG spec's own UA stylesheet already sets that),
+         so this only has to keep the wrapper out of layout, not fight the
+         browser to hide content that was already inert. `aria-hidden`
+         because nothing inside is ever meant to be read directly -- each
+         rendered avatar INSTANCE (classroom-groups.ts's own `avatarHtml`)
+         is its own `aria-hidden` `<svg>` too, for the same reason
+         `avatarSvg`'s own doc comment (src/lib/avatars.ts) gives: the
+         adjacent student name already carries the identity.
+
+         `set:html` -- see `avatarDefs`'s own comment above for why this is
+         safe: `avatarSvg` never interpolates anything a teacher typed. -->
+    <svg
+      class="cg-avatar-defs"
+      aria-hidden="true"
+      focusable="false"
+      set:html={avatarDefs}
+    />
+
     <p class="error" id="cg-error" role="alert" hidden></p>
 
     <!-- The results are written here as real text regardless of animation
@@ -766,15 +788,14 @@ const sexWhyText = sexWhy(roster, t);
     flex: 0 0 auto;
     border-radius: 50%;
   }
-  /* Per-student colour arrives as --hue, so the SVG markup itself stays a
-     constant with nothing interpolated into it. */
-  #cg-results .a-bg {
-    fill: hsl(var(--hue) 62% 88%);
-  }
-  #cg-results .a-head,
-  #cg-results .a-body {
-    fill: hsl(var(--hue) 45% 38%);
-  }
+  /* Stage 3, Task 8: no fill rule needed here any more. Colour used to
+     arrive as a --hue custom property this block set per student
+     (src/lib/grouping.ts's own Student.number, mod a fixed hue table); now
+     it is one of three fixed per-SEX palettes baked directly into the
+     `fill="…"` presentation attributes `avatarSvg` writes on each shape
+     (src/lib/avatars.ts, design spec section 5's own table) -- a real
+     `<use>` instance paints those attributes as authored, with nothing
+     here left to override them. */
   #cg-results .who {
     font-weight: 600;
     overflow-wrap: anywhere;
@@ -1535,16 +1556,10 @@ const sexWhyText = sexWhy(roster, t);
     gap: 0.75rem;
     margin: 1rem 0;
   }
-  fieldset {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.75rem;
-    margin: 0;
-  }
-  legend {
-    font-weight: 700;
-    padding: 0 0.35rem;
-  }
+  /* Stage 3, Task 8 removed the page's last `<fieldset>` (the naming radio
+     and theme picker) -- `fieldset`/`legend` rules retired with it rather
+     than left to style an element that no longer exists anywhere on this
+     page. */
   .field {
     margin-bottom: 0.5rem;
   }
@@ -1773,6 +1788,21 @@ const sexWhyText = sexWhy(roster, t);
   .actions button:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+  /* Stage 3, Task 8. The three avatar `<symbol>`s (design spec section 5) --
+     never painted on their own (a `<symbol>` is `display: none` by the SVG
+     spec's own UA stylesheet regardless of anything here), so this only
+     has to take the wrapper itself out of layout. `width/height: 0` plus
+     `overflow: hidden` rather than `display: none`: the markup's own
+     comment on this element explains why nothing here needs the heavier
+     visually-hidden clip technique `#cg-roster thead` uses elsewhere on
+     this page (that one keeps its content in the accessibility tree on
+     purpose; this one is `aria-hidden` and never meant to be read at all). */
+  .cg-avatar-defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
   }
   .error {
     max-width: var(--measure);

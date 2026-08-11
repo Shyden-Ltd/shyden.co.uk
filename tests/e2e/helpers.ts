@@ -81,7 +81,19 @@ export const rosterOf = async (page: Page, n: number) =>
 
 export const withGroups = async (page: Page, n = 12) => {
   await rosterOf(page, n);
-  await page.getByRole('button', { name: /Make groups|Buat kelompok/ }).click();
+  // "Make Groups" / "Buat Kelompok" -- capital-for-capital (en.ts's own
+  // `makeGroups`/id.ts's own `makeGroups`). A case-SENSITIVE regex name
+  // (no `i` flag) is matched against the accessible name exactly as
+  // Playwright computes it -- `escapeRegexForSelector` in Playwright's own
+  // source passes a regex through unchanged, flags and all -- so the
+  // lowercase `groups`/`kelompok` this line used to carry could never match
+  // either button. Found by tracing that matching path, not assumed;
+  // confirmed directly against a real page before this fix. This helper had
+  // no call site anywhere in the suite yet (grep confirmed it: `withGroups(`
+  // -- zero hits outside its own definition), so the bug was latent, never
+  // exercised, and would have reddened the FIRST test to use it for a
+  // reason that had nothing to do with what that test was checking.
+  await page.getByRole('button', { name: /Make Groups|Buat Kelompok/ }).click();
   await expect(page.locator('#cg-results .group').first()).toBeVisible();
 };
 

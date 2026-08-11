@@ -98,12 +98,6 @@ export const id: Strings = {
   leftoversHelp:
     'Dengan cara apa pun, tidak ada kelompok yang lebih kecil dari ukuran yang Anda pilih.',
 
-  namingLabel: 'Beri nama kelompok',
-  namingNumbered: 'Kelompok 1, 2, 3…',
-  namingThemed: 'Pakai tema',
-  themeLabel: 'Tema',
-  themeNames: { animals: 'Hewan', colours: 'Warna', planets: 'Planet' },
-
   soundOn: 'Suara aktif',
   soundOff: 'Suara mati',
   speedLabel: 'Kecepatan',
@@ -386,38 +380,5 @@ export const id: Strings = {
     // sehingga tidak ada satu jenis kelamin yang tepat untuk disebutkan.
     SEX_BOTH_TOO_SMALL: (names: string[]) =>
       `${names.join(', ')} digabungkan menjadi satu kelompok karena jumlah laki-laki maupun perempuan tidak cukup untuk membentuk kelompok sendiri-sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.`,
-  },
-
-  themes: {
-    animals: [
-      'Harimau',
-      'Elang',
-      'Lumba-lumba',
-      'Rubah',
-      'Panda',
-      'Rajawali',
-      'Berang-berang',
-      'Singa',
-    ],
-    colours: [
-      'Merah',
-      'Biru',
-      'Hijau',
-      'Kuning',
-      'Ungu',
-      'Jingga',
-      'Tosca',
-      'Merah Muda',
-    ],
-    planets: [
-      'Merkurius',
-      'Venus',
-      'Bumi',
-      'Mars',
-      'Yupiter',
-      'Saturnus',
-      'Uranus',
-      'Neptunus',
-    ],
   },
 };

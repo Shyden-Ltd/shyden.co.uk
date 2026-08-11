@@ -11,8 +11,6 @@
  * i18n.test.ts walks both locales for missing keys, blank values and
  * untranslated copy, at every depth. Treat this file as a review surface.
  */
-export const THEME_KEYS = ['animals', 'colours', 'planets'] as const;
-export type ThemeKey = (typeof THEME_KEYS)[number];
 
 /**
  * "Ana and Budi" / "4, 6 and 7" -- every item but the last comma-separated,
@@ -148,21 +146,6 @@ export const en = {
   leftoversBunch: 'Put them all in one group',
   leftoversHelp:
     'Either way, no group is ever smaller than the size you chose.',
-
-  namingLabel: 'Name the groups',
-  namingNumbered: 'Group 1, 2, 3…',
-  namingThemed: 'Use a theme',
-  themeLabel: 'Theme',
-  // `satisfies`, not `as`. The cast that used to be here widened the type to
-  // Record<string, string>, so `id: Strings` accepted a themeNames with keys
-  // MISSING — the page would then render an empty <option> on
-  // /id/classroom-groups. `satisfies` checks completeness while keeping the
-  // literal keys, so the guarantee this file claims is actually made.
-  themeNames: {
-    animals: 'Animals',
-    colours: 'Colours',
-    planets: 'Planets',
-  } satisfies Record<ThemeKey, string>,
 
   soundOn: 'Sound on',
   soundOff: 'Sound off',
@@ -644,39 +627,6 @@ export const en = {
     SEX_BOTH_TOO_SMALL: (names: string[]) =>
       `${names.join(', ')} were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.`,
   },
-
-  themes: {
-    animals: [
-      'Tigers',
-      'Eagles',
-      'Dolphins',
-      'Foxes',
-      'Pandas',
-      'Falcons',
-      'Otters',
-      'Lions',
-    ],
-    colours: [
-      'Red',
-      'Blue',
-      'Green',
-      'Yellow',
-      'Purple',
-      'Orange',
-      'Teal',
-      'Pink',
-    ],
-    planets: [
-      'Mercury',
-      'Venus',
-      'Earth',
-      'Mars',
-      'Jupiter',
-      'Saturn',
-      'Uranus',
-      'Neptune',
-    ],
-  } satisfies Record<ThemeKey, string[]>,
 };
 
 export type Strings = typeof en;

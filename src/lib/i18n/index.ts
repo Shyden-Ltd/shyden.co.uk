@@ -1,4 +1,4 @@
-import { en, THEME_KEYS, type Strings, type ThemeKey } from './en';
+import { en, type Strings } from './en';
 import { id } from './id';
 import {
   ERROR_CODES,
@@ -210,27 +210,21 @@ export function renderWarning(
   }
 }
 
-/** Whether a string off the DOM is one of the themes that actually exist. */
-export const isThemeKey = (value: string): value is ThemeKey =>
-  (THEME_KEYS as readonly string[]).includes(value);
-
-/** The display name for a group: numbered, or the nth name of a theme. */
-export function groupName(
-  index: number,
-  naming: 'numbered' | 'themed',
-  theme: string,
-  strings: Strings,
-): string {
-  // `theme` arrives from a <select> value, so it is a string from the page
-  // rather than a key anyone has checked. Numbering is the honest fallback
-  // for an unknown one, and the same fallback the theme runs out of names.
-  if (naming === 'numbered' || !isThemeKey(theme)) {
-    return strings.groupLabel(index + 1);
-  }
-  const names = strings.themes[theme];
-  // More groups than the theme has names: fall back to numbering rather than
-  // repeating a name, which would make two groups indistinguishable.
-  return names[index] ?? strings.groupLabel(index + 1);
+/**
+ * The display name for a group.
+ *
+ * Stage 3, Task 8 (design spec section 5): the themed branch this function
+ * used to have -- Animals / Colours / Planets, chosen by a now-removed
+ * `<select>` -- is gone along with the theme tables it read from. Groups
+ * are always numbered; kept as a real function (not inlined at its one call
+ * site, `classroom-groups.ts`'s own `render()`) because it still composes
+ * one thing this file already owns -- turning a zero-based index into the
+ * page's own `groupLabel` sentence -- in one place, the same reason
+ * `resultsHeadingText` below stays a function rather than two copies of
+ * "which form do I show" at each of ITS own call sites.
+ */
+export function groupName(index: number, strings: Strings): string {
+  return strings.groupLabel(index + 1);
 }
 
 /**
@@ -263,5 +257,4 @@ export function resultsHeadingText(
     : strings.resultsHeadingNamed(className);
 }
 
-export { THEME_KEYS };
-export type { Strings, ThemeKey };
+export type { Strings };

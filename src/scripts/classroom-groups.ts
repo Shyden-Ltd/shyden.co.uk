@@ -65,6 +65,7 @@ import {
 } from '../lib/i18n';
 import { sectionState } from '../lib/sections';
 import { staleReason, type Snapshot } from '../lib/staleness';
+import { avatarSymbolId } from '../lib/avatars';
 import { landAssetIndex, SFX_ASSET_GAIN } from '../lib/sfxAssets';
 // Six real, mastered CC0 samples (src/assets/sfx/CREDITS.md has provenance
 // and licence) -- imported through Vite so a missing file fails the BUILD,
@@ -719,7 +720,6 @@ if (form) {
   form.addEventListener('change', (e) => {
     const target = e.target as HTMLInputElement;
     if (target.name === 'mode') showFor('mode', target.value);
-    if (target.name === 'naming') showFor('naming', target.value);
     if (target.name === 'leftovers') updateGroupingHeader();
     updateStaleness();
   });
@@ -1511,46 +1511,51 @@ if (form) {
   };
 
   // ── rendering ───────────────────────────────────────────────────────────
-  const AVATAR_HUES = [8, 34, 64, 122, 168, 200, 250, 288, 320, 344];
 
   /**
-   * A CONSTANT with no interpolation, so this template can never carry
-   * teacher-supplied text however the calling code is later edited. The
-   * per-student colour arrives as a CSS custom property instead of being
-   * spliced into the markup, and the name is set with textContent.
-   * Decorative: hidden from assistive tech, which reads the name instead.
+   * `<svg class="avatar"><use href="#avatar-m"></use></svg>` -- the small
+   * per-student INSTANCE, referencing one of the three `<symbol>`s
+   * ClassroomGroupsPage.astro builds once, statically, at build time
+   * (`avatarSvg`, src/lib/avatars.ts: `AVATAR_SEXES.map(avatarSvg).join('')`,
+   * injected via `set:html` into a visually-hidden sprite). Interpolates
+   * `avatarSymbolId(student.sex)` into markup -- safe despite the
+   * interpolation, unlike a teacher's typed NAME just below, because that
+   * function (src/lib/avatars.ts, unit-tested there) is normalised to
+   * always return one of exactly three fixed, developer-authored strings,
+   * never anything shaped by what a teacher types or picks; `student.sex`
+   * itself only ever arrives from the roster table's own Sex <select>,
+   * whose options are `''`/`'M'`/`'F'` (roster-ui.ts) -- never free text.
+   *
+   * `aria-hidden`, matching the AVATAR_SVG constant this replaces --
+   * decorative, since `who.textContent` right after it already carries the
+   * identity a screen reader needs (avatars.ts's own `avatarSvg` still
+   * marks the un-rendered `<symbol>` `role="img"`/`aria-label`, so a
+   * consumer that DOES surface it directly still gets a real label; see
+   * that module's own doc comment on `LABEL` for why both are correct at
+   * once).
    */
-  const AVATAR_SVG =
-    '<svg class="avatar" viewBox="0 0 40 40" focusable="false" aria-hidden="true">' +
-    '<circle class="a-bg" cx="20" cy="20" r="20"></circle>' +
-    '<circle class="a-head" cx="20" cy="16" r="7"></circle>' +
-    '<path class="a-body" d="M6 40a14 14 0 0 1 28 0Z"></path>' +
-    '</svg>';
-
-  /** Deterministic per student, so the same child keeps the same face. */
-  const hueFor = (student: Student) =>
-    AVATAR_HUES[student.number % AVATAR_HUES.length];
+  const avatarHtml = (student: Student) =>
+    `<svg class="avatar" viewBox="0 0 40 40" focusable="false" aria-hidden="true">` +
+    `<use href="#${avatarSymbolId(student.sex)}"></use>` +
+    `</svg>`;
 
   const label = (student: Student) => resolveStudent(student.number);
 
-  const render = (groups: Student[][], naming: string, theme: string) => {
+  const render = (groups: Student[][]) => {
     tables.textContent = '';
     groups.forEach((group, i) => {
       const card = document.createElement('section');
       card.className = 'group';
       const h = document.createElement('h3');
-      h.textContent = groupName(
-        i,
-        naming === 'themed' ? 'themed' : 'numbered',
-        theme,
-        t,
-      );
+      // Stage 3, Task 8: groups are always numbered now -- the themed
+      // branch groupName() used to have, and the naming radio that chose
+      // it, are both gone (design spec section 5).
+      h.textContent = groupName(i, t);
       const ul = document.createElement('ul');
-      group.forEach((student, j) => {
+      group.forEach((student) => {
         const li = document.createElement('li');
         li.className = 'student';
-        li.style.setProperty('--hue', String(hueFor(student)));
-        li.innerHTML = AVATAR_SVG; // constant markup, no interpolation
+        li.innerHTML = avatarHtml(student); // see avatarHtml's own doc comment
         const who = document.createElement('span');
         who.className = 'who';
         who.textContent = label(student); // the untrusted value, set as TEXT
@@ -1633,8 +1638,6 @@ if (form) {
     // which is what would give `sexMode` a way to ever be anything else.
     const { groups, warnings } = outcome.result;
     void warnings;
-    const naming = readRadio('naming');
-    const theme = ($('cg-theme') as HTMLSelectElement).value;
 
     // Read fresh at every submit -- never cached -- so a class name typed
     // or changed between two shuffles is picked up on the next one. Set
@@ -1650,7 +1653,7 @@ if (form) {
     // live-region announcement actually fire.
     resultsHeadingEl.textContent = resultsHeadingText(classInput.value, t);
     // Text first, animation second — see the note at the top of this file.
-    render(groups, naming, theme);
+    render(groups);
     // Same ordering rule as the error path: the region joins the tree, and
     // only then is the sentence written into it.
     results.hidden = false;

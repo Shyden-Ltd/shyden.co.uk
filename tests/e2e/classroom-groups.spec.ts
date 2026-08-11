@@ -571,9 +571,11 @@ test.describe('class name and results heading', () => {
   // stage-3-owned behaviour: a naive implementation that broke
   // render()/groupName()'s call order while adding the heading write would
   // show up here. The claim "groups are always numbered" -- i.e. that the
-  // theme picker and the naming radio are gone -- is stage 3's own removal
-  // (design spec section 3, delivery item 3) and is NOT re-tested here;
-  // this only pins that setting a class name does not disturb today's
+  // theme picker and the naming radio are gone -- was stage 3's own removal
+  // (design spec section 3, delivery item 3; landed by Task 8, tested in
+  // classroom-groups-controls.spec.ts's "the theme select and the naming
+  // radio are gone" / "groups are numbered, always") and is NOT re-tested
+  // here; this only pins that setting a class name does not disturb today's
   // numbered DEFAULT.
   test('groups stay numbered when a class name is set', async ({ page }) => {
     await page.goto('/classroom-groups');
@@ -763,11 +765,12 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
     const labels = await page.locator('#cg-results .student').allTextContents();
     expect(labels.sort()).toEqual(['Siswa 1', 'Siswa 2', 'Siswa 3', 'Siswa 4']);
     // groupLabel's Indonesian output ("Kelompok N") was only ever proven at
-    // the unit level (i18n.test.ts's groupName tests) and, on this page, in
-    // its THEMED form ('themed groups are named from the chosen theme, in
-    // each language', classroom-groups-controls.spec.ts) -- the default,
-    // numbered heading a teacher who never touches naming actually sees had
-    // no e2e assertion in Indonesian at all.
+    // the unit level (i18n.test.ts's groupName tests), never against the
+    // real page in Indonesian -- the numbered heading every teacher sees
+    // (Stage 3, Task 8 made this the ONLY form: the theme picker and the
+    // naming radio that used to choose between it and a themed heading are
+    // both gone, design spec section 5) had no e2e assertion in Indonesian
+    // at all before this test.
     await expect(page.locator('#cg-results .group h3').first()).toHaveText(
       'Kelompok 1',
     );
@@ -1424,40 +1427,43 @@ test.describe('the no-scroll rule, measured', () => {
   // what this block measures: every project this suite runs under has
   // JavaScript enabled.)
   //
-  // Measured #main-to-#cg-go, the collapsed landing state, honestly:
+  // Measured #main-to-#cg-go, the collapsed landing state, honestly.
+  // RE-MEASURED after this stage's Task 8 deleted the naming/theme picker
+  // fieldset ("Name the groups") -- the numbers below are that second
+  // measurement, not the first, and not the arithmetic the paragraph after
+  // the old table predicted:
   //
   //   width x height   #cg-go.bottom   budget    vs budget
-  //   320x568          1395px          568px     827px OVER
-  //   375x667          1365px          667px     698px OVER
-  //   768x1024         881px           1024px    143px to spare
-  //   1280x800         881px           800px     81px OVER
+  //   320x568          1221px          568px     653px OVER
+  //   375x667          1191px          667px     524px OVER
+  //   768x1024          707px          1024px    317px to spare
+  //   1280x800          707px           800px     93px to spare
   //
-  // 768px fits, comfortably, not on a technicality, and stays un-`fixme`'d
-  // below. 1280x800 does not: the assertion is a position, not a margin,
-  // and 81px past the fold is still past it -- it reads `fits: true` in
-  // this file's git history only because the old height-based check could
-  // not see it. 320px and 375px stay the furthest over by a wide margin,
-  // and stay `fixme`: measured, not guessed, not weakened, not deleted.
+  // Every width fell by exactly 174px (1395->1221, 1365->1191, 881->707 at
+  // both wide widths) -- one fixed-height box leaving the flow, the same
+  // saving regardless of viewport, which is what the pre-removal note
+  // predicted and what re-measuring confirmed to the pixel. Nothing else
+  // moved: the roster section this stage added is absent from the landing
+  // state until a roster exists, so it costs nothing here.
   //
-  // What is left, at every width still over: the naming/theme picker
-  // fieldset ("Name the groups") is the last always-visible bordered box
-  // below the top row -- design spec section 12 marks it removed, but that
-  // removal is stage 3's, not built yet. Removing it saves a flat 174px at
-  // every width (measured by deleting the live fieldset and re-reading
-  // `#cg-go`'s own bottom -- one fixed-height box leaving the flow, the
-  // same saving regardless of viewport). That alone is enough to bring
-  // 1280x800 back under budget (881 - 174 = 707 <= 800) and to widen
-  // 768x1024's own margin (707 <= 1024, 317 to spare) -- but not enough for
-  // either phone width: 320x568 would still be 653px over, 375x667 still
-  // 524px over. Short of that, only an operator decision to trim the hero
-  // copy (h1/lead/privacy), the collapsed section headers' own density, or
-  // the How to use copy itself (ruled unchanged, section 2) would move the
-  // phone numbers again.
+  // 768px and 1280x800 both fit now, neither on a technicality (317px and
+  // 93px to spare). 1280x800 flips from `fixme` to a real `test` on this
+  // measurement -- it was `fits: false` because 881px genuinely sat 81px
+  // past an 800px fold, and it is `fits: true` now because the box that
+  // put it there is gone, not because the check was weakened.
+  //
+  // 320px and 375px stay the furthest over by a wide margin, and stay
+  // `fixme`: measured, not guessed, not weakened, not deleted. The picker
+  // was the last always-visible bordered box available to delete; with it
+  // gone, only an operator decision to trim the hero copy (h1/lead/
+  // privacy), the collapsed section headers' own density, or the How to
+  // use copy itself (ruled unchanged, section 2) would move the phone
+  // numbers again. Nothing left in this stage's plan touches them.
   const VIEWPORTS = [
     { width: 320, height: 568, fits: false }, // iPhone SE
     { width: 375, height: 667, fits: false }, // iPhone 8
     { width: 768, height: 1024, fits: true }, // iPad
-    { width: 1280, height: 800, fits: false }, // laptop -- see table above
+    { width: 1280, height: 800, fits: true }, // laptop -- see table above
   ];
 
   const measureFit = async (page: Page) => {

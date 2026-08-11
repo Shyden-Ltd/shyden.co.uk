@@ -18,8 +18,15 @@ import { test, expect } from './fixtures';
  * personal data.
  */
 
-/** `name`s that may legitimately appear in a submitted form. */
-const NON_PERSONAL_NAMES = ['mode', 'leftovers', 'naming'];
+/**
+ * `name`s that may legitimately appear in a submitted form.
+ *
+ * Stage 3, Task 8 removed `naming` -- the radio choosing "Group 1, 2, 3…"
+ * versus "Use a theme" -- along with the theme picker it revealed (design
+ * spec section 5). Groups are always numbered now, so there is nothing
+ * left for a radio group of that name to choose between.
+ */
+const NON_PERSONAL_NAMES = ['mode', 'leftovers'];
 
 test.describe('privacy — the class list cannot leave the page', () => {
   for (const path of ['/classroom-groups', '/id/classroom-groups']) {

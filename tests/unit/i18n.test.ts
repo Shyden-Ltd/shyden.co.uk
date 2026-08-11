@@ -104,9 +104,6 @@ const deepFunctions = (
  */
 const ALLOWED_IDENTICAL = new Set([
   'speedNormal', // "Normal" is the Indonesian word as well
-  'themes.planets[1]', // Venus
-  'themes.planets[3]', // Mars
-  'themes.planets[6]', // Uranus
   // Stage 3, Task 2. Punctuation/symbols, not English -- "#" and "—" carry
   // no language of their own, so there is nothing to translate. See these
   // two keys' own doc comments in en.ts.
@@ -1707,29 +1704,36 @@ describe('the locale-aware paths', () => {
   );
 });
 
+// Stage 3, Task 8 (design spec section 5): the themed branch this function
+// used to have -- Animals / Colours / Planets, chosen by a `naming`/`theme`
+// pair of arguments -- is gone along with the theme `<select>` that fed it
+// and the locale tables (`themeNames`, `themes`) it read from. Groups are
+// always numbered; these three tests are what is left of a block that used
+// to also cover "uses the theme in the page language" and two theme
+// fallback cases, both retired in the same commit that removes the feature
+// (design spec section 13's own "tests for a removed feature are deleted
+// in the same stage that removes it").
 describe('group names', () => {
   it('numbers groups from 1, not from 0', () => {
-    expect(groupName(0, 'numbered', 'animals', en)).toBe('Group 1');
-    expect(groupName(0, 'numbered', 'animals', id)).toBe('Kelompok 1');
+    expect(groupName(0, en)).toBe('Group 1');
+    expect(groupName(0, id)).toBe('Kelompok 1');
   });
 
-  it('uses the theme in the page language', () => {
-    expect(groupName(0, 'themed', 'animals', en)).toBe('Tigers');
-    expect(groupName(0, 'themed', 'animals', id)).toBe('Harimau');
+  it('keeps numbering past what any theme table used to hold', () => {
+    // The old theme tables topped out at 8 names and fell back to
+    // numbering past that point -- groupName has no such ceiling any more,
+    // proven here at an index well past where the old fallback used to
+    // kick in.
+    expect(groupName(8, en)).toBe('Group 9');
+    expect(groupName(8, id)).toBe('Kelompok 9');
   });
 
-  it('falls back to numbering past the end of a theme', () => {
-    // Repeating a name would make two groups indistinguishable, which is
-    // worse than a plain number.
-    expect(en.themes.animals).toHaveLength(8);
-    expect(groupName(8, 'themed', 'animals', en)).toBe('Group 9');
-  });
-
-  it('falls back to numbering for a theme that does not exist', () => {
-    // The value arrives from a <select> on the page, so it is a string
-    // nobody has checked by the time it gets here.
-    expect(groupName(0, 'themed', 'dinosaurs', en)).toBe('Group 1');
-    expect(groupName(0, 'themed', '', en)).toBe('Group 1');
+  it('matches groupLabel directly -- groupName is a thin, one-based wrapper around it', () => {
+    for (const strings of [en, id]) {
+      for (const index of [0, 1, 24]) {
+        expect(groupName(index, strings)).toBe(strings.groupLabel(index + 1));
+      }
+    }
   });
 });
 
