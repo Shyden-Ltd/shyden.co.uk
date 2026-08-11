@@ -87,7 +87,7 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | R-09 | An unnamed row renders "Student N" everywhere it appears | U+P | ☐ |
 | R-10 | **Fixed-width cells** — an empty name box is the same size as a full one | P | ☐ |
 | R-11 | A long name does not push the letters off a phone screen | P | ☐ |
-| R-12 | Identity is the number: two children called Ana are separated independently | U | ☐ |
+| R-12 | Identity is the number: two children called Ana are separated independently | U+P | ✓ stage 3 T10 |
 
 ## E · The roster reflows — stage 3
 
@@ -125,7 +125,7 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | A-17 | …and their **apart letter constrains nobody** | U | ☐ |
 | A-18 | A together-unit whose other members are all absent places its member normally | U | ☐ |
 | A-19 | The count line reads `24 students · 22 here · 2 absent` | P | ☐ |
-| A-20 | The word is **absent**, never "away", in every surface and both locales | P | ☐ |
+| A-20 | The word is **absent**, never "away", in every surface and both locales | P | ✓ stage 3 T4 |
 
 ## G · Together and apart — stage 1
 
@@ -394,10 +394,10 @@ spillover warning cannot be driven through the page without a roster fixture;
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| Y-01 | **The roster is never persisted** — reload loses it | P | ☐ |
-| Y-02 | No roster data in `localStorage` at any point | P | ☐ |
-| Y-03 | No roster data in `sessionStorage` at any point | P | ☐ |
-| Y-04 | No roster data in the URL at any point | P | ☐ |
+| Y-01 | **The roster is never persisted** — reload loses it | P | ✓ stage 3 T10 |
+| Y-02 | No roster data in `localStorage` at any point | P | ✓ stage 3 T10 |
+| Y-03 | No roster data in `sessionStorage` at any point | P | ✓ stage 3 T10 |
+| Y-04 | No roster data in the URL at any point | P | ✓ stage 3 T10 |
 | Y-05 | The how-to collapsed state persists | P | ☐ |
 | Y-06 | The four print choices persist | P | ☐ |
 | Y-07 | …and **nothing else** is written | P | ☐ |
@@ -410,19 +410,19 @@ spillover warning cannot be driven through the page without a roster fixture;
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| K-01 | The theme `<select>` is gone from the page | P | ☐ |
-| K-02 | `themeNames` / `themes` gone from **both** locale files | U | ☐ |
-| K-03 | `THEME_KEYS` and the themed branch of `groupName()` gone | U | ☐ |
-| K-04 | The **naming radio** is gone from the page | P | ☐ |
-| K-05 | `namingLabel` / `namingNumbered` / `namingThemed` gone from both locales | U | ☐ |
+| K-01 | The theme `<select>` is gone from the page | P | ✓ stage 3 T8 |
+| K-02 | `themeNames` / `themes` gone from **both** locale files | U | ✓ stage 3 T8 |
+| K-03 | `THEME_KEYS` and the themed branch of `groupName()` gone | U | ✓ stage 3 T8 |
+| K-04 | The **naming radio** is gone from the page | P | ✓ stage 3 T8 |
+| K-05 | `namingLabel` / `namingNumbered` / `namingThemed` gone from both locales | U | ✓ stage 3 T8 |
 | K-06 | The paste-names box is gone | P | ☐ |
 | K-07 | `namesLabel` / `namesHelp` gone from both locales | U | ☐ |
 | K-08 | The free-text keep-apart box is gone | P | ☐ |
 | K-09 | `keepApart*` copy keys gone from both locales | U | ☐ |
 | K-10 | `parseKeepApart` is no longer exported | U | ☐ |
 | K-11 | `KEEP_APART_NEEDS_NAMES` and `KEEP_APART_UNKNOWN_NAME` are gone | U | ☐ |
-| K-12 | `dead-copy.test.ts` proves **nothing renders** any removed key | U | ☐ |
-| K-13 | `i18n.test.ts` proves both locales still have identical key sets | U | ☐ |
+| K-12 | `dead-copy.test.ts` proves **nothing renders** any removed key | U | ✓ stage 3 T8 |
+| K-13 | `i18n.test.ts` proves both locales still have identical key sets | U | ✓ stage 3 T8 |
 | K-14 | No test anywhere still asserts a removed feature | U+P | ☐ |
 
 ## T · The suite itself
@@ -432,11 +432,11 @@ spillover warning cannot be driven through the page without a roster fixture;
 | M-01 | `rendered-text.spec.ts` seam scan stays green | P | ✓ |
 | M-02 | Every new sentence asserted **whole**, not by fragment | P | ✓ |
 | M-03 | Every new string asserted in **both** locales | P | ✓ |
-| M-04 | The four existing e2e suites are **extended**, not duplicated | P | ☐ |
-| M-05 | Tests for a removed feature are deleted in the **same stage** that removes it | P | ☐ |
-| M-06 | No `waitForTimeout` anywhere in the new tests | P | ☐ |
-| M-07 | No `expect(await x.count())` anywhere in the new tests | P | ☐ |
-| M-08 | All five Playwright projects pass — chromium, firefox, webkit, mobile-chrome, mobile-safari | P | ☐ |
+| M-04 | The four existing e2e suites are **extended**, not duplicated | P | ✓ stage 3 T10 |
+| M-05 | Tests for a removed feature are deleted in the **same stage** that removes it | P | ✓ stage 3 T10 |
+| M-06 | No `waitForTimeout` anywhere in the new tests | P | ✓ stage 3 T10 (0 hits, whole tests/ tree) |
+| M-07 | No `expect(await x.count())` anywhere in the new tests | P | ✓ stage 3 T10 (0 hits, whole tests/ tree) |
+| M-08 | All five Playwright projects pass — chromium, firefox, webkit, mobile-chrome, mobile-safari | P | ✓ stage 3 T10 (1556/14/0) |
 | M-09 | `npm run test:unit` and `npm run test:e2e` both exit 0 — **exit code checked, not output read** | U+P | ☐ |
 | M-10 | `needsJs` still covers the whole tool | P | ☐ |
 | M-11 | The homepage still ships **zero** JavaScript | P | ☐ |

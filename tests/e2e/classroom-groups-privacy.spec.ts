@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { buildRoster } from './helpers';
 
 /**
  * The page makes a promise in both languages: "No class list ever leaves this
@@ -269,5 +270,161 @@ test.describe('privacy — when storage is unavailable', () => {
       'aria-expanded',
       'false',
     );
+  });
+});
+
+/**
+ * Stage 3, Task 10 (Y-01…Y-04, R-12). The blocks above close the door at
+ * the MARKUP -- no control carrying typed text is submittable, so a broken
+ * script cannot put a class list in the address bar. These close it at
+ * RUNTIME: the roster now exists as real, named, editable rows, and the
+ * promise the page makes in both languages ("No class list ever leaves this
+ * page") has to survive every operation that could have written one
+ * somewhere, not just page load.
+ *
+ * Asserted AFTER each operation rather than once at the end, deliberately:
+ * a write that happened during editing and was cleared before the shuffle
+ * would pass a single check at the end and still have leaked.
+ */
+test.describe('privacy — the roster never leaves memory', () => {
+  /** Storage, session storage and the address bar, in one read. */
+  const everywhereItCouldHide = (page: import('@playwright/test').Page) =>
+    page.evaluate(() => ({
+      local: JSON.stringify({ ...localStorage }),
+      session: JSON.stringify({ ...sessionStorage }),
+      url: location.href,
+      // Cookies too -- the plan's own snippet checked the first three, but
+      // a cookie is the fourth place a name could be written to and the
+      // one nothing else in this suite looks at.
+      cookies: document.cookie,
+    }));
+
+  const expectNothingStored = async (
+    page: import('@playwright/test').Page,
+    when: string,
+  ) => {
+    const stored = await everywhereItCouldHide(page);
+    for (const [where, value] of Object.entries(stored)) {
+      expect(value, `${where} — ${when}`).not.toContain('Ana');
+      expect(value, `${where} — ${when}`).not.toContain('Budi');
+    }
+  };
+
+  test('nothing about the class is stored, after every operation', async ({
+    page,
+  }) => {
+    // `buildRoster` opens the section itself -- the plan's snippet called
+    // `openRoster` first as well, which would have TOGGLED #cg-students
+    // shut again and left every later locator waiting on a hidden row.
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await expectNothingStored(page, 'after building the roster');
+
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await expectNothingStored(page, 'after marking a student absent');
+
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+    await expectNothingStored(page, 'after shuffling');
+
+    // POSITIVE CONTROL. Everything above passes trivially if storage is
+    // simply unreadable in this context, or if `everywhereItCouldHide` is
+    // looking in the wrong place -- and a privacy test that cannot fail is
+    // worth nothing. So: change the one thing design spec section 11 DOES
+    // allow this page to remember, and prove the same read sees it land.
+    //
+    // Note the shape of what appears -- `cg-sound: "off"`. A preference,
+    // under a fixed key, with a value from a fixed set. That is the whole
+    // of what this tool is permitted to persist, and it is why the
+    // assertions above can be as blunt as "the word Ana is nowhere".
+    await page.locator('#cg-sound-toggle').click();
+    await page.uncheck('#cg-sound-check');
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('cg-sound')))
+      .toBe('off');
+    await expectNothingStored(page, 'after a preference was written');
+  });
+
+  test('a reload loses the roster', async ({ page }) => {
+    await buildRoster(page, [['F', 'Ana']]);
+    await page.reload();
+    await page.locator('#cg-students-toggle').click();
+    await expect(page.locator('.cg-student')).toHaveCount(0);
+  });
+
+  /**
+   * R-12, and the defect this whole stage exists to fix: identity is the
+   * NUMBER, never the name. Two children called Ana are two children.
+   *
+   * The plan's own assertion here was `expect(#cg-groups).toContainText
+   * ('Ana')` -- wrong selector (that id is the "how many groups" number
+   * input; the results container is `#cg-results`, the fifth time this
+   * stage has had to make that correction) and, more importantly, an
+   * assertion that passes as long as the word "Ana" appears ANYWHERE. It
+   * would pass just as well under the name-collapsing engine it is meant
+   * to rule out. Replaced with the two facts that actually distinguish
+   * them: BOTH Anas are placed, and the apart letter constrains only the
+   * one row that carries it.
+   */
+  test('two children called Ana are separated independently', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+      ['M', 'Eko'],
+    ]);
+    // Student 1 (the first Ana) and student 3 (Budi) must not meet.
+    //
+    // 'A', not the plan's 'X': the Apart dropdown offers only the letters
+    // in use plus ONE more (`availableLetters`, src/lib/roster.ts -- the
+    // list grows as letters are taken, so a fresh roster offers exactly
+    // "A"). Selecting 'X' waits forever on an option the page has no
+    // reason to render. Found by running it.
+    await page
+      .locator('.cg-student')
+      .nth(0)
+      .getByLabel('Apart')
+      .selectOption('A');
+    await page
+      .locator('.cg-student')
+      .nth(2)
+      .getByLabel('Apart')
+      .selectOption('A');
+    await page.getByLabel('Number of groups').check();
+    await page.getByLabel('How many groups').fill('2');
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+
+    // Both Anas are on the sheet. Under a name-matching engine the second
+    // would have been folded into the first and only one would appear.
+    await expect(
+      page.locator('#cg-results .student').getByText('Ana'),
+    ).toHaveCount(2);
+    await expect(page.locator('#cg-results .student')).toHaveCount(4);
+
+    // `data-number` (Stage 3, Task 9) is the identity, on the element --
+    // so which group each student landed in is readable without going
+    // through their name, which is the whole point being proven.
+    const groupOf = (n: number) =>
+      page
+        .locator('#cg-results .group')
+        .filter({ has: page.locator(`.student[data-number="${n}"]`) });
+    // The two rows carrying X are in different groups -- identified by
+    // each card's own heading ("Group 1"/"Group 2"), which is the only
+    // per-group identity the rendered sheet actually carries.
+    const [anaGroup, budiGroup] = await Promise.all([
+      groupOf(1).locator('h3').textContent(),
+      groupOf(3).locator('h3').textContent(),
+    ]);
+    expect(anaGroup).toMatch(/^Group \d+$/);
+    expect(anaGroup).not.toBe(budiGroup);
+    // ...and the SECOND Ana carries no letter, so she is placed freely.
+    // Asserted as "she is placed at all, in exactly one group" rather than
+    // "she is with Budi", which the shuffle is free to decide either way.
+    await expect(groupOf(2)).toHaveCount(1);
   });
 });
