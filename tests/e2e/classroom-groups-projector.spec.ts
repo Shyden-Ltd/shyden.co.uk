@@ -18,6 +18,20 @@ const bar = (page: import('@playwright/test').Page) =>
   page.locator('#cg-board-bar');
 
 /**
+ * Wait for the bar to fade.
+ *
+ * Explicit, generous timeout because this waits on a PRODUCT TIMER of
+ * 2500ms (`FADE_AFTER_MS`, src/scripts/projector.ts) and the default
+ * assertion window is 5000ms -- barely 2x headroom. That is enough on an
+ * idle laptop and not enough on one also driving 350 tests on a real phone,
+ * where it failed exactly once in the full gauntlet and never in a
+ * standalone run. Still condition-based: it waits for the class, never for
+ * a fixed time.
+ */
+const expectFaded = (page: import('@playwright/test').Page) =>
+  expect(bar(page)).toHaveClass(/faded/, { timeout: 15000 });
+
+/**
  * Wait until the page can actually be clicked again after leaving the board.
  *
  * Chromium GRANTS fullscreen here, and coming back out of it is not
@@ -113,16 +127,16 @@ test.describe('the projector view', () => {
   }) => {
     await withGroups(page);
     await page.getByRole('button', { name: 'Full screen' }).click();
-    await expect(bar(page)).toHaveClass(/faded/); // condition, not a sleep
+    await expectFaded(page); // condition, not a sleep
     // Two moves: a move to where the pointer already is dispatches no
     // event at all, and the pointer starts at (0,0).
     await page.mouse.move(200, 300);
     await page.mouse.move(220, 320);
     await expect(bar(page)).not.toHaveClass(/faded/);
-    await expect(bar(page)).toHaveClass(/faded/);
+    await expectFaded(page);
     await page.locator('#cg-board').click({ position: { x: 50, y: 300 } });
     await expect(bar(page)).not.toHaveClass(/faded/);
-    await expect(bar(page)).toHaveClass(/faded/);
+    await expectFaded(page);
     await page.keyboard.press('a');
     await expect(bar(page)).not.toHaveClass(/faded/);
   });
@@ -152,7 +166,7 @@ test.describe('the projector view', () => {
   test('a faded bar can still be reached by keyboard', async ({ page }) => {
     await withGroups(page);
     await page.getByRole('button', { name: 'Full screen' }).click();
-    await expect(bar(page)).toHaveClass(/faded/);
+    await expectFaded(page);
     await bar(page).getByRole('button', { name: 'Exit full screen' }).focus();
     await expect(bar(page)).not.toHaveClass(/faded/);
     await page.keyboard.press('Enter');
@@ -163,7 +177,7 @@ test.describe('the projector view', () => {
     await withGroups(page);
     for (const faded of [false, true]) {
       await page.getByRole('button', { name: 'Full screen' }).click();
-      if (faded) await expect(bar(page)).toHaveClass(/faded/);
+      if (faded) await expectFaded(page);
       await page.keyboard.press('Escape');
       await expect(page.locator('#cg-board')).toBeHidden();
       await clickable(page, '#cg-board-open');
