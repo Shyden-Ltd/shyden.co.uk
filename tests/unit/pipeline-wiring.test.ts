@@ -126,23 +126,16 @@ describe('the deploy pipeline runs what it claims to', () => {
     }
   });
 
-  // TRANSITIONAL. `release.yml` (deploy-before-merge) is still here, and only
-  // because the PR introducing its replacements has to be mergeable: branch
-  // protection requires `prod-verified`, and until the new pair is on the
-  // default branch this is the only thing that posts it.
+  // The deploy-before-merge workflow is GONE. It survived exactly one merge
+  // -- the one that introduced its replacements, which could not otherwise
+  // earn the `prod-verified` status branch protection then required. That
+  // status is no longer required: the gate is `dev-verified`, posted before
+  // the merge by release-dev.yml.
   //
-  // What must hold WHILE it survives is that it cannot fire on its own --
-  // dispatch only, no `push:` trigger -- so two pipelines can never race to
-  // deploy prod from the same event. The follow-up PR deletes it and replaces
-  // this test with the assertion that it is gone.
-  it('the retired workflow cannot fire on its own', () => {
-    const names = readdirSync(WORKFLOWS);
-    if (!names.includes('release.yml')) return; // already deleted: nothing to guard
-    const old = workflowSteps('release.yml');
-    expect(old).toContain('workflow_dispatch');
-    expect(old, 'the retired workflow must not trigger on push').not.toMatch(
-      /on:[\s\S]*?push:/,
-    );
+  // Two pipelines both able to deploy prod, disagreeing about when, is worse
+  // than either.
+  it('the deploy-before-merge workflow is gone', () => {
+    expect(readdirSync(WORKFLOWS)).not.toContain('release.yml');
   });
 
   // …and exactly one workflow deploys prod on a PUSH, so a merge can never
