@@ -695,6 +695,12 @@ const sexWhyText = sexWhy(roster, t);
     <button type="button" id="cg-print-open" class="cg-print-open" hidden>
       {t.printOpen}
     </button>
+    <!-- Stage 5, Task 5. The projector view's own way in. Hidden until
+         there are groups: a board with nothing on it is not worth a
+         button. -->
+    <button type="button" id="cg-board-open" class="cg-board-open" hidden>
+      {t.boardOpen}
+    </button>
 
     <p class="error" id="cg-error" role="alert" hidden></p>
 
@@ -792,6 +798,19 @@ const sexWhyText = sexWhy(roster, t);
        print stylesheet keys off; nothing here is re-rendered for paper,
        because a second rendering is how a printed sheet ends up disagreeing
        with the screen. -->
+  <!-- Stage 5, Task 5. The board. Empty in the markup: projector.ts moves
+       the LIVE `#cg-results` element into it on entry and puts it back on
+       exit, so what is on the wall and what is on the page are the same DOM
+       and cannot disagree. A second copy is how a projected sheet ends up
+       showing last shuffle's groups.
+
+       `hidden` until entered, and rendered here rather than built by script
+       for the same reason as the print panel: a mid-module failure leaves an
+       inert overlay rather than a broken one. -->
+  <div id="cg-board" class="cg-board" hidden>
+    <div id="cg-board-bar" class="cg-board-bar"></div>
+  </div>
+
   <dialog id="cg-print-panel" class="cg-print-panel">
     <form method="dialog" id="cg-print-form">
       <h2>{t.printHeading}</h2>
@@ -1580,6 +1599,68 @@ const sexWhyText = sexWhy(roster, t);
     border: 1px solid var(--border);
     border-radius: 6px;
     cursor: pointer;
+  }
+
+  /* ── the projector board (stage 5, task 5) ───────────────────────────────
+     A fixed full-viewport layer, used BOTH ways: it is what a browser that
+     grants the Fullscreen API fills, and it is the whole mechanism where
+     one refuses (iOS Safari never grants it on an arbitrary element). One
+     layout for both paths means the board a teacher sees is the same board
+     either way, and the API is an enhancement rather than a requirement. */
+  .cg-board-open,
+  .cg-board-bar button {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .cg-board {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  .cg-board[hidden] {
+    display: none;
+  }
+  .cg-board-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding: 0.6rem 0.9rem;
+    /* Fades OUT of the way, never out of existence: `visibility` or
+       `display` would take it out of the tab order and strand a keyboard
+       user mid-Tab. Opacity alone keeps every control reachable, which is
+       what lets `focusin` bring it back. */
+    transition: opacity 0.35s ease;
+  }
+  .cg-board-bar.faded {
+    opacity: 0.06;
+  }
+  .cg-board-stage {
+    flex: 1;
+    overflow: hidden;
+    padding: 0 1rem 1rem;
+  }
+  /* Set only when `fitScale` reports the sheet still does not fit at the
+     readable floor -- a class cannot read what is off the board either way,
+     but they can read what scrolls. */
+  .cg-board.scrolls .cg-board-stage {
+    overflow: auto;
+  }
+  /* While the board is open the page underneath must not scroll behind it,
+     and nothing on it may be reached by Tab. */
+  .cg-board-open-page {
+    overflow: hidden;
   }
 
   /* ── the printed sheet (stage 5, tasks 2 and 3) ──────────────────────────

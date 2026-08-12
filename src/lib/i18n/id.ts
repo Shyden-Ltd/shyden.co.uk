@@ -303,6 +303,13 @@ export const id: Strings = {
   printHereToday: (here: number, absent: number) =>
     `${here} siswa hadir hari ini · ${absent} tidak hadir`,
 
+  // ── Tampilan proyektor (tahap 5) ───────────────────────────────────────
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  boardOpen: 'Layar penuh',
+  boardExit: 'Keluar dari layar penuh',
+  boardShuffle: 'Acak lagi',
+
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
     // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA

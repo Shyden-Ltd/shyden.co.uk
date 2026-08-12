@@ -69,6 +69,7 @@ import {
 import { sexWhy, sexWhyReturning } from '../lib/sexOptions';
 import { renderIo } from './io-ui';
 import { renderPrintPanel } from './print-ui';
+import { renderProjector } from './projector';
 import { todayISO } from '../lib/csv';
 import { sectionState } from '../lib/sections';
 import { staleReason, type Snapshot } from '../lib/staleness';
@@ -1223,6 +1224,17 @@ if (form) {
   const refreshPrintAvailability = () =>
     printPanel?.setAvailable(getRoster().length > 0 || lastGroups !== null);
 
+  // Stage 5, Task 5. The board needs GROUPS, not merely a roster -- unlike
+  // the print panel, which can print a register on its own.
+  const projector = renderProjector(document, t, {
+    // The SAME submit path the button in the form uses, requested rather
+    // than reimplemented: one code path means a shuffle from the board can
+    // never behave differently from one triggered on the page.
+    onShuffle: () => form.requestSubmit(goButton),
+  });
+  const refreshBoardAvailability = () =>
+    projector?.setAvailable(lastGroups !== null);
+
   const ioBody = $<HTMLElement>('cg-io-body');
   const io = ioBody
     ? renderIo(ioBody, t, pageLocale, {
@@ -1893,6 +1905,7 @@ if (form) {
       lastGroups = null;
       io?.refresh();
       refreshPrintAvailability();
+      refreshBoardAvailability();
       // Unhidden BEFORE the text lands. A live region only reports mutations
       // to something already in the accessibility tree, so writing first and
       // revealing second announced nothing at all — the visitor pressed the
@@ -1916,6 +1929,11 @@ if (form) {
     lastGroups = groups;
     io?.refresh();
     refreshPrintAvailability();
+    refreshBoardAvailability();
+    // A new shuffle changes how much there is to show, so the board has to
+    // measure again -- after render, which is why this is not inside
+    // `refreshBoardAvailability`.
+    projector?.refit();
 
     // Read fresh at every submit -- never cached -- so a class name typed
     // or changed between two shuffles is picked up on the next one. Set

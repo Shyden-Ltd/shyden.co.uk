@@ -515,6 +515,19 @@ export const en = {
   printHereToday: (here: number, absent: number) =>
     `${here} ${here === 1 ? 'student' : 'students'} here today · ${absent} absent`,
 
+  // ── The projector view (stage 5; design spec section 10's board) ────────
+  //
+  // The groups, on the wall, for the class to read. The overlay MOVES the
+  // results element rather than re-rendering it, so what is on the board
+  // and what is on the page are the same DOM and cannot disagree -- see
+  // projector.ts's own doc comment.
+  boardOpen: 'Full screen',
+  boardExit: 'Exit full screen',
+  // Named for what it does here, not for the button it mirrors: on the
+  // board this is the only control besides Exit, and "Shuffle again" is
+  // what the results section already calls it.
+  boardShuffle: 'Shuffle again',
+
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different
     // triggers in grouping.ts -- an empty roster (no count, no names) and a
