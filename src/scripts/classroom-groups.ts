@@ -68,6 +68,7 @@ import {
 } from '../lib/i18n';
 import { sexWhy, sexWhyReturning } from '../lib/sexOptions';
 import { renderIo } from './io-ui';
+import { renderPrintPanel } from './print-ui';
 import { sectionState } from '../lib/sections';
 import { staleReason, type Snapshot } from '../lib/staleness';
 import { avatarSymbolId } from '../lib/avatars';
@@ -1128,6 +1129,13 @@ if (form) {
   // output, and would silently export a stale arrangement while the notice
   // above the sheet says the groups are out of date.
   let lastGroups: Student[][] | null = null;
+
+  // Stage 5, Task 1. The print panel shares `remember` with the how-to
+  // toggle above rather than reaching for `localStorage` itself, so every
+  // preference on this page goes through the one wrapper that survives a
+  // privacy profile throwing on the mere act of touching storage.
+  const printPanel = renderPrintPanel(document, remember);
+
   const ioBody = $<HTMLElement>('cg-io-body');
   const io = ioBody
     ? renderIo(ioBody, t, pageLocale, {
@@ -1797,6 +1805,7 @@ if (form) {
       // not on screen any more.
       lastGroups = null;
       io?.refresh();
+      printPanel?.setAvailable(false);
       // Unhidden BEFORE the text lands. A live region only reports mutations
       // to something already in the accessibility tree, so writing first and
       // revealing second announced nothing at all — the visitor pressed the
@@ -1819,6 +1828,7 @@ if (form) {
     // own comment where it is declared.
     lastGroups = groups;
     io?.refresh();
+    printPanel?.setAvailable(true);
 
     // Read fresh at every submit -- never cached -- so a class name typed
     // or changed between two shuffles is picked up on the next one. Set

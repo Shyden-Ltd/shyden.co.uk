@@ -722,6 +722,15 @@ const sexWhyText = sexWhy(roster, t);
         <button type="submit" form="cg-form">{t.again}</button>
       </div>
 
+      <!-- Stage 5, Task 1 (design spec section 10). A PANEL, not a bare
+           print button: "the teacher decides what goes on the paper -- the
+           operator was explicit that this is theirs to choose, not ours to
+           fix." The button sits with the results because there is nothing
+           to print until they exist. -->
+      <button type="button" id="cg-print-open" class="cg-print-open">
+        {t.printOpen}
+      </button>
+
       <p class="summary" id="cg-summary" role="status"></p>
 
       <!-- Stage 3, Task 9 (design spec section 6; G-11). A successful
@@ -751,6 +760,73 @@ const sexWhyText = sexWhy(roster, t);
       <div class="tables" id="cg-tables"></div>
     </section>
   </section>
+
+  <!-- Stage 5, Task 1. A native <dialog>: Escape closes it and focus stays
+       inside it for free, both of which a hand-rolled overlay has to
+       reimplement and usually gets wrong. Rendered here rather than built by
+       script so a visitor whose script fails mid-module gets nothing worse
+       than an inert panel that never opens -- the same reasoning #cg-stale
+       and #cg-error already follow on this page.
+
+       Sibling of the tool, not nested inside #cg-form: its controls must not
+       be submitted with the form, and `@media print` hides it with the rest
+       of the chrome.
+
+       The four choices are radios and checkboxes with real <label>s, so
+       `getByLabel` finds them by the words a teacher reads. The
+       `data-print-*` attributes the script writes onto <html> are what the
+       print stylesheet keys off; nothing here is re-rendered for paper,
+       because a second rendering is how a printed sheet ends up disagreeing
+       with the screen. -->
+  <dialog id="cg-print-panel" class="cg-print-panel">
+    <form method="dialog" id="cg-print-form">
+      <h2>{t.printHeading}</h2>
+
+      <fieldset>
+        <legend>{t.printWhat}</legend>
+        <label
+          ><input type="radio" name="print-what" value="class-list" />{
+            t.printWhatClassList
+          }</label
+        >
+        <label
+          ><input type="radio" name="print-what" value="groups" />{
+            t.printWhatGroups
+          }</label
+        >
+        <label
+          ><input type="radio" name="print-what" value="both" checked />{
+            t.printWhatBoth
+          }</label
+        >
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.printOnTheClassList}</legend>
+        <label
+          ><input type="checkbox" id="cg-print-absent" checked />{
+            t.printShowAbsent
+          }</label
+        >
+        <label
+          ><input type="checkbox" id="cg-print-letters" checked />{
+            t.printShowLetters
+          }</label
+        >
+      </fieldset>
+
+      <label class="cg-print-avatars-label"
+        ><input type="checkbox" id="cg-print-avatars" checked />{
+          t.printIncludeAvatars
+        }</label
+      >
+
+      <div class="cg-print-actions">
+        <button type="button" id="cg-print-cancel">{t.printCancel}</button>
+        <button type="button" id="cg-print-confirm">{t.printConfirm}</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="../../scripts/classroom-groups.ts"></script>
 </BaseLayout>
@@ -1425,6 +1501,73 @@ const sexWhyText = sexWhy(roster, t);
     color: var(--ink-soft);
     max-width: var(--measure);
   }
+  /* Stage 5, Task 1. The print panel. GLOBAL like every other rule in this
+     block -- the dialog is rendered by Astro, but its controls are reached
+     by a script and the two must not drift into scoped/unscoped halves. */
+  .cg-print-open {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .cg-print-panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.1rem;
+    max-width: min(30rem, 92vw);
+    color: var(--ink);
+    background: var(--surface);
+  }
+  .cg-print-panel::backdrop {
+    background: rgb(0 0 0 / 45%);
+  }
+  .cg-print-panel h2 {
+    margin: 0 0 0.8rem;
+    font-size: 1.15rem;
+  }
+  .cg-print-panel fieldset {
+    margin: 0 0 0.9rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .cg-print-panel legend {
+    padding: 0 0.35rem;
+    font-weight: 600;
+  }
+  /* Each choice is its own row with a 44px target -- a radio a teacher has
+     to hit precisely on a phone is the same defect as an undersized button,
+     and the label is part of the target because it is inside it. */
+  .cg-print-panel label {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    min-height: 44px;
+  }
+  .cg-print-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-top: 1rem;
+  }
+  .cg-print-actions button {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
   .cg-io-handover,
   .cg-io-imported {
     margin: 0.6rem 0 0;

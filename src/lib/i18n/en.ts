@@ -479,6 +479,29 @@ export const en = {
     'The second tab never asked for the class list. Your class list is still here — close that tab and try again.',
   ioHandoverSent: 'Your class list is now open in the other language.',
 
+  // ── The print panel (stage 5; design spec section 10) ───────────────────
+  //
+  // A panel rather than a bare button: "the teacher decides what goes on
+  // the paper -- the operator was explicit that this is theirs to choose,
+  // not ours to fix."
+  //
+  // The two class-list tick boxes are INDEPENDENT, which is why they are
+  // tick boxes rather than three named sheets: all four combinations are
+  // reachable, including "only who is here, with the letters" -- a
+  // combination named sheets could not express.
+  printOpen: 'Print',
+  printHeading: 'Print',
+  printWhat: 'What to print',
+  printWhatClassList: 'Class list',
+  printWhatGroups: 'Group results',
+  printWhatBoth: 'Both',
+  printOnTheClassList: 'On the class list',
+  printShowAbsent: 'Show students who are absent',
+  printShowLetters: 'Show sex and the together/apart letters',
+  printIncludeAvatars: 'Include avatars',
+  printCancel: 'Cancel',
+  printConfirm: 'Print',
+
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different
     // triggers in grouping.ts -- an empty roster (no count, no names) and a

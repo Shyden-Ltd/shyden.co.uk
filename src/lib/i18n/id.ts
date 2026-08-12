@@ -282,6 +282,22 @@ export const id: Strings = {
     'Tab kedua tidak pernah meminta daftar kelas. Daftar kelas Anda masih ada di sini — tutup tab itu lalu coba lagi.',
   ioHandoverSent: 'Daftar kelas Anda kini terbuka dalam bahasa lainnya.',
 
+  // ── Panel cetak (tahap 5; bagian 10 dokumen desain) ────────────────────
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  printOpen: 'Cetak',
+  printHeading: 'Cetak',
+  printWhat: 'Apa yang dicetak',
+  printWhatClassList: 'Daftar kelas',
+  printWhatGroups: 'Hasil kelompok',
+  printWhatBoth: 'Keduanya',
+  printOnTheClassList: 'Pada daftar kelas',
+  printShowAbsent: 'Tampilkan siswa yang tidak hadir',
+  printShowLetters: 'Tampilkan jenis kelamin dan huruf bersama/terpisah',
+  printIncludeAvatars: 'Sertakan avatar',
+  printCancel: 'Batal',
+  printConfirm: 'Cetak',
+
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
     // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA

@@ -74,14 +74,23 @@ export const buildRoster = async (
   await expect(page.locator('.cg-student')).toHaveCount(students.length);
 };
 
-export const rosterOf = async (page: Page, n: number) =>
+export const rosterOf = async (
+  page: Page,
+  n: number,
+  path = '/classroom-groups',
+) =>
   buildRoster(
     page,
     Array.from({ length: n }, () => [null] as [null]),
+    path,
   );
 
-export const withGroups = async (page: Page, n = 12) => {
-  await rosterOf(page, n);
+export const withGroups = async (
+  page: Page,
+  n = 12,
+  path = '/classroom-groups',
+) => {
+  await rosterOf(page, n, path);
   // "Make Groups" / "Buat Kelompok" -- capital-for-capital (en.ts's own
   // `makeGroups`/id.ts's own `makeGroups`). A case-SENSITIVE regex name
   // (no `i` flag) is matched against the accessible name exactly as
@@ -139,3 +148,72 @@ export const buildRosterAtPath = async (
   path: string,
   students: Array<['M' | 'F' | null, string?]>,
 ) => buildRoster(page, students, path);
+
+/**
+ * Stage 5's fixtures. Six students, number 4 absent, letters on #1/#2
+ * (together) and #3 (apart).
+ *
+ * The SHAPE is what makes `['1','2','3','5','6']` the right expectation when
+ * absent students are dropped -- change this fixture and those assertions
+ * become meaningless rather than failing, which is exactly why it lives in
+ * one place.
+ */
+export const rosterWithAnAbsence = async (page: Page) => {
+  await buildRoster(page, [
+    ['F', 'Ana'],
+    ['M', 'Budi'],
+    ['F', 'Citra'],
+    ['F', 'Dewi'],
+    ['M', 'Eko'],
+    [null],
+  ]);
+  await page
+    .locator('.cg-student')
+    .nth(0)
+    .getByLabel(/Together/)
+    .selectOption('A');
+  await page
+    .locator('.cg-student')
+    .nth(1)
+    .getByLabel(/Together/)
+    .selectOption('A');
+  await page
+    .locator('.cg-student')
+    .nth(2)
+    .getByLabel(/Apart/)
+    .selectOption('A');
+  await page
+    .locator('.cg-student')
+    .nth(3)
+    .getByLabel(/Absent/)
+    .check();
+};
+
+/** Six boys and two girls — separate mode then cannot give the girls a group. */
+export const rosterForSpillover = async (page: Page) => {
+  await buildRoster(page, [
+    ['M', 'Ana'],
+    ['M', 'Budi'],
+    ['M', 'Citra'],
+    ['M', 'Dedi'],
+    ['M', 'Eko'],
+    ['M', 'Fajar'],
+    ['F', 'Gita'],
+    ['F', 'Hani'],
+  ]);
+  await page.locator('#cg-grouping-toggle').click();
+  await page.getByLabel(/Keep boys and girls separate/).check();
+  await page.getByLabel(/Students in each group/).fill('4');
+};
+
+export const namesIn = (text: string): string[] =>
+  text.split(/\s+/).filter((w) => /^[A-Z][a-z]+$/.test(w));
+
+/** Open the print panel from the results section. */
+export const openPrintPanel = async (page: Page) => {
+  await page
+    .getByRole('button', { name: /^(Print|Cetak)$/ })
+    .first()
+    .click();
+  await expect(page.locator('#cg-print-panel')).toBeVisible();
+};
