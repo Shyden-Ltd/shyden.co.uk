@@ -463,6 +463,22 @@ export const en = {
   ioImported: (total: number) =>
     `Imported ${total} ${total === 1 ? 'student' : 'students'}.`,
 
+  // ── The two-language handover (stage 4, Task 6; design spec section 9) ──
+  //
+  // The roster crosses between tabs IN MEMORY, over a BroadcastChannel.
+  // sessionStorage was rejected: it writes children's names into
+  // browser-managed storage for the length of a page load, which can
+  // survive a crash on a shared classroom machine. A URL is worse -- that
+  // is the exact defect closed as C1 in PR #8.
+  ioBothLanguages: 'Also export in the other language',
+  ioBothLanguagesHint:
+    'Your file saves now, in this language. A second tab opens in the other language with the same class list, for you to check and save there. Nothing is stored and nothing is sent anywhere.',
+  ioHandoverBlocked:
+    'The second tab could not be opened. Your class list is still here — allow pop-ups and try again.',
+  ioHandoverTimedOut:
+    'The second tab never asked for the class list. Your class list is still here — close that tab and try again.',
+  ioHandoverSent: 'Your class list is now open in the other language.',
+
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different
     // triggers in grouping.ts -- an empty roster (no count, no names) and a

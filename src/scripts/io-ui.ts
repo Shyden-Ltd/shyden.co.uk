@@ -20,6 +20,7 @@
 import type { Student } from '../lib/grouping';
 import type { Strings } from '../lib/i18n';
 import type { Locale } from '../lib/csv-locale';
+import { otherLocale, toolPath } from '../lib/i18n';
 import {
   importFile,
   serialiseRoster,
@@ -85,6 +86,39 @@ export interface IoSection {
   /** Re-read what exists and show the controls that now apply. */
   refresh: () => void;
 }
+
+/**
+ * The name of the in-memory channel the two tabs meet on, and the three
+ * messages they exchange.
+ *
+ * A `BroadcastChannel` reaches every same-origin tab, which is exactly what
+ * is needed and also exactly why the handshake carries an `id`: a teacher
+ * with the tool open in three tabs must not have a fourth answer a request
+ * meant for the tab that made it.
+ *
+ * Design spec section 9 rejected the alternatives explicitly, and they are
+ * recorded here rather than only in the spec because this is where someone
+ * would be tempted to reach for them: `sessionStorage` writes children's
+ * names into browser-managed storage for the length of a page load, which
+ * can survive a crash on a shared classroom machine; a URL is worse, and is
+ * the exact defect closed as C1 in PR #8.
+ */
+const HANDOVER_CHANNEL = 'cg-handover';
+
+/**
+ * How long the sending tab waits to be asked before giving up and saying
+ * so. Long enough for a cold tab to load and run its script on a slow
+ * classroom machine; short enough that a teacher is not left guessing.
+ *
+ * The roster is KEPT either way -- design spec section 9: "The handover
+ * must never lose data by failing silently."
+ */
+const HANDOVER_TIMEOUT_MS = 5000;
+
+type HandoverMessage =
+  | { kind: 'ask'; id: string }
+  | { kind: 'roster'; id: string; roster: Student[]; className: string }
+  | { kind: 'ack'; id: string };
 
 export function renderIo(
   container: HTMLElement,
@@ -156,9 +190,34 @@ export function renderIo(
   const exportRoster = button(t.ioExportClassList, 'cg-io-export');
   const exportGroups = button(t.ioExportGroups, 'cg-io-export-groups');
   const template = button(t.ioDownloadTemplate, 'cg-io-template');
-  buttons.append(exportRoster, exportGroups, template);
+  const bothLanguages = button(t.ioBothLanguages, 'cg-io-both');
+  buttons.append(exportRoster, exportGroups, template, bothLanguages);
 
-  container.append(importField, problems, confirm, imported, buttons);
+  // Design spec section 9, step 1: the teacher "is told what will happen"
+  // BEFORE choosing, not after. Rendered beside the button rather than as
+  // a confirmation dialog: a sentence a teacher can read at their own pace
+  // beats one that blocks the page and gets dismissed unread.
+  const bothHint = document.createElement('p');
+  bothHint.className = 'cg-io-both-hint';
+  bothHint.id = 'cg-io-both-hint';
+  bothHint.textContent = t.ioBothLanguagesHint;
+  bothLanguages.setAttribute('aria-describedby', 'cg-io-both-hint');
+
+  const handover = document.createElement('p');
+  handover.className = 'cg-io-handover';
+  handover.id = 'cg-io-handover';
+  handover.setAttribute('role', 'status');
+  handover.hidden = true;
+
+  container.append(
+    importField,
+    problems,
+    confirm,
+    imported,
+    buttons,
+    bothHint,
+    handover,
+  );
 
   // ── behaviour ───────────────────────────────────────────────────────────
 
@@ -271,6 +330,118 @@ export function renderIo(
       fileName('class-list', handlers.getClassName(), todayISO(), locale),
     );
   });
+
+  // ── the two-language handover (design spec section 9) ───────────────────
+  //
+  // Both roles live here, in every tab, because either page can be the
+  // sender: the tool is bidirectional and "bidirectional" is precisely the
+  // kind of claim that gets made about code that only works one way. A tab
+  // is a RECEIVER if it was opened by this flow (marked by a hash on the
+  // URL, which carries no data -- only the fact that someone is expected to
+  // be listening) and a SENDER when the button is pressed.
+  const channel =
+    typeof BroadcastChannel === 'function'
+      ? new BroadcastChannel(HANDOVER_CHANNEL)
+      : null;
+
+  const say = (message: string) => {
+    // Unhidden BEFORE the text lands -- the same live-region ordering every
+    // other status on this page follows.
+    handover.hidden = false;
+    handover.textContent = message;
+  };
+
+  /** The sender: export here, open the other page, answer its one question. */
+  bothLanguages.addEventListener('click', () => {
+    handover.hidden = true;
+    handover.textContent = '';
+
+    // Step 2 of the spec's own sequence: "The current page's file saves."
+    // FIRST, unconditionally, before anything that can fail. A teacher who
+    // hits a blocked pop-up must still end up with the file they asked for.
+    const className = handlers.getClassName();
+    const roster = [...handlers.getRoster()];
+    download(
+      serialiseRoster(roster, className, locale),
+      fileName('class-list', className, todayISO(), locale),
+    );
+    handlers.onExported();
+
+    if (!channel) {
+      say(t.ioHandoverBlocked);
+      return;
+    }
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const target = `${toolPath(otherLocale(locale))}#${HANDOVER_CHANNEL}`;
+    const opened = window.open(target, '_blank');
+    if (!opened) {
+      // Design spec section 9: "If the tab is blocked ... say so plainly and
+      // keep the roster where it is." The roster is untouched above; only
+      // the handover failed.
+      say(t.ioHandoverBlocked);
+      return;
+    }
+
+    let settled = false;
+    const finish = (message: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      channel.removeEventListener('message', onMessage);
+      say(message);
+    };
+
+    // "The source tab forgets the roster only once the new tab acknowledges
+    // receipt" -- what is forgotten is the PENDING HANDOVER, not the
+    // teacher's class list, which stays on screen either way. After `ack`
+    // this tab stops answering, so a later `ask` from an unrelated tab
+    // cannot be served a roster nobody asked it to hold.
+    const onMessage = (event: MessageEvent<HandoverMessage>) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.kind === 'ask' && data.id === id) {
+        channel.postMessage({ kind: 'roster', id, roster, className });
+        return;
+      }
+      if (data.kind === 'ack' && data.id === id) finish(t.ioHandoverSent);
+    };
+    channel.addEventListener('message', onMessage);
+
+    // The receiving tab does not know the id until it announces itself, so
+    // the sender answers a bare ask too -- but only while this exchange is
+    // live, which is what the timeout below bounds.
+    const onAnyAsk = (event: MessageEvent<HandoverMessage>) => {
+      if (event.data?.kind === 'ask' && event.data.id === 'any' && !settled) {
+        channel.postMessage({ kind: 'roster', id, roster, className });
+      }
+    };
+    channel.addEventListener('message', onAnyAsk);
+
+    const timer = window.setTimeout(() => {
+      channel.removeEventListener('message', onAnyAsk);
+      finish(t.ioHandoverTimedOut);
+    }, HANDOVER_TIMEOUT_MS);
+  });
+
+  // The receiver. Runs on EVERY page load, but asks only when the hash says
+  // a handover is expected -- a page opened normally must not shout into a
+  // channel other tabs are listening on.
+  if (channel && window.location.hash === `#${HANDOVER_CHANNEL}`) {
+    const onOffer = (event: MessageEvent<HandoverMessage>) => {
+      const data = event.data;
+      if (!data || data.kind !== 'roster') return;
+      channel.removeEventListener('message', onOffer);
+      handlers.onImport(data.roster, data.className);
+      say(t.ioImported(data.roster.length));
+      // The acknowledgement the sender waits for. Sent AFTER the roster is
+      // applied, never before: an ack that arrives first would let the
+      // sender report success for a handover that then failed to render.
+      channel.postMessage({ kind: 'ack', id: data.id });
+    };
+    channel.addEventListener('message', onOffer);
+    channel.postMessage({ kind: 'ask', id: 'any' });
+  }
 
   const refresh = () => {
     // Design spec section 9: "Two buttons, and the groups one appears only

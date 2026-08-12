@@ -1410,6 +1410,27 @@ const sexWhyText = sexWhy(roster, t);
   .cg-io-problems li + li {
     margin-top: 0.3rem;
   }
+  /* The two-language handover. The hint sits UNDER the buttons and is
+     quieter than them -- it explains a choice rather than being one --
+     while the status line that replaces it after a press is normal weight,
+     because by then it is the only thing on screen reporting what
+     happened. */
+  /* `--ink-soft` and `--measure`, the tokens this page's own `.why` rule
+     already uses for exactly this job -- NOT a `--muted` that does not
+     exist anywhere in this codebase. `var(--muted, inherit)` would have
+     silently fallen back to `inherit` and looked deliberate. */
+  .cg-io-both-hint {
+    margin: 0.6rem 0 0;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  .cg-io-handover,
+  .cg-io-imported {
+    margin: 0.6rem 0 0;
+    font-weight: 600;
+    max-width: var(--measure);
+  }
   /* Stage 4, Task 5. The Import/export section's own controls, GLOBAL for
      the identical reason every rule in this block is: `renderIo`
      (src/scripts/io-ui.ts) builds them with document.createElement, so none
@@ -1423,11 +1444,14 @@ const sexWhyText = sexWhy(roster, t);
   .cg-add-confirm,
   .cg-remove-student,
   .cg-clear-roster,
-  .cg-io-export,
-  .cg-io-export-groups,
-  .cg-io-template,
-  .cg-io-replace,
-  .cg-io-keep {
+  /* By CONTAINER, not by listing each class. The first version of this rule
+     named five of the six buttons `renderIo` builds and missed
+     `.cg-io-both`, which shipped under the 44px floor and was caught only
+     because the site-wide touch-target test runs against every section
+     open. A container selector cannot be missed by the next button added
+     to either group -- closing the door rather than the one hole. */
+  .cg-io-buttons button,
+  .cg-io-confirm-buttons button {
     min-height: 44px;
     padding: 0.5rem 0.9rem;
     font: inherit;

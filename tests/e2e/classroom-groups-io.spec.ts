@@ -6,6 +6,7 @@ import {
   downloadText,
   downloadName,
   todayISO,
+  buildRosterAtPath,
 } from './helpers';
 
 /**
@@ -395,5 +396,214 @@ test.describe('Import / export — Indonesian', () => {
     await page.locator('#cg-io-toggle').click();
     const name = await downloadName(page, 'Ekspor daftar kelas');
     expect(name).toBe(`7B-daftar-kelas-${todayISO()}.csv`);
+  });
+});
+
+/**
+ * Stage 4, Task 6. W-01…W-13, Y-02…Y-04.
+ *
+ * Both directions are driven by the SAME parameterised case, because
+ * "bidirectional" is precisely the kind of claim that gets made about code
+ * that only works one way.
+ */
+test.describe('exporting in both languages', () => {
+  for (const [from, to, firstFile, secondFile, secondButton] of [
+    [
+      '/classroom-groups',
+      '/id/classroom-groups',
+      'class-list',
+      'daftar-kelas',
+      'Ekspor daftar kelas',
+    ],
+    [
+      '/id/classroom-groups',
+      '/classroom-groups',
+      'daftar-kelas',
+      'class-list',
+      'Export class list',
+    ],
+  ] as const) {
+    test(`works starting from ${from}`, async ({ page, context }) => {
+      await buildRosterAtPath(page, from, [
+        ['F', 'Ana'],
+        ['M', 'Budi'],
+      ]);
+      await page.locator('#cg-io-toggle').click();
+
+      const [download, newPage] = await Promise.all([
+        page.waitForEvent('download'),
+        context.waitForEvent('page'),
+        page
+          .getByRole('button', {
+            name: /other language|bahasa lainnya/,
+          })
+          .click(),
+      ]);
+
+      expect(download.suggestedFilename()).toContain(firstFile);
+      await newPage.waitForLoadState();
+      expect(new URL(newPage.url()).pathname).toBe(to);
+
+      await newPage.locator('#cg-students-toggle').click();
+      await expect(newPage.locator('.cg-student')).toHaveCount(2);
+      await expect(
+        newPage
+          .locator('.cg-student')
+          .first()
+          .getByLabel(/Name|Nama/),
+      ).toHaveValue('Ana');
+
+      await newPage.locator('#cg-io-toggle').click();
+      const [second] = await Promise.all([
+        newPage.waitForEvent('download'),
+        newPage.getByRole('button', { name: secondButton }).click(),
+      ]);
+      expect(second.suggestedFilename()).toContain(secondFile);
+    });
+  }
+
+  // The sex value must cross as the ENGINE's own 'M'/'F', not as the page's
+  // rendered letter -- otherwise an Indonesian 'P' arrives on the English
+  // page as a sex it does not recognise. The letters differ between the two
+  // pages, which is exactly why this is worth pinning.
+  test('a sex survives the crossing, in the receiving page own letters', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    const [, newPage] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await newPage.waitForLoadState();
+    await newPage.locator('#cg-students-toggle').click();
+    await expect(
+      newPage.locator('.cg-student').first().getByLabel('Jenis kelamin'),
+    ).toHaveValue('F');
+    // …and the Indonesian page shows it as P, its own letter for the same fact.
+    await expect(
+      newPage
+        .locator('.cg-student')
+        .first()
+        .getByLabel('Jenis kelamin')
+        .locator('option:checked'),
+    ).toHaveText('P');
+  });
+
+  test('nothing is written to storage and nothing is in a URL', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    const [, newPage] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await newPage.waitForLoadState();
+    await newPage.locator('#cg-students-toggle').click();
+    await expect(newPage.locator('.cg-student')).toHaveCount(1);
+    for (const p of [page, newPage]) {
+      const seen = await p.evaluate(() =>
+        [
+          JSON.stringify({ ...localStorage }),
+          JSON.stringify({ ...sessionStorage }),
+          location.href,
+          document.cookie,
+        ].join(' '),
+      );
+      expect(seen).not.toContain('Ana');
+    }
+  });
+
+  test('the source keeps the roster until the new tab acknowledges', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    const [, newPage] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await newPage.waitForLoadState();
+    await newPage.locator('#cg-students-toggle').click();
+    await expect(newPage.locator('.cg-student')).toHaveCount(1);
+    await expect(page.locator('.cg-student')).toHaveCount(1); // still there
+    await expect(
+      page.getByText('Your class list is now open in the other language.'),
+    ).toBeVisible();
+  });
+
+  test('a blocked tab is reported and the roster is kept', async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      window.open = () => null;
+    });
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    // The file still saves -- a blocked pop-up must not cost a teacher the
+    // export they actually asked for.
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    expect(download.suggestedFilename()).toContain('class-list');
+    await expect(
+      page.getByText(
+        'The second tab could not be opened. Your class list is still here — ' +
+          'allow pop-ups and try again.',
+      ),
+    ).toBeVisible();
+    await expect(page.locator('.cg-student')).toHaveCount(1);
+  });
+
+  // A tab that opens but never asks -- the other half of "the handover must
+  // never lose data by failing silently". Condition-based: this waits for
+  // the sentence to appear, never for a fixed number of milliseconds.
+  test('a tab that never asks is reported, and the roster is kept', async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      // A window that opens and does nothing -- the shape of a tab that
+      // loads but whose script never runs (a school filter, a failed
+      // deploy). Truthy, so it is not the blocked case.
+      window.open = () => ({ closed: false }) as unknown as Window;
+    });
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await expect(
+      page.getByText(
+        'The second tab never asked for the class list. Your class list is ' +
+          'still here — close that tab and try again.',
+      ),
+    ).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.cg-student')).toHaveCount(1);
+  });
+
+  // A page opened NORMALLY must not shout into the channel -- otherwise a
+  // teacher with two tabs open has one silently overwrite the other.
+  test('a page opened normally does not ask for anybody roster', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    const other = await context.newPage();
+    await other.goto('/id/classroom-groups');
+    await other.locator('#cg-students-toggle').click();
+    await expect(other.locator('.cg-student')).toHaveCount(0);
+    await expect(page.locator('.cg-student')).toHaveCount(1);
   });
 });

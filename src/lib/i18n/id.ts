@@ -270,6 +270,18 @@ export const id: Strings = {
   ioReplaceCancel: 'Pertahankan yang ada',
   ioImported: (total: number) => `${total} siswa diimpor.`,
 
+  // ── Serah-terima dua bahasa (tahap 4, Tugas 6) ─────────────────────────
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  ioBothLanguages: 'Ekspor juga dalam bahasa lainnya',
+  ioBothLanguagesHint:
+    'Berkas Anda tersimpan sekarang, dalam bahasa ini. Tab kedua akan terbuka dalam bahasa lainnya dengan daftar kelas yang sama, untuk Anda periksa dan simpan di sana. Tidak ada yang disimpan dan tidak ada yang dikirim ke mana pun.',
+  ioHandoverBlocked:
+    'Tab kedua tidak dapat dibuka. Daftar kelas Anda masih ada di sini — izinkan pop-up lalu coba lagi.',
+  ioHandoverTimedOut:
+    'Tab kedua tidak pernah meminta daftar kelas. Daftar kelas Anda masih ada di sini — tutup tab itu lalu coba lagi.',
+  ioHandoverSent: 'Daftar kelas Anda kini terbuka dalam bahasa lainnya.',
+
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
     // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA
