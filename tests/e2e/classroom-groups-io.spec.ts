@@ -705,3 +705,198 @@ test.describe('exporting in both languages', () => {
     await expect(page.locator('.cg-student')).toHaveCount(1);
   });
 });
+
+/**
+ * Review finding C2, fixed and pinned.
+ *
+ * The handover used to run over a `BroadcastChannel`, which is ORIGIN-WIDE.
+ * For the seconds a handover was live, any other document on this origin
+ * could have asked for the roster in one line and been handed every child's
+ * name -- a hole straight through this page's headline promise, and one the
+ * existing privacy tests could not see because they only ever inspect the
+ * two tabs they know about.
+ *
+ * These three are the tests that make the fix real.
+ */
+test.describe('the handover cannot be overheard', () => {
+  test('a third same-origin tab that asks is given nothing', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await page.locator('#cg-io-toggle').click();
+
+    // An ordinary third tab on the same origin, listening on BOTH the old
+    // channel and its own window, and asking every way the protocol has
+    // ever used. It must hear nothing at all.
+    const eavesdropper = await context.newPage();
+    await eavesdropper.goto(new URL('/classroom-groups', page.url()).href);
+    await eavesdropper.evaluate(() => {
+      const heard: unknown[] = [];
+      (window as unknown as { __heard: unknown[] }).__heard = heard;
+      window.addEventListener('message', (e) => heard.push(e.data));
+      if (typeof BroadcastChannel === 'function') {
+        const channel = new BroadcastChannel('cg-handover');
+        channel.addEventListener('message', (e) => heard.push(e.data));
+        channel.postMessage({ kind: 'ask', id: 'any' });
+        channel.postMessage({ kind: 'cg-ask' });
+      }
+    });
+
+    const [, receiver] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await receiver.waitForLoadState();
+    // The legitimate receiver got it…
+    await receiver.locator('#cg-students-toggle').click();
+    await expect(receiver.locator('.cg-student')).toHaveCount(2);
+
+    // …and the third tab got nothing, by any route. Asked again mid-flight
+    // for good measure.
+    await eavesdropper.evaluate(() => {
+      if (typeof BroadcastChannel === 'function') {
+        new BroadcastChannel('cg-handover').postMessage({
+          kind: 'ask',
+          id: 'any',
+        });
+      }
+    });
+    const heard = await eavesdropper.evaluate(
+      () => (window as unknown as { __heard: unknown[] }).__heard,
+    );
+    expect(JSON.stringify(heard)).not.toContain('Ana');
+    expect(JSON.stringify(heard)).not.toContain('Budi');
+    await expect(eavesdropper.locator('.cg-student')).toHaveCount(0);
+  });
+
+  test('a reloaded receiver does not arm itself again', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    const [, receiver] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await receiver.waitForLoadState();
+    await receiver.locator('#cg-students-toggle').click();
+    await expect(receiver.locator('.cg-student')).toHaveCount(1);
+
+    // The hash is spent: it is gone from the URL, so a reload cannot make
+    // this tab go looking for somebody's class list a second time.
+    expect(new URL(receiver.url()).hash).toBe('');
+    await receiver.reload();
+    await receiver.locator('#cg-students-toggle').click();
+    await expect(receiver.locator('.cg-student')).toHaveCount(0);
+  });
+
+  test('a receiver with work of its own is warned before it is replaced', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await page.locator('#cg-io-toggle').click();
+    const [, receiver] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await receiver.waitForLoadState();
+    await expect(receiver.locator('.cg-student')).toHaveCount(2);
+
+    // Now the teacher types a class of their own into the receiving tab and
+    // a SECOND handover arrives. Design spec section 9: "Never silent, even
+    // when the counts match."
+    await buildRoster(
+      receiver,
+      [
+        ['F', 'Gita'],
+        ['M', 'Hani'],
+        ['F', 'Sari'],
+      ],
+      new URL('/id/classroom-groups', receiver.url()).href,
+    );
+    const [, second] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await second.waitForLoadState();
+    // The NEW tab takes it, because it is empty…
+    await second.locator('#cg-students-toggle').click();
+    await expect(second.locator('.cg-student')).toHaveCount(2);
+    // …and the tab the teacher was working in is untouched.
+    await expect(receiver.locator('.cg-student')).toHaveCount(3);
+    await expect(
+      receiver.locator('.cg-student').first().getByLabel('Nama'),
+    ).toHaveValue('Gita');
+  });
+});
+
+test.describe('review findings — import', () => {
+  // I2. `File.text()` genuinely rejects. Unhandled it skipped everything
+  // below it, so the teacher saw nothing at all -- and because the input's
+  // value was cleared AFTER the read, picking the same file again fired no
+  // change event and the page ignored them a second time.
+  test('a file that cannot be read says so, and can be tried again', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await openIo(page);
+    // Make the read fail the way a moved or un-materialised cloud file
+    // does, once. The second attempt is a real read.
+    await page.evaluate(() => {
+      const original = File.prototype.text;
+      let failed = false;
+      File.prototype.text = function () {
+        if (failed) return original.call(this);
+        failed = true;
+        return Promise.reject(new DOMException('nope', 'NotReadableError'));
+      };
+    });
+    await upload(page, 'moved.csv', 'number,name\n1,Ana\n');
+    await expect(
+      page.getByText('That file could not be read. Try choosing it again.'),
+    ).toBeVisible();
+
+    // The SAME file again, which is what a teacher would do -- and it has
+    // to fire at all, which it did not while the value was left in place.
+    await upload(page, 'moved.csv', 'number,name\n1,Ana\n');
+    await expect(page.locator('.cg-student')).toHaveCount(1);
+    await expect(page.getByText(/could not be read/)).toHaveCount(0);
+  });
+
+  // I5. `if (className !== '')` left the previous class's name in place, so
+  // 8C's list printed under 7B and exported as 7B-class-list-….csv.
+  test('importing a file with no class name clears the old one', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Class (optional)').fill('7B');
+    await openIo(page);
+    await upload(page, 'unnamed.csv', 'number,name\n1,Gita\n2,Hani\n');
+    await expect(page.locator('.cg-student')).toHaveCount(2);
+    await expect(page.getByLabel('Class (optional)')).toHaveValue('');
+    // …and the next export is not filed under the class that is gone.
+    const name = await downloadName(page, 'Export class list');
+    expect(name).not.toContain('7B');
+  });
+
+  test('and an import that HAS a name takes it', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.getByLabel('Class (optional)').fill('7B');
+    await openIo(page);
+    await upload(page, 'named.csv', '# Class: 8C\nnumber,name\n1,Gita\n');
+    await expect(page.getByLabel('Class (optional)')).toHaveValue('8C');
+  });
+});

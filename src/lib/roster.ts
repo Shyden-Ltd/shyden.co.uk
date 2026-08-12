@@ -254,6 +254,19 @@ export function rosterWarnings(roster: Student[], t: Strings): string[] {
   const numbers = roster.map((s) => s.number);
   const min = Math.min(...numbers);
   const max = Math.max(...numbers);
+  // A range WIDER than the roster can hold is not a gap a teacher can act
+  // on, and enumerating it is not merely useless -- it is fatal. A school
+  // roll number (Indonesian NISN is ten digits) puts `max - min` in the
+  // tens of millions: the loop below builds an array that large,
+  // `rosterGapWarning` maps it to strings and joins it into a single
+  // ~10^9-character sentence, and the tab locks up with no paint and no way
+  // out but closing it -- taking the roster the teacher just imported with
+  // it. Measured, not theorised: 1 and 99999999 builds 60 million entries
+  // in two seconds.
+  //
+  // This warning exists for "you typed 1, 2, 3, 5". Bounded by MAX_ROSTER,
+  // because a gap that cannot fit in the roster is not that.
+  if (max - min >= MAX_ROSTER) return [];
   const present = new Set(numbers);
   const missing: number[] = [];
   for (let n = min; n <= max; n++) {

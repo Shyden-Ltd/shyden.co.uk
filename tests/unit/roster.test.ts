@@ -697,3 +697,49 @@ describe('rosterWarnings', () => {
     expect(msg).not.toContain('looks incomplete');
   });
 });
+
+/**
+ * Review finding, fixed. The gap warning must not enumerate a range wider
+ * than the roster can hold.
+ */
+describe('rosterWarnings does not enumerate an unbounded range', () => {
+  // A school roll number puts `max - min` in the tens of millions. The old
+  // loop built an array that large and joined it into one enormous
+  // sentence: the tab locked up with no paint and no way out but closing
+  // it, taking the roster the teacher had just imported with it.
+  //
+  // Timed, because "returns []" alone would also pass after ten minutes of
+  // building an array it then threw away.
+  it('returns nothing, promptly, for a range wider than MAX_ROSTER', () => {
+    const started = Date.now();
+    const out = rosterWarnings(
+      [student({ number: 1 }), student({ number: 99999999 })],
+      en,
+    );
+    expect(out).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  // The warning it is bounded FOR still fires: this is a limit, not a
+  // removal. Without this the fix could be "always return []" and pass.
+  it('still names a small gap', () => {
+    expect(
+      rosterWarnings(
+        [
+          student({ number: 1 }),
+          student({ number: 2 }),
+          student({ number: 4 }),
+        ],
+        en,
+      ),
+    ).toHaveLength(1);
+  });
+
+  // The boundary itself, both sides, so an off-by-one cannot survive.
+  it('warns up to the limit and stops beyond it', () => {
+    const at = [student({ number: 1 }), student({ number: MAX_ROSTER })];
+    const past = [student({ number: 1 }), student({ number: MAX_ROSTER + 1 })];
+    expect(rosterWarnings(at, en)).toHaveLength(1);
+    expect(rosterWarnings(past, en)).toEqual([]);
+  });
+});

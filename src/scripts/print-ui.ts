@@ -192,6 +192,13 @@ export function renderPrintPanel(
   });
 
   load();
+  // …and onto the document, immediately. `load()` alone put the remembered
+  // choices on the CONTROLS but not on `<html>`, so `data-print-*` was
+  // absent until the first time the panel's own Print was pressed. A
+  // teacher whose stored preference is "Groups only", printing from the
+  // browser's own menu, got both sheets -- the panel and the paper
+  // disagreeing about a choice the panel was showing correctly.
+  apply();
 
   return {
     // Design spec section 10's panel only makes sense once there is

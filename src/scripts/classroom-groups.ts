@@ -865,6 +865,20 @@ if (form) {
   let lastSnapshot: Snapshot | null = null;
   const staleNotice = $<HTMLElement>('cg-stale')!;
   const staleText = $<HTMLParagraphElement>('cg-stale-text')!;
+  /**
+   * Where all three stale refusals speak.
+   *
+   * Declared HERE, beside `#cg-stale`'s own text, rather than down with the
+   * three predicates that write it: `updateStaleness` clears it, and
+   * `updateStaleness` runs during setup -- a `const` declared later is in
+   * its temporal dead zone at that moment and throws, which nothing in this
+   * repo would have caught before a visitor did (there is no type checker,
+   * and `astro build` strips types without checking them).
+   *
+   * ONE element for all three exits, because a teacher does one thing at a
+   * time and three boxes would be three places to look.
+   */
+  const refusalEl = $<HTMLParagraphElement>('cg-refusal')!;
 
   const snapshot = (): Snapshot => ({
     mode: JSON.stringify(readMode()),
@@ -896,6 +910,14 @@ if (form) {
       // with `getByText('out of date')` still resolving to 1 element,
       // hidden but not gone, before this line existed.
       staleText.textContent = '';
+      // …and with it the refusal that staleness produced. `refuse()` is the
+      // only writer of `#cg-refusal` and used to be its only clearer, so a
+      // teacher who pressed Print while stale and then UNDID the edit was
+      // left with a role="alert" still saying the groups were out of date
+      // while everything else on the page said they were fine. Cleared
+      // HERE, beside the notice it accompanies, so the two cannot disagree.
+      refusalEl.hidden = true;
+      refusalEl.textContent = '';
       return;
     }
     // Joins the tree before the sentence is written -- same reason
@@ -1240,7 +1262,6 @@ if (form) {
    * being told "shuffle again before saving them" after pressing Print is
    * someone else's message.
    */
-  const refusalEl = $<HTMLParagraphElement>('cg-refusal')!;
   const groupsAreStale = () =>
     lastSnapshot !== null && staleReason(lastSnapshot, snapshot(), t) !== null;
   const refuse = (message: string): string | null => {
@@ -1263,6 +1284,9 @@ if (form) {
     // than reimplemented: one code path means a shuffle from the board can
     // never behave differently from one triggered on the page.
     onShuffle: () => form.requestSubmit(goButton),
+    // The SAME fact the page's own deal button uses, read rather than
+    // duplicated: one shuffle at a time, whichever button asked for it.
+    busy: () => goButton.disabled,
     refuseReason: () => refuse(t.staleRefuseBoard),
     // Design spec section 8: the reveal is animation, and the two ways a
     // teacher can already turn animation off both apply here. `#cg-speed`
@@ -1295,7 +1319,15 @@ if (form) {
         // screen is now exactly what is in a file the teacher holds.
         onExported: () => setRoster([...getRoster()], { saved: true }),
         onImport: (imported, className) => {
-          if (className !== '') classInput.value = className;
+          // The class name follows the roster WHOLESALE, blank included.
+          // `if (className !== '')` left the old name in place: import 8C's
+          // list (a hand-made file, or one exported before a name was
+          // typed -- `classLine` omits the line for a blank name) over a
+          // page showing 7B, and the roster is replaced while the heading,
+          // the printed sheet's header and the NEXT export filename all
+          // still say 7B. A teacher is handed a mislabelled paper register.
+          // The name belonged to the class that has just been replaced.
+          classInput.value = className;
           setRoster(imported, { saved: true });
           renderStudentsBody();
           updateStaleness();
@@ -1972,10 +2004,6 @@ if (form) {
     io?.refresh();
     refreshPrintAvailability();
     refreshBoardAvailability();
-    // A new shuffle changes how much there is to show, so the board has to
-    // measure again -- after render, which is why this is not inside
-    // `refreshBoardAvailability`.
-    projector?.refit();
 
     // Read fresh at every submit -- never cached -- so a class name typed
     // or changed between two shuffles is picked up on the next one. Set
@@ -1995,6 +2023,13 @@ if (form) {
     // Same ordering rule as the error path: the region joins the tree, and
     // only then is the sentence written into it.
     results.hidden = false;
+    // AFTER `render()` and after the section is visible -- `refit` measures
+    // `scrollHeight`, and measuring before the new cards exist sizes the
+    // board to the PREVIOUS shuffle. The stage is `overflow: hidden` until
+    // `fitScale` says it scrolls, so a taller arrangement measured against
+    // the old one loses its bottom group off the board with no scrollbar,
+    // in front of a class. It was called before `render` until this fix.
+    projector?.refit();
     summary.textContent = t.resultsSummary(groups.length, groups.flat().length);
 
     // A success can still carry `warnings` -- "Gita, Sari have joined a

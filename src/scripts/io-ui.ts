@@ -97,37 +97,91 @@ export interface IoSection {
 }
 
 /**
- * The name of the in-memory channel the two tabs meet on, and the three
- * messages they exchange.
+ * The marker that says a tab was opened BY the handover and should ask its
+ * opener for the roster.
  *
- * A `BroadcastChannel` reaches every same-origin tab, which is exactly what
- * is needed and also exactly why the handshake carries an `id`: a teacher
- * with the tool open in three tabs must not have a fourth answer a request
- * meant for the tab that made it.
- *
- * Design spec section 9 rejected the alternatives explicitly, and they are
- * recorded here rather than only in the spec because this is where someone
- * would be tempted to reach for them: `sessionStorage` writes children's
- * names into browser-managed storage for the length of a page load, which
- * can survive a crash on a shared classroom machine; a URL is worse, and is
- * the exact defect closed as C1 in PR #8.
+ * A hash carries no data -- only the fact that someone is expected to be
+ * listening -- and it is REMOVED the moment it has been read. Left in place
+ * it survives a reload, and a reloaded tab re-arms itself: the teacher
+ * reloads the Indonesian tab, hands a DIFFERENT class over from the English
+ * one, and the reloaded tab silently takes that second roster over the work
+ * it was already holding.
  */
-const HANDOVER_CHANNEL = 'cg-handover';
+const HANDOVER_HASH = 'cg-handover';
 
 /**
- * How long the sending tab waits to be asked before giving up and saying
- * so. Long enough for a cold tab to load and run its script on a slow
- * classroom machine; short enough that a teacher is not left guessing.
+ * How long each side waits before giving up and saying so.
+ *
+ * Both sides, not just the sender. A receiving tab that is never answered
+ * used to sit there looking like an ordinary empty tool page, saying
+ * nothing at all, while the sender alone reported the failure -- in the
+ * other tab, which the teacher had just been taken away from.
  *
  * The roster is KEPT either way -- design spec section 9: "The handover
  * must never lose data by failing silently."
  */
 const HANDOVER_TIMEOUT_MS = 5000;
 
+/**
+ * The two messages the tabs exchange, over `postMessage` between the OPENER
+ * and the window it opened.
+ *
+ * NOT a `BroadcastChannel`, and this is the whole point. A BroadcastChannel
+ * is ORIGIN-WIDE: for the seconds the handover is live, any other document
+ * on this origin could have asked for the roster in one line and been given
+ * every child's name --
+ *
+ *     new BroadcastChannel('cg-handover').postMessage({ kind: 'ask' })
+ *
+ * -- and the `id` in the old handshake constrained nothing, because the
+ * receiver could not know an id before it had spoken and so asked with a
+ * wildcard that the sender always answered. That is a hole straight through
+ * this page's headline promise, and it is invisible to a privacy test that
+ * only inspects the two tabs it knows about.
+ *
+ * `window.postMessage` is addressed to ONE window. The sender holds the
+ * handle `window.open` returned and speaks only to it; the receiver speaks
+ * only to `window.opener`. Both check `event.origin` against their own, and
+ * the receiver additionally checks the message came from the window that
+ * opened it. No third document can join, whatever it does.
+ *
+ * The alternatives design spec section 9 rejected are recorded here as
+ * well, because this is where someone would reach for them: `sessionStorage`
+ * writes children's names into browser-managed storage for the length of a
+ * page load, which can survive a crash on a shared classroom machine; a URL
+ * is worse, and is the exact defect closed as C1 in PR #8.
+ */
 type HandoverMessage =
-  | { kind: 'ask'; id: string }
-  | { kind: 'roster'; id: string; roster: Student[]; className: string }
-  | { kind: 'ack'; id: string };
+  | { kind: 'cg-ask' }
+  | { kind: 'cg-roster'; roster: Student[]; className: string }
+  | { kind: 'cg-ack' };
+
+/**
+ * Is this really one of our messages, with a roster shaped the way the
+ * roster is shaped?
+ *
+ * Validated rather than trusted even though the origin check has already
+ * run: `event.data` is whatever the other document chose to send, and a
+ * `roster` that is not an array reaches `renderRoster` and kills the module
+ * with a page full of nothing. A same-origin document is not automatically
+ * a friendly one, and a friendly one can still be an older version of this
+ * page speaking a shape this one no longer understands.
+ */
+const isRosterMessage = (
+  data: unknown,
+): data is { kind: 'cg-roster'; roster: Student[]; className: string } => {
+  if (typeof data !== 'object' || data === null) return false;
+  const message = data as Record<string, unknown>;
+  if (message.kind !== 'cg-roster') return false;
+  if (!Array.isArray(message.roster)) return false;
+  if (typeof message.className !== 'string') return false;
+  return message.roster.every(
+    (s: unknown) =>
+      typeof s === 'object' &&
+      s !== null &&
+      typeof (s as Student).number === 'number',
+  );
+};
 
 export function renderIo(
   container: HTMLElement,
@@ -269,14 +323,29 @@ export function renderIo(
 
   importInput.addEventListener('change', async () => {
     const file = importInput.files?.[0];
-    // Clearing the value is what lets the SAME file be chosen twice --
-    // without it a teacher who fixes their spreadsheet, saves over the
-    // original and picks it again gets no `change` event at all, and the
-    // page appears to ignore them.
     if (!file) return;
-    const text = await file.text();
+    // Cleared BEFORE the read, not after. Clearing the value is what lets
+    // the SAME file be chosen twice -- without it a teacher who fixes their
+    // spreadsheet, saves over the original and picks it again gets no
+    // `change` event at all, and the page appears to ignore them. Doing it
+    // after the read meant a read that FAILED left the value in place and
+    // locked them out of retrying the very file that had just failed.
     importInput.value = '';
     clearPanels();
+
+    // `File.text()` genuinely rejects -- `NotReadableError` when the file
+    // was moved, renamed or re-saved between the picker and the read, and
+    // on iOS when a cloud-provider file fails to materialise. Unhandled, it
+    // skipped everything below and the teacher was shown nothing at all:
+    // no problem list, no message, no panel. A refusal a visitor cannot see
+    // is the silent failure this codebase refuses everywhere else.
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      showProblems([{ row: null, message: t.csvProblemUnreadable }]);
+      return;
+    }
 
     const outcome = importFile(text, locale, t);
     if (!outcome.ok) {
@@ -346,13 +415,8 @@ export function renderIo(
   // Both roles live here, in every tab, because either page can be the
   // sender: the tool is bidirectional and "bidirectional" is precisely the
   // kind of claim that gets made about code that only works one way. A tab
-  // is a RECEIVER if it was opened by this flow (marked by a hash on the
-  // URL, which carries no data -- only the fact that someone is expected to
-  // be listening) and a SENDER when the button is pressed.
-  const channel =
-    typeof BroadcastChannel === 'function'
-      ? new BroadcastChannel(HANDOVER_CHANNEL)
-      : null;
+  // is a RECEIVER if it was opened by this flow, and a SENDER when the
+  // button is pressed.
 
   const say = (message: string) => {
     // Unhidden BEFORE the text lands -- the same live-region ordering every
@@ -377,13 +441,7 @@ export function renderIo(
     );
     handlers.onExported();
 
-    if (!channel) {
-      say(t.ioHandoverBlocked);
-      return;
-    }
-
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const target = `${toolPath(otherLocale(locale))}#${HANDOVER_CHANNEL}`;
+    const target = `${toolPath(otherLocale(locale))}#${HANDOVER_HASH}`;
     const opened = window.open(target, '_blank');
     if (!opened) {
       // Design spec section 9: "If the tab is blocked ... say so plainly and
@@ -398,59 +456,124 @@ export function renderIo(
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
-      channel.removeEventListener('message', onMessage);
+      window.removeEventListener('message', onMessage);
       say(message);
     };
 
-    // "The source tab forgets the roster only once the new tab acknowledges
-    // receipt" -- what is forgotten is the PENDING HANDOVER, not the
-    // teacher's class list, which stays on screen either way. After `ack`
-    // this tab stops answering, so a later `ask` from an unrelated tab
-    // cannot be served a roster nobody asked it to hold.
+    /**
+     * Answers ONE window: the one this tab just opened.
+     *
+     * `event.source !== opened` is the check that closes the origin-wide
+     * hole a BroadcastChannel left open -- no other document can be the
+     * window we hold a handle to. The origin check is belt to that brace
+     * and costs nothing.
+     *
+     * "The source tab forgets the roster only once the new tab
+     * acknowledges receipt" -- what is forgotten is the PENDING HANDOVER,
+     * not the teacher's class list, which stays on screen either way.
+     */
     const onMessage = (event: MessageEvent<HandoverMessage>) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.source !== opened) return;
       const data = event.data;
-      if (!data || typeof data !== 'object') return;
-      if (data.kind === 'ask' && data.id === id) {
-        channel.postMessage({ kind: 'roster', id, roster, className });
+      if (typeof data !== 'object' || data === null) return;
+      if (data.kind === 'cg-ask' && !settled) {
+        opened.postMessage(
+          { kind: 'cg-roster', roster, className },
+          window.location.origin,
+        );
         return;
       }
-      if (data.kind === 'ack' && data.id === id) finish(t.ioHandoverSent);
+      if (data.kind === 'cg-ack') finish(t.ioHandoverSent);
     };
-    channel.addEventListener('message', onMessage);
+    window.addEventListener('message', onMessage);
 
-    // The receiving tab does not know the id until it announces itself, so
-    // the sender answers a bare ask too -- but only while this exchange is
-    // live, which is what the timeout below bounds.
-    const onAnyAsk = (event: MessageEvent<HandoverMessage>) => {
-      if (event.data?.kind === 'ask' && event.data.id === 'any' && !settled) {
-        channel.postMessage({ kind: 'roster', id, roster, className });
-      }
-    };
-    channel.addEventListener('message', onAnyAsk);
-
-    const timer = window.setTimeout(() => {
-      channel.removeEventListener('message', onAnyAsk);
-      finish(t.ioHandoverTimedOut);
-    }, HANDOVER_TIMEOUT_MS);
+    const timer = window.setTimeout(
+      () => finish(t.ioHandoverTimedOut),
+      HANDOVER_TIMEOUT_MS,
+    );
   });
 
   // The receiver. Runs on EVERY page load, but asks only when the hash says
-  // a handover is expected -- a page opened normally must not shout into a
-  // channel other tabs are listening on.
-  if (channel && window.location.hash === `#${HANDOVER_CHANNEL}`) {
+  // a handover is expected AND there is an opener to ask -- a page opened
+  // normally must never go looking for somebody's class list.
+  if (window.location.hash === `#${HANDOVER_HASH}` && window.opener) {
+    const opener = window.opener as Window;
+
+    // The hash is spent the moment it is read. Left in place it survives a
+    // reload, and a reloaded tab re-arms: the teacher reloads this tab,
+    // hands a DIFFERENT class over from the other one, and this tab
+    // silently takes that second roster over the work it was already
+    // holding. `replaceState` leaves no history entry to go back to either.
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + window.location.search,
+    );
+
+    let received = false;
     const onOffer = (event: MessageEvent<HandoverMessage>) => {
-      const data = event.data;
-      if (!data || data.kind !== 'roster') return;
-      channel.removeEventListener('message', onOffer);
-      handlers.onImport(data.roster, data.className);
-      say(t.ioImported(data.roster.length));
-      // The acknowledgement the sender waits for. Sent AFTER the roster is
-      // applied, never before: an ack that arrives first would let the
-      // sender report success for a handover that then failed to render.
-      channel.postMessage({ kind: 'ack', id: data.id });
+      if (event.origin !== window.location.origin) return;
+      // Only from the window that opened this one, and only a message
+      // shaped like a roster -- see `isRosterMessage` for why a same-origin
+      // sender is still not trusted with the shape.
+      if (event.source !== opener) return;
+      if (!isRosterMessage(event.data)) return;
+      received = true;
+      window.clearTimeout(waiting);
+      window.removeEventListener('message', onOffer);
+      const { roster: incoming, className: incomingName } = event.data;
+
+      const applyAndAck = () => {
+        handlers.onImport(incoming, incomingName);
+        say(t.ioImported(incoming.length));
+        // The acknowledgement the sender waits for. Sent AFTER the roster
+        // is applied, never before: an ack that arrived first would let the
+        // sender report success for a handover that then failed to render.
+        opener.postMessage({ kind: 'cg-ack' }, window.location.origin);
+      };
+
+      // A handover is an import, and an import over existing work warns
+      // first -- design spec section 9's "Never silent, even when the
+      // counts match". This path used to skip that warning entirely and
+      // then mark the result SAVED, so a teacher's typed roster could be
+      // replaced silently and the header would say there was nothing to
+      // save about a class list that no longer existed anywhere.
+      const current = handlers.getRoster();
+      if (current.length === 0) {
+        applyAndAck();
+        return;
+      }
+      confirmText.textContent = t.ioReplaceWarning(
+        current.length,
+        current.filter((s) => s.name).length,
+      );
+      confirm.hidden = false;
+      confirmYes.onclick = () => {
+        clearPanels();
+        applyAndAck();
+      };
+      confirmNo.onclick = () => {
+        clearPanels();
+        // The sender is told, so it stops waiting and says what happened
+        // rather than timing out with a message about a tab that never
+        // asked -- it did ask, and this teacher declined.
+        opener.postMessage({ kind: 'cg-ack' }, window.location.origin);
+      };
     };
-    channel.addEventListener('message', onOffer);
-    channel.postMessage({ kind: 'ask', id: 'any' });
+    window.addEventListener('message', onOffer);
+
+    // The receiver's OWN timeout. Without it a tab that loaded too slowly
+    // to be answered sat there looking like an ordinary empty tool page,
+    // saying nothing, while the failure was reported in the other tab --
+    // the one the teacher had just been taken away from.
+    const waiting = window.setTimeout(() => {
+      if (received) return;
+      window.removeEventListener('message', onOffer);
+      say(t.ioHandoverNotOffered);
+    }, HANDOVER_TIMEOUT_MS);
+
+    opener.postMessage({ kind: 'cg-ask' }, window.location.origin);
   }
 
   const refresh = () => {

@@ -231,6 +231,9 @@ export const id: Strings = {
   // CSV_LOCALES, bukan ditulis ulang di sini. Terjemahan ini ditulis oleh
   // pelaksana tahap ini -- PERLU DITINJAU.
   csvProblemEmptyFile: 'Berkas ini kosong.',
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  csvProblemUnreadable: 'Berkas itu tidak dapat dibaca. Coba pilih lagi.',
   csvProblemNoNumberColumn:
     'Berkas ini tidak memiliki kolom nomor. Setiap siswa memerlukannya.',
   csvProblemNumberBlank: (row: number) =>
@@ -280,6 +283,10 @@ export const id: Strings = {
     'Tab kedua tidak dapat dibuka. Daftar kelas Anda masih ada di sini — izinkan pop-up lalu coba lagi.',
   ioHandoverTimedOut:
     'Tab kedua tidak pernah meminta daftar kelas. Daftar kelas Anda masih ada di sini — tutup tab itu lalu coba lagi.',
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  ioHandoverNotOffered:
+    'Tidak ada daftar kelas yang diterima. Kembali ke tab satunya lalu coba lagi.',
   ioHandoverSent: 'Daftar kelas Anda kini terbuka dalam bahasa lainnya.',
 
   // ── Panel cetak (tahap 5; bagian 10 dokumen desain) ────────────────────

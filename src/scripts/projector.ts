@@ -48,6 +48,14 @@ export interface ProjectorHandlers {
    */
   refuseReason?: () => string | null;
   /**
+   * Whether a shuffle is already running.
+   *
+   * The board's Shuffle button and the page's deal button are the same
+   * action, so they must share the same guard -- see the click handler
+   * below for what two overlapping deals actually do.
+   */
+  busy?: () => boolean;
+  /**
    * Whether the groups should be revealed one at a time, or simply be
    * there.
    *
@@ -292,10 +300,21 @@ export function renderProjector(
   openButton.addEventListener('click', enter);
   exit.addEventListener('click', () => void leave());
   shuffle.addEventListener('click', () => {
+    // The page's own deal button disables itself for the whole animation
+    // (2.6s at 24 students). This one shares that fact rather than keeping
+    // its own: without it, two presses during a deal start two overlapping
+    // animate() loops -- doubled land sounds, the first loop re-enabling
+    // the button while the second still runs, and `.dealt` being set on
+    // cards the second render has already detached.
+    if (handlers.busy?.()) return;
     handlers.onShuffle();
     // The cards were rebuilt by that shuffle, so they carry neither class
     // -- reveal them again rather than leaving a board of invisible groups.
     reveal();
+    // …and there may be more or less of them than before. Without this a
+    // board shuffle never re-measured at all, so a taller arrangement was
+    // sized to the previous one and lost its bottom group off the board.
+    refit();
     armFade();
   });
 

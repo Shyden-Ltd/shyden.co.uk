@@ -415,6 +415,11 @@ export const en = {
   // Row numbers count DATA rows, not file lines, so a `#` comment sitting
   // between two students never shifts the row a teacher is sent to.
   csvProblemEmptyFile: 'This file is empty.',
+  // The file could not be READ at all -- moved, renamed or re-saved between
+  // the picker and the read, or a cloud file that failed to materialise.
+  // Distinct from every problem below it, which are about a file that WAS
+  // read and could not be understood.
+  csvProblemUnreadable: 'That file could not be read. Try choosing it again.',
   csvProblemNoNumberColumn:
     'This file has no number column. Every student needs one.',
   csvProblemNumberBlank: (row: number) =>
@@ -477,6 +482,12 @@ export const en = {
     'The second tab could not be opened. Your class list is still here — allow pop-ups and try again.',
   ioHandoverTimedOut:
     'The second tab never asked for the class list. Your class list is still here — close that tab and try again.',
+  // The receiver's own side of the same failure. Without it a tab that
+  // loaded too slowly to be answered sat there looking like an ordinary
+  // empty tool page, while the failure was reported in the OTHER tab -- the
+  // one the teacher had just been taken away from.
+  ioHandoverNotOffered:
+    'No class list arrived. Go back to the other tab and try again.',
   ioHandoverSent: 'Your class list is now open in the other language.',
 
   // ── The print panel (stage 5; design spec section 10) ───────────────────

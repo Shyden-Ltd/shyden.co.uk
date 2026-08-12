@@ -186,6 +186,12 @@ test.describe('the projector view', () => {
     await withGroups(page);
     const before = await page.locator('#cg-results').innerText();
     await page.getByRole('button', { name: 'Full screen' }).click();
+    // The board's Shuffle shares the page's own one-at-a-time guard, so it
+    // does nothing while the previous deal is still running -- which is
+    // what a teacher pressing it twice should get, and what this test was
+    // unknowingly doing. Wait for the deal to finish first: condition-based
+    // on the deal button's own enabled state, never a sleep.
+    await expect(page.locator('#cg-go')).toBeEnabled();
     await bar(page).getByRole('button', { name: 'Shuffle again' }).click();
     // `#cg-board #cg-results`, not the whole board: `namesIn` matches any
     // Capitalised word, and the bar's own "Exit full screen" contributes
@@ -205,6 +211,7 @@ test.describe('the projector view', () => {
     await rosterForSpillover(page); // six boys, two girls, separate, groups of 4
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-go')).toBeEnabled();
     await bar(page).getByRole('button', { name: 'Shuffle again' }).click();
     await expect(page.locator('#cg-board')).toContainText(
       'have joined a group of boys',
@@ -374,5 +381,76 @@ test.describe('all three refuse while the groups are out of date', () => {
       .locator('#cg-print-panel')
       .getByRole('button', { name: 'Cancel' })
       .click();
+  });
+});
+
+/**
+ * Review findings, fixed and pinned. Each of these reddens against the code
+ * as it was before the fix beside it.
+ */
+test.describe('review findings', () => {
+  // I1. `refuse()` was the only writer of #cg-refusal AND its only clearer,
+  // so the alert outlived the staleness that produced it: the page said the
+  // groups were out of date in a role="alert" while everything else on it
+  // said they were fine.
+  test('a refusal clears when the change that caused it is undone', async ({
+    page,
+  }) => {
+    await rosterOf(page, 12);
+    await page.locator('#cg-go').click();
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await page.getByRole('button', { name: 'Print' }).click();
+    await expect(
+      page.getByText(
+        'These groups are out of date. Shuffle again before printing them.',
+      ),
+    ).toBeVisible();
+
+    // UNDO, rather than reshuffle: the staleness goes away by itself, and
+    // nothing else on the page is touched.
+    await page.locator('.cg-student').first().getByLabel('Absent').uncheck();
+    await expect(
+      page.getByText(/Shuffle again before printing them/),
+    ).toHaveCount(0);
+  });
+
+  test('and it clears on a reshuffle too', async ({ page }) => {
+    await rosterOf(page, 12);
+    await page.locator('#cg-go').click();
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(
+      page.getByText(/Shuffle again before showing them/),
+    ).toBeVisible();
+    await expect(page.locator('#cg-go')).toBeEnabled();
+    await page.locator('#cg-go').click();
+    await expect(
+      page.getByText(/Shuffle again before showing them/),
+    ).toHaveCount(0);
+  });
+
+  // I7a. The board's Shuffle and the page's deal button are one action and
+  // must share one guard. Two overlapping deals doubled the land sounds,
+  // re-enabled the button while the second was still running, and dealt
+  // onto cards the second render had already detached.
+  test('the board Shuffle does not start a second deal over the first', async ({
+    page,
+  }) => {
+    await withGroups(page);
+    await expect(page.locator('#cg-go')).toBeEnabled();
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    const shuffle = bar(page).getByRole('button', { name: 'Shuffle again' });
+    await shuffle.click();
+    // Mid-deal: the page's own button is disabled, so this press is refused
+    // rather than starting a second overlapping animation.
+    await expect(page.locator('#cg-go')).toBeDisabled();
+    await shuffle.click();
+    await expect(page.locator('#cg-go')).toBeEnabled();
+    // …and exactly one arrangement survives: every student appears once.
+    const names = await page
+      .locator('#cg-board .student')
+      .evaluateAll((els) => els.map((e) => e.textContent ?? ''));
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toHaveLength(12);
   });
 });

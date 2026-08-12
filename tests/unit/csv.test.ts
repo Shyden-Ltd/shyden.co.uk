@@ -260,8 +260,16 @@ describe('serialiseRoster', () => {
 });
 
 describe('todayISO and the filename helpers', () => {
+  // This test PINNED THE BUG. It read
+  // `todayISO(new Date('2026-08-06T23:30:00Z'))` and expected `2026-08-06`
+  // -- the UTC answer. That instant is 06:30 on the 7th at UTC+7, which is
+  // this site's own audience at exactly the hour they print a register, so
+  // the assertion was stating the defect as the contract. Restated with a
+  // LOCAL date, which is what the function now returns and what a person at
+  // the machine actually sees; the timezone-boundary cases are covered in
+  // their own block below.
   it('formats a date as YYYY-MM-DD', () => {
-    expect(todayISO(new Date('2026-08-06T23:30:00Z'))).toBe('2026-08-06');
+    expect(todayISO(new Date(2026, 7, 6, 23, 30))).toBe('2026-08-06');
   });
 
   it('builds the four filenames', () => {
@@ -810,4 +818,54 @@ describe('importFile — the wrong language, refused with a way forward', () => 
       'This file has no number column. Every student needs one.',
     );
   });
+});
+
+/**
+ * Review findings, fixed. Each of these reddens against the code as it was
+ * before the fix beside it — none is a restatement of something already
+ * covered.
+ */
+describe('todayISO is the LOCAL date, not UTC', () => {
+  // At UTC+7 a local time before 07:00 is the previous day in UTC. An
+  // Indonesian school day starts at about 06:30, which is exactly when a
+  // register is printed and a class list exported -- so `toISOString()`
+  // dated both artefacts yesterday for this site's own audience.
+  //
+  // The dates are built from LOCAL parts so this test states what a person
+  // at the machine would see, whatever zone the suite runs in.
+  it('takes the date from the local calendar day', () => {
+    const early = new Date(2026, 7, 13, 6, 30); // 13 Aug, 06:30 local
+    expect(todayISO(early)).toBe('2026-08-13');
+    const late = new Date(2026, 7, 13, 23, 30); // 13 Aug, 23:30 local
+    expect(todayISO(late)).toBe('2026-08-13');
+    // …and both ends of the day agree, which a UTC formatter cannot do:
+    // one of them always falls into a neighbouring date.
+    expect(todayISO(early)).toBe(todayISO(late));
+  });
+
+  it('pads the month and the day', () => {
+    expect(todayISO(new Date(2026, 0, 5, 12, 0))).toBe('2026-01-05');
+  });
+});
+
+describe('a class name survives the round trip whatever is in it', () => {
+  // The class comment is decoded ONCE. It used to be decoded twice -- the
+  // record parser removes the quoting, and the class-comment branch then
+  // ran the result through the parser again -- so a quote was eaten. A
+  // comma survived by luck, which is why only the comma was ever tested.
+  for (const className of [
+    '7B "Blue"',
+    '"Blue" Group',
+    '7B, "Blue"',
+    'Year 7 / Set B',
+    "Ana's class",
+  ]) {
+    it(`round-trips ${JSON.stringify(className)}`, () => {
+      const text = serialiseRoster([student({ number: 1 })], className, 'en');
+      const out = parseRoster(text, 'en', en);
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.className).toBe(className);
+    });
+  }
 });

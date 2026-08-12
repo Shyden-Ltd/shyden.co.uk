@@ -137,7 +137,19 @@ export function serialiseGroups(
  * that reads the clock internally cannot be tested without freezing time.
  */
 export function todayISO(now: Date = new Date()): string {
-  return now.toISOString().slice(0, 10);
+  // LOCAL date, not UTC. `toISOString()` was wrong here, and wrong in a way
+  // that lands on this site's own audience: at UTC+7 every local time
+  // before 07:00 yields the PREVIOUS day, and Indonesian school days
+  // commonly start at 06:30 -- precisely when a teacher prints the register
+  // and exports the class list. The sheet would be dated yesterday, and two
+  // exports on consecutive mornings could collide in the downloads folder,
+  // which is the exact thing the date was added to prevent.
+  //
+  // Built from local parts rather than `toLocaleDateString`, so the output
+  // cannot vary with the runtime's locale data: this string is a filename
+  // and a file's own metadata, not display copy.
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 /**
@@ -349,11 +361,18 @@ export function parseRoster(
       // through the record parser so a quoted class name containing a comma
       // arrives whole -- the record split above already divided it at that
       // comma.
+      // `cells` came out of `readRecord`, which has ALREADY removed the
+      // quoting. Decoding a second time here corrupted any class name
+      // containing a quote: `7B "Blue"` writes as `# Class: "7B ""Blue"""`
+      // and came back as `7B Blue`. Design spec section 9 is explicit that
+      // the class name is never altered, "not on the page, not in the
+      // `# Class:` line". A comma survived the double decode by luck --
+      // re-joining on `,` undid the second split -- which is why the comma
+      // test passed and the quote case was never noticed.
       const line = cells.join(',');
       const prefix = table.classComment;
       if (line.trimStart().toLowerCase().startsWith(prefix.toLowerCase())) {
-        const rest = line.trimStart().slice(prefix.length);
-        className = readRecord(rest.trim(), 0)[0].join(',').trim();
+        className = line.trimStart().slice(prefix.length).trim();
       }
       continue;
     }

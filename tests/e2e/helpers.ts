@@ -107,7 +107,22 @@ export const withGroups = async (
   await expect(page.locator('#cg-results .group').first()).toBeVisible();
 };
 
-export const todayISO = () => new Date().toISOString().slice(0, 10);
+/**
+ * The PRODUCT's formatter, re-exported -- never a second implementation.
+ *
+ * This used to be its own `toISOString().slice(0, 10)`, which agreed with
+ * the product only while the product was also (wrongly) UTC. The moment
+ * `todayISO` was fixed to the local calendar day, a re-implementation here
+ * would have disagreed with it for the seven hours a day this machine's
+ * own timezone is ahead of UTC -- making every filename and printed-date
+ * test fail in the morning and pass in the afternoon.
+ *
+ * That makes these e2e assertions agree with the product by construction,
+ * which is the point: WHAT the date should be is pinned at unit level
+ * against explicit local dates (tests/unit/csv.test.ts), and what these
+ * tests check is that the page uses it.
+ */
+export { todayISO } from '../../src/lib/csv';
 
 /**
  * Stage 4's fixtures. ADDED to this file, never started as a second one --

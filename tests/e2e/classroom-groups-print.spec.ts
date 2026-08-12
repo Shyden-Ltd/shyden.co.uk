@@ -107,11 +107,49 @@ test.describe('the print panel', () => {
   // the way out. A panel a teacher cannot back out of is worse than a bare
   // button.
   test('Escape closes the panel without printing', async ({ page }) => {
+    // Counts CALLS to window.print. This used to assert that `<html>`
+    // carried no `data-print-what`, which was a proxy -- and stopped being
+    // a true one when the remembered choices began reaching the document at
+    // load (so that a teacher printing from the browser's own menu gets the
+    // sheet their stored preference says). The proxy would now fail while
+    // the behaviour it stood for is correct; this asserts the behaviour.
+    await page.addInitScript(() => {
+      (window as unknown as { __prints: number }).__prints = 0;
+      window.print = () => {
+        (window as unknown as { __prints: number }).__prints += 1;
+      };
+    });
     await withGroups(page);
     await openPrintPanel(page);
     await page.keyboard.press('Escape');
     await expect(page.locator('#cg-print-panel')).toBeHidden();
-    await expect(page.locator('html')).not.toHaveAttribute('data-print-what');
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __prints: number }).__prints,
+      ),
+    ).toBe(0);
+  });
+
+  // …and the choices DO reach the document at load, from what was
+  // remembered, so the browser's own print menu produces the sheet the
+  // panel is showing rather than the build-time default.
+  test('a remembered choice is on the document before the panel is opened', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.print = () => {};
+    });
+    await withGroups(page);
+    await openPrintPanel(page);
+    await panel(page).getByLabel('Group results').check();
+    await panel(page).getByRole('button', { name: 'Cancel' }).click();
+
+    await page.reload();
+    // No panel opened on this load at all.
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-print-what',
+      'groups',
+    );
   });
 
   test('Cancel closes it and keeps the choices made', async ({ page }) => {
