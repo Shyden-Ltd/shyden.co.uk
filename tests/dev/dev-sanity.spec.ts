@@ -79,3 +79,68 @@ test('outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-env leak
     page.locator('a[href="https://shytalk.shyden.co.uk"]'),
   ).toHaveCount(0);
 });
+
+/**
+ * The v2 surfaces, on the deployed dev site.
+ *
+ * Dev is the MERGE GATE now, so this suite is what stands between a broken
+ * build and `main`. It stays a smoke, not a second copy of the e2e suite:
+ * each of these asks only "did this part of the tool arrive at all", which is
+ * the question a deploy can answer wrongly. Behaviour is proven by the 2036
+ * e2e tests that already ran before the deploy.
+ */
+test.describe('the Classroom Group Creator v2 surfaces reached dev', () => {
+  test('Student details builds a roster', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-students-toggle').click();
+    await page.getByRole('button', { name: /Add student/ }).click();
+    await expect(page.locator('.cg-student')).toHaveCount(1);
+    // The roster's own controls, not just a row: a partial bundle can render
+    // the table and wire nothing.
+    await expect(
+      page.locator('.cg-student').first().getByLabel('Name'),
+    ).toBeVisible();
+  });
+
+  test('Import / export offers its controls', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-io-toggle').click();
+    await expect(
+      page.getByRole('button', { name: 'Export class list' }),
+    ).toBeVisible();
+    await expect(page.locator('#cg-import')).toBeVisible();
+  });
+
+  test('the print panel and the projector are reachable once groups exist', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.fill('#cg-count', '8');
+    await page.fill('#cg-size', '4');
+    await page.locator('#cg-sound-toggle').click();
+    await page.selectOption('#cg-speed', 'skip');
+    await page.click('#cg-go');
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Print' }).click();
+    await expect(page.locator('#cg-print-panel')).toBeVisible();
+    await page
+      .locator('#cg-print-panel')
+      .getByRole('button', { name: 'Cancel' })
+      .click();
+
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board')).toBeVisible();
+    await expect(page.locator('#cg-board #cg-results')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#cg-board')).toBeHidden();
+  });
+
+  test('the Indonesian tool carries its own copy', async ({ page }) => {
+    await page.goto('/id/classroom-groups');
+    await page.locator('#cg-io-toggle').click();
+    await expect(
+      page.getByRole('button', { name: 'Ekspor daftar kelas' }),
+    ).toBeVisible();
+  });
+});
