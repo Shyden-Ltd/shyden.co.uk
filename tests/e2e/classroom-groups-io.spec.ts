@@ -248,6 +248,47 @@ test.describe('Import / export', () => {
     );
   });
 
+  // C-30's last surface: the results heading. The filename was sanitised
+  // from this same value, and the heading must not have been.
+  test('the sanitised filename does not leak into the results heading', async ({
+    page,
+  }) => {
+    await rosterOf(page, 4);
+    await page.getByLabel('Class (optional)').fill('Year 7 / Set B');
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await expect(page.locator('#cg-results-h')).toContainText('Year 7 / Set B');
+    await expect(page.locator('#cg-results-h')).not.toContainText(
+      'Year-7-Set-B',
+    );
+    await openIo(page);
+    expect(await downloadName(page, 'Export class list')).toContain(
+      'Year-7-Set-B',
+    );
+  });
+
+  // S-08. The warning is a HEADER, not a toast: it is still there after the
+  // page has had every chance to settle. Condition-based -- this waits for
+  // the page to go quiet, never for a fixed number of milliseconds.
+  test('the unsaved-changes warning is permanent, not a toast that fades', async ({
+    page,
+  }) => {
+    await rosterOf(page, 2);
+    await expect(page.locator('#cg-io .state')).toHaveText(
+      'unsaved changes — export to keep them',
+    );
+    await page.waitForLoadState('networkidle');
+    // A full animation frame plus the tool's own longest deal step: if
+    // anything on this page were going to clear the header on a timer, it
+    // would have by now.
+    await page.evaluate(
+      () =>
+        new Promise((resolve) => requestAnimationFrame(() => resolve(null))),
+    );
+    await expect(page.locator('#cg-io .state')).toHaveText(
+      'unsaved changes — export to keep them',
+    );
+  });
+
   test('the exported groups file is one row per student', async ({ page }) => {
     await rosterOf(page, 4);
     await page.getByLabel('Students in each group').fill('2');
@@ -594,6 +635,38 @@ test.describe('exporting in both languages', () => {
 
   // A page opened NORMALLY must not shout into the channel -- otherwise a
   // teacher with two tabs open has one silently overwrite the other.
+  // W-13. The whole flow's copy follows the STARTING page, not the file or
+  // the destination -- asserted from the Indonesian side, which the
+  // parameterised case above exercises for behaviour but not for wording.
+  test('the flow speaks the starting page own language, from Indonesian', async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      window.open = () => null;
+    });
+    await buildRosterAtPath(page, '/id/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    await expect(
+      page.getByText(
+        'Berkas Anda tersimpan sekarang, dalam bahasa ini. Tab kedua akan ' +
+          'terbuka dalam bahasa lainnya dengan daftar kelas yang sama, untuk ' +
+          'Anda periksa dan simpan di sana. Tidak ada yang disimpan dan ' +
+          'tidak ada yang dikirim ke mana pun.',
+      ),
+    ).toBeVisible();
+    await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /bahasa lainnya/ }).click(),
+    ]);
+    await expect(
+      page.getByText(
+        'Tab kedua tidak dapat dibuka. Daftar kelas Anda masih ada di ' +
+          'sini — izinkan pop-up lalu coba lagi.',
+      ),
+    ).toBeVisible();
+  });
+
   test('a page opened normally does not ask for anybody roster', async ({
     page,
     context,

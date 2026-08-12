@@ -1,5 +1,10 @@
 import { test, expect } from './fixtures';
-import { buildRoster } from './helpers';
+import {
+  buildRoster,
+  buildRosterAtPath,
+  upload,
+  downloadName,
+} from './helpers';
 
 /**
  * The page makes a promise in both languages: "No class list ever leaves this
@@ -426,5 +431,91 @@ test.describe('privacy — the roster never leaves memory', () => {
     // Asserted as "she is placed at all, in exactly one group" rather than
     // "she is with Budi", which the shuffle is free to decide either way.
     await expect(groupOf(2)).toHaveCount(1);
+  });
+});
+
+/**
+ * Stage 4, Task 7. Y-01…Y-04 re-asserted after the paths stage 4 added.
+ *
+ * Import, export and the handover are three new opportunities to write
+ * something somewhere. The invariant is re-checked after each rather than
+ * assumed to hold because it held before them -- which is the whole reason
+ * the stage-3 block above checks after EACH operation rather than once at
+ * the end.
+ */
+test.describe('privacy — the roster still never persists, after the new paths', () => {
+  const nowhere = async (
+    page: import('@playwright/test').Page,
+    when: string,
+  ) => {
+    const seen = await page.evaluate(() =>
+      [
+        JSON.stringify({ ...localStorage }),
+        JSON.stringify({ ...sessionStorage }),
+        location.href,
+        document.cookie,
+      ].join(' '),
+    );
+    expect(seen, when).not.toContain('Ana');
+    expect(seen, when).not.toContain('Budi');
+  };
+
+  test('an import writes nothing', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-io-toggle').click();
+    await upload(page, 'ok.csv', 'number,name\n1,Ana\n2,Budi\n');
+    await expect(page.getByText('Imported 2 students.')).toBeVisible();
+    await nowhere(page, 'after an import');
+  });
+
+  test('an export writes nothing, and leaves no object URL behind', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await page.locator('#cg-io-toggle').click();
+    await downloadName(page, 'Export class list');
+    await nowhere(page, 'after an export');
+    // The blob URL is revoked the moment the click is dispatched, so no
+    // <a> holding the file's bytes is left in the document -- see
+    // io-ui.ts's own `download` for why that matters here.
+    expect(
+      await page.evaluate(
+        () => document.querySelectorAll('a[href^="blob:"]').length,
+      ),
+    ).toBe(0);
+  });
+
+  test('the handover writes nothing in either tab', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await page.locator('#cg-io-toggle').click();
+    const [, newPage] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: /other language/ }).click(),
+    ]);
+    await newPage.waitForLoadState();
+    await newPage.locator('#cg-students-toggle').click();
+    await expect(newPage.locator('.cg-student')).toHaveCount(2);
+    await nowhere(page, 'source tab after the handover');
+    await nowhere(newPage, 'receiving tab after the handover');
+  });
+
+  test('a reload after an import still loses the roster', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-io-toggle').click();
+    await upload(page, 'ok.csv', 'number,name\n1,Ana\n');
+    await expect(page.getByText('Imported 1 student.')).toBeVisible();
+    await page.reload();
+    await page.locator('#cg-students-toggle').click();
+    await expect(page.locator('.cg-student')).toHaveCount(0);
   });
 });

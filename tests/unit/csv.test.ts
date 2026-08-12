@@ -324,6 +324,29 @@ describe('todayISO and the filename helpers', () => {
     expect(safeFilePart('../../etc/passwd')).toBe('etc-passwd');
     expect(safeFilePart('a\\b')).toBe('a-b');
     expect(safeFilePart('7B*?"<>|')).toBe('7B');
+    // C-29 names a colon and a CONTROL CHARACTER specifically. A colon is
+    // a drive separator on Windows and a path separator on classic Mac; a
+    // newline or a NUL in a filename is refused outright by some
+    // filesystems and silently truncates on others.
+    expect(safeFilePart('7B: top set')).toBe('7B-top-set');
+    expect(safeFilePart('7B\u0000\u0007x')).toBe('7B-x');
+    expect(safeFilePart('7B\nSet\tB')).toBe('7B-Set-B');
+  });
+
+  // C-30, the half a filename test cannot reach: the name a teacher typed
+  // survives into the FILE unaltered, slash and all, even though the
+  // filename beside it was sanitised from the same value.
+  it('writes the unsanitised class name into the file it names', () => {
+    const text = serialiseRoster(
+      [student({ number: 1 })],
+      'Year 7 / Set B',
+      'en',
+    );
+    expect(text).toContain('# Class: Year 7 / Set B');
+    expect(text).not.toContain('Year-7-Set-B');
+    expect(fileName('class-list', 'Year 7 / Set B', '2026-08-06', 'en')).toBe(
+      'Year-7-Set-B-class-list-2026-08-06.csv',
+    );
   });
 });
 

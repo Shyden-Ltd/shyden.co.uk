@@ -66,9 +66,9 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | S-03 | → `· 24 named · 2 absent` | P | ☐ |
 | S-04 | → `· 24 named · 2 absent · 2 together · 1 apart` | P | ☐ |
 | S-05 | `Grouping options · none` → `· mixed by sex` → `· mixed by sex · leftovers in one group` | P | ☐ |
-| S-06 | `Import / export · nothing to save yet` | P | ☐ |
-| S-07 | → `· unsaved changes — export to keep them` after any edit | P | ☐ |
-| S-08 | That warning is **permanent on the header**, not a toast that fades | P | ☐ |
+| S-06 | `Import / export · nothing to save yet` | P | ✓ stage 4 T5 |
+| S-07 | → `· unsaved changes — export to keep them` after any edit | P | ✓ stage 4 T5 |
+| S-08 | That warning is **permanent on the header**, not a toast that fades | P | ✓ stage 4 T5 |
 | S-09 | Every state string renders in both locales | P | ☐ |
 | S-10 | The section is named **Student details** / **Detail siswa**, never "Customise students" | P | ☐ |
 
@@ -174,7 +174,7 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | X-04 | `+ Add student` disables at 100, stating the limit | P | ☐ |
 | X-05 | `+ Add several…` disables at 100, stating the limit | P | ☐ |
 | X-06 | …and refuses a number that would cross it, saying how many rows are free | P | ☐ |
-| X-07 | An import of 101 rows is rejected whole, naming the count and the limit | P | ☐ |
+| X-07 | An import of 101 rows is rejected whole, naming the count and the limit | P | ✓ stage 4 T3 |
 | X-08 | There is **no way** to type the box past `MAX_ROSTER` with a list present | P | ☐ |
 
 ## J · Sex options and leftovers — stages 1 and 2
@@ -284,55 +284,55 @@ spillover warning cannot be driven through the page without a roster fixture;
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| C-01 | A file with only a `number` column imports that many anonymous students | P | ☐ |
-| C-02 | Partial rows import, everything else blank | P | ☐ |
-| C-03 | Class name round-trips via `# Class:` | P | ☐ |
-| C-04 | English headers and values | P | ☐ |
-| C-05 | Indonesian headers and values — `nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah` | P | ☐ |
-| C-06 | `M`/`F` on EN, `L`/`P` on ID | P | ☐ |
-| C-07 | `absent` blank for everyone present | P | ☐ |
-| C-08 | `absent` accepts `no` as present | P | ☐ |
-| C-09 | …and `tidak` on the Indonesian page | P | ☐ |
-| C-10 | Anything else in that column is refused **by name** | P | ☐ |
-| C-11 | An Indonesian file on the English page is **recognised**, refused, and links to `/id/` | P | ☐ |
-| C-12 | An English file on the Indonesian page is refused and links to `/` | P | ☐ |
-| C-13 | The refusal is in the **language of the page**, not of the file | P | ☐ |
-| C-14 | A bad file is rejected **whole** — nothing imported, roster untouched | P | ☐ |
-| C-15 | **Every** problem is listed, not just the first | P | ☐ |
-| C-16 | Each names the row, what was wrong, and what is accepted | P | ☐ |
-| C-17 | Import over a roster **always warns**, naming what will be lost | P | ☐ |
-| C-18 | …**including when the counts match** | P | ☐ |
-| C-19 | Template with no roster carries headers + example rows | P | ☐ |
-| C-20 | Template with a roster **is** the roster | P | ☐ |
-| C-21 | **Every `#` line is ignored** — example rows and a teacher's own note | P | ☐ |
-| C-22 | …except `# Class:` / `# Kelas:`, which are read as metadata | P | ☐ |
-| C-23 | A downloaded template imported unedited adds **no students at all** | P | ☐ |
-| C-24 | …including one whose example row is named "Example One" | P | ☐ |
-| C-25 | Export class list produces the roster | P | ☐ |
-| C-26 | Export groups appears **only once groups exist** | P | ☐ |
-| C-27 | Export groups is **one row per student** with a `group` column | P | ☐ |
-| C-28 | Filenames carry the class name and the date | P | ☐ |
-| C-29 | A class name with `/`, `\`, `:` or a control character produces a usable filename | P | ☐ |
-| C-30 | …and the class name is **unchanged** on the page, in `# Class:` and in the heading | P | ☐ |
-| C-31 | With no class name: `class-list-2026-08-06.csv` | P | ☐ |
+| C-01 | A file with only a `number` column imports that many anonymous students | P | ✓ stage 4 T3 |
+| C-02 | Partial rows import, everything else blank | P | ✓ stage 4 T3 |
+| C-03 | Class name round-trips via `# Class:` | P | ✓ stage 4 T2 |
+| C-04 | English headers and values | P | ✓ stage 4 T2 |
+| C-05 | Indonesian headers and values — `nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah` | P | ✓ stage 4 T2 |
+| C-06 | `M`/`F` on EN, `L`/`P` on ID | P | ✓ stage 4 T2 |
+| C-07 | `absent` blank for everyone present | P | ✓ stage 4 T2 |
+| C-08 | `absent` accepts `no` as present | P | ✓ stage 4 T3 |
+| C-09 | …and `tidak` on the Indonesian page | P | ✓ stage 4 T3 |
+| C-10 | Anything else in that column is refused **by name** | P | ✓ stage 4 T3 |
+| C-11 | An Indonesian file on the English page is **recognised**, refused, and links to `/id/` | P | ✓ stage 4 T4 |
+| C-12 | An English file on the Indonesian page is refused and links to `/` | P | ✓ stage 4 T4 |
+| C-13 | The refusal is in the **language of the page**, not of the file | P | ✓ stage 4 T4 |
+| C-14 | A bad file is rejected **whole** — nothing imported, roster untouched | P | ✓ stage 4 T3 |
+| C-15 | **Every** problem is listed, not just the first | P | ✓ stage 4 T3 |
+| C-16 | Each names the row, what was wrong, and what is accepted | P | ✓ stage 4 T3 |
+| C-17 | Import over a roster **always warns**, naming what will be lost | P | ✓ stage 4 T3 |
+| C-18 | …**including when the counts match** | P | ✓ stage 4 T3 |
+| C-19 | Template with no roster carries headers + example rows | P | ✓ stage 4 T3 |
+| C-20 | Template with a roster **is** the roster | P | ✓ stage 4 T3 |
+| C-21 | **Every `#` line is ignored** — example rows and a teacher's own note | P | ✓ stage 4 T3 |
+| C-22 | …except `# Class:` / `# Kelas:`, which are read as metadata | P | ✓ stage 4 T3 |
+| C-23 | A downloaded template imported unedited adds **no students at all** | P | ✓ stage 4 T3 |
+| C-24 | …including one whose example row is named "Example One" | P | ✓ stage 4 T3 |
+| C-25 | Export class list produces the roster | P | ✓ stage 4 T2 |
+| C-26 | Export groups appears **only once groups exist** | P | ✓ stage 4 T5 |
+| C-27 | Export groups is **one row per student** with a `group` column | P | ✓ stage 4 T2 |
+| C-28 | Filenames carry the class name and the date | P | ✓ stage 4 T5 |
+| C-29 | A class name with `/`, `\`, `:` or a control character produces a usable filename | P | ✓ stage 4 T5 |
+| C-30 | …and the class name is **unchanged** on the page, in `# Class:` and in the heading | P | ✓ stage 4 T5 |
+| C-31 | With no class name: `class-list-2026-08-06.csv` | P | ✓ stage 4 T5 |
 
 ## O · Both-language export — stage 4
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| W-01 | Offered from the **English** page | P | ☐ |
-| W-02 | Offered from the **Indonesian** page | P | ☐ |
-| W-03 | The teacher is told what will happen before it happens | P | ☐ |
-| W-04 | The current page's file saves **first**, in its own language | P | ☐ |
-| W-05 | A new tab opens on the other locale | P | ☐ |
-| W-06 | The roster arrives over an **in-memory** channel | P | ☐ |
-| W-07 | **Nothing is written to storage** — `localStorage` and `sessionStorage` both asserted empty of roster data | P | ☐ |
-| W-08 | **Nothing is in the URL** | P | ☐ |
-| W-09 | The source tab forgets the roster **only after acknowledgement** | P | ☐ |
-| W-10 | A blocked tab is reported plainly | P | ☐ |
-| W-11 | …and the roster is **kept** where it is | P | ☐ |
-| W-12 | A tab that never asks within the timeout is reported, roster kept | P | ☐ |
-| W-13 | The whole flow's copy is in the language of the **starting** page | P | ☐ |
+| W-01 | Offered from the **English** page | P | ✓ stage 4 T6 |
+| W-02 | Offered from the **Indonesian** page | P | ✓ stage 4 T6 |
+| W-03 | The teacher is told what will happen before it happens | P | ✓ stage 4 T6 |
+| W-04 | The current page's file saves **first**, in its own language | P | ✓ stage 4 T6 |
+| W-05 | A new tab opens on the other locale | P | ✓ stage 4 T6 |
+| W-06 | The roster arrives over an **in-memory** channel | P | ✓ stage 4 T6 |
+| W-07 | **Nothing is written to storage** — `localStorage` and `sessionStorage` both asserted empty of roster data | P | ✓ stage 4 T6 |
+| W-08 | **Nothing is in the URL** | P | ✓ stage 4 T6 |
+| W-09 | The source tab forgets the roster **only after acknowledgement** | P | ✓ stage 4 T6 |
+| W-10 | A blocked tab is reported plainly | P | ✓ stage 4 T6 |
+| W-11 | …and the roster is **kept** where it is | P | ✓ stage 4 T6 |
+| W-12 | A tab that never asks within the timeout is reported, roster kept | P | ✓ stage 4 T6 |
+| W-13 | The whole flow's copy is in the language of the **starting** page | P | ✓ stage 4 T6 |
 
 ## P · Print — stage 5
 
