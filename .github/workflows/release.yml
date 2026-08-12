@@ -1,0 +1,170 @@
+name: Release — deploy-before-merge (RETIRED, kept to merge its replacement)
+# RETIRED. Replaced by release-dev.yml (the merge gate) + release-prod.yml
+# (deploys from main after the merge). It survives only so that the PR which
+# introduces those two can itself be merged: branch protection requires
+# `prod-verified`, and this is the only workflow that posts it until the new
+# pair is on the default branch and the required check has been flipped to
+# `dev-verified`.
+#
+# DELETE ME in the follow-up PR — which will be the first real use of the new
+# pipeline, and so proves it works before this one is removed.
+#
+# DEPLOY-BEFORE-MERGE. Dispatched manually on a PR branch when it's ready to
+# ship. Runs the full comprehensive suite, deploys to dev, deploys to prod
+# behind the `prod` Environment approval gate, smoke-tests the live prod
+# deployment, then posts a `prod-verified` commit status on the released SHA.
+# Branch protection requires `prod-verified`, so main only advances once prod is
+# deployed AND verified live. Versioning/release happens on merge (release-tag.yml).
+#
+# Bootstrap note: workflow_dispatch is dispatchable by name only once this file
+# is on the default branch, so the PR that introduces the pipeline is merged via
+# the plain CI gate; every PR after that uses this gated flow.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-shyden
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---- Gate 1: comprehensive web tests -----------------------------------
+  test:
+    name: Comprehensive web tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format
+      - run: npm run build
+      - run: npm run test:unit
+      - run: npx playwright install --with-deps
+      - run: npm run test:e2e
+
+  # ---- Dev deploy --------------------------------------------------------
+  deploy-dev:
+    name: Deploy to Dev
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: dev
+      url: https://dev.shyden.co.uk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build (dev — outbound ShyTalk link → DEV, never prod)
+        env:
+          PUBLIC_SHYTALK_URL: https://dev.shytalk.shyden.co.uk
+        run: npm run build
+      - name: Deploy dist/ to Cloudflare Pages (dev project)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install -g wrangler@4
+          wrangler pages deploy dist --project-name shyden-site-dev --branch main
+
+  # ---- Prod deploy: MANUAL APPROVAL gate ---------------------------------
+  deploy-prod:
+    name: Deploy to Prod (needs approval)
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: prod
+      url: https://shyden.co.uk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build (prod defaults — outbound ShyTalk link → PROD)
+        run: npm run build
+      - name: Guard — fail if a [[placeholder]] leaked into shipped text
+        # -I: skip binary files. woff/woff2 fonts contain the bytes `[[`; a
+        # placeholder leak is a TEXT concern, so scanning binaries false-fails.
+        #
+        # Matches the placeholder SHAPE — `[[` … `]]` with no `]` between —
+        # rather than a bare `[[`. A bare `[[` is ordinary JavaScript: the
+        # minified bundle contains `new Map([[k,v],[k,v]])`, which blocked a
+        # release on 2026-08-05 with nothing wrong with the site. This is the
+        # second false positive of the same kind (see the `-I` note above), and
+        # both had the same cause — matching a fragment instead of the thing.
+        #
+        # It stays safe against that syntax because `[^]]` cannot cross the
+        # first `]`, so `[[k,v],` never completes the pattern. Verified against
+        # a real build: 0 matches, while an injected `[[companyNo]]` and an
+        # injected `[[reg office]]` are both caught.
+        run: |
+          if grep -rnIE '\[\[[^]]{1,60}\]\]' dist/; then
+            echo "::error::A [[…]] placeholder reached dist/ — refusing to ship to prod."
+            exit 1
+          fi
+          echo "No bracket placeholders in dist/ (text)."
+      - name: Deploy dist/ to Cloudflare Pages (prod project)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install -g wrangler@4
+          wrangler pages deploy dist --project-name shyden-site --branch main
+
+  # ---- Post-prod smoke test + prod-verified status -----------------------
+  # Smokes the live prod DEPLOYMENT alias (shyden-site.pages.dev, tester-locked
+  # with DEV_PASSWORD) — cutover-independent, so the gate works before the apex
+  # DNS points at the project. On success, posts the `prod-verified` status that
+  # branch protection requires for merge.
+  smoke-and-verify:
+    name: Post-prod smoke + prod-verified
+    needs: deploy-prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Smoke the live prod deployment
+        env:
+          SMOKE_PW: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BASE="https://shyden-site.pages.dev"
+          # Homepage: 200 + is the Shyden site.
+          code=$(curl -s -o home.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE/")
+          [ "$code" = "200" ] || { echo "::error::homepage HTTP $code"; exit 1; }
+          grep -qi 'shyden' home.html || { echo "::error::homepage missing 'shyden'"; exit 1; }
+          # Cross-env: prod ShyTalk link present, dev link absent.
+          grep -q 'https://shytalk.shyden.co.uk' home.html || { echo "::error::prod ShyTalk link missing"; exit 1; }
+          if grep -q 'https://dev.shytalk.shyden.co.uk' home.html; then echo "::error::DEV ShyTalk link leaked into prod"; exit 1; fi
+          # Real legal footer, no bracket placeholder.
+          grep -q '17110487' home.html || { echo "::error::footer company number missing"; exit 1; }
+          # Calculator page: 200 + the how-to instructions.
+          code=$(curl -sL -o gp.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE/glory-points")
+          [ "$code" = "200" ] || { echo "::error::/glory-points HTTP $code"; exit 1; }
+          grep -qi 'How to use it' gp.html || { echo "::error::calculator instructions missing"; exit 1; }
+          echo "Prod smoke passed against $BASE"
+      - name: Post prod-verified status on the released commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -f state=success \
+            -f context=prod-verified \
+            -f "description=Prod deployed + smoke-verified (run ${{ github.run_id }})" \
+            -f "target_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "Posted prod-verified=success on ${{ github.sha }}"

@@ -126,11 +126,33 @@ describe('the deploy pipeline runs what it claims to', () => {
     }
   });
 
-  // The retired workflow must not come back alongside its replacements: two
-  // pipelines both able to deploy prod, disagreeing about when, is worse than
-  // either.
-  it('the deploy-before-merge workflow is gone', () => {
+  // TRANSITIONAL. `release.yml` (deploy-before-merge) is still here, and only
+  // because the PR introducing its replacements has to be mergeable: branch
+  // protection requires `prod-verified`, and until the new pair is on the
+  // default branch this is the only thing that posts it.
+  //
+  // What must hold WHILE it survives is that it cannot fire on its own --
+  // dispatch only, no `push:` trigger -- so two pipelines can never race to
+  // deploy prod from the same event. The follow-up PR deletes it and replaces
+  // this test with the assertion that it is gone.
+  it('the retired workflow cannot fire on its own', () => {
     const names = readdirSync(WORKFLOWS);
-    expect(names).not.toContain('release.yml');
+    if (!names.includes('release.yml')) return; // already deleted: nothing to guard
+    const old = workflowSteps('release.yml');
+    expect(old).toContain('workflow_dispatch');
+    expect(old, 'the retired workflow must not trigger on push').not.toMatch(
+      /on:[\s\S]*?push:/,
+    );
+  });
+
+  // …and exactly one workflow deploys prod on a PUSH, so a merge can never
+  // start two prod deployments.
+  it('only one workflow deploys prod on a push', () => {
+    const pushers = allWorkflows().filter(
+      (w) =>
+        /on:[\s\S]*?push:/.test(w.text) &&
+        w.text.includes('shyden-site --branch'),
+    );
+    expect(pushers.map((w) => w.name)).toEqual(['release-prod.yml']);
   });
 });
