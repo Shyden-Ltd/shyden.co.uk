@@ -331,7 +331,11 @@ if (form) {
   // into -- see the submit handler below, and the element's own comment in
   // ClassroomGroupsPage.astro for why it is a list rather than a paragraph.
   const warningsList = $<HTMLUListElement>('cg-warnings')!;
+  // `print-groups` is an ALIAS, like the roster's own `print-list`: the
+  // printed groups ARE these cards, restyled. Added here rather than in the
+  // markup because this element is where every card is appended.
   const tables = $<HTMLDivElement>('cg-tables')!;
+  tables.classList.add('print-groups');
   // 'cg-sound' now names the collapsible SECTION (wired in the loop above,
   // ClassroomGroupsPage.astro's own comment has the reasoning) -- the
   // checkbox itself is 'cg-sound-check'.

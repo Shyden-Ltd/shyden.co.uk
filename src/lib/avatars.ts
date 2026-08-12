@@ -132,7 +132,12 @@ export function avatarSvg(sex: Sex): string {
     `<circle class="a-bg" cx="20" cy="20" r="20" fill="${bg}"></circle>` +
     `<path d="M6 40a14 14 0 0 1 28 0Z" fill="${body}"></path>` +
     `<circle cx="20" cy="18" r="7" fill="${FACE}"></circle>` +
-    `<path fill="${HAIR}" d="${HAIR_PATH[key]}"></path>` +
+    // `data-hair` makes the second signal ADDRESSABLE. Without it a test
+    // asking "are the three faces still distinguishable in greyscale" has
+    // to find this path by its fill COLOUR -- which is exactly the signal
+    // the greyscale case exists to remove, so the query would depend on the
+    // thing it is proving is not needed.
+    `<path data-hair="${key.toLowerCase()}" fill="${HAIR}" d="${HAIR_PATH[key]}"></path>` +
     `<circle cx="17" cy="18" r="1.1" fill="${FEATURES}"></circle>` +
     `<circle cx="23" cy="18" r="1.1" fill="${FEATURES}"></circle>` +
     `<path d="M16.5 21.5q3.5 2.6 7 0" stroke="${FEATURES}" stroke-width="1.3" fill="none" stroke-linecap="round"></path>` +

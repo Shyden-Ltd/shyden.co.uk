@@ -1,5 +1,10 @@
 import { test, expect } from './fixtures';
-import { withGroups, openPrintPanel, rosterWithAnAbsence } from './helpers';
+import {
+  withGroups,
+  openPrintPanel,
+  rosterWithAnAbsence,
+  buildRoster,
+} from './helpers';
 import { todayISO } from '../../src/lib/csv';
 
 /**
@@ -432,5 +437,91 @@ test.describe('the printed class list', () => {
     await expect(
       page.locator('.print-list tbody tr').first(),
     ).not.toContainText('Ana ');
+  });
+});
+
+/**
+ * Stage 5, Task 3. The printed groups, and the greyscale proof.
+ * Q-14, Q-15, Q-18, Q-19.
+ *
+ * The greyscale case does not merely check the page still renders: it
+ * asserts the boy and girl avatars remain DISTINGUISHABLE with colour
+ * removed, which is what the hair-length decision was for.
+ */
+test.describe('the printed groups', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.print = () => {};
+    });
+  });
+
+  test('avatars on: faces print; off: names only', async ({ page }) => {
+    await rosterWithAnAbsence(page);
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await sheet(page, {
+      what: 'Group results',
+      absent: true,
+      letters: true,
+      avatars: true,
+    });
+    await expect(page.locator('.print-groups svg').first()).toBeVisible();
+    await page.emulateMedia({ media: 'screen' });
+    await sheet(page, {
+      what: 'Group results',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('.print-groups svg:visible')).toHaveCount(0);
+  });
+
+  test('group results print minus absent students', async ({ page }) => {
+    await rosterWithAnAbsence(page);
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await sheet(page, {
+      what: 'Group results',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    // Dewi is #4 and absent, so she was never in the results at all --
+    // design spec section 4. The absent tick box governs the class list
+    // only, which is why this holds with it ON.
+    await expect(page.locator('.print-groups')).not.toContainText('Dewi');
+  });
+
+  test('legible with no colour at all', async ({ page }) => {
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+      ['F', 'Citra'],
+      ['M', 'Dedi'],
+    ]);
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await sheet(page, {
+      what: 'Both',
+      absent: true,
+      letters: true,
+      avatars: true,
+    });
+    await page.addStyleTag({
+      content: 'html { filter: grayscale(1) !important }',
+    });
+
+    // every printed name is still there and still readable
+    for (const name of ['Ana', 'Budi', 'Citra']) {
+      await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+    }
+    // …and boy/girl is still distinguishable, by HAIR rather than by
+    // colour. Found through `data-hair` rather than through the hair's own
+    // fill, because the fill is the very signal this case removes -- a
+    // query that depended on it would be proving nothing.
+    const hairs = await page
+      .locator('.cg-avatar-defs [data-hair]')
+      .evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('d')))]);
+    expect(hairs.length).toBeGreaterThan(1);
+    // Exactly three, one per face, and all different: two faces sharing a
+    // path would leave them apart only by colour, which is the defect.
+    expect(hairs).toHaveLength(3);
   });
 });
