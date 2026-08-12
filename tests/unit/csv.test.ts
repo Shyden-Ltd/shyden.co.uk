@@ -8,6 +8,8 @@ import {
   fileName,
   parseRoster,
   emptyTemplate,
+  detectLocale,
+  importFile,
 } from '../../src/lib/csv';
 import { student } from './factories';
 import { en } from '../../src/lib/i18n/en';
@@ -687,4 +689,98 @@ describe('parseRoster', () => {
       expect(out.className).toBe('7B');
     });
   }
+});
+
+/**
+ * Stage 4, Task 4. C-11, C-12, C-13.
+ *
+ * Detection rests entirely on the invariant asserted at the top of this
+ * file -- the two locales share no header word. That is why this can be
+ * decided from headers alone rather than by guessing from content.
+ */
+describe('detectLocale', () => {
+  it('recognises an English file', () =>
+    expect(detectLocale('number,name,sex\n1,Ana,F\n')).toBe('en'));
+
+  it('recognises an Indonesian file', () =>
+    expect(detectLocale('nomor,nama,jenis kelamin\n1,Ana,P\n')).toBe('id'));
+
+  it('recognises one by its class comment alone', () =>
+    expect(detectLocale('# Kelas: 7B\nnomor\n1\n')).toBe('id'));
+
+  it('returns null for something that is neither', () =>
+    expect(detectLocale('foo,bar\n1,2\n')).toBe(null));
+
+  // The header row is the FIRST non-comment record. A student called
+  // "nomor" sits in a data row and must not vote.
+  it('is not confused by a name that looks like a header', () =>
+    expect(detectLocale('number,name\n1,nomor\n')).toBe('en'));
+
+  it('recognises a file this codebase itself wrote, both ways', () => {
+    // Not a hand-typed sample: the real serialiser's output, so detection
+    // cannot pass here while drifting from what we actually emit.
+    const roster = [student({ number: 1, name: 'Ana', sex: 'F' })];
+    expect(detectLocale(serialiseRoster(roster, '7B', 'en'))).toBe('en');
+    expect(detectLocale(serialiseRoster(roster, '7B', 'id'))).toBe('id');
+    expect(detectLocale(emptyTemplate('en'))).toBe('en');
+    expect(detectLocale(emptyTemplate('id'))).toBe('id');
+  });
+
+  it('returns null for an empty file rather than guessing', () =>
+    expect(detectLocale('')).toBe(null));
+
+  it('reads a BOM and CRLF file the same as a plain one', () =>
+    expect(detectLocale('﻿nomor,nama\r\n1,Ana\r\n')).toBe('id'));
+
+  // Case and padding, the same tolerance `parseRoster` gives headers.
+  it('tolerates case and padding in the headers', () =>
+    expect(detectLocale(' Nomor , Nama \n1,Ana\n')).toBe('id'));
+});
+
+describe('importFile — the wrong language, refused with a way forward', () => {
+  it('is refused with a link, in the language of the PAGE', () => {
+    const out = importFile('nomor,nama\n1,Ana\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      'This looks like a Bahasa Indonesia class list. Open the Indonesian ' +
+        'version of this page to import it.',
+    );
+  });
+
+  it('is refused the other way round, in Indonesian', () => {
+    const out = importFile('number,name\n1,Ana\n', 'id', id);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toContain('bahasa Inggris');
+    expect(out.problems[0].message).not.toContain('Bahasa Indonesia class');
+  });
+
+  // The refusal REPLACES the parse, it does not accompany it. Parsing an
+  // Indonesian file as English produces a pile of "not understood"
+  // problems that are all noise once the real cause is known.
+  it('reports the language and nothing else', () => {
+    const out = importFile('nomor,nama,jenis kelamin\n1,Ana,P\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems).toHaveLength(1);
+    expect(out.problems[0].row).toBeNull();
+  });
+
+  it('passes a right-language file straight through to parseRoster', () => {
+    const text = 'number,name\n1,Ana\n';
+    expect(importFile(text, 'en', en)).toEqual(parseRoster(text, 'en', en));
+  });
+
+  // An unrecognisable file is NOT a wrong-language file. It falls through
+  // to the parser, whose own messages ("no number column") are the useful
+  // ones -- claiming it is in another language would be a guess.
+  it('falls through to the parser when the language cannot be told', () => {
+    const out = importFile('foo,bar\n1,2\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      'This file has no number column. Every student needs one.',
+    );
+  });
 });

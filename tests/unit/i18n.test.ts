@@ -187,6 +187,11 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   csvProblemAbsent: [7, 'maybe', 'yes, no'],
   csvProblemLetter: [7, 'together', 'AB'],
   csvProblemTooMany: [101, 100],
+  // Stage 4, Task 4. Probed with the English page's own names for the
+  // Indonesian language, which is the argument pair `importFile` supplies
+  // when an Indonesian file is dropped on the English page -- design spec
+  // section 9's own approved example.
+  csvWrongLanguage: ['Bahasa Indonesia', 'Indonesian'],
   // Stage 3, Task 4. renderRoster's own live count line (roster-ui.ts),
   // rendered under the table. (24, 22, 2) matches design spec section 4's
   // own literal example verbatim, the same example

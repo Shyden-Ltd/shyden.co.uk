@@ -247,6 +247,12 @@ export const id: Strings = {
     `Baris ${row} — ${column} '${value}' bukan huruf tunggal.`,
   csvProblemTooMany: (found: number, max: number) =>
     `Berkas ini berisi ${found} siswa. Detail siswa menampung hingga ${max}.`,
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  csvWrongLanguage: (language: string, version: string) =>
+    `Ini sepertinya daftar kelas ${language}. Buka halaman ini versi ${version} untuk mengimpornya.`,
+  csvLanguageName: { en: 'bahasa Inggris', id: 'bahasa Indonesia' },
+  csvLanguageVersion: { en: 'bahasa Inggris', id: 'bahasa Indonesia' },
 
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)

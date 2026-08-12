@@ -431,6 +431,17 @@ export const en = {
     `Row ${row} — ${column} '${value}' is not a single letter.`,
   csvProblemTooMany: (found: number, max: number) =>
     `This file has ${found} students. Student details holds up to ${max}.`,
+  // Design spec section 9's own approved refusal, verbatim. The LANGUAGE
+  // NAMES are parameters rather than baked in, so this one sentence serves
+  // however many locales the site grows: `csvLanguageName` below is what
+  // each locale calls the OTHER language, in its own words.
+  csvWrongLanguage: (language: string, version: string) =>
+    `This looks like a ${language} class list. Open the ${version} version of this page to import it.`,
+  // How this locale names each language, for the sentence above. Written
+  // as English speakers write them: "Bahasa Indonesia" is the endonym in
+  // ordinary English use, and the design spec's own approved copy uses it.
+  csvLanguageName: { en: 'English', id: 'Bahasa Indonesia' },
+  csvLanguageVersion: { en: 'English', id: 'Indonesian' },
 
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different

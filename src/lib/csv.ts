@@ -490,3 +490,101 @@ export function parseRoster(
   if (problems.length > 0) return { ok: false, problems };
   return { ok: true, roster, className };
 }
+
+/**
+ * Which language a file is written in, from its headers alone — or `null`
+ * when it is neither.
+ *
+ * This is only possible because of the invariant `csv-locale.ts` asserts:
+ * the two tables share NO header word. That is why a design rule and not a
+ * nicety, and it is why detection needs no guessing from content.
+ *
+ * The header row is the FIRST non-comment record, so a student called
+ * "nomor" sitting in a data row cannot vote on the file's language. The
+ * class comment is checked too, because a file may carry `# Kelas:` above
+ * headers this function would otherwise have to see to be sure.
+ *
+ * A tie is impossible given the shared-nothing invariant, but is resolved
+ * to `null` rather than to a winner: reporting "this looks like X" about a
+ * file that is equally Y is a guess dressed as a fact.
+ */
+export function detectLocale(text: string): Locale | null {
+  const body = text.replace(/^﻿/, '');
+  if (body.trim() === '') return null;
+
+  let header: string[] | null = null;
+  const comments: string[] = [];
+  let i = 0;
+  while (i < body.length && header === null) {
+    const [cells, next] = readRecord(body, i);
+    i = next;
+    const first = cells[0] ?? '';
+    if (first.trimStart().startsWith('#')) {
+      comments.push(cells.join(',').trim().toLowerCase());
+      continue;
+    }
+    if (cells.every((c) => c.trim() === '')) continue;
+    header = cells.map((c) => c.trim().toLowerCase());
+  }
+
+  const score = (locale: Locale): number => {
+    const table = CSV_LOCALES[locale];
+    const words = new Set(
+      Object.values(table.columns).map((w) => w.toLowerCase()),
+    );
+    const fromHeader = (header ?? []).filter((h) => words.has(h)).length;
+    const fromComment = comments.some((c) =>
+      c.startsWith(table.classComment.toLowerCase()),
+    )
+      ? 1
+      : 0;
+    return fromHeader + fromComment;
+  };
+
+  const en = score('en');
+  const id = score('id');
+  if (en === id) return null;
+  return en > id ? 'en' : 'id';
+}
+
+/**
+ * The whole import decision: refuse a file in the other language with a way
+ * forward, otherwise parse it.
+ *
+ * The wrong-language refusal REPLACES the parse rather than accompanying
+ * it. Parsing an Indonesian file as English produces a pile of "sex 'P' not
+ * understood" problems, every one of them noise once the real cause is
+ * known, and burying the one useful sentence under them is exactly the
+ * experience design spec section 9 is written to avoid.
+ *
+ * A file whose language cannot be told is NOT treated as wrong-language --
+ * it falls through to the parser, whose own "no number column" is the
+ * useful message. Claiming an unrecognisable file is in another language
+ * would be a guess.
+ *
+ * The refusal is written in the language of the PAGE, not of the file: a
+ * teacher who cannot read the file's language is exactly the teacher most
+ * likely to have opened it by mistake.
+ */
+export function importFile(
+  text: string,
+  locale: Locale,
+  t: Strings,
+): ParseResult {
+  const found = detectLocale(text);
+  if (found !== null && found !== locale) {
+    return {
+      ok: false,
+      problems: [
+        {
+          row: null,
+          message: t.csvWrongLanguage(
+            t.csvLanguageName[found],
+            t.csvLanguageVersion[found],
+          ),
+        },
+      ],
+    };
+  }
+  return parseRoster(text, locale, t);
+}
