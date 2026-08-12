@@ -24,9 +24,18 @@
  * discarded -- see the parser's own doc comment for that rule.
  */
 
-/** The site's two languages. Not widened speculatively: a third locale is a
- *  change to this file, which is the point of the file existing. */
-export type Locale = 'en' | 'id';
+/**
+ * The site's languages — RE-EXPORTED from `i18n`, never declared again here.
+ *
+ * A second `'en' | 'id'` union would be structurally identical, so nothing
+ * in this repo would ever report the two drifting apart: TypeScript would
+ * accept it and there is no type checker in CI regardless. Deriving it means
+ * a third site locale makes `CSV_LOCALES` fail its own completeness test
+ * below, rather than shipping a page whose export button has no table to
+ * read.
+ */
+export type { Locale } from './i18n';
+import type { Locale } from './i18n';
 
 /**
  * The six roster columns, in the order they are written and read.

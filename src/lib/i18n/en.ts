@@ -443,6 +443,26 @@ export const en = {
   csvLanguageName: { en: 'English', id: 'Bahasa Indonesia' },
   csvLanguageVersion: { en: 'English', id: 'Indonesian' },
 
+  // ── The Import/export section's own controls (stage 4, Task 5) ──────────
+  //
+  // Design spec section 9. `ioReplaceWarning` names BOTH counts because the
+  // spec is explicit that the warning says "how much of it was filled in by
+  // hand" -- a teacher who typed thirty names needs to know that is what is
+  // about to go, and "30 students" alone does not say it. It fires even when
+  // the counts match, because the same count can be a completely different
+  // class.
+  ioExportClassList: 'Export class list',
+  ioExportGroups: 'Export groups',
+  ioDownloadTemplate: 'Download template',
+  ioImportLabel: 'Import a class list',
+  ioProblemsHeading: 'This file was not imported:',
+  ioReplaceWarning: (total: number, named: number) =>
+    `This will replace your current class list — ${total} ${total === 1 ? 'student' : 'students'}, ${named} named.`,
+  ioReplaceConfirm: 'Replace it',
+  ioReplaceCancel: 'Keep what I have',
+  ioImported: (total: number) =>
+    `Imported ${total} ${total === 1 ? 'student' : 'students'}.`,
+
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different
     // triggers in grouping.ts -- an empty roster (no count, no names) and a

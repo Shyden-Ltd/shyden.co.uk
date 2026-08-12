@@ -192,6 +192,12 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   // when an Indonesian file is dropped on the English page -- design spec
   // section 9's own approved example.
   csvWrongLanguage: ['Bahasa Indonesia', 'Indonesian'],
+  // Stage 4, Task 5. src/scripts/io-ui.ts's `renderIo`, their sole caller.
+  // (3, 2) exercises the English plural branch on the first argument while
+  // the second is deliberately different, so a mutant tying both counts to
+  // one number cannot pass.
+  ioReplaceWarning: [3, 2],
+  ioImported: [2],
   // Stage 3, Task 4. renderRoster's own live count line (roster-ui.ts),
   // rendered under the table. (24, 22, 2) matches design spec section 4's
   // own literal example verbatim, the same example

@@ -62,8 +62,9 @@ export const setSex = async (page: Page, row: number, sex: 'M' | 'F') =>
 export const buildRoster = async (
   page: Page,
   students: Array<['M' | 'F' | null, string?]>,
+  path = '/classroom-groups',
 ) => {
-  await openRoster(page);
+  await openRoster(page, path);
   if (students.length > 1) await addSeveral(page, students.length - 1);
   for (const [i, [sex, name]] of students.entries()) {
     const row = page.locator('.cg-student').nth(i);
@@ -98,3 +99,43 @@ export const withGroups = async (page: Page, n = 12) => {
 };
 
 export const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Stage 4's fixtures. ADDED to this file, never started as a second one --
+ * see this file's own header for why two versions of a helper is a bug
+ * waiting to be blamed on the wrong test.
+ */
+export const upload = async (page: Page, name: string, body: string) => {
+  await page.locator('#cg-import').setInputFiles({
+    name,
+    mimeType: 'text/csv',
+    buffer: Buffer.from(body, 'utf8'),
+  });
+};
+
+/** The bytes a download actually contains, not the button that produced it. */
+export const downloadText = async (page: Page, button: string | RegExp) => {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: button }).click(),
+  ]);
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+};
+
+export const downloadName = async (page: Page, button: string | RegExp) => {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: button }).click(),
+  ]);
+  return download.suggestedFilename();
+};
+
+/** Build a roster on a named locale's page — the handover needs both. */
+export const buildRosterAtPath = async (
+  page: Page,
+  path: string,
+  students: Array<['M' | 'F' | null, string?]>,
+) => buildRoster(page, students, path);

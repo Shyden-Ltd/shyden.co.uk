@@ -254,6 +254,22 @@ export const id: Strings = {
   csvLanguageName: { en: 'bahasa Inggris', id: 'bahasa Indonesia' },
   csvLanguageVersion: { en: 'bahasa Inggris', id: 'bahasa Indonesia' },
 
+  // ── Kontrol bagian Impor / ekspor (tahap 4, Tugas 5) ───────────────────
+  //
+  // Lihat komentar pada versi Inggrisnya (en.ts). Bahasa Indonesia tidak
+  // mengubah bentuk kata untuk jamak, jadi tidak ada percabangan
+  // tunggal/jamak. Terjemahan pelaksana -- PERLU DITINJAU.
+  ioExportClassList: 'Ekspor daftar kelas',
+  ioExportGroups: 'Ekspor kelompok',
+  ioDownloadTemplate: 'Unduh templat',
+  ioImportLabel: 'Impor daftar kelas',
+  ioProblemsHeading: 'Berkas ini tidak diimpor:',
+  ioReplaceWarning: (total: number, named: number) =>
+    `Ini akan mengganti daftar kelas Anda saat ini — ${total} siswa, ${named} sudah diberi nama.`,
+  ioReplaceConfirm: 'Ganti',
+  ioReplaceCancel: 'Pertahankan yang ada',
+  ioImported: (total: number) => `${total} siswa diimpor.`,
+
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
     // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA

@@ -1359,11 +1359,75 @@ const sexWhyText = sexWhy(roster, t);
     align-items: center;
     gap: 0.6rem;
   }
+
+  /* The Import/export body. Mobile-first like everything else on this page:
+     the buttons wrap rather than scroll, and the file input is allowed to
+     shrink -- a fixed-width file input is the single most common cause of
+     horizontal scroll at 320px, which this site forbids site-wide. */
+  .cg-io-import {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+  }
+  .cg-io-import input[type='file'] {
+    max-width: 100%;
+    font: inherit;
+    /* A file input's own button is the touch target, and browsers size it
+       from the font. 44px of line-height gives it the floor this site
+       applies to every other control without restyling the widget itself,
+       which cannot be done portably. */
+    min-height: 44px;
+    line-height: 44px;
+  }
+  .cg-io-buttons,
+  .cg-io-confirm-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  /* Both panels are refusals or decisions, styled like the roster's own
+     `#cg-roster-problem` rather than as a third thing -- one visual
+     language for "the tool needs something from you". */
+  .cg-io-problems,
+  .cg-io-confirm {
+    margin: 0 0 0.9rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+  .cg-io-problems p,
+  .cg-io-confirm p {
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+  }
+  .cg-io-problems ul {
+    margin: 0;
+    padding-left: 1.2rem;
+  }
+  .cg-io-problems li + li {
+    margin-top: 0.3rem;
+  }
+  /* Stage 4, Task 5. The Import/export section's own controls, GLOBAL for
+     the identical reason every rule in this block is: `renderIo`
+     (src/scripts/io-ui.ts) builds them with document.createElement, so none
+     of them carries Astro's own scoping attribute and a scoped rule would
+     match nothing at all -- the exact failure recorded on `.avatar` further
+     down this file. Joined onto the roster's own button rule rather than
+     given a second one: they are the same kind of control and must not
+     drift into two visual languages. */
   .cg-add-student,
   .cg-add-several,
   .cg-add-confirm,
   .cg-remove-student,
-  .cg-clear-roster {
+  .cg-clear-roster,
+  .cg-io-export,
+  .cg-io-export-groups,
+  .cg-io-template,
+  .cg-io-replace,
+  .cg-io-keep {
     min-height: 44px;
     padding: 0.5rem 0.9rem;
     font: inherit;

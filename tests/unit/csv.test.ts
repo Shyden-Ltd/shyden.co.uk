@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
+import { LOCALES } from '../../src/lib/i18n';
 import {
   serialiseRoster,
   serialiseGroups,
@@ -132,8 +133,11 @@ describe('CSV_LOCALES', () => {
     }
   });
 
-  it('carries exactly the two locales this site ships', () => {
-    expect(Object.keys(CSV_LOCALES).sort()).toEqual(['en', 'id']);
+  // Compared against the SITE's own locale list, not a hand-written pair:
+  // a third locale added to `LOCALES` must redden here, rather than
+  // shipping a page whose export button has no column table to read.
+  it('carries a table for every locale this site ships', () => {
+    expect(Object.keys(CSV_LOCALES).sort()).toEqual([...LOCALES].sort());
   });
 });
 

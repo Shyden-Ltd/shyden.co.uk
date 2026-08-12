@@ -58,13 +58,16 @@ import {
 } from '../lib/sfx';
 import {
   getStrings,
+  isLocale,
   renderError,
   renderWarning,
   groupName,
   resultsHeadingText,
+  type Locale,
   type Strings,
 } from '../lib/i18n';
 import { sexWhy, sexWhyReturning } from '../lib/sexOptions';
+import { renderIo } from './io-ui';
 import { sectionState } from '../lib/sections';
 import { staleReason, type Snapshot } from '../lib/staleness';
 import { avatarSymbolId } from '../lib/avatars';
@@ -290,6 +293,12 @@ if (form) {
   }
 
   const t: Strings = getStrings(document.documentElement.lang);
+  // The SAME source `t` is read from, so the strings on the page and the
+  // language of the file it writes can never disagree -- `getStrings` falls
+  // back to English for an unknown value and this falls back with it.
+  const pageLocale: Locale = isLocale(document.documentElement.lang)
+    ? document.documentElement.lang
+    : 'en';
   // The engine's errors (and warnings) carry student NUMBERS, never names --
   // identity is the number, and grouping.ts has no roster to resolve one
   // from (see Student.number's doc comment there). `rosterNames` is where a
@@ -1110,6 +1119,42 @@ if (form) {
   renderStudentsBody();
   updateRosterValidation();
 
+  // ── import / export (stage 4) ──────────────────────────────────────────
+  //
+  // `lastGroups` is what the sheet on screen is showing, or `null` before
+  // the first shuffle and after a refusal -- the ONE fact "Export groups"
+  // depends on, kept here beside `lastSnapshot` rather than re-derived from
+  // the DOM. Reading the rendered cards back would be re-parsing our own
+  // output, and would silently export a stale arrangement while the notice
+  // above the sheet says the groups are out of date.
+  let lastGroups: Student[][] | null = null;
+  const ioBody = $<HTMLElement>('cg-io-body');
+  const io = ioBody
+    ? renderIo(ioBody, t, pageLocale, {
+        getRoster,
+        getGroups: () => lastGroups,
+        getClassName: () => classInput.value,
+        // An import REPLACES the roster wholesale and is a SAVE point:
+        // `{ saved: true }` is what makes `dirty` false, because what is on
+        // screen now is exactly what is in a file the teacher already has.
+        // Design spec section 11's own rule, and the other half of the pair
+        // export completes.
+        // Exporting is the OTHER save point. `io-ui` has no setter and no
+        // business having one, so it reports the moment a file left the
+        // page and this marks the roster saved -- the same
+        // `{ saved: true }` an import uses, for the same reason: what is on
+        // screen is now exactly what is in a file the teacher holds.
+        onExported: () => setRoster([...getRoster()], { saved: true }),
+        onImport: (imported, className) => {
+          if (className !== '') classInput.value = className;
+          setRoster(imported, { saved: true });
+          renderStudentsBody();
+          updateStaleness();
+          updateRosterValidation();
+        },
+      })
+    : null;
+
   // ── sound (six real CC0 samples; synthesis is the fallback) ─────────────
   // src/assets/sfx/ ships six mastered CC0 recordings -- shuffle.m4a,
   // land-1..4.m4a, done.m4a; provenance and licence in that directory's own
@@ -1747,6 +1792,11 @@ if (form) {
 
     if (!outcome.ok) {
       results.hidden = true;
+      // The sheet is gone, so "Export groups" must go with it -- otherwise
+      // it stays offering the arrangement from before the refusal, which is
+      // not on screen any more.
+      lastGroups = null;
+      io?.refresh();
       // Unhidden BEFORE the text lands. A live region only reports mutations
       // to something already in the accessibility tree, so writing first and
       // revealing second announced nothing at all — the visitor pressed the
@@ -1765,6 +1815,10 @@ if (form) {
     }
 
     const { groups, warnings } = outcome.result;
+    // What the sheet is showing, for "Export groups" -- see `lastGroups`'s
+    // own comment where it is declared.
+    lastGroups = groups;
+    io?.refresh();
 
     // Read fresh at every submit -- never cached -- so a class name typed
     // or changed between two shuffles is picked up on the next one. Set
