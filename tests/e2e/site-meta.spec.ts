@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 test('custom 404 renders branded not-found copy', async ({ page }) => {
   const res = await page.goto('/no-such-page-xyz');
   expect(res?.status()).toBe(404);
@@ -34,15 +34,19 @@ test('robots.txt references the sitemap', async ({ request }) => {
 // scroll guarantee as every other page (cf. homepage.spec.ts / glory-points.spec.ts).
 test.describe('404 page — mobile-first layout', () => {
   for (const width of [320, 375, 768, 1280]) {
-    test(`no horizontal scroll at ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto('/no-such-page-xyz');
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
-    });
+    test(
+      `no horizontal scroll at ${width}px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/no-such-page-xyz');
+        const overflow = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+      },
+    );
   }
 });

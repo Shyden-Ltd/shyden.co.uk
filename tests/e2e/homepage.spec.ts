@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 test.describe('homepage content', () => {
   test('hero CTA is a mailto and sections exist', async ({ page }) => {
     await page.goto('/');
@@ -70,33 +70,39 @@ test.describe('homepage content', () => {
       await expect(page.locator('#contact p').first()).toHaveText(sentence);
     });
   }
-  test('call-to-action buttons meet the 44×44px touch target', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 375, height: 800 });
-    await page.goto('/');
-    const btns = page.locator('.btn');
-    await expect(btns.first()).toBeVisible();
-    for (const b of await btns.all()) {
-      const box = await b.boundingBox();
-      expect(box).not.toBeNull();
-      expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
-      expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
-    }
-  });
+  test(
+    'call-to-action buttons meet the 44×44px touch target',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 800 });
+      await page.goto('/');
+      const btns = page.locator('.btn');
+      await expect(btns.first()).toBeVisible();
+      for (const b of await btns.all()) {
+        const box = await b.boundingBox();
+        expect(box).not.toBeNull();
+        expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
+        expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
+      }
+    },
+  );
 });
 test.describe('mobile-first layout', () => {
   for (const width of [320, 375, 768, 1280]) {
-    test(`no horizontal scroll at ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto('/');
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
-    });
+    test(
+      `no horizontal scroll at ${width}px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/');
+        const overflow = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+      },
+    );
   }
   test('no console errors on load', async ({ page }) => {
     const errors: string[] = [];

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('the sitemap', () => {
   test('lists every page and pairs the two languages', async ({ request }) => {

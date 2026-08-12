@@ -9,6 +9,9 @@
     "preview": "astro preview",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:ios": "vitest run --config vitest.ios.config.ts --reporter=verbose",
+    "test:devices": "node scripts/test-devices.mjs",
+    "dashboard": "node scripts/dashboard.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "format": "prettier --check ."
   },

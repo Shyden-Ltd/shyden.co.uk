@@ -1,6 +1,11 @@
-import { en, THEME_KEYS, type Strings, type ThemeKey } from './en';
+import { en, type Strings } from './en';
 import { id } from './id';
-import { ERROR_CODES, type GroupingError } from '../grouping';
+import {
+  ERROR_CODES,
+  type GroupingError,
+  WARNING_CODES,
+  type GroupingWarning,
+} from '../grouping';
 
 /** English first: it is the default and lives at the unprefixed route. */
 export const LOCALES = ['en', 'id'] as const;
@@ -41,14 +46,41 @@ export const localeFromPath = (pathname: string): Locale =>
   /^\/id(\/|$)/.test(pathname) ? 'id' : 'en';
 
 /**
+ * A student number, resolved to a label a teacher can read.
+ *
+ * The engine's errors carry numbers, never names (see `Student.number`'s
+ * comment: identity is the number, and `GroupingError`'s `keepApartImpossible`
+ * variant carries `students: number[]` for exactly that reason) — grouping.ts
+ * has no roster to resolve one from. `renderError` has no roster either by
+ * default, so a resolver is how one gets supplied.
+ */
+export type ResolveStudentLabel = (studentNumber: number) => string;
+
+/**
  * Turn an engine error into a sentence in the page's language.
  *
  * The engine deliberately returns a code plus data instead of prose, so this
  * is the single place a message is composed. The switch is exhaustive over
  * ErrorCode; adding a code without handling it here fails the type check
  * rather than silently rendering the raw code to a teacher.
+ *
+ * `resolveStudent` turns a `KEEP_APART_IMPOSSIBLE` number into display text.
+ * It defaults to the same numbered label an anonymous student already gets
+ * elsewhere on the page (`strings.studentNumber`) rather than a second,
+ * independent spelling of "Student N" — so a caller that forgets to pass a
+ * resolver still gets "Student 1, Student 2 all need to be kept apart…",
+ * never bare digits. Stage 2's page passes its own resolver, one that reads
+ * the roster and prefers `name ?? studentNumber(n)`, so a teacher who typed
+ * names sees them. This keeps the engine pure — `GroupingError` still carries
+ * only numbers, and nothing in this module imports grouping.ts's `Student`
+ * type — while guaranteeing the default is still a full sentence, not a
+ * partial one.
  */
-export function renderError(error: GroupingError, strings: Strings): string {
+export function renderError(
+  error: GroupingError,
+  strings: Strings,
+  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber(n),
+): string {
   const e = strings.errors;
   switch (error.code) {
     case ERROR_CODES.noStudents:
@@ -59,43 +91,170 @@ export function renderError(error: GroupingError, strings: Strings): string {
       return e.INVALID_GROUP_COUNT;
     case ERROR_CODES.tooManyGroups:
       return e.TOO_MANY_GROUPS(error.maxGroups);
-    case ERROR_CODES.keepApartNeedsNames:
-      return e.KEEP_APART_NEEDS_NAMES;
-    case ERROR_CODES.keepApartUnknownName:
-      return e.KEEP_APART_UNKNOWN_NAME(error.students);
+    // Carries `students: number[]`, exactly like keepApartImpossible below --
+    // same reason (identity is the number) and the same fix (resolve each
+    // one through `resolveStudent` before the copy ever sees it).
+    case ERROR_CODES.togetherApartClash:
+      return e.TOGETHER_APART_CLASH(error.students.map(resolveStudent));
+    case ERROR_CODES.togetherUnitTooLarge:
+      return e.TOGETHER_UNIT_TOO_LARGE(
+        error.letter,
+        error.unit,
+        error.groupSize,
+      );
+    case ERROR_CODES.togetherNoArrangement:
+      return e.TOGETHER_NO_ARRANGEMENT(error.groupsTried);
+    case ERROR_CODES.togetherSearchGaveUp:
+      return e.TOGETHER_SEARCH_GAVE_UP;
     case ERROR_CODES.tooManyStudents:
       return e.TOO_MANY_STUDENTS(error.maxStudents);
+    case ERROR_CODES.duplicateNumber:
+      return e.DUPLICATE_NUMBER(error.number);
     case ERROR_CODES.keepApartImpossible:
-      return e.KEEP_APART_IMPOSSIBLE(error.students, error.groupsNeeded);
+      return e.KEEP_APART_IMPOSSIBLE(
+        error.students.map(resolveStudent),
+        error.groupsNeeded,
+      );
     case ERROR_CODES.keepApartNoArrangement:
       return e.KEEP_APART_NO_ARRANGEMENT(error.groupsTried);
     case ERROR_CODES.keepApartSearchGaveUp:
       return e.KEEP_APART_SEARCH_GAVE_UP;
+    case ERROR_CODES.bothRulesNoArrangement:
+      return e.BOTH_RULES_NO_ARRANGEMENT(error.groupsTried);
+    case ERROR_CODES.bothRulesSearchGaveUp:
+      return e.BOTH_RULES_SEARCH_GAVE_UP;
+    // Carries `students: number[]`, exactly like togetherApartClash and
+    // keepApartImpossible above -- same reason (identity is the number) and
+    // the same fix (resolve each one through `resolveStudent` first).
+    case ERROR_CODES.sexNeedsAllSet:
+      return e.SEX_NEEDS_ALL_SET(error.students.map(resolveStudent));
+    // Task 8b. Carries `students: number[]`, exactly like the codes above --
+    // same reason (identity is the number) and the same fix.
+    case ERROR_CODES.sexSeparateSplitsUnit:
+      return e.SEX_SEPARATE_SPLITS_UNIT(error.students.map(resolveStudent));
+    // Fix round 1, F-2. Carries `groupsRequested: number`, never a student
+    // list -- no resolver needed, unlike every other `separate`-mode code
+    // above.
+    case ERROR_CODES.sexSeparateImpossible:
+      return e.SEX_SEPARATE_IMPOSSIBLE(error.groupsRequested);
+    // Fix round 2. Carries no data at all, like togetherSearchGaveUp /
+    // keepApartSearchGaveUp / bothRulesSearchGaveUp above -- nothing to pass
+    // through.
+    case ERROR_CODES.sexSeparateSearchGaveUp:
+      return e.SEX_SEPARATE_SEARCH_GAVE_UP;
+    // Task 9. Carries `students: number[]`, exactly like togetherApartClash
+    // above -- same reason (identity is the number) and the same fix.
+    case ERROR_CODES.pinnedSplitsUnit:
+      return e.PINNED_SPLITS_UNIT(error.students.map(resolveStudent));
+    case ERROR_CODES.pinnedApartClash:
+      return e.PINNED_APART_CLASH(error.students.map(resolveStudent));
+    // Carries a single `number`, exactly like duplicateNumber, but --
+    // unlike duplicateNumber -- resolved through `resolveStudent` before the
+    // copy sees it: this fires after matching against the current roster,
+    // so the number is a real, current student, not an ambiguous raw
+    // digit (see ERROR_CODES.pinnedInTwoGroups's doc comment).
+    case ERROR_CODES.pinnedInTwoGroups:
+      return e.PINNED_IN_TWO_GROUPS(resolveStudent(error.number));
+    // Fix round 1, F-1/F-2. Carries three numbers, never a student list --
+    // no resolver needed, unlike most codes above (same shape as
+    // sexSeparateImpossible's single `groupsRequested`, just three fields
+    // instead of one). Replaces the two situations that used to share
+    // `tooManyGroups` on the pinned path -- see
+    // ERROR_CODES.pinnedTooManyGroups's doc comment in grouping.ts.
+    case ERROR_CODES.pinnedTooManyGroups:
+      return e.PINNED_TOO_MANY_GROUPS(
+        error.requestedGroups,
+        error.pinnedGroupCount,
+        error.remainingStudents,
+      );
   }
 }
 
-/** Whether a string off the DOM is one of the themes that actually exist. */
-export const isThemeKey = (value: string): value is ThemeKey =>
-  (THEME_KEYS as readonly string[]).includes(value);
+/**
+ * Turn an engine warning into a sentence in the page's language.
+ *
+ * Mirrors `renderError` exactly, for the same reason: the engine returns a
+ * code plus data, never prose, and `students` carries numbers (identity is
+ * the number, see `Student.number` in grouping.ts) that this function
+ * resolves through the same `resolveStudent` parameter renderError uses,
+ * defaulting the same way -- a caller that forgets a resolver still gets
+ * "Student 7, Student 8 …", never bare digits.
+ *
+ * Task 8a. `sexSpillover` is the only code WARNING_CODES defines. Task 8a
+ * built this renderer ahead of a real caller -- see the doc comment on
+ * WARNING_CODES.sexSpillover there -- so Task 8b's separate-mode placement
+ * work landed against a channel that was already tested and translated
+ * rather than inventing one under time pressure alongside the harder
+ * placement logic.
+ */
+export function renderWarning(
+  warning: GroupingWarning,
+  strings: Strings,
+  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber(n),
+): string {
+  const w = strings.warnings;
+  switch (warning.code) {
+    case WARNING_CODES.sexSpillover:
+      return w.SEX_SPILLOVER(warning.students.map(resolveStudent), warning.sex);
+    // Task 9. Carries `students: number[]`, same resolver pattern as
+    // sexSpillover above -- no `sex` field to pass through, see
+    // WARNING_CODES.pinnedMixedSex's doc comment in grouping.ts.
+    case WARNING_CODES.pinnedMixedSex:
+      return w.PINNED_MIXED_SEX(warning.students.map(resolveStudent));
+    // Whole-branch review, I-2. Carries `students: number[]`, same resolver
+    // pattern as sexSpillover/pinnedMixedSex above -- no `sex` field to pass
+    // through, see WARNING_CODES.sexBothTooSmall's doc comment in
+    // grouping.ts.
+    case WARNING_CODES.sexBothTooSmall:
+      return w.SEX_BOTH_TOO_SMALL(warning.students.map(resolveStudent));
+  }
+}
 
-/** The display name for a group: numbered, or the nth name of a theme. */
-export function groupName(
-  index: number,
-  naming: 'numbered' | 'themed',
-  theme: string,
+/**
+ * The display name for a group.
+ *
+ * Stage 3, Task 8 (design spec section 5): the themed branch this function
+ * used to have -- Animals / Colours / Planets, chosen by a now-removed
+ * `<select>` -- is gone along with the theme tables it read from. Groups
+ * are always numbered; kept as a real function (not inlined at its one call
+ * site, `classroom-groups.ts`'s own `render()`) because it still composes
+ * one thing this file already owns -- turning a zero-based index into the
+ * page's own `groupLabel` sentence -- in one place, the same reason
+ * `resultsHeadingText` below stays a function rather than two copies of
+ * "which form do I show" at each of ITS own call sites.
+ */
+export function groupName(index: number, strings: Strings): string {
+  return strings.groupLabel(index + 1);
+}
+
+/**
+ * The results heading: unnamed groups read "Your groups"; a named class
+ * heads them "<name> — your groups" (design spec section 8). Composed here,
+ * in ONE place, so the named and unnamed forms cannot drift apart -- the
+ * same reason `groupName` and `renderError` above live here rather than at
+ * their call site.
+ *
+ * A blank -- or WHITESPACE-ONLY -- class name counts as none: design spec
+ * section 8 says plainly "Blank is fine and nothing is blocked", and a
+ * teacher who fat-fingers the space bar should not get a heading reading
+ * " — your groups", a dash with nothing in front of it. `.trim()` is used
+ * only to DECIDE that, never to alter what is shown: design spec section 9
+ * is explicit that "the class name itself is never altered -- not on the
+ * page, not in the `# Class:` line, not in the results heading" -- that
+ * section's own filename-safety substitution is deliberately scoped to the
+ * exported filename and nowhere else, so a name a teacher actually typed
+ * (leading/trailing whitespace included) reaches this heading exactly as
+ * typed. This deliberately corrects task-5-brief.md's own snippet, which
+ * threaded `className.trim()` through to the named branch as well as the
+ * blank check.
+ */
+export function resultsHeadingText(
+  className: string,
   strings: Strings,
 ): string {
-  // `theme` arrives from a <select> value, so it is a string from the page
-  // rather than a key anyone has checked. Numbering is the honest fallback
-  // for an unknown one, and the same fallback the theme runs out of names.
-  if (naming === 'numbered' || !isThemeKey(theme)) {
-    return strings.groupLabel(index + 1);
-  }
-  const names = strings.themes[theme];
-  // More groups than the theme has names: fall back to numbering rather than
-  // repeating a name, which would make two groups indistinguishable.
-  return names[index] ?? strings.groupLabel(index + 1);
+  return className.trim() === ''
+    ? strings.resultsHeading
+    : strings.resultsHeadingNamed(className);
 }
 
-export { THEME_KEYS };
-export type { Strings, ThemeKey };
+export type { Strings };

@@ -1,19 +1,72 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getStrings, THEME_KEYS, type Locale } from '../../lib/i18n';
+import { getStrings, type Locale } from '../../lib/i18n';
 // The engine owns the ceiling. Hard-coding a second number here is how the
 // field comes to advertise one limit while the tool enforces another.
-import { MAX_STUDENTS } from '../../lib/grouping';
+import { MAX_STUDENTS, type Student } from '../../lib/grouping';
+import { sectionState, type ToolState } from '../../lib/sections';
+import { sexWhy } from '../../lib/sexOptions';
+import { avatarSvg, AVATAR_SEXES } from '../../lib/avatars';
 
 interface Props {
   lang: Locale;
 }
 const { lang } = Astro.props;
 const t = getStrings(lang);
-// The declared list, not Object.keys of one of the two tables — enumerating
-// `themes` while rendering from `themeNames` is how one gains a key the other
-// lacks and the option ships with no label.
-const themes = THEME_KEYS;
+
+// Stage 3, Task 8 (design spec section 5). The three avatar `<symbol>`s,
+// built ONCE, here, at build time -- from the SAME `AVATAR_SEXES` list
+// `avatars.ts`'s own unit tests check against, not a hand-written
+// `['M', 'F', null]` copied a second time into this file (the "declared
+// list can lie" gap `themes`/`THEME_KEYS` risked above until this task
+// removed both). `set:html` below injects this raw, unescaped -- safe
+// because `avatarSvg` never interpolates anything a teacher typed or
+// picked (see that module's own "SECURITY" note); this is no different
+// from writing the same markup by hand directly into this template.
+const avatarDefs = AVATAR_SEXES.map(avatarSvg).join('');
+
+// The three built collapsible sections' headers (Student details, Grouping
+// options, Import / export — Sound & animation carries no state string at
+// all, see sections.ts) report this state from the moment the page loads,
+// computed at build time through the one function that also has a unit test
+// pinning it against both locale tables. Every field but `leftovers` stays
+// at this default for the whole of this stage: no roster exists yet
+// (`rosterSize`/`named`/`absent`/`together`/`apart`), `sexMode` stays `'off'`
+// because the two sex switches (rendered inside `#cg-grouping-body` below,
+// Stage 2 Task 4) are permanently `disabled` for the same reason (see
+// `sexWhyText` below), and nothing can mark the roster `dirty` until a later
+// stage gives it something to lose. `leftovers` mirrors the radio group's
+// own default further down (`checked` on `spread`) for this build-time
+// render only. `classroom-groups.ts` keeps the rendered header live from
+// there: its own `change` listener calls this same `sectionState` again
+// whenever the leftovers radio changes, and rewrites `#cg-grouping .state`
+// — so the header cannot go on reporting "none" once a teacher has picked
+// "put them all in one group".
+const initialToolState: ToolState = {
+  named: 0,
+  absent: 0,
+  together: 0,
+  apart: 0,
+  rosterSize: 0,
+  sexMode: 'off',
+  leftovers: 'spread',
+  dirty: false,
+};
+const sectionStrings = sectionState(initialToolState, t);
+
+// The two sex switches' disabled reason (design spec section 6), computed
+// once at build time exactly like `initialToolState` above -- there is no
+// roster on this page until stage 3 (`#cg-students-body` below renders
+// nothing), so `roster` is `null` for the whole of this stage and there is
+// no event anywhere on the page that could ever change it. `sexWhy` always
+// returns its "no list at all" message here as a result; the other two
+// messages it can produce are real and unit-tested (tests/unit/
+// sexOptions.test.ts) but unreachable from this page today. Whichever task
+// wires Student details' roster is what turns this into a live value
+// classroom-groups.ts recomputes on change, the same way
+// `updateGroupingHeader` already does for the leftovers radio below.
+const roster: Student[] | null = null;
+const sexWhyText = sexWhy(roster, t);
 ---
 
 <BaseLayout
@@ -26,12 +79,106 @@ const themes = THEME_KEYS;
     <p class="lead">{t.lead}</p>
     <p class="privacy">{t.privacy}</p>
 
-    <div class="how-to">
-      <h2 id="how-to-heading">{t.howToHeading}</h2>
-      <ol aria-labelledby="how-to-heading">
-        {t.howToSteps.map((step) => <li>{step}</li>)}
-      </ol>
-    </div>
+    <!-- NOT one of the tool's four collapsible sections (student details,
+         grouping options, import/export, sound & animation) -- it is the
+         page's own summary and description, so it sits above #cg-form and
+         outside it, per design spec section 3's "How to use — at the very
+         top, outside the tool". One header opens and closes BOTH parts
+         together: what this is (who it is for and why it was built, not
+         only what it does) and how to use it. Collapsed, #cg-howto-toggle
+         itself stays on screen and un-hidden -- a control that hides itself
+         is a trap -- and only #cg-howto-body, the content it discloses, ever
+         gets `hidden`. A bare <button> has no heading role, so it is wrapped
+         in an <h2> here -- matching #cg-results-h below and glory-points'
+         own #how-to-heading -- so heading navigation still finds this
+         section; the button alone carries the click. -->
+    <section id="cg-howto" class="howto">
+      <h2 class="howto-heading">
+        <button
+          type="button"
+          class="howto-toggle"
+          id="cg-howto-toggle"
+          aria-expanded="true"
+          aria-controls="cg-howto-body"
+        >
+          {t.howToHeading}
+        </button>
+      </h2>
+      <!-- EXPANDED in the raw markup -- no `hidden` here, unlike every other
+           collapsible section on this page (#cg-students/#cg-grouping/#cg-io/
+           #cg-sound below all render `hidden` in their own markup). This is
+           the page's own summary and description, not a control: a visitor
+           whose script never runs, or fails before reaching this section,
+           must still be able to read who this tool is for and why it exists
+           (design spec section 3's part 1) -- impossible if `hidden` ships
+           in the HTML at all. A code review caught this: the four sections
+           below have nothing to disclose until a teacher acts, so shipping
+           them `hidden` costs a script-disabled visitor nothing; this
+           section IS the content, so shipping it `hidden` would have cost
+           that visitor the one paragraph answering "who is this for and
+           why".
+
+           Collapsed is still the intended default for everyone else: design
+           spec section 2's operator ruling 2 (2026-08-08) reverses this
+           section's original expanded-by-default (section 3), measured at
+           ~310px on a phone, and section 2 calls it the single biggest
+           saving toward the tool fitting one screen. The script immediately
+           below enforces that default, synchronously, before paint, for
+           every visitor whose script runs -- see its own comment for why a
+           raw-HTML default could not deliver both requirements (no-JS
+           reachability AND a collapsed JS-enabled default) at once. -->
+      <div id="cg-howto-body" class="howto-body">
+        <p>{t.howToWhat}</p>
+        <ol>
+          {t.howToSteps.map((step) => <li>{step}</li>)}
+        </ol>
+      </div>
+    </section>
+
+    <!-- Collapses How to use, synchronously, for every visitor whose script
+         runs. The markup above ships EXPANDED (see its own comment: a
+         script-disabled visitor must still be able to read who this is for
+         and why), so without this, every JavaScript visitor would see the
+         full intro paragraph and three steps on first paint too -- undoing
+         the ~310px design spec section 2's ruling 2 exists to save.
+         classroom-groups.ts is a deferred `type="module"` (Astro
+         hoists/bundles every plain `<script>` in a `.astro` file that way),
+         so it does not run until after the browser has already parsed, and
+         typically painted, everything above it -- too late to avoid that
+         flash. This runs synchronously, in document order, right after the
+         elements it touches -- `is:inline` is required, or Astro would defer
+         it exactly the same way.
+
+         Reads the identical key classroom-groups.ts reads
+         (`cg-howto-collapsed`), the identical way -- see that file's own
+         comment on `HOWTO_KEY` for the full '0'/'1'/absent semantics: '0' is
+         the only stored value that means "a teacher left this open";
+         anything else -- '1', absent, or a failed read -- means collapse.
+         `openPreferred` only ever becomes `true` from an explicit '0': a
+         read of '1' or absent, AND a throw, both leave it `false`, so the
+         SAME collapse call below covers all three, rather than duplicating
+         it once inside the try and once in the catch. Safari's "Block all
+         cookies", a partitioned context or an MDM profile all throw
+         SecurityError on the mere act of reading localStorage, and this runs
+         before classroom-groups.ts exists to catch it -- leaving the section
+         uncollapsed on a throw would show the full expanded content through
+         first paint, the exact flash this script exists to prevent. -->
+    <script is:inline>
+      (function () {
+        var openPreferred = false;
+        try {
+          openPreferred = localStorage.getItem('cg-howto-collapsed') === '0';
+        } catch {
+          openPreferred = false;
+        }
+        if (!openPreferred) {
+          var body = document.getElementById('cg-howto-body');
+          var toggle = document.getElementById('cg-howto-toggle');
+          if (body) body.hidden = true;
+          if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        }
+      })();
+    </script>
 
     <!-- No `name` on any control that holds something a teacher typed. A form
          with no `action` submits to its OWN url as a GET, so a `name` here
@@ -42,8 +189,60 @@ const themes = THEME_KEYS;
          together, and "students per group" is not personal data.
          Everything else is read by id. Pinned by classroom-groups-privacy.spec.ts. -->
     <form id="cg-form" novalidate>
-      <fieldset>
-        <legend>{t.classHeading}</legend>
+      <!-- Design spec section 3: "Top row: Class (optional) · Students ·
+           Split by" -- one compact row of three parallel fields, replacing
+           the two bordered `<fieldset>`s Stage 2 Tasks 1 and 5 shipped
+           (`classHeading` "Your class", wrapping Class + Students;
+           `groupsHeading` "How to split them", wrapping the mode radios and
+           the active size/count field). classroom-groups.spec.ts's own "the
+           no-scroll rule, measured" test.fixme block named those two boxes,
+           by name, as part of why the collapsed page did not fit -- see
+           that file for the measurements this row exists to close.
+
+           Neither legend is missed: every field here already carries its
+           own accessible name -- a <label>, or for the mode radios the same
+           `aria-labelledby="cg-mode-label"` pattern the naming and
+           leftovers radiogroups elsewhere on this page already use -- so
+           dropping the two purely organisational headings loses no
+           accessible name, only a redundant one. Both keys are removed from
+           en.ts/id.ts in the same commit, not left for dead-copy.test.ts to
+           catch as unreferenced.
+
+           Mobile-first: `.top-row` is one column, stacked, matching section
+           3's own "on a phone they stack" -- see its own CSS comment below
+           for the arithmetic on why three fields in a row is not the
+           six-controls-in-304px problem section 3 documents for the roster,
+           and stacks anyway because the phone always does regardless of
+           what geometrically fits. `min-width: 768px` reuses
+           `.tool-sections`' own breakpoint just below, for the same
+           side-by-side-on-wide transition on the same page. -->
+      <div class="top-row">
+        <!-- Stage 2, Task 5. Design spec section 3's top row: "Class
+             (optional) · Students · Split by" -- this field first, matching
+             that order. Optional (section 8: "Blank is fine and nothing is
+             blocked"), so it carries no `required`, no pattern and no
+             `maxlength` -- a class name has no length this page enforces,
+             the same way #cg-count has no roster-shaped limit here either
+             (MAX_ROSTER is stage 3's, and governs the roster table, not
+             this field).
+
+             No `name`, by the same rule as every other typed-text control
+             on this page (see #cg-form's own comment above): a name here
+             would put a teacher's class name in the URL, the history and
+             the access log the moment the submit listener fails to attach.
+             `autocomplete="off"` on top of that -- unlike #cg-count, this
+             field holds free text a teacher typed, and the browser's own
+             autofill memory is a second place it could persist beyond
+             "forgotten when you close the page" (the privacy copy above,
+             section 11) that a `type="number"` field never carries.
+
+             `resultsHeadingText` (src/lib/i18n/index.ts) is the one place
+             this value is ever turned into the results heading; see its own
+             doc comment for why the value it reads is never trimmed. -->
+        <div class="field">
+          <label for="cg-class">{t.classLabel}</label>
+          <input id="cg-class" type="text" autocomplete="off" />
+        </div>
 
         <div class="field">
           <label for="cg-count">{t.studentsLabel}</label>
@@ -57,136 +256,391 @@ const themes = THEME_KEYS;
             aria-describedby="cg-count-help"
           />
           <p class="help" id="cg-count-help">{t.studentsHelp}</p>
-        </div>
-
-        <div class="field">
-          <label for="cg-names">{t.namesLabel}</label>
-          <textarea id="cg-names" rows="5" aria-describedby="cg-names-help"
-          ></textarea>
-          <p class="help" id="cg-names-help">{t.namesHelp}</p>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>{t.groupsHeading}</legend>
-
-        <div class="field">
-          <span class="label" id="cg-mode-label">{t.modeLabel}</span>
-          <div class="radios" role="radiogroup" aria-labelledby="cg-mode-label">
-            <label
-              ><input type="radio" name="mode" value="perGroup" checked />{
-                t.modePerGroup
-              }</label
-            >
-            <label
-              ><input type="radio" name="mode" value="groupCount" />{
-                t.modeGroupCount
-              }</label
-            >
-          </div>
-        </div>
-
-        <div class="field" data-mode="perGroup">
-          <label for="cg-size">{t.groupSizeLabel}</label>
-          <input
-            id="cg-size"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            max="50"
-            value="4"
-          />
-        </div>
-
-        <div class="field" data-mode="groupCount" hidden>
-          <label for="cg-groups">{t.groupCountLabel}</label>
-          <input
-            id="cg-groups"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            max="50"
-            value="6"
-          />
-        </div>
-
-        <div class="field">
-          <span class="label" id="cg-left-label">{t.leftoversLabel}</span>
-          <div class="radios" role="radiogroup" aria-labelledby="cg-left-label">
-            <label
-              ><input type="radio" name="leftovers" value="spread" checked />{
-                t.leftoversSpread
-              }</label
-            >
-            <label
-              ><input type="radio" name="leftovers" value="bunch" />{
-                t.leftoversBunch
-              }</label
-            >
-          </div>
-          <p class="help">{t.leftoversHelp}</p>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>{t.namingLabel}</legend>
-        <div class="field">
-          <div class="radios" role="radiogroup" aria-label={t.namingLabel}>
-            <label
-              ><input type="radio" name="naming" value="numbered" checked />{
-                t.namingNumbered
-              }</label
-            >
-            <label
-              ><input type="radio" name="naming" value="themed" />{
-                t.namingThemed
-              }</label
-            >
-          </div>
-        </div>
-        <div class="field" data-naming="themed" hidden>
-          <label for="cg-theme">{t.themeLabel}</label>
-          <select id="cg-theme">
-            {
-              themes.map((key) => (
-                <option value={key}>{t.themeNames[key]}</option>
-              ))
-            }
-          </select>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>{t.keepApartHeading}</legend>
-        <div class="field">
-          <label for="cg-apart">{t.keepApartLabel}</label>
-          <textarea id="cg-apart" rows="3" aria-describedby="cg-apart-help"
-          ></textarea>
-          <p class="help" id="cg-apart-help">{t.keepApartHelp}</p>
-          <p class="help" id="cg-apart-hint" hidden>
-            {t.keepApartNeedsNamesHint}
+          <!-- Stage 3, Task 7 (design spec section 4, "The Students box --
+               an input, then a read-out"). Ships HIDDEN, matching every
+               visit's real build-time state: no roster exists until a
+               script runs and a teacher adds a row, so `disabled` never
+               ships on #cg-count either -- both are classroom-groups.ts's
+               own job, live, from `updateStudentsBox`, wired through the
+               same `onRosterChanged` hook `updateIoHeader`/
+               `updateStudentsHeader` already use. `.why`, not `.help` --
+               the SAME class `#cg-sex-why` above already uses, for the
+               identical reason (see that markup's own comment): this is
+               not optional context, it is THE stated reason a control
+               cannot be used right now, present exactly while that is
+               true. `#cg-count-help` is swapped OUT the instant this
+               swaps in, never shown alongside it -- "Students are
+               anonymous and numbered" stops being true the moment a
+               roster can hold a real name, so showing it beside a reason
+               that contradicts it would be worse than showing neither.
+               `aria-describedby` is kept in step with whichever paragraph
+               is actually showing (updateStudentsBox rewrites it too),
+               rather than listing both ids unconditionally: browsers
+               disagree on whether a HIDDEN node's text still reaches the
+               accessible description when merely referenced by id, and
+               this does not gamble on it. -->
+          <p class="why" id="cg-count-locked" hidden>
+            {t.studentsLockedReason}
           </p>
         </div>
-      </fieldset>
 
-      <fieldset>
-        <legend>{t.playbackHeading}</legend>
-        <div class="field">
-          <label class="switch"
-            ><input id="cg-sound" type="checkbox" checked /><span
-              id="cg-sound-text">{t.soundOn}</span
-            ></label
-          >
+        <!-- The third top-row column: "Split by (per group / number of
+             groups)". `.split-by` carries no styling of its own -- it is a
+             grid placement wrapper only, so its three children still stack
+             with the SAME `.field` margin they used inside the old
+             `groupsHeading` fieldset (see .top-row > .field's own CSS
+             comment for why that margin is switched off one level up, on
+             Class/Students, but not reached down into here). -->
+        <div class="split-by">
+          <div class="field">
+            <span class="label" id="cg-mode-label">{t.modeLabel}</span>
+            <div
+              class="radios"
+              role="radiogroup"
+              aria-labelledby="cg-mode-label"
+            >
+              <label
+                ><input type="radio" name="mode" value="perGroup" checked />{
+                  t.modePerGroup
+                }</label
+              >
+              <label
+                ><input type="radio" name="mode" value="groupCount" />{
+                  t.modeGroupCount
+                }</label
+              >
+            </div>
+          </div>
+
+          <div class="field" data-mode="perGroup">
+            <label for="cg-size">{t.groupSizeLabel}</label>
+            <input
+              id="cg-size"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="50"
+              value="4"
+            />
+          </div>
+
+          <div class="field" data-mode="groupCount" hidden>
+            <label for="cg-groups">{t.groupCountLabel}</label>
+            <input
+              id="cg-groups"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="50"
+              value="6"
+            />
+          </div>
         </div>
-        <div class="field">
-          <label for="cg-speed">{t.speedLabel}</label>
-          <select id="cg-speed">
-            <option value="normal">{t.speedNormal}</option>
-            <option value="fast">{t.speedFast}</option>
-            <option value="skip">{t.speedSkip}</option>
-          </select>
-        </div>
-      </fieldset>
+      </div>
+
+      <!-- The naming radio ("Group 1, 2, 3…" / "Use a theme") and the theme
+           `<select>` it revealed used to sit here -- the last always-visible
+           bordered box below the top row (design spec section 2's own
+           "still owed" note). Stage 3, Task 8 removes both: avatars replace
+           the themes (design spec section 5), and with themes gone the
+           naming radio is a choice with one option, so it goes too. Groups
+           are always numbered now (`groupName`, src/lib/i18n/index.ts).
+           Recovers real vertical space, re-measured in
+           tests/e2e/classroom-groups.spec.ts's own "the no-scroll rule,
+           measured" block -- it helps the page's no-scroll rule (design
+           spec section 2) without closing it. -->
+
+      <!-- The tool's four collapsible sections (design spec section 3):
+           Student details, Grouping options, Import / export and Sound &
+           animation, in that order (the spec's own "Student details ·
+           Grouping options · Import / export · Sound & animation").
+
+           Sound & animation is the last of the four to be built (Stage 2,
+           Task 7). Until now it stayed where it already was, a plain
+           `<fieldset><legend>{t.playbackHeading}</legend>...` right above
+           this block: its existing checkbox already held `id="cg-sound"`,
+           so a fourth section sharing that literal id with its own wrapper
+           would have been a duplicate id, and that fieldset already
+           rendered the section's whole heading and content on its own —
+           an empty `cg-sound`-shaped shell wrapped around or beside it
+           would have put a SECOND "Sound and animation" heading on the
+           page for content already shown in full. The real fix, done here:
+           the fieldset and its `<legend>` are gone; its two controls moved
+           unchanged into `#cg-sound-body` below; and the checkbox that used
+           to hold `id="cg-sound"` is renamed `cg-sound-check`, freeing
+           `cg-sound` for this section's own wrapper — the same id every
+           other section here uses for its own (`cg-students`, `cg-grouping`,
+           `cg-io`). The rename ripples into every e2e spec file that
+           clicked or read the old id — classroom-groups.spec.ts,
+           classroom-groups-controls.spec.ts, classroom-groups-privacy.spec.ts,
+           classroom-groups-announcements.spec.ts and
+           tests/dev/dev-sanity.spec.ts — all updated alongside this file.
+
+           Same control as #cg-howto above, deliberately: a bare toggle
+           button loses the heading role the old markup had (see that
+           section's own comment), so every one of these wraps its button in
+           an <h2> too — the same level, since these are siblings of #cg-howto
+           and #cg-results in the page's outline, not a step beneath them.
+           The heading carries the level, the button carries the click,
+           `aria-expanded` and `aria-controls`. Collapsed by default, the
+           same rendered end state #cg-howto above reaches for a JavaScript
+           visitor — design spec section 2's rule is that everything in the
+           tool starts collapsed and opening is a deliberate act. Unlike
+           #cg-howto, though: these four have no reason to ship expanded in
+           the raw markup, because none of them hold content a visitor needs
+           to read without JavaScript — every one is empty or a control until
+           a teacher opens it, JavaScript or not. #cg-howto alone carries the
+           page's own summary and description, which is why IT alone ships
+           expanded in the HTML and relies on a script to collapse it (see
+           its own comment for the reasoning); these four cost a
+           script-disabled visitor nothing by shipping `hidden` outright.
+           Also unlike #cg-howto, the collapsed state here is never written
+           to localStorage: section 11 names exactly two UI preferences
+           allowed to persist (the how-to collapsed state, and a later print
+           panel) and this is not one of them, so every visit starts
+           collapsed.
+
+           Each of the first three buttons' own text is the label, a literal
+           `{' · '}` (an expression, not template whitespace — see
+           CLAUDE.md's own whitespace-seam rule), then the state span — so
+           the DOM text is the real, whole sentence design spec section 3
+           shows ("Student details · none added"), not a separator relying
+           on surrounding whitespace to survive reformatting. `cg-sound`'s
+           button carries none of that: `sectionState` (src/lib/sections.ts)
+           returns exactly three fields, not four — pinned by
+           tests/unit/sections.test.ts — because sound and speed are
+           simple, always-visible preferences, not data a teacher could
+           lose by collapsing the section. So this one button is the label
+           alone, with no middot and no `.state` span to leave empty or
+           invent a value for.
+
+           `cg-students` and `cg-io` are rendered here with no body content
+           at all, not a "coming soon" placeholder: that text would ship to
+           production if a later stage slipped. Stage 3, Task 2 gives
+           `#cg-students-body` real content -- the roster table -- but
+           entirely CLIENT-SIDE, from classroom-groups.ts's own "── student
+           roster" section (see that file); the markup below is unchanged,
+           still an empty div for the reason above, still true of `cg-io`.
+           `cg-grouping`'s body holds
+           the two sex switches (design spec section 6) and the leftovers
+           choice, rehomed here from the fieldset above unchanged (Stage 2,
+           Task 4) — same markup, same `name` attribute, same four locale
+           keys, still live today. Its header's own state is read LIVE from
+           that radio the moment it changes (see classroom-groups.ts's own
+           comment on `updateGroupingHeader`), unaffected by where the radio
+           physically sits, because the listener delegates on `#cg-form`
+           itself. `cg-sound`'s body holds the two controls the removed
+           fieldset above used to: same markup, same behaviour, and the same
+           ids apart from the checkbox rename this section's own opening
+           comment explains. -->
+      <div class="tool-sections">
+        <!-- Stage 5, Task 2. The printed sheet's own header: class name and
+             date, hidden on screen and revealed by `@media print`. Written
+             by classroom-groups.ts at print time from the SAME class input
+             and the same `todayISO` the CSV export uses, so the sheet and
+             the file cannot describe one shuffle with two dates. -->
+        <div class="print-head" id="cg-print-head" aria-hidden="true"></div>
+
+        <section id="cg-students" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-students-toggle"
+              aria-expanded="false"
+              aria-controls="cg-students-body"
+            >
+              {t.sectionStudentsHeading}{' · '}<span class="state"
+                >{sectionStrings.studentDetails}</span
+              >
+            </button>
+          </h2>
+          <h2 class="print-only-heading">{t.printClassListHeading}</h2>
+          <div id="cg-students-body" class="tool-section-body" hidden></div>
+          <!-- Stage 3, Task 6 (design spec section 4: "Opening Student
+               details with the count above 100 -- the section refuses to
+               open and says why... The count itself is left alone.").
+               A THIRD static sibling, the same shape as #cg-roster-problem/
+               #cg-roster-warning just below: never rebuilt by renderRoster,
+               so it survives whatever #cg-students-body currently holds --
+               which, in the one moment this fires, is nothing at all, since
+               classroom-groups.ts's own #cg-students-toggle listener never
+               calls renderStudentsBody() when refusing. Placed BEFORE the
+               body, not after, so a screen reader reaches "here is why" in
+               the same order a sighted teacher would look for it: right
+               where the content they expected to see would otherwise be.
+               role="alert" -- a refusal, the same reason #cg-roster-problem
+               below is one -- and reuses .error verbatim, exactly as that
+               element already does, since this is STATIC markup (unlike
+               everything roster-ui.ts builds with document.createElement)
+               and therefore genuinely carries Astro's own scoping
+               attribute. -->
+          <p class="error" id="cg-students-limit" role="alert" hidden></p>
+          <!-- Stage 3, Task 5 (design spec section 4: a duplicate number
+               or a together/apart clash is "refused in the table, as it
+               is typed" -- caught by rosterProblems, src/lib/roster.ts).
+               Static markup, SIBLINGS of #cg-students-body rather than
+               children built by renderRoster (roster-ui.ts): a text edit
+               deliberately never re-renders the table (that same file's
+               own RosterHandlers doc comment -- rebuilding mid-keystroke
+               would steal the focus and the caret from whoever is typing),
+               so the element this notice writes into has to survive every
+               keystroke untouched. Sitting OUTSIDE #cg-students-body, not
+               inside it, is also why the notice stays visible/announced
+               even if a teacher collapses Student details after creating
+               a problem -- the whole reason "Make groups" is disabled
+               must not go dark along with the section that explains it.
+
+               #cg-roster-problem is BLOCKING (a duplicate/clash) and reuses
+               .error verbatim -- the identical class #cg-error already
+               uses for the engine's own refusals, since this is the same
+               kind of fact caught one keystroke earlier; role="alert" for
+               the same reason, matching classroom-groups-announcements.spec.ts's
+               established "announced accessibly, not just shown" pattern.
+               #cg-roster-warning is NON-blocking (a numbering gap) and
+               gets its own lighter, amber .roster-warning treatment --
+               "the amber is the same family the page uses for warnings"
+               (design spec section 4, already the reasoning for the
+               absence tint) -- and role="status" so it does not interrupt
+               the way an alert does. classroom-groups.ts's own
+               updateRosterValidation is what writes into these, hide/show/
+               write in that order (its own comment has the reasoning) --
+               the same ordering #cg-stale-text below already uses, so a
+               live region here is never announced as already-populated. -->
+          <p class="error" id="cg-roster-problem" role="alert" hidden></p>
+          <p class="roster-warning" id="cg-roster-warning" role="status" hidden>
+          </p>
+        </section>
+
+        <section id="cg-grouping" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-grouping-toggle"
+              aria-expanded="false"
+              aria-controls="cg-grouping-body"
+            >
+              {t.sectionGroupingHeading}{' · '}<span class="state"
+                >{sectionStrings.groupingOptions}</span
+              >
+            </button>
+          </h2>
+          <div id="cg-grouping-body" class="tool-section-body" hidden>
+            <!-- Both switches are governed by ONE condition (design spec
+                 section 6: "disabled unless every student being grouped has
+                 M or F"), so they share ONE disabled state and ONE reason
+                 paragraph rather than each carrying its own -- two call
+                 sites computing the same fact is how a header disagreeing
+                 with reality happens elsewhere on this page (see the fix
+                 recorded on #cg-grouping's own header, above). `sexWhyText`
+                 is `null` for "enabled" (see sexOptions.ts's own doc
+                 comment on why), so `disabled={sexWhyText !== null}` and
+                 `hidden={sexWhyText === null}` read directly off the one
+                 value -- never a bare disabled control with nothing next to
+                 it explaining why. -->
+            <div class="field">
+              <div class="switches">
+                <label class="switch"
+                  ><input
+                    type="checkbox"
+                    id="cg-sex-mix"
+                    disabled={sexWhyText !== null}
+                    aria-describedby="cg-sex-why"
+                  /><span>{t.sexMixLabel}</span></label
+                >
+                <label class="switch"
+                  ><input
+                    type="checkbox"
+                    id="cg-sex-separate"
+                    disabled={sexWhyText !== null}
+                    aria-describedby="cg-sex-why"
+                  /><span>{t.sexSeparateLabel}</span></label
+                >
+              </div>
+              <p class="why" id="cg-sex-why" hidden={sexWhyText === null}>
+                {sexWhyText}
+              </p>
+            </div>
+
+            <!-- Rehomed from the "How to split them" fieldset above,
+                 unchanged: same markup, same `name="leftovers"`, same four
+                 locale keys (leftoversLabel/Spread/Bunch/Help). It works
+                 today and this task is only about where it lives. -->
+            <div class="field">
+              <span class="label" id="cg-left-label">{t.leftoversLabel}</span>
+              <div
+                class="radios"
+                role="radiogroup"
+                aria-labelledby="cg-left-label"
+              >
+                <label
+                  ><input
+                    type="radio"
+                    name="leftovers"
+                    value="spread"
+                    checked
+                  />{t.leftoversSpread}</label
+                >
+                <label
+                  ><input type="radio" name="leftovers" value="bunch" />{
+                    t.leftoversBunch
+                  }</label
+                >
+              </div>
+              <p class="help">{t.leftoversHelp}</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="cg-io" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-io-toggle"
+              aria-expanded="false"
+              aria-controls="cg-io-body"
+            >
+              {t.sectionImportExportHeading}{' · '}<span class="state"
+                >{sectionStrings.importExport}</span
+              >
+            </button>
+          </h2>
+          <div id="cg-io-body" class="tool-section-body" hidden></div>
+        </section>
+
+        <section id="cg-sound" class="tool-section">
+          <h2 class="tool-section-heading">
+            <button
+              type="button"
+              class="tool-section-toggle"
+              id="cg-sound-toggle"
+              aria-expanded="false"
+              aria-controls="cg-sound-body"
+            >
+              {t.sectionSoundHeading}
+            </button>
+          </h2>
+          <div id="cg-sound-body" class="tool-section-body" hidden>
+            <div class="field">
+              <label class="switch"
+                ><input id="cg-sound-check" type="checkbox" checked /><span
+                  id="cg-sound-text">{t.soundOn}</span
+                ></label
+              >
+            </div>
+            <div class="field">
+              <label for="cg-speed">{t.speedLabel}</label>
+              <select id="cg-speed">
+                <option value="normal">{t.speedNormal}</option>
+                <option value="fast">{t.speedFast}</option>
+                <option value="skip">{t.speedSkip}</option>
+              </select>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <p class="actions">
         <button type="submit" id="cg-go">{t.makeGroups}</button>
@@ -197,6 +651,62 @@ const themes = THEME_KEYS;
            it — no result and no reason. Says so instead, in their language. -->
       <noscript><p class="error" id="cg-noscript">{t.needsJs}</p></noscript>
     </form>
+
+    <!-- Stage 3, Task 8 (design spec section 5). The three avatar faces,
+         defined ONCE, here, from `avatarDefs` above -- a sibling of
+         `#cg-results`, deliberately NOT a descendant of it: `#cg-results`
+         ships `hidden` until the first shuffle, and this sprite has to
+         resolve for a `<use>` built inside `#cg-tables` (classroom-
+         groups.ts's own `render()`) the FIRST time a teacher presses
+         "Make groups" -- before `#cg-results` is ever unhidden. Sitting
+         outside it removes any question about whether an ancestor's own
+         `hidden` could affect a same-document `<use>` reference elsewhere.
+
+         Visually hidden (`.cg-avatar-defs`, the scoped styles below) rather
+         than `display: none`: a `<symbol>` is never rendered on its own
+         regardless (the SVG spec's own UA stylesheet already sets that),
+         so this only has to keep the wrapper out of layout, not fight the
+         browser to hide content that was already inert. `aria-hidden`
+         because nothing inside is ever meant to be read directly -- each
+         rendered avatar INSTANCE (classroom-groups.ts's own `avatarHtml`)
+         is its own `aria-hidden` `<svg>` too, for the same reason
+         `avatarSvg`'s own doc comment (src/lib/avatars.ts) gives: the
+         adjacent student name already carries the identity.
+
+         `set:html` -- see `avatarDefs`'s own comment above for why this is
+         safe: `avatarSvg` never interpolates anything a teacher typed. -->
+    <svg
+      class="cg-avatar-defs"
+      aria-hidden="true"
+      focusable="false"
+      set:html={avatarDefs}
+    />
+
+    <!-- Stage 5, Task 1 (design spec section 10). A PANEL, not a bare print
+         button: "the teacher decides what goes on the paper -- the operator
+         was explicit that this is theirs to choose, not ours to fix."
+
+         OUTSIDE #cg-results, deliberately. Its first home was inside them,
+         which tied printing the CLASS LIST to having pressed Make Groups --
+         but "What to print: Class list" exists exactly for the teacher who
+         wants the register and no shuffle. Hidden until there is something
+         to print at all (a roster, or groups), which classroom-groups.ts
+         decides through `setAvailable`. -->
+    <button type="button" id="cg-print-open" class="cg-print-open" hidden>
+      {t.printOpen}
+    </button>
+    <!-- Stage 5, Task 5. The projector view's own way in. Hidden until
+         there are groups: a board with nothing on it is not worth a
+         button. -->
+    <button type="button" id="cg-board-open" class="cg-board-open" hidden>
+      {t.boardOpen}
+    </button>
+
+    <!-- Stage 5, Task 6. Where all three stale refusals speak. ONE element
+         because a teacher does one thing at a time and three boxes would be
+         three places to look; `role="alert"` because a refusal is a refusal
+         -- the same treatment #cg-error beneath it already gets. -->
+    <p class="error" id="cg-refusal" role="alert" hidden></p>
 
     <p class="error" id="cg-error" role="alert" hidden></p>
 
@@ -211,11 +721,151 @@ const themes = THEME_KEYS;
          the script must unhide before it writes — a live region that appears
          already-populated is announced by nobody. -->
     <section id="cg-results" aria-labelledby="cg-results-h" hidden>
+      <!-- Build-time default is the UNNAMED form. classroom-groups.ts
+           overwrites this with resultsHeadingText(classInput.value, t) at
+           every submit, through `.textContent` (never `.innerHTML` -- a
+           teacher's typed text is theirs, not markup), before this section
+           is unhidden. A visitor whose script never attaches sees this
+           section stay `hidden` regardless (#cg-noscript covers that
+           state), so the static default here is never shown on its own. -->
+      <h2 class="print-only-heading">{t.printGroupsHeading}</h2>
       <h2 id="cg-results-h">{t.resultsHeading}</h2>
+
+      <!-- Stage 2, Task 6 (design spec section 8, "When the class changes
+           after a shuffle"). classroom-groups.ts's `updateStaleness` toggles
+           `hidden` on this whole element and adds `.stale` to #cg-results --
+           see src/lib/staleness.ts for the comparison behind it. Static
+           markup, toggled by the script, the SAME pattern #cg-error and
+           #cg-summary already use (hide/show the ancestor, THEN write the
+           descendant, so a screen reader hears the sentence rather than
+           silence) -- unlike the group cards below, this is a single,
+           fixed-shape region, not one repeated per student, so there is no
+           reason to build it with document.createElement.
+
+           The button sits OUTSIDE <form id="cg-form"> in the DOM, but
+           `form="cg-form"` associates it anyway: clicking it submits the
+           SAME form #cg-go does, through the SAME submit handler, so a
+           reshuffle triggered from here can never behave differently from
+           one triggered from the button up in the form -- one code path,
+           not two that could drift apart. This is the "way out" design spec
+           section 8 asks the badge to carry, reachable without scrolling
+           back up to #cg-go. Reuses `t.again` ("Shuffle again") rather than
+           a new key: it performs the identical action, so it earns the
+           identical label. -->
+      <div class="stale-notice" id="cg-stale" hidden>
+        <p role="status" id="cg-stale-text"></p>
+        <button type="submit" form="cg-form">{t.again}</button>
+      </div>
+
       <p class="summary" id="cg-summary" role="status"></p>
+
+      <!-- Stage 3, Task 9 (design spec section 6; G-11). A successful
+           shuffle can still have something to say -- "Gita, Sari have
+           joined a group of boys because there were not enough girls…" --
+           and until this task the script read `outcome.result.warnings`
+           only to `void` it, because `sexMode` was hard-coded `'off'` and
+           the array could never be non-empty. Now it can.
+
+           A <ul>, not a <p>: `warnings` is an ARRAY, and rendering only
+           `warnings[0]` would silently drop the rest. That is a real shape
+           today (a spillover warning and a pinned-mixed-sex warning can
+           both apply to one shuffle once stage 5 wires pins), not a
+           hypothetical -- and the roster's own single-message validation
+           box is a deliberately different case: there, one calm message at
+           a time as a teacher types. Here the shuffle is finished and every
+           thing it has to report is equally true.
+
+           `role="status"`, matching #cg-summary beside it: this is
+           information about a result the visitor asked for, never a
+           refusal, so it must not interrupt. Same hide/show-then-write
+           ordering as every other live region on this page -- see
+           #cg-stale's own comment above for why that ordering is what makes
+           the announcement actually fire. -->
+      <ul class="warnings" id="cg-warnings" role="status" hidden></ul>
+
       <div class="tables" id="cg-tables"></div>
     </section>
   </section>
+
+  <!-- Stage 5, Task 1. A native <dialog>: Escape closes it and focus stays
+       inside it for free, both of which a hand-rolled overlay has to
+       reimplement and usually gets wrong. Rendered here rather than built by
+       script so a visitor whose script fails mid-module gets nothing worse
+       than an inert panel that never opens -- the same reasoning #cg-stale
+       and #cg-error already follow on this page.
+
+       Sibling of the tool, not nested inside #cg-form: its controls must not
+       be submitted with the form, and `@media print` hides it with the rest
+       of the chrome.
+
+       The four choices are radios and checkboxes with real <label>s, so
+       `getByLabel` finds them by the words a teacher reads. The
+       `data-print-*` attributes the script writes onto <html> are what the
+       print stylesheet keys off; nothing here is re-rendered for paper,
+       because a second rendering is how a printed sheet ends up disagreeing
+       with the screen. -->
+  <!-- Stage 5, Task 5. The board. Empty in the markup: projector.ts moves
+       the LIVE `#cg-results` element into it on entry and puts it back on
+       exit, so what is on the wall and what is on the page are the same DOM
+       and cannot disagree. A second copy is how a projected sheet ends up
+       showing last shuffle's groups.
+
+       `hidden` until entered, and rendered here rather than built by script
+       for the same reason as the print panel: a mid-module failure leaves an
+       inert overlay rather than a broken one. -->
+  <div id="cg-board" class="cg-board" hidden>
+    <div id="cg-board-bar" class="cg-board-bar"></div>
+  </div>
+
+  <dialog id="cg-print-panel" class="cg-print-panel">
+    <form method="dialog" id="cg-print-form">
+      <h2>{t.printHeading}</h2>
+
+      <fieldset>
+        <legend>{t.printWhat}</legend>
+        <label
+          ><input type="radio" name="print-what" value="class-list" />{
+            t.printWhatClassList
+          }</label
+        >
+        <label
+          ><input type="radio" name="print-what" value="groups" />{
+            t.printWhatGroups
+          }</label
+        >
+        <label
+          ><input type="radio" name="print-what" value="both" checked />{
+            t.printWhatBoth
+          }</label
+        >
+      </fieldset>
+
+      <fieldset>
+        <legend>{t.printOnTheClassList}</legend>
+        <label
+          ><input type="checkbox" id="cg-print-absent" checked />{
+            t.printShowAbsent
+          }</label
+        >
+        <label
+          ><input type="checkbox" id="cg-print-letters" checked />{
+            t.printShowLetters
+          }</label
+        >
+      </fieldset>
+
+      <label class="cg-print-avatars-label"
+        ><input type="checkbox" id="cg-print-avatars" checked />{
+          t.printIncludeAvatars
+        }</label
+      >
+
+      <div class="cg-print-actions">
+        <button type="button" id="cg-print-cancel">{t.printCancel}</button>
+        <button type="button" id="cg-print-confirm">{t.printConfirm}</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="../../scripts/classroom-groups.ts"></script>
 </BaseLayout>
@@ -278,62 +928,1207 @@ const themes = THEME_KEYS;
     flex: 0 0 auto;
     border-radius: 50%;
   }
-  /* Per-student colour arrives as --hue, so the SVG markup itself stays a
-     constant with nothing interpolated into it. */
-  #cg-results .a-bg {
-    fill: hsl(var(--hue) 62% 88%);
-  }
-  #cg-results .a-head,
-  #cg-results .a-body {
-    fill: hsl(var(--hue) 45% 38%);
-  }
+  /* Stage 3, Task 8: no fill rule needed here any more. Colour used to
+     arrive as a --hue custom property this block set per student
+     (src/lib/grouping.ts's own Student.number, mod a fixed hue table); now
+     it is one of three fixed per-SEX palettes baked directly into the
+     `fill="…"` presentation attributes `avatarSvg` writes on each shape
+     (src/lib/avatars.ts, design spec section 5's own table) -- a real
+     `<use>` instance paints those attributes as authored, with nothing
+     here left to override them. */
   #cg-results .who {
     font-weight: 600;
     overflow-wrap: anywhere;
   }
+  /* `.stale` on #cg-results, toggled by classroom-groups.ts's own
+     `updateStaleness` (design spec section 8: "dimmed and badged"). Only
+     the group CARDS dim here -- the notice above them (static markup,
+     scoped styles above) stays at full contrast, since it is the thing
+     that most needs to stay readable while this is true. Global, not
+     scoped, for the SAME reason every other rule in this block is: `.group`
+     is built with document.createElement, so it never carries Astro's
+     scoping attribute -- see this block's own opening comment, and the
+     screenshot-shaped bug it records.
+
+     0.65, not the 0.55 an earlier pass shipped: `.group` paints no
+     background of its own, so this opacity composites `--ink` (#16171c)
+     directly over the page's actual background, `--bg` (#f7f6f2) --
+     0.55 measured 3.89:1, under the 4.5:1 AA floor for normal text, and a
+     teacher reading a projected screen while it is true is exactly the
+     case design spec section 8 keeps the old groups VISIBLE for, not an
+     incidental label the AA exemption would cover. 0.65 measures 5.38:1,
+     clear of the floor with margin rather than sitting on it. Guarded by
+     tests/e2e/classroom-groups.spec.ts's "the dim stays above the WCAG AA
+     contrast floor for normal text", which computes the real composited
+     contrast from live computed styles -- the older "darker than before"
+     test beside it passes at ANY opacity, including the one that failed
+     AA, so it could not have caught this on its own. */
+  #cg-results.stale .group {
+    opacity: 0.65;
+  }
+
+  /* ── Student details: the roster table (Stage 3, Tasks 2 & 3) ────────────
+     GLOBAL, for the SAME reason the results area above is: roster-ui.ts
+     builds every element with document.createElement, so none of it
+     carries Astro's scoping attribute -- see this block's own opening
+     comment for the bug this exact pattern already caused once on this
+     page. Anchored on #cg-roster/.cg-roster-toolbar/.cg-roster-absent-label
+     so these generic rules cannot reach any other page.
+
+     Mobile-first (CLAUDE.md: "base CSS is small-screen; enhance up"): the
+     rules immediately below, with NO media query, are the CARD layout --
+     one `.cg-student` per student, six real `<td>`s reflowed with
+     `display: grid` rather than a second DOM shape (roster-ui.ts's own
+     top-of-file comment: "no second render path"). The
+     `@media (min-width: 600px)` block further down is the ENHANCEMENT: it
+     restores the real `<table>`/`<tr>`/`<td>` display values and the
+     `<col>`-driven fixed layout Task 2 shipped, unchanged. Both blocks
+     target the SAME selectors at the SAME specificity on purpose -- see
+     each rule's own comment where that matters -- so the later, scoped
+     declaration wins only once the media query is true, and neither block
+     needs `!important` or a max-width query of its own to stay out of the
+     other's way.
+
+     Design spec section 3's own arithmetic for why a table cannot survive
+     a phone: "six controls at 44px do not fit 304px of usable width -- the
+     name box lands at about 44px, which satisfies the arithmetic and is
+     unusable." F-06/F-07 (no horizontal scroll; the name takes the full
+     remaining width) are what a card layout buys back; F-03/F-04 (same
+     content, same behaviour, both proved on the SAME `.cg-student`
+     elements in both layouts) are what "no second render path" buys. */
+  #cg-roster {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    border-collapse: collapse;
+    /* Contains the visually-hidden <thead> below, whose `position:
+       absolute` would otherwise resolve against the page's initial
+       containing block -- harmless once <thead> is `position: static`
+       again at the table breakpoint, so left unconditional rather than
+       toggled. */
+    position: relative;
+  }
+  #cg-roster thead,
+  #cg-roster tbody,
+  #cg-roster tfoot,
+  #cg-roster tr,
+  #cg-roster th,
+  #cg-roster td {
+    /* Every table-related display value, overridden to `block` in one
+       place -- not just `#cg-roster` itself -- so nothing here can fall
+       back to an implicit `table-row`/`table-cell` box that some browsers
+       still construct to "fix up" the table model even once an ancestor
+       stops being `display: table`. Cheap insurance against exactly the
+       kind of cross-browser table-rendering inconsistency Task 2's own
+       WebKit `min-height` finding (`#cg-roster input, #cg-roster select`,
+       below) already showed this page cannot simply assume away. */
+    display: block;
+  }
+  #cg-roster thead {
+    /* Visually hidden, not `display: none`: each `<th>`'s text stays in
+       the accessibility tree for anything that still exposes table
+       semantics, while the per-control `aria-label` every input/select
+       already carries (rosterColName/Sex/Absent/Together/Apart, set in
+       buildRow -- roster-ui.ts) is what a screen reader actually announces
+       per field, in EITHER layout. A sighted card reader gets no header
+       row at all -- design spec section 3 describes the card as two lines
+       of controls, not a header plus a card -- so hiding it here rather
+       than leaving it to render as six stacked, unlabelled-looking lines
+       above the first card. `#cg-roster thead th` keeps its own text
+       regardless: `toHaveText` reads `textContent`, which this technique
+       never touches (unlike `display: none`, which would still pass that
+       same assertion but for the wrong reason -- verified by reading
+       Playwright's own `elementText`, not assumed). */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+    padding: 0;
+    margin: -1px;
+  }
+  /* Remove's own column header text (fix round 1; roster-ui.ts's own
+     renderRoster, the `removeHeading` span). Same clip-based recipe as
+     `#cg-roster thead` immediately above -- text stays in the
+     accessibility tree, nothing here is `display: none` -- but applied to
+     ONE cell's own content, not a whole row, and UNCONDITIONALLY (no
+     media query) rather than only below the table breakpoint: the other
+     six headers show normally the moment the table returns at 600px, but
+     a visible "Remove" heading sitting above a column of seven identical
+     "Remove" buttons would only repeat what every row already says --
+     that judgement call was already made once, for the whole header row
+     on the card layout; this is the same call for one column, in both
+     layouts.
+
+     The SPAN carries the hiding, not the `<th>` itself, on purpose: an
+     absolutely-positioned `<th>` risks being pulled out of the header
+     ROW's own table layout once the table breakpoint restores real
+     `display: table-header-group`/`table-row`/`table-cell` values, where
+     the other six headers really are visible cells contributing to that
+     row -- hiding the CONTENT instead of the CELL sidesteps that risk
+     entirely, so the `<th>` stays an ordinary (empty-looking, still
+     participating) table cell in both layouts. */
+  .cg-roster-remove-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+    padding: 0;
+    margin: -1px;
+  }
+  /* One card per student (design spec section 3). `.cg-student` is the
+     SAME `<tr class="cg-student">` roster-ui.ts already builds for the
+     table -- this is the whole of "one renderer, two CSS layouts": no
+     class added, no attribute added, just a different `display` chosen by
+     viewport width.
+
+     GRID, not `flex-wrap`, and not by accident: an earlier version of
+     this rule used `display: flex; flex-wrap: wrap` with Name's own
+     `flex-basis: 0%`, reasoning that Name would simply claim whatever
+     line 1 had left. Measured instead of assumed (this task's own
+     standard) -- it did not. `flex-wrap`'s line-breaking decision runs
+     BEFORE grow/shrink are applied, using each item's flex-BASIS as its
+     hypothetical size; Name's `0%` basis meant it reserved no space
+     during that decision, so Sex and Absent both fit onto "line 1"
+     alongside it before Together/Apart finally overflowed onto a second
+     line -- four items wide, not two, and Name's own eventual share (of
+     THREE flex-grow:1 competitors on that line, not one) measured 14.78px
+     against the 152.4px F-07 needs. A 12-column grid with each `<td>`
+     EXPLICITLY placed has no such heuristic to get wrong: row 1 and row 2
+     are stated outright, not inferred from what happens to fit. */
+  #cg-roster .cg-student {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    align-items: center;
+    gap: 0.4rem 0.5rem;
+    padding: 0.6rem 0.7rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  #cg-roster .cg-student:last-child {
+    margin-bottom: 0;
+  }
+  #cg-roster .cg-student > td {
+    display: block;
+    padding: 0;
+    border-bottom: 0;
+    /* A grid item's AUTOMATIC minimum width, like a flex item's, defaults
+       to its own content's min-content size (e.g. a bare `<input>`'s
+       native ~20-character intrinsic width) -- without this override that
+       minimum wins over the explicit column tracks below and the row
+       overflows sideways instead of each cell narrowing to fit. This is
+       what F-06 (no horizontal scroll at 320px, even with 100 students)
+       actually rests on: 100 identical rows either all fit or none do,
+       since they are stacked vertically, not side by side. */
+    min-width: 0;
+  }
+  /* Row 1: # (2 of 12 columns -- narrow; a class register number is
+     rarely more than 3 digits) then Name, spanning every column # did
+     not take. "The name taking the full remaining width" (design spec
+     section 3) is this line, literally, not an emergent side effect of
+     how the other five columns happen to size themselves -- F-07's own
+     test asserts the rendered width directly, not just this comment's
+     arithmetic. */
+  #cg-roster .cg-student > td:nth-child(1) {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+  #cg-roster .cg-student > td:nth-child(2) {
+    grid-column: 3 / 13;
+    grid-row: 1;
+  }
+  /* Row 2: Sex, Absent, Together, Apart, three columns each (12 / 4) --
+     "on the second [line]" (design spec section 3), stated the same
+     explicit way as row 1 rather than left to wrap on its own. Their own
+     WIDTH is not held to the 44px touch-target floor -- only their HEIGHT
+     is (`#cg-roster input, #cg-roster select`'s own `min-height: 44px`,
+     below, unconditional in both layouts) -- matching Task 2's own
+     established reading of CLAUDE.md's touch-target rule for this exact
+     table (see this file's "per-row controls meet the 44px minimum
+     height" test, tests/e2e/classroom-groups-roster.spec.ts): design spec
+     section 3 is explicit that no arrangement of six full-width targets
+     fits a phone at all, which is the whole reason this reflow exists. */
+  #cg-roster .cg-student > td:nth-child(3) {
+    grid-column: 1 / 4;
+    grid-row: 2;
+  }
+  #cg-roster .cg-student > td:nth-child(4) {
+    grid-column: 4 / 7;
+    grid-row: 2;
+  }
+  #cg-roster .cg-student > td:nth-child(5) {
+    grid-column: 7 / 10;
+    grid-row: 2;
+  }
+  #cg-roster .cg-student > td:nth-child(6) {
+    grid-column: 10 / 13;
+    grid-row: 2;
+  }
+  /* Remove (Stage 3, Task 6; design spec section 4: "Removing a row
+     removes the student.") -- its OWN row, spanning every column, rather
+     than squeezed into row 1 or row 2 alongside the six fields already
+     there: section 3's own arithmetic already proved neither existing row
+     has room left for a seventh 44px control, and this is the only
+     placement that adds height instead of contesting width from Name or
+     any of the four row-2 fields -- section 2's "expanding is allowed to
+     scroll" rule is what makes that height free to add here, since
+     Student details only ever grows inside an EXPANDED section.
+     Right-aligned (a trailing action, read last) -- this rule is NOT
+     overridden at the table breakpoint below, and wins there too: it is
+     MORE specific than that breakpoint's own generic `#cg-roster td {
+     text-align: left }`, which is also the desired result in a table (the
+     last column of a row is a conventional home for a row-level action). */
+  #cg-roster .cg-student > td:nth-child(7) {
+    grid-column: 1 / 13;
+    grid-row: 3;
+    text-align: right;
+  }
+
+  /* ── absence: a tint, a stripe and a pill (Stage 3, Task 4) ───────────────
+     Design spec section 4: "the row is tinted instead" -- three signals,
+     none of them colour alone (A-05..A-09). `.is-absent` is added to the
+     SAME `.cg-student` <tr> both layouts share (roster-ui.ts's `buildRow`),
+     so a student marked absent looks identical in a card and in a table
+     row; `.cg-absent-pill` is a plain child element built beside the tick
+     (`buildRow`, roster-ui.ts) with no layout dependency of its own, so it
+     needs no separate card/table treatment.
+
+     `color` is set alongside `background`, deliberately -- this repo's own
+     working rule (CLAUDE.md), restated verbatim in this task's own brief:
+     "This repo has already shipped an unreadable panel that way, and a
+     mockup in this project's own brainstorm did it again." #1a1a1a on
+     #fff6e3 measures ~18.7:1, far past the 4.5:1 AA floor -- this is a
+     TINT, not a grey-out (A-09): every field in the row stays exactly as
+     legible as an ordinary one, which is also why nothing here touches
+     `#cg-roster input`/`select`'s own colour -- each control already paints
+     its own opaque `--surface` background over this tint and needs no
+     override to stay readable.
+
+     The stripe cannot be ONE rule for both layouts, and this is the one
+     place in this block where that is a real finding, not a stylistic
+     choice: `box-shadow` does not paint on a `display: table-row` box in
+     Chromium, Firefox or WebKit -- table rows are "internal table boxes"
+     outside normal box-shadow painting, the same category of table-specific
+     rendering gap this file's own WebKit `min-height` finding (above)
+     already caught once, just on the opposite property. Below the
+     breakpoint `.cg-student` is a real block/grid box (not a table part at
+     all), so the shadow below paints on it directly and runs the CARD'S OWN
+     FULL HEIGHT, both grid rows. Porting the identical selector into the
+     table breakpoint unchanged would not merely fail to paint there (which
+     would at least be visible in testing) -- it would SEEM to work if
+     tested against the wrong element: measured against `.cg-student` itself
+     rather than a real table-cell, this rule would still just as silently
+     not paint. The table breakpoint below moves the shadow onto the FIRST
+     `<td>` instead, a real `table-cell`, which always renders at its row's
+     own full height by construction (every cell in one `<tr>` shares the
+     row's height) -- restoring a stripe that runs the whole row regardless
+     of which layout is showing. */
+  #cg-roster .cg-student.is-absent {
+    background: #fff6e3;
+    color: #1a1a1a;
+    box-shadow: inset 3px 0 0 #d9a441;
+  }
+  /* Beside the tick (design spec section 4), a sibling of the checkbox
+     inside `.cg-roster-absent-label`'s own flex row (roster-ui.ts's
+     `buildRow`) -- so `justify-content: center` on that label centres tick
+     and pill together, as one group, rather than needing layout rules of
+     its own. Anchored on #cg-roster like every other roster rule in this
+     block, even though the class name alone is already distinctive: this
+     element only ever exists inside the table (buildRow is the sole place
+     that creates it), so scoping it the same way as the rest of this block
+     costs nothing and keeps the "anchored on #cg-roster" claim this block's
+     own opening comment makes actually true of every rule in it. */
+  #cg-roster .cg-absent-pill {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 99px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    background: #8a6a10;
+    color: #fff;
+  }
+
+  /* ── ...and the table, restored, at and above ~600px ──────────────────────
+     Design spec section 3: "The breakpoint is ~600px, and is one of two
+     figures that must be settled on real hardware -- see section 13. It is
+     a starting point, not a decision." Still owed on real hardware
+     (tracked in that section, not repeated here); the value below is that
+     same starting point, unchanged.
+
+     Every selector in this block reappears from the base rules above, at
+     THE SAME SPECIFICITY, so that CSS's own tie-break (later rule in the
+     source wins) is what decides the winner once this media query is
+     true -- not an accident of selector-writing, the mechanism this whole
+     mobile-first split depends on. Where a mobile rule set a property this
+     block does not restate (`gap`, `align-items`, `grid-template-columns`,
+     `grid-column`/`grid-row` on the six columns), it is because that
+     property has no effect once `display` is a table value at all --
+     inert, not forgotten. */
+  @media (min-width: 600px) {
+    #cg-roster {
+      display: table;
+      table-layout: fixed;
+    }
+    /* Seven columns, not six, as of Stage 3, Task 6 -- Remove earns its
+       own (col 7), so the original six (col 1-2, unchanged since Task 2)
+       are each scaled down by the same 90% factor to make room, keeping
+       the same relative proportions to one another (8:26:14:14:19:19,
+       still, just scaled) while the total still sums to exactly 100%:
+       7 + 23 + 13 + 13 + 17 + 17 + 10 = 100. */
+    #cg-roster col:nth-child(1) {
+      width: 7%;
+    }
+    #cg-roster col:nth-child(2) {
+      width: 23%;
+    }
+    #cg-roster col:nth-child(3) {
+      width: 13%;
+    }
+    #cg-roster col:nth-child(4) {
+      width: 13%;
+    }
+    #cg-roster col:nth-child(5) {
+      width: 17%;
+    }
+    #cg-roster col:nth-child(6) {
+      width: 17%;
+    }
+    /* Remove's own column -- see the CARD layout's own nth-child(7) rule,
+       above, for the row-placement side of this control, and
+       .cg-roster-remove-heading (further down) for its own header cell:
+       fix round 1 shipped this column with no matching <th> at all
+       (reasoning that adding one would redden a test asserting six
+       columns -- the test was pinning the OLD count, not a requirement,
+       and the real cost was a screen reader finding no name, or the WRONG
+       one, for this column). roster-ui.ts's own renderRoster now builds a
+       real seventh <th> for every table this renders. */
+    #cg-roster col:nth-child(7) {
+      width: 10%;
+    }
+    #cg-roster thead {
+      display: table-header-group;
+      position: static;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip: auto;
+      white-space: normal;
+      margin: 0;
+    }
+    #cg-roster tbody {
+      display: table-row-group;
+    }
+    #cg-roster tfoot {
+      display: table-footer-group;
+    }
+    #cg-roster tr {
+      display: table-row;
+    }
+    #cg-roster th,
+    #cg-roster td {
+      display: table-cell;
+      padding: 0.4rem 0.35rem;
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--border);
+    }
+    #cg-roster th {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--ink-soft);
+    }
+    #cg-roster tfoot td {
+      border-bottom: 0;
+      padding-top: 0.6rem;
+    }
+    /* Cancels the card's own border/background/padding -- a table row
+       cannot show its own border or background in the separated-borders
+       model this table does not use (`border-collapse: collapse`, above),
+       but resetting explicitly costs nothing and leaves nothing to the
+       collapsing algorithm's own border-conflict resolution to decide. */
+    #cg-roster .cg-student {
+      display: table-row;
+      padding: 0;
+      margin-bottom: 0;
+      border: 0;
+      border-radius: 0;
+      background: none;
+    }
+    #cg-roster .cg-student > td {
+      display: table-cell;
+      padding: 0.4rem 0.35rem;
+      border-bottom: 1px solid var(--border);
+      min-width: auto;
+    }
+    /* The stripe, moved onto the first real table-cell -- see the base
+       `.cg-student.is-absent` rule's own comment, above, for why
+       `box-shadow` cannot paint on `.cg-student` once it is a table-row.
+       Every `<td>` in one `<tr>` renders at that row's own full height by
+       construction, so this still runs the whole row, not just one cell --
+       unlike the base rule's own selector, which (ported here unchanged)
+       would only ever cover row 1 of the CARD grid (# and Name), never row
+       2 (Sex/Absent/Together/Apart). The base rule's own `box-shadow` stays
+       declared on `.cg-student.is-absent` at this width too -- inert, not
+       forgotten, the same "properties this block does not restate have no
+       effect once display is a table value" convention this file's own
+       opening comment already states for `gap`/`align-items`/
+       `grid-column`/`grid-row`. */
+    #cg-roster .cg-student.is-absent > td:first-child {
+      box-shadow: inset 3px 0 0 #d9a441;
+    }
+  }
+  /* 44px minimum touch target (CLAUDE.md), matching every other field
+     control on this page -- reachable at ANY width, in EITHER layout.
+     Unlike height, WIDTH is not held to that floor here -- see the card
+     rules' own comment on `.cg-student > td:nth-child(3..6)`, above, for
+     why: design spec section 3 shows there is no arrangement of six
+     44px-wide targets that fits a phone at all, which is why the roster
+     reflows to cards instead. */
+  #cg-roster input,
+  #cg-roster select {
+    width: 100%;
+    /* Safari ignores `min-height` on a native `menulist`/number control --
+       the SAME quirk this file's own scoped `input[type='number'],
+       textarea, select` rule (further down) already found and fixed for
+       the top-of-form fields, measured there at 25px tall on WebKit against
+       Chromium's correct 44px. Found again here, independently, by this
+       task's own cross-browser run (webkit and mobile-safari both failed
+       "per-row controls meet the 44px minimum height" at 24px before this
+       rule existed) -- confirmed rather than assumed to still apply just
+       because it was true once, since these are different elements built a
+       different way (document.createElement, not Astro JSX) under a
+       different, GLOBAL stylesheet. `appearance: none` is what makes
+       `min-height` take effect at all; the drawn arrow below is what keeps
+       a `<select>` still looking like one once the native chrome is gone. */
+    appearance: none;
+    -webkit-appearance: none;
+    min-height: 44px;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 0.95rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--surface);
+    color: var(--ink);
+  }
+  #cg-roster select {
+    padding-right: 1.6rem;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23444' stroke-width='2' stroke-linecap='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.4rem center;
+    background-size: 0.65rem;
+  }
+  #cg-roster input[type='checkbox'] {
+    width: 1.3rem;
+    height: 1.3rem;
+    min-height: 0;
+  }
+  /* The checkbox's real tap target -- the SAME whole-row-is-the-target
+     pattern `.switch`/`.radios label` already use elsewhere on this page
+     (this file's own scoped styles, further down), just not reachable from
+     there since nothing built by document.createElement carries Astro's
+     scoping attribute (this block's own opening comment). */
+  .cg-roster-absent-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+  /* The consequence line and the live count line underneath the table
+     (design spec section 4; roster-ui.ts's own `renderRoster`, right after
+     `container.appendChild(table)`). Both are real `<p>` siblings AFTER
+     `</table>`, never table content, so they get their OWN anchors rather
+     than an `#cg-roster` descendant selector: `#cg-roster-count` by id,
+     `.cg-roster-consequence` by its `cg-` prefixed class name -- the same
+     "scope by distinctive naming, not by nesting" pattern
+     `.cg-roster-toolbar`/`.cg-roster-absent-label` just above already use,
+     for the identical reason (roster-ui.ts builds every one of these with
+     `document.createElement`, so nothing here carries Astro's own scoping
+     attribute -- see this block's own opening comment). Same visual
+     treatment as `.help`/`.why` elsewhere on this page (the scoped style
+     block, further down) -- explanatory text under a control, not a
+     warning -- restated here rather than reached from there, since a
+     scoped selector cannot match an element with no scoping attribute
+     either. */
+  #cg-roster-count,
+  .cg-roster-consequence {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    margin: 0.6rem 0 0;
+    max-width: var(--measure);
+  }
+  .cg-roster-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  /* The Import/export body. Mobile-first like everything else on this page:
+     the buttons wrap rather than scroll, and the file input is allowed to
+     shrink -- a fixed-width file input is the single most common cause of
+     horizontal scroll at 320px, which this site forbids site-wide. */
+  .cg-io-import {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+  }
+  .cg-io-import input[type='file'] {
+    max-width: 100%;
+    font: inherit;
+    /* A file input's own button is the touch target, and browsers size it
+       from the font. 44px of line-height gives it the floor this site
+       applies to every other control without restyling the widget itself,
+       which cannot be done portably. */
+    min-height: 44px;
+    line-height: 44px;
+  }
+  .cg-io-buttons,
+  .cg-io-confirm-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  /* Both panels are refusals or decisions, styled like the roster's own
+     `#cg-roster-problem` rather than as a third thing -- one visual
+     language for "the tool needs something from you". */
+  .cg-io-problems,
+  .cg-io-confirm {
+    margin: 0 0 0.9rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+  .cg-io-problems p,
+  .cg-io-confirm p {
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+  }
+  .cg-io-problems ul {
+    margin: 0;
+    padding-left: 1.2rem;
+  }
+  .cg-io-problems li + li {
+    margin-top: 0.3rem;
+  }
+  /* The two-language handover. The hint sits UNDER the buttons and is
+     quieter than them -- it explains a choice rather than being one --
+     while the status line that replaces it after a press is normal weight,
+     because by then it is the only thing on screen reporting what
+     happened. */
+  /* `--ink-soft` and `--measure`, the tokens this page's own `.why` rule
+     already uses for exactly this job -- NOT a `--muted` that does not
+     exist anywhere in this codebase. `var(--muted, inherit)` would have
+     silently fallen back to `inherit` and looked deliberate. */
+  .cg-io-both-hint {
+    margin: 0.6rem 0 0;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  /* Stage 5, Task 1. The print panel. GLOBAL like every other rule in this
+     block -- the dialog is rendered by Astro, but its controls are reached
+     by a script and the two must not drift into scoped/unscoped halves. */
+  .cg-print-open {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .cg-print-panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.1rem;
+    max-width: min(30rem, 92vw);
+    color: var(--ink);
+    background: var(--surface);
+  }
+  .cg-print-panel::backdrop {
+    background: rgb(0 0 0 / 45%);
+  }
+  .cg-print-panel h2 {
+    margin: 0 0 0.8rem;
+    font-size: 1.15rem;
+  }
+  .cg-print-panel fieldset {
+    margin: 0 0 0.9rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .cg-print-panel legend {
+    padding: 0 0.35rem;
+    font-weight: 600;
+  }
+  /* Each choice is its own row with a 44px target -- a radio a teacher has
+     to hit precisely on a phone is the same defect as an undersized button,
+     and the label is part of the target because it is inside it. */
+  .cg-print-panel label {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    min-height: 44px;
+  }
+  .cg-print-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-top: 1rem;
+  }
+  .cg-print-actions button {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  /* ── the projector board (stage 5, task 5) ───────────────────────────────
+     A fixed full-viewport layer, used BOTH ways: it is what a browser that
+     grants the Fullscreen API fills, and it is the whole mechanism where
+     one refuses (iOS Safari never grants it on an arbitrary element). One
+     layout for both paths means the board a teacher sees is the same board
+     either way, and the API is an enhancement rather than a requirement. */
+  .cg-board-open,
+  .cg-board-bar button {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .cg-board {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  .cg-board[hidden] {
+    display: none;
+  }
+  .cg-board-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding: 0.6rem 0.9rem;
+    /* Fades OUT of the way, never out of existence: `visibility` or
+       `display` would take it out of the tab order and strand a keyboard
+       user mid-Tab. Opacity alone keeps every control reachable, which is
+       what lets `focusin` bring it back. */
+    transition: opacity 0.35s ease;
+  }
+  .cg-board-bar.faded {
+    opacity: 0.06;
+  }
+  /* The reveal (stage 5, task 6). `revealing` is the starting state and
+     `revealed` the finished one, so a group that never gets `revealing` is
+     simply visible -- which is exactly what animation-off must produce, and
+     is why the two classes are separate rather than one toggled class. */
+  .cg-board .group.revealing {
+    opacity: 0;
+    transform: translateY(0.6rem);
+    transition:
+      opacity 0.35s ease,
+      transform 0.35s ease;
+  }
+  .cg-board .group.revealing.revealed {
+    opacity: 1;
+    transform: none;
+  }
+  /* The browser's own setting overrides the page's, always: a visitor who
+     asked their OS for less motion has already answered this question. */
+  @media (prefers-reduced-motion: reduce) {
+    .cg-board .group.revealing {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+
+  .cg-board-stage {
+    flex: 1;
+    overflow: hidden;
+    padding: 0 1rem 1rem;
+  }
+  /* Set only when `fitScale` reports the sheet still does not fit at the
+     readable floor -- a class cannot read what is off the board either way,
+     but they can read what scrolls. */
+  .cg-board.scrolls .cg-board-stage {
+    overflow: auto;
+  }
+  /* While the board is open the page underneath must not scroll behind it,
+     and nothing on it may be reached by Tab. */
+  .cg-board-open-page {
+    overflow: hidden;
+  }
+
+  /* ── the printed sheet (stage 5, tasks 2 and 3) ──────────────────────────
+     Design spec section 10. The sheet is THIS DOM, restyled -- never a
+     second rendering, because a second rendering is how a printed sheet ends
+     up disagreeing with the screen. Everything below keys off the four
+     `data-print-*` attributes print-ui.ts writes onto <html>.
+
+     GLOBAL, like every rule in this block: the roster table and its cells
+     are built by script and carry no Astro scoping attribute.
+
+     NOTHING HERE MAY DEPEND ON COLOUR. Greyscale is the assumption, not a
+     fallback -- which is why absence prints as a ticked BOX and never as a
+     tint, and why the avatars carry hair length as well as hue. */
+  .print-head,
+  .print-only-heading,
+  .cg-print-value,
+  .print-foot-here {
+    display: none;
+  }
+
+  @media print {
+    /* The site's own chrome, the tool's controls, and everything that is a
+       way to CHANGE the class rather than a record of it. A printed page
+       with a form on it is a photocopy of a screen, not a sheet. */
+    header,
+    footer,
+    nav,
+    #cg-howto,
+    /* NOT `#cg-form`. The four tool sections live INSIDE the form, so
+       hiding it takes the class list with it -- found by running Task 2's
+       own tests, which then measured an invisible table. What comes off the
+       sheet is every way to CHANGE the class, named one at a time: the top
+       row of fields, the three sections that are all controls, the deal
+       button, and the roster's own toolbar further down. */
+    .top-row,
+    #cg-go,
+    #cg-noscript,
+    #cg-print-panel,
+    #cg-print-open,
+    #cg-stale,
+    #cg-summary,
+    #cg-warnings,
+    #cg-grouping,
+    #cg-io,
+    #cg-sound,
+    .cg-roster-toolbar,
+    .cg-roster-consequence,
+    #cg-roster-problem,
+    #cg-roster-warning,
+    #cg-students-limit,
+    .tool-section-heading {
+      display: none !important;
+    }
+
+    /* A collapsed section is a screen affordance. On paper every part the
+       teacher asked for is simply present. */
+    .tool-section-body[hidden] {
+      display: block !important;
+    }
+
+    .print-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 0 0 0.8rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #000;
+      font-size: 1.1rem;
+    }
+    .print-only-heading {
+      display: block;
+      margin: 0.9rem 0 0.4rem;
+      font-size: 1rem;
+    }
+
+    /* The controls give way to their text twins -- see roster-ui.ts's own
+       `printMirror` for why a mirror exists at all: an <input>'s value is
+       not its text, and browsers disagree about printing it. */
+    .cg-roster input,
+    .cg-roster select,
+    .cg-roster button,
+    .cg-roster .cg-absent-pill {
+      display: none !important;
+    }
+    .cg-print-value {
+      display: inline;
+    }
+
+    /* Absence is a ticked box in the Absent column and NOTHING else --
+       design spec's own "the printed sheet carries neither the absent tint
+       nor the pill". Both are overridden explicitly rather than left to
+       `print-color-adjust`, which browsers honour inconsistently. */
+    .cg-student.is-absent,
+    .cg-student.is-absent td {
+      background: none !important;
+      background-color: transparent !important;
+    }
+
+    /* Anchored on `#cg-roster`, not on `.print-list` alone.
+       Stage 3's card/table dual layout sets `display` on every table part
+       through `#cg-roster thead, #cg-roster tr, #cg-roster th, …` -- ID
+       specificity (1,0,1), which a class selector (0,2,1) loses to
+       silently. Every rule below therefore matches that anchor, so the
+       cascade decides on SOURCE ORDER, which is what was intended.
+       Found by probing computed styles, not by reading: the rules were
+       present in the built CSS and simply outranked. */
+    #cg-roster {
+      display: table !important;
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+    #cg-roster thead {
+      display: table-header-group !important;
+    }
+    #cg-roster tbody {
+      display: table-row-group !important;
+    }
+    #cg-roster .cg-student {
+      display: table-row !important;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      background: none !important;
+    }
+    #cg-roster th,
+    #cg-roster td,
+    #cg-roster .cg-student > td {
+      display: table-cell !important;
+      padding: 0.25rem 0.4rem;
+      border: 1px solid #000;
+      text-align: left;
+    }
+    .print-foot {
+      margin: 0.5rem 0 0;
+    }
+
+    /* Remove is column 7 and is never on paper: there is nothing to press. */
+    #cg-roster th:nth-child(7),
+    #cg-roster td:nth-child(7) {
+      display: none !important;
+    }
+
+    /* Sex (3), Together (5), Apart (6) -- governed by the letters box, and
+       ONLY by it. */
+    [data-print-letters='off'] #cg-roster th:nth-child(3),
+    [data-print-letters='off'] #cg-roster td:nth-child(3),
+    [data-print-letters='off'] #cg-roster th:nth-child(5),
+    [data-print-letters='off'] #cg-roster td:nth-child(5),
+    [data-print-letters='off'] #cg-roster th:nth-child(6),
+    [data-print-letters='off'] #cg-roster td:nth-child(6) {
+      display: none !important;
+    }
+
+    /* Absent (4) and the absent ROWS -- governed by the absent box alone.
+       This is the whole point of the task: putting the Absent COLUMN under
+       the letters box instead would let a teacher choose to show absent
+       students and then be unable to tell which they are, which prints a
+       lie. */
+    [data-print-absent='off'] #cg-roster th:nth-child(4),
+    [data-print-absent='off'] #cg-roster td:nth-child(4),
+    [data-print-absent='off'] #cg-roster .cg-student[data-absent='true'] {
+      display: none !important;
+    }
+    /* …and with them gone the numbers jump, so the sheet says why. */
+    [data-print-absent='off'] .print-foot {
+      display: none;
+    }
+    [data-print-absent='off'] .print-foot-here {
+      display: block;
+      margin: 0.5rem 0 0;
+    }
+
+    [data-print-avatars='off'] .avatar {
+      display: none !important;
+    }
+
+    /* What to print. `both` hides neither. */
+    [data-print-what='groups'] #cg-students {
+      display: none !important;
+    }
+    [data-print-what='class-list'] #cg-results {
+      display: none !important;
+    }
+  }
+
+  .cg-io-handover,
+  .cg-io-imported {
+    margin: 0.6rem 0 0;
+    font-weight: 600;
+    max-width: var(--measure);
+  }
+  /* Stage 4, Task 5. The Import/export section's own controls, GLOBAL for
+     the identical reason every rule in this block is: `renderIo`
+     (src/scripts/io-ui.ts) builds them with document.createElement, so none
+     of them carries Astro's own scoping attribute and a scoped rule would
+     match nothing at all -- the exact failure recorded on `.avatar` further
+     down this file. Joined onto the roster's own button rule rather than
+     given a second one: they are the same kind of control and must not
+     drift into two visual languages. */
+  .cg-add-student,
+  .cg-add-several,
+  .cg-add-confirm,
+  .cg-remove-student,
+  .cg-clear-roster,
+  /* By CONTAINER, not by listing each class. The first version of this rule
+     named five of the six buttons `renderIo` builds and missed
+     `.cg-io-both`, which shipped under the 44px floor and was caught only
+     because the site-wide touch-target test runs against every section
+     open. A container selector cannot be missed by the next button added
+     to either group -- closing the door rather than the one hole. */
+  .cg-io-buttons button,
+  .cg-io-confirm-buttons button {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  /* Design spec section 4, "Adding a row at 100": both add controls
+     disable at the limit -- matching `.actions button:disabled`'s own
+     visual language (the SCOPED style block, further down) rather than
+     inventing a second one, but restated GLOBAL here for the identical
+     reason every other rule in this block is: buildToolbar (roster-ui.ts)
+     builds both buttons by document.createElement, so neither carries
+     Astro's own scoping attribute. Remove is never disabled by this rule
+     -- nothing about MAX_ROSTER stops a teacher removing a row, even at
+     the ceiling; a class already full is exactly when removing one first
+     matters most. */
+  .cg-add-student:disabled,
+  .cg-add-several:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  /* Slightly smaller and quieter than the two ADD buttons above -- an
+     established, lower-emphasis action, not a peer of "+ Add student"/
+     "+ Add several…", which is why it is not in the shared rule above.
+     `.cg-clear-roster` ("Clear all", Stage 3, Task 7) shares this same
+     lower-emphasis treatment rather than the bold ADD styling: it is a
+     peer of Remove in how rarely it is reached for and how destructive it
+     is, not a peer of "+ Add student"/"+ Add several…". */
+  .cg-remove-student,
+  .cg-clear-roster {
+    min-height: 44px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+  /* A real, measured cross-browser gap, caught only because all five
+     Playwright projects were run, not just chromium -- the same category
+     of finding Stage 3, Tasks 2 and 4 already caught once each (a WebKit
+     `min-height` miss on the roster's own `<select>`s; `box-shadow` never
+     painting on `display: table-row`). `.cg-remove-student` shares every
+     rule above with `.cg-clear-roster` and measures a clean 44px on
+     Firefox -- it sits inside a `<td>`, plain table-cell layout. Firefox
+     alone rendered `.cg-clear-roster` at 43.999969482421875px: one
+     thousandth of a pixel short of the 44px floor, `box-sizing:
+     border-box` already set (tokens.css) and not the cause. The one real
+     difference is layout context -- `.cg-clear-roster` is a flex ITEM of
+     `.cg-roster-toolbar` (`flex-wrap: wrap` + `gap`), sitting exactly AT
+     its own `min-height` boundary with no natural content height to push
+     it past that boundary the way the bolder Add buttons' own larger
+     padding does -- and Firefox's flex layout rounds that boundary a
+     hair short here, where Chromium/WebKit do not. A whole extra pixel of
+     headroom is imperceptible next to a 44px sibling and comfortably
+     clears any subpixel rounding this or a future layout tweak could
+     introduce -- overrides the shared 44px above by equal specificity,
+     later in source order, rather than raising it for `.cg-remove-student`
+     too, which already measures cleanly and has no reason to change. */
+  .cg-clear-roster {
+    min-height: 45px;
+  }
+  .cg-add-several-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  /* The two refusals `buildToolbar` (roster-ui.ts) can render: "Adding a
+     row at 100" (a STANDING fact once the roster reaches MAX_ROSTER) and
+     "+ Add several…"'s own crossing-the-limit refusal (a TRANSIENT
+     response to one confirm click) -- same severity, same visual family,
+     so one class covers both rather than inventing a second. Duplicates
+     .error's own colours (the SCOPED style block, further down) rather
+     than sharing the class, for the identical reason .roster-warning
+     duplicates .stale-notice's amber instead of sharing it, just below --
+     a scoped selector cannot match an element built by
+     document.createElement, which carries no scoping attribute at all.
+     `margin: 0` -- both call sites append this into a flex/inline-flex
+     parent of their own (.cg-roster-toolbar / .cg-add-several-inline,
+     both `gap`-spaced already), so a <p>'s own default block margin would
+     only double up on spacing the parent already provides. */
+  .cg-roster-limit-message {
+    margin: 0;
+    padding: 0.5rem 0.8rem;
+    max-width: var(--measure);
+    border-radius: 6px;
+    border: 1px solid #b3261e;
+    color: #8c1d18;
+    background: #fdecea;
+    font-size: 0.9rem;
+  }
+  /* Same specificity fix `.stale-notice[hidden]` already needed further
+     down (its own comment has the full reasoning): `display: inline-flex`
+     above is an AUTHOR rule and wins a specificity tie against the
+     `[hidden] { display: none }` the user-agent stylesheet supplies, so
+     without this the "how many?" field would still occupy visible space
+     while `hidden`. */
+  .cg-add-several-inline[hidden] {
+    display: none;
+  }
+  .cg-add-several-inline input {
+    width: 5rem;
+    min-height: 44px;
+    box-sizing: border-box;
+    font: inherit;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--surface);
+    color: var(--ink);
+  }
+  /* Once at least one student exists, this same field sits inside
+     #cg-roster's own <tfoot> (the toolbar is rendered there, "inline in
+     the table footer" -- roster-ui.ts's own comment on why). `#cg-roster
+     input` above is an ID selector (specificity 1,0,1) and would otherwise
+     beat the class selector just above (0,1,1), stretching this small
+     quantity field to the FULL cell width the instant a roster exists --
+     caught by eye, not by any assertion (no test here checks this field's
+     width), while checking the fix for the OTHER cross-browser 44px defect
+     this block's own comment records. Matched with equal specificity
+     (1,1,1) so it wins regardless of which context the field is rendered
+     in. */
+  #cg-roster .cg-add-several-inline input {
+    width: 5rem;
+  }
 </style>
 
 <style>
+  /* This block's margins/gaps/padding (`.wrap`, `h1`, `.lead`, `.privacy`,
+     `.howto`, and further down `form`/`fieldset`/`.field`/`.tool-sections`/
+     `.tool-section-toggle`) are tighter than an earlier pass shipped --
+     Stage 2, Task 7's own vertical-fit measurement (classroom-groups.spec.ts,
+     "the no-scroll rule, measured") found the collapsed page 1348px too tall
+     at 320px. This pass recovered 245px of that (2148px -> 1903px) with no
+     change to any touch target (every `min-height: 44px` is untouched) and
+     no content removed. It is kept regardless of that test's own
+     `test.fixme`: real savings, even short of the full target, are still
+     real savings, and every value below is still comfortably legible. What
+     closes the remaining gap is out of this task's scope -- see that test's
+     own comment for the numbers and the reason. */
   .wrap {
     max-width: var(--maxw);
     margin: 0 auto;
-    padding: 3rem var(--space);
+    padding: 1.5rem var(--space) 3rem;
+  }
+  h1 {
+    margin: 0 0 0.5rem;
   }
   .lead {
+    margin: 0 0 0.5rem;
     font-size: 1.15rem;
     color: var(--ink-soft);
     max-width: var(--measure);
   }
   .privacy {
+    margin: 0;
     color: var(--ink-soft);
     max-width: var(--measure);
     font-size: 0.95rem;
   }
-  .how-to ol {
+  .howto {
     max-width: var(--measure);
-    padding-left: 1.2rem;
+    margin-bottom: 0.75rem;
   }
-  .how-to li {
+  /* The <h2> wrapper exists for its heading role, not its box -- zero its
+     margin so the button's own 44px row is still the whole visual header,
+     unchanged from before the wrap. */
+  .howto-heading {
+    margin: 0;
+  }
+  /* Reset to plain text so this reads as a header, not a native button --
+     full width and 44px tall, per CLAUDE.md's touch-target rule, so the
+     whole row is the tap target rather than just the glyph or the words. */
+  .howto-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.5rem 0;
+    font: inherit;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    text-align: left;
+    cursor: pointer;
+  }
+  /* Decorative only -- aria-expanded is what actually reports state to
+     assistive tech. Rotates rather than swapping glyphs, so open and closed
+     share one character and cannot drift into mismatched icons. */
+  .howto-toggle::before {
+    content: '▸ ';
+    display: inline-block;
+    transition: transform 150ms ease-out;
+  }
+  .howto-toggle[aria-expanded='true']::before {
+    transform: rotate(90deg);
+  }
+  .howto-body p {
+    color: var(--ink-soft);
+  }
+  .howto-body ol {
+    padding-left: 1.2rem;
+    margin: 0.75rem 0 0;
+  }
+  .howto-body li {
     margin-bottom: 0.35rem;
   }
 
   form {
     display: grid;
-    gap: 1.25rem;
-    margin: 2rem 0;
+    gap: 0.75rem;
+    margin: 1rem 0;
   }
-  fieldset {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 0;
-  }
-  legend {
-    font-weight: 700;
-    padding: 0 0.35rem;
-  }
+  /* Stage 3, Task 8 removed the page's last `<fieldset>` (the naming radio
+     and theme picker) -- `fieldset`/`legend` rules retired with it rather
+     than left to style an element that no longer exists anywhere on this
+     page. */
   .field {
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
   }
   .field:last-child {
     margin-bottom: 0;
@@ -344,7 +2139,14 @@ const themes = THEME_KEYS;
     font-weight: 600;
     margin-bottom: 0.35rem;
   }
-  .help {
+  /* `.why` (the sex switches' disabled reason) is visually identical to
+     `.help` -- both explain a control -- but kept a distinct class because
+     it is semantically different: `.help` is optional context, `.why` is
+     THE stated reason a control cannot be used right now, present exactly
+     while that is true (see the markup's own comment on `hidden={sexWhyText
+     === null}`). */
+  .help,
+  .why {
     color: var(--ink-soft);
     font-size: 0.9rem;
     margin: 0.35rem 0 0;
@@ -379,7 +2181,27 @@ const themes = THEME_KEYS;
     max-width: var(--measure);
     resize: vertical;
   }
-  .radios {
+  /* #cg-class only. Mirrors input[type='number']/select above for box size,
+     border and the 44px touch target, but WITHOUT their appearance reset and
+     custom chevron: a native text field has no spinner to strip and no
+     dropdown to hint at, so painting the same arrow here would show a
+     chevron next to a field that opens nothing. */
+  input[type='text'] {
+    width: 100%;
+    max-width: 22rem;
+    min-height: 44px;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--bg);
+    color: var(--ink);
+  }
+  .radios,
+  /* Same layout as .radios (a vertical stack with a gap) for the two sex
+     switches -- a distinct class because these are independent checkboxes,
+     not a radio group, and reusing `.radios` would misname that. */
+  .switches {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -397,7 +2219,129 @@ const themes = THEME_KEYS;
     width: 1.15rem;
     height: 1.15rem;
   }
-  .actions button {
+  /* Disabled state for a `.switch` (the sex switches; #cg-sound-check is
+     never disabled, so this never applies to it). The label text drops to
+     `--ink-soft` -- the SAME colour `.help`/`.why` already use elsewhere on
+     this page, not a new one, and independently checked here: 6.37:1
+     against `--bg`, comfortably above the 4.5:1 AA floor for normal text.
+     Deliberately NOT the `opacity: 0.6` this page uses for a disabled
+     button (`.actions button:disabled`) -- measured, that treatment drops
+     `--ink-soft` to roughly 2.67:1, well under AA. A disabled control still
+     needs a readable contrast ratio; this is that check, not an
+     assumption. */
+  .switch input:disabled {
+    cursor: not-allowed;
+  }
+  .switch input:disabled + span {
+    color: var(--ink-soft);
+  }
+  /* Design spec section 3's "Top row: Class (optional) · Students · Split
+     by" -- see the markup's own comment on `.top-row` for what this
+     replaces. Mobile-first, one column, matching `.tool-sections` just
+     below; `min-width: 768px` reuses that exact breakpoint rather than
+     inventing a second figure for the same page.
+
+     The arithmetic before committing to this shape: at 320px, `.wrap`'s own
+     padding (`var(--space)`, 16px a side at this width) leaves ~288px of
+     content. Three columns across that, with two 0.75rem (12px) gaps
+     between them, would still leave ~88px per column -- well clear of the
+     44px touch-target floor in both dimensions, unlike the roster row
+     design spec section 3 separately documents (six 44px targets alone
+     need 264px of a 304px budget, leaving ~44px for the name box, too
+     narrow to read or type into). Three fields in ~288px is not that
+     problem -- but an 88px-wide box for an open-ended class name would
+     still be unpleasant to type into, and section 3 says plainly that a
+     phone stacks, full stop, so the row only goes side by side once
+     `min-width: 768px` actually gives it room (three ~229px columns
+     there). */
+  .top-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  /* `.field`'s own `margin-bottom` a few rules up is what `.split-by`'s own
+     three nested fields still rely on for vertical rhythm, unchanged from
+     when they sat inside the old `groupsHeading` fieldset. Here, on
+     Class/Students, it would only double up on the gap `.top-row` already
+     provides -- both stacked on a phone and side by side once wide --
+     so it is switched off, scoped to DIRECT children only so it cannot
+     reach down into `.split-by`'s own. */
+  .top-row > .field {
+    margin-bottom: 0;
+  }
+  @media (min-width: 768px) {
+    .top-row {
+      grid-template-columns: repeat(3, 1fr);
+      /* Grid's own default (`stretch`) would pull the shorter Class/
+         Students columns down to match `.split-by`'s taller one (a radio
+         pair plus a number field) the moment they sit in a row instead of
+         stacked -- `start` keeps each column exactly as tall as its own
+         content. */
+      align-items: start;
+    }
+  }
+  /* Mobile-first: one column, stacked -- design spec section 3's
+     "Arrangement B" is the ENHANCEMENT, not the base. `auto` rows (not a
+     fixed height) so an empty body and a later, filled one can sit in the
+     same grid without one dictating the other's height. */
+  .tool-sections {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    margin: 0.25rem 0;
+  }
+  @media (min-width: 768px) {
+    .tool-sections {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .tool-section {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 1rem;
+  }
+  /* Same reasoning as .howto-heading above: the <h2> is for its role, not
+     its box. */
+  .tool-section-heading {
+    margin: 0;
+  }
+  /* Deliberately the SAME rule set as .howto-toggle above, not a rewrite --
+     see this section's own comment in the markup on why these share one
+     pattern. */
+  .tool-section-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.25rem 0;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    text-align: left;
+    cursor: pointer;
+  }
+  .tool-section-toggle::before {
+    content: '▸ ';
+    display: inline-block;
+    transition: transform 150ms ease-out;
+  }
+  .tool-section-toggle[aria-expanded='true']::before {
+    transform: rotate(90deg);
+  }
+  /* Regular weight against the label's bold, so the fixed name and the
+     part that actually changes read as visually distinct. */
+  .tool-section-toggle .state {
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+  .tool-section-body:not([hidden]) {
+    padding-bottom: 1rem;
+  }
+  .actions button,
+  .stale-notice button {
     min-height: 44px;
     padding: 0.6rem 1.4rem;
     font: inherit;
@@ -412,6 +2356,21 @@ const themes = THEME_KEYS;
     opacity: 0.6;
     cursor: default;
   }
+  /* Stage 3, Task 8. The three avatar `<symbol>`s (design spec section 5) --
+     never painted on their own (a `<symbol>` is `display: none` by the SVG
+     spec's own UA stylesheet regardless of anything here), so this only
+     has to take the wrapper itself out of layout. `width/height: 0` plus
+     `overflow: hidden` rather than `display: none`: the markup's own
+     comment on this element explains why nothing here needs the heavier
+     visually-hidden clip technique `#cg-roster thead` uses elsewhere on
+     this page (that one keeps its content in the accessibility tree on
+     purpose; this one is `aria-hidden` and never meant to be read at all). */
+  .cg-avatar-defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
   .error {
     max-width: var(--measure);
     padding: 0.75rem 1rem;
@@ -420,7 +2379,113 @@ const themes = THEME_KEYS;
     color: #8c1d18;
     background: #fdecea;
   }
+  /* #cg-roster-problem/#cg-roster-warning sit directly inside
+     .tool-section (padding: 0 1rem, no vertical padding of its own -- see
+     that rule's own comment), as siblings of #cg-students-body rather than
+     inside it (ClassroomGroupsPage.astro's own comment on the markup has
+     the full reasoning). Margin here, rather than relying on the browser's
+     own default <p> margin, so spacing is explicit and identical whichever
+     of the two is showing. */
+  #cg-roster-problem,
+  .roster-warning {
+    margin: 0.5rem 0 1rem;
+  }
+  /* Design spec section 4's own "the amber is the same family the page
+     uses for warnings" -- these are the SAME border/background hex values
+     .stale-notice already uses (that rule's own comment has the AA
+     contrast measurement, taken once and reused here rather than
+     re-derived), applied to a plain, buttonless notice: a roster gap is a
+     lighter-weight fact than "these groups are out of date", so this skips
+     .stale-notice's flex row entirely. Text stays --ink, not a special
+     amber tone, for the identical reason .is-absent's own tint keeps full
+     contrast rather than becoming a grey-out. */
+  .roster-warning {
+    max-width: var(--measure);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #956b1e;
+    background: #fff6e3;
+    color: var(--ink);
+  }
 
+  /* Design spec section 4's own "the amber is the same family the page
+     uses for warnings" -- reused here rather than inventing a third
+     palette (the first is --accent, the second is .error's red). Text
+     stays `--ink` rather than an amber tone: the amber itself is
+     decoration ("colour is never the only signal" -- the SENTENCE is the
+     signal), so the words carrying that sentence need to be as legible as
+     anything else on the page, not merely legible enough. Measured
+     16.65:1 against this background, comfortably clear of the 4.5:1 AA
+     floor. Mobile-first column stack; `align-items: flex-start` keeps the
+     button its own width instead of stretching full-bleed, which reads
+     oddly at 320px around one short word.
+
+     Border darkened from the original #d9a441 (review, minor): that value
+     measured only 2.09:1 against the page background, and the fill behind
+     it (#fff6e3) measures 1.01:1 -- next to invisible -- so the box read as
+     a badge in name only, carried almost entirely by the sentence inside
+     it. Defensible under "colour is never the only signal" (the sentence
+     IS the signal, and stays legible on its own), but a badge that cannot
+     be seen is still worth fixing cheaply. #956b1e is the SAME hue and
+     saturation, just darker, so it stays the family design spec section 4
+     asks for rather than becoming a fourth palette; measured 4.41:1
+     against the page background, clear of the 3:1 floor WCAG 1.4.11 sets
+     for a UI component's boundary. The fill is unchanged -- this is a
+     border fix, not a redesign. */
+  .stale-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+    max-width: var(--measure);
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #956b1e;
+    background: #fff6e3;
+  }
+  /* `display: flex` above is an AUTHOR rule; the native `[hidden] {
+     display: none }` is only a USER-AGENT default, and author styles win a
+     specificity tie against the UA stylesheet -- so `hidden` alone would
+     leave an empty flex box with visible padding and a border sitting on
+     the page. `[hidden]` on the selector raises this rule's own
+     specificity above the bare class above, restoring the native
+     behaviour. Caught by "the notice offers its own way to reshuffle":
+     classroom-groups.ts sets the `hidden` ATTRIBUTE correctly, but
+     `toBeHidden()` failed with "Received: visible" until this rule existed
+     -- the count-based `getByText` tests could not have caught this, since
+     they do not check visibility at all. */
+  .stale-notice[hidden] {
+    display: none;
+  }
+  .stale-notice p {
+    margin: 0;
+    color: var(--ink);
+  }
+  /* Enhancement only -- the mobile-first column stack above is the base and
+     still works perfectly well here; this just reclaims the wasted width a
+     short sentence plus one button leaves on a wider screen. Same
+     breakpoint .tables already uses below, for one fewer number in the
+     file to keep in sync. */
+  @media (min-width: 560px) {
+    .stale-notice {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+  }
+
+  /* A class name is free text with no length limit (design spec section 8:
+     nothing blocks a blank one; nothing here caps a long one either -- see
+     #cg-class's own comment above). Same treatment as `.who` in the results
+     area's global styles below -- an unbroken long name must wrap rather
+     than push the page wider than the viewport (CLAUDE.md's
+     no-horizontal-scroll rule); ordinary word-wrap cannot help a single
+     token with no spaces. */
+  #cg-results-h {
+    overflow-wrap: anywhere;
+  }
   .tables {
     display: grid;
     grid-template-columns: 1fr;
