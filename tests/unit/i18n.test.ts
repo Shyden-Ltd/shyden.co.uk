@@ -172,6 +172,21 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   // probe is a bare name and neither locale has to know that fallback rule.
   // 'Dewi' matches design spec section 13's own approved example verbatim.
   sexWhyReturning: ['Dewi'],
+  // Stage 4, Task 3. src/lib/csv.ts's `parseRoster`, their sole caller.
+  //
+  // The accepted-token argument is passed IN from CSV_LOCALES rather than
+  // written by each locale, so the probe supplies the value the ENGLISH
+  // table would give. That is deliberate and it is what makes the
+  // untranslated-copy half of this test meaningful: with the same tokens on
+  // both sides, any difference in the produced sentence has to come from
+  // the translated wording around them, not from the tokens.
+  csvProblemNumberBlank: [7],
+  csvProblemNumberNotWhole: [7, 'abc'],
+  csvProblemDuplicateNumber: [12, 5, 5],
+  csvProblemSex: [7, 'Male', 'M, F'],
+  csvProblemAbsent: [7, 'maybe', 'yes, no'],
+  csvProblemLetter: [7, 'together', 'AB'],
+  csvProblemTooMany: [101, 100],
   // Stage 3, Task 4. renderRoster's own live count line (roster-ui.ts),
   // rendered under the table. (24, 22, 2) matches design spec section 4's
   // own literal example verbatim, the same example

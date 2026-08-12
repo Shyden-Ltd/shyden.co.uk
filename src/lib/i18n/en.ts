@@ -402,6 +402,36 @@ export const en = {
   // owns deciding whether a finer-grained comparison is worth building.
   staleRoster: 'These groups are out of date — the class list changed.',
 
+  // ── CSV import/export (design spec section 9) ───────────────────────────
+  //
+  // Stage 4. Every refusal is written in the language of the PAGE, never of
+  // the file, and names the tokens THAT page accepts -- telling an
+  // Indonesian teacher to "use M, F" is advice that would fail again. The
+  // accepted tokens are therefore passed IN, from CSV_LOCALES
+  // (src/lib/csv-locale.ts), rather than written here a second time: two
+  // copies of the same token list is how the parser and the message it
+  // prints come to disagree.
+  //
+  // Row numbers count DATA rows, not file lines, so a `#` comment sitting
+  // between two students never shifts the row a teacher is sent to.
+  csvProblemEmptyFile: 'This file is empty.',
+  csvProblemNoNumberColumn:
+    'This file has no number column. Every student needs one.',
+  csvProblemNumberBlank: (row: number) =>
+    `Row ${row} — number is blank. Every student needs one.`,
+  csvProblemNumberNotWhole: (row: number, value: string) =>
+    `Row ${row} — number '${value}' is not a whole number.`,
+  csvProblemDuplicateNumber: (row: number, value: number, firstRow: number) =>
+    `Row ${row} — number ${value} is already used by row ${firstRow}.`,
+  csvProblemSex: (row: number, value: string, accepted: string) =>
+    `Row ${row} — sex '${value}' not understood. Use ${accepted}, or leave blank.`,
+  csvProblemAbsent: (row: number, value: string, accepted: string) =>
+    `Row ${row} — absent '${value}' not understood. Use ${accepted}, or leave blank.`,
+  csvProblemLetter: (row: number, column: string, value: string) =>
+    `Row ${row} — ${column} '${value}' is not a single letter.`,
+  csvProblemTooMany: (found: number, max: number) =>
+    `This file has ${found} students. Student details holds up to ${max}.`,
+
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different
     // triggers in grouping.ts -- an empty roster (no count, no names) and a

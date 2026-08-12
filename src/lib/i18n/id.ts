@@ -224,6 +224,30 @@ export const id: Strings = {
   // versi Inggrisnya (en.ts).
   staleRoster: 'Kelompok ini sudah tidak berlaku lagi — daftar kelas berubah.',
 
+  // ── Impor/ekspor CSV (bagian 9 dokumen desain) ─────────────────────────
+  //
+  // Tahap 4. Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan
+  // lengkapnya. Token yang diterima dikirim sebagai parameter dari
+  // CSV_LOCALES, bukan ditulis ulang di sini. Terjemahan ini ditulis oleh
+  // pelaksana tahap ini -- PERLU DITINJAU.
+  csvProblemEmptyFile: 'Berkas ini kosong.',
+  csvProblemNoNumberColumn:
+    'Berkas ini tidak memiliki kolom nomor. Setiap siswa memerlukannya.',
+  csvProblemNumberBlank: (row: number) =>
+    `Baris ${row} — nomor kosong. Setiap siswa memerlukannya.`,
+  csvProblemNumberNotWhole: (row: number, value: string) =>
+    `Baris ${row} — nomor '${value}' bukan bilangan bulat.`,
+  csvProblemDuplicateNumber: (row: number, value: number, firstRow: number) =>
+    `Baris ${row} — nomor ${value} sudah dipakai oleh baris ${firstRow}.`,
+  csvProblemSex: (row: number, value: string, accepted: string) =>
+    `Baris ${row} — jenis kelamin '${value}' tidak dikenali. Gunakan ${accepted}, atau kosongkan.`,
+  csvProblemAbsent: (row: number, value: string, accepted: string) =>
+    `Baris ${row} — tidak hadir '${value}' tidak dikenali. Gunakan ${accepted}, atau kosongkan.`,
+  csvProblemLetter: (row: number, column: string, value: string) =>
+    `Baris ${row} — ${column} '${value}' bukan huruf tunggal.`,
+  csvProblemTooMany: (found: number, max: number) =>
+    `Berkas ini berisi ${found} siswa. Detail siswa menampung hingga ${max}.`,
+
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
     // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA

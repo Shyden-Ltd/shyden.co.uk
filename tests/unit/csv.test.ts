@@ -6,8 +6,12 @@ import {
   todayISO,
   safeFilePart,
   fileName,
+  parseRoster,
+  emptyTemplate,
 } from '../../src/lib/csv';
 import { student } from './factories';
+import { en } from '../../src/lib/i18n/en';
+import { id } from '../../src/lib/i18n/id';
 
 /**
  * Stage 4, Task 1. The two column tables, and the invariants that make
@@ -374,4 +378,313 @@ describe('serialiseGroups', () => {
       serialiseGroups([[student({ number: 1 })]], '', '2026-08-06', 'en'),
     ).toBe('# Groups made 2026-08-06\ngroup,number,name\n1,1,\n');
   });
+});
+
+/**
+ * Stage 4, Task 3. Parsing -- the largest task in this stage and the one a
+ * teacher will feel. C-01, C-02, C-08…C-10, C-14…C-16, C-21…C-24, X-07.
+ *
+ * The governing rule (design spec section 9): a bad file is rejected WHOLE
+ * and reports EVERY problem, never just the first, because a teacher who
+ * has to make three round trips to a spreadsheet stops using the tool.
+ */
+describe('parseRoster', () => {
+  it('accepts a file with nothing but a number column', () => {
+    const out = parseRoster('number\n1\n2\n3\n', 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster.map((s) => s.number)).toEqual([1, 2, 3]);
+    expect(
+      out.roster.every((s) => s.name === null && s.sex === null && !s.absent),
+    ).toBe(true);
+  });
+
+  it('accepts partial rows', () => {
+    const out = parseRoster('number,name,sex\n1,Ana,\n2,,M\n', 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster[0]).toMatchObject({ number: 1, name: 'Ana', sex: null });
+    expect(out.roster[1]).toMatchObject({ number: 2, name: null, sex: 'M' });
+  });
+
+  it('round-trips the class name', () => {
+    const out = parseRoster('# Class: 7B\nnumber\n1\n', 'en', en);
+    expect(out.ok && out.className).toBe('7B');
+  });
+
+  it('round-trips a quoted class name containing a comma', () => {
+    const out = parseRoster('# Class: "Year 7, Set B"\nnumber\n1\n', 'en', en);
+    expect(out.ok && out.className).toBe('Year 7, Set B');
+  });
+
+  it('reads the Indonesian class comment on the Indonesian page', () => {
+    const out = parseRoster('# Kelas: 7B\nnomor\n1\n', 'id', id);
+    expect(out.ok && out.className).toBe('7B');
+  });
+
+  it('accepts blank, no and NO as present', () => {
+    for (const v of ['', 'no', 'NO', 'No']) {
+      const out = parseRoster(`number,absent\n1,${v}\n`, 'en', en);
+      expect(out.ok && out.roster[0].absent, v).toBe(false);
+    }
+  });
+
+  it('accepts yes in any case as absent', () => {
+    for (const v of ['yes', 'YES', 'Yes']) {
+      const out = parseRoster(`number,absent\n1,${v}\n`, 'en', en);
+      expect(out.ok && out.roster[0].absent, v).toBe(true);
+    }
+  });
+
+  it('accepts tidak as present on the Indonesian page', () => {
+    const out = parseRoster('nomor,tidak hadir\n1,tidak\n', 'id', id);
+    expect(out.ok && out.roster[0].absent).toBe(false);
+  });
+
+  it('accepts ya as absent on the Indonesian page', () => {
+    const out = parseRoster('nomor,tidak hadir\n1,ya\n', 'id', id);
+    expect(out.ok && out.roster[0].absent).toBe(true);
+  });
+
+  it('reads L and P as the sexes on the Indonesian page', () => {
+    const out = parseRoster('nomor,jenis kelamin\n1,L\n2,P\n', 'id', id);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster.map((s) => s.sex)).toEqual(['M', 'F']);
+  });
+
+  it('refuses anything else in the absent column, by name', () => {
+    const out = parseRoster('number,absent\n1,maybe\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      "Row 1 — absent 'maybe' not understood. Use yes, no, or leave blank.",
+    );
+  });
+
+  it('refuses an unrecognised sex, by name', () => {
+    const out = parseRoster('number,sex\n1,Male\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      "Row 1 — sex 'Male' not understood. Use M, F, or leave blank.",
+    );
+  });
+
+  // The refusal is written in the language of the PAGE, and names the
+  // tokens THAT page accepts -- an Indonesian teacher told to "use M, F"
+  // has been given advice that would fail again.
+  it('refuses in Indonesian, naming the Indonesian tokens', () => {
+    const out = parseRoster('nomor,jenis kelamin\n1,Male\n', 'id', id);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toContain('L');
+    expect(out.problems[0].message).not.toContain('Use M, F');
+    expect(out.problems[0].message).not.toBe(
+      "Row 1 — sex 'Male' not understood. Use M, F, or leave blank.",
+    );
+  });
+
+  it('lists EVERY problem, not just the first', () => {
+    const out = parseRoster(
+      'number,name,sex\n' +
+        '1,Ana,F\n' +
+        '2,Budi,Male\n' + // row 2 — bad sex
+        '1,Citra,F\n' + // row 3 — duplicate number
+        ',Dewi,F\n', // row 4 — no number
+      'en',
+      en,
+    );
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems).toHaveLength(3);
+    expect(out.problems.map((p) => p.row)).toEqual([2, 3, 4]);
+    expect(out.problems[1].message).toBe(
+      'Row 3 — number 1 is already used by row 1.',
+    );
+    expect(out.problems[2].message).toBe(
+      'Row 4 — number is blank. Every student needs one.',
+    );
+  });
+
+  it('refuses a number that is not a whole number, by name', () => {
+    const out = parseRoster('number\n1\nabc\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      "Row 2 — number 'abc' is not a whole number.",
+    );
+  });
+
+  it('refuses a file with no number column at all', () => {
+    const out = parseRoster('name,sex\nAna,F\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].row).toBeNull();
+    expect(out.problems[0].message).toBe(
+      'This file has no number column. Every student needs one.',
+    );
+  });
+
+  it('refuses an empty file', () => {
+    const out = parseRoster('', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].row).toBeNull();
+    expect(out.problems[0].message).toBe('This file is empty.');
+  });
+
+  // A file whose headers are all present but which carries no data rows is
+  // NOT an error -- it is an empty class list, and importing it empties the
+  // roster, which is a thing a teacher may mean.
+  it('accepts a header-only file as an empty roster', () => {
+    const out = parseRoster('number,name\n', 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster).toEqual([]);
+  });
+
+  it('ignores every # line except the class comment', () => {
+    const out = parseRoster(
+      '# Class: 7B\nnumber,name\n# 1,Ana\n# my notes\n2,Budi\n',
+      'en',
+      en,
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster).toHaveLength(1);
+    expect(out.roster[0].name).toBe('Budi');
+  });
+
+  // Row numbers count DATA rows, not file lines, so a comment sitting
+  // between two students does not shift the number a teacher is told to
+  // look at. Without this the message sends them to the wrong row.
+  it('numbers rows by data row, so a # line does not shift them', () => {
+    const out = parseRoster('number\n1\n# a note\n# another\n1\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      'Row 2 — number 1 is already used by row 1.',
+    );
+  });
+
+  it('imports nothing from an untouched template', () => {
+    // `emptyTemplate` is the same exported function the download button calls,
+    // so this proves the artefact a teacher actually receives -- not a copy of
+    // it written in the test, which would pass while the real one drifted.
+    const out = parseRoster(emptyTemplate('en'), 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster).toEqual([]);
+  });
+
+  it('imports nothing from an untouched Indonesian template either', () => {
+    const out = parseRoster(emptyTemplate('id'), 'id', id);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster).toEqual([]);
+  });
+
+  it('does not import a real child called Example One', () => {
+    // The reason examples are comment lines rather than recognised by content.
+    const out = parseRoster('number,name\n1,Example One\n', 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster[0].name).toBe('Example One');
+  });
+
+  it('rejects a file of more than MAX_ROSTER rows, naming both numbers', () => {
+    const rows = Array.from({ length: 101 }, (_, i) => `${i + 1}`).join('\n');
+    const out = parseRoster(`number\n${rows}\n`, 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      'This file has 101 students. Student details holds up to 100.',
+    );
+  });
+
+  it('accepts a file of exactly MAX_ROSTER rows', () => {
+    const rows = Array.from({ length: 100 }, (_, i) => `${i + 1}`).join('\n');
+    const out = parseRoster(`number\n${rows}\n`, 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster).toHaveLength(100);
+  });
+
+  it('handles CRLF line endings, which is what Excel writes', () => {
+    const out = parseRoster('number,name\r\n1,Ana\r\n', 'en', en);
+    expect(out.ok && out.roster[0].name).toBe('Ana');
+  });
+
+  it('handles a UTF-8 BOM, which is also what Excel writes', () => {
+    const out = parseRoster('﻿number,name\n1,Ana\n', 'en', en);
+    expect(out.ok).toBe(true);
+  });
+
+  it('reads quoted cells containing commas', () => {
+    const out = parseRoster('number,name\n1,"Wong, Mei"\n', 'en', en);
+    expect(out.ok && out.roster[0].name).toBe('Wong, Mei');
+  });
+
+  it('reads a doubled quote inside a quoted cell', () => {
+    const out = parseRoster('number,name\n1,"Jo ""Jojo"" Tan"\n', 'en', en);
+    expect(out.ok && out.roster[0].name).toBe('Jo "Jojo" Tan');
+  });
+
+  it('reads a newline inside a quoted cell without splitting the row', () => {
+    const out = parseRoster('number,name\n1,"Ana\nMaria"\n2,Budi\n', 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster).toHaveLength(2);
+    expect(out.roster[0].name).toBe('Ana\nMaria');
+  });
+
+  it('tolerates headers in any order', () => {
+    const out = parseRoster('name,number\nAna,1\n', 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster[0]).toMatchObject({ number: 1, name: 'Ana' });
+  });
+
+  it('tolerates headers in a different case and with padding', () => {
+    const out = parseRoster(' Number , Name \n1,Ana\n', 'en', en);
+    expect(out.ok && out.roster[0].name).toBe('Ana');
+  });
+
+  it('reads the together and apart letters, upper-cased', () => {
+    const out = parseRoster('number,together,apart\n1,a,b\n', 'en', en);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.roster[0]).toMatchObject({ together: 'A', apart: 'B' });
+  });
+
+  it('refuses a together value that is not a single letter', () => {
+    const out = parseRoster('number,together\n1,AB\n', 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems[0].message).toBe(
+      "Row 1 — together 'AB' is not a single letter.",
+    );
+  });
+
+  // A round trip is the claim the whole stage rests on. Asserted as an
+  // object comparison over the WHOLE roster, in both languages, rather
+  // than field by field -- a field the serialiser drops and the parser
+  // defaults would survive any narrower check.
+  for (const locale of ['en', 'id'] as const) {
+    it(`round-trips a full roster through serialise and parse (${locale})`, () => {
+      const original = [
+        student({ number: 1, name: 'Ana', sex: 'F', together: 'A' }),
+        student({ number: 4, name: 'Wong, Mei', sex: 'F', absent: true }),
+        student({ number: 6, sex: 'M', apart: 'B' }),
+        student({ number: 9 }),
+      ];
+      const text = serialiseRoster(original, '7B', locale);
+      const out = parseRoster(text, locale, locale === 'en' ? en : id);
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.roster).toEqual(original);
+      expect(out.className).toBe('7B');
+    });
+  }
 });

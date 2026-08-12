@@ -64,6 +64,17 @@ export interface CsvLocale {
    * literal in the serialiser is exactly how that happens unnoticed.
    */
   groupsMadeComment: string;
+  /**
+   * The last line of the template downloaded with no class list on screen,
+   * written as a `#` comment like the two example rows above it — so it
+   * imports as nothing whether or not a teacher deletes it.
+   *
+   * Here rather than in `i18n.ts` for the same reason as
+   * `groupsMadeComment`: it is text inside a FILE, and the rule governing
+   * this stage is that the file matches the language of the page. Keeping
+   * every word the file contains in one table is what makes that checkable.
+   */
+  templateHint: string;
 }
 
 export const CSV_LOCALES: Record<Locale, CsvLocale> = {
@@ -82,6 +93,7 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     absentNo: 'no',
     groupColumn: 'group',
     groupsMadeComment: '# Groups made',
+    templateHint: 'delete these two lines and type your own',
   },
   id: {
     classComment: '# Kelas:',
@@ -105,5 +117,6 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     absentNo: 'tidak',
     groupColumn: 'kelompok',
     groupsMadeComment: '# Kelompok dibuat',
+    templateHint: 'hapus dua baris ini lalu ketik milik Anda sendiri',
   },
 };
