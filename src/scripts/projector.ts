@@ -129,6 +129,26 @@ export function renderProjector(
    */
   let revealTimers: number[] = [];
   let open = false;
+  /**
+   * Which showing we are on.
+   *
+   * Every asynchronous answer the browser owes us -- a fullscreen grant, a
+   * `fullscreenchange` from an exit -- can arrive after the showing that
+   * asked for it has ended, and must not be allowed to act on the NEXT one.
+   * Each async handler captures the session it belongs to and does nothing
+   * if it has been superseded.
+   */
+  let session = 0;
+  /**
+   * Whether THIS showing actually got fullscreen.
+   *
+   * `fullscreenchange` fires for exits too, including the exit that tidies
+   * up a grant which landed late from a PREVIOUS showing. Without this, that
+   * stray event closed a board the current showing had just opened: enter,
+   * Escape, enter again, and the second board vanished on its own. Found by
+   * probing -- the bar never faded because there was no board.
+   */
+  let inFullscreen = false;
 
   /**
    * Never fade while the bar holds focus.
@@ -239,10 +259,23 @@ export function renderProjector(
     // into fullscreen on a board that is already `display: none`, leaving
     // the whole page unreachable behind a blank fullscreen surface with no
     // way back but the browser's own.
+    const mine = ++session;
     void board
       .requestFullscreen?.()
       .then(() => {
-        if (!open) void leave();
+        // A grant that belongs to a showing which has already ended must be
+        // UNDONE, not merely ignored -- ignoring it leaves the document in
+        // fullscreen over a hidden board, with the whole page unclickable
+        // behind a blank surface. It must also not be mistaken for the
+        // CURRENT showing's fullscreen, which is what `session` separates:
+        // ignoring it outright broke exactly that, and leaving it unguarded
+        // let a stale exit close a board that had just opened.
+        if (session !== mine || !open) {
+          if (doc.fullscreenElement)
+            void doc.exitFullscreen?.().catch(() => {});
+          return;
+        }
+        inFullscreen = true;
       })
       .catch(() => {});
     // Focus MOVES to the board, which is what an overlay owes a keyboard
@@ -285,6 +318,7 @@ export function renderProjector(
     //
     // Chromium GRANTS fullscreen here, so this path is the normal one, not
     // the exception -- the overlay fallback is what the refusal case uses.
+    inFullscreen = false;
     if (doc.fullscreenElement) {
       await doc.exitFullscreen?.().catch(() => {});
     }
@@ -350,8 +384,16 @@ export function renderProjector(
   // Leaving fullscreen by the browser's own means (F11, the Esc the API
   // itself consumes) must close the board too, or the overlay is left
   // covering a page nobody asked it to cover.
+  // Leaving fullscreen by the browser's own means (F11, the Escape the API
+  // itself consumes) must close the board too, or the overlay is left
+  // covering a page nobody asked it to cover.
+  //
+  // `inFullscreen` is what makes this safe. The event also fires for the
+  // EXIT that tidies up a grant landing late from a previous showing, and
+  // acting on that closed the board the current showing had just opened.
+  // Only a showing that actually got fullscreen can be the one leaving it.
   doc.addEventListener('fullscreenchange', () => {
-    if (open && !doc.fullscreenElement) void leave();
+    if (open && inFullscreen && !doc.fullscreenElement) void leave();
   });
 
   window.addEventListener('resize', refit);

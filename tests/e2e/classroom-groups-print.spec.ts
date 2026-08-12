@@ -55,7 +55,14 @@ test.describe('the print panel', () => {
   });
 
   test('all four choices survive a reload', async ({ page }) => {
-    await withGroups(page);
+    // TWO students, not the default twelve. This test is about four
+    // checkbox states surviving a reload; the roster only has to be big
+    // enough for the Print button to exist. Building twelve, shuffling
+    // them, reloading and building twelve again is a great deal of DOM for
+    // an assertion that touches none of it -- and it crashed WebKit on CI
+    // ("WebKit encountered an internal error" inside `page.goto`, before
+    // any assertion ran) while passing on the other four projects.
+    await withGroups(page, 2);
     await openPrintPanel(page);
     await panel(page).getByLabel('Class list').check();
     await panel(page).getByLabel('Include avatars').uncheck();
@@ -63,7 +70,7 @@ test.describe('the print panel', () => {
     await panel(page).getByRole('button', { name: 'Cancel' }).click();
 
     await page.reload();
-    await withGroups(page);
+    await withGroups(page, 2);
     await openPrintPanel(page);
     await expect(panel(page).getByLabel('Class list')).toBeChecked();
     await expect(panel(page).getByLabel('Include avatars')).not.toBeChecked();
@@ -195,7 +202,7 @@ test.describe('the print panel — Indonesian', () => {
   test('the panel offers what to print, with Keduanya as the default', async ({
     page,
   }) => {
-    await withGroups(page, 12, '/id/classroom-groups');
+    await withGroups(page, 2, '/id/classroom-groups');
     await openPrintPanel(page);
     await expect(panel(page).getByLabel('Keduanya')).toBeChecked();
     await expect(panel(page).getByLabel('Daftar kelas')).not.toBeChecked();
@@ -203,7 +210,7 @@ test.describe('the print panel — Indonesian', () => {
   });
 
   test('all three tick boxes start ticked', async ({ page }) => {
-    await withGroups(page, 12, '/id/classroom-groups');
+    await withGroups(page, 2, '/id/classroom-groups');
     await openPrintPanel(page);
     for (const label of [
       'Tampilkan siswa yang tidak hadir',
@@ -215,14 +222,16 @@ test.describe('the print panel — Indonesian', () => {
   });
 
   test('all four choices survive a reload', async ({ page }) => {
-    await withGroups(page, 12, '/id/classroom-groups');
+    // Two students, for the reason given on the English case above -- this
+    // is the test that crashed WebKit on CI.
+    await withGroups(page, 2, '/id/classroom-groups');
     await openPrintPanel(page);
     await panel(page).getByLabel('Daftar kelas').check();
     await panel(page).getByLabel('Sertakan avatar').uncheck();
     await panel(page).getByRole('button', { name: 'Batal' }).click();
 
     await page.reload();
-    await withGroups(page, 12, '/id/classroom-groups');
+    await withGroups(page, 2, '/id/classroom-groups');
     await openPrintPanel(page);
     await expect(panel(page).getByLabel('Daftar kelas')).toBeChecked();
     await expect(panel(page).getByLabel('Sertakan avatar')).not.toBeChecked();

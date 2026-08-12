@@ -173,6 +173,31 @@ test.describe('the projector view', () => {
     await expect(page.locator('#cg-board')).toBeHidden();
   });
 
+  // A stray `fullscreenchange` from a PREVIOUS showing must not close the
+  // current one. Entering, leaving at once, and entering again is the
+  // sequence that produced it: the first grant lands after the exit, the
+  // tidy-up exit fires `fullscreenchange`, and the second board -- already
+  // open by then -- closed itself. Found by probing, because the visible
+  // symptom was a bar that never faded: there was no board to fade on.
+  test('a second showing survives the first one tidying up after itself', async ({
+    page,
+  }) => {
+    await withGroups(page);
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    // Out immediately, while the grant is still in flight.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#cg-board')).toBeHidden();
+    await clickable(page, '#cg-board-open');
+
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board')).toBeVisible();
+    // …and it STAYS open. The stray event arrives after the fact, so a
+    // single assertion the instant it opens would pass either way.
+    await expectFaded(page);
+    await expect(page.locator('#cg-board')).toBeVisible();
+    await expect(page.locator('#cg-board #cg-results')).toBeVisible();
+  });
+
   test('Escape exits, faded or not', async ({ page }) => {
     await withGroups(page);
     for (const faded of [false, true]) {
