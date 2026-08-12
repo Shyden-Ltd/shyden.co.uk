@@ -51,6 +51,19 @@ export interface CsvLocale {
   absentNo: string;
   /** The extra first column on an exported GROUPS file. */
   groupColumn: string;
+  /**
+   * The second metadata line on an exported GROUPS file, before the date:
+   * `# Groups made 2026-08-06`.
+   *
+   * Design spec section 9 shows this line ONLY in English, so the
+   * Indonesian wording is this stage's own translation -- a REVIEW
+   * SURFACE, flagged rather than quietly shipped. It is in the table
+   * rather than in `csv.ts` because leaving it English on an Indonesian
+   * export would break this stage's own governing constraint ("the file
+   * must match the language of the page -- headers AND values"), and a
+   * literal in the serialiser is exactly how that happens unnoticed.
+   */
+  groupsMadeComment: string;
 }
 
 export const CSV_LOCALES: Record<Locale, CsvLocale> = {
@@ -68,6 +81,7 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     absentYes: 'yes',
     absentNo: 'no',
     groupColumn: 'group',
+    groupsMadeComment: '# Groups made',
   },
   id: {
     classComment: '# Kelas:',
@@ -90,5 +104,6 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     absentYes: 'ya',
     absentNo: 'tidak',
     groupColumn: 'kelompok',
+    groupsMadeComment: '# Kelompok dibuat',
   },
 };
