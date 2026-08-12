@@ -184,47 +184,57 @@ test.describe('Import / export', () => {
     ).toBeVisible();
   });
 
-  test('the template is the roster once there is one', async ({ page }) => {
-    await buildRoster(page, [
-      ['F', 'Ana'],
-      ['M', 'Budi'],
-    ]);
-    await openIo(page);
-    const text = await downloadText(page, 'Download template');
-    expect(text).toContain('1,Ana,F,,,');
-    expect(text).toContain('2,Budi,M,,,');
-    // and it is a real roster, not the example rows
-    expect(text).not.toContain('# 1,Ana');
-  });
+  test(
+    'the template is the roster once there is one',
+    { tag: '@requires-download-bytes' },
+    async ({ page }) => {
+      await buildRoster(page, [
+        ['F', 'Ana'],
+        ['M', 'Budi'],
+      ]);
+      await openIo(page);
+      const text = await downloadText(page, 'Download template');
+      expect(text).toContain('1,Ana,F,,,');
+      expect(text).toContain('2,Budi,M,,,');
+      // and it is a real roster, not the example rows
+      expect(text).not.toContain('# 1,Ana');
+    },
+  );
 
-  test('the template with no roster is example COMMENT rows only', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await openIo(page);
-    const text = await downloadText(page, 'Download template');
-    expect(text).toContain('# 1,Ana,F,,A,');
-    // Every line that is not the header is a comment, so importing it
-    // unedited adds nobody. The header is found by its own content rather
-    // than by position, because the `# Class:` prompt line comes first.
-    const body = text
-      .split('\n')
-      .filter((l) => l.trim() !== '')
-      .filter((l) => l !== 'number,name,sex,absent,together,apart');
-    expect(body.every((l) => l.startsWith('#'))).toBe(true);
-  });
+  test(
+    'the template with no roster is example COMMENT rows only',
+    { tag: '@requires-download-bytes' },
+    async ({ page }) => {
+      await page.goto('/classroom-groups');
+      await openIo(page);
+      const text = await downloadText(page, 'Download template');
+      expect(text).toContain('# 1,Ana,F,,A,');
+      // Every line that is not the header is a comment, so importing it
+      // unedited adds nobody. The header is found by its own content rather
+      // than by position, because the `# Class:` prompt line comes first.
+      const body = text
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .filter((l) => l !== 'number,name,sex,absent,together,apart');
+      expect(body.every((l) => l.startsWith('#'))).toBe(true);
+    },
+  );
 
-  test('the exported class list is the roster on screen', async ({ page }) => {
-    await buildRoster(page, [
-      ['F', 'Ana'],
-      ['M', 'Budi'],
-    ]);
-    await openIo(page);
-    const text = await downloadText(page, 'Export class list');
-    expect(text).toBe(
-      'number,name,sex,absent,together,apart\n1,Ana,F,,,\n2,Budi,M,,,\n',
-    );
-  });
+  test(
+    'the exported class list is the roster on screen',
+    { tag: '@requires-download-bytes' },
+    async ({ page }) => {
+      await buildRoster(page, [
+        ['F', 'Ana'],
+        ['M', 'Budi'],
+      ]);
+      await openIo(page);
+      const text = await downloadText(page, 'Export class list');
+      expect(text).toBe(
+        'number,name,sex,absent,together,apart\n1,Ana,F,,,\n2,Budi,M,,,\n',
+      );
+    },
+  );
 
   test('the filename carries the class and the date', async ({ page }) => {
     await rosterOf(page, 2);
@@ -289,17 +299,21 @@ test.describe('Import / export', () => {
     );
   });
 
-  test('the exported groups file is one row per student', async ({ page }) => {
-    await rosterOf(page, 4);
-    await page.getByLabel('Students in each group').fill('2');
-    await page.getByRole('button', { name: 'Make Groups' }).click();
-    await openIo(page);
-    const text = await downloadText(page, 'Export groups');
-    const lines = text.split('\n').filter(Boolean);
-    expect(lines[0]).toBe(`# Groups made ${todayISO()}`);
-    expect(lines[1]).toBe('group,number,name');
-    expect(lines).toHaveLength(6); // comment + header + 4 students
-  });
+  test(
+    'the exported groups file is one row per student',
+    { tag: '@requires-download-bytes' },
+    async ({ page }) => {
+      await rosterOf(page, 4);
+      await page.getByLabel('Students in each group').fill('2');
+      await page.getByRole('button', { name: 'Make Groups' }).click();
+      await openIo(page);
+      const text = await downloadText(page, 'Export groups');
+      const lines = text.split('\n').filter(Boolean);
+      expect(lines[0]).toBe(`# Groups made ${todayISO()}`);
+      expect(lines[1]).toBe('group,number,name');
+      expect(lines).toHaveLength(6); // comment + header + 4 students
+    },
+  );
 
   test('exporting clears the unsaved-changes warning', async ({ page }) => {
     // The other half of stage 3's `dirty` rule: setRoster(next, { saved: true }).
@@ -347,24 +361,26 @@ test.describe('Import / export', () => {
   // bytes back, and get the same roster. The unit suite proves
   // serialise/parse agree; this proves the PAGE hands them the same roster
   // it is showing.
-  test('a roster survives a round trip through export and import', async ({
-    page,
-  }) => {
-    await buildRoster(page, [
-      ['F', 'Ana'],
-      ['M', 'Budi'],
-      [null, 'Wong, Mei'],
-    ]);
-    await openIo(page);
-    const text = await downloadText(page, 'Export class list');
-    await page.reload();
-    await openIo(page);
-    await upload(page, 'again.csv', text);
-    await expect(page.locator('.cg-student')).toHaveCount(3);
-    await expect(
-      page.locator('.cg-student').nth(2).getByLabel('Name'),
-    ).toHaveValue('Wong, Mei');
-  });
+  test(
+    'a roster survives a round trip through export and import',
+    { tag: '@requires-download-bytes' },
+    async ({ page }) => {
+      await buildRoster(page, [
+        ['F', 'Ana'],
+        ['M', 'Budi'],
+        [null, 'Wong, Mei'],
+      ]);
+      await openIo(page);
+      const text = await downloadText(page, 'Export class list');
+      await page.reload();
+      await openIo(page);
+      await upload(page, 'again.csv', text);
+      await expect(page.locator('.cg-student')).toHaveCount(3);
+      await expect(
+        page.locator('.cg-student').nth(2).getByLabel('Name'),
+      ).toHaveValue('Wong, Mei');
+    },
+  );
 
   test('no console errors while importing and exporting', async ({ page }) => {
     const errors: string[] = [];
@@ -390,23 +406,27 @@ test.describe('Import / export — Indonesian', () => {
     await expect(page.getByText('Impor daftar kelas')).toBeVisible();
   });
 
-  test('an Indonesian page exports an Indonesian file', async ({ page }) => {
-    await buildRoster(
-      page,
-      [
-        ['F', 'Ana'],
-        ['M', 'Budi'],
-      ],
-      '/id/classroom-groups',
-    );
-    await page.locator('#cg-io-toggle').click();
-    const text = await downloadText(page, 'Ekspor daftar kelas');
-    expect(text).toBe(
-      'nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah\n' +
-        '1,Ana,P,,,\n' +
-        '2,Budi,L,,,\n',
-    );
-  });
+  test(
+    'an Indonesian page exports an Indonesian file',
+    { tag: '@requires-download-bytes' },
+    async ({ page }) => {
+      await buildRoster(
+        page,
+        [
+          ['F', 'Ana'],
+          ['M', 'Budi'],
+        ],
+        '/id/classroom-groups',
+      );
+      await page.locator('#cg-io-toggle').click();
+      const text = await downloadText(page, 'Ekspor daftar kelas');
+      expect(text).toBe(
+        'nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah\n' +
+          '1,Ana,P,,,\n' +
+          '2,Budi,L,,,\n',
+      );
+    },
+  );
 
   test('a successful Indonesian import says so in Indonesian', async ({
     page,
@@ -674,7 +694,12 @@ test.describe('exporting in both languages', () => {
     await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
     await page.locator('#cg-io-toggle').click();
     const other = await context.newPage();
-    await other.goto('/id/classroom-groups');
+    // An ABSOLUTE url, built from the page under test. `context.newPage()`
+    // carries no `baseURL` over a CDP connection to a real phone, so a
+    // relative path there is "Cannot navigate to invalid URL" -- found on
+    // real Android, where every other page in this suite comes from the
+    // `page` fixture and never hits it.
+    await other.goto(new URL('/id/classroom-groups', page.url()).href);
     await other.locator('#cg-students-toggle').click();
     await expect(other.locator('.cg-student')).toHaveCount(0);
     await expect(page.locator('.cg-student')).toHaveCount(1);

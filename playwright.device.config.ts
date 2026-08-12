@@ -53,7 +53,18 @@ export default defineConfig({
       // see docs/superpowers/specs/2026-08-08-real-device-test-harness-design.md) for exactly
       // the same "physically impossible on one real device" reason @emulated-viewport already
       // covers for the screen.
-      grepInvert: /@emulated-viewport|@requires-isolated-context/,
+      // `@requires-download-bytes` -- stage 4. Real Chrome on Android hands a
+      // download to the device's own Downloads folder; a CDP client cannot
+      // stream its bytes back, and `download.createReadStream()` returns
+      // "canceled" every time. That is a property of the phone, not of the
+      // page: the same tests read the same bytes on all five desktop
+      // projects, and the real device still proves the download FIRES and
+      // carries the right suggested FILENAME, which is everything about the
+      // export a phone can observe. Excluded for the same "physically
+      // impossible on one real device" reason as the two tags above, not
+      // because they are inconvenient.
+      grepInvert:
+        /@emulated-viewport|@requires-isolated-context|@requires-download-bytes/,
     },
   ],
 });
