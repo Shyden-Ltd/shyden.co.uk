@@ -109,6 +109,17 @@ export function renderProjector(
   results.parentElement?.insertBefore(placeholder, results);
 
   let fadeTimer = 0;
+  /**
+   * The reveal's own timers, one per group, so they can be CANCELLED.
+   *
+   * Left running they outlive the showing that started them: a teacher who
+   * leaves mid-reveal has the remaining timers fire against groups that are
+   * back on the page, and a second showing has last showing's pending
+   * timers re-adding `revealed` out of order behind the new one. Neither is
+   * visible in a test that lets the reveal finish, which is why they are
+   * tracked rather than fired and forgotten.
+   */
+  let revealTimers: number[] = [];
   let open = false;
 
   /**
@@ -164,20 +175,39 @@ export function renderProjector(
    * With animation off, the groups go straight to `revealed` and never
    * carry `revealing` at all -- not a faster animation, none.
    */
-  const reveal = () => {
-    const groups = Array.from(stage.querySelectorAll<HTMLElement>('.group'));
-    for (const group of groups) {
+  /**
+   * Cancel a reveal in progress AND undo its half-finished state.
+   *
+   * Clearing the timers is not enough on its own: a card left carrying
+   * `revealing` without `revealed` is a card mid-transition, and it goes
+   * back to the page in that state. It happens to render normally today
+   * only because the rule is scoped to `.cg-board .group.revealing` -- a
+   * scope that is one stylesheet edit away from not saving it. Undone here
+   * so the cards are clean wherever they end up, rather than relying on a
+   * selector to hide the mess.
+   */
+  const stopReveal = () => {
+    for (const timer of revealTimers) window.clearTimeout(timer);
+    revealTimers = [];
+    for (const group of stage.querySelectorAll<HTMLElement>('.group')) {
       group.classList.remove('revealing', 'revealed');
     }
+  };
+
+  const reveal = () => {
+    stopReveal();
+    const groups = Array.from(stage.querySelectorAll<HTMLElement>('.group'));
     if (handlers.animates?.() === false) {
       for (const group of groups) group.classList.add('revealed');
       return;
     }
     for (const group of groups) group.classList.add('revealing');
     groups.forEach((group, i) => {
-      window.setTimeout(
-        () => group.classList.add('revealed'),
-        i * REVEAL_STEP_MS,
+      revealTimers.push(
+        window.setTimeout(
+          () => group.classList.add('revealed'),
+          i * REVEAL_STEP_MS,
+        ),
       );
     });
   };
@@ -230,6 +260,10 @@ export function renderProjector(
     }
     open = false;
     window.clearTimeout(fadeTimer);
+    // BEFORE the results element is moved back: `stopReveal` reaches the
+    // cards through the stage, and once they have left it they are out of
+    // its reach and would go back to the page still mid-transition.
+    stopReveal();
     bar.classList.remove('faded');
 
     // FULLSCREEN FIRST, and AWAITED. `exitFullscreen` is asynchronous, and

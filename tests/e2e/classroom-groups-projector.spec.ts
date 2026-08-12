@@ -230,6 +230,36 @@ test.describe('the projector view', () => {
  * Stage 5, Task 6. Z-21, Z-22, Z-23, E-15, E-16, E-17.
  */
 test.describe('the reveal', () => {
+  // Leaving MID-reveal must cancel what is still pending. Left running, the
+  // remaining timers fire against groups that are back on the page, and a
+  // second showing has the first showing's timers re-adding `revealed`
+  // behind the new one. Caught by self-review, not by a test that lets the
+  // reveal finish -- which is every other test in this block.
+  test('leaving mid-reveal cancels the rest of it', async ({ page }) => {
+    await withGroups(page, 24);
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board .group').first()).toHaveClass(
+      /revealing/,
+    );
+    // Out again immediately, while later groups are still queued.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#cg-board')).toBeHidden();
+    // The groups are back on the page and none of them is left mid-reveal:
+    // a pending timer firing now would add `revealed` to a card that is no
+    // longer on the board at all.
+    const stuck = await page
+      .locator('#cg-results .group')
+      .evaluateAll(
+        (els) =>
+          els.filter(
+            (e) =>
+              e.classList.contains('revealing') &&
+              !e.classList.contains('revealed'),
+          ).length,
+      );
+    expect(stuck).toBe(0);
+  });
+
   test('the reveal plays on the board', async ({ page }) => {
     await withGroups(page);
     await page.getByRole('button', { name: 'Full screen' }).click();
