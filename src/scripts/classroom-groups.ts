@@ -1211,7 +1211,12 @@ if (form) {
 
   const printPanel = renderPrintPanel(document, remember, {
     onApply: writePrintHead,
+    refuseReason: () => refusePrint(),
   });
+  // Declared as a wrapper so the panel can be built before `refuse` exists
+  // -- the panel needs a predicate, not an answer, and the predicate is
+  // only ever called on a click.
+  let refusePrint: () => string | null = () => null;
 
   /**
    * There is something to print when there is a roster OR groups on screen
@@ -1226,11 +1231,45 @@ if (form) {
 
   // Stage 5, Task 5. The board needs GROUPS, not merely a roster -- unlike
   // the print panel, which can print a register on its own.
+  /**
+   * The one place a stale refusal is spoken, for all three exits.
+   *
+   * `staleReason` (src/lib/staleness.ts) already decides whether the groups
+   * on screen still match the form; this only turns that into the sentence
+   * for the thing the teacher was about to do. Three sentences, not one:
+   * being told "shuffle again before saving them" after pressing Print is
+   * someone else's message.
+   */
+  const refusalEl = $<HTMLParagraphElement>('cg-refusal')!;
+  const groupsAreStale = () =>
+    lastSnapshot !== null && staleReason(lastSnapshot, snapshot(), t) !== null;
+  const refuse = (message: string): string | null => {
+    if (!groupsAreStale()) {
+      refusalEl.hidden = true;
+      refusalEl.textContent = '';
+      return null;
+    }
+    // Unhidden before the text lands -- the same live-region ordering every
+    // other alert on this page follows.
+    refusalEl.hidden = false;
+    refusalEl.textContent = message;
+    return message;
+  };
+
+  refusePrint = () => refuse(t.staleRefusePrint);
+
   const projector = renderProjector(document, t, {
     // The SAME submit path the button in the form uses, requested rather
     // than reimplemented: one code path means a shuffle from the board can
     // never behave differently from one triggered on the page.
     onShuffle: () => form.requestSubmit(goButton),
+    refuseReason: () => refuse(t.staleRefuseBoard),
+    // Design spec section 8: the reveal is animation, and the two ways a
+    // teacher can already turn animation off both apply here. `#cg-speed`
+    // is the one to read, because `reduceMotion` above has already forced
+    // it to `skip` -- one fact, read once, rather than two checks that
+    // could disagree.
+    animates: () => speedSelect.value !== 'skip',
   });
   const refreshBoardAvailability = () =>
     projector?.setAvailable(lastGroups !== null);
@@ -1240,6 +1279,9 @@ if (form) {
     ? renderIo(ioBody, t, pageLocale, {
         getRoster,
         getGroups: () => lastGroups,
+        // Design spec section 8's third exit. `io-ui` asks before it
+        // downloads; the answer, and the sentence, are decided here.
+        refuseExport: () => refuse(t.staleRefuseExport),
         getClassName: () => classInput.value,
         // An import REPLACES the roster wholesale and is a SAVE point:
         // `{ saved: true }` is what makes `dirty` false, because what is on

@@ -702,6 +702,12 @@ const sexWhyText = sexWhy(roster, t);
       {t.boardOpen}
     </button>
 
+    <!-- Stage 5, Task 6. Where all three stale refusals speak. ONE element
+         because a teacher does one thing at a time and three boxes would be
+         three places to look; `role="alert"` because a refusal is a refusal
+         -- the same treatment #cg-error beneath it already gets. -->
+    <p class="error" id="cg-refusal" role="alert" hidden></p>
+
     <p class="error" id="cg-error" role="alert" hidden></p>
 
     <!-- The results are written here as real text regardless of animation
@@ -1646,6 +1652,31 @@ const sexWhyText = sexWhy(roster, t);
   .cg-board-bar.faded {
     opacity: 0.06;
   }
+  /* The reveal (stage 5, task 6). `revealing` is the starting state and
+     `revealed` the finished one, so a group that never gets `revealing` is
+     simply visible -- which is exactly what animation-off must produce, and
+     is why the two classes are separate rather than one toggled class. */
+  .cg-board .group.revealing {
+    opacity: 0;
+    transform: translateY(0.6rem);
+    transition:
+      opacity 0.35s ease,
+      transform 0.35s ease;
+  }
+  .cg-board .group.revealing.revealed {
+    opacity: 1;
+    transform: none;
+  }
+  /* The browser's own setting overrides the page's, always: a visitor who
+     asked their OS for less motion has already answered this question. */
+  @media (prefers-reduced-motion: reduce) {
+    .cg-board .group.revealing {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+
   .cg-board-stage {
     flex: 1;
     overflow: hidden;

@@ -528,6 +528,18 @@ export const en = {
   // what the results section already calls it.
   boardShuffle: 'Shuffle again',
 
+  // Design spec section 8's rule, applied at the three places groups LEAVE
+  // the screen. Three separate sentences, not one: each names the thing the
+  // teacher was about to do, and a teacher told "shuffle again before
+  // saving them" when they pressed Print has been given someone else's
+  // message.
+  staleRefuseExport:
+    'These groups are out of date. Shuffle again before saving them.',
+  staleRefusePrint:
+    'These groups are out of date. Shuffle again before printing them.',
+  staleRefuseBoard:
+    'These groups are out of date. Shuffle again before showing them.',
+
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different
     // triggers in grouping.ts -- an empty roster (no count, no names) and a

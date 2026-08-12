@@ -310,6 +310,15 @@ export const id: Strings = {
   boardExit: 'Keluar dari layar penuh',
   boardShuffle: 'Acak lagi',
 
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  staleRefuseExport:
+    'Kelompok ini sudah tidak berlaku lagi. Acak lagi sebelum menyimpannya.',
+  staleRefusePrint:
+    'Kelompok ini sudah tidak berlaku lagi. Acak lagi sebelum mencetaknya.',
+  staleRefuseBoard:
+    'Kelompok ini sudah tidak berlaku lagi. Acak lagi sebelum menampilkannya.',
+
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)
     // untuk alasan lengkap -- kalimat ini sekarang benar untuk KEDUA

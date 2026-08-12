@@ -32,6 +32,9 @@ const FADE_AFTER_MS = 2500;
  * tested; these are the two numbers it is given.
  */
 const BASE_PX = 40;
+
+/** How long between one group appearing and the next. */
+const REVEAL_STEP_MS = 220;
 const FLOOR_PX = 24;
 
 export interface ProjectorHandlers {
@@ -44,6 +47,16 @@ export interface ProjectorHandlers {
    * boolean read once: the answer changes as the teacher edits.
    */
   refuseReason?: () => string | null;
+  /**
+   * Whether the groups should be revealed one at a time, or simply be
+   * there.
+   *
+   * Asked at every entry rather than read once: a teacher can change the
+   * animation setting between one showing and the next, and design spec
+   * section 8 treats `prefers-reduced-motion` and the Skip choice as the
+   * same instruction — the caller collapses them.
+   */
+  animates?: () => boolean;
 }
 
 export interface Projector {
@@ -139,6 +152,36 @@ export function renderProjector(
   // has to be able to call this -- see that handler's own comment.
   let leave: () => Promise<void>;
 
+  /**
+   * The reveal: each group arriving in turn, so a class watches rather than
+   * reads a wall of names that was simply there.
+   *
+   * `revealing` goes on immediately and `revealed` follows one group at a
+   * time; CSS carries the transition. Both classes are cleared first, so a
+   * second showing reveals again rather than finding everything already
+   * revealed.
+   *
+   * With animation off, the groups go straight to `revealed` and never
+   * carry `revealing` at all -- not a faster animation, none.
+   */
+  const reveal = () => {
+    const groups = Array.from(stage.querySelectorAll<HTMLElement>('.group'));
+    for (const group of groups) {
+      group.classList.remove('revealing', 'revealed');
+    }
+    if (handlers.animates?.() === false) {
+      for (const group of groups) group.classList.add('revealed');
+      return;
+    }
+    for (const group of groups) group.classList.add('revealing');
+    groups.forEach((group, i) => {
+      window.setTimeout(
+        () => group.classList.add('revealed'),
+        i * REVEAL_STEP_MS,
+      );
+    });
+  };
+
   const enter = () => {
     if (open) return;
     if (handlers.refuseReason?.()) return;
@@ -171,6 +214,7 @@ export function renderProjector(
     // bar would hold `canFade` false forever and the bar would never fade
     // at all.
     board.focus();
+    reveal();
     armFade();
     refit();
   };
@@ -215,6 +259,9 @@ export function renderProjector(
   exit.addEventListener('click', () => void leave());
   shuffle.addEventListener('click', () => {
     handlers.onShuffle();
+    // The cards were rebuilt by that shuffle, so they carry neither class
+    // -- reveal them again rather than leaving a board of invisible groups.
+    reveal();
     armFade();
   });
 

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { withGroups, rosterForSpillover, namesIn } from './helpers';
+import { withGroups, rosterForSpillover, rosterOf, namesIn } from './helpers';
 
 /**
  * Stage 5, Task 5. The projector view. Z-01…Z-06, Z-10…Z-20, Z-24.
@@ -214,5 +214,126 @@ test.describe('the projector view', () => {
     await expect(
       bar(page).getByRole('button', { name: 'Keluar dari layar penuh' }),
     ).toBeVisible();
+  });
+});
+
+/**
+ * Stage 5, Task 6. Z-21, Z-22, Z-23, E-15, E-16, E-17.
+ */
+test.describe('the reveal', () => {
+  test('the reveal plays on the board', async ({ page }) => {
+    await withGroups(page);
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board .group').first()).toHaveClass(
+      /revealing/,
+    );
+    await expect(page.locator('#cg-board .group').last()).toHaveClass(
+      /revealed/,
+    );
+  });
+
+  test('the Sound & animation switch suppresses it', async ({ page }) => {
+    // AFTER the roster is built, not before: `withGroups` navigates (it
+    // goes to the page and opens Student details), so a setting made first
+    // is thrown away by that navigation. The plan's own snippet set it
+    // first and would have passed only if suppression never worked.
+    await withGroups(page);
+    await page.locator('#cg-sound-toggle').click();
+    // A <select>, not a checkbox — the plan's snippet used `.check()` on a
+    // label that is an <option>. The real control is `#cg-speed`.
+    await page.selectOption('#cg-speed', 'skip');
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board .group').first()).not.toHaveClass(
+      /revealing/,
+    );
+    // …and they are on screen, which is what "suppressed" has to mean: a
+    // board of permanently invisible groups would also satisfy the line
+    // above.
+    await expect(page.locator('#cg-board .group').first()).toHaveClass(
+      /revealed/,
+    );
+    await expect(page.locator('#cg-board .group').first()).toBeVisible();
+  });
+
+  test('prefers-reduced-motion suppresses it', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await withGroups(page);
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board .group').first()).not.toHaveClass(
+      /revealing/,
+    );
+    await expect(page.locator('#cg-board .group').first()).toBeVisible();
+  });
+});
+
+/**
+ * Three separate tests against three separate entry points. A shared helper
+ * asserting "one of them refused" would pass while two of them quietly
+ * succeeded, and each of those two puts a wrong answer in front of a class.
+ */
+test.describe('all three refuse while the groups are out of date', () => {
+  const goStale = async (page: import('@playwright/test').Page) => {
+    await rosterOf(page, 12);
+    await page.locator('#cg-go').click();
+    await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await expect(page.getByText(/These groups are out of date/)).toBeVisible();
+  };
+
+  test('Export groups refuses, and says why', async ({ page }) => {
+    await goStale(page);
+    await page.locator('#cg-io-toggle').click();
+    await page.getByRole('button', { name: 'Export groups' }).click();
+    await expect(
+      page.getByText(
+        'These groups are out of date. Shuffle again before saving them.',
+      ),
+    ).toBeVisible();
+  });
+
+  test('Print refuses, and says why', async ({ page }) => {
+    await goStale(page);
+    await page.getByRole('button', { name: 'Print' }).click();
+    await expect(page.locator('#cg-print-panel')).toBeHidden();
+    await expect(
+      page.getByText(
+        'These groups are out of date. Shuffle again before printing them.',
+      ),
+    ).toBeVisible();
+  });
+
+  test('Full screen refuses, and says why', async ({ page }) => {
+    await goStale(page);
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board')).toBeHidden();
+    await expect(
+      page.getByText(
+        'These groups are out of date. Shuffle again before showing them.',
+      ),
+    ).toBeVisible();
+  });
+
+  // …and each one WORKS again once the groups are fresh, so the refusal is
+  // a gate rather than a wall. Without this a permanently-broken control
+  // would satisfy all three tests above.
+  test('and all three work again after a reshuffle', async ({ page }) => {
+    await goStale(page);
+    // `#cg-go`, by id. After a successful shuffle its LABEL becomes
+    // "Shuffle again" (classroom-groups.ts sets `goButton.textContent =
+    // t.again`), so asking for it by the name it had at load finds nothing.
+    await page.locator('#cg-go').click();
+    await expect(page.getByText(/These groups are out of date/)).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect(page.locator('#cg-board')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#cg-board')).toBeHidden();
+    await clickable(page, '#cg-print-open');
+
+    await page.getByRole('button', { name: 'Print' }).click();
+    await expect(page.locator('#cg-print-panel')).toBeVisible();
+    await page
+      .locator('#cg-print-panel')
+      .getByRole('button', { name: 'Cancel' })
+      .click();
   });
 });

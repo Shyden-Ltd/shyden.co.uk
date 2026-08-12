@@ -50,6 +50,15 @@ export interface IoHandlers {
    * not saving their work.
    */
   onExported: () => void;
+  /**
+   * Why the GROUPS may not be exported right now, or `null`.
+   *
+   * Only the groups: a class list is a record of who is in the room and is
+   * never out of date with respect to a shuffle. Design spec section 8
+   * refuses the three things that put a stale ARRANGEMENT somewhere it
+   * outlives the screen.
+   */
+  refuseExport?: () => string | null;
 }
 
 const button = (text: string, className: string): HTMLButtonElement => {
@@ -307,6 +316,7 @@ export function renderIo(
   exportGroups.addEventListener('click', () => {
     const groups = handlers.getGroups();
     if (!groups) return;
+    if (handlers.refuseExport?.()) return;
     const className = handlers.getClassName();
     const on = todayISO();
     download(
