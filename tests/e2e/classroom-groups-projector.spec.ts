@@ -71,8 +71,17 @@ test.describe('the projector view', () => {
     await withGroups(page);
     await page.getByRole('button', { name: 'Full screen' }).click();
     await expect(page.locator('#cg-board')).toBeVisible();
+    // The viewport is read from the PAGE, not from `page.viewportSize()`.
+    // On a real device over CDP there is no emulated viewport and that
+    // returns `null` -- found on the real Android gauntlet, where this was
+    // the only failure in 339. `window.innerWidth/innerHeight` is the real
+    // viewport on every target, which is what this assertion was always
+    // about; asking Playwright was asking the wrong thing.
     const box = (await page.locator('#cg-board').boundingBox())!;
-    const vp = page.viewportSize()!;
+    const vp = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }));
     expect(box.width).toBeCloseTo(vp.width, 0);
     expect(box.height).toBeCloseTo(vp.height, 0);
     // …and the groups are actually ON it, which is the point of falling

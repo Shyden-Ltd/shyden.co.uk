@@ -113,7 +113,7 @@ it is ticked**, and a row is ticked only when a test exists that was **observed 
 | A-05 | Row background `#fff6e3` | P | ☐ |
 | A-06 | Left stripe `#d9a441` | P | ☐ |
 | A-07 | A pill reading **`absent`** beside the tick | P | ☐ |
-| A-08 | The ticked box carries the fact **without colour** — assert it with colour removed | P | ☐ |
+| A-08 | The ticked box carries the fact **without colour** — assert it with colour removed | P | ✓ stage 5 T2 |
 | A-09 | Row text keeps full contrast — this is a tint, not a grey-out | P | ☐ |
 | A-10 | The consequence line is on screen **whether or not anyone is marked** | P | ☐ |
 | A-11 | Absent students are excluded from grouping | U | ☐ |
@@ -258,9 +258,9 @@ spillover warning cannot be driven through the page without a roster fixture;
 | E-12 | Changing group size or leftovers marks them out of date | P | ☐ |
 | E-13 | The badge **states which change did it** | P | ☐ |
 | E-14 | Old groups stay visible, dimmed | P | ☐ |
-| E-15 | **Export groups refuses while stale**, and says why | P | ☐ |
-| E-16 | **Print refuses while stale**, and says why | P | ☐ |
-| E-17 | **Full screen refuses while stale**, and says why | P | ☐ |
+| E-15 | **Export groups refuses while stale**, and says why | P | ✓ stage 5 T6 |
+| E-16 | **Print refuses while stale**, and says why | P | ✓ stage 5 T6 |
+| E-17 | **Full screen refuses while stale**, and says why | P | ✓ stage 5 T6 |
 | E-18 | Shuffling clears the badge | P | ☐ |
 | E-19 | Undoing the change clears the badge | P | ☐ |
 
@@ -338,56 +338,56 @@ spillover warning cannot be driven through the page without a roster fixture;
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| Q-01 | The panel offers class list / group results / both | P | ☐ |
-| Q-02 | **Both** is the default | P | ☐ |
-| Q-03 | All three tick boxes start ticked | P | ☐ |
-| Q-04 | All four choices are remembered across a reload | P | ☐ |
-| Q-05 | Combination 1: absent ✓ letters ✓ | P | ☐ |
-| Q-06 | Combination 2: absent ✓ letters ✗ | P | ☐ |
-| Q-07 | Combination 3: absent ✗ letters ✓ | P | ☐ |
-| Q-08 | Combination 4: absent ✗ letters ✗ | P | ☐ |
-| Q-09 | **Showing absent students always prints the `Absent` column**, letters on or off | P | ☐ |
-| Q-10 | Unticking letters leaves the `Absent` column alone | P | ☐ |
-| Q-11 | Hiding absent students drops them entirely | P | ☐ |
-| Q-12 | …and the numbers then jump (1,2,3,5) | P | ☐ |
-| Q-13 | …and the sheet still states how many are absent | P | ☐ |
-| Q-14 | Avatars on: faces print | P | ☐ |
-| Q-15 | Avatars off: names only | P | ☐ |
-| Q-16 | The sheet carries class name and date | P | ☐ |
-| Q-17 | No form, no site header, no footer on the sheet | P | ☐ |
-| Q-18 | **Legible in greyscale** — asserted with colour removed | P | ☐ |
-| Q-19 | Group results print minus absent students | P | ☐ |
-| Q-20 | Printed rows carry **neither** the tint **nor** the pill | P | ☐ |
-| Q-21 | Every panel string in both locales | P | ☐ |
+| Q-01 | The panel offers class list / group results / both | P | ✓ stage 5 T1 |
+| Q-02 | **Both** is the default | P | ✓ stage 5 T1 |
+| Q-03 | All three tick boxes start ticked | P | ✓ stage 5 T1 |
+| Q-04 | All four choices are remembered across a reload | P | ✓ stage 5 T1 |
+| Q-05 | Combination 1: absent ✓ letters ✓ | P | ✓ stage 5 T2 |
+| Q-06 | Combination 2: absent ✓ letters ✗ | P | ✓ stage 5 T2 |
+| Q-07 | Combination 3: absent ✗ letters ✓ | P | ✓ stage 5 T2 |
+| Q-08 | Combination 4: absent ✗ letters ✗ | P | ✓ stage 5 T2 |
+| Q-09 | **Showing absent students always prints the `Absent` column**, letters on or off | P | ✓ stage 5 T2 |
+| Q-10 | Unticking letters leaves the `Absent` column alone | P | ✓ stage 5 T2 |
+| Q-11 | Hiding absent students drops them entirely | P | ✓ stage 5 T2 |
+| Q-12 | …and the numbers then jump (1,2,3,5) | P | ✓ stage 5 T2 |
+| Q-13 | …and the sheet still states how many are absent | P | ✓ stage 5 T2 |
+| Q-14 | Avatars on: faces print | P | ✓ stage 5 T3 |
+| Q-15 | Avatars off: names only | P | ✓ stage 5 T3 |
+| Q-16 | The sheet carries class name and date | P | ✓ stage 5 T2 |
+| Q-17 | No form, no site header, no footer on the sheet | P | ✓ stage 5 T2 |
+| Q-18 | **Legible in greyscale** — asserted with colour removed | P | ✓ stage 5 T3 |
+| Q-19 | Group results print minus absent students | P | ✓ stage 5 T3 |
+| Q-20 | Printed rows carry **neither** the tint **nor** the pill | P | ✓ stage 5 T2 |
+| Q-21 | Every panel string in both locales | P | ✓ stage 5 T1 |
 
 ## Q · Full screen — stage 5
 
 | # | Requirement | Suite | ✓ |
 |---|---|---|---|
-| Z-01 | The button appears **only once groups exist** | P | ☐ |
-| Z-02 | The Fullscreen API path works | P | ☐ |
-| Z-03 | The overlay fallback works | P | ☐ |
-| Z-04 | **A refused `requestFullscreen` lands in the fallback**, never in nothing happening | P | ☐ |
-| Z-05 | No form or site chrome on the board | P | ☐ |
-| Z-06 | Class name heads it; groups numbered | P | ☐ |
-| Z-07 | Type shrinks to fit | P | ☐ |
-| Z-08 | …and stops at the floor — names ≥24px, headings ≥32px | P | ☐ |
-| Z-09 | Below the floor the board scrolls rather than shrinking | P | ☐ |
-| Z-10 | The control bar fades | P | ☐ |
-| Z-11 | …and returns on pointer-move | P | ☐ |
-| Z-12 | …and on tap | P | ☐ |
-| Z-13 | …and on any key | P | ☐ |
-| Z-14 | **It does not fade while a control inside it holds focus** | P | ☐ |
-| Z-15 | Escape exits while the bar is visible | P | ☐ |
-| Z-16 | Escape exits while the bar is faded | P | ☐ |
-| Z-17 | Pins still work on the board | P | ☐ |
-| Z-18 | Shuffle again works on the board | P | ☐ |
-| Z-19 | **A shuffle done on the board is what the page shows on exit** | P | ☐ |
-| Z-20 | Scroll position is restored on exit | P | ☐ |
-| Z-21 | The reveal animation plays | P | ☐ |
-| Z-22 | …suppressed by the Sound & animation switch | P | ☐ |
-| Z-23 | …suppressed by `prefers-reduced-motion` | P | ☐ |
-| Z-24 | **Warnings appear on the board**, not only on the page behind it | P | ☐ |
+| Z-01 | The button appears **only once groups exist** | P | ✓ stage 5 T5 |
+| Z-02 | The Fullscreen API path works | P | ✓ stage 5 T5 |
+| Z-03 | The overlay fallback works | P | ✓ stage 5 T5 |
+| Z-04 | **A refused `requestFullscreen` lands in the fallback**, never in nothing happening | P | ✓ stage 5 T5 |
+| Z-05 | No form or site chrome on the board | P | ✓ stage 5 T5 |
+| Z-06 | Class name heads it; groups numbered | P | ✓ stage 5 T5 |
+| Z-07 | Type shrinks to fit | P | ✓ stage 5 T4 |
+| Z-08 | …and stops at the floor — names ≥24px, headings ≥32px | P | ✓ stage 5 T4 |
+| Z-09 | Below the floor the board scrolls rather than shrinking | P | ✓ stage 5 T4 |
+| Z-10 | The control bar fades | P | ✓ stage 5 T5 |
+| Z-11 | …and returns on pointer-move | P | ✓ stage 5 T5 |
+| Z-12 | …and on tap | P | ✓ stage 5 T5 |
+| Z-13 | …and on any key | P | ✓ stage 5 T5 |
+| Z-14 | **It does not fade while a control inside it holds focus** | P | ✓ stage 5 T5 |
+| Z-15 | Escape exits while the bar is visible | P | ✓ stage 5 T5 |
+| Z-16 | Escape exits while the bar is faded | P | ✓ stage 5 T5 |
+| Z-17 | Pins still work on the board | P | ✓ stage 5 T5 |
+| Z-18 | Shuffle again works on the board | P | ✓ stage 5 T5 |
+| Z-19 | **A shuffle done on the board is what the page shows on exit** | P | ✓ stage 5 T5 |
+| Z-20 | Scroll position is restored on exit | P | ✓ stage 5 T5 |
+| Z-21 | The reveal animation plays | P | ✓ stage 5 T6 |
+| Z-22 | …suppressed by the Sound & animation switch | P | ✓ stage 5 T6 |
+| Z-23 | …suppressed by `prefers-reduced-motion` | P | ✓ stage 5 T6 |
+| Z-24 | **Warnings appear on the board**, not only on the page behind it | P | ✓ stage 5 T5 |
 | Z-25 | **The type floor is read from the back of a room, off a real projector** | D | ☐ |
 
 ## R · Persistence and privacy — stages 2, 4 and 5
@@ -399,8 +399,8 @@ spillover warning cannot be driven through the page without a roster fixture;
 | Y-03 | No roster data in `sessionStorage` at any point | P | ✓ stage 3 T10 |
 | Y-04 | No roster data in the URL at any point | P | ✓ stage 3 T10 |
 | Y-05 | The how-to collapsed state persists | P | ☐ |
-| Y-06 | The four print choices persist | P | ☐ |
-| Y-07 | …and **nothing else** is written | P | ☐ |
+| Y-06 | The four print choices persist | P | ✓ stage 5 T1 |
+| Y-07 | …and **nothing else** is written | P | ✓ stage 5 T1 |
 | Y-08 | New privacy copy renders in full, in English | P | ☐ |
 | Y-09 | …and in Indonesian | P | ☐ |
 | Y-10 | The old wording "No class list ever leaves this page" is **gone** | P | ☐ |
