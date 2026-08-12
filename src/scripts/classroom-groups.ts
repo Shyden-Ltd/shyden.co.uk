@@ -69,6 +69,7 @@ import {
 import { sexWhy, sexWhyReturning } from '../lib/sexOptions';
 import { renderIo } from './io-ui';
 import { renderPrintPanel } from './print-ui';
+import { todayISO } from '../lib/csv';
 import { sectionState } from '../lib/sections';
 import { staleReason, type Snapshot } from '../lib/staleness';
 import { avatarSymbolId } from '../lib/avatars';
@@ -752,6 +753,49 @@ if (form) {
    * after it finishes -- and re-deriving position from the roster would be
    * wrong anyway, since the roster's order is not the groups' order.
    */
+  /**
+   * Keep every roster row's print-only text twin in step with its control.
+   *
+   * Hung off the same `onRosterChanged` hook as `relabelResults` below, and
+   * for the same reason: a TEXT edit deliberately never re-renders the row
+   * (that would steal focus and the caret -- see roster-ui.ts's own split
+   * handlers), so a mirror updated only on re-render would go stale on
+   * every keystroke and print a name the teacher had already changed.
+   *
+   * Reads the LIVE roster by row index, not the control's own value: the
+   * roster array is what the sheet is a picture of, and one source means
+   * the paper and the engine cannot disagree.
+   */
+  const refreshPrintMirrors = () => {
+    const current = getRoster();
+    const rows = document.querySelectorAll<HTMLElement>(
+      '#cg-roster .cg-student',
+    );
+    rows.forEach((row, i) => {
+      const student = current[i];
+      if (!student) return;
+      row.dataset.absent = String(student.absent);
+      const values = row.querySelectorAll<HTMLElement>('.cg-print-value');
+      const texts = [
+        String(student.number),
+        student.name ?? '',
+        student.sex === 'M'
+          ? t.rosterSexMale
+          : student.sex === 'F'
+            ? t.rosterSexFemale
+            : t.rosterUnset,
+        student.absent ? '\u2611' : '\u2610',
+        student.together ?? t.rosterUnset,
+        student.apart ?? t.rosterUnset,
+      ];
+      values.forEach((el, j) => {
+        if (texts[j] !== undefined && el.textContent !== texts[j]) {
+          el.textContent = texts[j];
+        }
+      });
+    });
+  };
+
   const relabelResults = () => {
     for (const el of tables.querySelectorAll<HTMLElement>('.student')) {
       const number = Number(el.dataset.number);
@@ -790,6 +834,8 @@ if (form) {
     updateStudentsBox();
     updateSexSwitches(previous);
     relabelResults();
+    refreshPrintMirrors();
+    refreshPrintAvailability();
   };
   updateIoHeader();
   updateStudentsHeader();
@@ -1134,7 +1180,44 @@ if (form) {
   // toggle above rather than reaching for `localStorage` itself, so every
   // preference on this page goes through the one wrapper that survives a
   // privacy profile throwing on the mere act of touching storage.
-  const printPanel = renderPrintPanel(document, remember);
+  // The sheet's own header: the class name a teacher typed and the date,
+  // both hidden on screen. Rewritten at every print rather than once at
+  // load, so a class name typed after the page opened still reaches the
+  // paper -- the same "read fresh at every submit" rule the results heading
+  // already follows. `todayISO` is stage 4's own formatter (src/lib/csv.ts),
+  // so the sheet and the exported CSV cannot describe one shuffle with two
+  // date formats.
+  const printHead = $<HTMLElement>('cg-print-head');
+  const writePrintHead = () => {
+    if (!printHead) return;
+    printHead.textContent = '';
+    const name = classInput.value.trim();
+    if (name !== '') {
+      const who = document.createElement('strong');
+      // `.textContent`, never `.innerHTML`: a teacher's class name is
+      // theirs, not markup -- the same rule the results heading follows.
+      who.textContent = name;
+      printHead.appendChild(who);
+    }
+    const when = document.createElement('span');
+    when.textContent = t.printedOn(todayISO());
+    printHead.appendChild(when);
+  };
+
+  const printPanel = renderPrintPanel(document, remember, {
+    onApply: writePrintHead,
+  });
+
+  /**
+   * There is something to print when there is a roster OR groups on screen
+   * -- not only once groups exist. Design spec section 10's "What to print:
+   * Class list" is exactly the teacher who wants the register and no
+   * shuffle, and gating the button on the results would have made that
+   * combination unreachable. Found by running Task 2's own tests, which
+   * build a roster and never press Make Groups.
+   */
+  const refreshPrintAvailability = () =>
+    printPanel?.setAvailable(getRoster().length > 0 || lastGroups !== null);
 
   const ioBody = $<HTMLElement>('cg-io-body');
   const io = ioBody
@@ -1805,7 +1888,7 @@ if (form) {
       // not on screen any more.
       lastGroups = null;
       io?.refresh();
-      printPanel?.setAvailable(false);
+      refreshPrintAvailability();
       // Unhidden BEFORE the text lands. A live region only reports mutations
       // to something already in the accessibility tree, so writing first and
       // revealing second announced nothing at all — the visitor pressed the
@@ -1828,7 +1911,7 @@ if (form) {
     // own comment where it is declared.
     lastGroups = groups;
     io?.refresh();
-    printPanel?.setAvailable(true);
+    refreshPrintAvailability();
 
     // Read fresh at every submit -- never cached -- so a class name typed
     // or changed between two shuffles is picked up on the next one. Set

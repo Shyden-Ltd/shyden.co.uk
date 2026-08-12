@@ -108,6 +108,38 @@ export const anonymousStudent = (number: number): Student => ({
   apart: null,
 });
 
+/**
+ * The print-only text twin of a cell's control.
+ *
+ * An `<input>`'s VALUE is not its text content, so a printed sheet built
+ * from form controls is blank to any text assertion and unreliable on paper
+ * besides -- browsers disagree about whether and how a control's value
+ * appears in print. This is the same DOM, in the same cell, carrying the
+ * same fact as text: `@media print` hides the control and shows this.
+ *
+ * Kept in sync by `refreshPrintMirrors` (classroom-groups.ts), hung off the
+ * one `onRosterChanged` hook every roster mutation already routes through --
+ * the same pattern `relabelResults` uses for the rendered groups, and for
+ * the same reason: text edits deliberately never re-render (they would steal
+ * focus and the caret), so a mirror that only updated on re-render would go
+ * stale on every keystroke.
+ */
+const printMirror = (value: string): HTMLSpanElement => {
+  const span = document.createElement('span');
+  span.className = 'cg-print-value';
+  span.textContent = value;
+  span.setAttribute('aria-hidden', 'true');
+  return span;
+};
+
+/** M/F, or an em dash for unset — the same glyph the <select> shows. */
+const sexText = (student: Student, t: Strings): string =>
+  student.sex === 'M'
+    ? t.rosterSexMale
+    : student.sex === 'F'
+      ? t.rosterSexFemale
+      : t.rosterUnset;
+
 const buildOption = (value: string, label: string): HTMLOptionElement => {
   const option = document.createElement('option');
   option.value = value;
@@ -312,6 +344,11 @@ function buildRow(
   // block's own comment for why the stripe needs a SECOND rule at that
   // breakpoint rather than this class alone.
   if (student.absent) tr.classList.add('is-absent');
+  // The same fact as `.is-absent`, as an ATTRIBUTE, so the print stylesheet
+  // can select on it without borrowing a class whose job on screen is the
+  // tint and the stripe. One write, from the one place that already decides
+  // it -- never a second check that could disagree.
+  tr.dataset.absent = String(student.absent);
 
   // # — the number. Editable (design spec section 4: "The teacher may
   // override them"); identity is the number everywhere else in this
@@ -331,6 +368,7 @@ function buildRow(
     }
   });
   numberTd.appendChild(numberInput);
+  numberTd.appendChild(printMirror(String(student.number)));
 
   // Name — optional. `placeholder` previews the SAME fallback label the
   // results grid and every error message already use for this student
@@ -352,6 +390,7 @@ function buildRow(
     handlers.onTextChange(patched(getRoster(), index, { name: value }));
   });
   nameTd.appendChild(nameInput);
+  nameTd.appendChild(printMirror(student.name ?? ''));
 
   // Sex — blank (neutral) / M / F. The <option> VALUE is always the raw
   // 'M'/'F' the engine's Student.sex type uses, in both languages; only the
@@ -372,6 +411,7 @@ function buildRow(
     handlers.onSelectChange(patched(getRoster(), index, { sex: value }));
   });
   sexTd.appendChild(sexSelect);
+  sexTd.appendChild(printMirror(sexText(student, t)));
 
   // Absent — ticking it marks the student out of the shuffle (design spec
   // section 4). Nothing else in this row is ever disabled by it — a later
@@ -415,6 +455,10 @@ function buildRow(
     absentLabel.appendChild(pill);
   }
   absentTd.appendChild(absentLabel);
+  // A ticked BOX, not a word: design spec section 10's own "the `Absent`
+  // column says it in no ink and no colour". \u2611/\u2610 read identically in
+  // greyscale and need no legend.
+  absentTd.appendChild(printMirror(student.absent ? '\u2611' : '\u2610'));
 
   // Together / Apart — a letter each, from a dropdown that grows as needed
   // (design spec section 4; `availableLetters`, src/lib/roster.ts).
@@ -435,6 +479,7 @@ function buildRow(
     handlers.onSelectChange(patched(getRoster(), index, { together: value }));
   });
   togetherTd.appendChild(togetherSelect);
+  togetherTd.appendChild(printMirror(student.together ?? t.rosterUnset));
 
   const apartTd = document.createElement('td');
   const apartSelect = document.createElement('select');
@@ -449,6 +494,7 @@ function buildRow(
     handlers.onSelectChange(patched(getRoster(), index, { apart: value }));
   });
   apartTd.appendChild(apartSelect);
+  apartTd.appendChild(printMirror(student.apart ?? t.rosterUnset));
 
   // Remove — design spec section 4: "Removing a row removes the student."
   // A SEVENTH cell, with a real (visually-hidden) header of its own — see
@@ -521,7 +567,11 @@ export function renderRoster(
 
   const table = document.createElement('table');
   table.id = 'cg-roster';
-  table.className = 'cg-roster';
+  // `print-list` is an ALIAS, not a second element: the printed class list
+  // IS this table, restyled by `@media print`. Named so the print stylesheet
+  // and its tests read as being about paper rather than about the roster
+  // widget that happens to be underneath.
+  table.className = 'cg-roster print-list';
 
   // Fixed widths live in CSS (ClassroomGroupsPage.astro's own global style
   // block, anchored on #cg-roster — see that block's own comment on why
@@ -710,12 +760,23 @@ export function renderRoster(
   // is.
   const countLine = document.createElement('p');
   countLine.id = 'cg-roster-count';
-  countLine.className = 'cg-roster-count';
+  countLine.className = 'cg-roster-count print-foot';
   const { absent } = rosterCounts(roster);
+  // The PRINT-ONLY alternative, for the sheet with absent students dropped
+  // -- design spec section 10: "The sheet says how many are absent so the
+  // gap is never a mystery", because the remaining numbers jump (1, 2, 3, 5)
+  // and an unexplained gap reads as a mistake. Built here beside the line it
+  // replaces, from the SAME three counts, so the two can never disagree
+  // about how many are absent.
+  const hereLine = document.createElement('p');
+  hereLine.className = 'cg-roster-count-here print-foot-here';
+  hereLine.setAttribute('aria-hidden', 'true');
+  hereLine.textContent = t.printHereToday(roster.length - absent, absent);
+
   countLine.textContent = t.rosterCountLine(
     roster.length,
     roster.length - absent,
     absent,
   );
-  container.appendChild(countLine);
+  container.append(countLine, hereLine);
 }

@@ -198,6 +198,12 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   // one number cannot pass.
   ioReplaceWarning: [3, 2],
   ioImported: [2],
+  // Stage 5, Task 2. The printed sheet's date line and its
+  // absent-students-dropped footer. (5, 1) exercises the English plural
+  // branch with two different numbers, so a mutant tying both to one count
+  // cannot pass.
+  printedOn: ['2026-08-06'],
+  printHereToday: [5, 1],
   // Stage 3, Task 4. renderRoster's own live count line (roster-ui.ts),
   // rendered under the table. (24, 22, 2) matches design spec section 4's
   // own literal example verbatim, the same example

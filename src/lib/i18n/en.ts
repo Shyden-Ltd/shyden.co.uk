@@ -501,6 +501,19 @@ export const en = {
   printIncludeAvatars: 'Include avatars',
   printCancel: 'Cancel',
   printConfirm: 'Print',
+  // The sheet's own two headings and its date line. `printedOn` takes the
+  // date as a parameter so it comes from stage 4's `todayISO` -- the sheet
+  // and the exported file can never describe the same shuffle with two
+  // date formats.
+  printClassListHeading: 'Class list',
+  printGroupsHeading: 'Groups',
+  printedOn: (on: string) => `Printed ${on}`,
+  // Design spec section 10: with absent students dropped, "the sheet says
+  // how many are absent so the gap is never a mystery" -- because the
+  // remaining numbers then jump (1, 2, 3, 5) and an unexplained gap reads
+  // as a mistake.
+  printHereToday: (here: number, absent: number) =>
+    `${here} ${here === 1 ? 'student' : 'students'} here today · ${absent} absent`,
 
   errors: {
     // Whole-branch review, I-4. `noStudents` fires from TWO different

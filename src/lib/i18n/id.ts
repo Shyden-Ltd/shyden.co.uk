@@ -297,6 +297,11 @@ export const id: Strings = {
   printIncludeAvatars: 'Sertakan avatar',
   printCancel: 'Batal',
   printConfirm: 'Cetak',
+  printClassListHeading: 'Daftar kelas',
+  printGroupsHeading: 'Kelompok',
+  printedOn: (on: string) => `Dicetak ${on}`,
+  printHereToday: (here: number, absent: number) =>
+    `${here} siswa hadir hari ini · ${absent} tidak hadir`,
 
   errors: {
     // Whole-branch review, I-4. Lihat komentar pada versi Inggrisnya (en.ts)

@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
-import { withGroups, openPrintPanel } from './helpers';
+import { withGroups, openPrintPanel, rosterWithAnAbsence } from './helpers';
+import { todayISO } from '../../src/lib/csv';
 
 /**
  * Every control assertion is scoped to the PANEL, never to the page.
@@ -182,5 +183,254 @@ test.describe('the print panel — Indonesian', () => {
     await openPrintPanel(page);
     await expect(panel(page).getByLabel('Daftar kelas')).toBeChecked();
     await expect(panel(page).getByLabel('Sertakan avatar')).not.toBeChecked();
+  });
+});
+
+/**
+ * Stage 5, Task 2. The printed class list, in all four combinations.
+ * Q-05…Q-13, Q-16, Q-17, Q-20, A-08.
+ *
+ * All four are tested because the two tick boxes being INDEPENDENT is the
+ * whole reason they are tick boxes and not three named sheets.
+ */
+const sheet = async (
+  page: import('@playwright/test').Page,
+  opts: {
+    what: string;
+    absent: boolean;
+    letters: boolean;
+    avatars: boolean;
+  },
+) => {
+  await openPrintPanel(page);
+  await panel(page).getByLabel(opts.what).check();
+  await panel(page)
+    .getByLabel('Show students who are absent')
+    .setChecked(opts.absent);
+  await panel(page)
+    .getByLabel('Show sex and the together/apart letters')
+    .setChecked(opts.letters);
+  await panel(page).getByLabel('Include avatars').setChecked(opts.avatars);
+  await panel(page).getByRole('button', { name: 'Print' }).click();
+  await page.emulateMedia({ media: 'print' });
+};
+
+test.describe('the printed class list', () => {
+  test.beforeEach(async ({ page }) => {
+    // `window.print()` is the last thing the panel's Print button does.
+    // Stubbed before load on every test in this block -- see the note on
+    // the attributes test above for why not relying on it being a no-op.
+    await page.addInitScript(() => {
+      window.print = () => {};
+    });
+    await rosterWithAnAbsence(page); // 6 students, #4 absent, letters on #1/#2/#3
+  });
+
+  test('absent ✓ letters ✓ — the full register', async ({ page }) => {
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('.print-list thead th:visible')).toHaveText([
+      '#',
+      'Name',
+      'Sex',
+      'Absent',
+      'Together',
+      'Apart',
+    ]);
+    await expect(page.locator('.print-list tbody tr:visible')).toHaveCount(6);
+    await expect(page.locator('.print-foot')).toHaveText(
+      '6 students · 5 here · 1 absent',
+    );
+  });
+
+  test('absent ✓ letters ✗ — the Absent column STAYS', async ({ page }) => {
+    // The combination that would otherwise print an absent child
+    // indistinguishable from a present one.
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: false,
+      avatars: false,
+    });
+    await expect(page.locator('.print-list thead th:visible')).toHaveText([
+      '#',
+      'Name',
+      'Absent',
+    ]);
+    await expect(page.locator('.print-list tbody tr:visible')).toHaveCount(6);
+    await expect(page.locator('.print-list tbody tr').nth(3)).toContainText(
+      '☑',
+    );
+  });
+
+  test('absent ✗ letters ✓ — dropped, and the numbers jump', async ({
+    page,
+  }) => {
+    await sheet(page, {
+      what: 'Class list',
+      absent: false,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('.print-list tbody tr:visible')).toHaveCount(5);
+    const numbers = await page
+      .locator('.print-list tbody tr:visible td:first-child')
+      .allTextContents();
+    expect(numbers).toEqual(['1', '2', '3', '5', '6']);
+    await expect(page.locator('.print-foot-here')).toHaveText(
+      '5 students here today · 1 absent',
+    );
+    // …and the line it replaces is gone, so the sheet does not carry two
+    // different totals.
+    await expect(page.locator('.print-foot')).toBeHidden();
+  });
+
+  test('absent ✗ letters ✗ — numbers and names only', async ({ page }) => {
+    await sheet(page, {
+      what: 'Class list',
+      absent: false,
+      letters: false,
+      avatars: false,
+    });
+    await expect(page.locator('.print-list thead th:visible')).toHaveText([
+      '#',
+      'Name',
+    ]);
+    await expect(page.locator('.print-list tbody tr:visible')).toHaveCount(5);
+  });
+
+  test('no form and no site chrome on the sheet', async ({ page }) => {
+    await sheet(page, {
+      what: 'Both',
+      absent: true,
+      letters: true,
+      avatars: true,
+    });
+    // The plan's own snippet asserted `#cg-form` itself was hidden. It
+    // cannot be: the four tool sections live INSIDE the form, so the class
+    // list would go with it. The requirement (design spec section 10) is
+    // about what a teacher SEES -- "no form, no collapsed sections, no site
+    // chrome" -- so this asserts the CONTROLS are gone, which is the honest
+    // form of the same claim and does not depend on where the <form>
+    // element happens to start.
+    for (const sel of [
+      'header nav',
+      'footer',
+      '.top-row',
+      '#cg-go',
+      '#cg-grouping',
+      '#cg-io',
+      '#cg-sound',
+      '#cg-howto',
+      '.cg-roster-toolbar',
+    ]) {
+      await expect(page.locator(sel), sel).toBeHidden();
+    }
+    // Nothing a teacher could press or type into is left anywhere on the
+    // sheet -- a stronger claim than naming sections one at a time, and the
+    // one that actually fails if a future control is added and forgotten.
+    const interactive = page.locator(
+      '#cg-form input:visible, #cg-form select:visible, #cg-form button:visible, #cg-form textarea:visible',
+    );
+    await expect(interactive).toHaveCount(0);
+    // …and the class list is still there, which is the whole point of not
+    // hiding the form.
+    await expect(page.locator('#cg-roster')).toBeVisible();
+  });
+
+  test('the sheet carries the class name and a date', async ({ page }) => {
+    await page.getByLabel('Class (optional)').fill('7B');
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('.print-head')).toContainText('7B');
+    await expect(page.locator('.print-head')).toContainText(todayISO());
+  });
+
+  test('paper carries neither the tint nor the pill', async ({ page }) => {
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('.print-list .cg-absent-pill')).toBeHidden();
+    await expect(page.locator('.print-list tbody tr').nth(3)).toHaveCSS(
+      'background-color',
+      'rgba(0, 0, 0, 0)',
+    );
+  });
+
+  // Q-16/Q-17: the two What-to-print choices actually exclude each other's
+  // section. Without this a sheet asked for one could quietly carry both.
+  test('Class list prints the roster and not the groups', async ({ page }) => {
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('#cg-students')).toBeVisible();
+    await expect(page.locator('#cg-results')).toBeHidden();
+  });
+
+  test('Group results prints the groups and not the roster', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await sheet(page, {
+      what: 'Group results',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('#cg-results')).toBeVisible();
+    await expect(page.locator('#cg-students')).toBeHidden();
+  });
+
+  test('Both prints both', async ({ page }) => {
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await sheet(page, {
+      what: 'Both',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('#cg-students')).toBeVisible();
+    await expect(page.locator('#cg-results')).toBeVisible();
+  });
+
+  // A rename after the panel was last opened must reach the paper. The
+  // mirrors are the only text on the sheet, and a text edit deliberately
+  // never re-renders its row -- so this is the case that would go stale.
+  test('a name typed after the last print still reaches the sheet', async ({
+    page,
+  }) => {
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: true,
+      avatars: false,
+    });
+    await expect(page.locator('.print-list tbody tr').first()).toContainText(
+      'Ana',
+    );
+    await page.emulateMedia({ media: 'screen' });
+    await page.locator('.cg-student').first().getByLabel('Name').fill('Annika');
+    await page.emulateMedia({ media: 'print' });
+    await expect(page.locator('.print-list tbody tr').first()).toContainText(
+      'Annika',
+    );
+    await expect(
+      page.locator('.print-list tbody tr').first(),
+    ).not.toContainText('Ana ');
   });
 });

@@ -434,6 +434,13 @@ const sexWhyText = sexWhy(roster, t);
            ids apart from the checkbox rename this section's own opening
            comment explains. -->
       <div class="tool-sections">
+        <!-- Stage 5, Task 2. The printed sheet's own header: class name and
+             date, hidden on screen and revealed by `@media print`. Written
+             by classroom-groups.ts at print time from the SAME class input
+             and the same `todayISO` the CSV export uses, so the sheet and
+             the file cannot describe one shuffle with two dates. -->
+        <div class="print-head" id="cg-print-head" aria-hidden="true"></div>
+
         <section id="cg-students" class="tool-section">
           <h2 class="tool-section-heading">
             <button
@@ -448,6 +455,7 @@ const sexWhyText = sexWhy(roster, t);
               >
             </button>
           </h2>
+          <h2 class="print-only-heading">{t.printClassListHeading}</h2>
           <div id="cg-students-body" class="tool-section-body" hidden></div>
           <!-- Stage 3, Task 6 (design spec section 4: "Opening Student
                details with the count above 100 -- the section refuses to
@@ -674,6 +682,20 @@ const sexWhyText = sexWhy(roster, t);
       set:html={avatarDefs}
     />
 
+    <!-- Stage 5, Task 1 (design spec section 10). A PANEL, not a bare print
+         button: "the teacher decides what goes on the paper -- the operator
+         was explicit that this is theirs to choose, not ours to fix."
+
+         OUTSIDE #cg-results, deliberately. Its first home was inside them,
+         which tied printing the CLASS LIST to having pressed Make Groups --
+         but "What to print: Class list" exists exactly for the teacher who
+         wants the register and no shuffle. Hidden until there is something
+         to print at all (a roster, or groups), which classroom-groups.ts
+         decides through `setAvailable`. -->
+    <button type="button" id="cg-print-open" class="cg-print-open" hidden>
+      {t.printOpen}
+    </button>
+
     <p class="error" id="cg-error" role="alert" hidden></p>
 
     <!-- The results are written here as real text regardless of animation
@@ -694,6 +716,7 @@ const sexWhyText = sexWhy(roster, t);
            is unhidden. A visitor whose script never attaches sees this
            section stay `hidden` regardless (#cg-noscript covers that
            state), so the static default here is never shown on its own. -->
+      <h2 class="print-only-heading">{t.printGroupsHeading}</h2>
       <h2 id="cg-results-h">{t.resultsHeading}</h2>
 
       <!-- Stage 2, Task 6 (design spec section 8, "When the class changes
@@ -721,15 +744,6 @@ const sexWhyText = sexWhy(roster, t);
         <p role="status" id="cg-stale-text"></p>
         <button type="submit" form="cg-form">{t.again}</button>
       </div>
-
-      <!-- Stage 5, Task 1 (design spec section 10). A PANEL, not a bare
-           print button: "the teacher decides what goes on the paper -- the
-           operator was explicit that this is theirs to choose, not ours to
-           fix." The button sits with the results because there is nothing
-           to print until they exist. -->
-      <button type="button" id="cg-print-open" class="cg-print-open">
-        {t.printOpen}
-      </button>
 
       <p class="summary" id="cg-summary" role="status"></p>
 
@@ -1566,6 +1580,191 @@ const sexWhyText = sexWhy(roster, t);
     border: 1px solid var(--border);
     border-radius: 6px;
     cursor: pointer;
+  }
+
+  /* ── the printed sheet (stage 5, tasks 2 and 3) ──────────────────────────
+     Design spec section 10. The sheet is THIS DOM, restyled -- never a
+     second rendering, because a second rendering is how a printed sheet ends
+     up disagreeing with the screen. Everything below keys off the four
+     `data-print-*` attributes print-ui.ts writes onto <html>.
+
+     GLOBAL, like every rule in this block: the roster table and its cells
+     are built by script and carry no Astro scoping attribute.
+
+     NOTHING HERE MAY DEPEND ON COLOUR. Greyscale is the assumption, not a
+     fallback -- which is why absence prints as a ticked BOX and never as a
+     tint, and why the avatars carry hair length as well as hue. */
+  .print-head,
+  .print-only-heading,
+  .cg-print-value,
+  .print-foot-here {
+    display: none;
+  }
+
+  @media print {
+    /* The site's own chrome, the tool's controls, and everything that is a
+       way to CHANGE the class rather than a record of it. A printed page
+       with a form on it is a photocopy of a screen, not a sheet. */
+    header,
+    footer,
+    nav,
+    #cg-howto,
+    /* NOT `#cg-form`. The four tool sections live INSIDE the form, so
+       hiding it takes the class list with it -- found by running Task 2's
+       own tests, which then measured an invisible table. What comes off the
+       sheet is every way to CHANGE the class, named one at a time: the top
+       row of fields, the three sections that are all controls, the deal
+       button, and the roster's own toolbar further down. */
+    .top-row,
+    #cg-go,
+    #cg-noscript,
+    #cg-print-panel,
+    #cg-print-open,
+    #cg-stale,
+    #cg-summary,
+    #cg-warnings,
+    #cg-grouping,
+    #cg-io,
+    #cg-sound,
+    .cg-roster-toolbar,
+    .cg-roster-consequence,
+    #cg-roster-problem,
+    #cg-roster-warning,
+    #cg-students-limit,
+    .tool-section-heading {
+      display: none !important;
+    }
+
+    /* A collapsed section is a screen affordance. On paper every part the
+       teacher asked for is simply present. */
+    .tool-section-body[hidden] {
+      display: block !important;
+    }
+
+    .print-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 0 0 0.8rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #000;
+      font-size: 1.1rem;
+    }
+    .print-only-heading {
+      display: block;
+      margin: 0.9rem 0 0.4rem;
+      font-size: 1rem;
+    }
+
+    /* The controls give way to their text twins -- see roster-ui.ts's own
+       `printMirror` for why a mirror exists at all: an <input>'s value is
+       not its text, and browsers disagree about printing it. */
+    .cg-roster input,
+    .cg-roster select,
+    .cg-roster button,
+    .cg-roster .cg-absent-pill {
+      display: none !important;
+    }
+    .cg-print-value {
+      display: inline;
+    }
+
+    /* Absence is a ticked box in the Absent column and NOTHING else --
+       design spec's own "the printed sheet carries neither the absent tint
+       nor the pill". Both are overridden explicitly rather than left to
+       `print-color-adjust`, which browsers honour inconsistently. */
+    .cg-student.is-absent,
+    .cg-student.is-absent td {
+      background: none !important;
+      background-color: transparent !important;
+    }
+
+    /* Anchored on `#cg-roster`, not on `.print-list` alone.
+       Stage 3's card/table dual layout sets `display` on every table part
+       through `#cg-roster thead, #cg-roster tr, #cg-roster th, …` -- ID
+       specificity (1,0,1), which a class selector (0,2,1) loses to
+       silently. Every rule below therefore matches that anchor, so the
+       cascade decides on SOURCE ORDER, which is what was intended.
+       Found by probing computed styles, not by reading: the rules were
+       present in the built CSS and simply outranked. */
+    #cg-roster {
+      display: table !important;
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+    #cg-roster thead {
+      display: table-header-group !important;
+    }
+    #cg-roster tbody {
+      display: table-row-group !important;
+    }
+    #cg-roster .cg-student {
+      display: table-row !important;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      background: none !important;
+    }
+    #cg-roster th,
+    #cg-roster td,
+    #cg-roster .cg-student > td {
+      display: table-cell !important;
+      padding: 0.25rem 0.4rem;
+      border: 1px solid #000;
+      text-align: left;
+    }
+    .print-foot {
+      margin: 0.5rem 0 0;
+    }
+
+    /* Remove is column 7 and is never on paper: there is nothing to press. */
+    #cg-roster th:nth-child(7),
+    #cg-roster td:nth-child(7) {
+      display: none !important;
+    }
+
+    /* Sex (3), Together (5), Apart (6) -- governed by the letters box, and
+       ONLY by it. */
+    [data-print-letters='off'] #cg-roster th:nth-child(3),
+    [data-print-letters='off'] #cg-roster td:nth-child(3),
+    [data-print-letters='off'] #cg-roster th:nth-child(5),
+    [data-print-letters='off'] #cg-roster td:nth-child(5),
+    [data-print-letters='off'] #cg-roster th:nth-child(6),
+    [data-print-letters='off'] #cg-roster td:nth-child(6) {
+      display: none !important;
+    }
+
+    /* Absent (4) and the absent ROWS -- governed by the absent box alone.
+       This is the whole point of the task: putting the Absent COLUMN under
+       the letters box instead would let a teacher choose to show absent
+       students and then be unable to tell which they are, which prints a
+       lie. */
+    [data-print-absent='off'] #cg-roster th:nth-child(4),
+    [data-print-absent='off'] #cg-roster td:nth-child(4),
+    [data-print-absent='off'] #cg-roster .cg-student[data-absent='true'] {
+      display: none !important;
+    }
+    /* …and with them gone the numbers jump, so the sheet says why. */
+    [data-print-absent='off'] .print-foot {
+      display: none;
+    }
+    [data-print-absent='off'] .print-foot-here {
+      display: block;
+      margin: 0.5rem 0 0;
+    }
+
+    [data-print-avatars='off'] .avatar {
+      display: none !important;
+    }
+
+    /* What to print. `both` hides neither. */
+    [data-print-what='groups'] #cg-students {
+      display: none !important;
+    }
+    [data-print-what='class-list'] #cg-results {
+      display: none !important;
+    }
   }
 
   .cg-io-handover,

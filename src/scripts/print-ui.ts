@@ -58,6 +58,15 @@ export interface PrintHandlers {
    * time, because the answer changes as the teacher edits.
    */
   refuseReason?: () => string | null;
+  /**
+   * Called once, after the `data-print-*` attributes are set and before
+   * `window.print()`.
+   *
+   * The sheet's header carries a class name typed on the page, which this
+   * module has no business reading: it owns the panel, not the tool. The
+   * caller writes it, at the one moment it is about to matter.
+   */
+  onApply?: () => void;
 }
 
 export function renderPrintPanel(
@@ -173,6 +182,7 @@ export function renderPrintPanel(
   confirm.addEventListener('click', () => {
     save();
     apply();
+    handlers.onApply?.();
     panel.close();
     // The attributes are set BEFORE this, so the browser's own print
     // preview renders the sheet the teacher chose. Called last and
