@@ -223,7 +223,7 @@ export const en = {
   // `rosterAddConfirm` is matched EXACTLY (`{ name: 'Add', exact: true }`)
   // by later stages' own tests, precisely so it is never mistaken for
   // `rosterAddStudent` above, whose text also contains the word "Add".
-  rosterHowMany: 'How many?',
+  rosterHowMany: 'How many to add?',
   rosterAddConfirm: 'Add',
 
   // Stage 3, Task 4 (design spec section 4, "Absence"). Two lines rendered
@@ -264,6 +264,10 @@ export const en = {
   // because a duplicate always names exactly one prior holder.
   rosterDuplicateMessage: (number: number, name: string) =>
     `Number ${number} is already used by ${name}. Every student needs their own.`,
+  // Sex is required for every student (operator, 2026-08-13). Phrased like
+  // every other roster refusal on this page: it names WHO, and what to do.
+  rosterNoSexMessage: (names: string[]) =>
+    `${joinAnd(names)} still ${names.length === 1 ? 'needs' : 'need'} M or F. Every student needs one before you can make groups.`,
   // `names` arrives pre-resolved (rosterProblems), the same "the caller
   // resolves numbers to labels" contract TOGETHER_APART_CLASH above already
   // keeps. Joined with "and" (joinAnd, above), not TOGETHER_APART_CLASH's

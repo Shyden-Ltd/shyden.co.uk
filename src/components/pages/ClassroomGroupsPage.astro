@@ -252,7 +252,7 @@ const sexWhyText = sexWhy(roster, t);
             inputmode="numeric"
             min="1"
             max={MAX_STUDENTS}
-            value="24"
+            value="30"
             aria-describedby="cg-count-help"
           />
           <p class="help" id="cg-count-help">{t.studentsHelp}</p>
@@ -908,7 +908,12 @@ const sexWhyText = sexWhy(roster, t);
   }
   #cg-results .student {
     display: flex;
-    align-items: center;
+    /* `start`, not `center`: a name that wraps to three lines on the board
+       ("Christopher / Wetherington- / Smythe") left its avatar floating
+       against the middle line, reading as a misalignment rather than a
+       bullet. One line is unaffected — centre and start are the same thing
+       when there is only one line to align to. */
+    align-items: start;
     gap: 0.6rem;
     /* Dealt in by the script. Starting hidden means a half-finished deal never
        shows a card in a nonsense position; `.dealt` is added per card. */
@@ -996,6 +1001,31 @@ const sexWhyText = sexWhy(roster, t);
      remaining width) are what a card layout buys back; F-03/F-04 (same
      content, same behaviour, both proved on the SAME `.cg-student`
      elements in both layouts) are what "no second render path" buys. */
+  /* No spinner on any number field on this page — and this rule lives in the
+     GLOBAL block on purpose.
+
+     Astro scopes `<style>` by stamping a `data-astro-cid-*` attribute onto
+     the elements it can see at build time. Every roster row is built by
+     roster-ui.ts at runtime, so it carries no such attribute and a scoped
+     rule never matches it. The first attempt at this rule went in the scoped
+     block below and worked on the two static fields while every `#` input in
+     the table kept its arrows — visible in a screenshot, invisible to a
+     stylesheet reading of the diff.
+
+     Why remove them at all: the arrows are ~15px of control inside a cell
+     that is ~40px wide, and a teacher types a class size rather than clicking
+     to it thirty times. Wheel-scrolling is handled in classroom-groups.ts;
+     CSS cannot reach it. */
+  #cg-form input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  #cg-form input[type='number']::-webkit-outer-spin-button,
+  #cg-form input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+  }
   #cg-roster {
     display: block;
     width: 100%;
@@ -1136,11 +1166,18 @@ const sexWhyText = sexWhy(roster, t);
      how the other five columns happen to size themselves -- F-07's own
      test asserts the rendered width directly, not just this comment's
      arithmetic. */
-  #cg-roster .cg-student > td:nth-child(1) {
+  /* DOM order is Absent, #, Name, Sex, Together, Apart, Remove (the table
+     wants Absent first). The CARD does not have to follow it: grid placement
+     is independent of source order, so the phone layout is kept EXACTLY as it
+     was — # and Name on row 1, the four small controls on row 2 — while the
+     table reorders. A first pass moved Absent into row 1 and cost Name two of
+     its twelve columns, which the "name takes the full remaining width" test
+     caught at 320px (150.4px against a 152.4px floor). */
+  #cg-roster .cg-student > td:nth-child(2) {
     grid-column: 1 / 3;
     grid-row: 1;
   }
-  #cg-roster .cg-student > td:nth-child(2) {
+  #cg-roster .cg-student > td:nth-child(3) {
     grid-column: 3 / 13;
     grid-row: 1;
   }
@@ -1155,11 +1192,13 @@ const sexWhyText = sexWhy(roster, t);
      height" test, tests/e2e/classroom-groups-roster.spec.ts): design spec
      section 3 is explicit that no arrangement of six full-width targets
      fits a phone at all, which is the whole reason this reflow exists. */
-  #cg-roster .cg-student > td:nth-child(3) {
+  #cg-roster .cg-student > td:nth-child(4) {
     grid-column: 1 / 4;
     grid-row: 2;
   }
-  #cg-roster .cg-student > td:nth-child(4) {
+  /* Absent — row 2, in the slot it has always occupied on a phone, even
+     though it is now the FIRST cell in the DOM. */
+  #cg-roster .cg-student > td:nth-child(1) {
     grid-column: 4 / 7;
     grid-row: 2;
   }
@@ -1285,14 +1324,19 @@ const sexWhyText = sexWhy(roster, t);
        the same relative proportions to one another (8:26:14:14:19:19,
        still, just scaled) while the total still sums to exactly 100%:
        7 + 23 + 13 + 13 + 17 + 17 + 10 = 100. */
+    /* 9%, not 7%: a class of 30 means two digits, and a big year group three.
+       At 7% this cell was 21.7px wide — and because number inputs used to
+       inherit `select`'s 2.2rem chevron padding, its content box was
+       NEGATIVE and the student's number could never be seen at all. The
+       padding is fixed further down; this gives the digits somewhere to go. */
     #cg-roster col:nth-child(1) {
-      width: 7%;
+      width: 10%;
     }
     #cg-roster col:nth-child(2) {
-      width: 23%;
+      width: 9%;
     }
     #cg-roster col:nth-child(3) {
-      width: 13%;
+      width: 24%;
     }
     #cg-roster col:nth-child(4) {
       width: 13%;
@@ -1312,8 +1356,20 @@ const sexWhyText = sexWhy(roster, t);
        and the real cost was a screen reader finding no name, or the WRONG
        one, for this column). roster-ui.ts's own renderRoster now builds a
        real seventh <th> for every table this renders. */
+    /* A LENGTH, not a percentage — the only column here whose content has a
+       hard floor. The Remove button measures 76px min-content (its label plus
+       11.2px of padding either side) and cannot shrink below it, so under
+       `table-layout: fixed` any percentage that resolves narrower leaves the
+       button spilling out of the cell and straight through the card's right
+       border: 29px at 600px, 13px at 768px, 34.5px at 1512px before this.
+       None of it registered as page-level horizontal scroll, which is why it
+       shipped.
+
+       5.5rem (88px) clears 76px at every width. The remaining six columns now
+       sum to 90% and the browser distributes what is left, which is what
+       fixed layout does with a mixed length/percentage set. */
     #cg-roster col:nth-child(7) {
-      width: 10%;
+      width: 5.5rem;
     }
     #cg-roster thead {
       display: table-header-group;
@@ -1442,7 +1498,10 @@ const sexWhyText = sexWhy(roster, t);
   .cg-roster-absent-label {
     display: flex;
     align-items: center;
-    justify-content: center;
+    /* `flex-start`, not `center` (operator, 2026-08-13): every other column
+       in this table is left-aligned, so a centred tick sat off-axis from the
+       header above it and from every cell beside it. */
+    justify-content: flex-start;
     min-height: 44px;
   }
   /* The consequence line and the live count line underneath the table
@@ -1486,7 +1545,23 @@ const sexWhyText = sexWhy(roster, t);
     margin-bottom: 0.9rem;
   }
   .cg-io-import input[type='file'] {
-    max-width: 100%;
+    /* `width`, NOT `max-width` -- this line is load-bearing for the whole
+       page's width on a phone, and `max-width: 100%` (what it used to say)
+       does not do the job.
+
+       A native file input has a large intrinsic minimum: the "Choose File"
+       button plus "No file chosen", ~344px in Chromium. `#cg-form` is a grid
+       whose items default to `min-width: auto`, so that minimum propagates up
+       -- .cg-io-import -> .tool-section-body -> .tool-sections -> the form's
+       only track -- and sizes the track to 378px REGARDLESS of the viewport.
+       Every sibling then inherits it, including `.top-row`, so the entire
+       form overflowed: 5px at 390px and 74px at 320px, against this site's
+       "no horizontal scroll >=320px" rule.
+
+       `max-width` cannot fix it because the automatic minimum is computed
+       from the element's own min-content size, which `max-width` does not
+       change. An explicit `width` replaces that contribution outright. */
+    width: 100%;
     font: inherit;
     /* A file input's own button is the touch target, and browsers size it
        from the font. 44px of line-height gives it the floor this site
@@ -1637,6 +1712,24 @@ const sexWhyText = sexWhy(roster, t);
   .cg-board[hidden] {
     display: none;
   }
+  /* The board triples the type for a wall, but `#cg-tables`' own track size
+     is `minmax(15rem, 1fr)` — and `rem` is relative to the ROOT font, not the
+     board's. So the columns stayed 242px while the text went to 40px, and a
+     241px name box holding 40px type had no choice: `overflow-wrap: anywhere`
+     did exactly what it was told and broke a name mid-word, "Christoph / er /
+     Wethering / ton- / Smythe". Unreadable at the back of a classroom, and
+     invisible to every earlier check because they all used "Student 1".
+     `em` is the unit that scales with the board. */
+  .cg-board #cg-tables {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 9em), 1fr));
+  }
+  /* …and once the column can hold a name, prefer a word boundary. `anywhere`
+     is the page's defence against a long name pushing the layout sideways; on
+     the board the column is wide enough that breaking a word is a last
+     resort, not the first move. */
+  .cg-board #cg-results .who {
+    overflow-wrap: break-word;
+  }
   .cg-board-bar {
     display: flex;
     flex-wrap: wrap;
@@ -1739,11 +1832,31 @@ const sexWhyText = sexWhy(roster, t);
     #cg-io,
     #cg-sound,
     .cg-roster-toolbar,
+    /* The toolbar's own `<tfoot><td colspan="7">`, not just the div inside
+       it. Hiding only the div left the cell in the table, and its 1px top
+       border drew a full-width rule across the bottom of every printed class
+       list — a line under a row that no longer had any content. Hide the
+       container, not its contents. */
+    #cg-roster tfoot,
     .cg-roster-consequence,
     #cg-roster-problem,
     #cg-roster-warning,
     #cg-students-limit,
-    .tool-section-heading {
+    .tool-section-heading,
+    /* EVERY button, rather than one more name on the list above. That list is
+       the same shape as the no-horizontal-scroll checks that missed Import /
+       export: correct for what it enumerates, silently wrong about what it
+       does not. "Full screen" was never added to it and printed on the sheet,
+       between the class list and the groups.
+
+       Safe as a blanket rule: no button on this page is a record of anything.
+       The controls that DO belong on paper are the roster's own inputs — the
+       Absent box a teacher ticks by hand — and those are not buttons. */
+    button,
+    .skip-link,
+    /* An empty print-head still draws its box: a 504x7px blank strip above
+       the class list on any sheet printed before a class name was typed. */
+    .print-head:empty {
       display: none !important;
     }
 
@@ -1836,10 +1949,10 @@ const sexWhyText = sexWhy(roster, t);
       display: none !important;
     }
 
-    /* Sex (3), Together (5), Apart (6) -- governed by the letters box, and
+    /* Sex (4), Together (5), Apart (6) -- governed by the letters box, and
        ONLY by it. */
-    [data-print-letters='off'] #cg-roster th:nth-child(3),
-    [data-print-letters='off'] #cg-roster td:nth-child(3),
+    [data-print-letters='off'] #cg-roster th:nth-child(4),
+    [data-print-letters='off'] #cg-roster td:nth-child(4),
     [data-print-letters='off'] #cg-roster th:nth-child(5),
     [data-print-letters='off'] #cg-roster td:nth-child(5),
     [data-print-letters='off'] #cg-roster th:nth-child(6),
@@ -1852,8 +1965,11 @@ const sexWhyText = sexWhy(roster, t);
        the letters box instead would let a teacher choose to show absent
        students and then be unable to tell which they are, which prints a
        lie. */
-    [data-print-absent='off'] #cg-roster th:nth-child(4),
-    [data-print-absent='off'] #cg-roster td:nth-child(4),
+    /* Absent is column 1 now, not 4 (operator, 2026-08-13). Left at 4 this
+       hid the SEX column instead and printed the Absent one — a sheet that
+       silently answered a different question than the tick box asked. */
+    [data-print-absent='off'] #cg-roster th:nth-child(1),
+    [data-print-absent='off'] #cg-roster td:nth-child(1),
     [data-print-absent='off'] #cg-roster .cg-student[data-absent='true'] {
       display: none !important;
     }
@@ -2084,6 +2200,15 @@ const sexWhyText = sexWhy(roster, t);
   .howto-toggle {
     display: flex;
     align-items: center;
+    /* `display: flex` makes the ::before marker and every text node a flex
+       ITEM, and flex layout discards whitespace BETWEEN items and trims it at
+       an item's edge. So the space authored in `content: '▸ '` was thrown
+       away and the marker rendered flush against the label: "▸How to use".
+       `gap` is the only thing that puts it back -- the markup was already
+       correct, the layout mode was eating it. Same rule on
+       `.tool-section-toggle`, where it also restored the space before the
+       `.state` span ("Student details ·none added"). */
+    gap: 0.35em;
     width: 100%;
     min-height: 44px;
     padding: 0.5rem 0;
@@ -2100,7 +2225,10 @@ const sexWhyText = sexWhy(roster, t);
      assistive tech. Rotates rather than swapping glyphs, so open and closed
      share one character and cannot drift into mismatched icons. */
   .howto-toggle::before {
-    content: '▸ ';
+    /* No trailing space: as a flex item it was trimmed and never rendered, so
+       keeping it only suggested a gap that `gap` above is what actually
+       provides. */
+    content: '▸';
     display: inline-block;
     transition: transform 150ms ease-out;
   }
@@ -2152,7 +2280,19 @@ const sexWhyText = sexWhy(roster, t);
     margin: 0.35rem 0 0;
     max-width: var(--measure);
   }
-  input[type='number'],
+  /* `input[type='number']` used to share this rule with `select`, and paid
+     for it twice:
+
+     1. It inherited the chevron background and `padding-right: 2.2rem` drawn
+        for a native `menulist`. A number field is not a dropdown, so the
+        chevron promised a list that does not exist.
+     2. 2.2rem + 0.6rem is 44.8px of horizontal padding. The roster's `#`
+        input is 21.7px wide (col 1 of a fixed 7-column table), and with
+        `box-sizing: border-box` that leaves a NEGATIVE content box — so the
+        student's number was clipped away entirely. The value was always
+        there in the DOM; there was nowhere to draw it.
+
+     Number inputs now follow `input[type='text']` below instead. */
   textarea,
   select {
     width: 100%;
@@ -2181,12 +2321,17 @@ const sexWhyText = sexWhy(roster, t);
     max-width: var(--measure);
     resize: vertical;
   }
+  /* The spinner reset lives in the GLOBAL block (see `#cg-form
+     input[type='number']` up there) — a scoped rule cannot reach the roster
+     rows, which roster-ui.ts creates at runtime without Astro's scoping
+     attribute. */
   /* #cg-class only. Mirrors input[type='number']/select above for box size,
      border and the 44px touch target, but WITHOUT their appearance reset and
      custom chevron: a native text field has no spinner to strip and no
      dropdown to hint at, so painting the same arrow here would show a
      chevron next to a field that opens nothing. */
-  input[type='text'] {
+  input[type='text'],
+  input[type='number'] {
     width: 100%;
     max-width: 22rem;
     min-height: 44px;
@@ -2294,6 +2439,20 @@ const sexWhyText = sexWhy(roster, t);
     .tool-sections {
       grid-template-columns: 1fr 1fr;
     }
+    /* Student details holds a SEVEN-column table; the other three hold a
+       handful of switches. Sharing a half-width column with them squeezed the
+       roster into ~470px, and with `table-layout: fixed` the Remove button —
+       whose text and padding come to ~100px — could not fit its 10% cell and
+       spilled 34.5px past the card's right border at 1512px, 49.4px at 768px.
+       That never showed up as page-level horizontal scroll, which is why the
+       existing checks never saw it: the button overflowed the CARD, not the
+       document.
+
+       Full width is the honest fix. A table with seven columns is not a
+       half-width control. */
+    #cg-students {
+      grid-column: 1 / -1;
+    }
   }
   .tool-section {
     border: 1px solid var(--border);
@@ -2311,6 +2470,11 @@ const sexWhyText = sexWhy(roster, t);
   .tool-section-toggle {
     display: flex;
     align-items: center;
+    /* See `.howto-toggle`'s note: flex eats the whitespace the markup
+       authors. Here it cost TWO spaces -- after the ▸ marker, and the one
+       before `<span class="state">` in `Student details · <span>` -- so the
+       label rendered "▸Student details ·none added" in both locales. */
+    gap: 0.35em;
     width: 100%;
     min-height: 44px;
     padding: 0.25rem 0;
@@ -2324,7 +2488,7 @@ const sexWhyText = sexWhy(roster, t);
     cursor: pointer;
   }
   .tool-section-toggle::before {
-    content: '▸ ';
+    content: '▸';
     display: inline-block;
     transition: transform 150ms ease-out;
   }

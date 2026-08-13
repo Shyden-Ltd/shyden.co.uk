@@ -7,6 +7,7 @@ import {
   downloadName,
   todayISO,
   buildRosterAtPath,
+  giveEveryoneASex,
 } from './helpers';
 
 /**
@@ -178,6 +179,7 @@ test.describe('Import / export', () => {
     await expect(
       page.getByRole('button', { name: 'Export groups' }),
     ).toHaveCount(0);
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(
       page.getByRole('button', { name: 'Export groups' }),
@@ -265,6 +267,7 @@ test.describe('Import / export', () => {
   }) => {
     await rosterOf(page, 4);
     await page.getByLabel('Class (optional)').fill('Year 7 / Set B');
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results-h')).toContainText('Year 7 / Set B');
     await expect(page.locator('#cg-results-h')).not.toContainText(
@@ -305,6 +308,7 @@ test.describe('Import / export', () => {
     async ({ page }) => {
       await rosterOf(page, 4);
       await page.getByLabel('Students in each group').fill('2');
+      await giveEveryoneASex(page);
       await page.getByRole('button', { name: 'Make Groups' }).click();
       await openIo(page);
       const text = await downloadText(page, 'Export groups');

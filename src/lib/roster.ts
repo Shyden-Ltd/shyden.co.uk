@@ -19,7 +19,7 @@ import type { Strings } from './i18n';
 
 /**
  * Student details holds up to this many named rows — design spec section 4,
- * "Two size limits, not one". `MAX_STUDENTS` (grouping.ts, 500) is the
+ * "Two size limits, not one". `MAX_STUDENTS` (grouping.ts, also 100) is the
  * other limit: a bare count of anonymous students costs the page one
  * number, while a named row costs six form controls (number, name, sex,
  * absent, together, apart), so the two get different ceilings. 100 is
@@ -140,7 +140,7 @@ export const availableLetters = (
  * can act on the affected row(s) without re-deriving them from `message`.
  */
 export interface Problem {
-  kind: 'duplicate' | 'clash';
+  kind: 'duplicate' | 'clash' | 'no-sex';
   students: number[];
   message: string;
 }
@@ -226,6 +226,30 @@ export function rosterProblems(roster: Student[], t: Strings): Problem[] {
         message: t.rosterClashMessage(clashers.map((s) => label(s, t))),
       });
     }
+  }
+
+  // Pushed LAST, deliberately. Only the FIRST problem is surfaced
+  // (`#cg-roster-problem`), and a missing sex is the least specific thing
+  // wrong with a roster — a duplicate number or a together/apart clash names
+  // one student and one contradiction, while "nobody has a sex yet" is the
+  // ordinary state of a roster someone is still filling in. Pushing it first
+  // buried every sharper message behind it.
+
+  // Sex is required for every student (operator, 2026-08-13). Reported as ONE
+  // problem naming everyone still missing it, rather than one per student: a
+  // fresh roster of thirty would otherwise post thirty identical refusals,
+  // and the teacher's next action is the same either way.
+  //
+  // Absent students are included. They are still students on the list, and a
+  // roster half-filled because someone happened to be away is exactly the
+  // state this rule exists to stop reaching the shuffle.
+  const noSex = roster.filter((s) => s.sex === null);
+  if (noSex.length > 0) {
+    problems.push({
+      kind: 'no-sex',
+      students: noSex.map((s) => s.number),
+      message: t.rosterNoSexMessage(noSex.map((s) => label(s, t))),
+    });
   }
 
   return problems;

@@ -209,7 +209,15 @@ function buildToolbar(
   const howMany = document.createElement('input');
   howMany.type = 'number';
   howMany.min = '1';
-  howMany.setAttribute('aria-label', t.rosterHowMany);
+  // A VISIBLE label, not an `aria-label`. The field used to appear as a bare
+  // number box beside an "Add" button with nothing on screen saying what the
+  // number was for — screen-reader users had the answer and everyone else
+  // guessed. A real `<label for>` gives both the same sentence.
+  howMany.id = 'cg-add-several-count';
+  const howManyLabel = document.createElement('label');
+  howManyLabel.htmlFor = howMany.id;
+  howManyLabel.className = 'cg-add-several-label';
+  howManyLabel.textContent = t.rosterHowMany;
 
   const confirmButton = button(t.rosterAddConfirm, 'cg-add-confirm');
 
@@ -274,7 +282,7 @@ function buildToolbar(
     howMany.focus();
   });
 
-  inline.append(howMany, confirmButton, roomMessage);
+  inline.append(howManyLabel, howMany, confirmButton, roomMessage);
   wrap.append(addButton, severalButton, inline);
 
   // "Clear all" -- design spec section 4, "Emptying the list... Clearing a
@@ -399,8 +407,16 @@ function buildRow(
   const sexTd = document.createElement('td');
   const sexSelect = document.createElement('select');
   sexSelect.setAttribute('aria-label', t.rosterColSex);
+  const unsetOption = buildOption('', t.rosterUnset);
+  // Once a sex has been chosen there is no way back to "—" (operator,
+  // 2026-08-13). The placeholder exists to say "not answered yet", not to be
+  // an answer, and leaving it selectable let a teacher undo a required field
+  // by accident. Disabled rather than removed so the option a screen reader
+  // already announced does not vanish mid-interaction, and so the select
+  // keeps a stable option list across re-renders.
+  unsetOption.disabled = student.sex !== null;
   sexSelect.append(
-    buildOption('', t.rosterUnset),
+    unsetOption,
     buildOption('M', t.rosterSexMale),
     buildOption('F', t.rosterSexFemale),
   );
@@ -524,7 +540,9 @@ function buildRow(
   });
   removeTd.appendChild(removeButton);
 
-  tr.append(numberTd, nameTd, sexTd, absentTd, togetherTd, apartTd, removeTd);
+  // Absent first — must stay in step with the header order above and with
+  // every `nth-child` rule in ClassroomGroupsPage.astro.
+  tr.append(absentTd, numberTd, nameTd, sexTd, togetherTd, apartTd, removeTd);
   return tr;
 }
 
@@ -590,11 +608,17 @@ export function renderRoster(
 
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
+  // Absent FIRST (operator, 2026-08-13). It is the column a teacher touches
+  // at the start of a lesson, before anything else on the row matters, and it
+  // was buried in the middle. Every positional rule that depends on this
+  // order — the card layout's `.cg-student > td:nth-child(1..7)`, the table's
+  // `col:nth-child(1..7)` widths, and the print letters rule — moves with it,
+  // in ClassroomGroupsPage.astro.
   for (const heading of [
+    t.rosterColAbsent,
     t.rosterColNumber,
     t.rosterColName,
     t.rosterColSex,
-    t.rosterColAbsent,
     t.rosterColTogether,
     t.rosterColApart,
   ]) {

@@ -137,7 +137,7 @@ export const id: Strings = {
   rosterSexFemale: 'P',
   rosterAddStudent: '+ Tambah siswa',
   rosterAddSeveral: '+ Tambah beberapa…',
-  rosterHowMany: 'Berapa?',
+  rosterHowMany: 'Berapa yang ditambahkan?',
   rosterAddConfirm: 'Tambah',
 
   // Lihat komentar pada versi Inggrisnya (en.ts) untuk alasan lengkap.
@@ -156,6 +156,9 @@ export const id: Strings = {
   // "sendiri" ("their own") menutup kalimat sama seperti versi Inggris.
   rosterDuplicateMessage: (number: number, name: string) =>
     `Nomor ${number} sudah dipakai oleh ${name}. Setiap siswa harus punya nomornya sendiri.`,
+  // Indonesian does not inflect the verb for number, so one form covers both.
+  rosterNoSexMessage: (names: string[]) =>
+    `${joinDan(names)} masih perlu L atau P. Setiap siswa memerlukannya sebelum Anda dapat membuat kelompok.`,
   rosterClashMessage: (names: string[]) =>
     `${joinDan(names)} sudah ditandai untuk disatukan, jadi tidak bisa sekaligus dipisahkan.`,
   rosterGapWarning: (missing: number[]) =>

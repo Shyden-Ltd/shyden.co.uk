@@ -450,8 +450,8 @@ describe('rosterProblems', () => {
   it('finds a duplicate number and names who already holds it', () => {
     const problems = rosterProblems(
       [
-        student({ number: 5, name: 'Eko' }),
-        student({ number: 5, name: 'Ana' }),
+        student({ sex: 'M', number: 5, name: 'Eko' }),
+        student({ sex: 'M', number: 5, name: 'Ana' }),
       ],
       en,
     );
@@ -465,8 +465,20 @@ describe('rosterProblems', () => {
   it('finds a together-and-apart clash', () => {
     const problems = rosterProblems(
       [
-        student({ number: 1, name: 'Ana', together: 'A', apart: 'X' }),
-        student({ number: 2, name: 'Budi', together: 'A', apart: 'X' }),
+        student({
+          sex: 'M',
+          number: 1,
+          name: 'Ana',
+          together: 'A',
+          apart: 'X',
+        }),
+        student({
+          sex: 'M',
+          number: 2,
+          name: 'Budi',
+          together: 'A',
+          apart: 'X',
+        }),
       ],
       en,
     );
@@ -480,9 +492,9 @@ describe('rosterProblems', () => {
     expect(
       rosterProblems(
         [
-          student({ number: 1, together: 'A', apart: 'X' }),
-          student({ number: 2, together: 'A' }),
-          student({ number: 3, apart: 'X' }),
+          student({ sex: 'M', number: 1, together: 'A', apart: 'X' }),
+          student({ sex: 'M', number: 2, together: 'A' }),
+          student({ sex: 'M', number: 3, apart: 'X' }),
         ],
         en,
       ),
@@ -491,7 +503,7 @@ describe('rosterProblems', () => {
 
   it('names an unnamed student as Student N in the message', () => {
     const problems = rosterProblems(
-      [student({ number: 5 }), student({ number: 5 })],
+      [student({ sex: 'M', number: 5 }), student({ sex: 'M', number: 5 })],
       en,
     );
     expect(problems[0].message).toContain('Student 5');
@@ -502,7 +514,7 @@ describe('rosterProblems', () => {
   // the real number involved, for both kinds.
   it('the duplicate problem names the duplicated number in students', () => {
     const problems = rosterProblems(
-      [student({ number: 7 }), student({ number: 7 })],
+      [student({ sex: 'M', number: 7 }), student({ sex: 'M', number: 7 })],
       en,
     );
     expect(problems[0].students).toEqual([7]);
@@ -511,8 +523,8 @@ describe('rosterProblems', () => {
   it('the clash problem names every clashing number in students', () => {
     const problems = rosterProblems(
       [
-        student({ number: 1, together: 'A', apart: 'X' }),
-        student({ number: 2, together: 'A', apart: 'X' }),
+        student({ sex: 'M', number: 1, together: 'A', apart: 'X' }),
+        student({ sex: 'M', number: 2, together: 'A', apart: 'X' }),
       ],
       en,
     );
@@ -526,9 +538,9 @@ describe('rosterProblems', () => {
   it('reports a number used three times only once', () => {
     const problems = rosterProblems(
       [
-        student({ number: 5, name: 'Eko' }),
-        student({ number: 5, name: 'Ana' }),
-        student({ number: 5, name: 'Budi' }),
+        student({ sex: 'M', number: 5, name: 'Eko' }),
+        student({ sex: 'M', number: 5, name: 'Ana' }),
+        student({ sex: 'M', number: 5, name: 'Budi' }),
       ],
       en,
     );
@@ -541,10 +553,10 @@ describe('rosterProblems', () => {
   it('reports two different duplicated numbers as two separate problems', () => {
     const problems = rosterProblems(
       [
-        student({ number: 5 }),
-        student({ number: 5 }),
-        student({ number: 9 }),
-        student({ number: 9 }),
+        student({ sex: 'M', number: 5 }),
+        student({ sex: 'M', number: 5 }),
+        student({ sex: 'M', number: 9 }),
+        student({ sex: 'M', number: 9 }),
       ],
       en,
     );
@@ -559,8 +571,14 @@ describe('rosterProblems', () => {
   it('an absent student holding one side of a clash does not trigger it', () => {
     const problems = rosterProblems(
       [
-        student({ number: 1, together: 'A', apart: 'X', absent: true }),
-        student({ number: 2, together: 'A', apart: 'X' }),
+        student({
+          sex: 'M',
+          number: 1,
+          together: 'A',
+          apart: 'X',
+          absent: true,
+        }),
+        student({ sex: 'M', number: 2, together: 'A', apart: 'X' }),
       ],
       en,
     );
@@ -575,8 +593,8 @@ describe('rosterProblems', () => {
   it('a duplicate number is still caught when one holder is absent', () => {
     const problems = rosterProblems(
       [
-        student({ number: 5, name: 'Eko', absent: true }),
-        student({ number: 5, name: 'Ana' }),
+        student({ sex: 'M', number: 5, name: 'Eko', absent: true }),
+        student({ sex: 'M', number: 5, name: 'Ana' }),
       ],
       en,
     );
@@ -591,8 +609,20 @@ describe('rosterProblems', () => {
   it('renders the clash message in Indonesian too, not a copy of the English sentence', () => {
     const problems = rosterProblems(
       [
-        student({ number: 1, name: 'Ana', together: 'A', apart: 'X' }),
-        student({ number: 2, name: 'Budi', together: 'A', apart: 'X' }),
+        student({
+          sex: 'M',
+          number: 1,
+          name: 'Ana',
+          together: 'A',
+          apart: 'X',
+        }),
+        student({
+          sex: 'M',
+          number: 2,
+          name: 'Budi',
+          together: 'A',
+          apart: 'X',
+        }),
       ],
       id,
     );

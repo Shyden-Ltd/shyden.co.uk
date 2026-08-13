@@ -4,6 +4,7 @@ import {
   openPrintPanel,
   rosterWithAnAbsence,
   buildRoster,
+  giveEveryoneASex,
 } from './helpers';
 import { todayISO } from '../../src/lib/csv';
 
@@ -285,11 +286,13 @@ test.describe('the printed class list', () => {
       letters: true,
       avatars: false,
     });
+    // Absent leads the row now (operator, 2026-08-13) — it is the column a
+    // teacher fills in first, so it is the column they read first.
     await expect(page.locator('.print-list thead th:visible')).toHaveText([
+      'Absent',
       '#',
       'Name',
       'Sex',
-      'Absent',
       'Together',
       'Apart',
     ]);
@@ -309,9 +312,9 @@ test.describe('the printed class list', () => {
       avatars: false,
     });
     await expect(page.locator('.print-list thead th:visible')).toHaveText([
+      'Absent',
       '#',
       'Name',
-      'Absent',
     ]);
     await expect(page.locator('.print-list tbody tr:visible')).toHaveCount(6);
     await expect(page.locator('.print-list tbody tr').nth(3)).toContainText(
@@ -329,8 +332,12 @@ test.describe('the printed class list', () => {
       avatars: false,
     });
     await expect(page.locator('.print-list tbody tr:visible')).toHaveCount(5);
+    // `nth-child(2)`, not `first-child`: Absent took column 1. `first-child`
+    // still MATCHES when that column is hidden — it would have read a run of
+    // empty strings and compared them against the numbers, which is a test
+    // passing for the wrong reason rather than failing.
     const numbers = await page
-      .locator('.print-list tbody tr:visible td:first-child')
+      .locator('.print-list tbody tr:visible td:nth-child(2)')
       .allTextContents();
     expect(numbers).toEqual(['1', '2', '3', '5', '6']);
     await expect(page.locator('.print-foot-here')).toHaveText(
@@ -423,6 +430,7 @@ test.describe('the printed class list', () => {
   // Q-16/Q-17: the two What-to-print choices actually exclude each other's
   // section. Without this a sheet asked for one could quietly carry both.
   test('Class list prints the roster and not the groups', async ({ page }) => {
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await sheet(page, {
       what: 'Class list',
@@ -437,6 +445,7 @@ test.describe('the printed class list', () => {
   test('Group results prints the groups and not the roster', async ({
     page,
   }) => {
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await sheet(page, {
       what: 'Group results',
@@ -449,6 +458,7 @@ test.describe('the printed class list', () => {
   });
 
   test('Both prints both', async ({ page }) => {
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await sheet(page, {
       what: 'Both',
@@ -504,6 +514,7 @@ test.describe('the printed groups', () => {
 
   test('avatars on: faces print; off: names only', async ({ page }) => {
     await rosterWithAnAbsence(page);
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await sheet(page, {
       what: 'Group results',
@@ -524,6 +535,7 @@ test.describe('the printed groups', () => {
 
   test('group results print minus absent students', async ({ page }) => {
     await rosterWithAnAbsence(page);
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await sheet(page, {
       what: 'Group results',
@@ -544,6 +556,7 @@ test.describe('the printed groups', () => {
       ['F', 'Citra'],
       ['M', 'Dedi'],
     ]);
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await sheet(page, {
       what: 'Both',
@@ -570,5 +583,58 @@ test.describe('the printed groups', () => {
     // Exactly three, one per face, and all different: two faces sharing a
     // path would leave them apart only by colour, which is the defect.
     expect(hairs).toHaveLength(3);
+  });
+});
+
+// ── What the operator found by pressing Print ──────────────────────────────
+test.describe('the printed sheet', () => {
+  test('carries no controls', async ({ page }) => {
+    await withGroups(page, 6);
+    await page.emulateMedia({ media: 'print' });
+    const controls = await page.evaluate(() =>
+      [...document.querySelectorAll('button, a[href]')]
+        .filter((el) => {
+          const cs = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return (
+            cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0
+          );
+        })
+        .map((el) => (el.textContent || '').trim().slice(0, 24)),
+    );
+    // "Full screen" printed on every sheet: the print CSS named controls one
+    // at a time and that button was never added to the list.
+    expect(controls, `printed controls: ${controls.join(' | ')}`).toEqual([]);
+  });
+
+  test('carries the class name and the date however it was printed', async ({
+    page,
+  }) => {
+    await withGroups(page, 6);
+    await page.locator('#cg-class').fill('Year 9 — Set 2');
+    // Ctrl/Cmd+P, not the in-page Print button. `writePrintHead` used to run
+    // only from the print panel's apply, so printing the way people actually
+    // print produced a sheet with no class name and no date.
+    await page.emulateMedia({ media: 'print' });
+    await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+    const head = page.locator('#cg-print-head');
+    await expect(head).toContainText('Year 9 — Set 2');
+    await expect(head).toContainText(/\d{4}-\d{2}-\d{2}/);
+  });
+
+  test('draws no rule under a class list whose toolbar is hidden', async ({
+    page,
+  }) => {
+    await withGroups(page, 6);
+    await page.emulateMedia({ media: 'print' });
+    // The toolbar lives in `<tfoot><td colspan="7">`. Hiding only the div
+    // inside left the cell in the table and its 1px top border drew a
+    // full-width rule across the bottom of every printed class list.
+    const foot = await page.evaluate(() => {
+      const tf = document.querySelector('#cg-roster tfoot');
+      if (!tf) return 'no tfoot';
+      return getComputedStyle(tf).display;
+    });
+    expect(foot).toBe('none');
   });
 });
