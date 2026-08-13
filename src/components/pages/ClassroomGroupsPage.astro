@@ -1486,7 +1486,23 @@ const sexWhyText = sexWhy(roster, t);
     margin-bottom: 0.9rem;
   }
   .cg-io-import input[type='file'] {
-    max-width: 100%;
+    /* `width`, NOT `max-width` -- this line is load-bearing for the whole
+       page's width on a phone, and `max-width: 100%` (what it used to say)
+       does not do the job.
+
+       A native file input has a large intrinsic minimum: the "Choose File"
+       button plus "No file chosen", ~344px in Chromium. `#cg-form` is a grid
+       whose items default to `min-width: auto`, so that minimum propagates up
+       -- .cg-io-import -> .tool-section-body -> .tool-sections -> the form's
+       only track -- and sizes the track to 378px REGARDLESS of the viewport.
+       Every sibling then inherits it, including `.top-row`, so the entire
+       form overflowed: 5px at 390px and 74px at 320px, against this site's
+       "no horizontal scroll >=320px" rule.
+
+       `max-width` cannot fix it because the automatic minimum is computed
+       from the element's own min-content size, which `max-width` does not
+       change. An explicit `width` replaces that contribution outright. */
+    width: 100%;
     font: inherit;
     /* A file input's own button is the touch target, and browsers size it
        from the font. 44px of line-height gives it the floor this site
@@ -2084,6 +2100,15 @@ const sexWhyText = sexWhy(roster, t);
   .howto-toggle {
     display: flex;
     align-items: center;
+    /* `display: flex` makes the ::before marker and every text node a flex
+       ITEM, and flex layout discards whitespace BETWEEN items and trims it at
+       an item's edge. So the space authored in `content: '▸ '` was thrown
+       away and the marker rendered flush against the label: "▸How to use".
+       `gap` is the only thing that puts it back -- the markup was already
+       correct, the layout mode was eating it. Same rule on
+       `.tool-section-toggle`, where it also restored the space before the
+       `.state` span ("Student details ·none added"). */
+    gap: 0.35em;
     width: 100%;
     min-height: 44px;
     padding: 0.5rem 0;
@@ -2100,7 +2125,10 @@ const sexWhyText = sexWhy(roster, t);
      assistive tech. Rotates rather than swapping glyphs, so open and closed
      share one character and cannot drift into mismatched icons. */
   .howto-toggle::before {
-    content: '▸ ';
+    /* No trailing space: as a flex item it was trimmed and never rendered, so
+       keeping it only suggested a gap that `gap` above is what actually
+       provides. */
+    content: '▸';
     display: inline-block;
     transition: transform 150ms ease-out;
   }
@@ -2311,6 +2339,11 @@ const sexWhyText = sexWhy(roster, t);
   .tool-section-toggle {
     display: flex;
     align-items: center;
+    /* See `.howto-toggle`'s note: flex eats the whitespace the markup
+       authors. Here it cost TWO spaces -- after the ▸ marker, and the one
+       before `<span class="state">` in `Student details · <span>` -- so the
+       label rendered "▸Student details ·none added" in both locales. */
+    gap: 0.35em;
     width: 100%;
     min-height: 44px;
     padding: 0.25rem 0;
@@ -2324,7 +2357,7 @@ const sexWhyText = sexWhy(roster, t);
     cursor: pointer;
   }
   .tool-section-toggle::before {
-    content: '▸ ';
+    content: '▸';
     display: inline-block;
     transition: transform 150ms ease-out;
   }

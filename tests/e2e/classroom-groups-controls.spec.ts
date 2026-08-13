@@ -534,6 +534,116 @@ test.describe('classroom groups — mobile-first layout', () => {
       expect(errors, `${path}: ${errors.join(' | ')}`).toEqual([]);
     }
   });
+
+  // ── The gap that let a real overflow ship ──────────────────────────────
+  //
+  // The checks above open `#cg-grouping-toggle` and `#cg-sound-toggle` and
+  // nothing else, because each was added when its own section first gained
+  // content. `#cg-io-toggle` never got one — and Import / export is the one
+  // section holding a native `<input type="file">`, whose intrinsic minimum
+  // (~344px in Chromium: the button plus "No file chosen") propagated up
+  // `#cg-form`'s grid, whose items default to `min-width: auto`, and pinned
+  // the form's only track to 378px regardless of viewport. Result: 5px of
+  // horizontal scroll at 390px, 74px at 320px, in both locales, live.
+  //
+  // A hand-written list of sections is what missed it, so this does not add
+  // Import / export to the list — it DERIVES every toggle from the DOM. A
+  // section added later is covered the day it appears, with no test edit.
+  test(
+    'no horizontal scroll with any single section open — every section, derived',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      const failures: string[] = [];
+      for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+        for (const width of [320, 390, 768]) {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(path);
+          const ids = await page
+            .locator('button[aria-expanded][aria-controls]')
+            .evaluateAll((els) => els.map((e) => e.id).filter(Boolean));
+          // A page with no disclosures would make every assertion below
+          // vacuous, so the count is asserted rather than assumed.
+          expect(ids.length, `${path}: no disclosure buttons found`).toBeGreaterThan(3);
+          for (const id of ids) {
+            await page.goto(path);
+            await page.locator(`#${id}`).click();
+            const overflow = await page.evaluate(
+              () =>
+                document.documentElement.scrollWidth -
+                document.documentElement.clientWidth,
+            );
+            if (overflow > 0)
+              failures.push(`${path} @${width}px with #${id} open: ${overflow}px`);
+          }
+          // …and every section open at once, which no earlier test did.
+          await page.goto(path);
+          for (const id of ids) await page.locator(`#${id}`).click();
+          const all = await page.evaluate(
+            () =>
+              document.documentElement.scrollWidth -
+              document.documentElement.clientWidth,
+          );
+          if (all > 0) failures.push(`${path} @${width}px with ALL open: ${all}px`);
+        }
+      }
+      expect(failures, failures.join('\n')).toEqual([]);
+    },
+  );
+
+  // ── Flex ate the whitespace the markup authored ────────────────────────
+  //
+  // `.tool-section-toggle` and `.howto-toggle` are `display: flex`, which
+  // makes the ::before marker and every text node a flex ITEM — and flex
+  // discards whitespace BETWEEN items and trims it at an item's edge. The
+  // authored space in `content: '▸ '` and the one in
+  // `Student details · <span class="state">` were both thrown away, so the
+  // page read "▸Student details ·none added" in both locales.
+  //
+  // This has to be measured, not read: `textContent` still contains both
+  // spaces, so every text assertion on this page passed while it looked
+  // broken. Geometry is the only witness.
+  test(
+    'a disclosure label keeps a visible gap between marker, label and state',
+    async ({ page }) => {
+      for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+        await page.goto(path);
+        const gaps = await page.evaluate(() => {
+          const out: { id: string; markerGap: number; stateGap: number | null }[] = [];
+          for (const btn of document.querySelectorAll<HTMLElement>(
+            '.tool-section-toggle, .howto-toggle',
+          )) {
+            const text = [...btn.childNodes].find(
+              (n) => n.nodeType === 3 && n.textContent?.trim(),
+            );
+            if (!text) continue;
+            const r = document.createRange();
+            r.selectNodeContents(text);
+            const textBox = r.getBoundingClientRect();
+            const markerW = parseFloat(getComputedStyle(btn, '::before').width) || 0;
+            const btnBox = btn.getBoundingClientRect();
+            // marker sits at the button's content start; the gap is whatever
+            // lies between its right edge and the label's left edge.
+            const markerGap =
+              textBox.left - (btnBox.left + parseFloat(getComputedStyle(btn).paddingLeft) + markerW);
+            const state = btn.querySelector('.state');
+            const stateGap = state
+              ? state.getBoundingClientRect().left - textBox.right
+              : null;
+            out.push({ id: btn.id, markerGap, stateGap });
+          }
+          return out;
+        });
+        expect(gaps.length, `${path}: no disclosure toggles found`).toBeGreaterThan(3);
+        for (const g of gaps) {
+          expect(g.markerGap, `${path} #${g.id}: marker is flush against the label`)
+            .toBeGreaterThan(1);
+          if (g.stateGap !== null)
+            expect(g.stateGap, `${path} #${g.id}: state is flush against the label`)
+              .toBeGreaterThan(1);
+        }
+      }
+    },
+  );
 });
 
 // Stage 2, Task 2's own RED tests (H-01…H-08, Y-05). The plan's literal
