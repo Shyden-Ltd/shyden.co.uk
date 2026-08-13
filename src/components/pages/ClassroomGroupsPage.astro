@@ -252,7 +252,7 @@ const sexWhyText = sexWhy(roster, t);
             inputmode="numeric"
             min="1"
             max={MAX_STUDENTS}
-            value="24"
+            value="30"
             aria-describedby="cg-count-help"
           />
           <p class="help" id="cg-count-help">{t.studentsHelp}</p>
@@ -996,6 +996,31 @@ const sexWhyText = sexWhy(roster, t);
      remaining width) are what a card layout buys back; F-03/F-04 (same
      content, same behaviour, both proved on the SAME `.cg-student`
      elements in both layouts) are what "no second render path" buys. */
+  /* No spinner on any number field on this page — and this rule lives in the
+     GLOBAL block on purpose.
+
+     Astro scopes `<style>` by stamping a `data-astro-cid-*` attribute onto
+     the elements it can see at build time. Every roster row is built by
+     roster-ui.ts at runtime, so it carries no such attribute and a scoped
+     rule never matches it. The first attempt at this rule went in the scoped
+     block below and worked on the two static fields while every `#` input in
+     the table kept its arrows — visible in a screenshot, invisible to a
+     stylesheet reading of the diff.
+
+     Why remove them at all: the arrows are ~15px of control inside a cell
+     that is ~40px wide, and a teacher types a class size rather than clicking
+     to it thirty times. Wheel-scrolling is handled in classroom-groups.ts;
+     CSS cannot reach it. */
+  #cg-form input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  #cg-form input[type='number']::-webkit-outer-spin-button,
+  #cg-form input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+  }
   #cg-roster {
     display: block;
     width: 100%;
@@ -1285,11 +1310,16 @@ const sexWhyText = sexWhy(roster, t);
        the same relative proportions to one another (8:26:14:14:19:19,
        still, just scaled) while the total still sums to exactly 100%:
        7 + 23 + 13 + 13 + 17 + 17 + 10 = 100. */
+    /* 9%, not 7%: a class of 30 means two digits, and a big year group three.
+       At 7% this cell was 21.7px wide — and because number inputs used to
+       inherit `select`'s 2.2rem chevron padding, its content box was
+       NEGATIVE and the student's number could never be seen at all. The
+       padding is fixed further down; this gives the digits somewhere to go. */
     #cg-roster col:nth-child(1) {
-      width: 7%;
+      width: 9%;
     }
     #cg-roster col:nth-child(2) {
-      width: 23%;
+      width: 21%;
     }
     #cg-roster col:nth-child(3) {
       width: 13%;
@@ -1312,8 +1342,20 @@ const sexWhyText = sexWhy(roster, t);
        and the real cost was a screen reader finding no name, or the WRONG
        one, for this column). roster-ui.ts's own renderRoster now builds a
        real seventh <th> for every table this renders. */
+    /* A LENGTH, not a percentage — the only column here whose content has a
+       hard floor. The Remove button measures 76px min-content (its label plus
+       11.2px of padding either side) and cannot shrink below it, so under
+       `table-layout: fixed` any percentage that resolves narrower leaves the
+       button spilling out of the cell and straight through the card's right
+       border: 29px at 600px, 13px at 768px, 34.5px at 1512px before this.
+       None of it registered as page-level horizontal scroll, which is why it
+       shipped.
+
+       5.5rem (88px) clears 76px at every width. The remaining six columns now
+       sum to 90% and the browser distributes what is left, which is what
+       fixed layout does with a mixed length/percentage set. */
     #cg-roster col:nth-child(7) {
-      width: 10%;
+      width: 5.5rem;
     }
     #cg-roster thead {
       display: table-header-group;
@@ -2180,7 +2222,19 @@ const sexWhyText = sexWhy(roster, t);
     margin: 0.35rem 0 0;
     max-width: var(--measure);
   }
-  input[type='number'],
+  /* `input[type='number']` used to share this rule with `select`, and paid
+     for it twice:
+
+     1. It inherited the chevron background and `padding-right: 2.2rem` drawn
+        for a native `menulist`. A number field is not a dropdown, so the
+        chevron promised a list that does not exist.
+     2. 2.2rem + 0.6rem is 44.8px of horizontal padding. The roster's `#`
+        input is 21.7px wide (col 1 of a fixed 7-column table), and with
+        `box-sizing: border-box` that leaves a NEGATIVE content box — so the
+        student's number was clipped away entirely. The value was always
+        there in the DOM; there was nowhere to draw it.
+
+     Number inputs now follow `input[type='text']` below instead. */
   textarea,
   select {
     width: 100%;
@@ -2209,12 +2263,17 @@ const sexWhyText = sexWhy(roster, t);
     max-width: var(--measure);
     resize: vertical;
   }
+  /* The spinner reset lives in the GLOBAL block (see `#cg-form
+     input[type='number']` up there) — a scoped rule cannot reach the roster
+     rows, which roster-ui.ts creates at runtime without Astro's scoping
+     attribute. */
   /* #cg-class only. Mirrors input[type='number']/select above for box size,
      border and the 44px touch target, but WITHOUT their appearance reset and
      custom chevron: a native text field has no spinner to strip and no
      dropdown to hint at, so painting the same arrow here would show a
      chevron next to a field that opens nothing. */
-  input[type='text'] {
+  input[type='text'],
+  input[type='number'] {
     width: 100%;
     max-width: 22rem;
     min-height: 44px;
@@ -2321,6 +2380,20 @@ const sexWhyText = sexWhy(roster, t);
   @media (min-width: 768px) {
     .tool-sections {
       grid-template-columns: 1fr 1fr;
+    }
+    /* Student details holds a SEVEN-column table; the other three hold a
+       handful of switches. Sharing a half-width column with them squeezed the
+       roster into ~470px, and with `table-layout: fixed` the Remove button —
+       whose text and padding come to ~100px — could not fit its 10% cell and
+       spilled 34.5px past the card's right border at 1512px, 49.4px at 768px.
+       That never showed up as page-level horizontal scroll, which is why the
+       existing checks never saw it: the button overflowed the CARD, not the
+       document.
+
+       Full width is the honest fix. A table with seven columns is not a
+       half-width control. */
+    #cg-students {
+      grid-column: 1 / -1;
     }
   }
   .tool-section {

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { addSeveral, buildRoster } from './helpers';
+import { addSeveral, buildRoster, openRoster } from './helpers';
 
 /**
  * The controls the review found reachable from the page and asserted by
@@ -563,7 +563,10 @@ test.describe('classroom groups — mobile-first layout', () => {
             .evaluateAll((els) => els.map((e) => e.id).filter(Boolean));
           // A page with no disclosures would make every assertion below
           // vacuous, so the count is asserted rather than assumed.
-          expect(ids.length, `${path}: no disclosure buttons found`).toBeGreaterThan(3);
+          expect(
+            ids.length,
+            `${path}: no disclosure buttons found`,
+          ).toBeGreaterThan(3);
           for (const id of ids) {
             await page.goto(path);
             await page.locator(`#${id}`).click();
@@ -573,7 +576,9 @@ test.describe('classroom groups — mobile-first layout', () => {
                 document.documentElement.clientWidth,
             );
             if (overflow > 0)
-              failures.push(`${path} @${width}px with #${id} open: ${overflow}px`);
+              failures.push(
+                `${path} @${width}px with #${id} open: ${overflow}px`,
+              );
           }
           // …and every section open at once, which no earlier test did.
           await page.goto(path);
@@ -583,7 +588,8 @@ test.describe('classroom groups — mobile-first layout', () => {
               document.documentElement.scrollWidth -
               document.documentElement.clientWidth,
           );
-          if (all > 0) failures.push(`${path} @${width}px with ALL open: ${all}px`);
+          if (all > 0)
+            failures.push(`${path} @${width}px with ALL open: ${all}px`);
         }
       }
       expect(failures, failures.join('\n')).toEqual([]);
@@ -602,48 +608,62 @@ test.describe('classroom groups — mobile-first layout', () => {
   // This has to be measured, not read: `textContent` still contains both
   // spaces, so every text assertion on this page passed while it looked
   // broken. Geometry is the only witness.
-  test(
-    'a disclosure label keeps a visible gap between marker, label and state',
-    async ({ page }) => {
-      for (const path of ['/classroom-groups', '/id/classroom-groups']) {
-        await page.goto(path);
-        const gaps = await page.evaluate(() => {
-          const out: { id: string; markerGap: number; stateGap: number | null }[] = [];
-          for (const btn of document.querySelectorAll<HTMLElement>(
-            '.tool-section-toggle, .howto-toggle',
-          )) {
-            const text = [...btn.childNodes].find(
-              (n) => n.nodeType === 3 && n.textContent?.trim(),
-            );
-            if (!text) continue;
-            const r = document.createRange();
-            r.selectNodeContents(text);
-            const textBox = r.getBoundingClientRect();
-            const markerW = parseFloat(getComputedStyle(btn, '::before').width) || 0;
-            const btnBox = btn.getBoundingClientRect();
-            // marker sits at the button's content start; the gap is whatever
-            // lies between its right edge and the label's left edge.
-            const markerGap =
-              textBox.left - (btnBox.left + parseFloat(getComputedStyle(btn).paddingLeft) + markerW);
-            const state = btn.querySelector('.state');
-            const stateGap = state
-              ? state.getBoundingClientRect().left - textBox.right
-              : null;
-            out.push({ id: btn.id, markerGap, stateGap });
-          }
-          return out;
-        });
-        expect(gaps.length, `${path}: no disclosure toggles found`).toBeGreaterThan(3);
-        for (const g of gaps) {
-          expect(g.markerGap, `${path} #${g.id}: marker is flush against the label`)
-            .toBeGreaterThan(1);
-          if (g.stateGap !== null)
-            expect(g.stateGap, `${path} #${g.id}: state is flush against the label`)
-              .toBeGreaterThan(1);
+  test('a disclosure label keeps a visible gap between marker, label and state', async ({
+    page,
+  }) => {
+    for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+      await page.goto(path);
+      const gaps = await page.evaluate(() => {
+        const out: {
+          id: string;
+          markerGap: number;
+          stateGap: number | null;
+        }[] = [];
+        for (const btn of document.querySelectorAll<HTMLElement>(
+          '.tool-section-toggle, .howto-toggle',
+        )) {
+          const text = [...btn.childNodes].find(
+            (n) => n.nodeType === 3 && n.textContent?.trim(),
+          );
+          if (!text) continue;
+          const r = document.createRange();
+          r.selectNodeContents(text);
+          const textBox = r.getBoundingClientRect();
+          const markerW =
+            parseFloat(getComputedStyle(btn, '::before').width) || 0;
+          const btnBox = btn.getBoundingClientRect();
+          // marker sits at the button's content start; the gap is whatever
+          // lies between its right edge and the label's left edge.
+          const markerGap =
+            textBox.left -
+            (btnBox.left +
+              parseFloat(getComputedStyle(btn).paddingLeft) +
+              markerW);
+          const state = btn.querySelector('.state');
+          const stateGap = state
+            ? state.getBoundingClientRect().left - textBox.right
+            : null;
+          out.push({ id: btn.id, markerGap, stateGap });
         }
+        return out;
+      });
+      expect(
+        gaps.length,
+        `${path}: no disclosure toggles found`,
+      ).toBeGreaterThan(3);
+      for (const g of gaps) {
+        expect(
+          g.markerGap,
+          `${path} #${g.id}: marker is flush against the label`,
+        ).toBeGreaterThan(1);
+        if (g.stateGap !== null)
+          expect(
+            g.stateGap,
+            `${path} #${g.id}: state is flush against the label`,
+          ).toBeGreaterThan(1);
       }
-    },
-  );
+    }
+  });
 });
 
 // Stage 2, Task 2's own RED tests (H-01…H-08, Y-05). The plan's literal
@@ -962,18 +982,28 @@ test.describe("the tool's collapsible sections", () => {
     );
   });
 
+  // Student details no longer shares a row: it holds a seven-column table and
+  // now spans the full width on a laptop. This test used to pair it with
+  // Grouping options and reddened when that changed — correctly. Squeezed into
+  // half a card the roster's `#` column collapsed to a 2px content box at
+  // 768px and the student's number could not be drawn at all, so the span is
+  // load-bearing, not cosmetic. The two-by-two claim now rests on the three
+  // sections that really do sit two-by-two.
   test(
-    'sections sit two-by-two on a laptop and stacked on a phone',
+    'the simple sections sit two-by-two on a laptop and stacked on a phone',
     { tag: '@emulated-viewport' },
     async ({ page }) => {
       await page.goto('/classroom-groups');
       await page.setViewportSize({ width: 1280, height: 900 });
-      const a = (await page.locator('#cg-students').boundingBox())!;
-      const b = (await page.locator('#cg-grouping').boundingBox())!;
+      const a = (await page.locator('#cg-grouping').boundingBox())!;
+      const b = (await page.locator('#cg-io').boundingBox())!;
       expect(b.y).toBeCloseTo(a.y, 0); // same row
+      // …and the roster section takes the whole row above them.
+      const roster = (await page.locator('#cg-students').boundingBox())!;
+      expect(roster.width).toBeGreaterThan(a.width * 1.8);
       await page.setViewportSize({ width: 320, height: 800 });
-      const c = (await page.locator('#cg-students').boundingBox())!;
-      const d = (await page.locator('#cg-grouping').boundingBox())!;
+      const c = (await page.locator('#cg-grouping').boundingBox())!;
+      const d = (await page.locator('#cg-io').boundingBox())!;
       expect(d.y).toBeGreaterThan(c.y); // stacked
     },
   );
@@ -1541,5 +1571,155 @@ test.describe('Grouping options, live from the roster — Indonesian', () => {
           'memerlukannya untuk setiap siswa yang dikelompokkan.',
       ),
     ).toBeVisible();
+  });
+});
+
+// ── The four the operator found by looking at the page ─────────────────────
+//
+// Every one of these was live in production and green in this suite. They are
+// grouped together because they share one cause: the checks here asserted DOM
+// and text, and all four are things you can only see.
+test.describe('classroom groups — what a teacher actually sees', () => {
+  test('the class size starts at 30', async ({ page }) => {
+    for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+      await page.goto(path);
+      await expect(page.locator('#cg-count')).toHaveValue('30');
+    }
+  });
+
+  // The roster's `#` cell is ~40px wide. It used to inherit `select`'s chevron
+  // rule — `padding: 0.5rem 2.2rem 0.5rem 0.6rem`, 44.8px of horizontal
+  // padding — which with `box-sizing: border-box` left a NEGATIVE content box.
+  // The value was in the DOM the whole time, so `toHaveValue` passed while the
+  // number could not be seen at all. Only the content box proves it.
+  test(
+    'a student number has room to be drawn, not just a value',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      for (const width of [390, 768, 1024, 1280, 1512]) {
+        await page.setViewportSize({ width, height: 950 });
+        await openRoster(page);
+        await page.locator('.cg-add-student').click();
+        await expect(page.locator('.cg-roster-number').first()).toHaveValue(
+          '1',
+        );
+        const box = await page
+          .locator('.cg-roster-number')
+          .first()
+          .evaluate((el) => {
+            const cs = getComputedStyle(el);
+            return (
+              el.getBoundingClientRect().width -
+              parseFloat(cs.paddingLeft) -
+              parseFloat(cs.paddingRight) -
+              parseFloat(cs.borderLeftWidth) -
+              parseFloat(cs.borderRightWidth)
+            );
+          });
+        // Two digits at this font need ~16px; a class of 30 has two.
+        expect(
+          box,
+          `@${width}px the # input has ${box.toFixed(1)}px of content box`,
+        ).toBeGreaterThan(16);
+      }
+    },
+  );
+
+  // The Remove button is 76px of min-content in a `table-layout: fixed` cell.
+  // At 10% it did not fit and spilled 34.5px past the card's RIGHT BORDER at
+  // 1512px, 49.4px at 768px — and never once produced page-level horizontal
+  // scroll, which is the only thing the older checks measured.
+  test(
+    'nothing in the roster escapes its card',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      const failures: string[] = [];
+      for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+        for (const width of [320, 390, 600, 768, 1024, 1280, 1512]) {
+          await page.setViewportSize({ width, height: 950 });
+          await openRoster(page, path);
+          // openRoster already adds one, so three more makes four — enough rows
+          // that a wrapping or spilling control shows up.
+          for (let i = 0; i < 3; i++)
+            await page.locator('.cg-add-student').click();
+          await expect(page.locator('.cg-student')).toHaveCount(4);
+          const worst = await page.evaluate(() => {
+            const card = document.getElementById('cg-students')!;
+            const cb = card.getBoundingClientRect();
+            const cs = getComputedStyle(card);
+            const padR =
+              cb.right -
+              parseFloat(cs.paddingRight) -
+              parseFloat(cs.borderRightWidth);
+            let over = 0;
+            let who = '';
+            for (const el of card.querySelectorAll('*')) {
+              const eb = el.getBoundingClientRect();
+              if (!eb.width) continue;
+              if (eb.right - padR > over) {
+                over = eb.right - padR;
+                who = String(el.className).split(' ')[0] || el.tagName;
+              }
+            }
+            return { over, who };
+          });
+          if (worst.over > 0.5)
+            failures.push(
+              `${path} @${width}px: ${worst.who} is ${worst.over.toFixed(1)}px past the card`,
+            );
+        }
+      }
+      expect(failures, failures.join('\n')).toEqual([]);
+    },
+  );
+
+  // Two separate mechanisms, both required. The spinner reset MUST live in the
+  // global style block: roster rows are built at runtime and carry no Astro
+  // scoping attribute, so a scoped rule styles the two static fields and
+  // silently misses every row — which is exactly what the first fix did.
+  test('number fields have no spinner, including rows built at runtime', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await page.locator('.cg-add-student').click();
+    const appearances = await page.evaluate(() =>
+      [...document.querySelectorAll('#cg-form input[type=number]')].map(
+        (el) => ({
+          id: (el as HTMLElement).id || el.className,
+          appearance: getComputedStyle(el).appearance,
+        }),
+      ),
+    );
+    expect(appearances.length).toBeGreaterThan(2);
+    for (const a of appearances)
+      expect(a.appearance, `${a.id} still renders a spinner`).toBe('textfield');
+    // …and the chevron drawn for `select` must not be on a number field.
+    const bg = await page
+      .locator('#cg-count')
+      .evaluate((el) => getComputedStyle(el).backgroundImage);
+    expect(bg, '#cg-count wears a dropdown chevron but is not a dropdown').toBe(
+      'none',
+    );
+  });
+
+  // A focused number input treats the wheel as increment/decrement, so
+  // scrolling the page silently rewrites the class size. CSS cannot reach it.
+  test('scrolling the page does not change a focused number field', async ({
+    page,
+    isMobile,
+  }) => {
+    // A touch device has no wheel to guard against, and WebKit's mobile
+    // emulation rejects mouse.wheel outright. The behaviour under test only
+    // exists where a wheel does.
+    test.skip(!!isMobile, 'no mouse wheel on a touch device');
+    await page.goto('/classroom-groups');
+    const count = page.locator('#cg-count');
+    await count.focus();
+    await expect(count).toHaveValue('30');
+    await count.hover();
+    await page.mouse.wheel(0, 240);
+    await expect(count).toHaveValue('30');
+    await page.mouse.wheel(0, -240);
+    await expect(count).toHaveValue('30');
   });
 });

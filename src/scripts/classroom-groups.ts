@@ -192,6 +192,33 @@ if (form) {
   // barriers, because one of them is one careless edit from being removed.
   form.addEventListener('submit', (e) => e.preventDefault());
 
+  // A focused `<input type="number">` treats a mouse wheel as increment/
+  // decrement, so scrolling the PAGE past a field a teacher happened to click
+  // silently rewrites the class size — or, in the roster, a student's number.
+  // It looks like nothing happened until the groups come out wrong, which
+  // makes it a data bug wearing a styling bug's clothes. CSS cannot prevent
+  // it; only a non-passive listener can.
+  //
+  // Bound on the document in CAPTURE, not per input: the roster builds its
+  // rows after this runs, so any per-element wiring would cover the two
+  // static fields and miss every row a teacher adds. Blur rather than merely
+  // preventDefault so the page still scrolls — the field simply stops being
+  // the wheel's target.
+  document.addEventListener(
+    'wheel',
+    (e) => {
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLInputElement &&
+        el.type === 'number' &&
+        e.target === el
+      ) {
+        el.blur();
+      }
+    },
+    { capture: true, passive: true },
+  );
+
   /**
    * Storage is a convenience, never a dependency. Safari's "Block all
    * cookies", partitioned third-party contexts and some managed device
