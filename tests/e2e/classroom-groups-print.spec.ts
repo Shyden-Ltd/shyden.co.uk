@@ -572,3 +572,56 @@ test.describe('the printed groups', () => {
     expect(hairs).toHaveLength(3);
   });
 });
+
+// ── What the operator found by pressing Print ──────────────────────────────
+test.describe('the printed sheet', () => {
+  test('carries no controls', async ({ page }) => {
+    await withGroups(page, 6);
+    await page.emulateMedia({ media: 'print' });
+    const controls = await page.evaluate(() =>
+      [...document.querySelectorAll('button, a[href]')]
+        .filter((el) => {
+          const cs = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return (
+            cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0
+          );
+        })
+        .map((el) => (el.textContent || '').trim().slice(0, 24)),
+    );
+    // "Full screen" printed on every sheet: the print CSS named controls one
+    // at a time and that button was never added to the list.
+    expect(controls, `printed controls: ${controls.join(' | ')}`).toEqual([]);
+  });
+
+  test('carries the class name and the date however it was printed', async ({
+    page,
+  }) => {
+    await withGroups(page, 6);
+    await page.locator('#cg-class').fill('Year 9 — Set 2');
+    // Ctrl/Cmd+P, not the in-page Print button. `writePrintHead` used to run
+    // only from the print panel's apply, so printing the way people actually
+    // print produced a sheet with no class name and no date.
+    await page.emulateMedia({ media: 'print' });
+    await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+    const head = page.locator('#cg-print-head');
+    await expect(head).toContainText('Year 9 — Set 2');
+    await expect(head).toContainText(/\d{4}-\d{2}-\d{2}/);
+  });
+
+  test('draws no rule under a class list whose toolbar is hidden', async ({
+    page,
+  }) => {
+    await withGroups(page, 6);
+    await page.emulateMedia({ media: 'print' });
+    // The toolbar lives in `<tfoot><td colspan="7">`. Hiding only the div
+    // inside left the cell in the table and its 1px top border drew a
+    // full-width rule across the bottom of every printed class list.
+    const foot = await page.evaluate(() => {
+      const tf = document.querySelector('#cg-roster tfoot');
+      if (!tf) return 'no tfoot';
+      return getComputedStyle(tf).display;
+    });
+    expect(foot).toBe('none');
+  });
+});

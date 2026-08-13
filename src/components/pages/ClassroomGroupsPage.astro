@@ -908,7 +908,12 @@ const sexWhyText = sexWhy(roster, t);
   }
   #cg-results .student {
     display: flex;
-    align-items: center;
+    /* `start`, not `center`: a name that wraps to three lines on the board
+       ("Christopher / Wetherington- / Smythe") left its avatar floating
+       against the middle line, reading as a misalignment rather than a
+       bullet. One line is unaffected — centre and start are the same thing
+       when there is only one line to align to. */
+    align-items: start;
     gap: 0.6rem;
     /* Dealt in by the script. Starting hidden means a half-finished deal never
        shows a card in a nonsense position; `.dealt` is added per card. */
@@ -1695,6 +1700,24 @@ const sexWhyText = sexWhy(roster, t);
   .cg-board[hidden] {
     display: none;
   }
+  /* The board triples the type for a wall, but `#cg-tables`' own track size
+     is `minmax(15rem, 1fr)` — and `rem` is relative to the ROOT font, not the
+     board's. So the columns stayed 242px while the text went to 40px, and a
+     241px name box holding 40px type had no choice: `overflow-wrap: anywhere`
+     did exactly what it was told and broke a name mid-word, "Christoph / er /
+     Wethering / ton- / Smythe". Unreadable at the back of a classroom, and
+     invisible to every earlier check because they all used "Student 1".
+     `em` is the unit that scales with the board. */
+  .cg-board #cg-tables {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 9em), 1fr));
+  }
+  /* …and once the column can hold a name, prefer a word boundary. `anywhere`
+     is the page's defence against a long name pushing the layout sideways; on
+     the board the column is wide enough that breaking a word is a last
+     resort, not the first move. */
+  .cg-board #cg-results .who {
+    overflow-wrap: break-word;
+  }
   .cg-board-bar {
     display: flex;
     flex-wrap: wrap;
@@ -1797,11 +1820,31 @@ const sexWhyText = sexWhy(roster, t);
     #cg-io,
     #cg-sound,
     .cg-roster-toolbar,
+    /* The toolbar's own `<tfoot><td colspan="7">`, not just the div inside
+       it. Hiding only the div left the cell in the table, and its 1px top
+       border drew a full-width rule across the bottom of every printed class
+       list — a line under a row that no longer had any content. Hide the
+       container, not its contents. */
+    #cg-roster tfoot,
     .cg-roster-consequence,
     #cg-roster-problem,
     #cg-roster-warning,
     #cg-students-limit,
-    .tool-section-heading {
+    .tool-section-heading,
+    /* EVERY button, rather than one more name on the list above. That list is
+       the same shape as the no-horizontal-scroll checks that missed Import /
+       export: correct for what it enumerates, silently wrong about what it
+       does not. "Full screen" was never added to it and printed on the sheet,
+       between the class list and the groups.
+
+       Safe as a blanket rule: no button on this page is a record of anything.
+       The controls that DO belong on paper are the roster's own inputs — the
+       Absent box a teacher ticks by hand — and those are not buttons. */
+    button,
+    .skip-link,
+    /* An empty print-head still draws its box: a 504x7px blank strip above
+       the class list on any sheet printed before a class name was typed. */
+    .print-head:empty {
       display: none !important;
     }
 

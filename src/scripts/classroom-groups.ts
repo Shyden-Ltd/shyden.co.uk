@@ -1258,6 +1258,15 @@ if (form) {
     printHead.appendChild(when);
   };
 
+  // Ctrl/Cmd+P is a browser action, not one this page can route through its
+  // own Print panel — and `writePrintHead` used to run ONLY from that panel's
+  // apply. A teacher who printed the way people actually print got a sheet
+  // with no class name and no date on it, while the same sheet printed via
+  // the in-page button carried both. `beforeprint` is the only hook that
+  // covers every route to paper, including the print dialog opened from the
+  // browser menu.
+  window.addEventListener('beforeprint', writePrintHead);
+
   const printPanel = renderPrintPanel(document, remember, {
     onApply: writePrintHead,
     refuseReason: () => refusePrint(),

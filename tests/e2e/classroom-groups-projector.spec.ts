@@ -1,5 +1,11 @@
 import { test, expect } from './fixtures';
-import { withGroups, rosterForSpillover, rosterOf, namesIn } from './helpers';
+import {
+  withGroups,
+  rosterForSpillover,
+  rosterOf,
+  namesIn,
+  buildRoster,
+} from './helpers';
 
 /**
  * Stage 5, Task 5. The projector view. Z-01…Z-06, Z-10…Z-20, Z-24.
@@ -521,5 +527,52 @@ test.describe('review findings', () => {
       .evaluateAll((els) => els.map((e) => e.textContent ?? ''));
     expect(new Set(names).size).toBe(names.length);
     expect(names).toHaveLength(12);
+  });
+});
+
+// ── The board, with a name long enough to matter ───────────────────────────
+test.describe('the projector board holds a real name', () => {
+  test('a long name wraps at word boundaries, not mid-word', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      [null, 'Christopher Wetherington-Smythe'],
+      [null, 'Bob'],
+      [null, 'Dewi'],
+      [null, 'Eko'],
+    ]);
+    await page.locator('#cg-form button[type="submit"]').click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
+    await page
+      .getByRole('button', { name: /Full screen|Layar penuh/ })
+      .first()
+      .click();
+    await expect(page.locator('#cg-board')).not.toHaveAttribute('hidden', /.*/);
+
+    const board = await page.evaluate(() => {
+      const card = document.querySelector('#cg-results .group')!;
+      const who = [...document.querySelectorAll('#cg-results .who')].sort(
+        (a, b) => (b.textContent || '').length - (a.textContent || '').length,
+      )[0];
+      return {
+        cardWidth: card.getBoundingClientRect().width,
+        wrap: getComputedStyle(who).overflowWrap,
+        nameWidth: who.getBoundingClientRect().width,
+        fontSize: parseFloat(getComputedStyle(who).fontSize),
+      };
+    });
+
+    // `#cg-tables`' track was `minmax(15rem, 1fr)` — rem is relative to the
+    // ROOT font, so the column stayed 242px while the board tripled the type
+    // to 40px, and `overflow-wrap: anywhere` broke the name into
+    // "Christoph / er / Wethering / ton- / Smythe".
+    expect(
+      board.cardWidth,
+      `board card is ${board.cardWidth.toFixed(0)}px for ${board.fontSize}px type`,
+    ).toBeGreaterThan(board.fontSize * 8);
+    expect(
+      board.wrap,
+      'a board name may only break a word as a last resort',
+    ).toBe('break-word');
   });
 });
