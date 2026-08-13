@@ -1,5 +1,11 @@
 import { test, expect } from './fixtures';
-import { addSeveral, buildRoster, openRoster } from './helpers';
+import {
+  addSeveral,
+  buildRoster,
+  openRoster,
+  giveEveryoneASex,
+  rosterOf,
+} from './helpers';
 
 /**
  * The controls the review found reachable from the page and asserted by
@@ -1398,6 +1404,7 @@ test.describe('Grouping options', () => {
     await page.locator('#cg-grouping-toggle').click();
     await page.getByLabel('Keep boys and girls separate').check();
     await page.getByLabel('Students in each group').fill('4');
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(
       page.getByText(
@@ -1427,6 +1434,7 @@ test.describe('Grouping options', () => {
     await page.locator('#cg-grouping-toggle').click();
     await page.getByLabel('Keep boys and girls separate').check();
     await page.getByLabel('Students in each group').fill('4');
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.getByText(/have joined a group of boys/)).toBeVisible();
 
@@ -1721,5 +1729,111 @@ test.describe('classroom groups — what a teacher actually sees', () => {
     await expect(count).toHaveValue('30');
     await page.mouse.wheel(0, -240);
     await expect(count).toHaveValue('30');
+  });
+});
+
+// ── The operator's five, 2026-08-13 ────────────────────────────────────────
+test.describe('the five the operator asked for', () => {
+  test('the class size ceiling is 100', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await expect(page.locator('#cg-count')).toHaveAttribute('max', '100');
+    await page.locator('#cg-count').fill('101');
+    await giveEveryoneASex(page);
+    await page.getByRole('button', { name: 'Make groups' }).click();
+    await expect(page.locator('#cg-error')).toContainText('The most is 100');
+  });
+
+  test('Absent is the first column and its tick is left-aligned', async ({
+    page,
+  }) => {
+    for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+      await openRoster(page, path);
+      const heads = page.locator('#cg-roster thead th');
+      await expect(heads.first()).toHaveText(/Absent|Tidak hadir/);
+      // A RATIO of the cell, not an absolute pixel offset. A checkbox is a
+      // native widget and Firefox, WebKit and Chromium each give it a
+      // different intrinsic size and margin, so a `< 4px` threshold passed on
+      // Chromium and failed on the others for no product reason. What
+      // "left-aligned" means here is "nowhere near the middle" — which is
+      // exactly what a centred tick was, and what the header above it is not.
+      const ratio = await page.evaluate(() => {
+        const cell = document.querySelector(
+          '#cg-roster .cg-student > td:nth-child(1)',
+        )!;
+        const box = cell.querySelector('input[type=checkbox]')!;
+        const cs = getComputedStyle(cell);
+        const cellBox = cell.getBoundingClientRect();
+        const left = cellBox.left + parseFloat(cs.paddingLeft);
+        const width =
+          cellBox.width -
+          parseFloat(cs.paddingLeft) -
+          parseFloat(cs.paddingRight);
+        const b = box.getBoundingClientRect();
+        return (b.left + b.width / 2 - left) / width;
+      });
+      expect(
+        ratio,
+        `${path}: the tick's centre sits ${(ratio * 100).toFixed(0)}% across its cell`,
+      ).toBeLessThan(0.35);
+    }
+  });
+
+  test('a sex is required, and cannot be taken back once given', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    // Blocked while anyone is missing one…
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeDisabled();
+    const sex = page.locator('.cg-student').first().getByLabel('Sex');
+    // …and the placeholder is choosable only while it is still the answer.
+    await expect(sex.locator('option[value=""]')).not.toBeDisabled();
+    await sex.selectOption('M');
+    await expect(sex.locator('option[value=""]')).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: 'Make groups' }),
+    ).toBeEnabled();
+  });
+
+  test('the deal never disables its own button, and a change ends it at once', async ({
+    page,
+  }) => {
+    await rosterOf(page, 12);
+    // By id, not by name: the button relabels itself to "Shuffle again" the
+    // moment the first deal starts, so a name-based locator stops resolving
+    // exactly when this test needs to read it.
+    const go = page.locator('#cg-go');
+    await go.click();
+    // The button stays live for the whole deal — pressing it again is the
+    // documented way to reshuffle, so disabling it contradicted its label.
+    await expect(go).toBeEnabled();
+    // Editing anything ends the animation immediately rather than leaving a
+    // half-dealt sheet: every card is landed.
+    await page.locator('#cg-class').fill('Year 9');
+    await expect(page.locator('#cg-results .student:not(.dealt)')).toHaveCount(
+      0,
+    );
+  });
+
+  test('the Add several field says what the number is for', async ({
+    page,
+  }) => {
+    for (const [path, label] of [
+      ['/classroom-groups', 'How many to add?'],
+      ['/id/classroom-groups', 'Berapa yang ditambahkan?'],
+    ] as const) {
+      await page.goto(path);
+      await page.locator('#cg-students-toggle').click();
+      await page
+        .getByRole('button', { name: /Add several|Tambah beberapa/ })
+        .click();
+      // A VISIBLE label, not only an aria-label: the field used to appear as
+      // a bare number box with nothing on screen saying what it counted.
+      await expect(page.locator('label.cg-add-several-label')).toHaveText(
+        label,
+      );
+      await expect(page.getByLabel(label)).toBeVisible();
+    }
   });
 });

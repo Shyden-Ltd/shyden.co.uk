@@ -2,7 +2,12 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { readdirSync } from 'node:fs';
 import { join, relative, sep, basename } from 'node:path';
-import { openRoster, addSeveral, buildRoster } from './helpers';
+import {
+  openRoster,
+  addSeveral,
+  buildRoster,
+  giveEveryoneASex,
+} from './helpers';
 
 /**
  * Every assertion is web-first (auto-retrying). No fixed waits: the tool deals
@@ -118,6 +123,7 @@ test.describe('classroom group creator', () => {
   }) => {
     await page.goto('/classroom-groups');
     await page.getByLabel('Number of students').fill('12');
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make groups' }).click();
     // 12 students at the default group size (4) => 3 groups.
     await expect(page.locator('#cg-results .group')).toHaveCount(3);
@@ -444,7 +450,7 @@ test.describe('classroom group creator', () => {
     await page.click('#cg-go');
 
     await expect(page.locator('#cg-error')).toHaveText(
-      'That is more students than this tool will take. The most is 500.',
+      'That is more students than this tool will take. The most is 100.',
     );
     // Still alive and still usable, which is the actual claim.
     await expect(page.locator('#cg-go')).toBeEnabled();
@@ -1012,6 +1018,7 @@ test.describe('out-of-date groups', () => {
     test(`${what} marks the groups out of date`, async ({ page }) => {
       await openRoster(page);
       await addSeveral(page, 11);
+      await giveEveryoneASex(page);
       await page.getByRole('button', { name: 'Make Groups' }).click();
       await expect(page.locator('#cg-results .group').first()).toBeVisible();
       await edit(page);
@@ -1033,6 +1040,7 @@ test.describe('out-of-date groups', () => {
     await openRoster(page);
     await addSeveral(page, 11);
     await page.locator('.cg-student').first().getByLabel('Absent').check();
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await page.locator('.cg-student').first().getByLabel('Absent').uncheck();
@@ -1062,6 +1070,7 @@ test.describe('out-of-date groups', () => {
     ]);
     await page.locator('#cg-grouping-toggle').click();
     await page.getByLabel('Keep boys and girls separate').check();
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await page
@@ -1094,6 +1103,7 @@ test.describe('out-of-date groups', () => {
       ['F'],
       ['F'],
     ]);
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await page.locator('#cg-grouping-toggle').click();
@@ -1118,6 +1128,7 @@ test.describe('out-of-date groups', () => {
   test('a rename does not mark the groups out of date', async ({ page }) => {
     await openRoster(page);
     await addSeveral(page, 11);
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await page.locator('.cg-student').first().getByLabel('Name').fill('Anna');

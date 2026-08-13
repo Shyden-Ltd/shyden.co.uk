@@ -26,11 +26,33 @@ export const openRoster = async (page: Page, path = '/classroom-groups') => {
   await page.getByRole('button', { name: /Add student|Tambah siswa/ }).click();
 };
 
+/**
+ * Give every roster row a sex.
+ *
+ * "Make Groups" does not enable until every student has one (operator,
+ * 2026-08-13; `rosterProblems`' `no-sex` problem). `openRoster` and
+ * `addSeveral` deliberately create rows WITHOUT a sex — the tests for the
+ * sex-based grouping options depend on being able to — so any test that
+ * builds a roster that way and then wants to reach the results calls this.
+ *
+ * 'M' for everyone means "this test does not care about sex". A test that
+ * does states its own mix through `buildRoster`.
+ */
+export const giveEveryoneASex = async (page: Page, sex: 'M' | 'F' = 'M') => {
+  const rows = page.locator('#cg-roster tbody tr');
+  for (let i = 0; i < (await rows.count()); i++) {
+    const select = rows.nth(i).getByLabel(/Sex|Jenis kelamin/);
+    if ((await select.inputValue()) === '') await select.selectOption(sex);
+  }
+};
+
 export const addSeveral = async (page: Page, howMany: number) => {
   await page
     .getByRole('button', { name: /Add several|Tambah beberapa/ })
     .click();
-  await page.getByLabel(/How many\?|Berapa\?/).fill(String(howMany));
+  await page
+    .getByLabel(/How many to add\?|Berapa yang ditambahkan\?/)
+    .fill(String(howMany));
   await page.getByRole('button', { name: /^Add$|^Tambah$/ }).click();
 };
 
@@ -74,6 +96,16 @@ export const buildRoster = async (
   await expect(page.locator('.cg-student')).toHaveCount(students.length);
 };
 
+/**
+ * A roster of `n` students that is READY TO GROUP — every student carries a
+ * sex, because sex is required before "Make Groups" enables (operator,
+ * 2026-08-13; `rosterProblems`' own `no-sex` problem, src/lib/roster.ts).
+ *
+ * 'M' for all of them is deliberate and means "this test does not care about
+ * sex". A test that DOES care states its own mix through `buildRoster`, which
+ * still honours `null` — that is how the tests for the sex-based grouping
+ * options build a roster that is intentionally incomplete.
+ */
 export const rosterOf = async (
   page: Page,
   n: number,
@@ -81,7 +113,7 @@ export const rosterOf = async (
 ) =>
   buildRoster(
     page,
-    Array.from({ length: n }, () => [null] as [null]),
+    Array.from({ length: n }, () => ['M'] as ['M']),
     path,
   );
 

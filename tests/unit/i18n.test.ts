@@ -214,6 +214,7 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   // (src/lib/roster.ts) -- (5, 'Eko') matches task-5-brief.md's own
   // approved example verbatim.
   rosterDuplicateMessage: [5, 'Eko'],
+  rosterNoSexMessage: [['Eko', 'Dewi']],
   rosterClashMessage: [['Ana', 'Budi']],
   rosterGapWarning: [[4, 6, 7]],
   // Stage 3, Task 6. rosterOpenProblem/rosterAtLimit's own sole callers

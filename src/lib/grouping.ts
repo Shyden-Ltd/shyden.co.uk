@@ -520,7 +520,7 @@ export type GroupingOutcome =
  * helper, retired in Task 2 along with the free-text `keepApart` field that
  * fed it.) SUPERSEDED, not just old -- see the Task 5 paragraphs below: this
  * exact shape (many disjoint SAME-size cliques) no longer reproduces on the
- * current engine at all, at any size up to the 500-student ceiling. Kept
+ * current engine at all, at any size up to the MAX_STUDENTS ceiling. Kept
  * here as a record of why the cap exists and roughly what scale of danger it
  * was guarding against, not as a claim about current behaviour -- Task 5
  * needed an equivalently pathological letter-based input to re-prove that,
@@ -589,10 +589,19 @@ const SEARCH_NODE_CAP = 200_000;
  *
  * A roster is materialised as objects before anything else can guard it, so
  * `Array.from({ length: 100000000 })` from a mis-keyed paste allocates until
- * the tab is killed — on a phone, until the browser is. 500 is far above any
- * real class and far below anything that hurts.
+ * the tab is killed — on a phone, until the browser is. This is what stops
+ * that.
+ *
+ * 100, lowered from 500 (operator, 2026-08-13). The design's "two size
+ * limits, not one" reasoning still holds — a bare count costs the page one
+ * number, a named row costs six form controls — but the two ceilings now
+ * meet at the same value, because no real class is larger than 100 either
+ * way. `MAX_ROSTER` (roster.ts) stays the limit that governs named rows;
+ * this one governs the anonymous count. They agree by value now, not by
+ * accident, and each still has its own name so a future change to one does
+ * not silently move the other.
  */
-export const MAX_STUDENTS = 500;
+export const MAX_STUDENTS = 100;
 
 const fail = (error: GroupingError): GroupingOutcome => ({ ok: false, error });
 

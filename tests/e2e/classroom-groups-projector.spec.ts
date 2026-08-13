@@ -5,6 +5,7 @@ import {
   rosterOf,
   namesIn,
   buildRoster,
+  giveEveryoneASex,
 } from './helpers';
 
 /**
@@ -284,6 +285,7 @@ test.describe('the projector view', () => {
     page,
   }) => {
     await rosterForSpillover(page); // six boys, two girls, separate, groups of 4
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await page.getByRole('button', { name: 'Full screen' }).click();
     await expect(page.locator('#cg-go')).toBeEnabled();
@@ -504,11 +506,20 @@ test.describe('review findings', () => {
     ).toHaveCount(0);
   });
 
-  // I7a. The board's Shuffle and the page's deal button are one action and
-  // must share one guard. Two overlapping deals doubled the land sounds,
-  // re-enabled the button while the second was still running, and dealt
-  // onto cards the second render had already detached.
-  test('the board Shuffle does not start a second deal over the first', async ({
+  // I7a, rewritten for the deal's new contract (operator, 2026-08-13).
+  //
+  // The original pinned the OLD mechanism: mid-deal the page's button went
+  // `disabled`, so a second press was REFUSED. The operator asked for the
+  // opposite — the button never disables, and pressing Shuffle again during a
+  // deal starts a new one from the top, which is what the button says it
+  // does.
+  //
+  // What the original was really protecting is kept, because it is still
+  // right and is the whole reason `dealToken` exists: two overlapping deals
+  // doubled the land sounds and dealt onto cards a later render had already
+  // detached. Exactly one arrangement must survive a re-press, and every
+  // student must appear exactly once.
+  test('pressing the board Shuffle mid-deal restarts it, leaving one arrangement', async ({
     page,
   }) => {
     await withGroups(page);
@@ -516,12 +527,13 @@ test.describe('review findings', () => {
     await page.getByRole('button', { name: 'Full screen' }).click();
     const shuffle = bar(page).getByRole('button', { name: 'Shuffle again' });
     await shuffle.click();
-    // Mid-deal: the page's own button is disabled, so this press is refused
-    // rather than starting a second overlapping animation.
-    await expect(page.locator('#cg-go')).toBeDisabled();
+    // Mid-deal the button stays usable — that is the change.
+    await expect(page.locator('#cg-go')).toBeEnabled();
+    // …and a second press is ACCEPTED rather than swallowed.
     await shuffle.click();
     await expect(page.locator('#cg-go')).toBeEnabled();
-    // …and exactly one arrangement survives: every student appears once.
+    // One arrangement, every student once, nothing dealt twice.
+    await expect(page.locator('#cg-board .student')).toHaveCount(12);
     const names = await page
       .locator('#cg-board .student')
       .evaluateAll((els) => els.map((e) => e.textContent ?? ''));
@@ -535,11 +547,14 @@ test.describe('the projector board holds a real name', () => {
   test('a long name wraps at word boundaries, not mid-word', async ({
     page,
   }) => {
+    // Every student carries a sex: "Make Groups" does not enable until they
+    // all do (operator, 2026-08-13). This test is about how a long NAME wraps
+    // on the board, so the sex is just the price of reaching the board.
     await buildRoster(page, [
-      [null, 'Christopher Wetherington-Smythe'],
-      [null, 'Bob'],
-      [null, 'Dewi'],
-      [null, 'Eko'],
+      ['M', 'Christopher Wetherington-Smythe'],
+      ['M', 'Bob'],
+      ['F', 'Dewi'],
+      ['M', 'Eko'],
     ]);
     await page.locator('#cg-form button[type="submit"]').click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();

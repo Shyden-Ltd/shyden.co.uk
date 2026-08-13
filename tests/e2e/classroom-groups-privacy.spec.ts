@@ -4,6 +4,7 @@ import {
   buildRosterAtPath,
   upload,
   downloadName,
+  giveEveryoneASex,
 } from './helpers';
 
 /**
@@ -330,6 +331,7 @@ test.describe('privacy — the roster never leaves memory', () => {
     await page.locator('.cg-student').first().getByLabel('Absent').check();
     await expectNothingStored(page, 'after marking a student absent');
 
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await expectNothingStored(page, 'after shuffling');
@@ -401,6 +403,7 @@ test.describe('privacy — the roster never leaves memory', () => {
       .selectOption('A');
     await page.getByLabel('Number of groups').check();
     await page.getByLabel('How many groups').fill('2');
+    await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
 

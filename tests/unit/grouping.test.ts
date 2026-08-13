@@ -1540,12 +1540,24 @@ describe('apart letters — exhausting the search budget is never reported as "n
     // not just one, and the earlier "same shape, all-equal-size blocks"
     // together-test (the 15-buddy-pairs one, above) establishes the general
     // pattern this instantiates for apart letters specifically.
-    const students = [20, 19, 18, 17, 16, 15].flatMap((size, ci) =>
+    // Was [20, 19, 18, 17, 16, 15] = 105 students. MAX_STUDENTS dropped from
+    // 500 to 100 (operator, 2026-08-13), so that input is now refused with
+    // TOO_MANY_STUDENTS before the search ever runs — the test would have
+    // passed its `ok === false` check while proving nothing about the search
+    // at all. The last clique is shortened to land on exactly 100; the shape
+    // (six singleton apart-cliques of unequal size, group count 20) is
+    // unchanged, and this input was verified to still return
+    // KEEP_APART_SEARCH_GAVE_UP under the same default seed.
+    //
+    // The budget is comfortably reachable inside the new ceiling: a sweep of
+    // seven shapes at 87-100 students found this code at every one of them,
+    // so the lowered limit did not orphan this path.
+    const students = [20, 19, 18, 17, 16, 10].flatMap((size, ci) =>
       Array.from({ length: size }, (_, j) =>
         student({ number: ci * 100 + j + 1, apart: `C${ci}` }),
       ),
     );
-    expect(students).toHaveLength(105);
+    expect(students).toHaveLength(100);
 
     const out = buildGroups(
       base({ students, mode: { kind: 'groupCount', count: 20 } }),
@@ -4542,7 +4554,12 @@ describe('pinned groups', () => {
     };
 
     const testKeepApartSearchGaveUpPinned = () => {
-      const students = [20, 19, 18, 17, 16, 15].flatMap((size, ci) =>
+      // Was [20, 19, 18, 17, 16, 15] = 105, plus the pinned pair = 107.
+      // MAX_STUDENTS is 100 now (operator, 2026-08-13), so that input is
+      // refused with TOO_MANY_STUDENTS before the search runs. The last
+      // clique is shortened so the total lands on exactly 100 WITH the pair;
+      // the shape is otherwise unchanged.
+      const students = [20, 19, 18, 17, 16, 8].flatMap((size, ci) =>
         Array.from({ length: size }, (_, j) =>
           student({ number: ci * 100 + j + 1, apart: `C${ci}` }),
         ),

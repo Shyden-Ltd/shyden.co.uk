@@ -957,6 +957,8 @@ if (form) {
   };
 
   form.addEventListener('change', (e) => {
+    // Changing anything means the teacher has stopped watching the deal.
+    finishDealNow();
     const target = e.target as HTMLInputElement;
     if (target.name === 'mode') showFor('mode', target.value);
     if (target.name === 'leftovers') updateGroupingHeader();
@@ -965,7 +967,10 @@ if (form) {
   // The brief's own instruction: recompute on every `change` AND `input`
   // event, so a teacher typing a new group size sees the notice the moment
   // they type it, not only once the field loses focus.
-  form.addEventListener('input', updateStaleness);
+  form.addEventListener('input', () => {
+    finishDealNow();
+    updateStaleness();
+  });
 
   // ── student roster (Student details' table) ─────────────────────────────
   // Design spec sections 3/4. `renderRoster` (roster-ui.ts) is a pure
@@ -1963,10 +1968,31 @@ if (form) {
     });
   };
 
+  // The deal is interruptible (operator, 2026-08-13). Two ways out, and they
+  // mean different things:
+  //
+  //   `dealToken`  — a NEWER deal has started. This one abandons quietly and
+  //                  touches nothing, because the new one owns the cards now.
+  //   `dealSkip`   — the teacher changed a detail mid-deal. The animation is
+  //                  no longer worth watching, so it finishes INSTANTLY:
+  //                  every remaining card lands at once rather than the deal
+  //                  being cancelled and leaving a half-dealt sheet.
+  //
+  // Neither disables the button. Pressing "Shuffle again" during a deal
+  // starts a new one from the top, which is what the button says it does.
+  let dealToken = 0;
+  let dealSkip = false;
+  const finishDealNow = () => {
+    dealSkip = true;
+  };
+
   const animate = async (groups: Student[][], speed: string) => {
+    const myDeal = ++dealToken;
+    dealSkip = false;
     const cards = Array.from(tables.querySelectorAll<HTMLElement>('.student'));
+    const landAll = () => cards.forEach((c) => c.classList.add('dealt'));
     if (speed === 'skip') {
-      cards.forEach((c) => c.classList.add('dealt'));
+      landAll();
       return;
     }
     // FAST_STEP_S/NORMAL_STEP_S live in sfx.ts, not here, so
@@ -1977,10 +2003,20 @@ if (form) {
     const step = (speed === 'fast' ? FAST_STEP_S : NORMAL_STEP_S) * 1000;
     sfx.shuffle();
     for (let i = 0; i < cards.length; i++) {
+      // Superseded: a newer deal is running and owns these cards.
+      if (myDeal !== dealToken) return;
+      // Asked to finish: land the rest in one frame, then fall out of the
+      // loop to the same completion path a full deal takes.
+      if (dealSkip) break;
       cards[i].classList.add('dealt');
       sfx.land(i);
       await new Promise((r) => setTimeout(r, step));
     }
+    if (myDeal !== dealToken) return;
+    // Unconditional, not only on the skip path: a deal that ran to the end
+    // has already landed every card, so this is a no-op there and the single
+    // guarantee that no sheet is ever left half-dealt.
+    landAll();
     sfx.done();
   };
 
@@ -2104,21 +2140,16 @@ if (form) {
     lastSnapshot = snapshot();
     updateStaleness();
 
-    goButton.disabled = true;
     try {
       await animate(groups, speedSelect.value);
     } finally {
-      // In a finally because a rejection here would otherwise leave the
-      // button disabled for good — and a disabled default button also
-      // suppresses Enter, so there would be no keyboard way out either.
-      // Re-derived from the CURRENT roster, not a bare `false`: a teacher
-      // can still edit Student details while the deal animation plays (only
-      // this button, not the form, is disabled during it), so a duplicate
-      // typed in that window must not be silently re-enabled the moment the
-      // animation ends. Recomputing here is what `updateRosterValidation`
-      // (── student roster, above) already does on every roster edit; the
-      // common case -- no roster, or no problem -- reads back `false`,
-      // identical to the line this replaces.
+      // The deal no longer disables this button at all (see `animate`), so
+      // this is not an "undo the disable" step — it re-derives the button's
+      // state from the CURRENT roster. A teacher can edit Student details
+      // while the deal plays, and a duplicate typed in that window must not
+      // be silently cleared the moment the animation ends. Still in a
+      // `finally` so a rejection inside the deal cannot skip it and leave
+      // the button reporting a roster state that is no longer true.
       updateRosterValidation();
     }
   });
