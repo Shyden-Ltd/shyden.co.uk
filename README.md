@@ -1,32 +1,125 @@
 # shyden.co.uk
 
-The **Shyden Ltd** company website — a bespoke, AI-powered software company.
+The **Shyden Ltd** company website, plus two free tools it hosts.
 
-## Status
+Live at [shyden.co.uk](https://shyden.co.uk). Staged at `dev.shyden.co.uk`, which
+sits behind Basic auth and disallows crawling.
 
-**v1 in design.** See the design spec:
-[`docs/superpowers/specs/2026-07-23-shyden-homepage-design.md`](docs/superpowers/specs/2026-07-23-shyden-homepage-design.md)
+## What's on the site
 
-v1 scope:
+| Route               | What it is                                                                             | Ships JS |
+| ------------------- | -------------------------------------------------------------------------------------- | -------- |
+| `/`                 | Company homepage                                                                       | **no**   |
+| `/glory-points`     | Glory Points Calculator — a client-side companion tool for the third-party YeeTalk app | yes      |
+| `/classroom-groups` | Classroom Group Creator — builds fair random groups from a class list, for teachers    | yes      |
+| `/404`              | Not-found page                                                                         | no       |
 
-- **Homepage** — company landing / lead generation.
-- **Glory Points Calculator** (`/glory-points`) — a re-designed, client-side companion tool for the third-party YeeTalk app.
+Every route also exists under `/id/` in Bahasa Indonesia. Locales are declared in
+`src/lib/i18n/index.ts`; copy lives in `src/lib/i18n/{en,id,site}.ts`.
+
+**The homepage ships zero JavaScript**, and `release-prod.yml` fails the release
+if that ever stops being true.
 
 ## Tech
 
-- **[Astro](https://astro.build)** static site generator (multi-page-ready, zero-JS output).
-- **Cloudflare Pages** hosting ($0).
-- **Mobile-first**, **TDD** (Vitest + Playwright), **all-browser-compatible**.
+- **[Astro](https://astro.build)** static site generator.
+- **Cloudflare Pages** hosting, deployed by `wrangler` from CI.
+- Fonts self-hosted via `@fontsource`; sound effects self-hosted in
+  `src/assets/sfx/`. **No third-party requests at runtime.**
+- Node **24** (`.nvmrc`). Formatting by Prettier.
 
 ## Development
 
     npm install
-    npm run dev         # http://localhost:4321
-    npm test            # unit + e2e
+    npm run dev          # http://localhost:4321
+    npm run build        # → dist/
+    npm run format       # prettier --check .
 
-## Deploy (Cloudflare Pages)
+## Testing
 
-- Connect the repo in Cloudflare Pages.
-- Build command: `npm run build` · Output directory: `dist` · Node: 24.
-- Add the custom domain `shyden.co.uk` (and confirm `shytalk.shyden.co.uk` resolves before cutover).
-- The old Flask Glory Points app is retired once cutover is verified.
+| Command                | What it covers                                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `npm run test:unit`    | Vitest — pure logic, i18n completeness, pipeline wiring                                                     |
+| `npm run test:e2e`     | Playwright, 5 browser projects, against a built `dist/`                                                     |
+| `npm test`             | both of the above                                                                                           |
+| `npm run test:devices` | Real-device gauntlet — emulated + real Android Chrome (CDP) + real iOS Safari (WebDriver) against one build |
+| `npm run dashboard`    | Live read-only view of a gauntlet run at http://localhost:4322                                              |
+| `npm run test:ios`     | iOS-specific Vitest config                                                                                  |
+
+Two further Playwright suites run only in CI, against **deployed** sites rather
+than a local build:
+
+- `tests/dev/dev-sanity.spec.ts` via `playwright.dev.config.ts` — verifies
+  `dev.shyden.co.uk` after each dev deploy.
+- `tests/prod/prod-sanity.spec.ts` via `playwright.prod.config.ts` — verifies
+  production in a real browser before `prod-verified` is posted.
+
+The device gauntlet does **not** run in CI (no phones there), and does not cover
+Brave or Firefox on Android. It proves exactly one iOS engine: every iOS browser
+is WKWebView.
+
+## Branching and release
+
+`develop` is the default branch. Nothing reaches production without being
+deployed to dev and verified there first.
+
+```
+feature/xxx ──PR──▶ develop ──push──▶ release-dev ──▶ dev.shyden.co.uk
+                 │                    full suite            │
+            build-and-test            deploy                │
+             (required)               dev-sanity            │
+                                      post dev-verified ◀───┘
+                                          on that SHA
+                                               │
+develop ──promotion PR──▶ main   requires: build-and-test + dev-verified
+                           │
+                         push ──▶ release-prod  approval gate → deploy →
+                           │                    smoke → browser check →
+                           │                    post prod-verified
+                           └──▶ release-tag     tag + GitHub release
+```
+
+| Branch              | Required checks                   | Direct push |
+| ------------------- | --------------------------------- | ----------- |
+| `develop` (default) | `build-and-test`                  | no          |
+| `main`              | `build-and-test` + `dev-verified` | no          |
+
+`dev-verified` is a **commit status**, so it is bound to a SHA rather than a
+branch. A promotion PR's head _is_ develop's head, which is why the status
+carries across with no copying step.
+
+`develop` must not require `dev-verified` — that status is produced _by_ pushing
+to develop, so requiring it would deadlock.
+
+### Workflows
+
+| File               | Trigger                               | Does                                                                       |
+| ------------------ | ------------------------------------- | -------------------------------------------------------------------------- |
+| `ci.yml`           | PRs into `develop` or `main`          | `build-and-test`: format, build, unit, e2e                                 |
+| `release-dev.yml`  | push to `develop`, or manual dispatch | full suite → deploy dev → dev-sanity → post `dev-verified`                 |
+| `release-prod.yml` | push to `main`                        | approval gate → deploy prod → smoke → browser check → post `prod-verified` |
+| `release-tag.yml`  | push to `main`                        | tags and creates the GitHub release                                        |
+| `rollback.yml`     | manual dispatch                       | rolls production back to a previous Cloudflare deployment                  |
+
+`release-dev.yml` can be dispatched on any branch to put it on dev, but the
+`dev-verified` status is only posted for `develop` — otherwise a feature branch
+could earn the status main's protection requires and skip integration entirely.
+
+`tests/unit/pipeline-wiring.test.ts` holds this shape up. It exists because the
+dev sanity suite and its config were both written and then referenced by nothing
+in CI, so "deployed to dev" only meant `wrangler` had not errored.
+
+## Hosting
+
+- Cloudflare Pages project `shyden-site`. Build: `npm run build`, output `dist`,
+  Node 24.
+- Custom domain `shyden.co.uk`; `shytalk.shyden.co.uk` points at ShyTalk.
+- The outbound ShyTalk link is env-derived (`PUBLIC_SHYTALK_URL`) so a dev build
+  never links to production. Both sanity suites assert this.
+
+## Conventions
+
+`CLAUDE.md` is the working agreement — mobile-first, TDD, WCAG AA, and a set of
+hard-won notes about failures this codebase has actually shipped (JSX whitespace,
+flex eating authored spaces, scoped styles missing runtime DOM, intrinsic
+`min-width` forcing horizontal scroll). Read it before changing layout or copy.
