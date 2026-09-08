@@ -252,6 +252,42 @@ describe('the deploy pipeline runs what it claims to', () => {
     ).toBeLessThan(status);
   });
 
+  /**
+   * Production is verified against the host REAL VISITORS GET.
+   *
+   * `shyden-site.pages.dev` is the deployment alias, and it is Basic-auth
+   * locked (401) while the apex is public (200). Verifying the alias means
+   * `prod-verified` attests that a password-protected staging URL rendered —
+   * it says nothing about whether shyden.co.uk resolves, presents a valid
+   * certificate, or routes to this project at all. Any of those breaking
+   * leaves the site dark for everyone while the release goes green.
+   *
+   * Two tests because there are two independent ways to regress: the config
+   * default drifting back, and the workflow overriding a correct default.
+   * A fix to only one of them changes nothing.
+   */
+  it('the prod browser run defaults to the public production domain', async () => {
+    delete process.env.WEB_BASE_URL;
+    const config = (await import('../../playwright.prod.config')).default;
+
+    expect(config.use?.baseURL).toBe('https://shyden.co.uk');
+  });
+
+  it('prod verification targets the public domain, not the deployment alias', () => {
+    const prod = workflowSteps('release-prod.yml');
+
+    expect(
+      prod,
+      'a prod check still runs against the Basic-auth-locked deployment alias',
+    ).not.toMatch(/shyden-site\.pages\.dev/);
+    expect(prod, 'the curl smoke does not target the apex').toMatch(
+      /BASE="https:\/\/shyden\.co\.uk"/,
+    );
+    expect(prod, 'the browser run does not target the apex').toMatch(
+      /WEB_BASE_URL:\s*https:\/\/shyden\.co\.uk/,
+    );
+  });
+
   it('the prod sanity suite exists and is more than a stub', () => {
     const spec = readFileSync('tests/prod/prod-sanity.spec.ts', 'utf8');
     expect(spec.match(/\bit\(|\btest\(/g)?.length ?? 0).toBeGreaterThan(3);

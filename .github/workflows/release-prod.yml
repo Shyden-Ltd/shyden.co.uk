@@ -72,9 +72,13 @@ jobs:
           wrangler pages deploy dist --project-name shyden-site --branch main
 
   # ---- Post-prod smoke + prod-verified -----------------------------------
-  # Smokes the live prod DEPLOYMENT alias (shyden-site.pages.dev, tester-locked
-  # with DEV_PASSWORD) — cutover-independent, so this works before the apex DNS
-  # points at the project.
+  # Smokes the PUBLIC production domain — the host real visitors get.
+  #
+  # This used to smoke the `shyden-site.pages.dev` deployment alias, which was
+  # cutover-independent and so worked before the apex DNS pointed at the
+  # project. The cutover has happened, and the alias is the wrong target now:
+  # it answers only behind Basic auth, so a DNS, certificate, or routing fault
+  # on the apex left the site dark for every visitor while this job went green.
   #
   # `prod-verified` is no longer what branch protection requires (that is
   # `dev-verified` now, posted before the merge). It is kept because it is a
@@ -95,7 +99,7 @@ jobs:
           SMOKE_PW: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
         run: |
           set -euo pipefail
-          BASE="https://shyden-site.pages.dev"
+          BASE="https://shyden.co.uk"
 
           # Homepage: 200 + is the Shyden site.
           code=$(curl -s -o home.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE/")
@@ -162,10 +166,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify the live prod site in a real browser
         env:
-          # Same Basic-auth gate fronts the Pages host today. Kept under its own
-          # name so prod can be given its own secret without touching the config.
+          # The public apex is not gated, so this credential goes unused there:
+          # Basic auth is only sent when a host actually challenges for it. Kept
+          # wired under its own name so prod can be gated again, or given its
+          # own secret, without touching the config.
           PROD_BASIC_AUTH_PASSWORD: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
-          WEB_BASE_URL: https://shyden-site.pages.dev
+          WEB_BASE_URL: https://shyden.co.uk
         run: npx playwright test --config=playwright.prod.config.ts
 
       # Reached only if BOTH the smoke and the browser run passed: a failing
