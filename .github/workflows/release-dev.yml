@@ -1,5 +1,5 @@
 name: Release — dev (deploy + verify, gates the merge)
-# THE MERGE GATE. Dispatched on a PR branch when it is ready. Runs the full
+# THE PROMOTION GATE. Fires on every push to `develop`. Runs the full
 # comprehensive suite, deploys to dev, then VERIFIES the deployed dev site and
 # posts a `dev-verified` commit status on the SHA.
 #
@@ -10,12 +10,27 @@ name: Release — dev (deploy + verify, gates the merge)
 # site nobody but us can reach, and prod only ever runs a commit that is
 # already on `main`.
 #
-# Dispatched rather than automatic on `pull_request`: dev is a single shared
-# environment, and every PR deploying to it would mean the last push wins,
-# with `dev-verified` describing whichever branch happened to land last. A
-# dispatch says plainly which ref was verified.
+# Automatic on every push to `develop`, and still dispatchable by hand.
+#
+# The old trigger was dispatch-ONLY, for a real reason: dev is a single shared
+# environment, and every PR branch deploying to it would mean the last push
+# wins, with `dev-verified` describing whichever branch happened to land last.
+#
+# An integration branch removes that competition by construction rather than by
+# discipline. Exactly one branch deploys to dev, so "last push wins" stops being
+# ambiguous — dev always shows develop's head, which is what dev should show.
+# The dev deploy also stops being a step anyone can forget, which is what made
+# the merge gate skippable.
+#
+# `workflow_dispatch` stays as an escape hatch for putting an arbitrary branch
+# on dev. The status step below is guarded so that hatch cannot become a bypass.
+#
+# concurrency below keeps `cancel-in-progress: false`: rapid merges must QUEUE,
+# never cancel a half-finished deploy.
 
 on:
+  push:
+    branches: [develop]
   workflow_dispatch:
 
 concurrency:
@@ -103,6 +118,12 @@ jobs:
           WEB_BASE_URL: https://dev.shyden.co.uk
         run: npx playwright test --config=playwright.dev.config.ts
       - name: Post dev-verified status on the deployed commit
+        # Deploy and verify whatever ref a dispatch points at, but publish the
+        # STATUS only for develop. `dev-verified` is what branch protection on
+        # `main` requires, so an unguarded dispatch would let any feature branch
+        # earn it and then open a PR straight into `main` — skipping develop and
+        # the integration it exists to force.
+        if: github.ref_name == 'develop'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

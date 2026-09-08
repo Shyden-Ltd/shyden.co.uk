@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -147,5 +147,113 @@ describe('the deploy pipeline runs what it claims to', () => {
         w.text.includes('shyden-site --branch'),
     );
     expect(pushers.map((w) => w.name)).toEqual(['release-prod.yml']);
+  });
+
+  // ---- the develop branching model ---------------------------------------
+  //
+  // `release-dev.yml` was DISPATCH-only, which made the dev deploy — and so the
+  // `dev-verified` status gating `main` — a step someone had to remember. The
+  // header comment gave a real reason: every PR branch deploying to one shared
+  // dev environment means the last push wins, and `dev-verified` then describes
+  // whichever branch happened to land last.
+  //
+  // An integration branch removes that competition by construction rather than
+  // by discipline: exactly one branch deploys to dev, so "last push wins" is no
+  // longer ambiguous — dev always shows develop's head, which is what it should
+  // show.
+  it('dev deploys automatically when develop moves', () => {
+    const dev = workflowSteps('release-dev.yml');
+    expect(dev).toMatch(/on:[\s\S]*?push:[\s\S]*?branches:\s*\[develop\]/);
+  });
+
+  // The dispatch escape hatch stays: deploying an arbitrary branch to dev is a
+  // real capability worth keeping.
+  it('the dispatch escape hatch survives', () => {
+    const dev = workflowSteps('release-dev.yml');
+    expect(dev).toMatch(/workflow_dispatch:/);
+  });
+
+  // …but an UNGUARDED dispatch would hand any feature branch a `dev-verified`
+  // status, which is exactly what branch protection on `main` requires. That
+  // branch could then open a PR straight into `main` and satisfy the gate
+  // without ever passing through `develop` — the bypass this whole model
+  // exists to prevent. Deploy and test on any ref; publish the STATUS only for
+  // develop.
+  it('dev-verified is only posted for develop', () => {
+    const dev = workflowSteps('release-dev.yml');
+    const post = dev.indexOf('/statuses/');
+    expect(post, 'no dev-verified status step found').toBeGreaterThan(-1);
+    const step = dev.slice(Math.max(0, post - 900), post);
+    expect(step).toMatch(/if:.*github\.ref_name\s*==\s*'develop'/);
+  });
+
+  // `ci.yml` had a bare `pull_request:` — every PR, whatever its base. That
+  // happened to be correct while `main` was the only long-lived branch, and
+  // silently stays correct here, which is the problem: nothing records that
+  // `build-and-test` is required on BOTH bases. Name them, so removing one is
+  // a red test rather than a quiet hole in the gate.
+  it('CI runs on pull requests into develop and main', () => {
+    const ci = workflowSteps('ci.yml');
+    expect(ci).toMatch(/pull_request:[\s\S]*?branches:\s*\[develop,\s*main\]/);
+  });
+
+  // RAW text on purpose — the opposite of every other check in this file.
+  //
+  // Elsewhere a comment claiming the pipeline does something is prose to be
+  // stripped. Here the comment IS the thing under test: `ci.yml`'s header
+  // explained itself in terms of `deploy.yml`, a workflow deleted with the
+  // deploy-before-merge pipeline. A reader trusting that comment goes looking
+  // for a file that has not existed for releases.
+  //
+  // Guards the CLASS rather than that one instance: any workflow naming any
+  // workflow file that is not there fails, including the next one.
+  it('no workflow names a workflow file that does not exist', () => {
+    const candidates = (name: string) => [
+      join(WORKFLOWS, name),
+      join('.github', name),
+      name,
+    ];
+    const dangling: string[] = [];
+
+    for (const file of readdirSync(WORKFLOWS)) {
+      if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
+      const raw = readFileSync(join(WORKFLOWS, file), 'utf8');
+      for (const [, ref] of raw.matchAll(/\b([\w.-]+\.ya?ml)\b/g)) {
+        if (!candidates(ref).some((p) => existsSync(p))) {
+          dangling.push(`${file} → ${ref}`);
+        }
+      }
+    }
+
+    expect(dangling).toEqual([]);
+  });
+
+  // Production was verified by `curl`: status codes and grepping fetched HTML.
+  // That is a TEXT assertion, and this repo has already shipped a bug for a
+  // full release that no text assertion can see — `display: flex` ate authored
+  // whitespace while `textContent` still contained it, so every text-based
+  // check passed. curl also cannot tell whether the CSS loaded, whether the
+  // calculators' JS ran, or whether the page scrolls sideways at 320px.
+  //
+  // `prod-verified` should mean a browser rendered production, so the browser
+  // run has to come BEFORE the status is posted, not beside it.
+  it('prod-verified is gated on a real browser run, not a curl smoke', () => {
+    const prod = workflowSteps('release-prod.yml');
+    const browser = prod.indexOf('playwright.prod.config');
+    const status = prod.indexOf('/statuses/');
+
+    expect(browser, 'prod never runs playwright.prod.config').toBeGreaterThan(
+      -1,
+    );
+    expect(status, 'prod never posts a commit status').toBeGreaterThan(-1);
+    expect(
+      browser,
+      'prod-verified is posted before the browser run that should gate it',
+    ).toBeLessThan(status);
+  });
+
+  it('the prod sanity suite exists and is more than a stub', () => {
+    const spec = readFileSync('tests/prod/prod-sanity.spec.ts', 'utf8');
+    expect(spec.match(/\bit\(|\btest\(/g)?.length ?? 0).toBeGreaterThan(3);
   });
 });

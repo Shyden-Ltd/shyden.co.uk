@@ -140,6 +140,37 @@ jobs:
           fi
 
           echo "Prod smoke passed against $BASE"
+
+      # ---- Gate: a real browser, before the status is posted ---------------
+      #
+      # The smoke above proves bytes arrived and that certain strings are among
+      # them. It cannot prove the page RENDERS. It is a text assertion, and this
+      # repo shipped a bug for an entire release that no text assertion could
+      # see: `display: flex` ate authored whitespace while `textContent` still
+      # contained it, so every text-based check passed. It also cannot tell
+      # whether the stylesheet loaded, whether the calculators' script ran, or
+      # whether a page scrolls sideways at 320px.
+      #
+      # This job does not check the repo out — the smoke only needed curl — so
+      # the browser check brings its own checkout and dependencies.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify the live prod site in a real browser
+        env:
+          # Same Basic-auth gate fronts the Pages host today. Kept under its own
+          # name so prod can be given its own secret without touching the config.
+          PROD_BASIC_AUTH_PASSWORD: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
+          WEB_BASE_URL: https://shyden-site.pages.dev
+        run: npx playwright test --config=playwright.prod.config.ts
+
+      # Reached only if BOTH the smoke and the browser run passed: a failing
+      # step fails the job, so `prod-verified` is never posted for a release
+      # that did not render.
       - name: Post prod-verified status on the released commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -147,6 +178,6 @@ jobs:
           gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
             -f state=success \
             -f context=prod-verified \
-            -f "description=Prod deployed + smoke-verified (run ${{ github.run_id }})" \
+            -f "description=Prod deployed + browser-verified (run ${{ github.run_id }})" \
             -f "target_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo "Posted prod-verified=success on ${{ github.sha }}"

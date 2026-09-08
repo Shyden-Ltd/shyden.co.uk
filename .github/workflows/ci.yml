@@ -1,10 +1,17 @@
 name: CI
-# The REQUIRED status check branch protection enforces before `main` can be
-# updated. PR-only on purpose: the Deploy pipeline (deploy.yml) re-runs the same
-# full suite as its own gate on every push to main, so a push:[main] trigger
-# here would only double the work on each merge.
+# The REQUIRED status check on BOTH long-lived branches: `develop`, where work
+# integrates, and `main`, which describes what is live.
+#
+# PR-only on purpose: release-dev.yml re-runs this same full suite as its own
+# gate on every push to develop, and release-prod.yml gates the push to main, so
+# a push: trigger here would only double the work on each merge.
+#
+# The bases are NAMED rather than left as a bare `pull_request:`. A bare trigger
+# happens to cover both today, which is precisely the problem — nothing records
+# that both are required, so losing one would be silent.
 on:
   pull_request:
+    branches: [develop, main]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest

@@ -555,13 +555,21 @@ test.describe('classroom groups — mobile-first layout', () => {
   // A hand-written list of sections is what missed it, so this does not add
   // Import / export to the list — it DERIVES every toggle from the DOM. A
   // section added later is covered the day it appears, with no test edit.
-  test(
-    'no horizontal scroll with any single section open — every section, derived',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      const failures: string[] = [];
-      for (const path of ['/classroom-groups', '/id/classroom-groups']) {
-        for (const width of [320, 390, 768]) {
+  // One test per (locale, width). This was a single test that looped both,
+  // which put ~42 navigations and ~60 clicks inside Playwright's default 30s
+  // PER-TEST budget: firefox spent 22.2s of it on an idle machine and blew
+  // past 30s under the parallel suite, so the verdict was decided by machine
+  // load rather than by the page. Split, it matches the generated-per-width
+  // pattern in homepage.spec.ts / site-meta.spec.ts, each case runs ~7
+  // navigations, the cases run in parallel, and a failure names its locale
+  // and width in the title instead of only in the message.
+  for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+    for (const width of [320, 390, 768]) {
+      test(
+        `no horizontal scroll at ${width}px with any single section open — ${path}, every section derived`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          const failures: string[] = [];
           await page.setViewportSize({ width, height: 900 });
           await page.goto(path);
           const ids = await page
@@ -596,11 +604,11 @@ test.describe('classroom groups — mobile-first layout', () => {
           );
           if (all > 0)
             failures.push(`${path} @${width}px with ALL open: ${all}px`);
-        }
-      }
-      expect(failures, failures.join('\n')).toEqual([]);
-    },
-  );
+          expect(failures, failures.join('\n')).toEqual([]);
+        },
+      );
+    }
+  }
 
   // ── Flex ate the whitespace the markup authored ────────────────────────
   //
