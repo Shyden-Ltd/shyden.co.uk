@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { recordErrors } from './recorders';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import {
@@ -390,13 +391,12 @@ test.describe('Import / export', () => {
   );
 
   test('no console errors while importing and exporting', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    const reported = recordErrors(page);
     await page.goto('/classroom-groups');
     await openIo(page);
     await upload(page, 'ok.csv', 'number,name\n1,Ana\n');
     await downloadName(page, 'Export class list');
-    expect(errors).toEqual([]);
+    await reported.expectNone('importing and exporting report nothing');
   });
 });
 

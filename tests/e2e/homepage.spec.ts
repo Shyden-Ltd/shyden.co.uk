@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { recordErrors } from './recorders';
 test.describe('homepage content', () => {
   test('hero CTA is a mailto and sections exist', async ({ page }) => {
     await page.goto('/');
@@ -105,9 +106,8 @@ test.describe('mobile-first layout', () => {
     );
   }
   test('no console errors on load', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    const reported = recordErrors(page);
     await page.goto('/');
-    expect(errors).toEqual([]);
+    await reported.expectNone('the homepage loads without console errors');
   });
 });
