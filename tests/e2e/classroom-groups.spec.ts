@@ -1607,42 +1607,49 @@ test.describe('the no-scroll rule, measured', () => {
   // JavaScript enabled.)
   //
   // Measured #main-to-#cg-go, the collapsed landing state, honestly.
-  // RE-MEASURED after this stage's Task 8 deleted the naming/theme picker
-  // fieldset ("Name the groups") -- the numbers below are that second
-  // measurement, not the first, and not the arithmetic the paragraph after
-  // the old table predicted:
   //
-  //   width x height   #cg-go.bottom   budget    vs budget
-  //   320x568          1221px          568px     653px OVER
-  //   375x667          1191px          667px     524px OVER
-  //   768x1024          707px          1024px    317px to spare
-  //   1280x800          707px           800px     93px to spare
+  // RE-MEASURED FOR #32, by running the page -- not carried forward. Two of
+  // the four rows in the table this replaces were already stale when #32 was
+  // picked up: it claimed 707px at both 768 and 1280 where the page actually
+  // renders 761px, and "93px to spare" at 1280x800 where the real headroom
+  // is 39px. Verified by rebuilding this file's own `git HEAD` version and
+  // measuring that, so the difference is the old table's and not the fix's.
+  // It is the same failure #32 exists to close -- a hand-maintained table
+  // nobody re-executes -- which is why the seam test below re-checks the
+  // mechanism on every run instead of trusting prose.
   //
-  // Every width fell by exactly 174px (1395->1221, 1365->1191, 881->707 at
-  // both wide widths) -- one fixed-height box leaving the flow, the same
-  // saving regardless of viewport, which is what the pre-removal note
-  // predicted and what re-measuring confirmed to the pixel. Nothing else
-  // moved: the roster section this stage added is absent from the landing
-  // state until a roster exists, so it costs nothing here.
+  //   width x height   #cg-form   #cg-go.bottom      budget   vs budget
+  //   320x568           769px     1221px -> 556px     568px   653 OVER -> 12 spare
+  //   375x667           768px     1191px -> 655px     667px   524 OVER -> 12 spare
+  //   768x1024          488px      761px (unchanged) 1024px   263 to spare
+  //   1280x800          488px      761px (unchanged)  800px    39 to spare
   //
-  // 768px and 1280x800 both fit now, neither on a technicality (317px and
-  // 93px to spare). 1280x800 flips from `fixme` to a real `test` on this
-  // measurement -- it was `fits: false` because 881px genuinely sat 81px
-  // past an 800px fold, and it is `fits: true` now because the box that
-  // put it there is gone, not because the check was weakened.
+  // The `#cg-form` column is why this was never a matter of trimming the
+  // hero. At 320 the form ALONE measures 769px against a 568px budget, and
+  // at 375 it is 768px against 667px -- so deleting the site header, the h1,
+  // the lead paragraph and the privacy note outright would STILL have left
+  // the submit button below the fold at both phone sizes. Nothing above the
+  // form was ever the thing standing in the way.
   //
-  // 320px and 375px stay the furthest over by a wide margin, and stay
-  // `fixme`: measured, not guessed, not weakened, not deleted. The picker
-  // was the last always-visible bordered box available to delete; with it
-  // gone, only an operator decision to trim the hero copy (h1/lead/
-  // privacy), the collapsed section headers' own density, or the How to
-  // use copy itself (ruled unchanged, section 2) would move the phone
-  // numbers again. Nothing left in this stage's plan touches them.
+  // The fix is in ClassroomGroupsPage.astro, under `@media screen and
+  // (max-width: 599px)`: `.actions` becomes `position: sticky; bottom: 0`,
+  // so the submit button rests ON the fold and the form scrolls behind it.
+  // The 12px of clearance at both phone sizes is the bar's own bottom
+  // padding -- measured, so this is not passing on an exact tie.
+  //
+  // WHAT THIS ASSERTS, AND WHAT IT DOES NOT. `#cg-go` is REACHABLE without
+  // scrolling at all four sizes, which is what the title now says. At 768
+  // and 1280 the whole tool fits as well; at 320 and 375 the form still
+  // scrolls and only the action row is pinned. A sticky bar makes the action
+  // reachable, it does not make the page short. The previous title ("the
+  // tool fits without scrolling") would have become false at the two phone
+  // sizes the moment this started passing, so it changed WITH the fix rather
+  // than being left behind to describe a page that no longer exists.
   const VIEWPORTS = [
-    { width: 320, height: 568, fits: false }, // iPhone SE
-    { width: 375, height: 667, fits: false }, // iPhone 8
-    { width: 768, height: 1024, fits: true }, // iPad
-    { width: 1280, height: 800, fits: true }, // laptop -- see table above
+    { width: 320, height: 568 }, // iPhone SE
+    { width: 375, height: 667 }, // iPhone 8
+    { width: 768, height: 1024 }, // iPad
+    { width: 1280, height: 800 }, // laptop
   ];
 
   const measureFit = async (page: Page) => {
@@ -1656,82 +1663,55 @@ test.describe('the no-scroll rule, measured', () => {
     expect(bottom).toBeLessThanOrEqual(budget);
   };
 
-  for (const { width, height, fits } of VIEWPORTS) {
-    // `test.fixme` for the three that still do not fit -- tracked, not
-    // hidden; `test` for the one that genuinely passes. Written as an
-    // explicit if/else, each branch opening with a literal `test(`/
-    // `test.fixme(` token immediately followed by its own inline title --
-    // rather than the earlier `const run = fits ? test : test.fixme;
-    // run(title, ...)` indirection -- so a source scanner that attributes a
-    // viewport call to its enclosing test by looking for exactly that
-    // literal shape (tests/unit/viewport-tagging.test.ts, and any reader
-    // grepping for `test(`) can find this declaration at all: neither an
-    // aliased callee nor a title passed by variable reference is visible to
-    // a scan like that -- tests/unit/viewport-tagging.test.ts's own
-    // "aliased callee" synthetic test proves what that scan sees instead
-    // (an actionable finding, not silence). `measureFit` above is the one
-    // body the passing and failing cases still share, so they cannot drift
-    // into checking two different things -- only the trivial two-line
-    // wrapper that resizes the page and picks which registration function
-    // to call is duplicated, and it carries no assertion of its own.
-    if (fits) {
-      test(
-        `the tool fits without scrolling at ${width}x${height}`,
-        { tag: '@emulated-viewport' },
-        async ({ page }) => {
-          await page.setViewportSize({ width, height });
-          await measureFit(page);
-        },
-      );
-    } else {
-      test.fixme(
-        `the tool fits without scrolling at ${width}x${height}`,
-        { tag: '@emulated-viewport' },
-        async ({ page }) => {
-          await page.setViewportSize({ width, height });
-          await measureFit(page);
-        },
-      );
-    }
+  // No `fits` flag and no if/else any more -- every viewport runs as `test`.
+  // The flag existed only to choose `test.fixme` for the sizes that failed,
+  // and #32 removed the last two of those; a flag with one possible value is
+  // dead weight, and the branch it fed is precisely what made "tracked, not
+  // hidden" assertable without being true. `test(` is still written
+  // literally, with its title inline as a template literal rather than
+  // hoisted to a variable, because tests/unit/viewport-tagging.test.ts scans
+  // source text for exactly that shape and is blind to a title passed by
+  // reference or reached through an aliased callee.
+  for (const { width, height } of VIEWPORTS) {
+    test(
+      `the primary action is reachable without scrolling at ${width}x${height}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height });
+        await measureFit(page);
+      },
+    );
   }
 
-  // The table above, and the `fits` flags it feeds, are hand-maintained --
-  // written by re-measuring and pasting the numbers in, not computed by
-  // this file. `test.fixme` bodies never run, so if a later change (stage
-  // 3 removing the picker, or anything else) closes the gap at a viewport
-  // still marked `fits: false`, nothing above would notice: the row would
-  // stay silently skipped, describing a bug that is no longer there. A
-  // hand-maintained table nothing ever re-checks is exactly how a
-  // `test.fixme` row outlives the bug it was tracking. This companion test
-  // re-measures all four, unconditionally -- never `fixme`'d -- and fails
-  // the moment reality and the declared `fits` table disagree, in EITHER
-  // direction: a viewport that starts passing while still marked `false`,
-  // or one that starts failing while marked `true`. Either failure means
-  // the table above is stale and needs updating by hand, the same way it
-  // was written.
+  // ASSERT THE SEAM, not the sides. The four tests above would go on passing
+  // at 768 and 1280 if the sticky rule were deleted outright -- those sizes
+  // fit on their own -- and a breakpoint that drifted from 599px down to,
+  // say, 359px would fail 375x667 with a message about pixels rather than
+  // about the rule that moved. Neither tells a reader WHICH mechanism is
+  // carrying the phone sizes. This checks that mechanism directly and in
+  // both directions: sticky below the breakpoint, static above it. It
+  // replaces the old "declared fits table matches what the page actually
+  // does" companion, which cross-checked the `fits` flags against reality
+  // and had nothing left to check once those flags went -- this asserts
+  // something the four tests above genuinely cannot.
   test(
-    'the declared fits table matches what the page actually does',
+    'the action row is sticky below the 600px breakpoint and static above it',
     { tag: '@emulated-viewport' },
     async ({ page }) => {
-      const actual: Record<string, boolean> = {};
-      for (const { width, height } of VIEWPORTS) {
+      const positionAt = async (width: number, height: number) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
-        const { bottom, budget } = await page.evaluate(() => ({
-          bottom: Math.round(
-            document.getElementById('cg-go')!.getBoundingClientRect().bottom,
-          ),
-          budget: window.innerHeight,
-        }));
-        actual[`${width}x${height}`] = bottom <= budget;
-      }
-      const declared = Object.fromEntries(
-        VIEWPORTS.map(({ width, height, fits }) => [
-          `${width}x${height}`,
-          fits,
-        ]),
-      );
-      expect(actual).toEqual(declared);
+        return page.evaluate(
+          () =>
+            getComputedStyle(
+              document.getElementById('cg-go')!.closest('.actions')!,
+            ).position,
+        );
+      };
+      expect(await positionAt(320, 568)).toBe('sticky');
+      expect(await positionAt(375, 667)).toBe('sticky');
+      expect(await positionAt(768, 1024)).toBe('static');
+      expect(await positionAt(1280, 800)).toBe('static');
     },
   );
 
