@@ -279,9 +279,9 @@ export const id: Strings = {
   // ── Serah-terima dua bahasa (tahap 4, Tugas 6) ─────────────────────────
   // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
   // PERLU DITINJAU.
-  ioBothLanguages: 'Ekspor juga dalam bahasa lainnya',
+  ioBothLanguages: 'Ekspor juga dalam bahasa lain',
   ioBothLanguagesHint:
-    'Berkas Anda tersimpan sekarang, dalam bahasa ini. Tab kedua akan terbuka dalam bahasa lainnya dengan daftar kelas yang sama, untuk Anda periksa dan simpan di sana. Tidak ada yang disimpan dan tidak ada yang dikirim ke mana pun.',
+    'Berkas Anda tersimpan sekarang, dalam bahasa ini. Tab kedua akan terbuka dalam bahasa yang Anda pilih, dengan daftar kelas yang sama, untuk Anda periksa dan simpan di sana. Tidak ada yang disimpan dan tidak ada yang dikirim ke mana pun.',
   ioHandoverBlocked:
     'Tab kedua tidak dapat dibuka. Daftar kelas Anda masih ada di sini — izinkan pop-up lalu coba lagi.',
   ioHandoverTimedOut:
@@ -290,7 +290,10 @@ export const id: Strings = {
   // PERLU DITINJAU.
   ioHandoverNotOffered:
     'Tidak ada daftar kelas yang diterima. Kembali ke tab satunya lalu coba lagi.',
-  ioHandoverSent: 'Daftar kelas Anda kini terbuka dalam bahasa lainnya.',
+  // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --
+  // PERLU DITINJAU.
+  ioHandoverSent: (language: string) =>
+    `Daftar kelas Anda kini terbuka dalam ${language}.`,
 
   // ── Panel cetak (tahap 5; bagian 10 dokumen desain) ────────────────────
   // Lihat komentar pada versi Inggrisnya (en.ts). Terjemahan pelaksana --

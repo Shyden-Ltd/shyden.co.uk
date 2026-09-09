@@ -5,6 +5,7 @@ import {
   upload,
   downloadName,
   giveEveryoneASex,
+  handoverTo,
 } from './helpers';
 
 /**
@@ -503,7 +504,7 @@ test.describe('privacy — the roster still never persists, after the new paths'
     const [, newPage] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await newPage.waitForLoadState();
     await newPage.locator('#cg-students-toggle').click();

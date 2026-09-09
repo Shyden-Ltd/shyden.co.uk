@@ -6,9 +6,11 @@ import {
   DEFAULT_LOCALE,
 } from '../../src/lib/i18n/index';
 import { siteEn, siteId } from '../../src/lib/i18n/site';
+import { en } from '../../src/lib/i18n/en';
+import { id } from '../../src/lib/i18n/id';
 
 /**
- * One tripwire retired, one still armed.
+ * Both tripwires retired.
  *
  * This file held two deliberate failures, each guarding a user-facing
  * behaviour that was still binary after #21 generalised the routing:
@@ -20,20 +22,34 @@ import { siteEn, siteId } from '../../src/lib/i18n/site';
  *      language's own name from LOCALE_METADATA, so it labels N alternatives
  *      correctly. The guards below are what stop the single label returning.
  *
- *   2. STILL ARMED. The classroom-groups handover takes
- *      `otherLocales(locale)[0]`, which is only ever right while there is
- *      exactly one. Stage 3 replaces it with a picker. Until then this is what
- *      stops a third locale shipping a handover that chooses a language on the
- *      teacher's behalf, silently.
+ *   2. RETIRED by Stage 3. The classroom-groups handover took
+ *      `otherLocales(locale)[0]` — only ever right while there is exactly
+ *      one alternative, and a silent choice on the teacher's behalf as soon
+ *      as there are two. It is now a disclosure of one button per language,
+ *      and the confirmation names the language it opened.
  *
- * Do not "fix" the remaining tripwire by relaxing its number. Retire it the
- * way Stage 2 retired the first: build the thing, then replace the tripwire
- * with assertions about what was built.
+ * Neither was retired by relaxing a number. Each was retired by building the
+ * thing and replacing the tripwire with assertions about what was built —
+ * which is the only way a tripwire may ever be removed from this file.
  */
 
 const source = (path: string) => readFileSync(path, 'utf8');
 const SWITCHER = 'src/components/LanguageSwitcher.astro';
 const HEADER = 'src/components/Header.astro';
+const IO = 'src/scripts/io-ui.ts';
+
+/**
+ * Comments stripped before any source-text assertion — a guard matched
+ * against raw file text is satisfied by the file's own documentation, which
+ * is how a vacuous supply-chain guard shipped here once (#23). The paragraph
+ * above this file's first describe explains what the handover USED to do; it
+ * must not be what keeps these green.
+ */
+const withoutComments = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+/** A native name from a locale that is not routed, so nothing else can supply it. */
+const NATIVE_NAME_PROBE = 'Tiếng Việt';
 
 describe('the language switcher labels every alternative (tripwire 1, retired)', () => {
   it('no longer ships a single string meaning "the other language"', () => {
@@ -84,15 +100,55 @@ describe('the language switcher labels every alternative (tripwire 1, retired)',
   });
 });
 
-describe('binary-locale assumptions still outstanding after #21', () => {
-  it('the handover has exactly one destination', () => {
-    // io-ui.ts takes otherLocales(locale)[0]. Stage 3 replaces it with a
-    // picker; until then a third locale would silently choose for the teacher.
+describe('the handover offers every language (tripwire 2, retired)', () => {
+  it('no longer chooses a destination on the teacher behalf', () => {
+    // The exact shape of the retired bug: the FIRST alternative, taken
+    // without asking. Correct for one, a silent decision for two.
+    const src = withoutComments(source(IO));
     expect(
-      LOCALES.length,
-      'the handover picks otherLocales(locale)[0] — build the locale picker ' +
-        '(#21 Stage 3) before adding a locale',
-    ).toBe(2);
+      src.includes('otherLocales(locale)[0]'),
+      'the handover took the first alternative — Stage 3 offers all of them',
+    ).toBe(false);
+  });
+
+  it('builds one entry per alternative, labelled in that language own name', () => {
+    const src = withoutComments(source(IO));
+    expect(src).toContain('otherLocales(');
+    expect(
+      src,
+      'a picker whose entries are not labelled from their own metadata is ' +
+        'the single-label bug again, with a disclosure around it',
+    ).toContain('nativeName');
+  });
+
+  it('names the language it opened, in the confirmation', () => {
+    // Behaviour, not source text. A binary sentence cannot name a language,
+    // so this is what makes "the other language" impossible to reinstate.
+    for (const [label, t] of [
+      ['en', en],
+      ['id', id],
+    ] as const) {
+      expect(typeof t.ioHandoverSent, `${label}.ioHandoverSent`).toBe(
+        'function',
+      );
+      expect(t.ioHandoverSent(NATIVE_NAME_PROBE)).toContain(NATIVE_NAME_PROBE);
+    }
+  });
+
+  it('offers the export without saying how many languages there are', () => {
+    // Site copy never states which languages anything is available in (#21).
+    // "the other language" also counts the alternatives, out loud, at one.
+    for (const [label, t] of [
+      ['en', en],
+      ['id', id],
+    ] as const) {
+      for (const binary of ['the other language', 'bahasa lainnya']) {
+        expect(
+          `${t.ioBothLanguages} ${t.ioBothLanguagesHint}`.toLowerCase(),
+          `${label} still offers the handover in binary terms`,
+        ).not.toContain(binary);
+      }
+    }
   });
 
   it('the default locale is the one served without a prefix', () => {

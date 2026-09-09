@@ -479,9 +479,9 @@ export const en = {
   // browser-managed storage for the length of a page load, which can
   // survive a crash on a shared classroom machine. A URL is worse -- that
   // is the exact defect closed as C1 in PR #8.
-  ioBothLanguages: 'Also export in the other language',
+  ioBothLanguages: 'Also export in another language',
   ioBothLanguagesHint:
-    'Your file saves now, in this language. A second tab opens in the other language with the same class list, for you to check and save there. Nothing is stored and nothing is sent anywhere.',
+    'Your file saves now, in this language. A second tab opens in the language you pick, with the same class list, for you to check and save there. Nothing is stored and nothing is sent anywhere.',
   ioHandoverBlocked:
     'The second tab could not be opened. Your class list is still here — allow pop-ups and try again.',
   ioHandoverTimedOut:
@@ -492,7 +492,13 @@ export const en = {
   // one the teacher had just been taken away from.
   ioHandoverNotOffered:
     'No class list arrived. Go back to the other tab and try again.',
-  ioHandoverSent: 'Your class list is now open in the other language.',
+  // Takes the language it opened, because there is no longer "the other"
+  // one to point at -- the teacher picked from a list. The NATIVE name is
+  // what goes in (`LOCALE_METADATA.nativeName`, the same label the button
+  // they just pressed carried): a teacher who chose 中文 is looking for
+  // 中文 in the confirmation, not for the English word "Chinese".
+  ioHandoverSent: (language: string) =>
+    `Your class list is now open in ${language}.`,
 
   // ── The print panel (stage 5; design spec section 10) ───────────────────
   //
