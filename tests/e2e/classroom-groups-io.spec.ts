@@ -8,6 +8,7 @@ import {
   todayISO,
   buildRosterAtPath,
   giveEveryoneASex,
+  handoverTo,
 } from './helpers';
 
 /**
@@ -472,13 +473,14 @@ test.describe('Import / export — Indonesian', () => {
  * that only works one way.
  */
 test.describe('exporting in both languages', () => {
-  for (const [from, to, firstFile, secondFile, secondButton] of [
+  for (const [from, to, firstFile, secondFile, secondButton, destination] of [
     [
       '/classroom-groups',
       '/id/classroom-groups',
       'class-list',
       'daftar-kelas',
       'Ekspor daftar kelas',
+      'Bahasa Indonesia',
     ],
     [
       '/id/classroom-groups',
@@ -486,6 +488,7 @@ test.describe('exporting in both languages', () => {
       'daftar-kelas',
       'class-list',
       'Export class list',
+      'English',
     ],
   ] as const) {
     test(`works starting from ${from}`, async ({ page, context }) => {
@@ -498,11 +501,7 @@ test.describe('exporting in both languages', () => {
       const [download, newPage] = await Promise.all([
         page.waitForEvent('download'),
         context.waitForEvent('page'),
-        page
-          .getByRole('button', {
-            name: /other language|bahasa lainnya/,
-          })
-          .click(),
+        handoverTo(page, destination),
       ]);
 
       expect(download.suggestedFilename()).toContain(firstFile);
@@ -540,7 +539,7 @@ test.describe('exporting in both languages', () => {
     const [, newPage] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await newPage.waitForLoadState();
     await newPage.locator('#cg-students-toggle').click();
@@ -566,7 +565,7 @@ test.describe('exporting in both languages', () => {
     const [, newPage] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await newPage.waitForLoadState();
     await newPage.locator('#cg-students-toggle').click();
@@ -593,14 +592,14 @@ test.describe('exporting in both languages', () => {
     const [, newPage] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await newPage.waitForLoadState();
     await newPage.locator('#cg-students-toggle').click();
     await expect(newPage.locator('.cg-student')).toHaveCount(1);
     await expect(page.locator('.cg-student')).toHaveCount(1); // still there
     await expect(
-      page.getByText('Your class list is now open in the other language.'),
+      page.getByText('Your class list is now open in Bahasa Indonesia.'),
     ).toBeVisible();
   });
 
@@ -617,7 +616,7 @@ test.describe('exporting in both languages', () => {
     // export they actually asked for.
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     expect(download.suggestedFilename()).toContain('class-list');
     await expect(
@@ -646,7 +645,7 @@ test.describe('exporting in both languages', () => {
     await page.locator('#cg-io-toggle').click();
     await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await expect(
       page.getByText(
@@ -674,14 +673,15 @@ test.describe('exporting in both languages', () => {
     await expect(
       page.getByText(
         'Berkas Anda tersimpan sekarang, dalam bahasa ini. Tab kedua akan ' +
-          'terbuka dalam bahasa lainnya dengan daftar kelas yang sama, untuk ' +
+          'terbuka dalam bahasa yang Anda pilih, dengan daftar kelas yang ' +
+          'sama, untuk ' +
           'Anda periksa dan simpan di sana. Tidak ada yang disimpan dan ' +
           'tidak ada yang dikirim ke mana pun.',
       ),
     ).toBeVisible();
     await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: /bahasa lainnya/ }).click(),
+      handoverTo(page, 'English'),
     ]);
     await expect(
       page.getByText(
@@ -707,6 +707,118 @@ test.describe('exporting in both languages', () => {
     await other.locator('#cg-students-toggle').click();
     await expect(other.locator('.cg-student')).toHaveCount(0);
     await expect(page.locator('.cg-student')).toHaveCount(1);
+  });
+});
+
+/**
+ * #21 Stage 3. The destination is the teacher's to choose.
+ *
+ * It used to be `otherLocales(locale)[0]` — the FIRST alternative, taken
+ * without asking, which is only ever the right one while there is exactly
+ * one of them. `tests/unit/locale-switcher.test.ts` failed on purpose to stop
+ * a third locale shipping that silent choice; these are what retire it.
+ *
+ * A DISCLOSURE OF BUTTONS, not choose-then-send. `window.open` has to run
+ * inside the click that asked for it or the browser blocks the tab — which is
+ * why `ioHandoverBlocked` exists at all. Pressing the language IS the gesture,
+ * so there is no stored choice to read back outside one.
+ */
+test.describe('the handover destination is chosen, not assumed', () => {
+  test('keeps the list shut until it is asked for', async ({ page }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await openIo(page);
+    await expect(page.locator('.cg-io-both-target')).toBeHidden();
+    await page.locator('#cg-io-both-toggle').click();
+    await expect(page.locator('.cg-io-both-target').first()).toBeVisible();
+  });
+
+  test('offers one button per other language, named in that language', async ({
+    page,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await openIo(page);
+    await page.locator('#cg-io-both-toggle').click();
+
+    const choices = page.locator('.cg-io-both-target');
+    await expect(choices).toHaveCount(1);
+    // Its OWN name, and `lang` so a screen reader says it in that language
+    // rather than spelling it out in English -- the same rule the header
+    // switcher follows (tests/e2e/language-switcher.spec.ts).
+    await expect(choices.first()).toContainText('Bahasa Indonesia');
+    await expect(choices.first()).toHaveAttribute('lang', 'id');
+  });
+
+  test('draws the flag from the page own sprite, not a second copy', async ({
+    page,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await openIo(page);
+    await page.locator('#cg-io-both-toggle').click();
+
+    // `<use href="#flag-id">` resolving against a symbol the page defines is
+    // what proves the picker and the header switcher draw the SAME shapes.
+    // A broken reference renders nothing at all and reads as a spacing bug.
+    await expect(
+      page.locator('.cg-io-both-target svg.flag use'),
+    ).toHaveAttribute('href', '#flag-id');
+    await expect(page.locator('symbol#flag-id')).toHaveCount(1);
+  });
+
+  test('gives every language button a real touch target', async ({ page }) => {
+    // `.cg-io-both` shipped under the 44px floor once already; the rule that
+    // fixed it selects by CONTAINER so a new button cannot be missed. These
+    // buttons are new, and inside a `<details>` -- assert, do not assume.
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await openIo(page);
+    const summary = page.locator('#cg-io-both-toggle');
+    expect((await summary.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    await summary.click();
+    for (const choice of await page.locator('.cg-io-both-target').all()) {
+      expect((await choice.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('does not drop the keyboard where the list just closed', async ({
+    page,
+    context,
+  }) => {
+    // The list closes once the tab is open, which takes the button that was
+    // just pressed out of the document's focus order with it. Left alone the
+    // browser drops focus onto `<body>` and a teacher tabbing through the
+    // section restarts at the top of the page (WCAG 2.4.3).
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await openIo(page);
+    await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      handoverTo(page, 'Bahasa Indonesia'),
+    ]);
+    // `document.activeElement`, not `toBeFocused`. The handover has just
+    // moved the BROWSER's focus to the new tab, so this page is not the
+    // focused one and `toBeFocused` reports `inactive` in Firefox whatever
+    // the document says. What matters is where this document's focus sits
+    // when the teacher comes back to it.
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe(
+      'cg-io-both-toggle',
+    );
+  });
+
+  test('names the language it opened, not "the other one"', async ({
+    page,
+    context,
+  }) => {
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await openIo(page);
+    const [, newPage] = await Promise.all([
+      page.waitForEvent('download'),
+      context.waitForEvent('page'),
+      handoverTo(page, 'Bahasa Indonesia'),
+    ]);
+    await newPage.waitForLoadState();
+    expect(new URL(newPage.url()).pathname).toBe('/id/classroom-groups');
+    await expect(
+      page.getByText('Your class list is now open in Bahasa Indonesia.'),
+    ).toBeVisible();
   });
 });
 
@@ -753,7 +865,7 @@ test.describe('the handover cannot be overheard', () => {
     const [, receiver] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await receiver.waitForLoadState();
     // The legitimate receiver got it…
@@ -787,7 +899,7 @@ test.describe('the handover cannot be overheard', () => {
     const [, receiver] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await receiver.waitForLoadState();
     await receiver.locator('#cg-students-toggle').click();
@@ -813,7 +925,7 @@ test.describe('the handover cannot be overheard', () => {
     const [, receiver] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await receiver.waitForLoadState();
     await expect(receiver.locator('.cg-student')).toHaveCount(2);
@@ -833,7 +945,7 @@ test.describe('the handover cannot be overheard', () => {
     const [, second] = await Promise.all([
       page.waitForEvent('download'),
       context.waitForEvent('page'),
-      page.getByRole('button', { name: /other language/ }).click(),
+      handoverTo(page, 'Bahasa Indonesia'),
     ]);
     await second.waitForLoadState();
     // The NEW tab takes it, because it is empty…

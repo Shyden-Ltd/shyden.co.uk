@@ -1,12 +1,14 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getStrings, type Locale } from '../../lib/i18n';
+import { getStrings, LOCALES, type Locale } from '../../lib/i18n';
 // The engine owns the ceiling. Hard-coding a second number here is how the
 // field comes to advertise one limit while the tool enforces another.
 import { MAX_STUDENTS, type Student } from '../../lib/grouping';
 import { sectionState, type ToolState } from '../../lib/sections';
 import { sexWhy } from '../../lib/sexOptions';
 import { avatarSvg, AVATAR_SEXES } from '../../lib/avatars';
+import { flagSymbol } from '../../lib/i18n/flags';
+import { LOCALE_METADATA } from '../../lib/i18n/metadata';
 
 interface Props {
   lang: Locale;
@@ -24,6 +26,21 @@ const t = getStrings(lang);
 // picked (see that module's own "SECURITY" note); this is no different
 // from writing the same markup by hand directly into this template.
 const avatarDefs = AVATAR_SEXES.map(avatarSvg).join('');
+
+// Stage 3 of #21. The same trick for the handover picker's flags: the five
+// shapes live in `src/lib/i18n/flags.ts` and `io-ui.ts` -- TypeScript, which
+// cannot import `Flag.astro` -- draws each entry as `<use href="#flag-id">`
+// against these. Injected raw for the reason `avatarDefs` gives above:
+// `flagSymbol` interpolates nothing, and takes a five-member union rather
+// than free text (that module's own SECURITY note).
+//
+// Derived from LOCALES, not from all five MVP flags: the picker can only ever
+// offer a language the site actually serves, so a symbol for an unrouted one
+// would be bytes on every page load that nothing can reference. #22 adds `zh`
+// to LOCALES and this follows, with no edit here.
+const flagDefs = LOCALES.map((l) => flagSymbol(LOCALE_METADATA[l].flag)).join(
+  '',
+);
 
 // The three built collapsible sections' headers (Student details, Grouping
 // options, Import / export — Sound & animation carries no state string at
@@ -680,6 +697,20 @@ const sexWhyText = sexWhy(roster, t);
       aria-hidden="true"
       focusable="false"
       set:html={avatarDefs}
+    />
+
+    <!-- The handover picker's flags, same sprite trick, same reasons.
+
+         Its OWN class, not `.cg-avatar-defs`. Sharing that one to inherit the
+         hiding rule also made `.cg-avatar-defs symbol` — the query
+         `each rendered avatar references one of the three defined, coloured
+         faces` uses — return five symbols instead of three. A class that
+         hides a thing is not a class that IDENTIFIES it. -->
+    <svg
+      class="cg-flag-defs"
+      aria-hidden="true"
+      focusable="false"
+      set:html={flagDefs}
     />
 
     <!-- Stage 5, Task 1 (design spec section 10). A PANEL, not a bare print
@@ -1615,6 +1646,99 @@ const sexWhyText = sexWhy(roster, t);
     color: var(--ink-soft);
     max-width: var(--measure);
   }
+  /* Stage 3 of #21. The handover picker: a disclosure of one button per
+     language, in the same button row.
+
+     Its own line (`flex-basis: 100%`), so the open list never sits beside a
+     button or reaches past the section's edge. The header's switcher can
+     afford an absolutely-positioned menu because it hangs off a header with
+     room to its right; this one is inside a section that ALREADY has an
+     open 320px overflow bug (#32), and a second floating layer there would
+     be a second one. In flow, an open list pushes the page down -- which is
+     free, and correct at every width. */
+  .cg-io-both {
+    flex-basis: 100%;
+    /* `min-width: 0`, or a flex item refuses to shrink below its own
+       min-content width. This section shares a grid with the form above it,
+       so an unshrinkable item here does not clip itself -- it widens the
+       TRACK and puts horizontal scroll on the whole page. `#cg-io-toggle`
+       pinned that track to 378px once and cost 74px of scroll at 320px;
+       this control repeated it for 23px until this line and the summary's
+       own `width` below were fixed. */
+    min-width: 0;
+  }
+  /* A `<summary>` matches neither `.cg-io-buttons button` above nor anything
+     else, so it is styled to the SAME values here rather than left looking
+     like a link in a row of buttons. `list-style: none` plus the WebKit
+     pseudo-element removes the native triangle in both engines. */
+  #cg-io-both-toggle {
+    display: inline-flex;
+    align-items: center;
+    /* `gap`, never a literal space between inline children: a flex container
+       discards whitespace between items. */
+    gap: 0.5rem;
+    /* NOT `width: max-content`. That makes the summary's min-content
+       contribution equal to its longest possible line -- "Also export in
+       another language" -- which is exactly what widened the grid track
+       above. Shrink-to-fit is what `inline-flex` already does. */
+    flex-wrap: wrap;
+    max-width: 100%;
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    list-style: none;
+  }
+  #cg-io-both-toggle::-webkit-details-marker {
+    display: none;
+  }
+  /* The caret is drawn, not written: `io-ui.ts` sets the summary's label with
+     `textContent`, so a character appended there would be part of the
+     accessible name a screen reader reads out. */
+  #cg-io-both-toggle::after {
+    content: '';
+    width: 0;
+    height: 0;
+    border-left: 0.28em solid transparent;
+    border-right: 0.28em solid transparent;
+    border-top: 0.32em solid currentColor;
+  }
+  .cg-io-both[open] > #cg-io-both-toggle::after {
+    transform: rotate(180deg);
+  }
+  .cg-io-both-list {
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cg-io-both-target {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  /* `Flag.astro`'s own sizing is Astro-SCOPED, and these flags are built by
+     `io-ui.ts` at runtime, so they never carry that component's hashed
+     attribute. Same values, stated here, or the flags render at the SVG's
+     intrinsic size and the row breaks. */
+  .cg-io-both-target .flag {
+    display: block;
+    width: 1.5em;
+    height: 1em;
+    flex: none;
+    border-radius: 1px;
+    /* The Indonesian and Thai flags end in white, which vanishes on a pale
+       surface. A hairline keeps every flag a distinct object. */
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.18);
+  }
   /* Stage 5, Task 1. The print panel. GLOBAL like every other rule in this
      block -- the dialog is rendered by Astro, but its controls are reached
      by a script and the two must not drift into scoped/unscoped halves. */
@@ -2019,7 +2143,11 @@ const sexWhyText = sexWhy(roster, t);
      `.cg-io-both`, which shipped under the 44px floor and was caught only
      because the site-wide touch-target test runs against every section
      open. A container selector cannot be missed by the next button added
-     to either group -- closing the door rather than the one hole. */
+     to either group -- closing the door rather than the one hole. It has
+     since paid for itself twice: #21 Stage 3 turned `.cg-io-both` into a
+     `<details>` and put a button per language inside it, and every one of
+     them arrived at 44px without this rule being touched. The `<summary>`
+     is NOT a button and does not match -- see its own rule below. */
   .cg-io-buttons button,
   .cg-io-confirm-buttons button {
     min-height: 44px;
@@ -2529,7 +2657,8 @@ const sexWhyText = sexWhy(roster, t);
      visually-hidden clip technique `#cg-roster thead` uses elsewhere on
      this page (that one keeps its content in the accessibility tree on
      purpose; this one is `aria-hidden` and never meant to be read at all). */
-  .cg-avatar-defs {
+  .cg-avatar-defs,
+  .cg-flag-defs {
     position: absolute;
     width: 0;
     height: 0;

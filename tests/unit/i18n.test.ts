@@ -137,6 +137,12 @@ const FUNCTION_PROBES: Record<string, unknown[]> = {
   // Stage 2, Task 5. `resultsHeadingNamed` -- resultsHeadingText's sole
   // caller for a non-blank class name (src/lib/i18n/index.ts).
   resultsHeadingNamed: ['7B'],
+  // #21 Stage 3. The handover's confirmation now takes the language it
+  // opened, so a NATIVE NAME is what it is called with in the product
+  // (io-ui.ts passes the label off the button the teacher pressed). The
+  // name itself is identical in both catalogues by design -- only the
+  // sentence around it is translated, which is exactly what this compares.
+  ioHandoverSent: ['Bahasa Indonesia'],
   'errors.TOO_MANY_STUDENTS': [500],
   'errors.DUPLICATE_NUMBER': [5],
   'errors.TOO_MANY_GROUPS': [4],

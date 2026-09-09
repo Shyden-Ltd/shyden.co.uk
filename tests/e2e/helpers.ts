@@ -264,3 +264,22 @@ export const openPrintPanel = async (page: Page) => {
     .click();
   await expect(page.locator('#cg-print-panel')).toBeVisible();
 };
+
+/**
+ * Press a handover destination by the language's OWN name.
+ *
+ * #21 Stage 3 replaced the single "the other language" button with a
+ * disclosure of one button per language, so reaching a destination is two
+ * clicks: the summary opens the list, and the language's own button is the
+ * gesture that opens the tab.
+ *
+ * Returned as ONE promise deliberately. `window.open` has to run inside that
+ * second click, so every caller arms `waitForEvent('download')` /
+ * `context.waitForEvent('page')` AROUND the whole sequence — passing this
+ * straight into `Promise.all` keeps the waiters registered before the click,
+ * which a two-statement version would not.
+ */
+export const handoverTo = async (page: Page, language: string | RegExp) => {
+  await page.locator('#cg-io-both-toggle').click();
+  await page.getByRole('button', { name: language }).click();
+};
