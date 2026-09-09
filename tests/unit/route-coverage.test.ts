@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { LOCALES, PREFIXED_LOCALES } from '../../src/lib/i18n';
+import { LOCALES, PREFIXED_LOCALES, localisePath } from '../../src/lib/i18n';
 import { withoutTsComments } from './source-text';
 
 /**
@@ -132,5 +132,69 @@ describe('the post-deploy gates derive their routes', () => {
           `production`,
       ).toEqual([]);
     }
+  });
+});
+
+/**
+ * The production smoke fetches every route the site serves. #57.
+ *
+ * `release-prod.yml` loops over a HAND-WRITTEN path list, and its own comment
+ * records why that list exists: the release of 2026-08-12 rebuilt the
+ * Classroom Group Creator from nothing, and the smoke would have passed with
+ * that page 404ing because it only ever fetched two URLs. The list was then
+ * extended by hand -- and extended again for each locale, which is how the
+ * comment came to say "in BOTH languages" while the site serves five.
+ *
+ * That is the #49 defect in the third gate. The dev and prod SANITY suites now
+ * derive their routes; this list still cannot, because it is a shell loop in
+ * YAML with no access to the catalogue.
+ *
+ * So the list stays hand-written and is made UNABLE TO GO STALE instead: a
+ * sixth locale fails here until the workflow is updated. The runtime behaviour
+ * of a release workflow is deliberately not touched -- it executes only on a
+ * promotion, so a mistake in it would surface at release time, in front of the
+ * one action nobody wants to retry.
+ */
+const PROD_SMOKE_WORKFLOW = '.github/workflows/release-prod.yml';
+
+/** The paths the prod smoke loop actually iterates, comments stripped. */
+function prodSmokePaths(): string[] {
+  const body = readFileSync(PROD_SMOKE_WORKFLOW, 'utf8')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n');
+  const loop = /for path in ([^;]+); do/.exec(body);
+  return loop ? loop[1].trim().split(/\s+/).sort() : [];
+}
+
+describe('the production smoke covers every route', () => {
+  it('finds the smoke loop at all', () => {
+    // Without this the comparison below is vacuous the day someone rewrites
+    // the loop: no match, empty list, and an empty expectation would agree.
+    expect(
+      prodSmokePaths().length,
+      `no \`for path in ...; do\` loop found in ${PROD_SMOKE_WORKFLOW} -- if it ` +
+        'was restructured, this guard must be taught the new shape rather than deleted',
+    ).toBeGreaterThan(0);
+  });
+
+  it('smokes every route except the homepage, which is checked separately', () => {
+    // `/` is fetched BEFORE the loop and asserted far harder -- 200, contains
+    // "shyden", prod ShyTalk link present, dev link absent, real company
+    // number -- so it is excluded here rather than duplicated.
+    const expected = LOCALES.flatMap((locale) =>
+      ['/', '/glory-points', '/classroom-groups'].map((page) =>
+        localisePath(page, locale),
+      ),
+    )
+      .filter((path) => path !== '/')
+      .sort();
+
+    expect(
+      prodSmokePaths(),
+      'the prod smoke path list has drifted from LOCALES. It is hand-written ' +
+        'because it is a shell loop, so adding a locale means editing ' +
+        `${PROD_SMOKE_WORKFLOW} by hand -- this is the failure that makes you do it`,
+    ).toEqual(expected);
   });
 });

@@ -113,11 +113,19 @@ jobs:
           # Real legal footer, no bracket placeholder.
           grep -q '17110487' home.html || { echo "::error::footer company number missing"; exit 1; }
 
-          # EVERY page this site serves, in BOTH languages — not just the two
+          # EVERY page this site serves, in EVERY language — not just the two
           # that happened to exist when this smoke was first written. The
           # release of 2026-08-12 rebuilt the Classroom Group Creator from
           # nothing and this smoke would have passed with that page 404ing,
           # because it only ever fetched the homepage and the calculator.
+          #
+          # This list is hand-written because it is a shell loop with no access
+          # to the catalogue — and it said "BOTH languages" while the site
+          # served five, which is exactly how it goes stale. It cannot any
+          # more: 'the production smoke covers every route' in
+          # tests/unit/route-coverage.test.ts derives the expected set from
+          # LOCALES and fails until this line is updated. Adding a locale means
+          # editing this line by hand; that test is what makes you.
           for path in /glory-points /classroom-groups /id/ /id/glory-points /id/classroom-groups /zh/ /zh/glory-points /zh/classroom-groups /vi/ /vi/glory-points /vi/classroom-groups /th/ /th/glory-points /th/classroom-groups; do
             code=$(curl -sL -o page.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE$path")
             [ "$code" = "200" ] || { echo "::error::$path HTTP $code"; exit 1; }
