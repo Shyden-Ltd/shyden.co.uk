@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { LOCALES, localisePath } from '../../src/lib/i18n/index';
 
 test.describe('the sitemap', () => {
   test('lists every page and pairs the two languages', async ({ request }) => {
@@ -9,14 +10,16 @@ test.describe('the sitemap', () => {
       new URL(m[1]).pathname.replace(/\/$/, ''),
     );
 
-    expect(locs.sort()).toEqual([
-      '',
-      '/classroom-groups',
-      '/glory-points',
-      '/id',
-      '/id/classroom-groups',
-      '/id/glory-points',
-    ]);
+    // Derived from LOCALES, not listed: a hand-written list of six was
+    // correct for two languages and silently wrong the moment #22 added
+    // three more. Every page in every locale, with the trailing slash
+    // stripped the same way the parse above strips it.
+    const expected = LOCALES.flatMap((locale) =>
+      ['/', '/classroom-groups', '/glory-points'].map((page) =>
+        localisePath(page, locale).replace(/\/$/, ''),
+      ),
+    );
+    expect(locs.sort()).toEqual(expected.sort());
   });
 
   test('declares the language relationships search engines need', async ({
@@ -63,7 +66,12 @@ test.describe('the 404 head', () => {
     await page.goto('/classroom-groups');
     await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
     await expect(page.locator('link[rel="canonical"]')).toHaveCount(1);
-    await expect(page.locator('link[rel="alternate"]')).toHaveCount(3);
+    // One per locale plus `x-default`, derived: this read 3 while the site
+    // shipped two languages, and 3 is not a fact about the page — it is
+    // LOCALES.length + 1, and it was going to be wrong on the next language.
+    await expect(page.locator('link[rel="alternate"]')).toHaveCount(
+      LOCALES.length + 1,
+    );
   });
 });
 

@@ -44,6 +44,34 @@ h3 {
   font-family: var(--font-head);
   line-height: 1.15;
 }
+/*
+ * Thai needs a taller line than Latin, and #22 measured how much.
+ *
+ * Thai stacks up to two marks ABOVE the base glyph (vowel, then tone) and one
+ * below it, so its ink box is far deeper than a Latin cap-height-plus-descender
+ * box the 1.15 above was tuned for. Measured with Canvas
+ * `actualBoundingBoxAscent/Descent` against the real line box, on the built
+ * pages: the /th/ homepage h1 drew 45.9px of ink into a 36.8px line at 320px
+ * wide — 9.1px over, across SIX lines, so tone marks collided with the
+ * descenders of the line above. h3 ran 1.9–4.8px over and one span 1px over.
+ * Nothing was clipped by an `overflow: hidden`; the lines simply ran into each
+ * other, which is what "no clipped ascenders or descenders" (#22) is about.
+ *
+ * 1.5 rather than a hair over the worst case: the deepest ratio measured was
+ * ink/font-size 1.43, and a heading that wraps to six lines on a phone should
+ * not sit one rounding error from touching. Body copy is untouched — 1.6
+ * already clears Thai, which is why no `p` appeared in the measurements.
+ *
+ * `:lang(th)` rather than `[lang="th"]`: it matches inherited language too, so
+ * a Thai heading inside an otherwise-English page — the language switcher's own
+ * list — is covered by the same rule. `tests/e2e/thai-typography.spec.ts` holds
+ * the measurement so a future change to the 1.15 above cannot silently undo it.
+ */
+:lang(th) h1,
+:lang(th) h2,
+:lang(th) h3 {
+  line-height: 1.5;
+}
 a {
   color: var(--accent);
 }

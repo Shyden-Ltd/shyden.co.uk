@@ -118,7 +118,7 @@ jobs:
           # release of 2026-08-12 rebuilt the Classroom Group Creator from
           # nothing and this smoke would have passed with that page 404ing,
           # because it only ever fetched the homepage and the calculator.
-          for path in /glory-points /classroom-groups /id/ /id/glory-points /id/classroom-groups; do
+          for path in /glory-points /classroom-groups /id/ /id/glory-points /id/classroom-groups /zh/ /zh/glory-points /zh/classroom-groups /vi/ /vi/glory-points /vi/classroom-groups /th/ /th/glory-points /th/classroom-groups; do
             code=$(curl -sL -o page.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE$path")
             [ "$code" = "200" ] || { echo "::error::$path HTTP $code"; exit 1; }
             # Non-trivial: a Cloudflare error page or an empty build is a 200.

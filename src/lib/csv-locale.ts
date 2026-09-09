@@ -141,4 +141,73 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     templateHint: 'hapus dua baris ini lalu ketik milik Anda sendiri',
     fileName: { 'class-list': 'daftar-kelas', groups: 'kelompok' },
   },
+  zh: {
+    classComment: '# 类：',
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
+    // reviewer may prefer native tokens; both places change together.
+    sex: { M: 'M', F: 'F' },
+    columns: {
+      number: '数字',
+      name: '名称',
+      sex: '性',
+      absent: '缺席',
+      together: '一起',
+      apart: '分开',
+    },
+    absentYes: '是',
+    absentNo: '不',
+    groupColumn: '组',
+    groupsMadeComment: '# 已创建的组',
+    templateHint: '删除这两行，然后输入你自己的内容',
+    fileName: {
+      'class-list': '班级名单',
+      groups: '组',
+    },
+  },
+  vi: {
+    classComment: '# Lớp:',
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
+    // reviewer may prefer native tokens; both places change together.
+    sex: { M: 'M', F: 'F' },
+    columns: {
+      number: 'số',
+      name: 'tên',
+      sex: 'tình dục',
+      absent: 'vắng mặt',
+      together: 'cùng nhau',
+      apart: 'riêng biệt',
+    },
+    absentYes: 'đúng vậy',
+    absentNo: 'không',
+    groupColumn: 'nhóm',
+    groupsMadeComment: '# Các nhóm đã được tạo',
+    templateHint: 'Hãy xóa hai dòng này và nhập nội dung của riêng bạn',
+    fileName: {
+      'class-list': 'danh sách lớp',
+      groups: 'nhóm',
+    },
+  },
+  th: {
+    classComment: '# ชั้นเรียน:',
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
+    // reviewer may prefer native tokens; both places change together.
+    sex: { M: 'M', F: 'F' },
+    columns: {
+      number: 'ตัวเลข',
+      name: 'ชื่อ',
+      sex: 'เพศ',
+      absent: 'ไม่มา',
+      together: 'ด้วยกัน',
+      apart: 'แยกกัน',
+    },
+    absentYes: 'ใช่',
+    absentNo: 'ไม่',
+    groupColumn: 'กลุ่ม',
+    groupsMadeComment: '# กลุ่มที่สร้างแล้ว',
+    templateHint: 'ลบสองบรรทัดนี้แล้วพิมพ์ข้อความของคุณเอง',
+    fileName: {
+      'class-list': 'รายชื่อชั้น',
+      groups: 'กลุ่ม',
+    },
+  },
 };

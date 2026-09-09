@@ -257,8 +257,24 @@ export const id: Strings = {
   // PERLU DITINJAU.
   csvWrongLanguage: (language: string, version: string) =>
     `Ini sepertinya daftar kelas ${language}. Buka halaman ini versi ${version} untuk mengimpornya.`,
-  csvLanguageName: { en: 'bahasa Inggris', id: 'bahasa Indonesia' },
-  csvLanguageVersion: { en: 'bahasa Inggris', id: 'bahasa Indonesia' },
+  // Lowercase `bahasa`, matching the two entries that were already here.
+  // DeepL returned 'Thailand' for 'Thai' into Indonesian -- the COUNTRY, not
+  // the language -- so `bahasa Thai` is a correction, not machine output, and
+  // is on the review list with the rest (#22).
+  csvLanguageName: {
+    en: 'bahasa Inggris',
+    id: 'bahasa Indonesia',
+    zh: 'bahasa Mandarin',
+    vi: 'bahasa Vietnam',
+    th: 'bahasa Thai',
+  },
+  csvLanguageVersion: {
+    en: 'bahasa Inggris',
+    id: 'bahasa Indonesia',
+    zh: 'bahasa Mandarin',
+    vi: 'bahasa Vietnam',
+    th: 'bahasa Thai',
+  },
 
   // ── Kontrol bagian Impor / ekspor (tahap 4, Tugas 5) ───────────────────
   //

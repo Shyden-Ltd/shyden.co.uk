@@ -1,6 +1,13 @@
 import { test, expect } from './fixtures';
 import { LOCALES, localisePath, type Locale } from '../../src/lib/i18n/index';
-import { siteEn, siteId, type SiteStrings } from '../../src/lib/i18n/site';
+import {
+  siteEn,
+  siteId,
+  siteZh,
+  siteVi,
+  siteTh,
+  type SiteStrings,
+} from '../../src/lib/i18n/site';
 
 /**
  * Every published page is served in every locale it claims to ship.
@@ -18,7 +25,13 @@ import { siteEn, siteId, type SiteStrings } from '../../src/lib/i18n/site';
 
 /** The site copy each locale ships. Keyed loosely so a missing one is a test
  *  failure below, not a compile error that would hide behind `as`. */
-const SITE: Record<string, SiteStrings> = { en: siteEn, id: siteId };
+const SITE: Record<string, SiteStrings> = {
+  en: siteEn,
+  id: siteId,
+  zh: siteZh,
+  vi: siteVi,
+  th: siteTh,
+};
 
 const PAGES = [
   { path: '/', title: (s: SiteStrings) => s.home.title },
@@ -29,11 +42,12 @@ const PAGES = [
  * Where a page lives in a given locale, derived from the route layout
  * (`src/pages/<locale>/…`) rather than from `localisePath`.
  *
- * `localisePath` is written for exactly two locales today: its
- * `/^\/id(?=\/|$)/` strip and its `` `/id${stripped}` `` join are both
- * hardcoded, so it hands back an Indonesian URL for any locale #21/#22 adds.
- * The two are pinned together below, so generalising that helper is confirmed
- * here — and forgetting to generalise it fails here.
+ * Kept as a SECOND, independent derivation rather than deleted now that
+ * `localisePath` is general (#21 Stage 1 replaced its hardcoded
+ * `/^\/id(?=\/|$)/` with a pattern built from `PREFIXED_LOCALES`). The two
+ * are pinned together below: the helper and the route layout must agree for
+ * every locale, and a test that used the helper to check the helper would
+ * agree with itself no matter what either one said.
  */
 const urlFor = (path: string, locale: Locale) =>
   locale === 'en' ? path : `/${locale}${path === '/' ? '/' : path}`;

@@ -1,6 +1,16 @@
 import { en, type Strings } from './en';
 import { id } from './id';
-import { siteEn, siteId, type SiteStrings } from './site';
+import { zh } from './zh';
+import { vi } from './vi';
+import { th } from './th';
+import {
+  siteEn,
+  siteId,
+  siteZh,
+  siteVi,
+  siteTh,
+  type SiteStrings,
+} from './site';
 import {
   ERROR_CODES,
   type GroupingError,
@@ -9,7 +19,7 @@ import {
 } from '../grouping';
 
 /** English first: it is the default and lives at the unprefixed route. */
-export const LOCALES = ['en', 'id'] as const;
+export const LOCALES = ['en', 'id', 'zh', 'vi', 'th'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /**
@@ -39,7 +49,7 @@ export const PREFIXED_LOCALES: readonly Locale[] = LOCALES.filter(
  */
 const PREFIX_PATTERN = new RegExp(`^/(${PREFIXED_LOCALES.join('|')})(?=/|$)`);
 
-const TABLE: Record<Locale, Strings> = { en, id };
+const TABLE: Record<Locale, Strings> = { en, id, zh, vi, th };
 
 export const isLocale = (value: unknown): value is Locale =>
   typeof value === 'string' && (LOCALES as readonly string[]).includes(value);
@@ -58,7 +68,13 @@ export const getStrings = (locale: unknown): Strings =>
  * `getStrings` is also simply where its twin belongs: one file decides what a
  * locale is and what copy it gets.
  */
-const SITE_TABLE: Record<Locale, SiteStrings> = { en: siteEn, id: siteId };
+const SITE_TABLE: Record<Locale, SiteStrings> = {
+  en: siteEn,
+  id: siteId,
+  zh: siteZh,
+  vi: siteVi,
+  th: siteTh,
+};
 
 /** Unknown or absent locale falls back to the default, never throws. */
 export const getSiteStrings = (locale: unknown): SiteStrings =>

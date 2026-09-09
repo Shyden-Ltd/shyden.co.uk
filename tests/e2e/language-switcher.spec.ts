@@ -1,4 +1,6 @@
 import { test, expect } from './fixtures';
+import { otherLocales } from '../../src/lib/i18n/index';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 
 /**
  * The language switcher, as a visitor meets it.
@@ -35,11 +37,21 @@ test.describe('language switcher', () => {
     page,
   }) => {
     await page.goto('/');
+    // Every other language, derived. A count of 1 and a single hard-coded
+    // name asserted that the site had two languages, not that the switcher
+    // lists them -- and it would have gone on passing if #22 had wired the
+    // three new locales everywhere EXCEPT here.
+    const others = otherLocales('en');
     const entries = page.locator(`${SWITCHER} li a`);
-    await expect(entries).toHaveCount(1);
-    await expect(entries.first()).toContainText('Bahasa Indonesia');
-    await expect(entries.first()).toHaveAttribute('hreflang', 'id');
-    await expect(entries.first()).toHaveAttribute('lang', 'id');
+    await expect(entries).toHaveCount(others.length);
+    for (const locale of others) {
+      const entry = entries.filter({
+        hasText: LOCALE_METADATA[locale].nativeName,
+      });
+      await expect(entry, `an entry for ${locale}`).toHaveCount(1);
+      await expect(entry).toHaveAttribute('hreflang', locale);
+      await expect(entry).toHaveAttribute('lang', locale);
+    }
   });
 
   test('opens and closes without JavaScript', async ({ page }) => {
