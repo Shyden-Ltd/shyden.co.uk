@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { sitePaths } from '../site-pages';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 
 /**
@@ -25,9 +26,7 @@ import { LOCALES, localisePath } from '../../src/lib/i18n';
  * would have passed throughout.
  */
 
-const THAI_ROUTES = ['/', '/glory-points', '/classroom-groups'].map((p) =>
-  localisePath(p, 'th'),
-);
+const THAI_ROUTES = sitePaths().map((p) => localisePath(p, 'th'));
 
 /** Both phone sizes #32 fixed, plus a tablet and a laptop. A heading wraps to
  * more lines the narrower it gets, and collisions only happen between lines. */
@@ -48,11 +47,21 @@ test.describe('Thai typography', () => {
         await page.setViewportSize({ width, height: 900 });
 
         for (const route of THAI_ROUTES) {
-          await page.goto(route);
-          const offenders = await page.evaluate(() => {
+          const response = await page.goto(route);
+
+          // Assert the SEAM: that this route served at all. The site's own
+          // 404 page carries Thai text (3 characters of it), so a missing
+          // route renders Thai, measures clean, and passes — which is how a
+          // page with no `/th` twin slipped through before #68.
+          expect(
+            response?.status(),
+            `${route} at ${width}px: route did not serve`,
+          ).toBe(200);
+          const { offenders, examined } = await page.evaluate(() => {
             const THAI = /[฀-๿]/;
             const context = document.createElement('canvas').getContext('2d')!;
             const found: string[] = [];
+            let examined = 0;
 
             for (const el of document.querySelectorAll(
               'h1,h2,h3,p,li,label,button,a,span,td,th,summary',
@@ -61,6 +70,7 @@ test.describe('Thai typography', () => {
               // Leaf nodes only: a parent's textContent concatenates its
               // children and would be measured in the parent's font.
               if (!THAI.test(text) || el.children.length > 0) continue;
+              examined += 1;
 
               const style = getComputedStyle(el);
               const fontSize = parseFloat(style.fontSize);
@@ -80,8 +90,19 @@ test.describe('Thai typography', () => {
                   `${el.tagName.toLowerCase()} ink ${ink.toFixed(1)}px > line ${lineHeight.toFixed(1)}px — "${text.slice(0, 24)}"`,
                 );
             }
-            return [...new Set(found)];
+            return { offenders: [...new Set(found)], examined };
           });
+
+          // Anti-vacuity, and this file already knew to worry about it: its
+          // own opening test says these routes would 404 and "every
+          // measurement below would pass on an empty page". That covered
+          // Thai leaving LOCALES; it did not cover a route that 404s for any
+          // other reason, or a page not yet translated. Deriving the route
+          // list (#68) makes the second case reachable, so measure it.
+          expect(
+            examined,
+            `${route} at ${width}px: no Thai text was measured — the route is missing or untranslated`,
+          ).toBeGreaterThan(0);
 
           expect(
             offenders,

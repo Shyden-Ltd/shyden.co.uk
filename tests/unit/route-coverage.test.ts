@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { pageNames } from '../site-pages';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOCALES, PREFIXED_LOCALES, localisePath } from '../../src/lib/i18n';
@@ -27,23 +28,10 @@ import { withoutTsComments } from './source-text';
 const PAGES_DIR = 'src/pages';
 const LOCALE_ROUTE = join(PAGES_DIR, '[locale]');
 
-/**
- * The site's pages, read off the routes that serve the default locale.
- *
- * `404.astro` is excluded: it is Cloudflare's not-found document, served at
- * one URL for the whole site, and there is no `/id/404` to match it.
- */
-const pageRoutes = (): string[] =>
-  readdirSync(PAGES_DIR, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith('.astro'))
-    .map((e) => e.name.replace(/\.astro$/, ''))
-    .filter((n) => n !== '404')
-    .sort();
-
 describe('every locale is routed from LOCALES, not from a directory per locale', () => {
   it('serves the default locale from the unprefixed routes', () => {
-    expect(pageRoutes().length).toBeGreaterThan(0);
-    expect(pageRoutes()).toContain('index');
+    expect(pageNames().length).toBeGreaterThan(0);
+    expect(pageNames()).toContain('index');
   });
 
   it('serves every other locale from ONE dynamic route per page', () => {
@@ -54,7 +42,7 @@ describe('every locale is routed from LOCALES, not from a directory per locale',
     expect(
       dynamic,
       'a page served at / with no [locale] twin 404s in every other language',
-    ).toEqual(pageRoutes());
+    ).toEqual(pageNames());
   });
 
   it('has no hand-written directory for any locale', () => {
@@ -71,7 +59,7 @@ describe('every locale is routed from LOCALES, not from a directory per locale',
   });
 
   it('generates its paths from PREFIXED_LOCALES, not from a literal list', () => {
-    for (const route of pageRoutes()) {
+    for (const route of pageNames()) {
       const src = readFileSync(join(LOCALE_ROUTE, `${route}.astro`), 'utf8');
       expect(src, `${route}.astro`).toContain('PREFIXED_LOCALES');
       expect(src, `${route}.astro has no getStaticPaths`).toContain(
