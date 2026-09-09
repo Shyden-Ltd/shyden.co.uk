@@ -11,6 +11,33 @@ import {
 export const LOCALES = ['en', 'id'] as const;
 export type Locale = (typeof LOCALES)[number];
 
+/**
+ * The locale served without a URL prefix, by construction the first in LOCALES.
+ *
+ * Named rather than written as the literal `'en'` in six places: the default
+ * being English is a routing decision, not a fact about the English language,
+ * and every `=== 'en'` was a place a reader had to infer that.
+ */
+export const DEFAULT_LOCALE: Locale = LOCALES[0];
+
+/** Locales that carry a URL prefix -- everything except the default. */
+export const PREFIXED_LOCALES: readonly Locale[] = LOCALES.filter(
+  (l) => l !== DEFAULT_LOCALE,
+);
+
+/**
+ * Matches a leading `/<locale>` segment for any PREFIXED locale.
+ *
+ * Built from LOCALES rather than written out, because the literal it replaces
+ * (`/^\/id(?=\/|$)/`) failed silently rather than loudly: with `zh` in
+ * LOCALES but not in the pattern, `localisePath('/', 'zh')` returned `/id/` --
+ * the INDONESIAN homepage, served as Chinese, with every existing test green.
+ *
+ * The `(?=\/|$)` boundary is load-bearing: without it `/identity-check` parses
+ * as Indonesian and gets rewritten.
+ */
+const PREFIX_PATTERN = new RegExp(`^/(${PREFIXED_LOCALES.join('|')})(?=/|$)`);
+
 const TABLE: Record<Locale, Strings> = { en, id };
 
 export const isLocale = (value: unknown): value is Locale =>
@@ -20,12 +47,19 @@ export const isLocale = (value: unknown): value is Locale =>
 export const getStrings = (locale: unknown): Strings =>
   isLocale(locale) ? TABLE[locale] : en;
 
-/** The path to this tool in a given locale. English is unprefixed. */
+/** The path to this tool in a given locale. The default locale is unprefixed. */
 export const toolPath = (locale: Locale): string =>
-  locale === 'en' ? '/classroom-groups' : `/${locale}/classroom-groups`;
+  localisePath('/classroom-groups', locale);
 
-export const otherLocale = (locale: Locale): Locale =>
-  locale === 'en' ? 'id' : 'en';
+/**
+ * Every locale except the one being viewed, in LOCALES order.
+ *
+ * Replaces `otherLocale`, which returned a single Locale and was therefore
+ * binary by construction: with five languages there is no "the other one",
+ * only a list. The language switcher is a dropdown for exactly that reason.
+ */
+export const otherLocales = (locale: Locale): Locale[] =>
+  LOCALES.filter((l) => l !== locale);
 
 /**
  * The same page in another locale.
@@ -36,14 +70,16 @@ export const otherLocale = (locale: Locale): Locale =>
  * unprefixed, so switching is purely adding or removing the `/id` segment.
  */
 export function localisePath(pathname: string, target: Locale): string {
-  const stripped = pathname.replace(/^\/id(?=\/|$)/, '') || '/';
-  if (target === 'en') return stripped;
-  return stripped === '/' ? '/id/' : `/id${stripped}`;
+  const stripped = pathname.replace(PREFIX_PATTERN, '') || '/';
+  if (target === DEFAULT_LOCALE) return stripped;
+  return stripped === '/' ? `/${target}/` : `/${target}${stripped}`;
 }
 
 /** The locale a path belongs to, inferred from its prefix. */
-export const localeFromPath = (pathname: string): Locale =>
-  /^\/id(\/|$)/.test(pathname) ? 'id' : 'en';
+export const localeFromPath = (pathname: string): Locale => {
+  const prefix = PREFIX_PATTERN.exec(pathname);
+  return prefix ? (prefix[1] as Locale) : DEFAULT_LOCALE;
+};
 
 /**
  * A student number, resolved to a label a teacher can read.

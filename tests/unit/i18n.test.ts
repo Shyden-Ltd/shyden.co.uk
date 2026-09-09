@@ -9,7 +9,7 @@ import {
   localisePath,
   localeFromPath,
   toolPath,
-  otherLocale,
+  otherLocales,
   isLocale,
   groupName,
   resultsHeadingText,
@@ -1719,10 +1719,15 @@ describe('the locale-aware paths', () => {
     expect(toolPath(locale)).toBe(expected);
   });
 
-  it('otherLocale is its own inverse', () => {
-    expect(otherLocale('en')).toBe('id');
-    expect(otherLocale('id')).toBe('en');
-    expect(otherLocale(otherLocale('en'))).toBe('en');
+  it('otherLocales lists every locale except the one given', () => {
+    expect(otherLocales('en')).toEqual(['id']);
+    expect(otherLocales('id')).toEqual(['en']);
+    // Derived as well as spelled out, so this keeps holding as LOCALES grows
+    // rather than becoming another two-locale assumption to find later.
+    for (const locale of LOCALES) {
+      expect(otherLocales(locale)).not.toContain(locale);
+      expect(otherLocales(locale)).toHaveLength(LOCALES.length - 1);
+    }
   });
 
   it.each([
