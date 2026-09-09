@@ -108,18 +108,43 @@ export const withoutMarkupComments = (text: string): string =>
  * matches. Quotes, template literals and escapes are tracked; that is the
  * whole of the grammar this needs.
  */
+/**
+ * A `/` either opens a regex literal or divides, and only the token before it
+ * tells them apart, and the old scanner tracked neither (#65). Two concrete
+ * breakages, both the shape of a comment-stripping regex — which is exactly
+ * what these guards read: `/\/\*x\*\//g` ends in `//`, so the scanner cut
+ * the literal short as a line comment; and `/['"]/g` opened a string at the
+ * quote inside the character class, so comments went unstripped until the
+ * next apostrophe in the file.
+ */
+function startsRegex(tail: string): boolean {
+  if (tail === '') return true;
+  if (/[=(,:[!&|?{};+\-*%~^<>]$/.test(tail)) return true;
+  return /(return|typeof|instanceof|in|of|new|delete|void|case|do|else|yield|await)$/.test(
+    tail,
+  );
+}
+
 export function withoutTsComments(source: string): string {
   let out = '';
   let quote: string | null = null;
+  /** Last 16 non-whitespace characters emitted, for the decision above. */
+  let tail = '';
+
+  const emit = (text: string) => {
+    out += text;
+    const dense = text.replace(/\s+/g, '');
+    if (dense) tail = (tail + dense).slice(-16);
+  };
 
   for (let i = 0; i < source.length; i += 1) {
     const char = source[i];
     const next = source[i + 1];
 
     if (quote) {
-      out += char;
+      emit(char);
       if (char === '\\') {
-        out += source[i + 1] ?? '';
+        emit(source[i + 1] ?? '');
         i += 1;
       } else if (char === quote) quote = null;
       continue;
@@ -127,7 +152,7 @@ export function withoutTsComments(source: string): string {
 
     if (char === "'" || char === '"' || char === '`') {
       quote = char;
-      out += char;
+      emit(char);
       continue;
     }
 
@@ -145,8 +170,56 @@ export function withoutTsComments(source: string): string {
       continue;
     }
 
-    out += char;
+    if (char === '/' && startsRegex(tail)) {
+      emit(char);
+      i += 1;
+      let inClass = false;
+      for (; i < source.length; i += 1) {
+        const c = source[i];
+        emit(c);
+        if (c === '\\') {
+          emit(source[i + 1] ?? '');
+          i += 1;
+        } else if (c === '\n') break;
+        else if (c === '[') inClass = true;
+        else if (c === ']') inClass = false;
+        else if (c === '/' && !inClass) break;
+      }
+      continue;
+    }
+
+    emit(char);
   }
 
   return out;
+}
+
+/**
+ * True for a line that is ENTIRELY a comment: a `//` line, a `/*` opener, or
+ * a ` * ` continuation. Exposed separately because a caller may need to walk
+ * backwards over the comment block above a line rather than transform a whole
+ * file — `parked-tests.test.ts` does, to attribute a parked test to the note
+ * that explains it.
+ */
+export function isCommentLine(line: string): boolean {
+  const trimmed = line.trimStart();
+  return (
+    trimmed.startsWith('//') ||
+    trimmed.startsWith('*') ||
+    trimmed.startsWith('/*')
+  );
+}
+
+/**
+ * Blanks whole comment lines while keeping the line COUNT identical, so a line
+ * number derived from the result still points at the right line of the
+ * original file. The removers above cannot do that — dropping a comment shifts
+ * every number after it — which is why three suites had each grown their own
+ * copy of this before #65 gave it a home.
+ */
+export function blankCommentLines(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => (isCommentLine(line) ? '' : line))
+    .join('\n');
 }

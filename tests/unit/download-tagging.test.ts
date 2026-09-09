@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { isCommentLine } from './source-text';
 import { readdirSync, readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
@@ -90,12 +91,7 @@ const scan = () => {
     const readingLines = lines
       .map((l, i) => ({ l, line: i + 1 }))
       // A call sitting only inside a comment is not a call.
-      .filter(
-        ({ l }) =>
-          l.includes(READS_BYTES) &&
-          !l.trimStart().startsWith('*') &&
-          !l.trimStart().startsWith('//'),
-      )
+      .filter(({ l }) => l.includes(READS_BYTES) && !isCommentLine(l))
       .map(({ line }) => line);
 
     for (const line of readingLines) {

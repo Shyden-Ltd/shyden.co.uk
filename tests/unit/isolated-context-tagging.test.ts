@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { blankCommentLines } from './source-text';
 import { readdirSync, readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
@@ -72,10 +73,7 @@ function lineNumberAt(text: string, index: number): number {
 /** Blanks every line whose trimmed content starts with `//`, keeping line count (and every
  * other line's number) identical -- identical technique to viewport-tagging.test.ts. */
 function blankComments(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => (/^\s*\/\//.test(line) ? '' : line))
-    .join('\n');
+  return blankCommentLines(text);
 }
 
 /** Indentation (count of leading spaces) of the line containing character `index`. */

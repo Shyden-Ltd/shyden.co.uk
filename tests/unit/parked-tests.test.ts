@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { blankCommentLines, isCommentLine } from './source-text';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -88,23 +89,6 @@ function lineNumberAt(text: string, index: number): number {
   return text.slice(0, index).split('\n').length;
 }
 
-function isCommentLine(line: string): boolean {
-  const t = line.trim();
-  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
-}
-
-/**
- * Blanks every comment line, keeping the line COUNT identical so every other
- * line's number is unchanged. `*` and `/*` openers are blanked as well as
- * `//`, so a JSDoc quoting a `test.fixme(` call cannot register as one.
- */
-function blankComments(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => (isCommentLine(line) ? '' : line))
-    .join('\n');
-}
-
 /** The unbroken run of comment lines immediately above `line` (1-indexed). */
 function precedingCommentBlock(lines: string[], line: number): string[] {
   const block: string[] = [];
@@ -118,7 +102,7 @@ export function findUnreferencedParkedTests(
   file: string,
   source: string,
 ): string[] {
-  const blanked = blankComments(source);
+  const blanked = blankCommentLines(source);
   const lines = source.split('\n');
   const findings: string[] = [];
 

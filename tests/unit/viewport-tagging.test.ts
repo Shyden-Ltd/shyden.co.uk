@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { blankCommentLines } from './source-text';
 import { readdirSync, readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
@@ -98,10 +99,7 @@ function lineNumberAt(text: string, index: number): number {
  * (and therefore every other line's number) identical -- see the file-level
  * comment above for the two real near-misses this exists to stop. */
 function blankComments(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => (/^\s*\/\//.test(line) ? '' : line))
-    .join('\n');
+  return blankCommentLines(text);
 }
 
 type Kind = 'test' | 'describe';
