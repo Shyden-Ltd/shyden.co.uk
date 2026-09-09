@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { specDirs } from '../spec-dirs';
 import { join } from 'node:path';
 import { test, expect, BASE_URL_AWARE_APIS } from './fixtures';
 
@@ -8,7 +9,7 @@ import { test, expect, BASE_URL_AWARE_APIS } from './fixtures';
 // patterns by careful wording elsewhere in this file.
 const SELF = join('tests', 'e2e', 'baseurl-guard.spec.ts');
 
-const SCAN_DIRS = [join('tests', 'e2e'), join('tests', 'device')];
+const SCAN_DIRS = specDirs();
 
 function listSourceFiles(dir: string): string[] {
   const out: string[] = [];
