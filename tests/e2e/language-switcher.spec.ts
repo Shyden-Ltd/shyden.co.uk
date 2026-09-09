@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 
@@ -107,10 +108,16 @@ test.describe('language switcher', () => {
   });
 
   test(
-    'adds no horizontal scroll at 320px, in either language',
+    'adds no horizontal scroll at 320px, in every language',
     { tag: '@emulated-viewport' },
     async ({ page }) => {
-      for (const path of ['/', '/id/']) {
+      // Derived from LOCALES (#75). This read `['/', '/id/']`, written when
+      // those were the only two. Width at 320px is one of the few genuinely
+      // locale-sensitive things here — Thai and Chinese set to different
+      // widths than English — so the three locales #22 added are exactly the
+      // ones this test most needed to see. The loop is inside the test, so
+      // covering them costs iterations, not tests.
+      for (const path of LOCALES.map((locale) => localisePath('/', locale))) {
         await page.setViewportSize({ width: 320, height: 720 });
         await page.goto(path);
         // Not vacuous: a switcher hidden at 320px would satisfy "no overflow"
