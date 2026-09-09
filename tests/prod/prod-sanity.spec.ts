@@ -1,4 +1,41 @@
 import { test, expect } from '@playwright/test';
+import {
+  LOCALES,
+  localisePath,
+  getSiteStrings,
+  getStrings,
+} from '../../src/lib/i18n/index';
+
+/**
+ * Every route the site serves, derived. #49.
+ *
+ * Both lists below were hand-written `/id/*` triples, and each carried a
+ * comment saying a dropped locale would deploy green -- which is what happened
+ * the moment #22 added zh, vi and th: nine routes, never requested here, while
+ * the gate stayed green. Extending the list by hand is how it broke the first
+ * time, so it is derived now and a sixth language is covered the day it joins
+ * LOCALES.
+ */
+const ROUTES = LOCALES.flatMap((locale) => [
+  {
+    locale,
+    path: localisePath('/', locale),
+    heading: getSiteStrings(locale).home.heroHeading,
+    englishHeading: getSiteStrings('en').home.heroHeading,
+  },
+  {
+    locale,
+    path: localisePath('/glory-points', locale),
+    heading: getSiteStrings(locale).glory.heading,
+    englishHeading: getSiteStrings('en').glory.heading,
+  },
+  {
+    locale,
+    path: localisePath('/classroom-groups', locale),
+    heading: getStrings(locale).heading,
+    englishHeading: getStrings('en').heading,
+  },
+]);
 
 /**
  * Production, verified in a real browser before `prod-verified` is posted.
@@ -72,14 +109,7 @@ test('the Classroom Group Creator forms groups', async ({ page }) => {
 //
 // 320px because that is the narrowest viewport the working agreement supports.
 test.describe('no page scrolls sideways at 320px', () => {
-  for (const path of [
-    '/',
-    '/glory-points',
-    '/classroom-groups',
-    '/id/',
-    '/id/glory-points',
-    '/id/classroom-groups',
-  ]) {
+  for (const { path } of ROUTES) {
     test(`${path} fits a 320px viewport`, async ({ page }) => {
       await page.setViewportSize({ width: 320, height: 720 });
       await page.goto(path);
@@ -96,17 +126,26 @@ test.describe('no page scrolls sideways at 320px', () => {
   }
 });
 
-test('the Indonesian half of the site is served, and in Indonesian', async ({
+test('every locale the site claims to serve is live, and in that language', async ({
   page,
 }) => {
-  // Asserts the lang attribute rather than a heading: half the routes on this
-  // site are /id/*, and a build that dropped the locale would deploy green,
-  // but the COPY is changing and must not be able to redden a release gate.
-  for (const path of ['/id/', '/id/glory-points', '/id/classroom-groups']) {
+  // The original note here said a heading assertion must not be able to redden
+  // a release gate, because the COPY is changing and a hand-written table of
+  // headings would drift from it. That concern is answered rather than
+  // overridden: the expectation comes from the SAME catalogue the page renders
+  // from, so a copy change updates both in one commit and cannot drift.
+  //
+  // What it cannot catch on its own is a catalogue left as English -- it would
+  // agree with itself. The comparison against the English string is the
+  // independent half, so the two cannot fail together silently.
+  for (const { locale, path, heading, englishHeading } of ROUTES) {
     const res = await page.goto(path);
     expect(res?.status(), `${path} did not return 200`).toBe(200);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'id');
-    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('lang', locale);
+    await expect(page.locator('h1')).toContainText(heading);
+    if (locale !== 'en') {
+      await expect(page.locator('h1')).not.toHaveText(englishHeading);
+    }
   }
 });
 
