@@ -30,7 +30,16 @@ import {
 // src/assets/sfx/ -- see readM4aContainerDurationS's own doc comment for why.
 
 const SFX_DIR = join('src', 'assets', 'sfx');
-const ROLES: readonly SfxRole[] = ['shuffle', 'land', 'done'];
+/**
+ * Derived from the manifest, never written out. Every one of these records is
+ * `Readonly<Record<SfxRole, …>>`, so the roles enumerate themselves.
+ *
+ * They were hand-written until #70, and the four loops below iterate this
+ * list: a role added with a real asset file, a gain of 9 and a declared
+ * maximum duration of 0.001s passed all 21 tests, because none of those loops
+ * ever reached it.
+ */
+const ROLES = Object.keys(SFX_MANIFEST) as readonly SfxRole[];
 
 describe('the module surface', () => {
   it('exports nothing that nothing uses', () => {
@@ -45,6 +54,17 @@ describe('the module surface', () => {
         'SFX_MAX_DURATION_S',
       ].sort(),
     );
+  });
+});
+
+describe('the role list the assertions iterate', () => {
+  it('is derived from the manifest, and the three records agree on it', () => {
+    // Anti-vacuity: an empty derivation would make every loop below a no-op
+    // that reports success. The cross-checks are the seam — a role added to
+    // one record and forgotten in another is what this catches at runtime.
+    expect(ROLES.length).toBeGreaterThan(0);
+    expect(Object.keys(SFX_ASSET_GAIN).sort()).toEqual([...ROLES].sort());
+    expect(Object.keys(SFX_MAX_DURATION_S).sort()).toEqual([...ROLES].sort());
   });
 });
 
