@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { sitePaths } from '../site-pages';
 import {
   LOCALES,
   localisePath,
@@ -34,7 +35,7 @@ const PREFIXED = LOCALES.filter((l) => l !== 'en');
 const urlFor = (path: string, locale: Locale) =>
   locale === 'en' ? path : `/${locale}${path === '/' ? '/' : path}`;
 
-const PATHS = ['/', '/glory-points', '/classroom-groups'] as const;
+const PATHS = sitePaths();
 
 describe('locale routing generalises across every shipped locale', () => {
   it('places every path in every locale per the route layout', () => {

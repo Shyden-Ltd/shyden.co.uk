@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { sitePaths } from '../site-pages';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 
 /**
@@ -25,9 +26,7 @@ import { LOCALES, localisePath } from '../../src/lib/i18n';
  * would have passed throughout.
  */
 
-const THAI_ROUTES = ['/', '/glory-points', '/classroom-groups'].map((p) =>
-  localisePath(p, 'th'),
-);
+const THAI_ROUTES = sitePaths().map((p) => localisePath(p, 'th'));
 
 /** Both phone sizes #32 fixed, plus a tablet and a laptop. A heading wraps to
  * more lines the narrower it gets, and collisions only happen between lines. */
