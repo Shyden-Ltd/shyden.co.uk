@@ -77,6 +77,27 @@ export const withoutCommentLines = (text: string, marker = '#'): string =>
     .join('\n');
 
 /**
+ * Markup with its `<!-- … -->` comments removed.
+ *
+ * `.astro` files are HTML as well as TypeScript, and an HTML comment is
+ * invisible to the TS scanner below — different grammar, different delimiters.
+ * A suite reading `src/**` sees both in one file.
+ *
+ * It matters most where a guard asserts ABSENCE. `dead-copy.test.ts` calls a
+ * key dead when nothing references it, so `<!-- heroSubheading removed in
+ * #17 -->` keeps a dead key looking alive and SUPPRESSES the finding, with
+ * nothing going red to say so.
+ *
+ * Found by sweeping for source-text readers rather than trusting the list of
+ * them in #24 — which was hand-written, and missed `flags.test.ts`. That file
+ * was not vulnerable (it had already written this same stripper locally,
+ * citing #23), but its private copy is what this replaces, and the HTML case
+ * it covered was missing from the shared module the other suites use.
+ */
+export const withoutMarkupComments = (text: string): string =>
+  text.replace(/<!--[\s\S]*?-->/g, '');
+
+/**
  * TypeScript with `//` and block comments removed, STRING LITERALS INTACT.
  *
  * A regex cannot do this correctly and the failures are the ones that matter:

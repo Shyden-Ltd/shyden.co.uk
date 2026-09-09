@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { withoutCommentLines, withoutTsComments } from './source-text';
+import {
+  withoutCommentLines,
+  withoutMarkupComments,
+  withoutTsComments,
+} from './source-text';
 import { join } from 'node:path';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
@@ -33,7 +37,9 @@ import { siteEn } from '../../src/lib/i18n/site';
  * was removed in #17` is exactly the note someone writes while deleting the
  * last real use of a key.
  *
- * TWO PASSES, because this corpus is `.astro` as well as `.ts`. The scanner in
+ * THREE PASSES, because this corpus is `.astro` as well as `.ts`, and an
+ * HTML comment (`<!-- heroSubheading removed in #17 -->`) is invisible to a
+ * TypeScript scanner. The scanner in
  * withoutTsComments tracks string literals so a URL or a quoted `//` survives,
  * but an apostrophe in `.astro` TEMPLATE TEXT ("don't") opens a quote that
  * never closes, and from there it stops stripping. It never deletes anything
@@ -43,7 +49,7 @@ import { siteEn } from '../../src/lib/i18n/site';
  * template is the residual, and is narrow enough to name rather than chase.
  */
 const strippedSource = (text: string) =>
-  withoutTsComments(withoutCommentLines(text, '//'));
+  withoutTsComments(withoutMarkupComments(withoutCommentLines(text, '//')));
 
 const sourceText = (() => {
   const collect = (dir: string): string[] =>

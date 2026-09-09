@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { withoutMarkupComments, withoutTsComments } from './source-text';
 import { LOCALE_METADATA, MVP_LOCALES } from '../../src/lib/i18n/metadata';
 import {
   FLAG_CODES,
@@ -30,16 +31,19 @@ import {
 const source = (path: string) => readFileSync(path, 'utf8');
 
 /**
- * Comments stripped BEFORE any source-text assertion.
+ * Comments stripped BEFORE any source-text assertion, both grammars.
  *
  * A guard matched against raw file text is satisfied by the file's own
- * documentation: shyden.co.uk shipped a supply-chain guard that passed on a
- * comment describing the config it was meant to require (#23). A comment in
- * `Flag.astro` explaining which shapes used to live there would pass a naive
- * "no geometry here" check while the geometry was still present.
+ * documentation (#23). A comment in `Flag.astro` explaining which shapes used
+ * to live there would pass a naive "no geometry here" check while the geometry
+ * was still present.
+ *
+ * This was a private copy of the same helper until #60. It is shared now, per
+ * #24 -- and sharing it is what revealed that the module every OTHER suite
+ * uses had no HTML-comment case at all.
  */
-const withoutComments = (src: string) =>
-  src.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+const strippedMarkup = (src: string) =>
+  withoutTsComments(withoutMarkupComments(src));
 
 describe('the flag shapes have exactly one definition', () => {
   it('draws every flag the metadata table names', () => {
@@ -97,7 +101,7 @@ describe('the flag shapes have exactly one definition', () => {
   });
 
   it('leaves no geometry behind in Flag.astro', () => {
-    const src = withoutComments(source('src/components/Flag.astro'));
+    const src = strippedMarkup(source('src/components/Flag.astro'));
     for (const shape of ['<rect', '<polygon', '<path', 'fill="#']) {
       expect(
         src.includes(shape),
