@@ -1,5 +1,16 @@
 import { en, type Strings } from './en';
 import { id } from './id';
+import { zh } from './zh';
+import { vi } from './vi';
+import { th } from './th';
+import {
+  siteEn,
+  siteId,
+  siteZh,
+  siteVi,
+  siteTh,
+  type SiteStrings,
+} from './site';
 import {
   ERROR_CODES,
   type GroupingError,
@@ -8,7 +19,7 @@ import {
 } from '../grouping';
 
 /** English first: it is the default and lives at the unprefixed route. */
-export const LOCALES = ['en', 'id'] as const;
+export const LOCALES = ['en', 'id', 'zh', 'vi', 'th'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /**
@@ -38,7 +49,7 @@ export const PREFIXED_LOCALES: readonly Locale[] = LOCALES.filter(
  */
 const PREFIX_PATTERN = new RegExp(`^/(${PREFIXED_LOCALES.join('|')})(?=/|$)`);
 
-const TABLE: Record<Locale, Strings> = { en, id };
+const TABLE: Record<Locale, Strings> = { en, id, zh, vi, th };
 
 export const isLocale = (value: unknown): value is Locale =>
   typeof value === 'string' && (LOCALES as readonly string[]).includes(value);
@@ -46,6 +57,30 @@ export const isLocale = (value: unknown): value is Locale =>
 /** Unknown or absent locale falls back to English rather than throwing. */
 export const getStrings = (locale: unknown): Strings =>
   isLocale(locale) ? TABLE[locale] : en;
+
+/**
+ * Site copy by locale — header, footer, homepage, 404, Glory Points.
+ *
+ * Here rather than in `site.ts` since #22: the lookup needs `isLocale` and
+ * `DEFAULT_LOCALE` as values, and importing them into `site.ts` made that
+ * file unreadable to `scripts/i18n-translate.mjs`, which runs under plain
+ * Node. Every site string was therefore invisible to the translator. Beside
+ * `getStrings` is also simply where its twin belongs: one file decides what a
+ * locale is and what copy it gets.
+ */
+const SITE_TABLE: Record<Locale, SiteStrings> = {
+  en: siteEn,
+  id: siteId,
+  zh: siteZh,
+  vi: siteVi,
+  th: siteTh,
+};
+
+/** Unknown or absent locale falls back to the default, never throws. */
+export const getSiteStrings = (locale: unknown): SiteStrings =>
+  isLocale(locale) ? SITE_TABLE[locale] : SITE_TABLE[DEFAULT_LOCALE];
+
+export type { SiteStrings };
 
 /** The path to this tool in a given locale. The default locale is unprefixed. */
 export const toolPath = (locale: Locale): string =>

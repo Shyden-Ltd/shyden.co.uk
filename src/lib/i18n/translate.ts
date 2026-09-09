@@ -107,8 +107,138 @@ export const DO_NOT_TRANSLATE: readonly string[] = [
   // The registered company number and office, as the footer states them. A
   // legal fact, and wrong the moment it is "translated".
   '17110487',
-  'England and Wales',
+  // The footer's own wording, ampersand and all. This read 'England and
+  // Wales' until #22 and therefore matched no string the site ships.
+  'England & Wales',
 ];
+
+/**
+ * The tag name DeepL is told to leave alone, in `ignore_tags`.
+ *
+ * One letter because it travels inside the copy and DeepL bills per
+ * character. Defined once and used by both the wrapping and the request, so
+ * the two cannot drift -- a request ignoring `<keep>` while the text carried
+ * `<x>` would translate the term and look fine.
+ */
+const PROTECT_TAG = 'x';
+
+/**
+ * Protected terms, longest first.
+ *
+ * `Shyden` is a prefix of `Shyden Ltd`. Wrapping the short one first yields
+ * `<x>Shyden</x> Ltd` and hands "Ltd" to the translator on its own, which is
+ * how a company name comes back half-translated.
+ */
+const PROTECTED_LONGEST_FIRST: readonly string[] = [...DO_NOT_TRANSLATE].sort(
+  (a, b) => b.length - a.length,
+);
+
+const escapeForRegExp = (text: string): string =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * XML escaping, because the request asks for `tag_handling: 'xml'`.
+ *
+ * DeepL parses the text as XML when tag handling is on, so a bare `&` is a
+ * malformed entity and the whole request comes back `400` -- which is exactly
+ * what #22's first run of the widened catalogue did, on the footer's
+ * "Registered in England & Wales." Escaping is the fix rather than banning
+ * the character: an ampersand is correct English and copy should not bend to
+ * a transport detail.
+ *
+ * `&` first on the way out and last on the way back, or the escaping eats its
+ * own output (`&lt;` -> `&amp;lt;`) and the round trip stops being one.
+ */
+export const escapeXml = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+export const unescapeXml = (text: string): string =>
+  text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/**
+ * Wrap every protected term so DeepL returns it untouched.
+ *
+ * #22 found this missing entirely: `DO_NOT_TRANSLATE` was imported by the
+ * script, its LENGTH printed ("do-not-send 6 protected terms"), and the batch
+ * sent raw. `ignore_tags: ['x']` rode on every request and no `<x>` was ever
+ * emitted, so the list protected nothing. The zh/vi/th run returned "Shyden"
+ * intact in all three languages by DeepL's own proper-noun handling -- luck,
+ * not a control, and luck that runs out the first time someone writes "Glory
+ * Points" into the catalogue. Only one of the six terms occurs in today's
+ * copy, which is why nothing looked wrong.
+ *
+ * The lookbehind stops a shorter term matching inside a span a longer one
+ * already wrapped: in `<x>Shyden Ltd</x>`, `Shyden` sits immediately after
+ * `<x>` and is skipped.
+ */
+export function protectTerms(text: string): string {
+  let out = text;
+  for (const term of PROTECTED_LONGEST_FIRST) {
+    // The term is escaped the same way the text was, or a name carrying an
+    // ampersand ("England & Wales") never matches the escaped copy it sits in.
+    out = out.replace(
+      new RegExp(
+        `(?<!<${PROTECT_TAG}>)${escapeForRegExp(escapeXml(term))}(?!</${PROTECT_TAG}>)`,
+        'g',
+      ),
+      `<${PROTECT_TAG}>${escapeXml(term)}</${PROTECT_TAG}>`,
+    );
+  }
+  return out;
+}
+
+/**
+ * Take the tags back out of what DeepL returned.
+ *
+ * The prose around a protected term changes; the tag survives the round trip
+ * verbatim, so stripping it recovers the string a catalogue should hold.
+ */
+export const unprotectTerms = (text: string): string =>
+  text.replace(new RegExp(`</?${PROTECT_TAG}>`, 'g'), '');
+
+/**
+ * The exact JSON body of a translate request.
+ *
+ * Here rather than in the script for the reason every other decision is: this
+ * is the thing that has to be RIGHT, and in the script it could only be
+ * checked by making a network call. `tests/unit/translate.test.ts` asserts the
+ * text it carries is protected -- the assertion that was missing while the
+ * list sat unused.
+ */
+export function buildRequestBody(
+  texts: readonly string[],
+  target: MvpLocale,
+): {
+  text: string[];
+  source_lang: string;
+  target_lang: string;
+  ignore_tags: string[];
+  tag_handling: string;
+} {
+  return {
+    text: texts.map((t) => protectTerms(escapeXml(t))),
+    source_lang: 'EN',
+    target_lang: deeplLanguage(target),
+    ignore_tags: [PROTECT_TAG],
+    tag_handling: 'xml',
+  };
+}
+
+/**
+ * CSV vocabulary keys a translator must never be handed.
+ *
+ * `sex` holds the two TOKENS a teacher types into a spreadsheet cell -- `M`
+ * and `F` in English, `L`/`P` in Indonesian (from laki-laki / perempuan,
+ * matching what the roster table shows on the Indonesian page). Sent to DeepL
+ * a bare `M` comes back as a guess about a letter, and the tokens carry a
+ * cross-file invariant a translator cannot see: they must agree with
+ * `rosterSexMale`/`rosterSexFemale` in the same locale's own catalogue, or the
+ * file a teacher exports disagrees with the table they exported it from.
+ *
+ * Everything else in the table is ordinary words -- column headers, `yes`,
+ * `no`, the class comment -- and goes through DeepL like any other copy.
+ */
+export const CSV_KEYS_NOT_TRANSLATED: readonly string[] = ['sex'];
 
 /** A letter in any script — Latin, Han, Thai. Not a digit and not punctuation. */
 const HAS_A_LETTER = /\p{L}/u;

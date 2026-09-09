@@ -2,11 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { MVP_LOCALES } from '../../src/lib/i18n/metadata';
+import { en } from '../../src/lib/i18n/en';
+import { siteEn } from '../../src/lib/i18n/site';
+import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import {
+  CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
+  buildRequestBody,
+  escapeXml,
   deeplEndpoint,
   deeplLanguage,
   needsTranslation,
+  protectTerms,
+  unescapeXml,
+  unprotectTerms,
   untranslatedKeys,
   TRANSLATABLE_LOCALES,
 } from '../../src/lib/i18n/translate';
@@ -25,6 +34,37 @@ import {
  * below can therefore be tested without a key, without a network, and without
  * spending a character of a free-tier quota.
  */
+
+/**
+ * Every distinct translatable string the harness collects -- all three
+ * catalogues, not just `en`.
+ *
+ * Walked here rather than imported from the script, so this does not depend
+ * on the thing it checks. Scoped to `en` alone until #22, which is half of
+ * why the 400 on "Registered in England & Wales." went unpredicted: the guard
+ * was looking at a catalogue the offending string was not in. A hand-written
+ * list of things to check misses the one that breaks -- CLAUDE.md's own words,
+ * and the second time this repo has paid for it.
+ */
+function collectCatalogue(): string[] {
+  const out = new Set<string>();
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) return value.forEach(walk);
+    if (value && typeof value === 'object')
+      return Object.values(value).forEach(walk);
+    if (needsTranslation(value)) out.add(value as string);
+  };
+  walk(en);
+  walk(siteEn);
+  walk(
+    Object.fromEntries(
+      Object.entries(CSV_LOCALES.en).filter(
+        ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
+      ),
+    ),
+  );
+  return [...out];
+}
 
 describe('the DeepL key decides the host', () => {
   it('routes a free key to the free host', () => {
@@ -113,6 +153,144 @@ describe('what must never be sent to a translator', () => {
     // an accepted identical string in tests/unit/i18n.test.ts.
     expect(needsTranslation('#')).toBe(false);
     expect(needsTranslation('—')).toBe(false);
+  });
+});
+
+/**
+ * #22. `DO_NOT_TRANSLATE` was a list nothing consulted.
+ *
+ * The block above asserts the list HOLDS the right terms, and that is all it
+ * ever asserted. `scripts/i18n-translate.mjs` imported the list, printed its
+ * LENGTH ("do-not-send 6 protected terms") and sent the batch raw; the
+ * `ignore_tags: ['x']` on the request protected nothing, because nothing ever
+ * emitted an `<x>` tag. The run for zh/vi/th returned "Shyden" intact in all
+ * three languages by DeepL's own proper-noun handling -- luck, not a control.
+ * Presence is not the assertion, exactly as the supply-chain guard (#23) and
+ * the prod-smoke path list (#21 Stage 4) both learned.
+ *
+ * Only one of the six terms occurs in today's catalogue, which is why nothing
+ * looked wrong. The tests below assert the EFFECT: that the text handed to
+ * DeepL carries the tags, and that what comes back is unwrapped again.
+ */
+describe('protected terms are wrapped before they are sent', () => {
+  it('wraps a protected term in the tag the request tells DeepL to ignore', () => {
+    expect(protectTerms('Built for teachers, by Shyden.')).toBe(
+      'Built for teachers, by <x>Shyden</x>.',
+    );
+  });
+
+  it('wraps the longest match first, so a name is never split', () => {
+    // 'Shyden' is a prefix of 'Shyden Ltd'. Shortest-first would produce
+    // `<x>Shyden</x> Ltd` and hand "Ltd" to the translator on its own.
+    expect(
+      protectTerms(escapeXml('Shyden Ltd is registered in England & Wales.')),
+    ).toBe('<x>Shyden Ltd</x> is registered in <x>England &amp; Wales</x>.');
+  });
+
+  it('leaves a string with no protected term untouched', () => {
+    const plain = 'Split a class fairly in one click.';
+    expect(protectTerms(plain)).toBe(plain);
+  });
+
+  it('round-trips: unprotect undoes protect exactly', () => {
+    for (const source of [
+      'Built for teachers, by Shyden.',
+      'Shyden Ltd, company 17110487, England & Wales.',
+      'Nothing protected here at all.',
+    ]) {
+      expect(unprotectTerms(protectTerms(source))).toBe(source);
+    }
+  });
+
+  it('strips the tags DeepL returns around a translated sentence', () => {
+    // What actually comes back: the tag survives, the prose around it does not.
+    expect(unprotectTerms('由 <x>Shyden</x> 专为教师打造。')).toBe(
+      '由 Shyden 专为教师打造。',
+    );
+  });
+
+  it('builds a request whose every text is protected', () => {
+    const body = buildRequestBody(['Built by Shyden.', 'No names here.'], 'zh');
+    expect(body.text).toEqual(['Built by <x>Shyden</x>.', 'No names here.']);
+    expect(body.target_lang).toBe('ZH-HANS');
+    expect(body.source_lang).toBe('EN');
+    // The tag name in the payload must be the one protectTerms emits, or the
+    // wrapping is decoration and the term is translated anyway.
+    expect(body.ignore_tags).toContain('x');
+    expect(body.tag_handling).toBe('xml');
+  });
+
+  it('is actually wired into the script, not merely available to it', () => {
+    // The bug this whole block exists for was a pure function that was never
+    // called. A source scan is the only surface available: the script is a
+    // top-level-await module that calls the network on import.
+    const script = readFileSync(
+      join('scripts', 'i18n-translate.mjs'),
+      'utf8',
+    ).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+    expect(script, 'the request body must come from buildRequestBody').toMatch(
+      /buildRequestBody\(/,
+    );
+    expect(script, 'the response must be unwrapped again').toMatch(
+      /unprotectTerms\(/,
+    );
+  });
+
+  it('escapes the ampersand that made DeepL answer 400', () => {
+    // The footer's "Registered in England & Wales." A bare `&` is a malformed
+    // entity to an XML parser, and `tag_handling: 'xml'` means DeepL is one.
+    expect(escapeXml('England & Wales')).toBe('England &amp; Wales');
+    expect(escapeXml('a < b > c')).toBe('a &lt; b &gt; c');
+  });
+
+  it('escapes the ampersand FIRST so it does not eat its own output', () => {
+    // `<` -> `&lt;` -> `&amp;lt;` if `&` is escaped second. The round trip
+    // below is what actually pins this; this names the reason.
+    expect(escapeXml('<')).toBe('&lt;');
+    expect(unescapeXml(escapeXml('&lt; is how you write <'))).toBe(
+      '&lt; is how you write <',
+    );
+  });
+
+  it('protects a term that carries an ampersand, in its escaped form', () => {
+    // `DO_NOT_TRANSLATE` said 'England and Wales' until #22 and therefore
+    // matched nothing: the copy has always said '&'.
+    const body = buildRequestBody(['Registered in England & Wales.'], 'zh');
+    expect(body.text[0]).toBe('Registered in <x>England &amp; Wales</x>.');
+  });
+
+  it("collects all three catalogues, not just the tool's", () => {
+    // The round-trip guard below walks THIS file's copy of the collection, so
+    // it cannot notice the HARNESS collecting less -- mutation-verified:
+    // narrowing the walk to `en` alone left every test green, because no
+    // string in `en` carries an ampersand and the round trip then holds
+    // trivially. This binds the script to the three sources by name, which is
+    // the direction that actually goes wrong: site copy was invisible to the
+    // translator for an entire release because nothing asserted it was seen.
+    const script = readFileSync(
+      join('scripts', 'i18n-translate.mjs'),
+      'utf8',
+    ).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+    for (const [source, why] of [
+      ['collect(en)', "the tool's own catalogue"],
+      ['collect(siteEn)', 'header, footer, homepage and 404 copy'],
+      ['CSV_LOCALES', 'every word a downloaded file carries'],
+    ]) {
+      expect(script, `the harness must collect ${why}`).toContain(source);
+    }
+  });
+
+  it('round-trips every real catalogue string through the whole pipeline', () => {
+    // The assertion that would have predicted the 400, over exactly what the
+    // harness sends: escape, protect, then back again must be the identity.
+    const broken = collectCatalogue().filter(
+      (source) =>
+        unescapeXml(unprotectTerms(protectTerms(escapeXml(source)))) !== source,
+    );
+    expect(
+      broken,
+      'these strings do not survive the request pipeline unchanged',
+    ).toEqual([]);
   });
 });
 

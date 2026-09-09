@@ -26,14 +26,20 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { argv, env, exit } from 'node:process';
 
 import {
+  CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
+  buildRequestBody,
   deeplEndpoint,
   deeplLanguage,
   needsTranslation,
+  unescapeXml,
+  unprotectTerms,
   untranslatedKeys,
   TRANSLATABLE_LOCALES,
 } from '../src/lib/i18n/translate.ts';
 import { en } from '../src/lib/i18n/en.ts';
+import { siteEn } from '../src/lib/i18n/site.ts';
+import { CSV_LOCALES } from '../src/lib/csv-locale.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
 /** DeepL accepts up to 50 texts per request. */
@@ -86,7 +92,29 @@ const collect = (value) => {
     return Object.values(value).forEach(collect);
   if (needsTranslation(value)) strings.add(value);
 };
+
+/**
+ * Every English catalogue the site ships, not just the tool's.
+ *
+ * `en` alone was the whole collection until #22, which is how the header,
+ * footer, homepage and 404 copy came to be invisible to the translator: they
+ * live in `site.ts`, and that file imported `isLocale` as a VALUE from
+ * `./index`, which plain Node cannot resolve. The fix was to move the lookup,
+ * not to special-case it here -- see `src/lib/i18n/index.ts`.
+ *
+ * The CSV vocabulary is the third: every word a downloaded file carries has to
+ * match the language of the page it came from, which makes it copy. Its `sex`
+ * tokens are the one part held back -- see CSV_KEYS_NOT_TRANSLATED.
+ */
 collect(en);
+collect(siteEn);
+collect(
+  Object.fromEntries(
+    Object.entries(CSV_LOCALES.en).filter(
+      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
+    ),
+  ),
+);
 
 const pending = [...strings].filter((s) => !(s in known));
 const characters = pending.reduce((n, s) => n + s.length, 0);
@@ -118,20 +146,17 @@ for (let i = 0; i < pending.length; i += BATCH) {
       Authorization: `DeepL-Auth-Key ${apiKey.trim()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      text: batch,
-      source_lang: 'EN',
-      target_lang: deeplLanguage(target),
-      // The names and legal facts come back exactly as they went in.
-      ignore_tags: ['x'],
-      tag_handling: 'xml',
-    }),
+    // The names and legal facts come back exactly as they went in, because
+    // `buildRequestBody` wraps them in the tag this request ignores. Built
+    // there, not here: in this file it could only be checked by calling the
+    // network, and for one release it was not checked at all (#22).
+    body: JSON.stringify(buildRequestBody(batch, target)),
   });
   // The status only, never the body: a DeepL error can echo the request.
   if (!response.ok) die(`DeepL responded ${response.status}`);
   const { translations } = await response.json();
   batch.forEach((source, n) => {
-    known[source] = translations[n].text;
+    known[source] = unescapeXml(unprotectTerms(translations[n].text));
   });
   console.log(`  ${Math.min(i + BATCH, pending.length)}/${pending.length}`);
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LOCALES, type Locale } from '../../src/lib/i18n/index';
-import { getSiteStrings } from '../../src/lib/i18n/site';
+import { getSiteStrings } from '../../src/lib/i18n';
 import {
   MVP_LOCALES,
   LOCALE_METADATA,

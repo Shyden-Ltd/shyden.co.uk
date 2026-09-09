@@ -1,4 +1,6 @@
 import { test, expect } from './fixtures';
+import { otherLocales } from '../../src/lib/i18n/index';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import {
   buildRoster,
   rosterOf,
@@ -727,7 +729,10 @@ test.describe('the handover destination is chosen, not assumed', () => {
   test('keeps the list shut until it is asked for', async ({ page }) => {
     await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
     await openIo(page);
-    await expect(page.locator('.cg-io-both-target')).toBeHidden();
+    // `.first()`, because there is one button per other language now (four,
+    // since #22) and a bare locator would be a strict-mode violation rather
+    // than an assertion. The list is one `<details>`, so shut is shut for all.
+    await expect(page.locator('.cg-io-both-target').first()).toBeHidden();
     await page.locator('#cg-io-both-toggle').click();
     await expect(page.locator('.cg-io-both-target').first()).toBeVisible();
   });
@@ -739,13 +744,22 @@ test.describe('the handover destination is chosen, not assumed', () => {
     await openIo(page);
     await page.locator('#cg-io-both-toggle').click();
 
+    // Derived from LOCALES: this asserted a count of 1 and the single name
+    // 'Bahasa Indonesia', which was a fact about there being two languages
+    // rather than about the picker. Every other language, each checked.
+    const others = otherLocales('en');
     const choices = page.locator('.cg-io-both-target');
-    await expect(choices).toHaveCount(1);
-    // Its OWN name, and `lang` so a screen reader says it in that language
-    // rather than spelling it out in English -- the same rule the header
-    // switcher follows (tests/e2e/language-switcher.spec.ts).
-    await expect(choices.first()).toContainText('Bahasa Indonesia');
-    await expect(choices.first()).toHaveAttribute('lang', 'id');
+    await expect(choices).toHaveCount(others.length);
+    for (const locale of others) {
+      // Its OWN name, and `lang` so a screen reader says it in that language
+      // rather than spelling it out in English -- the same rule the header
+      // switcher follows (tests/e2e/language-switcher.spec.ts).
+      const choice = choices.filter({
+        hasText: LOCALE_METADATA[locale].nativeName,
+      });
+      await expect(choice, `a button for ${locale}`).toHaveCount(1);
+      await expect(choice).toHaveAttribute('lang', locale);
+    }
   });
 
   test('draws the flag from the page own sprite, not a second copy', async ({
@@ -758,10 +772,17 @@ test.describe('the handover destination is chosen, not assumed', () => {
     // `<use href="#flag-id">` resolving against a symbol the page defines is
     // what proves the picker and the header switcher draw the SAME shapes.
     // A broken reference renders nothing at all and reads as a spacing bug.
-    await expect(
-      page.locator('.cg-io-both-target svg.flag use'),
-    ).toHaveAttribute('href', '#flag-id');
-    await expect(page.locator('symbol#flag-id')).toHaveCount(1);
+    for (const locale of otherLocales('en')) {
+      const flag = `#flag-${LOCALE_METADATA[locale].flag}`;
+      await expect(
+        page
+          .locator('.cg-io-both-target')
+          .filter({ hasText: LOCALE_METADATA[locale].nativeName })
+          .locator('svg.flag use'),
+        `${locale} draws ${flag}`,
+      ).toHaveAttribute('href', flag);
+      await expect(page.locator(`symbol${flag}`)).toHaveCount(1);
+    }
   });
 
   test('gives every language button a real touch target', async ({ page }) => {

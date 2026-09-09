@@ -84,6 +84,17 @@ export interface CsvLocale {
    * every word the file contains in one table is what makes that checkable.
    */
   templateHint: string;
+  /**
+   * The word in a downloaded file's NAME, per design spec section 9's own
+   * examples: `7B-class-list-2026-08-06.csv`.
+   *
+   * Folded in here by #22, from a second `Record<Locale, string>` table that
+   * lived in `csv.ts`. Two tables keyed by locale are two places to remember
+   * when a language is added, and this file already exists to hold every word
+   * a CSV carries. `safeFilePart` keeps Unicode letters deliberately, so a
+   * native-script slug is a filename, not a mangling.
+   */
+  fileName: Record<'class-list' | 'groups', string>;
 }
 
 export const CSV_LOCALES: Record<Locale, CsvLocale> = {
@@ -103,6 +114,7 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     groupColumn: 'group',
     groupsMadeComment: '# Groups made',
     templateHint: 'delete these two lines and type your own',
+    fileName: { 'class-list': 'class-list', groups: 'groups' },
   },
   id: {
     classComment: '# Kelas:',
@@ -127,5 +139,75 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     groupColumn: 'kelompok',
     groupsMadeComment: '# Kelompok dibuat',
     templateHint: 'hapus dua baris ini lalu ketik milik Anda sendiri',
+    fileName: { 'class-list': 'daftar-kelas', groups: 'kelompok' },
+  },
+  zh: {
+    classComment: '# 类：',
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
+    // reviewer may prefer native tokens; both places change together.
+    sex: { M: 'M', F: 'F' },
+    columns: {
+      number: '数字',
+      name: '名称',
+      sex: '性',
+      absent: '缺席',
+      together: '一起',
+      apart: '分开',
+    },
+    absentYes: '是',
+    absentNo: '不',
+    groupColumn: '组',
+    groupsMadeComment: '# 已创建的组',
+    templateHint: '删除这两行，然后输入你自己的内容',
+    fileName: {
+      'class-list': '班级名单',
+      groups: '组',
+    },
+  },
+  vi: {
+    classComment: '# Lớp:',
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
+    // reviewer may prefer native tokens; both places change together.
+    sex: { M: 'M', F: 'F' },
+    columns: {
+      number: 'số',
+      name: 'tên',
+      sex: 'tình dục',
+      absent: 'vắng mặt',
+      together: 'cùng nhau',
+      apart: 'riêng biệt',
+    },
+    absentYes: 'đúng vậy',
+    absentNo: 'không',
+    groupColumn: 'nhóm',
+    groupsMadeComment: '# Các nhóm đã được tạo',
+    templateHint: 'Hãy xóa hai dòng này và nhập nội dung của riêng bạn',
+    fileName: {
+      'class-list': 'danh sách lớp',
+      groups: 'nhóm',
+    },
+  },
+  th: {
+    classComment: '# ชั้นเรียน:',
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
+    // reviewer may prefer native tokens; both places change together.
+    sex: { M: 'M', F: 'F' },
+    columns: {
+      number: 'ตัวเลข',
+      name: 'ชื่อ',
+      sex: 'เพศ',
+      absent: 'ไม่มา',
+      together: 'ด้วยกัน',
+      apart: 'แยกกัน',
+    },
+    absentYes: 'ใช่',
+    absentNo: 'ไม่',
+    groupColumn: 'กลุ่ม',
+    groupsMadeComment: '# กลุ่มที่สร้างแล้ว',
+    templateHint: 'ลบสองบรรทัดนี้แล้วพิมพ์ข้อความของคุณเอง',
+    fileName: {
+      'class-list': 'รายชื่อชั้น',
+      groups: 'กลุ่ม',
+    },
   },
 };

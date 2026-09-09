@@ -1749,8 +1749,9 @@ describe('the locale-aware paths', () => {
   });
 
   it('otherLocales lists every locale except the one given', () => {
-    expect(otherLocales('en')).toEqual(['id']);
-    expect(otherLocales('id')).toEqual(['en']);
+    expect(otherLocales('en')).toEqual(['id', 'zh', 'vi', 'th']);
+    expect(otherLocales('id')).toEqual(['en', 'zh', 'vi', 'th']);
+    expect(otherLocales('th')).toEqual(['en', 'id', 'zh', 'vi']);
     // Derived as well as spelled out, so this keeps holding as LOCALES grows
     // rather than becoming another two-locale assumption to find later.
     for (const locale of LOCALES) {

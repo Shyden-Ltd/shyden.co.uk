@@ -1,5 +1,5 @@
 import { calculateGlory, formatNumber, ERRORS } from '../lib/gloryPoints';
-import { getSiteStrings } from '../lib/i18n/site';
+import { getSiteStrings } from '../lib/i18n';
 
 // The calculator's own error copy is asserted verbatim by its unit tests, so
 // gloryPoints.ts stays English and untouched. Mapping BY THE EXPORTED ERRORS

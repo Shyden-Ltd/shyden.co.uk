@@ -449,8 +449,26 @@ export const en = {
   // How this locale names each language, for the sentence above. Written
   // as English speakers write them: "Bahasa Indonesia" is the endonym in
   // ordinary English use, and the design spec's own approved copy uses it.
-  csvLanguageName: { en: 'English', id: 'Bahasa Indonesia' },
-  csvLanguageVersion: { en: 'English', id: 'Indonesian' },
+  //
+  // All five MVP locales, because `csvLanguageName[found]` is indexed by the
+  // locale the parser DETECTED: a map missing a language cannot name the file
+  // a teacher just chose. `Bahasa Indonesia` stays the endonym because that is
+  // ordinary English usage and the design spec's approved copy uses it; for
+  // the other three, ordinary English is the exonym.
+  csvLanguageName: {
+    en: 'English',
+    id: 'Bahasa Indonesia',
+    zh: 'Chinese',
+    vi: 'Vietnamese',
+    th: 'Thai',
+  },
+  csvLanguageVersion: {
+    en: 'English',
+    id: 'Indonesian',
+    zh: 'Chinese',
+    vi: 'Vietnamese',
+    th: 'Thai',
+  },
 
   // ── The Import/export section's own controls (stage 4, Task 5) ──────────
   //
