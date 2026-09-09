@@ -177,12 +177,6 @@ export function safeFilePart(className: string): string {
   return className.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
 }
 
-/** The four filenames, per design spec section 9's own examples. */
-const FILE_KIND: Record<'class-list' | 'groups', Record<Locale, string>> = {
-  'class-list': { en: 'class-list', id: 'daftar-kelas' },
-  groups: { en: 'groups', id: 'kelompok' },
-};
-
 /**
  * `7B-class-list-2026-08-06.csv`, or `class-list-2026-08-06.csv` unnamed.
  *
@@ -196,7 +190,10 @@ export function fileName(
   locale: Locale,
 ): string {
   const safe = safeFilePart(className);
-  return [safe, FILE_KIND[kind][locale], on].filter(Boolean).join('-') + '.csv';
+  return (
+    [safe, CSV_LOCALES[locale].fileName[kind], on].filter(Boolean).join('-') +
+    '.csv'
+  );
 }
 
 /**

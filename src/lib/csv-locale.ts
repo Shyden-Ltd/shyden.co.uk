@@ -84,6 +84,17 @@ export interface CsvLocale {
    * every word the file contains in one table is what makes that checkable.
    */
   templateHint: string;
+  /**
+   * The word in a downloaded file's NAME, per design spec section 9's own
+   * examples: `7B-class-list-2026-08-06.csv`.
+   *
+   * Folded in here by #22, from a second `Record<Locale, string>` table that
+   * lived in `csv.ts`. Two tables keyed by locale are two places to remember
+   * when a language is added, and this file already exists to hold every word
+   * a CSV carries. `safeFilePart` keeps Unicode letters deliberately, so a
+   * native-script slug is a filename, not a mangling.
+   */
+  fileName: Record<'class-list' | 'groups', string>;
 }
 
 export const CSV_LOCALES: Record<Locale, CsvLocale> = {
@@ -103,6 +114,7 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     groupColumn: 'group',
     groupsMadeComment: '# Groups made',
     templateHint: 'delete these two lines and type your own',
+    fileName: { 'class-list': 'class-list', groups: 'groups' },
   },
   id: {
     classComment: '# Kelas:',
@@ -127,5 +139,6 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     groupColumn: 'kelompok',
     groupsMadeComment: '# Kelompok dibuat',
     templateHint: 'hapus dua baris ini lalu ketik milik Anda sendiri',
+    fileName: { 'class-list': 'daftar-kelas', groups: 'kelompok' },
   },
 };

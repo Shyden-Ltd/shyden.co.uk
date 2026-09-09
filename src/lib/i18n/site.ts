@@ -1,4 +1,3 @@
-import { isLocale, DEFAULT_LOCALE, type Locale } from './index';
 /**
  * Site-wide copy — header, footer, homepage, 404 and the Glory Points page.
  *
@@ -177,16 +176,15 @@ export const siteId: SiteStrings = {
 };
 
 /**
- * A locale's site copy, by table lookup rather than by ternary.
+ * The tables and the lookup live in `./index`, beside `getStrings`.
  *
- * Five components each carried their own `lang === 'id' ? siteId : siteEn`.
- * That is correct for exactly two locales and silently wrong for a third: any
- * locale that is not Indonesian receives the ENGLISH table, so a Chinese page
- * would have rendered in English with nothing failing to say so. One lookup,
- * one place to add a language.
+ * This file used to end with `SITE_TABLE` and `getSiteStrings`, which meant
+ * importing `isLocale`/`DEFAULT_LOCALE` as VALUES from `./index` -- and that
+ * one import is why `scripts/i18n-translate.mjs` could not read this
+ * catalogue: the harness runs under plain Node, which resolves neither an
+ * extensionless `./index` nor the tree behind it, so every site string
+ * (header, footer, homepage, 404) was invisible to the translator while
+ * en.ts, which imports nothing, was not. #22 moved the lookup rather than
+ * duplicating `isLocale` here, so there is still exactly one place that
+ * decides what a locale is. This file is now pure data, like en.ts and id.ts.
  */
-const SITE_TABLE: Record<Locale, SiteStrings> = { en: siteEn, id: siteId };
-
-/** Unknown or absent locale falls back to the default, never throws. */
-export const getSiteStrings = (locale: unknown): SiteStrings =>
-  isLocale(locale) ? SITE_TABLE[locale] : SITE_TABLE[DEFAULT_LOCALE];
