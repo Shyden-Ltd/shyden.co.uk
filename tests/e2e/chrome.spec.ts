@@ -227,8 +227,15 @@ test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
       await atLeast44(page.locator('.wordmark'));
       await atLeast44(page.locator('header summary'));
       await page.locator('header summary').click(); // open the disclosure so nav links render
-      for (const a of await page.locator('header nav a').all())
-        await atLeast44(a);
+      const links = page.locator('header nav a');
+      // `.all()` resolves to [] when nothing matches -- it neither waits nor
+      // fails -- so without this count the loop below iterates zero times and
+      // the test goes green having checked none of the links its own title
+      // claims to check. Proven, not assumed: pointing this locator at a
+      // non-existent class left the test passing. The desktop case alongside
+      // has always guarded this; the mobile one did not.
+      await expect(links).toHaveCount(3);
+      for (const a of await links.all()) await atLeast44(a);
       await atLeast44(
         page.locator('footer a[href="mailto:support@shyden.co.uk"]'),
       );

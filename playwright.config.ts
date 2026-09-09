@@ -1,5 +1,43 @@
 import { defineConfig, devices } from '@playwright/test';
 
+/**
+ * Specs that assert HTTP responses and DOM text, and never render.
+ *
+ * A sitemap's URLs, a canonical tag, whether two words come out touching:
+ * `textContent` is spec-defined, so these bytes do not vary by engine. Running
+ * them on all five projects cost four extra runs each and returned nothing the
+ * first run had not already proven.
+ *
+ * The boundary is mechanical, not editorial -- a spec is content-only exactly
+ * when it never drives the viewport -- so it is enforced rather than trusted:
+ * tests/unit/browser-matrix.test.ts fails if anything listed here calls
+ * `setViewportSize` or carries `@emulated-viewport`, if a name here stops
+ * matching a real file, or if any engine project stops ignoring these.
+ *
+ * `site-meta.spec.ts` is deliberately NOT here. It mixes three content
+ * assertions with a parameterised 404 layout test that does resize, and the
+ * layout half has to keep running everywhere.
+ */
+export const CONTENT_ONLY_SPECS = [
+  'head-and-sitemap.spec.ts',
+  'seo.spec.ts',
+  'baseurl-guard.spec.ts',
+  'rendered-text.spec.ts',
+  'locale-parity.spec.ts',
+];
+
+const contentOnly = new RegExp(
+  `(?:${CONTENT_ONLY_SPECS.map((s) => s.replace(/\./g, '\\.')).join('|')})$`,
+);
+
+const ENGINES = [
+  { name: 'chromium', device: 'Desktop Chrome' },
+  { name: 'firefox', device: 'Desktop Firefox' },
+  { name: 'webkit', device: 'Desktop Safari' },
+  { name: 'mobile-chrome', device: 'Pixel 5' },
+  { name: 'mobile-safari', device: 'iPhone 13' },
+] as const;
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -33,10 +71,21 @@ export default defineConfig({
   },
   use: { baseURL: 'http://localhost:4321' },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
-    { name: 'mobile-safari', use: { ...devices['iPhone 13'] } },
+    // Bytes and DOM text are identical on every engine, so running these five
+    // times bought four repeats of a result the first run already had. Once is
+    // enough. See CONTENT_ONLY_SPECS.
+    {
+      name: 'content',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: contentOnly,
+    },
+    // Everything that renders, on every engine it has to render on. A collapsed
+    // nav wrapper once pushed the header links off-screen and only a real
+    // engine could see it -- this half of the matrix is not negotiable.
+    ...ENGINES.map(({ name, device }) => ({
+      name,
+      use: { ...devices[device] },
+      testIgnore: contentOnly,
+    })),
   ],
 });
