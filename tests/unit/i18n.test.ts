@@ -3,6 +3,7 @@ import { en } from '../../src/lib/i18n/en';
 import { id } from '../../src/lib/i18n/id';
 import {
   LOCALES,
+  DEFAULT_LOCALE,
   getStrings,
   renderError,
   renderWarning,
@@ -21,6 +22,7 @@ import {
   type GroupingWarning,
 } from '../../src/lib/grouping';
 import { siteEn, siteId } from '../../src/lib/i18n/site';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 
 const locales = [
   ['en', en],
@@ -1649,8 +1651,30 @@ describe('site-wide copy is fully translated', () => {
 });
 
 describe('locale lookup', () => {
-  it('exposes exactly the two supported locales, English first', () => {
-    expect(LOCALES).toEqual(['en', 'id']);
+  // #21 Stage 4. This used to be `expect(LOCALES).toEqual(['en', 'id'])` — a
+  // tripwire wearing an assertion's clothes. It stated the CONFIGURATION, so
+  // adding a locale failed it, and the only way past was to edit the literal
+  // — which is not review, it is bookkeeping. What actually has to hold is
+  // below, and it keeps holding at five locales without an edit.
+  it('lists the default locale first, once each', () => {
+    expect(LOCALES[0]).toBe(DEFAULT_LOCALE);
+    expect(new Set(LOCALES).size, 'a locale is listed twice').toBe(
+      LOCALES.length,
+    );
+  });
+
+  it('gives every locale a strings table and its own metadata', () => {
+    // The half that a list of names cannot state: a locale in LOCALES with no
+    // catalogue behind it routes to a page rendered in English, and one with
+    // no metadata gets `og:locale` and its number formatting from whatever
+    // the lookup falls back to.
+    for (const locale of LOCALES) {
+      expect(getStrings(locale), `${locale} has no strings table`).toBeTruthy();
+      expect(
+        LOCALE_METADATA[locale]?.nativeName,
+        `${locale} has no native name — the switcher would label it blank`,
+      ).toBeTruthy();
+    }
   });
 
   it.each(locales)('getStrings("%s") returns that locale', (name, strings) => {
