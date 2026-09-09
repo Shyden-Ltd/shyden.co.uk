@@ -1930,6 +1930,21 @@ const sexWhyText = sexWhy(roster, t);
     display: none;
   }
 
+  /* #32's sticky action row (`.actions`, in the scoped block below) rests on
+     the fold at mobile widths, so anything the browser scrolls into view --
+     a tabbed-to field, an anchor, a script's `scrollIntoView` -- can land
+     underneath it. 5rem clears the bar's measured height (44px button +
+     0.75rem padding either side + a 1px border = 69px) with room over.
+
+     Here rather than beside the rule it serves: `scroll-padding` belongs to
+     the scroll container, which is `html`, and Astro's scoped block cannot
+     select an element it does not render. */
+  @media screen and (max-width: 599px) {
+    html {
+      scroll-padding-bottom: 5rem;
+    }
+  }
+
   @media print {
     /* The site's own chrome, the tool's controls, and everything that is a
        way to CHANGE the class rather than a record of it. A printed page
@@ -2631,6 +2646,55 @@ const sexWhyText = sexWhy(roster, t);
   }
   .tool-section-body:not([hidden]) {
     padding-bottom: 1rem;
+  }
+  /* #32. Measured, not estimated, with this page's own `measureFit`: at
+     320x568 `#cg-go` sat 653px below the fold and at 375x667, 524px below
+     it, and both viewport-fit tests were parked as `test.fixme` behind a
+     comment claiming a tracking ticket that did not exist.
+
+     Shrinking the page was never available. `#cg-form` ALONE measures 769px
+     at 320px wide and 768px at 375px, against budgets of 568px and 667px --
+     so deleting the site header, the h1, the lead and the privacy note
+     outright still would not have fitted it. The fix is to stop the primary
+     action depending on the page's height at all.
+
+     `sticky`, not `fixed`, for the reason `.cg-io-both` states above for its
+     own picker: in flow is free, and correct at every width. The row keeps
+     its place in the form, comes to rest at its natural position once the
+     end of the form scrolls into view, and needs nothing to reserve space
+     for it. `fixed` takes it out of flow and needs a matching
+     `padding-bottom` on the form -- which hides the last field the moment
+     the two drift apart.
+
+     Inside the content box, NOT full-bleed. A full-width bar wants negative
+     margins, and this page has paid for width tricks twice already
+     (`#cg-io-toggle` pinned a grid track to 378px and cost 74px of
+     horizontal scroll at 320px; `.cg-io-both` repeated it for 23px). A
+     border-top earns the separation without touching width.
+
+     `screen and`, explicitly. `@media print` already hides `#cg-go` and
+     every other button, and paper is wider than 599px so this block would
+     not match a sheet -- but not matching by accident of paper width is not
+     the same as saying it does not apply.
+
+     `max-width: 599px`, not a height query: 600px is the breakpoint this
+     file already splits on (`min-width: 600px` is the enhancement). Both
+     failing sizes and both mobile Playwright projects (Pixel 5 at 393px,
+     iPhone 13 at 390px) sit below it; both passing sizes (768, 1280) sit
+     above it and are untouched. */
+  @media screen and (max-width: 599px) {
+    .actions {
+      position: sticky;
+      bottom: 0;
+      /* Flush to the fold. The row's own bottom margin would otherwise hold
+         the bar 16px clear of the edge, which reads as a gap rather than as
+         a bar resting on it. */
+      margin-bottom: 0;
+      padding: 0.75rem 0;
+      /* Opaque, or the fields the row floats over show through it. */
+      background: var(--bg, #f7f6f2);
+      border-top: 1px solid var(--border, #e7e4dc);
+    }
   }
   .actions button,
   .stale-notice button {
