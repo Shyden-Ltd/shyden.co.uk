@@ -18,7 +18,8 @@
     "dashboard": "node scripts/dashboard.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "format": "prettier --check .",
-    "i18n:scaffold": "node scripts/i18n-scaffold.mjs"
+    "i18n:scaffold": "node scripts/i18n-scaffold.mjs",
+    "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
