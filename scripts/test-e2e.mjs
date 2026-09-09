@@ -34,7 +34,7 @@
  * held to the full total.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -262,10 +262,10 @@ function main() {
     );
 
     let executed = null;
+    let parsed = null;
     try {
-      executed = countExecuted(
-        JSON.parse(readFileSync(reportPath, 'utf8')).stats,
-      );
+      parsed = JSON.parse(readFileSync(reportPath, 'utf8'));
+      executed = countExecuted(parsed.stats);
     } catch (cause) {
       console.error(
         `\n${RULE}\n  E2E RECONCILIATION FAILED — the run produced no readable report\n\n` +
@@ -274,6 +274,23 @@ function main() {
           `  a pass.\n${RULE}\n`,
       );
       process.exit(1);
+    }
+
+    // #44 wants the distribution before anyone changes a timeout. Emitted
+    // whether the run passed or failed — a failed run is when the numbers
+    // matter most — and appended to the GitHub job summary when there is one,
+    // so a few runs accumulate evidence with no artifact upload and no new
+    // action to SHA-pin.
+    const table = formatTimings(projectTimings(parsed));
+    if (table) {
+      console.error(
+        `\n${RULE}\n  E2E DURATIONS BY PROJECT\n${RULE}\n${table}\n`,
+      );
+      if (process.env.GITHUB_STEP_SUMMARY)
+        appendFileSync(
+          process.env.GITHUB_STEP_SUMMARY,
+          `\n### e2e durations by project\n\n${table}\n`,
+        );
     }
 
     const verdict = reconcile({
@@ -287,6 +304,86 @@ function main() {
   } finally {
     rmSync(reportDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Playwright's default per-test budget, which this repo does not override.
+ *
+ * `playwright.config.ts` sets no `timeout` and no `navigationTimeout`, so the
+ * "Test timeout of 30000ms exceeded" in #44 was the WHOLE TEST's budget rather
+ * than a stalled navigation — `page.goto` was simply where the clock ran out.
+ * Every number below is read against this.
+ */
+export const TEST_BUDGET_MS = 30000;
+
+/** Nearest-rank percentile over an ASCENDING array. */
+const rank = (ascending, quantile) =>
+  ascending[Math.ceil(quantile * ascending.length) - 1];
+
+/**
+ * Per-project duration distribution from a Playwright json report.
+ *
+ * The suite already produces this and throws it away: the json reporter exists
+ * for #36's suite-size guard, `stats` is read out of it, and the temp file is
+ * deleted. #44 asks for the real numbers before any timeout is changed, and
+ * they have been in every CI run all along.
+ *
+ * THE TAIL, NOT THE MEAN. A mean over ~2200 tests cannot move enough for one
+ * 30-second test to show up in it. p90 and max are where a flake lives.
+ */
+export function projectTimings(report) {
+  const byProject = new Map();
+
+  const visit = (suites) => {
+    for (const suite of suites ?? []) {
+      for (const spec of suite.specs ?? []) {
+        for (const test of spec.tests ?? []) {
+          // The SLOWEST attempt, not the last. A test that times out at 30s
+          // and passes at 800ms on retry is exactly the case this exists to
+          // surface, and reporting the retry erases the finding.
+          const ms = Math.max(
+            0,
+            ...(test.results ?? []).map((r) => r.duration ?? 0),
+          );
+          const rows = byProject.get(test.projectName) ?? [];
+          rows.push({ title: spec.title, ms });
+          byProject.set(test.projectName, rows);
+        }
+      }
+      visit(suite.suites);
+    }
+  };
+  visit(report?.suites);
+
+  return [...byProject].map(([project, tests]) => {
+    const ascending = tests.map((t) => t.ms).sort((a, b) => a - b);
+    return {
+      project,
+      count: tests.length,
+      p50: rank(ascending, 0.5),
+      p90: rank(ascending, 0.9),
+      max: ascending[ascending.length - 1],
+      slowest: [...tests].sort((a, b) => b.ms - a.ms).slice(0, 3),
+    };
+  });
+}
+
+/** The distribution as a markdown table, for a terminal or a job summary. */
+export function formatTimings(rows) {
+  if (!rows.length) return '';
+  return [
+    '| project | tests | p50 | p90 | max | slowest |',
+    '| --- | ---: | ---: | ---: | ---: | --- |',
+    ...rows.map(
+      (r) =>
+        `| ${r.project} | ${r.count} | ${r.p50} | ${r.p90} | ${r.max} | ` +
+        `${r.slowest.map((t) => `${t.title} (${t.ms}ms)`).join('; ')} |`,
+    ),
+    '',
+    `Durations in ms. Playwright's default per-test budget is ${TEST_BUDGET_MS}ms ` +
+      'and this repo sets no override, so a max approaching it is #44 rather ' +
+      'than a merely slow page.',
+  ].join('\n');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();
