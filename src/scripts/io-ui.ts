@@ -20,7 +20,7 @@
 import type { Student } from '../lib/grouping';
 import type { Strings } from '../lib/i18n';
 import type { Locale } from '../lib/csv-locale';
-import { otherLocale, toolPath } from '../lib/i18n';
+import { otherLocales, toolPath } from '../lib/i18n';
 import {
   importFile,
   serialiseRoster,
@@ -441,7 +441,14 @@ export function renderIo(
     );
     handlers.onExported();
 
-    const target = `${toolPath(otherLocale(locale))}#${HANDOVER_HASH}`;
+    // The handover opens the tool in the OTHER language, and `ioHandoverSent`
+    // says exactly that. With two locales there is one alternative and this is
+    // unambiguous. Operator decision on #21 is that with five locales the
+    // teacher picks the target; until that picker exists, `the handover has
+    // exactly one destination` in tests/unit/locale-switcher.test.ts fails as
+    // soon as LOCALES grows, so this can never silently pick a language for
+    // somebody.
+    const target = `${toolPath(otherLocales(locale)[0])}#${HANDOVER_HASH}`;
     const opened = window.open(target, '_blank');
     if (!opened) {
       // Design spec section 9: "If the tab is blocked ... say so plainly and
