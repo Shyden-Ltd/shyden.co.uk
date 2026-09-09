@@ -91,7 +91,7 @@ interface IosDevice {
  * question as its own upfront presence check, but through its OWN,
  * self-contained copy of this parsing rather than importing this function:
  * measured directly (not assumed) that plain Node cannot load this module
- * graph even with this repo's pinned Node (.nvmrc: 24), which strips
+ * graph even with this repo's pinned Node (see .nvmrc), which strips
  * TypeScript *types* natively but not TypeScript *syntax that requires a
  * real transform* -- `webdriver.ts` and `interaction.ts` both use
  * constructor parameter properties (e.g. `constructor(private readonly
