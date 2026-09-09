@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { withoutCommentLines, withoutTsComments } from './source-text';
 import { join } from 'node:path';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
@@ -22,6 +23,28 @@ import { siteEn } from '../../src/lib/i18n/site';
  * files, so a key can be complete, translated, non-blank, and never once
  * shown to anybody.
  */
+/**
+ * Source with its comments removed, before anything is searched in it. #24.
+ *
+ * This suite asserts ABSENCE -- a key is dead if nothing references it -- so
+ * the exposure runs the opposite way to the other source-text guards: a
+ * comment naming a key makes a dead key look alive and SUPPRESSES a finding.
+ * Nothing goes red, which is why it would never be noticed. `// heroSubheading
+ * was removed in #17` is exactly the note someone writes while deleting the
+ * last real use of a key.
+ *
+ * TWO PASSES, because this corpus is `.astro` as well as `.ts`. The scanner in
+ * withoutTsComments tracks string literals so a URL or a quoted `//` survives,
+ * but an apostrophe in `.astro` TEMPLATE TEXT ("don't") opens a quote that
+ * never closes, and from there it stops stripping. It never deletes anything
+ * -- quote mode copies verbatim -- so the failure is under-stripping, and the
+ * line-based pass runs first to catch whole-line comments regardless of quote
+ * state. A trailing comment after an unbalanced apostrophe in an .astro
+ * template is the residual, and is narrow enough to name rather than chase.
+ */
+const strippedSource = (text: string) =>
+  withoutTsComments(withoutCommentLines(text, '//'));
+
 const sourceText = (() => {
   const collect = (dir: string): string[] =>
     readdirSync(dir).flatMap((entry) => {
@@ -39,7 +62,7 @@ const sourceText = (() => {
 
   return collect('src')
     .filter((path) => !definitions.includes(path))
-    .map((path) => readFileSync(path, 'utf8'))
+    .map((path) => strippedSource(readFileSync(path, 'utf8')))
     .join('\n');
 })();
 
@@ -54,7 +77,9 @@ describe('every translated string reaches a page', () => {
   });
 
   it('every error code the copy defines is rendered by renderError', () => {
-    const renderer = readFileSync('src/lib/i18n/index.ts', 'utf8');
+    const renderer = strippedSource(
+      readFileSync('src/lib/i18n/index.ts', 'utf8'),
+    );
     const unused = Object.keys(en.errors).filter(
       (code) => !renderer.includes(code),
     );
@@ -71,7 +96,9 @@ describe('every translated string reaches a page', () => {
   // still pass every other check in this file, same as an error code
   // would.
   it('every warning code the copy defines is rendered by renderWarning', () => {
-    const renderer = readFileSync('src/lib/i18n/index.ts', 'utf8');
+    const renderer = strippedSource(
+      readFileSync('src/lib/i18n/index.ts', 'utf8'),
+    );
     const unused = Object.keys(en.warnings).filter(
       (code) => !renderer.includes(code),
     );

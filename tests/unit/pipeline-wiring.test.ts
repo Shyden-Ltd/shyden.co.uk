@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { withoutCommentLines } from './source-text';
 
 /**
  * The deploy pipeline is wired to the things it claims to run.
@@ -34,11 +35,7 @@ const workflow = (name: string) => readFileSync(join(WORKFLOWS, name), 'utf8');
  * because this file's own comment explaining the fix still contained the
  * filename it was looking for.
  */
-const runnableText = (text: string) =>
-  text
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('#'))
-    .join('\n');
+const runnableText = (text: string) => withoutCommentLines(text);
 
 const workflowSteps = (name: string) => runnableText(workflow(name));
 

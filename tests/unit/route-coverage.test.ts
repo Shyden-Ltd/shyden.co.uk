@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOCALES, PREFIXED_LOCALES } from '../../src/lib/i18n';
+import { withoutTsComments } from './source-text';
 
 /**
  * #21 Stage 4. Adding a locale must not mean writing routes by hand.
@@ -107,19 +108,6 @@ const gateSpecs = () =>
       .map((f) => join(dir, f)),
   );
 
-/**
- * TypeScript source with its comments removed. ASSERT ON THIS, never the raw
- * text: both gate files DOCUMENT the `/id/` paths they used to hardcode, and
- * matched against raw source that prose fails the check on its own — the
- * inverse of #23, where a comment satisfied a guard instead of breaking it.
- */
-const withoutComments = (source: string) =>
-  source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//'))
-    .join('\n');
-
 describe('the post-deploy gates derive their routes', () => {
   it('has gate specs to check', () => {
     // Without this the loop below is vacuous if the directories are ever
@@ -134,7 +122,7 @@ describe('the post-deploy gates derive their routes', () => {
     );
     for (const file of gateSpecs()) {
       const found = [
-        ...withoutComments(readFileSync(file, 'utf8')).matchAll(pattern),
+        ...withoutTsComments(readFileSync(file, 'utf8')).matchAll(pattern),
       ].map((m) => m[0]);
       expect(
         found,

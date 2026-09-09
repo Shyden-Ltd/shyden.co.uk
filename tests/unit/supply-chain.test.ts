@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { withoutYamlComments } from './source-text';
 
 /**
  * The CI supply chain is pinned, and something keeps it current.
@@ -62,12 +63,7 @@ const dependabot = () =>
  * the comment (above the groups) makes the ordering check pass too. Caught by
  * mutation while adding that ordering check.
  */
-const configBody = () =>
-  dependabot()
-    .split('\n')
-    .map((line) => line.replace(/(^|\s)#.*$/, ''))
-    .filter((line) => line.trim() !== '')
-    .join('\n');
+const configBody = () => withoutYamlComments(dependabot());
 
 /**
  * The config split into one text block per `package-ecosystem:` entry, so a
