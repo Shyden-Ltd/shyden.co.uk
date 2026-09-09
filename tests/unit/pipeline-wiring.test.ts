@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -48,6 +49,22 @@ const allWorkflows = () =>
       name: f,
       text: runnableText(readFileSync(join(WORKFLOWS, f), 'utf8')),
     }));
+
+/**
+ * The site's pages, read off the routes that serve the default locale.
+ *
+ * `404.astro` is excluded: it is the not-found document, served at one URL
+ * for the whole site, and there is no `/id/404` to match it.
+ */
+const pageRoutes = (): string[] =>
+  readdirSync('src/pages', { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.astro'))
+    .map((e) => e.name.replace(/\.astro$/, ''))
+    .filter((n) => n !== '404')
+    .sort();
+
+/** `index` is served at `/`, every other route at `/<name>`. */
+const urlFor = (route: string) => (route === 'index' ? '/' : `/${route}`);
 
 describe('the deploy pipeline runs what it claims to', () => {
   it('some workflow actually runs the dev sanity suite', () => {
@@ -110,20 +127,45 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(prod).toContain("grep -rnIE '\\[\\[[^]]{1,60}\\]\\]' dist/");
   });
 
-  // Every page, both locales. The smoke checked the homepage and the
+  // Every page, every locale. The smoke checked the homepage and the
   // calculator only, and would have passed with the Classroom Group Creator
   // 404ing — through the entire release that rebuilt it.
-  it('the prod smoke covers every page in both languages', () => {
+  //
+  // DERIVED since #21 Stage 4, from LOCALES and from the routes on disk. The
+  // hand-written list this replaces named five paths and was correct for two
+  // locales; it would have gone on passing while `/zh/glory-points` 404'd
+  // through a whole release, because a list cannot check that it is still the
+  // whole list.
+  //
+  // An EXACT SET comparison against the paths the loop actually iterates, not
+  // `prod.includes(path)`. A substring check here is worse than no check: the
+  // English `/glory-points` is a substring of the Indonesian
+  // `/id/glory-points`, so the English assertion passes on the Indonesian
+  // path, and mutating a path to `/id/glory-pointsXX` leaves it green. That
+  // vacuity was real and was caught by mutating this guard, not by reading it.
+  // Set equality also catches a path the routes no longer serve.
+  it('the prod smoke covers every page in every locale', () => {
     const prod = workflowSteps('release-prod.yml');
-    for (const path of [
-      '/glory-points',
-      '/classroom-groups',
-      '/id/',
-      '/id/glory-points',
-      '/id/classroom-groups',
-    ]) {
-      expect(prod, `prod smoke does not fetch ${path}`).toContain(path);
+    const loop = /for path in ([^;]+); do/.exec(prod);
+    expect(loop, 'the prod smoke no longer loops over a path list').not.toBe(
+      null,
+    );
+    const fetched = new Set(loop![1].trim().split(/\s+/));
+
+    // The default locale's homepage is fetched on its own as `$BASE/`,
+    // because the smoke greps that response for the footer and the ShyTalk
+    // link. Everything else goes through the loop.
+    const home = localisePath('/', DEFAULT_LOCALE);
+    expect(prod, 'the homepage is no longer fetched').toContain('"$BASE/"');
+
+    const expected = new Set<string>();
+    for (const locale of LOCALES) {
+      for (const route of pageRoutes()) {
+        const path = localisePath(urlFor(route), locale);
+        if (path !== home) expected.add(path);
+      }
     }
+    expect([...fetched].sort()).toEqual([...expected].sort());
   });
 
   // The deploy-before-merge workflow is GONE. It survived exactly one merge
