@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { LOCALES, localisePath } from '../../src/lib/i18n';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -37,7 +38,15 @@ import {
 const NON_PERSONAL_NAMES = ['mode', 'leftovers'];
 
 test.describe('privacy — the class list cannot leave the page', () => {
-  for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+  // Derived from LOCALES, not written out. This was `en` and `id` — correct
+  // when those were the only two locales, and silently wrong from #22, which
+  // shipped five. The page's own header says the promise is made "in both
+  // languages"; it is made in five, and each is a separately generated page
+  // off the `[locale]` route, so a template divergence in one is exactly the
+  // failure #49 proved can go unnoticed (#73).
+  for (const path of LOCALES.map((locale) =>
+    localisePath('/classroom-groups', locale),
+  )) {
     test(`${path}: no control holding typed text is submittable`, async ({
       page,
     }) => {
