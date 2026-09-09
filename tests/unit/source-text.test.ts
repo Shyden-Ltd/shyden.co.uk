@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   withoutYamlComments,
+  withoutYamlQuotes,
   withoutCommentLines,
   withoutTsComments,
 } from './source-text';
@@ -70,5 +71,35 @@ describe('withoutCommentLines', () => {
     const out = withoutCommentLines('# gone\nrun: echo "a # b"');
     expect(out).not.toContain('gone');
     expect(out).toContain('echo "a # b"');
+  });
+});
+
+describe('withoutYamlQuotes', () => {
+  /**
+   * YAML quoting is a style, not a meaning. `'actions/cache*'` and
+   * `"actions/cache*"` are the same scalar, and a guard that matches one but
+   * not the other fails on correct configuration.
+   *
+   * Found by building the org template repository against this repo's own
+   * supply-chain guard: the group was written in this file's house style
+   * (single quotes, as `'npm'` and `'develop'` are) and the guard reported it
+   * ungrouped. A false alarm rather than a false pass, so the safe direction
+   * -- but it would have reddened CI on a correct config and sent whoever hit
+   * it looking for a problem that was not there.
+   */
+  it('treats single and double quoted scalars as the same text', () => {
+    expect(withoutYamlQuotes("- 'actions/cache*'")).toBe(
+      withoutYamlQuotes('- "actions/cache*"'),
+    );
+  });
+
+  it('leaves an unquoted scalar alone', () => {
+    expect(withoutYamlQuotes('- actions/cache*')).toContain('actions/cache*');
+  });
+
+  it('does not merge two adjacent scalars into one', () => {
+    // `['a','b']` must not become `a,b` in a way that matches a pattern
+    // spanning both -- the separator has to survive.
+    expect(withoutYamlQuotes("['a','b']")).toBe('[a,b]');
   });
 });

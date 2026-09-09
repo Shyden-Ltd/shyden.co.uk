@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { withoutYamlComments } from './source-text';
+import { withoutYamlComments, withoutYamlQuotes } from './source-text';
 
 /**
  * The CI supply chain is pinned, and something keeps it current.
@@ -133,7 +133,7 @@ describe('Dependabot keeps the pins from rotting', () => {
   it('an action repo used at more than one sub-path is grouped into one PR', () => {
     const config = configBody();
     const ungrouped = subPathRepos()
-      .filter(([key]) => !config.includes(`"${key}*"`))
+      .filter(([key]) => !withoutYamlQuotes(config).includes(`${key}*`))
       .map(([key, refs]) => `${key} used at ${refs.size} sub-paths, ungrouped`);
 
     expect(
@@ -159,10 +159,13 @@ describe('Dependabot keeps the pins from rotting', () => {
   it('a sub-path group is declared before the catch-all that would swallow it', () => {
     const misordered = subPathRepos().flatMap(([key]) =>
       ecosystemBlocks()
-        .filter((block) => block.includes(`"${key}*"`))
+        .filter((block) => withoutYamlQuotes(block).includes(`${key}*`))
         .filter((block) => {
           const catchAll = block.indexOf('patch-updates:');
-          return catchAll !== -1 && catchAll < block.indexOf(`"${key}*"`);
+          return (
+            catchAll !== -1 &&
+            catchAll < withoutYamlQuotes(block).indexOf(`${key}*`)
+          );
         })
         .map(() => `${key} grouped after patch-updates`),
     );
