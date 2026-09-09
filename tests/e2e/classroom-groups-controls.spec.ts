@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { sampledPaths } from './locale-sampling';
 import {
   addSeveral,
   buildRoster,
@@ -349,7 +350,7 @@ test.describe('the results are styled, not just present', () => {
 });
 
 test.describe('classroom groups — mobile-first layout', () => {
-  for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+  for (const path of sampledPaths('/classroom-groups')) {
     for (const width of [320, 375, 768, 1280]) {
       test(
         `${path}: no horizontal scroll at ${width}px`,
@@ -530,7 +531,7 @@ test.describe('classroom groups — mobile-first layout', () => {
   test('no console errors on either language', async ({ page }) => {
     // This is the page that ships a script, and it was the page without this
     // test.
-    for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+    for (const path of sampledPaths('/classroom-groups')) {
       const errors: string[] = [];
       page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
       page.on('pageerror', (e) => errors.push(e.message));
@@ -563,7 +564,7 @@ test.describe('classroom groups — mobile-first layout', () => {
   // pattern in homepage.spec.ts / site-meta.spec.ts, each case runs ~7
   // navigations, the cases run in parallel, and a failure names its locale
   // and width in the title instead of only in the message.
-  for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+  for (const path of sampledPaths('/classroom-groups')) {
     for (const width of [320, 390, 768]) {
       test(
         `no horizontal scroll at ${width}px with any single section open — ${path}, every section derived`,
@@ -625,7 +626,7 @@ test.describe('classroom groups — mobile-first layout', () => {
   test('a disclosure label keeps a visible gap between marker, label and state', async ({
     page,
   }) => {
-    for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+    for (const path of sampledPaths('/classroom-groups')) {
       await page.goto(path);
       const gaps = await page.evaluate(() => {
         const out: {
@@ -1597,7 +1598,7 @@ test.describe('Grouping options, live from the roster — Indonesian', () => {
 // and text, and all four are things you can only see.
 test.describe('classroom groups — what a teacher actually sees', () => {
   test('the class size starts at 30', async ({ page }) => {
-    for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+    for (const path of sampledPaths('/classroom-groups')) {
       await page.goto(path);
       await expect(page.locator('#cg-count')).toHaveValue('30');
     }
@@ -1650,7 +1651,7 @@ test.describe('classroom groups — what a teacher actually sees', () => {
     { tag: '@emulated-viewport' },
     async ({ page }) => {
       const failures: string[] = [];
-      for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+      for (const path of sampledPaths('/classroom-groups')) {
         for (const width of [320, 390, 600, 768, 1024, 1280, 1512]) {
           await page.setViewportSize({ width, height: 950 });
           await openRoster(page, path);
@@ -1754,7 +1755,7 @@ test.describe('the five the operator asked for', () => {
   test('Absent is the first column and its tick is left-aligned', async ({
     page,
   }) => {
-    for (const path of ['/classroom-groups', '/id/classroom-groups']) {
+    for (const path of sampledPaths('/classroom-groups')) {
       await openRoster(page, path);
       const heads = page.locator('#cg-roster thead th');
       await expect(heads.first()).toHaveText(/Absent|Tidak hadir/);
