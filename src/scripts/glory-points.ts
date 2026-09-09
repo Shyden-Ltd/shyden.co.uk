@@ -1,12 +1,12 @@
 import { calculateGlory, formatNumber, ERRORS } from '../lib/gloryPoints';
-import { siteEn, siteId } from '../lib/i18n/site';
+import { getSiteStrings } from '../lib/i18n/site';
 
 // The calculator's own error copy is asserted verbatim by its unit tests, so
 // gloryPoints.ts stays English and untouched. Mapping BY THE EXPORTED ERRORS
 // OBJECT rather than by literal strings means a reworded message updates here
 // automatically instead of silently falling through to English.
 const lang = document.documentElement.lang === 'id' ? 'id' : 'en';
-const t = (lang === 'id' ? siteId : siteEn).glory;
+const t = getSiteStrings(lang).glory;
 const LOCALISED_ERROR = new Map<string, string>([
   [ERRORS.empty, t.errors.empty],
   [ERRORS.notWhole, t.errors.notWhole],

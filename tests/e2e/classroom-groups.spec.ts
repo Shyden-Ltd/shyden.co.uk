@@ -1385,10 +1385,17 @@ test.describe('site-wide language switching', () => {
     page,
   }) => {
     // The classic i18n bug is a switcher that dumps you on the homepage.
+    // Two steps since #21 Stage 2: the switcher is a <details> dropdown, so the
+    // summary opens it and the entry inside is the link.
+    const open = () => page.click('header details.lang-switch > summary');
+    const choose = () => page.click('header details.lang-switch li a');
+
     await page.goto('/classroom-groups');
-    await page.click('header a.lang');
+    await open();
+    await choose();
     await expect(page).toHaveURL(/\/id\/classroom-groups\/?$/);
-    await page.click('header a.lang');
+    await open();
+    await choose();
     await expect(page).toHaveURL(/\/classroom-groups\/?$/);
   });
 

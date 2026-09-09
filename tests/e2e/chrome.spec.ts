@@ -85,17 +85,17 @@ test.describe('header + footer', () => {
     async ({ page }) => {
       await page.setViewportSize({ width: 375, height: 800 });
       await page.goto('/');
-      const details = page.locator('header details');
+      const details = page.locator('header details.menu');
       const firstLink = page.locator('header nav a').first();
       // Closed by default: the nav is hidden.
       await expect(details).toHaveJSProperty('open', false);
       await expect(firstLink).toBeHidden();
       // Click the summary to open: the nav is revealed (no JS involved).
-      await page.locator('header summary').click();
+      await page.locator('header details.menu > summary').click();
       await expect(details).toHaveJSProperty('open', true);
       await expect(firstLink).toBeVisible();
       // Keyboard: native <summary> activation toggles the disclosure on Enter.
-      await page.locator('header summary').focus();
+      await page.locator('header details.menu > summary').focus();
       await page.keyboard.press('Enter');
       await expect(details).toHaveJSProperty('open', false);
       await expect(firstLink).toBeHidden();
@@ -108,8 +108,8 @@ test.describe('header + footer', () => {
     async ({ page }) => {
       await page.setViewportSize({ width: 375, height: 800 });
       await page.goto('/');
-      await page.locator('header summary').click(); // open at mobile
-      await expect(page.locator('header details')).toHaveJSProperty(
+      await page.locator('header details.menu > summary').click(); // open at mobile
+      await expect(page.locator('header details.menu')).toHaveJSProperty(
         'open',
         true,
       );
@@ -143,11 +143,12 @@ test.describe('header + footer', () => {
       );
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto('/');
-      // Anchor on the language link — the last thing in the bar before <nav> —
-      // rather than on the wordmark: engines differ on how many Tab presses that
-      // gap costs, and an explicit focus() fixes the starting point on all of
-      // them. Tab then advances in DOM order, so this asserts OUR running order.
-      await page.locator('header a.lang').focus();
+      // Anchor on the language switcher's summary — the last focusable thing
+      // in the bar before <nav> — rather than on the wordmark: engines differ on
+      // how many Tab presses that gap costs, and an explicit focus() fixes the
+      // starting point on all of them. Tab then advances in DOM order, so this
+      // asserts OUR running order.
+      await page.locator('header details.lang-switch > summary').focus();
 
       for (const label of ['Services', 'Work', 'Contact']) {
         await page.keyboard.press('Tab');
@@ -171,7 +172,7 @@ test.describe('header + footer', () => {
       await page.goto('/');
       for (const sel of [
         'header .wordmark',
-        'header a.lang',
+        'header details.lang-switch > summary',
         'header nav a:nth-of-type(1)',
         'header nav a:nth-of-type(2)',
         'header nav a:nth-of-type(3)',
@@ -225,8 +226,16 @@ test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
       await page.setViewportSize({ width: 375, height: 800 });
       await page.goto('/');
       await atLeast44(page.locator('.wordmark'));
-      await atLeast44(page.locator('header summary'));
-      await page.locator('header summary').click(); // open the disclosure so nav links render
+      // Derived, not named: the header gained a second disclosure (the
+      // language switcher) after this test was written, and a hand-written
+      // list would have kept passing while missing it.
+      const summaries = page.locator('header details.menu > summary');
+      const howMany = await summaries.count();
+      expect(howMany, 'no header disclosures found to measure').toBeGreaterThan(
+        0,
+      );
+      for (let i = 0; i < howMany; i += 1) await atLeast44(summaries.nth(i));
+      await page.locator('header details.menu > summary').click(); // open the nav
       const links = page.locator('header nav a');
       // `.all()` resolves to [] when nothing matches -- it neither waits nor
       // fails -- so without this count the loop below iterates zero times and
@@ -270,7 +279,7 @@ test.describe('mobile layout: no horizontal overflow', () => {
     async ({ page }) => {
       await page.setViewportSize({ width: 320, height: 800 });
       await page.goto('/');
-      await page.locator('header summary').click();
+      await page.locator('header details.menu > summary').click();
       const overflow = await page.evaluate(
         () =>
           document.documentElement.scrollWidth -

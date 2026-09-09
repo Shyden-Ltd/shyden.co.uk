@@ -1,13 +1,13 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { type Locale } from '../../lib/i18n';
-import { siteEn, siteId } from '../../lib/i18n/site';
+import { getSiteStrings } from '../../lib/i18n/site';
 
 interface Props {
   lang: Locale;
 }
 const { lang } = Astro.props;
-const t = (lang === 'id' ? siteId : siteEn).glory;
+const t = getSiteStrings(lang).glory;
 ---
 
 <BaseLayout title={t.title} description={t.description} lang={lang}>

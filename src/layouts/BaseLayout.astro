@@ -8,7 +8,8 @@ import {
   localeFromPath,
   type Locale,
 } from '../lib/i18n';
-import { siteEn, siteId } from '../lib/i18n/site';
+import { getSiteStrings } from '../lib/i18n/site';
+import { metadataFor } from '../lib/i18n/metadata';
 
 interface Props {
   title: string;
@@ -30,7 +31,7 @@ const {
   lang = localeFromPath(Astro.url.pathname),
   noIndex = false,
 } = Astro.props;
-const site = lang === 'id' ? siteId : siteEn;
+const site = getSiteStrings(lang);
 const siteOrigin = Astro.site ?? Astro.url;
 const canonical = new URL(Astro.url.pathname, siteOrigin).href;
 
@@ -79,7 +80,7 @@ const xDefault = new URL(localisePath(Astro.url.pathname, 'en'), siteOrigin)
     }
     {!noIndex && <meta property="og:url" content={canonical} />}
     <meta property="og:image" content={new URL(ogImage, siteOrigin).href} />
-    <meta property="og:locale" content={lang === 'id' ? 'id_ID' : 'en_GB'} />
+    <meta property="og:locale" content={metadataFor(lang).ogLocale} />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <slot name="head" />
