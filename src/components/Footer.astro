@@ -1,12 +1,12 @@
 ---
 import { type Locale } from '../lib/i18n';
-import { siteEn, siteId } from '../lib/i18n/site';
+import { getSiteStrings } from '../lib/i18n/site';
 
 interface Props {
   lang: Locale;
 }
 const { lang } = Astro.props;
-const t = lang === 'id' ? siteId : siteEn;
+const t = getSiteStrings(lang);
 
 // Legal values from Companies House (SHYDEN LTD, company 17110487, active,
 // incorporated 23 Mar 2026). Registered office is the exact CH address.

@@ -1,3 +1,4 @@
+import { isLocale, DEFAULT_LOCALE, type Locale } from './index';
 /**
  * Site-wide copy — header, footer, homepage, 404 and the Glory Points page.
  *
@@ -89,7 +90,11 @@ export const siteEn = {
     },
   },
 
-  language: { switchTo: 'Bahasa Indonesia', label: 'Language' },
+  // `switchTo` (one string meaning "the other language") was removed in #21
+  // Stage 2: it could only ever label one alternative. The switcher now reads
+  // each language's own name from LOCALE_METADATA. `label` names the control
+  // itself and stays.
+  language: { label: 'Language' },
 };
 
 export type SiteStrings = typeof siteEn;
@@ -168,5 +173,20 @@ export const siteId: SiteStrings = {
     },
   },
 
-  language: { switchTo: 'English', label: 'Bahasa' },
+  language: { label: 'Bahasa' },
 };
+
+/**
+ * A locale's site copy, by table lookup rather than by ternary.
+ *
+ * Five components each carried their own `lang === 'id' ? siteId : siteEn`.
+ * That is correct for exactly two locales and silently wrong for a third: any
+ * locale that is not Indonesian receives the ENGLISH table, so a Chinese page
+ * would have rendered in English with nothing failing to say so. One lookup,
+ * one place to add a language.
+ */
+const SITE_TABLE: Record<Locale, SiteStrings> = { en: siteEn, id: siteId };
+
+/** Unknown or absent locale falls back to the default, never throws. */
+export const getSiteStrings = (locale: unknown): SiteStrings =>
+  isLocale(locale) ? SITE_TABLE[locale] : SITE_TABLE[DEFAULT_LOCALE];

@@ -1,0 +1,126 @@
+---
+import Flag from './Flag.astro';
+import { localisePath, otherLocales, type Locale } from '../lib/i18n';
+import { metadataFor } from '../lib/i18n/metadata';
+import { getSiteStrings } from '../lib/i18n/site';
+
+interface Props {
+  lang: Locale;
+  pathname: string;
+}
+const { lang, pathname } = Astro.props;
+
+/**
+ * The language switcher: a flag and the language's own name, per alternative.
+ *
+ * This replaces a single `<a>` labelled `strings.language.switchTo` — one
+ * string meaning "the other language", which is only ever correct while there
+ * is exactly one other. Rendered over two alternatives it labelled both
+ * identically, so a visitor saw the same word twice and could not tell which
+ * was which. `tests/unit/locale-switcher.test.ts` failed on purpose to stop
+ * that shipping; this component is what retires that tripwire.
+ *
+ * Zero JavaScript. The homepage ships none, and a language switcher is exactly
+ * the control a visitor needs when something else has gone wrong — so it is a
+ * native `<details>`, the same disclosure the mobile nav already uses. It works
+ * with JS disabled, is keyboard-operable for free, and closes on Escape.
+ *
+ * Each alternative carries `hreflang` and its own `lang`, so a screen reader
+ * announces 中文 in Chinese rather than spelling it out in English.
+ */
+const t = getSiteStrings(lang);
+const current = metadataFor(lang);
+const alternatives = otherLocales(lang).map((code) => ({
+  code,
+  meta: metadataFor(code),
+  href: localisePath(pathname, code),
+}));
+---
+
+<details class="lang-switch">
+  <summary aria-label={t.language.label}>
+    <Flag code={current.flag} />
+    <span class="name">{current.nativeName}</span>
+    <span class="caret" aria-hidden="true"></span>
+  </summary>
+  <ul>
+    {
+      alternatives.map(({ code, meta, href }) => (
+        <li>
+          <a href={href} hreflang={code} lang={code} rel="alternate">
+            <Flag code={meta.flag} />
+            <span class="name">{meta.nativeName}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</details>
+
+<style>
+  .lang-switch {
+    position: relative;
+    font-size: 0.9rem;
+  }
+  summary {
+    display: flex;
+    align-items: center;
+    /* `gap`, never a literal space between inline children: a flex container
+       discards whitespace between items, which has silently eaten separators
+       in this repo before. */
+    gap: 0.5rem;
+    min-height: 44px;
+    padding: 0 0.5rem;
+    cursor: pointer;
+    list-style: none;
+    border-radius: 4px;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary:hover,
+  summary:focus-visible {
+    background: var(--surface, rgb(0 0 0 / 0.04));
+  }
+  .caret {
+    width: 0;
+    height: 0;
+    border-left: 0.28em solid transparent;
+    border-right: 0.28em solid transparent;
+    border-top: 0.32em solid currentColor;
+  }
+  [open] > summary .caret {
+    transform: rotate(180deg);
+  }
+  ul {
+    position: absolute;
+    right: 0;
+    z-index: 20;
+    margin: 0.25rem 0 0;
+    padding: 0.25rem;
+    list-style: none;
+    min-width: max-content;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+  }
+  li a {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    padding: 0 0.75rem;
+    white-space: nowrap;
+    text-decoration: none;
+    color: inherit;
+    border-radius: 4px;
+  }
+  li a:hover,
+  li a:focus-visible {
+    background: var(--surface, rgb(0 0 0 / 0.06));
+  }
+  .name {
+    line-height: 1;
+  }
+</style>

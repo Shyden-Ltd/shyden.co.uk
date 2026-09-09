@@ -1,12 +1,13 @@
 ---
-import { localisePath, otherLocales, type Locale } from '../lib/i18n';
-import { siteEn, siteId } from '../lib/i18n/site';
+import LanguageSwitcher from './LanguageSwitcher.astro';
+import { localisePath, type Locale } from '../lib/i18n';
+import { getSiteStrings } from '../lib/i18n/site';
 
 interface Props {
   lang: Locale;
 }
 const { lang } = Astro.props;
-const t = lang === 'id' ? siteId : siteEn;
+const t = getSiteStrings(lang);
 
 // Root-relative (/#…) not bare (#…): the Header renders on every page via
 // BaseLayout, but these section anchors live only on the homepage — so bare
@@ -23,16 +24,6 @@ const links = [
   { href: `${base}/#work`, label: t.nav.work },
   { href: `${base}/#contact`, label: t.nav.contact },
 ];
-
-// One link per other locale. With two locales this renders exactly the single
-// link it always did; the list is what lets #21's flag dropdown replace it
-// without another rewrite of this component.
-//
-// `t.language.switchTo` is a SINGLE string meaning "the other language", so it
-// can only label one link correctly. `the language switcher cannot label more
-// than one alternative` in tests/unit/locale-switcher.test.ts fails the moment
-// LOCALES grows, which forces the native-name metadata to land first.
-const others = otherLocales(lang);
 ---
 
 <header>
@@ -43,19 +34,7 @@ const others = otherLocales(lang);
         ><span class="bars"></span></summary
       >
     </details>
-    {
-      others.map((code) => (
-        <a
-          class="lang"
-          href={localisePath(Astro.url.pathname, code)}
-          hreflang={code}
-          lang={code}
-          rel="alternate"
-        >
-          {t.language.switchTo}
-        </a>
-      ))
-    }
+    <LanguageSwitcher lang={lang} pathname={Astro.url.pathname} />
     <nav id="primary-nav">
       {links.map((l) => <a href={l.href}>{l.label}</a>)}
     </nav>

@@ -1,0 +1,135 @@
+---
+import type { FlagCode } from '../lib/i18n/metadata';
+
+interface Props {
+  code: FlagCode;
+  /** Decorative by default: the native name beside it carries the meaning. */
+  title?: string;
+}
+const { code, title } = Astro.props;
+
+/**
+ * Flags drawn inline, not fetched.
+ *
+ * The repo self-hosts its fonts and sound effects and makes no third-party
+ * requests; an icon CDN would break that for five small shapes. Inlining also
+ * costs zero requests and lets the flags inherit the switcher's sizing.
+ *
+ * Emoji flags were rejected deliberately: they do not render on Windows, where
+ * Chrome and Edge show the bare regional-indicator letters — a switcher that
+ * reads `CN` / `ID` to a large share of visitors.
+ *
+ * All five are normalised to a 3:2 box so the names beside them line up. The
+ * Union Flag is properly 2:1 and is drawn without its counterchange offset;
+ * both are the usual compromises for an icon a few millimetres wide, and
+ * neither changes which flag a reader sees.
+ */
+
+/** A five-pointed star, point up, centred on the origin, outer radius 1. */
+const STAR =
+  '0,-1 0.224,-0.309 0.951,-0.309 0.363,0.118 0.588,0.809 ' +
+  '0,0.382 -0.588,0.809 -0.363,0.118 -0.951,-0.309 -0.224,-0.309';
+---
+
+<svg
+  class="flag"
+  viewBox="0 0 24 16"
+  role={title ? 'img' : 'presentation'}
+  aria-hidden={title ? undefined : 'true'}
+  focusable="false"
+>
+  {title && <title>{title}</title>}
+
+  {
+    code === 'gb' && (
+      <g>
+        {/* An SVG root clips to its viewBox, so the diagonals need no
+            clipPath — which also avoids a duplicate element id when two
+            switchers render on one page. */}
+        <rect width="24" height="16" fill="#012169" />
+        <path d="M0 0 24 16M24 0 0 16" stroke="#fff" stroke-width="3.2" />
+        <path d="M0 0 24 16M24 0 0 16" stroke="#C8102E" stroke-width="1.9" />
+        <path d="M12 0V16M0 8H24" stroke="#fff" stroke-width="5.3" />
+        <path d="M12 0V16M0 8H24" stroke="#C8102E" stroke-width="3.2" />
+      </g>
+    )
+  }
+
+  {
+    code === 'id' && (
+      <g>
+        <rect width="24" height="8" fill="#CE1126" />
+        <rect y="8" width="24" height="8" fill="#fff" />
+      </g>
+    )
+  }
+
+  {
+    code === 'th' && (
+      <g>
+        <rect width="24" height="16" fill="#A51931" />
+        <rect y="2.67" width="24" height="10.66" fill="#F4F5F8" />
+        <rect y="5.33" width="24" height="5.34" fill="#2D2A4A" />
+      </g>
+    )
+  }
+
+  {
+    code === 'vn' && (
+      <g>
+        <rect width="24" height="16" fill="#DA251D" />
+        <polygon
+          points={STAR}
+          fill="#FF0"
+          transform="translate(12 8) scale(4.4)"
+        />
+      </g>
+    )
+  }
+
+  {
+    code === 'cn' && (
+      <g>
+        <rect width="24" height="16" fill="#EE1C25" />
+        <polygon
+          points={STAR}
+          fill="#FF0"
+          transform="translate(4 4) scale(2.4)"
+        />
+        <polygon
+          points={STAR}
+          fill="#FF0"
+          transform="translate(8.2 1.8) scale(0.8) rotate(23)"
+        />
+        <polygon
+          points={STAR}
+          fill="#FF0"
+          transform="translate(9.9 3.7) scale(0.8) rotate(46)"
+        />
+        <polygon
+          points={STAR}
+          fill="#FF0"
+          transform="translate(9.9 6.2) scale(0.8) rotate(70)"
+        />
+        <polygon
+          points={STAR}
+          fill="#FF0"
+          transform="translate(8.2 8) scale(0.8) rotate(23)"
+        />
+      </g>
+    )
+  }
+</svg>
+
+<style>
+  .flag {
+    display: block;
+    width: 1.5em;
+    height: 1em;
+    flex: none;
+    border-radius: 1px;
+    /* The Indonesian and Thai flags end in white, which vanishes on a white
+       header. A hairline keeps every flag a distinct object. */
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.18);
+  }
+</style>

@@ -1625,7 +1625,6 @@ describe('site-wide copy is fully translated', () => {
     // done. Proper nouns and the language switcher label are legitimately
     // identical across locales, so they are excluded by name.
     const allowedIdentical = new Set([
-      'language.switchTo', // literally the other language's own name
       'language.label',
       'footer.companyNo', // "No. Perusahaan" vs "Company No." differ, but keep the guard honest
       // "Glory points" is YeeTalk's in-app currency — a product name, not
