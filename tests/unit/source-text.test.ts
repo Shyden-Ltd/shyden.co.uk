@@ -4,6 +4,7 @@ import {
   withoutYamlQuotes,
   withoutCommentLines,
   withoutTsComments,
+  withoutMarkupComments,
 } from './source-text';
 
 /**
@@ -101,5 +102,37 @@ describe('withoutYamlQuotes', () => {
     // `['a','b']` must not become `a,b` in a way that matches a pattern
     // spanning both -- the separator has to survive.
     expect(withoutYamlQuotes("['a','b']")).toBe('[a,b]');
+  });
+});
+
+describe('withoutMarkupComments', () => {
+  /**
+   * `.astro` files are HTML as well as TypeScript, and `<!-- … -->` is a
+   * comment the TS scanner cannot see.
+   *
+   * This matters most for `dead-copy.test.ts`, which asserts ABSENCE: a key is
+   * dead if nothing references it, so an HTML comment naming a key keeps a
+   * dead key looking alive and suppresses the finding with nothing going red.
+   */
+  it('removes an HTML comment', () => {
+    expect(withoutMarkupComments('<!-- heroSubheading -->')).not.toContain(
+      'heroSubheading',
+    );
+  });
+
+  it('removes a multi-line HTML comment', () => {
+    expect(
+      withoutMarkupComments('<!--\n  removed in #17: heroSubheading\n-->'),
+    ).not.toContain('heroSubheading');
+  });
+
+  it('leaves the markup around it intact', () => {
+    expect(withoutMarkupComments('<p>a</p><!-- x --><p>b</p>')).toBe(
+      '<p>a</p><p>b</p>',
+    );
+  });
+
+  it('does not eat a lone angle bracket in text', () => {
+    expect(withoutMarkupComments('<p>a < b</p>')).toContain('a < b');
   });
 });
