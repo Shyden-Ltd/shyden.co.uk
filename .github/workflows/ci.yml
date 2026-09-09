@@ -27,3 +27,15 @@ jobs:
       - run: npm run test:unit
       - run: npx playwright install --with-deps
       - run: npm run test:e2e
+      # Only when something failed, and only then. `actions/upload-artifact`
+      # is first-party -- the same `actions` org as checkout and setup-node
+      # above -- so this adds no new trust boundary, and it is SHA-pinned with
+      # its version comment like every other action here.
+      - name: Keep the failing run's Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore
