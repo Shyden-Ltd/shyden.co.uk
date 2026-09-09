@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { isCommentLine } from './source-text';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
+import { specFilesUnder } from '../source-files';
 
 /**
  * Real Chrome on Android hands a download to the DEVICE's own Downloads
@@ -37,15 +38,6 @@ import { join } from 'node:path';
 const TAG = '@requires-download-bytes';
 /** The one helper that reads a download's bytes. `downloadName` does not. */
 const READS_BYTES = 'downloadText(';
-
-const specFiles = (dir: string): string[] =>
-  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-    entry.isDirectory()
-      ? specFiles(join(dir, entry.name))
-      : entry.name.endsWith('.spec.ts')
-        ? [join(dir, entry.name)]
-        : [],
-  );
 
 interface Decl {
   line: number;
@@ -83,7 +75,7 @@ const owning = (decls: Decl[], line: number): Decl | undefined =>
 const scan = () => {
   const untagged: string[] = [];
   const stale: string[] = [];
-  for (const file of specFiles('tests/e2e')) {
+  for (const file of specFilesUnder('tests/e2e')) {
     const source = withoutTsComments(readFileSync(file, 'utf8'));
     const lines = source.split('\n');
     const decls = declarations(source);
@@ -132,11 +124,11 @@ describe('every test that reads a download’s bytes is tagged', () => {
   // because the helper was renamed, or `tests/e2e` moved -- would report a
   // clean sweep it never performed.
   it('is actually looking at tests that read bytes', () => {
-    const reading = specFiles('tests/e2e').filter((f) =>
+    const reading = specFilesUnder('tests/e2e').filter((f) =>
       withoutTsComments(readFileSync(f, 'utf8')).includes(READS_BYTES),
     );
     expect(reading.length).toBeGreaterThan(0);
-    const tagged = specFiles('tests/e2e').flatMap((f) =>
+    const tagged = specFilesUnder('tests/e2e').flatMap((f) =>
       declarations(withoutTsComments(readFileSync(f, 'utf8'))).filter((d) =>
         d.header.includes(TAG),
       ),

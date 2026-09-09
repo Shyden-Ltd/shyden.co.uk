@@ -1,7 +1,8 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { readdirSync } from 'node:fs';
+
 import { join, relative, sep, basename } from 'node:path';
+import { filesUnder } from '../source-files';
 import {
   openRoster,
   addSeveral,
@@ -92,16 +93,9 @@ const AUDIO_URL_PATTERN = /\.m4a(?:\?|$)/;
  *  webServer produces before any test runs) and returns every `.m4a` file
  *  found, as full filesystem paths -- not hardcoded to `dist/_astro/`
  *  specifically, so this stays correct if Vite's own asset directory ever
- *  changes. Mirrors baseurl-guard.spec.ts's own recursive file-walk. */
-function listM4aFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...listM4aFiles(full));
-    else if (entry.name.endsWith('.m4a')) out.push(full);
-  }
-  return out;
-}
+ *  changes. The recursion it once carried was one of nine private copies (#80). */
+const listM4aFiles = (dir: string): string[] =>
+  filesUnder(dir, (path) => path.endsWith('.m4a'));
 
 /** A filesystem path under `dist/` -> the URL path the built site actually
  *  serves it at, e.g. `dist/_astro/shuffle.AbC123.m4a` -> `/_astro/shuffle.

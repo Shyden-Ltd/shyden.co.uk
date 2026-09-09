@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { specDirs } from '../spec-dirs';
 import { blankCommentLines, isCommentLine } from './source-text';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tsFilesUnder } from '../source-files';
 
 /**
  * "Tracked, not hidden" has to be TRUE, not merely written.
@@ -74,17 +75,6 @@ const DECLARATION =
  * wrapped declaration puts its title on the next line, and the house Prettier
  * config wraps the options object after that. */
 const CONTEXT_LINES_AFTER = 5;
-
-function listSourceFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...listSourceFiles(full));
-    else if (/\.tsx?$/.test(entry.name)) out.push(full);
-  }
-  return out;
-}
 
 function lineNumberAt(text: string, index: number): number {
   return text.slice(0, index).split('\n').length;
@@ -225,7 +215,7 @@ describe('parked tests must name an issue', () => {
   });
 
   it('the e2e corpus parks nothing without naming an issue', () => {
-    const files = SCAN_DIRS.flatMap(listSourceFiles);
+    const files = SCAN_DIRS.flatMap(tsFilesUnder);
 
     // The same self-check viewport-tagging.test.ts runs: a walk that silently
     // found zero files would pass for the wrong reason.

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { specDirs } from '../spec-dirs';
 import { blankCommentLines } from './source-text';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
+import { tsFilesUnder } from '../source-files';
 
 /**
  * A real phone has one screen. `page.setViewportSize(...)` and
@@ -80,17 +81,6 @@ import { join } from 'node:path';
 
 const EMULATED_VIEWPORT_TAG = '@emulated-viewport';
 const SCAN_DIRS = specDirs();
-
-function listSourceFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...listSourceFiles(full));
-    else if (/\.tsx?$/.test(entry.name)) out.push(full);
-  }
-  return out;
-}
 
 function lineNumberAt(text: string, index: number): number {
   return text.slice(0, index).split('\n').length;
@@ -341,7 +331,7 @@ function analyze(file: string, rawText: string): string[] {
 
 describe('a real phone cannot resize its own screen', () => {
   it('every test that manipulates the viewport is tagged @emulated-viewport, and no tag is stale', () => {
-    const files = SCAN_DIRS.flatMap(listSourceFiles);
+    const files = SCAN_DIRS.flatMap(tsFilesUnder);
 
     // Same self-check tests/e2e/baseurl-guard.spec.ts uses on itself: a walk that
     // silently found zero files would pass for the wrong reason.
