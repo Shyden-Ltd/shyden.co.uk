@@ -1,4 +1,10 @@
 import { test, expect } from '@playwright/test';
+import {
+  LOCALES,
+  localisePath,
+  getSiteStrings,
+  getStrings,
+} from '../../src/lib/i18n/index';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -31,19 +37,63 @@ test('the Classroom Group Creator loads on dev', async ({ page }) => {
   await expect(page.locator('#cg-results .student')).toHaveCount(8);
 });
 
-test.describe('the Indonesian half of the site exists on dev', () => {
-  // Half the routes on this site are /id/* and none of them were checked
-  // here. A build that dropped the locale would have deployed green.
-  for (const [path, heading] of [
-    ['/id/', 'Kami membangun'],
-    ['/id/glory-points', 'Kalkulator Glory Points'],
-    ['/id/classroom-groups', 'Pembuat Kelompok Kelas'],
-  ] as const) {
-    test(`${path} is served in Indonesian`, async ({ page }) => {
+/**
+ * Every locale the site CLAIMS to serve is actually on the deployed host.
+ *
+ * This block used to be a hand-written list of three `/id/*` paths, and its own
+ * comment recorded that the same gap had already happened once: "Half the
+ * routes on this site are /id/* and none of them were checked here." It was
+ * fixed by extending the list, so it broke again the moment #22 added zh, vi
+ * and th — nine routes, the entire point of that ticket, never requested from
+ * the deployed site while `dev-verified` went green anyway. See #49.
+ *
+ * `dev-verified` is a REQUIRED status on main's branch protection. It is the
+ * gate between develop and production, so a list that silently stops covering
+ * new routes is not a coverage gap, it is a gate that stopped gating.
+ *
+ * DERIVED, so a sixth language is covered the day it joins LOCALES and nobody
+ * has to remember this file. The expected heading comes from the same
+ * catalogue the page renders from, which closes the "second hand-written
+ * table" drift but opens a smaller hole: a catalogue accidentally left as
+ * English would agree with itself and pass. The differs-from-English check
+ * below is the independent half.
+ */
+const ROUTES = LOCALES.flatMap((locale) => [
+  {
+    locale,
+    path: localisePath('/', locale),
+    heading: getSiteStrings(locale).home.heroHeading,
+    englishHeading: getSiteStrings('en').home.heroHeading,
+  },
+  {
+    locale,
+    path: localisePath('/glory-points', locale),
+    heading: getSiteStrings(locale).glory.heading,
+    englishHeading: getSiteStrings('en').glory.heading,
+  },
+  {
+    locale,
+    path: localisePath('/classroom-groups', locale),
+    heading: getStrings(locale).heading,
+    englishHeading: getStrings('en').heading,
+  },
+]);
+
+test.describe('every locale the site claims to serve is deployed', () => {
+  for (const { locale, path, heading, englishHeading } of ROUTES) {
+    test(`${path} is served in ${locale}`, async ({ page }) => {
       const res = await page.goto(path);
-      expect(res?.status()).toBe(200);
-      await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+      expect(res?.status(), `${path} did not return 200`).toBe(200);
+      await expect(page.locator('html')).toHaveAttribute('lang', locale);
       await expect(page.locator('h1')).toContainText(heading);
+
+      if (locale !== 'en') {
+        // Independent of the catalogue above: a build that fell back to
+        // English would still match its own strings if the catalogue were the
+        // thing that regressed. This asserts against the ENGLISH copy instead,
+        // so the two checks cannot fail together silently.
+        await expect(page.locator('h1')).not.toHaveText(englishHeading);
+      }
     });
   }
 });
@@ -136,11 +186,20 @@ test.describe('the Classroom Group Creator v2 surfaces reached dev', () => {
     await expect(page.locator('#cg-board')).toBeHidden();
   });
 
-  test('the Indonesian tool carries its own copy', async ({ page }) => {
-    await page.goto('/id/classroom-groups');
-    await page.locator('#cg-io-toggle').click();
-    await expect(
-      page.getByRole('button', { name: 'Ekspor daftar kelas' }),
-    ).toBeVisible();
-  });
+  // Was one test against `/id/classroom-groups` asserting the literal string
+  // 'Ekspor daftar kelas' -- a hand-written copy expectation that could drift
+  // from the catalogue, covering one of the four translated locales. Both the
+  // path and the expected label are derived now, so this checks that each
+  // locale's TOOL, not just its page shell, carries its own copy. #49.
+  for (const locale of LOCALES.filter((l) => l !== 'en')) {
+    test(`the ${locale} tool carries its own copy`, async ({ page }) => {
+      await page.goto(localisePath('/classroom-groups', locale));
+      await page.locator('#cg-io-toggle').click();
+      await expect(
+        page.getByRole('button', {
+          name: getStrings(locale).ioExportClassList,
+        }),
+      ).toBeVisible();
+    });
+  }
 });

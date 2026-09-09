@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { LOCALES } from '../../src/lib/i18n';
+import { LOCALES, PREFIXED_LOCALES } from '../../src/lib/i18n';
 
 /**
  * #21 Stage 4. Adding a locale must not mean writing routes by hand.
@@ -76,6 +76,73 @@ describe('every locale is routed from LOCALES, not from a directory per locale',
       expect(src, `${route}.astro has no getStaticPaths`).toContain(
         'getStaticPaths',
       );
+    }
+  });
+});
+
+/**
+ * The post-deploy gates must DERIVE their routes, never list them. #49.
+ *
+ * `tests/dev/dev-sanity.spec.ts` gates `dev-verified`, which is a required
+ * status on main's branch protection — the mechanical stop between develop and
+ * production. Its route list was hand-written, so when #22 took the site from
+ * six routes to fifteen, nine of them were never requested from the deployed
+ * host and the gate went green anyway. `tests/prod/prod-sanity.spec.ts` had
+ * the identical defect in two places.
+ *
+ * It had already happened once before that, and BOTH files carried a comment
+ * saying so ("a build that dropped the locale would deploy green"). It was
+ * fixed each time by extending the list, which is why it kept recurring. This
+ * is what stops the third recurrence: adding a locale-prefixed literal back to
+ * either gate fails here.
+ *
+ * DERIVED THREE TIMES OVER, because a guard against hardcoded lists must not
+ * contain one: the files come from the filesystem, the locale prefixes from
+ * PREFIXED_LOCALES, and the emptiness of the result is what is asserted.
+ */
+const gateSpecs = () =>
+  ['tests/dev', 'tests/prod'].flatMap((dir) =>
+    readdirSync(dir)
+      .filter((f) => f.endsWith('.spec.ts'))
+      .map((f) => join(dir, f)),
+  );
+
+/**
+ * TypeScript source with its comments removed. ASSERT ON THIS, never the raw
+ * text: both gate files DOCUMENT the `/id/` paths they used to hardcode, and
+ * matched against raw source that prose fails the check on its own — the
+ * inverse of #23, where a comment satisfied a guard instead of breaking it.
+ */
+const withoutComments = (source: string) =>
+  source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n');
+
+describe('the post-deploy gates derive their routes', () => {
+  it('has gate specs to check', () => {
+    // Without this the loop below is vacuous if the directories are ever
+    // renamed: no files, no matches, green.
+    expect(gateSpecs().length).toBeGreaterThan(1);
+  });
+
+  it('hardcodes no locale-prefixed route in any deploy gate', () => {
+    const pattern = new RegExp(
+      `['"\`]/(?:${PREFIXED_LOCALES.join('|')})/`,
+      'g',
+    );
+    for (const file of gateSpecs()) {
+      const found = [
+        ...withoutComments(readFileSync(file, 'utf8')).matchAll(pattern),
+      ].map((m) => m[0]);
+      expect(
+        found,
+        `${file} hardcodes a locale-prefixed path. Derive it from LOCALES ` +
+          `and localisePath instead — a hand-written list stops covering new ` +
+          `locales silently, and this gate is what stands between develop and ` +
+          `production`,
+      ).toEqual([]);
     }
   });
 });
