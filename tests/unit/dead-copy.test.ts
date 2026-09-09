@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import {
   withoutCommentLines,
   withoutMarkupComments,
@@ -8,6 +8,7 @@ import {
 import { join } from 'node:path';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
+import { filesUnder } from '../source-files';
 
 /**
  * A defined string that nothing renders.
@@ -52,13 +53,6 @@ const strippedSource = (text: string) =>
   withoutTsComments(withoutMarkupComments(withoutCommentLines(text, '//')));
 
 const sourceText = (() => {
-  const collect = (dir: string): string[] =>
-    readdirSync(dir).flatMap((entry) => {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) return collect(path);
-      return /\.(astro|ts)$/.test(path) ? [path] : [];
-    });
-
   // Excludes the files that DEFINE the copy, and nothing else. i18n/index.ts
   // stays in: it is a renderer, and dropping the whole i18n directory made
   // `groupLabel` and `themes` look dead when index.ts composes both.
@@ -66,7 +60,7 @@ const sourceText = (() => {
     join('src', 'lib', 'i18n', f),
   );
 
-  return collect('src')
+  return filesUnder('src', (path) => /\.(astro|ts)$/.test(path))
     .filter((path) => !definitions.includes(path))
     .map((path) => strippedSource(readFileSync(path, 'utf8')))
     .join('\n');

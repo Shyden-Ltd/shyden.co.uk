@@ -1,26 +1,9 @@
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname } from 'node:path';
+import { specFilesUnder } from './source-files';
 
 const TESTS_DIR = 'tests';
 
 /** Every directory at or below `dir` that directly holds a Playwright spec. */
-function dirsHoldingSpecs(dir: string): string[] {
-  const entries = readdirSync(dir, { withFileTypes: true });
-  const here = entries.some(
-    (entry) => entry.isFile() && entry.name.endsWith('.spec.ts'),
-  )
-    ? [dir]
-    : [];
-  const below = entries
-    .filter(
-      (entry) =>
-        entry.isDirectory() &&
-        !entry.name.startsWith('.') &&
-        entry.name !== 'node_modules',
-    )
-    .flatMap((entry) => dirsHoldingSpecs(join(dir, entry.name)));
-  return [...here, ...below];
-}
 
 /**
  * The directories a source-scanning guard should read, derived from disk.
@@ -33,4 +16,5 @@ function dirsHoldingSpecs(dir: string): string[] {
  * green at 11/11, and widening the scan immediately found a real defect
  * (#67).
  */
-export const specDirs = (): string[] => dirsHoldingSpecs(TESTS_DIR).sort();
+export const specDirs = (): string[] =>
+  [...new Set(specFilesUnder(TESTS_DIR).map((path) => dirname(path)))].sort();

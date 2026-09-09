@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { specDirs } from '../spec-dirs';
 import { blankCommentLines } from './source-text';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
+import { tsFilesUnder } from '../source-files';
 
 /**
  * A real device has exactly ONE adopted browser context for the whole run
@@ -55,17 +56,6 @@ import { join } from 'node:path';
 
 const REQUIRES_ISOLATED_CONTEXT_TAG = '@requires-isolated-context';
 const SCAN_DIRS = specDirs();
-
-function listSourceFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...listSourceFiles(full));
-    else if (/\.tsx?$/.test(entry.name)) out.push(full);
-  }
-  return out;
-}
 
 function lineNumberAt(text: string, index: number): number {
   return text.slice(0, index).split('\n').length;
@@ -284,7 +274,7 @@ function analyze(file: string, rawText: string): string[] {
 
 describe('a real device cannot isolate a JavaScript-disabled context', () => {
   it('every test inside a javaScriptEnabled:false describe is tagged @requires-isolated-context, and no tag is stale', () => {
-    const files = SCAN_DIRS.flatMap(listSourceFiles);
+    const files = SCAN_DIRS.flatMap(tsFilesUnder);
 
     // Same self-check viewport-tagging.test.ts/baseurl-guard.spec.ts use on themselves: a walk
     // that silently found zero files would pass for the wrong reason.

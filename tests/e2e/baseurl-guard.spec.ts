@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { specDirs } from '../spec-dirs';
 import { join } from 'node:path';
 import { test, expect, BASE_URL_AWARE_APIS } from './fixtures';
+import { tsFilesUnder } from '../source-files';
 
 // This file's own path, relative to the repo root -- excluded from the scan below. The guard
 // necessarily talks ABOUT the APIs it looks for (see BASE_URL_AWARE_APIS's `reason` strings,
@@ -11,25 +12,12 @@ const SELF = join('tests', 'e2e', 'baseurl-guard.spec.ts');
 
 const SCAN_DIRS = specDirs();
 
-function listSourceFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...listSourceFiles(full));
-    else if (/\.tsx?$/.test(entry.name)) out.push(full);
-  }
-  return out;
-}
-
 function lineNumberAt(text: string, index: number): number {
   return text.slice(0, index).split('\n').length;
 }
 
 test('every baseURL-aware API call on a relative literal is one the device fixtures actually resolve', () => {
-  const files = SCAN_DIRS.flatMap(listSourceFiles).filter(
-    (file) => file !== SELF,
-  );
+  const files = SCAN_DIRS.flatMap(tsFilesUnder).filter((file) => file !== SELF);
 
   // A silent guard that scanned zero files would pass for the wrong reason -- prove the walk
   // actually found the suite before trusting it found nothing wrong with the suite.

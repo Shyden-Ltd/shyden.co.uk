@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { blankCommentLines } from './source-text';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MVP_LOCALES } from '../../src/lib/i18n/metadata';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
+import { filesUnder } from '../source-files';
 import {
   CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
@@ -343,20 +344,13 @@ describe('the harness never runs itself', () => {
     // This module is for the CLI. Reaching it from a page would put the
     // glossary — and whatever it grows into — in the browser bundle.
     const offenders: string[] = [];
-    const walk = (dir: string) => {
-      for (const e of readdirSync(dir, { withFileTypes: true })) {
-        const p = join(dir, e.name);
-        if (e.isDirectory()) walk(p);
-        else if (
-          /\.(ts|astro)$/.test(e.name) &&
-          p !== 'src/lib/i18n/translate.ts'
-        ) {
-          if (readFileSync(p, 'utf8').includes('i18n/translate'))
-            offenders.push(p);
-        }
-      }
-    };
-    walk('src');
+    for (const path of filesUnder(
+      'src',
+      (p) => /\.(ts|astro)$/.test(p) && p !== 'src/lib/i18n/translate.ts',
+    )) {
+      if (readFileSync(path, 'utf8').includes('i18n/translate'))
+        offenders.push(path);
+    }
     expect(offenders).toEqual([]);
   });
 });
