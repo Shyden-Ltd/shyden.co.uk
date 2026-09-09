@@ -44,6 +44,26 @@ export const withoutYamlComments = (text: string): string =>
     .join('\n');
 
 /**
+ * YAML with its scalar quote characters removed.
+ *
+ * Quoting in YAML is a STYLE, not a meaning: `'actions/cache*'` and
+ * `"actions/cache*"` are the same scalar. A guard that greps for one spelling
+ * reports a correct config as missing, which is a false ALARM rather than a
+ * false pass -- the safe direction, but it reddens CI on config that is right
+ * and sends whoever hits it hunting a problem that does not exist.
+ *
+ * Found by building the org template repository against this repo's own
+ * supply-chain guard. The template configured the sub-path group in this
+ * repo's own house style (single quotes, as `'npm'` and `'develop'` are
+ * written) and the guard called it ungrouped.
+ *
+ * Only the quote characters go; separators and structure stay, so `['a','b']`
+ * becomes `[a,b]` and two scalars cannot merge into one.
+ */
+export const withoutYamlQuotes = (text: string): string =>
+  text.replace(/['"]/g, '');
+
+/**
  * Text with whole-line comments removed, for a given marker.
  *
  * Deliberately leaves trailing comments alone: a GitHub workflow's `run:`
