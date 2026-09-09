@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# Rejects a commit message that puts a closing keyword next to an issue
+# number inside a NEGATION.
+#
+# GitHub's closing-keyword parser has no concept of negation: it scans for
+# `close #<n>` and finds `CLOSE #44` inside `DOES NOT CLOSE #44`. Commit
+# 983fb7e said exactly that, in capitals, and closed the issue the sentence
+# was written to keep open (#77). The issue then sat closed for a day while
+# every handover recorded it as deliberately open.
+#
+# Installed by `scripts/install-hooks.mjs` via `prepare`, which points
+# core.hooksPath at this directory. See #35.
+set -u
+
+fail() {
+  echo "commit-msg: $1" >&2
+  exit 1
+}
+
+message_file="${1:-}"
+[ -n "$message_file" ] || fail 'no message file given (git passes it as $1)'
+[ -r "$message_file" ] || fail "cannot read $message_file"
+
+offender=$(grep -inE \
+  '(not|never|without)[[:space:]]+(clos|fix|resolv)[a-z]*[[:space:]]+#[0-9]+' \
+  "$message_file" | head -1)
+
+if [ -n "$offender" ]; then
+  fail "a negated closing keyword still closes the issue on GitHub.
+
+  $offender
+
+GitHub matches \`close #<n>\` inside \`DOES NOT CLOSE #<n>\` and closes it
+anyway. Write \`Refs #<n>\` and say the caveat without the words close, fix
+or resolve immediately before the number."
+fi
