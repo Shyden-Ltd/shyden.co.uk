@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  blankCommentLines,
+  isCommentLine,
   withoutYamlComments,
   withoutYamlQuotes,
   withoutCommentLines,
@@ -134,5 +136,72 @@ describe('withoutMarkupComments', () => {
 
   it('does not eat a lone angle bracket in text', () => {
     expect(withoutMarkupComments('<p>a < b</p>')).toContain('a < b');
+  });
+});
+
+describe('withoutTsComments understands regex literals', () => {
+  it('keeps code following a regex literal that contains a quote', () => {
+    // The trailing comment is the real assertion: without regex support the
+    // scanner opens a fake string at the `'` inside the class, stops seeing
+    // comments, and passes this test by emitting the whole input verbatim.
+    const kept = withoutTsComments(
+      `const a = /['"]/g; // gone\nconst b = 2;\n`,
+    );
+    expect(kept).toContain('const b = 2;');
+    expect(kept).not.toContain('gone');
+  });
+
+  it('keeps a regex literal that contains comment syntax', () => {
+    const kept = withoutTsComments(
+      `const r = /\\/\\*x\\*\\//g; // gone\nconst b = 2;\n`,
+    );
+    expect(kept).toContain('/\\/\\*x\\*\\//g');
+    expect(kept).not.toContain('gone');
+    expect(kept).toContain('const b = 2;');
+  });
+
+  it('still treats a slash after a value as division, not a regex', () => {
+    const kept = withoutTsComments(`const x = a / b; // gone\nconst c = 3;\n`);
+    expect(kept).toContain('a / b;');
+    expect(kept).not.toContain('gone');
+    expect(kept).toContain('const c = 3;');
+  });
+
+  it('strips a comment that follows a comment-stripping regex', () => {
+    // Characterisation, not a reproduction: this shape survived the old
+    // scanner too, because the backslashes keep the slashes non-adjacent.
+    // It is here so the line-comment stripper's own shape stays covered.
+    const kept = withoutTsComments(
+      `const strip = (s: string) => s.replace(/\\/\\/.*$/gm, ''); // gone\nconst b = 2;\n`,
+    );
+    expect(kept).toContain('const b = 2;');
+    expect(kept).not.toContain('gone');
+  });
+});
+
+describe('blankCommentLines keeps line numbers intact', () => {
+  it('blanks a comment line without removing it', () => {
+    const out = blankCommentLines('a;\n// note\nb;\n');
+    expect(out.split('\n')).toEqual(['a;', '', 'b;', '']);
+  });
+
+  it('blanks JSDoc openers and continuations too', () => {
+    // A JSDoc quoting `test.fixme(` must not register as a parked test.
+    expect(
+      blankCommentLines('/**\n * test.fixme(\n */\nc;').split('\n'),
+    ).toEqual(['', '', '', 'c;']);
+  });
+
+  it('leaves a trailing comment alone — whole lines only', () => {
+    expect(blankCommentLines('a; // kept\n')).toBe('a; // kept\n');
+  });
+
+  it('exposes the per-line predicate for callers that walk backwards', () => {
+    expect(['// x', ' * x', '/* x', 'code'].map(isCommentLine)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
   });
 });

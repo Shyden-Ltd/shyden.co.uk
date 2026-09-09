@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { accessSync, constants, readFileSync } from 'node:fs';
+import { withoutCommentLines } from './source-text';
 
 /**
  * The pre-push hook exists, is wired, and still runs what it was built to run.
@@ -51,9 +52,8 @@ const hookSource = () => readFileSync(HOOK, 'utf8');
  * messages can satisfy an assertion about what it executes.
  */
 function invokedNpmScripts(): string[] {
-  return hookSource()
+  return withoutCommentLines(hookSource(), '#')
     .split('\n')
-    .filter((line) => !line.trim().startsWith('#'))
     .map((line) => /^\s*npm run (\S+)/.exec(line)?.[1])
     .filter((name): name is string => Boolean(name))
     .sort();

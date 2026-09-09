@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { blankCommentLines } from './source-text';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { MVP_LOCALES } from '../../src/lib/i18n/metadata';
@@ -224,10 +225,9 @@ describe('protected terms are wrapped before they are sent', () => {
     // The bug this whole block exists for was a pure function that was never
     // called. A source scan is the only surface available: the script is a
     // top-level-await module that calls the network on import.
-    const script = readFileSync(
-      join('scripts', 'i18n-translate.mjs'),
-      'utf8',
-    ).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+    const script = blankCommentLines(
+      readFileSync(join('scripts', 'i18n-translate.mjs'), 'utf8'),
+    );
     expect(script, 'the request body must come from buildRequestBody').toMatch(
       /buildRequestBody\(/,
     );
@@ -267,10 +267,9 @@ describe('protected terms are wrapped before they are sent', () => {
     // trivially. This binds the script to the three sources by name, which is
     // the direction that actually goes wrong: site copy was invisible to the
     // translator for an entire release because nothing asserted it was seen.
-    const script = readFileSync(
-      join('scripts', 'i18n-translate.mjs'),
-      'utf8',
-    ).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+    const script = blankCommentLines(
+      readFileSync(join('scripts', 'i18n-translate.mjs'), 'utf8'),
+    );
     for (const [source, why] of [
       ['collect(en)', "the tool's own catalogue"],
       ['collect(siteEn)', 'header, footer, homepage and 404 copy'],

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { withoutTsComments } from './source-text';
 import {
   LOCALES,
   otherLocales,
@@ -37,16 +38,6 @@ const source = (path: string) => readFileSync(path, 'utf8');
 const SWITCHER = 'src/components/LanguageSwitcher.astro';
 const HEADER = 'src/components/Header.astro';
 const IO = 'src/scripts/io-ui.ts';
-
-/**
- * Comments stripped before any source-text assertion — a guard matched
- * against raw file text is satisfied by the file's own documentation, which
- * is how a vacuous supply-chain guard shipped here once (#23). The paragraph
- * above this file's first describe explains what the handover USED to do; it
- * must not be what keeps these green.
- */
-const withoutComments = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 /** A native name from a locale that is not routed, so nothing else can supply it. */
 const NATIVE_NAME_PROBE = 'Tiếng Việt';
@@ -104,7 +95,7 @@ describe('the handover offers every language (tripwire 2, retired)', () => {
   it('no longer chooses a destination on the teacher behalf', () => {
     // The exact shape of the retired bug: the FIRST alternative, taken
     // without asking. Correct for one, a silent decision for two.
-    const src = withoutComments(source(IO));
+    const src = withoutTsComments(source(IO));
     expect(
       src.includes('otherLocales(locale)[0]'),
       'the handover took the first alternative — Stage 3 offers all of them',
@@ -112,7 +103,7 @@ describe('the handover offers every language (tripwire 2, retired)', () => {
   });
 
   it('builds one entry per alternative, labelled in that language own name', () => {
-    const src = withoutComments(source(IO));
+    const src = withoutTsComments(source(IO));
     expect(src).toContain('otherLocales(');
     expect(
       src,
