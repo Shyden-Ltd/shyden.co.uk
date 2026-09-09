@@ -293,3 +293,52 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(spec.match(/\bit\(|\btest\(/g)?.length ?? 0).toBeGreaterThan(3);
   });
 });
+
+/**
+ * The e2e reconciliation guard is what `npm run test:e2e` actually runs.
+ *
+ * The guard (scripts/test-e2e.mjs) compares the tests a run accounted for
+ * against the tests `playwright test --list` enumerates, and refuses a green
+ * summary over a partial run. It protects nothing if the pipeline calls
+ * Playwright directly and walks straight past it — which is the easiest change
+ * in the world to make by accident, and produces no visible symptom, because
+ * the suite still passes. It just stops being checked.
+ */
+describe('the e2e reconciliation guard cannot be bypassed', () => {
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+
+  it('is what `npm run test:e2e` invokes', () => {
+    expect(
+      pkg.scripts['test:e2e'],
+      'pointing this back at `playwright test` silently removes the guard ' +
+        'without failing a single test',
+    ).toContain('scripts/test-e2e.mjs');
+  });
+
+  it('names a script that exists', () => {
+    expect(existsSync('scripts/test-e2e.mjs')).toBe(true);
+  });
+
+  it('is not bypassed by any workflow calling Playwright directly', () => {
+    // The deployed-site smoke suites legitimately call Playwright with their
+    // own config (playwright.dev/prod.config.ts) and are not the full corpus.
+    // Anything invoking the DEFAULT config, though, is the full suite and must
+    // come through the guard.
+    const bypasses = readdirSync(WORKFLOWS)
+      .flatMap((file) =>
+        workflow(file)
+          .split('\n')
+          .map((line) => ({ file, line })),
+      )
+      .filter(
+        ({ line }) =>
+          /\bplaywright\s+test\b/.test(line) && !line.includes('--config='),
+      );
+
+    expect(
+      bypasses.map(({ file, line }) => `${file}: ${line.trim()}`),
+      'a workflow running the default config outside `npm run test:e2e` is a ' +
+        'full suite whose completeness nobody checks',
+    ).toEqual([]);
+  });
+});
