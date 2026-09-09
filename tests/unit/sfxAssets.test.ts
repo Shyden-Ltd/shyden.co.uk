@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
+
+/*
+ * SWEPT FOR #24 AND IMMUNE BY CONSTRUCTION, recorded rather than assumed.
+ *
+ * The source-text guards in this repo can be satisfied by a file's own
+ * documentation -- three have been (#23, #21 Stage 4, #35) -- so every suite
+ * that reads a file was swept. This one reads BINARY: `readFileSync` here
+ * takes no encoding and returns a Buffer of an .m4a, parsed for its container
+ * duration. Everything else it asserts against comes from importing
+ * `src/lib/sfxAssets` as a VALUE. There is no text for a comment to live in,
+ * so there is nothing to strip.
+ */
 import { join } from 'node:path';
 import * as sfxAssets from '../../src/lib/sfxAssets';
 import {

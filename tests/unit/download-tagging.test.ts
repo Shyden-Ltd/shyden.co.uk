@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
+import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
 
 /**
@@ -82,7 +83,7 @@ const scan = () => {
   const untagged: string[] = [];
   const stale: string[] = [];
   for (const file of specFiles('tests/e2e')) {
-    const source = readFileSync(file, 'utf8');
+    const source = withoutTsComments(readFileSync(file, 'utf8'));
     const lines = source.split('\n');
     const decls = declarations(source);
 
@@ -136,11 +137,11 @@ describe('every test that reads a download’s bytes is tagged', () => {
   // clean sweep it never performed.
   it('is actually looking at tests that read bytes', () => {
     const reading = specFiles('tests/e2e').filter((f) =>
-      readFileSync(f, 'utf8').includes(READS_BYTES),
+      withoutTsComments(readFileSync(f, 'utf8')).includes(READS_BYTES),
     );
     expect(reading.length).toBeGreaterThan(0);
     const tagged = specFiles('tests/e2e').flatMap((f) =>
-      declarations(readFileSync(f, 'utf8')).filter((d) =>
+      declarations(withoutTsComments(readFileSync(f, 'utf8'))).filter((d) =>
         d.header.includes(TAG),
       ),
     );
@@ -151,6 +152,8 @@ describe('every test that reads a download’s bytes is tagged', () => {
   // A tag every spec carries correctly, that no config excludes, protects
   // nothing.
   it('the device config actually excludes this tag', () => {
-    expect(readFileSync('playwright.device.config.ts', 'utf8')).toContain(TAG);
+    expect(
+      withoutTsComments(readFileSync('playwright.device.config.ts', 'utf8')),
+    ).toContain(TAG);
   });
 });

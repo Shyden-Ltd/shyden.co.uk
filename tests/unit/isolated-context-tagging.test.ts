@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
+import { withoutTsComments } from './source-text';
 import { join } from 'node:path';
 
 /**
@@ -295,7 +296,7 @@ describe('a real device cannot isolate a JavaScript-disabled context', () => {
     ).toBeGreaterThan(0);
 
     const findings = files.flatMap((file) =>
-      analyze(file, readFileSync(file, 'utf8')),
+      analyze(file, withoutTsComments(readFileSync(file, 'utf8'))),
     );
     expect(findings, findings.join('\n')).toEqual([]);
   });
