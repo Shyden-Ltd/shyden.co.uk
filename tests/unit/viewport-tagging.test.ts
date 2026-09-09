@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { specDirs } from '../spec-dirs';
 import { blankCommentLines } from './source-text';
 import { readdirSync, readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
@@ -78,7 +79,7 @@ import { join } from 'node:path';
  */
 
 const EMULATED_VIEWPORT_TAG = '@emulated-viewport';
-const SCAN_DIRS = [join('tests', 'e2e'), join('tests', 'device')];
+const SCAN_DIRS = specDirs();
 
 function listSourceFiles(dir: string): string[] {
   const out: string[] = [];

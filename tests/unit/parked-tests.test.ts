@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { specDirs } from '../spec-dirs';
 import { blankCommentLines, isCommentLine } from './source-text';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -54,7 +55,7 @@ import { join } from 'node:path';
  * "tracked", and it is one this file can actually keep.
  */
 
-const SCAN_DIRS = [join('tests', 'e2e'), join('tests', 'device')];
+const SCAN_DIRS = specDirs();
 
 /** Any `#123`. Deliberately NOT a `/g/` regex: a global regex carries
  * `lastIndex` between `.test()` calls and would report alternating results
