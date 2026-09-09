@@ -14,6 +14,7 @@
     "test:e2e": "node scripts/test-e2e.mjs",
     "test:ios": "vitest run --config vitest.ios.config.ts --reporter=verbose",
     "test:devices": "node scripts/test-devices.mjs",
+    "i18n:translate": "node scripts/i18n-translate.mjs",
     "dashboard": "node scripts/dashboard.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "format": "prettier --check ."
