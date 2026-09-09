@@ -69,7 +69,23 @@ export default defineConfig({
     url: 'http://localhost:4321',
     reuseExistingServer: !!process.env.PW_REUSE_SERVER,
   },
-  use: { baseURL: 'http://localhost:4321' },
+  use: {
+    baseURL: 'http://localhost:4321',
+    // #44. A test that times out inside `page.goto` leaves ONE LINE of text
+    // behind, and the run is gone: `retries` is 0 and nothing is kept. Two
+    // occurrences have now been reasoned about from a stack trace and a
+    // memory of what the test does.
+    //
+    // The measured distribution says this is not load — mobile-safari's max
+    // sits around 10-11.6s against a 30s budget across runs, and the failing
+    // test never appears in the slowest three. So the next occurrence needs
+    // to be diagnosable, not re-argued.
+    //
+    // `retain-on-failure`, not `on`: a trace per test across ~2200 tests is
+    // hundreds of megabytes of artefact for runs that told us nothing. This
+    // costs nothing on a green run.
+    trace: 'retain-on-failure',
+  },
   projects: [
     // Bytes and DOM text are identical on every engine, so running these five
     // times bought four repeats of a result the first run already had. Once is
