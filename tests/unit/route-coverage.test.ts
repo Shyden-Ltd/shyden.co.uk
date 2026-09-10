@@ -73,10 +73,19 @@ describe('every locale is routed from LOCALES, not from a directory per locale',
           readFileSync(join(LOCALE_ROUTE, `${route}.astro`), 'utf8'),
         ),
       );
-      expect(src, `${route}.astro`).toContain('PREFIXED_LOCALES');
-      expect(src, `${route}.astro has no getStaticPaths`).toContain(
-        'getStaticPaths',
-      );
+      // ANCHORED to a USE, not to the word. Stripping removes one way of
+      // faking this; it still passes on a file that imports the constant and
+      // then ignores it, which is the same bug wearing an import. The claim
+      // is that the paths are GENERATED from it, so assert a call on it.
+      expect(
+        /PREFIXED_LOCALES\s*\.\s*\w+\(/.test(src),
+        `${route}.astro mentions PREFIXED_LOCALES but never calls anything ` +
+          'on it — the paths are not generated from it',
+      ).toBe(true);
+      expect(
+        /^export function getStaticPaths\(/m.test(src),
+        `${route}.astro has no getStaticPaths export`,
+      ).toBe(true);
     }
   });
 });
