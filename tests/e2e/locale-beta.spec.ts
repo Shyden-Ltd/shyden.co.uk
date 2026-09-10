@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { contrastRatio } from './helpers';
+import { shoot } from './evidence';
 import {
   LOCALES,
   DEFAULT_LOCALE,
@@ -21,11 +22,16 @@ import {
  *
  * Runs over the full LOCALES set, not `SAMPLED_LOCALES`: this is text- and
  * layout-sensitive, and the 320px case in particular differs by script.
+ *
+ * `shoot` calls sit AFTER the assertion they document, so a captured image is
+ * itself the result -- see tests/e2e/evidence.ts. They are free unless
+ * `EVIDENCE_DIR` is set.
  */
 
 const SWITCHER = 'details.lang-switch';
 const BADGE = '[data-beta]';
 const NOTICE = '[data-beta-notice]';
+const FOOTER = 'footer#contact-legal';
 
 /**
  * The count that must appear on EVERY page in EVERY locale.
@@ -52,10 +58,22 @@ test.describe('every unverified language is marked BETA', () => {
         await page.locator(BADGE).count(),
         `${path}: expected one badge per beta locale`,
       ).toBe(EXPECTED_BADGES);
+      await shoot(
+        page,
+        `${locale} page carries exactly ${EXPECTED_BADGES} badges`,
+        page.locator(SWITCHER),
+      );
 
       // The language being read is badged only when it is itself unverified.
       const summaryBadge = page.locator(`${SWITCHER} > summary ${BADGE}`);
       await expect(summaryBadge).toHaveCount(isBetaLocale(locale) ? 1 : 0);
+      await shoot(
+        page,
+        isBetaLocale(locale)
+          ? `${locale} is unverified, so the control it is read in is badged`
+          : `${locale} is verified, so the control shows no badge`,
+        page.locator(`${SWITCHER} > summary`),
+      );
 
       await page.locator(`${SWITCHER} > summary`).click();
       for (const other of otherLocales(locale)) {
@@ -64,6 +82,11 @@ test.describe('every unverified language is marked BETA', () => {
           entry.locator(BADGE),
           `${path}: ${other} is ${isBetaLocale(other) ? 'unverified and unbadged' : 'verified but badged'}`,
         ).toHaveCount(isBetaLocale(other) ? 1 : 0);
+        await shoot(
+          page,
+          `${other} entry ${isBetaLocale(other) ? 'is badged' : 'is NOT badged'}`,
+          entry,
+        );
       }
     });
 
@@ -75,6 +98,11 @@ test.describe('every unverified language is marked BETA', () => {
         // English is the one locale we can confirm verified, so its page
         // carries no notice at all.
         await expect(notice).toHaveCount(0);
+        await shoot(
+          page,
+          'the English footer carries no beta notice',
+          page.locator(FOOTER),
+        );
         return;
       }
 
@@ -82,9 +110,16 @@ test.describe('every unverified language is marked BETA', () => {
       await expect(notice).toContainText(t.language.betaNotice);
       // The badge token is not translated; the sentence beside it is.
       await expect(notice).toContainText(BETA_BADGE);
+      await shoot(page, `the notice is present and in ${locale}`, notice);
+
       if (locale !== DEFAULT_LOCALE) {
         await expect(notice).not.toContainText(
           getSiteStrings(DEFAULT_LOCALE).language.betaNotice,
+        );
+        await shoot(
+          page,
+          `${locale} does not fall back to the English sentence`,
+          page.locator(FOOTER),
         );
       }
     });
@@ -99,13 +134,17 @@ test.describe('every unverified language is marked BETA', () => {
     // reader traverses but `innerText` omits.
     for (const locale of PREFIXED_LOCALES) {
       await page.goto(localisePath('/', locale));
-      const spoken = await page
-        .locator(`${SWITCHER} > summary ${BADGE}`)
-        .evaluate((el) => el.textContent ?? '');
+      const badge = page.locator(`${SWITCHER} > summary ${BADGE}`);
+      const spoken = await badge.evaluate((el) => el.textContent ?? '');
       expect(spoken, `${locale}: badge is a bare token`).toContain(
         getSiteStrings(locale).language.betaLabel,
       );
       expect(spoken).toContain(BETA_BADGE);
+      await shoot(
+        page,
+        `${locale} badge is announced as "${spoken.trim()}"`,
+        page.locator(`${SWITCHER} > summary`),
+      );
     }
   });
 
@@ -116,12 +155,24 @@ test.describe('every unverified language is marked BETA', () => {
     // badge is a different composite from the one in the summary.
     await page.goto(localisePath('/', PREFIXED_LOCALES[0]));
     const summaryBadge = page.locator(`${SWITCHER} > summary ${BADGE}`).first();
-    expect(await contrastRatio(summaryBadge)).toBeGreaterThanOrEqual(4.5);
+    const summaryRatio = await contrastRatio(summaryBadge);
+    expect(summaryRatio).toBeGreaterThanOrEqual(4.5);
+    await shoot(
+      page,
+      `summary badge paints ${summaryRatio.toFixed(2)}:1, floor is 4.5:1`,
+      page.locator(`${SWITCHER} > summary`),
+    );
 
     await page.locator(`${SWITCHER} > summary`).click();
     const entryBadge = page.locator(`${SWITCHER} li ${BADGE}`).first();
     await expect(entryBadge).toBeVisible();
-    expect(await contrastRatio(entryBadge)).toBeGreaterThanOrEqual(4.5);
+    const entryRatio = await contrastRatio(entryBadge);
+    expect(entryRatio).toBeGreaterThanOrEqual(4.5);
+    await shoot(
+      page,
+      `entry badge paints ${entryRatio.toFixed(2)}:1, floor is 4.5:1`,
+      page.locator(`${SWITCHER} ul`),
+    );
   });
 
   test(
@@ -150,6 +201,10 @@ test.describe('every unverified language is marked BETA', () => {
           overflow,
           `${path} scrolls sideways at 320px with the BETA marker`,
         ).toBeLessThanOrEqual(0);
+        await shoot(
+          page,
+          `${locale} at 320px: badge visible, overflow ${overflow}px`,
+        );
       }
     },
   );
