@@ -85,7 +85,7 @@ describe('noIndexHeaderValue', () => {
 });
 
 describe('basicAuthOk — FAILS CLOSED', () => {
-  it.each([
+  it.each<[string | null | undefined, string]>([
     ['', 'empty password (env var unset) must never open the gate'],
     [undefined, 'undefined password fails closed'],
     [null, 'null password fails closed'],
@@ -94,7 +94,7 @@ describe('basicAuthOk — FAILS CLOSED', () => {
       false,
     ),
   );
-  it.each([
+  it.each<[string | null | undefined, string]>([
     [null, 'null header'],
     [undefined, 'undefined header'],
     ['', 'empty header'],

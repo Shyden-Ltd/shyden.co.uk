@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { isCommentLine } from './source-text';
 import { readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
-import { join } from 'node:path';
 import { specFilesUnder } from '../source-files';
 
 /**

@@ -564,6 +564,11 @@ describe('buildGroups — refusals', () => {
       base({ students: 4, mode: { kind: 'groupCount', count: 9 } }),
     );
     if (out.ok) throw new Error('expected refusal');
+    // Asserting the code is what makes `maxGroups` reachable on the union,
+    // and it is also the assertion this test was missing: it checked the
+    // number without ever checking WHICH refusal carried it.
+    expect(out.error.code).toBe(ERROR_CODES.tooManyGroups);
+    if (out.error.code !== ERROR_CODES.tooManyGroups) return;
     expect(out.error.maxGroups).toBe(4);
   });
 });
@@ -574,6 +579,7 @@ describe('buildGroups — no input may hang or crash the browser tab', () => {
     const out = buildGroups(base({ students: 100_000_000 }));
     if (out.ok) throw new Error('expected refusal');
     expect(out.error.code).toBe(ERROR_CODES.tooManyStudents);
+    if (out.error.code !== ERROR_CODES.tooManyStudents) return;
     expect(out.error.maxStudents).toBe(MAX_STUDENTS);
   });
 

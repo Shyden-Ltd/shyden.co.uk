@@ -61,7 +61,7 @@ export const nextNumber = (roster: Student[]): number =>
  * same as one that was never set (`null`) — only a name with real
  * characters in it counts.
  */
-export const rosterCounts = (roster: Student[]) => ({
+export const rosterCounts = (roster: readonly Student[]) => ({
   named: roster.filter((s) => s.name !== null && s.name !== '').length,
   absent: roster.filter((s) => s.absent).length,
   together: roster.filter((s) => s.together !== null).length,
