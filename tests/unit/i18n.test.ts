@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { nonEmpty } from '../source-files';
 import { en } from '../../src/lib/i18n/en';
 import { id } from '../../src/lib/i18n/id';
 import {
@@ -50,13 +51,20 @@ const deepKeys = (value: unknown, path = ''): string[] => {
   return [path];
 };
 
-const deepStrings = (value: unknown, path = ''): Array<[string, string]> => {
+/**
+ * The recursion, kept private so an empty sub-walk stays ordinary HERE.
+ *
+ * A function, a number or an empty object contributes nothing, and must be
+ * allowed to. The refusal belongs to the top-level form and nowhere else --
+ * the shape `walk`/`filesUnder` settled on in tests/source-files.ts (#84).
+ */
+const walkStrings = (value: unknown, path = ''): Array<[string, string]> => {
   if (typeof value === 'string') return [[path, value]];
   if (Array.isArray(value))
-    return value.flatMap((v, i) => deepStrings(v, `${path}[${i}]`));
+    return value.flatMap((v, i) => walkStrings(v, `${path}[${i}]`));
   if (value && typeof value === 'object')
     return Object.entries(value).flatMap(([k, v]) =>
-      deepStrings(v, path ? `${path}.${k}` : k),
+      walkStrings(v, path ? `${path}.${k}` : k),
     );
   // A function contributes NOTHING here -- not a key, not a value, not a
   // string to compare. `deepFunctions` below is the walk that actually
@@ -69,6 +77,21 @@ const deepStrings = (value: unknown, path = ''): Array<[string, string]> => {
   // the rest, so this comment used to overclaim; it no longer does.
   return [];
 };
+
+/**
+ * Every string in a catalogue, PROVED non-empty before a guard reads it.
+ *
+ * Three guards below assert absence over the result of filtering this --
+ * nothing blank, nothing left as English. A walker that returned `[]` would
+ * satisfy all three at once while reading nothing, which is #84's lesson in
+ * a second medium: the file walk already refuses an empty result inside
+ * `filesUnder`, and a catalogue walk is the same shape.
+ *
+ * A plain `throw` via `nonEmpty`, not an `expect`: the refusal belongs to
+ * the derivation, where a call site cannot forget it.
+ */
+const deepStrings = (value: unknown): Array<[string, string]> =>
+  nonEmpty(walkStrings(value), 'catalogue strings');
 
 /**
  * Every function-valued leaf, addressed by the same dotted path `deepKeys`
