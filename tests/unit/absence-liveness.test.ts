@@ -45,6 +45,14 @@ import {
  *
  * `.not.toEqual([])` is a PRESENCE assertion and is skipped: it fails, loudly,
  * on an empty population, so it cannot hide one.
+ *
+ * The scan covers EVERY `.ts` under `tests/`, not just `*.test.ts` and
+ * `*.spec.ts`. That filter looked like a definition and was really a
+ * hand-drawn boundary -- the kind #24's sweep was built on and #60 and #65
+ * then found survivors outside. It excluded `tests/e2e/recorders.ts`, which
+ * is where #79's collector-liveness lesson was learned and which carries
+ * three absence assertions of its own. Derive the scope from the filesystem,
+ * including for your own guard.
  */
 
 /** Reaching any of these means the subject came from outside the test. */
@@ -136,7 +144,7 @@ function scan() {
   const findings: string[] = [];
   let absences = 0;
   let proved = 0;
-  for (const file of tsFiles.filter((f) => /\.(test|spec)\.ts$/.test(f))) {
+  for (const file of tsFiles) {
     const sf = parseFile(file);
     const decls = declarationsIn(sf);
     const check = (node: ts.Node) => {
@@ -169,7 +177,11 @@ describe('absence assertions prove the population they searched', () => {
   // those is good news. This is the shape `event-collectors.test.ts` settled.
   it('finds the absence assertions it is meant to be judging', () => {
     expect(tsFiles.length).toBeGreaterThan(30);
-    expect(result.absences).toBeGreaterThan(80);
+    // 112 today. The floor is stated against a measured figure rather
+    // than left comfortably low, for the reason `anchored-presence`
+    // records: a control with slack in it is most of the way back to
+    // no control at all.
+    expect(result.absences).toBeGreaterThan(100);
     expect(result.proved).toBeGreaterThan(0);
   });
 

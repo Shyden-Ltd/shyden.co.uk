@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { searched } from '../source-files';
 
 /**
  * Browser-event recorders — the only place in the suite that subscribes to a
@@ -110,16 +111,27 @@ export function recordErrors(page: Page): ErrorRecorder {
   const ANY_SENTINEL = /__liveness_[a-z0-9]+__/;
   const consoleErrors: string[] = [];
   const uncaught: string[] = [];
+  /**
+   * EVERY console message, sentinels included -- the population the verdicts
+   * below are drawn from (#118).
+   *
+   * `flush` already waits for the sentinel, so this is not a second control
+   * for the same fact: it is that fact, carried into the assertion's own
+   * expression instead of standing next to it. A reader of the verdict can
+   * see what was searched without tracing back to the poll.
+   */
+  const delivered: string[] = [];
   let sentinelSeen = false;
   page.on('console', (message) => {
     const text = message.text();
+    delivered.push(text);
     if (text.includes(SENTINEL)) sentinelSeen = true;
     else if (message.type() === 'error' && !ANY_SENTINEL.test(text))
       consoleErrors.push(text);
   });
   page.on('pageerror', (error) => uncaught.push(String(error)));
 
-  const flush = async (because: string): Promise<void> => {
+  const flush = async (because: string): Promise<readonly string[]> => {
     // Emitted through `console.error`, not `console.log`, so the sentinel
     // travels the same filter as a real error. A control that took an easier
     // path than the thing it vouches for proves nothing about it.
@@ -129,18 +141,34 @@ export function recordErrors(page: Page): ErrorRecorder {
         message: `${because}: the console channel never delivered this helper's own sentinel, so an empty error list would mean nothing (#79)`,
       })
       .toBe(true);
+    return delivered;
   };
 
   return {
     consoleErrors,
     uncaught,
     async expectNone(because) {
-      await flush(because);
-      expect([...consoleErrors, ...uncaught], because).toEqual([]);
+      const seen = await flush(because);
+      expect(
+        searched([...consoleErrors, ...uncaught], {
+          of: seen,
+          what: 'console messages delivered',
+        }),
+        because,
+      ).toEqual([]);
     },
     async expectNoUncaught(because) {
-      await flush(because);
-      expect(uncaught, because).toEqual([]);
+      // The KNOWN LIMIT above applies to the population as much as to the
+      // sentinel: `pageerror` is vouched for only by sharing this channel's
+      // ordering, never by being exercised itself.
+      const seen = await flush(because);
+      expect(
+        searched(uncaught, {
+          of: seen,
+          what: 'console messages delivered (pageerror rides their ordering)',
+        }),
+        because,
+      ).toEqual([]);
     },
   };
 }
