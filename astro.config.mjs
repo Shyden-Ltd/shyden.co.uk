@@ -20,9 +20,27 @@ export default defineConfig({
   // routing config above, so without this the sitemap listed six <loc>
   // entries and zero xhtml:link alternates — declaring no relationship
   // between the English and Indonesian versions of the same page.
+  //
+  // WRITTEN OUT because this file runs under plain Node and cannot import
+  // src/lib/i18n. That duplication is the whole hazard: it said en+id for
+  // weeks after #22 shipped five languages, so nine of fifteen URLs declared
+  // NO alternates at all while the guard — which also named en and id by hand
+  // — passed. Two hand-written lists agreeing with each other is not a check.
+  // The values are LOCALE_METADATA's `ogLocale` with `_` as `-`, and
+  // tests/unit/sitemap-config.test.ts asserts this map against that table, so
+  // the seam is checked even though the import cannot be. See #108.
   integrations: [
     sitemap({
-      i18n: { defaultLocale: 'en', locales: { en: 'en-GB', id: 'id-ID' } },
+      i18n: {
+        defaultLocale: 'en',
+        locales: {
+          en: 'en-GB',
+          id: 'id-ID',
+          zh: 'zh-CN',
+          vi: 'vi-VN',
+          th: 'th-TH',
+        },
+      },
     }),
   ],
   devToolbar: { enabled: false },

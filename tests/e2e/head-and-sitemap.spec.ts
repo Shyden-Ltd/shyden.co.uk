@@ -1,4 +1,17 @@
 import { test, expect } from './fixtures';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+
+/**
+ * The hreflang set every page in the sitemap must declare.
+ *
+ * Derived from `LOCALE_METADATA.ogLocale` (`en_GB` -> `en-GB`) rather than a
+ * second table: that table exists precisely because five separate places used
+ * to decide what a locale meant, and each was silently correct for two
+ * languages and wrong for the third.
+ */
+const EXPECTED_ALTERNATES = LOCALES.map((locale) =>
+  LOCALE_METADATA[locale].ogLocale.replace('_', '-'),
+).sort();
 import { LOCALES, localisePath } from '../../src/lib/i18n/index';
 
 test.describe('the sitemap', () => {
@@ -31,8 +44,34 @@ test.describe('the sitemap', () => {
     // versions of a page looked like unrelated near-duplicates.
     const xml = await (await request.get('/sitemap-0.xml')).text();
     expect(xml).toContain('xhtml:link');
-    expect(xml).toContain('hreflang="en-GB"');
-    expect(xml).toContain('hreflang="id-ID"');
+
+    // Asserted PER <url>, against a set derived from LOCALE_METADATA.
+    //
+    // This read `toContain('hreflang="en-GB"')` and `id-ID` — two names
+    // written by hand, matched anywhere in the file, agreeing with a config
+    // that also named those two by hand. Two hand-written lists agreeing with
+    // each other is not a check: nine of fifteen URLs (`/zh/*`, `/vi/*`,
+    // `/th/*`) carried NO alternates at all and it passed. See #108, and #104
+    // for the same drift in the 404.
+    const blocks = xml.match(/<url>[\s\S]*?<\/url>/g) ?? [];
+    expect(
+      blocks.length,
+      'no <url> blocks — the parse is broken',
+    ).toBeGreaterThan(0);
+    const short = (url: string) => url.replace('https://shyden.co.uk', '');
+    const wrong = blocks
+      .map((block) => ({
+        loc: short(/<loc>([^<]*)<\/loc>/.exec(block)?.[1] ?? '?'),
+        langs: [...block.matchAll(/hreflang="([^"]+)"/g)]
+          .map((m) => m[1])
+          .sort(),
+      }))
+      .filter((u) => u.langs.join() !== EXPECTED_ALTERNATES.join())
+      .map((u) => `${u.loc} -> ${u.langs.join(',') || 'NONE'}`);
+    expect(
+      wrong,
+      `expected every page to declare ${EXPECTED_ALTERNATES.join(',')}`,
+    ).toEqual([]);
 
     // Each entry pairs with its own translation, not with the homepage.
     const groups = xml.split('<url>').slice(1);
