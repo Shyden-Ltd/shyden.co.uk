@@ -1,4 +1,4 @@
-import { metadataFor } from './i18n/metadata';
+import { metadataFor, type MvpLocale } from './i18n/metadata';
 /** Exact user-facing messages — copy is part of the contract (tests assert these). */
 export const ERRORS = {
   empty: 'Please enter a number.',
@@ -56,6 +56,6 @@ export function calculateGlory(rawInput: string): GloryOutcome {
  * point one one two". The page's own static copy already says "0,9 bean per
  * koin", so hard-coding en-US here made it contradict itself.
  */
-export function formatNumber(n: number, locale: 'en' | 'id'): string {
+export function formatNumber(n: number, locale: MvpLocale): string {
   return n.toLocaleString(metadataFor(locale).numberLocale);
 }
