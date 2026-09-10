@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { nonEmpty } from '../source-files';
 
 /**
  * The Node version this repo runs on is stated ONCE, and everything agrees.
@@ -83,15 +84,18 @@ const npmrc = (): Map<string, string> => {
 
 /** Workflow files with comments stripped, so prose cannot satisfy a guard. */
 const workflowBodies = (): [string, string][] =>
-  readdirSync(WORKFLOWS)
-    .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-    .map((f) => [
-      f,
-      readFileSync(join(WORKFLOWS, f), 'utf8')
-        .split('\n')
-        .map((line) => line.replace(/(^|\s)#.*$/, ''))
-        .join('\n'),
-    ]);
+  nonEmpty(
+    readdirSync(WORKFLOWS).filter(
+      (f) => f.endsWith('.yml') || f.endsWith('.yaml'),
+    ),
+    `workflow files in ${WORKFLOWS}`,
+  ).map((f) => [
+    f,
+    readFileSync(join(WORKFLOWS, f), 'utf8')
+      .split('\n')
+      .map((line) => line.replace(/(^|\s)#.*$/, ''))
+      .join('\n'),
+  ]);
 
 describe('the Node version contract is stated once and agreed everywhere', () => {
   it('declares engines.node in package.json', () => {

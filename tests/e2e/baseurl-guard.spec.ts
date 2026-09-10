@@ -19,12 +19,14 @@ function lineNumberAt(text: string, index: number): number {
 test('every baseURL-aware API call on a relative literal is one the device fixtures actually resolve', () => {
   const files = SCAN_DIRS.flatMap(tsFilesUnder).filter((file) => file !== SELF);
 
-  // A silent guard that scanned zero files would pass for the wrong reason -- prove the walk
-  // actually found the suite before trusting it found nothing wrong with the suite.
+  // `tsFilesUnder` proves its own result non-empty (#84), so the sibling
+  // copies of this check are gone. This one survives for a reason the
+  // collector cannot see: the list is NARROWED afterwards, by filtering out
+  // SELF, and a collector has no view of a filter its caller applies.
   expect(
     files.length,
-    `expected to find .ts files under ${SCAN_DIRS.join(', ')}; found none, which means this ` +
-      "guard's own file-walk is broken, not that the suite has nothing to check",
+    `every .ts file under ${SCAN_DIRS.join(', ')} is this spec itself, so the ` +
+      'scan below has nothing left to check',
   ).toBeGreaterThan(0);
 
   const unresolved = BASE_URL_AWARE_APIS.filter((entry) => !entry.resolved);

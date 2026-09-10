@@ -285,17 +285,6 @@ test.describe('classroom group creator', () => {
     page,
   }) => {
     const files = listM4aFiles(join('dist'));
-    // A silent guard that found zero files would pass for the wrong reason
-    // -- prove the walk actually found the build output before trusting the
-    // loop below proves anything about it (same reasoning as
-    // baseurl-guard.spec.ts's own "found none, which means this guard's own
-    // file-walk is broken" check).
-    expect(
-      files.length,
-      'expected to find .m4a files under dist/ (a fresh build should always ' +
-        'produce them); found none, which means this walk is broken, not ' +
-        'that the six sound assets are missing',
-    ).toBeGreaterThan(0);
 
     for (const role of [
       'shuffle',

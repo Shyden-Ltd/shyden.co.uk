@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withoutYamlComments, withoutYamlQuotes } from './source-text';
+import { nonEmpty } from '../source-files';
 
 /**
  * The CI supply chain is pinned, and something keeps it current.
@@ -29,8 +30,11 @@ const WORKFLOWS = '.github/workflows';
 const DEPENDABOT = '.github/dependabot.yml';
 
 const workflowFiles = () =>
-  readdirSync(WORKFLOWS).filter(
-    (f) => f.endsWith('.yml') || f.endsWith('.yaml'),
+  nonEmpty(
+    readdirSync(WORKFLOWS).filter(
+      (f) => f.endsWith('.yml') || f.endsWith('.yaml'),
+    ),
+    `workflow files in ${WORKFLOWS}`,
   );
 
 /**

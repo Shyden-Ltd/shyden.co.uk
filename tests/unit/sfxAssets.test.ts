@@ -13,6 +13,7 @@ import { readFileSync, readdirSync } from 'node:fs';
  * so there is nothing to strip.
  */
 import { join } from 'node:path';
+import { nonEmpty } from '../source-files';
 import * as sfxAssets from '../../src/lib/sfxAssets';
 import {
   SFX_MANIFEST,
@@ -87,9 +88,12 @@ describe('SFX_MANIFEST', () => {
   });
 
   it('matches the real files committed at src/assets/sfx/ exactly -- no drift in either direction', () => {
-    const onDisk = readdirSync(SFX_DIR)
-      .filter((name) => name.endsWith('.m4a'))
-      .sort();
+    const onDisk = nonEmpty(
+      readdirSync(SFX_DIR)
+        .filter((name) => name.endsWith('.m4a'))
+        .sort(),
+      `.m4a files in ${SFX_DIR}`,
+    );
     const declared = Object.values(SFX_MANIFEST).flat().sort();
     expect(declared).toEqual(onDisk);
   });

@@ -40,14 +40,48 @@ export function filesUnder(
   dir: string,
   keep: (path: string) => boolean,
 ): string[] {
+  return nonEmpty(walk(dir, keep).sort(), `files under ${dir}`);
+}
+
+/**
+ * The recursion, kept private so an empty result stays ordinary HERE.
+ *
+ * `tests/` holds directories with no `.spec.ts` in them, so a walk that
+ * refused an empty sub-result could never complete. The refusal belongs to
+ * the exported, top-level form and nowhere else.
+ */
+function walk(dir: string, keep: (path: string) => boolean): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (isSkipped(entry.name)) continue;
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...filesUnder(path, keep));
+    if (entry.isDirectory()) out.push(...walk(path, keep));
     else if (keep(path)) out.push(path);
   }
-  return out.sort();
+  return out;
+}
+
+/**
+ * A derived set, proved non-empty before a guard is allowed to scan it.
+ *
+ * #79 settled this shape for browser events and put the control INSIDE
+ * `recorders.ts`, because a call site cannot forget what it never writes.
+ * The filesystem collectors kept it as a convention instead: eleven guards
+ * hand-wrote `expect(files.length).toBeGreaterThan(0)`, five of them copying
+ * a comment that cites a sibling, and **four forgot** — twelve tests passed
+ * while scanning zero files (#84).
+ *
+ * A plain `throw`, not `expect`: this module is imported by both Vitest and
+ * Playwright specs, and a failed assertion belonging to neither runner is
+ * still a loud, correctly-attributed failure in both.
+ */
+export function nonEmpty<T>(items: T[], what: string): T[] {
+  if (items.length === 0)
+    throw new Error(
+      `found no ${what} — the walk is broken, not the subject clean. ` +
+        'A guard handed an empty list asserts nothing at all (#84).',
+    );
+  return items;
 }
 
 /**

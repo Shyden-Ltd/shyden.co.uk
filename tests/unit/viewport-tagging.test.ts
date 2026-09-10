@@ -333,14 +333,6 @@ describe('a real phone cannot resize its own screen', () => {
   it('every test that manipulates the viewport is tagged @emulated-viewport, and no tag is stale', () => {
     const files = SCAN_DIRS.flatMap(tsFilesUnder);
 
-    // Same self-check tests/e2e/baseurl-guard.spec.ts uses on itself: a walk that
-    // silently found zero files would pass for the wrong reason.
-    expect(
-      files.length,
-      `expected to find .ts files under ${SCAN_DIRS.join(', ')}; found none, which means ` +
-        "this guard's own file-walk is broken, not that the suite has nothing to check",
-    ).toBeGreaterThan(0);
-
     const findings = files.flatMap((file) =>
       analyze(file, withoutTsComments(readFileSync(file, 'utf8'))),
     );

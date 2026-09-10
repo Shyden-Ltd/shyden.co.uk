@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { pageNames, sitePaths } from '../site-pages';
 
@@ -16,5 +19,15 @@ describe('the site page list is derived from src/pages', () => {
     expect(sitePaths()).toContain('/');
     expect(sitePaths()).toContain('/glory-points');
     expect(sitePaths()).toHaveLength(pageNames().length);
+  });
+});
+
+describe('the page list refuses to answer blind (#84)', () => {
+  it('throws when the pages directory holds no page', () => {
+    // A real empty directory, not a mock: `locale-routing.test.ts` loops this
+    // list five times and `thai-typography.spec.ts` builds its routes from it,
+    // and all six tests passed green while it was empty.
+    const empty = mkdtempSync(join(tmpdir(), 'shyden-pages-'));
+    expect(() => pageNames(empty)).toThrow(/broken/);
   });
 });

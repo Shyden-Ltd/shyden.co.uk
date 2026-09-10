@@ -155,3 +155,93 @@ describe('walking a directory tree has exactly one home', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * A directory read whose result a guard will scan, without proving the read
+ * found anything (#84).
+ *
+ * `nonEmpty()` in `tests/source-files.ts` is that proof, and it has to wrap
+ * the read itself. Eleven call sites hand-wrote
+ * `expect(files.length).toBeGreaterThan(0)` — five copying a comment that
+ * cites a sibling — and four forgot, leaving fifteen tests passing while they
+ * scanned nothing at all. #79 settled the same argument for browser events:
+ * the control belongs in the collector, because a call site cannot forget
+ * what it never writes.
+ *
+ * Takes SOURCE, not a path, so the mutation tests below can hand it text that
+ * is not on disk.
+ *
+ * KNOWN LIMIT — lexical, deliberately. `nonEmpty(` must be the token
+ * immediately before the read, whitespace aside, so `nonEmpty(wrap(read…))`
+ * would be reported although it is proved. No such shape exists in this repo,
+ * and a rule a reader can check by eye beats one that needs a parser. It also
+ * cannot see a read whose result is proved LATER, by a caller — that is the
+ * convention #84 removed, and reporting it is the point, not a false
+ * positive.
+ */
+const PROVED_RIGHT_HERE = /\bnonEmpty\s*\(\s*$/;
+
+export function readsADirectoryUnproved(source: string): boolean {
+  const code = withoutTsComments(source);
+  // Built per call, never shared: a module-level /g regex carries `lastIndex`
+  // between calls, so an early return would leave the next caller scanning
+  // from halfway through its own file.
+  const reads = /\breaddirSync\s*\(/g;
+  for (let hit = reads.exec(code); hit; hit = reads.exec(code))
+    if (!PROVED_RIGHT_HERE.test(code.slice(0, hit.index))) return true;
+  return false;
+}
+
+describe('a directory read cannot reach a guard unproved', () => {
+  it('is unwrapped only where the walk itself lives', () => {
+    expect(
+      SCANNED.filter((path) =>
+        readsADirectoryUnproved(readFileSync(path, 'utf8')),
+      ),
+    ).toEqual([
+      // The recursion. An empty sub-result is ordinary here and must stay
+      // that way, so the proof belongs to the exported top-level form.
+      'tests/source-files.ts',
+      // The detector's own fixtures, which have to spell the syntax out in
+      // order to prove the detector catches it.
+      'tests/unit/one-home.test.ts',
+    ]);
+  });
+
+  it('catches an unproved read however it is written', () => {
+    expect(readsADirectoryUnproved("const x = readdirSync('dir');")).toBe(true);
+    expect(
+      readsADirectoryUnproved('const x = readdirSync(dir).filter(f);'),
+    ).toBe(true);
+  });
+
+  it('accepts a read proved at the point of reading', () => {
+    expect(
+      readsADirectoryUnproved("const x = nonEmpty(readdirSync(dir), 'files');"),
+    ).toBe(false);
+    expect(
+      readsADirectoryUnproved(
+        "const x = nonEmpty(\n  readdirSync(dir).filter(f),\n  'files',\n);",
+      ),
+    ).toBe(false);
+  });
+
+  it('is not satisfied by a nonEmpty somewhere ELSE in the file', () => {
+    // The whole reason the rule is lexical. "This file imports nonEmpty"
+    // would be trivially satisfiable — use it once, then add a bare read —
+    // which is the vacuity this ticket exists to remove, not to re-create.
+    expect(
+      readsADirectoryUnproved(
+        "const a = nonEmpty(readdirSync(x), 'a');\nconst b = readdirSync(y);",
+      ),
+    ).toBe(true);
+  });
+
+  it('is not fired by a comment describing one', () => {
+    expect(
+      readsADirectoryUnproved(
+        '// a bare readdirSync(dir) here would be unproved\nconst x = 1;',
+      ),
+    ).toBe(false);
+  });
+});
