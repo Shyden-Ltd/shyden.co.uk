@@ -72,24 +72,33 @@ describe('the language switcher labels every alternative (tripwire 1, retired)',
 
   it('derives its entries from otherLocales, not from a fixed pair', () => {
     const src = source(SWITCHER);
-    expect(src).toContain('otherLocales(');
+    // Anchored to the CALL and to a property READ, not to the words: an
+    // import left behind after the derivation was replaced would satisfy a
+    // bare `toContain` even on stripped source (#98 AC 3).
     expect(
-      src,
+      /\botherLocales\s*\(/.test(src),
+      'the switcher names otherLocales but never calls it',
+    ).toBe(true);
+    expect(
+      /\.\s*nativeName\b/.test(src),
       'each entry must be labelled from its own metadata, or the dropdown is ' +
         'just the single-label bug with a caret on it',
-    ).toContain('nativeName');
+    ).toBe(true);
   });
 
   it('gives every alternative its own hreflang and lang', () => {
     // Without `lang`, a screen reader announces 中文 in English phonetics.
     const src = source(SWITCHER);
-    expect(src).toContain('hreflang={code}');
-    expect(src).toContain('lang={code}');
+    expect(/\shreflang=\{code\}/.test(src), 'no per-entry hreflang').toBe(true);
+    expect(/\slang=\{code\}/.test(src), 'no per-entry lang').toBe(true);
   });
 
   it('is the only switcher the header renders', () => {
     const src = source(HEADER);
-    expect(src).toContain('<LanguageSwitcher');
+    expect(
+      /<LanguageSwitcher[\s/>]/.test(src),
+      'the header does not render the LanguageSwitcher element',
+    ).toBe(true);
     expect(
       src.includes('otherLocales'),
       'the header must not hand-roll a second switcher beside the component',
@@ -98,7 +107,10 @@ describe('the language switcher labels every alternative (tripwire 1, retired)',
 
   it('ships no JavaScript, because the homepage ships none', () => {
     const src = source(SWITCHER);
-    expect(src).toContain('<details');
+    expect(
+      /<details[\s>]/.test(src),
+      'the switcher is not a <details> element, so it needs JavaScript',
+    ).toBe(true);
     expect(
       /<script/.test(src),
       'a language switcher is exactly the control someone needs when ' +
