@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { projectTimings, formatTimings } from '../../scripts/test-e2e.mjs';
+import { readFileSync } from 'node:fs';
+import {
+  projectTimings,
+  formatTimings,
+  TEST_BUDGET_MS,
+} from '../../scripts/test-e2e.mjs';
+import { withoutTsComments } from './source-text';
 
 /**
  * Where the e2e suite's time actually goes, per project.
@@ -125,5 +131,49 @@ describe('per-project e2e timings', () => {
     // The 30000ms default is the thing these numbers are read against; a table
     // without it makes the reader look it up and guess.
     expect(table).toContain('30000');
+  });
+});
+
+describe('the budget every table is measured against is the real one', () => {
+  /**
+   * `TEST_BUDGET_MS` is a hard-coded 30000, and the whole of #44 is read
+   * against it: "a max approaching it is #44 rather than a merely slow page".
+   * What makes that true is Playwright's default per-test timeout, which holds
+   * only while `playwright.config.ts` overrides neither `timeout` nor
+   * `navigationTimeout`. That was documented in three comments and asserted
+   * nowhere — so an override would leave both tables measuring against a
+   * number the run no longer uses, and every conclusion drawn from them wrong
+   * with nothing going red.
+   *
+   * COMMENTS ARE STRIPPED FIRST, and the last case proves that is not a
+   * formality here: measured, the config is 6111 bytes raw and 1465 stripped,
+   * and the word `timeout` survives ONLY in prose. An absence check run over
+   * the raw file would be reading mostly documentation — including the
+   * documentation explaining why it exists.
+   */
+  const config = () =>
+    withoutTsComments(readFileSync('playwright.config.ts', 'utf8'));
+
+  it('overrides no timeout of any kind, so the defaults are what run', () => {
+    // Deliberately every `*timeout:` setting, not just `timeout` and
+    // `navigationTimeout`: `actionTimeout` and an `expect` timeout would move
+    // these numbers just as silently, and the claim being protected is that
+    // NOTHING in this config overrides a default the tables assume.
+    expect(config()).not.toMatch(/[a-z]*timeout\s*:/i);
+  });
+
+  it("measures against Playwright's documented default", () => {
+    expect(TEST_BUDGET_MS).toBe(30000);
+  });
+
+  it('reads the config, not the prose about the config', () => {
+    // The control on the check above, and the direction that makes an absence
+    // assertion vacuous: if the stripper stopped stripping, the guard would go
+    // on passing while reading something other than what it claims to. The
+    // config discusses `timeout` at length and configures none, so the word
+    // must be present raw and gone once stripped.
+    const raw = readFileSync('playwright.config.ts', 'utf8');
+    expect(raw).toMatch(/\btimeout\b/i);
+    expect(withoutTsComments(raw)).not.toMatch(/\btimeout\b/i);
   });
 });
