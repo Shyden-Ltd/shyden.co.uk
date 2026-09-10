@@ -3,6 +3,8 @@ import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withoutCommentLines } from './source-text';
+import { nonEmpty } from '../source-files';
+import { pageNames } from '../site-pages';
 
 /**
  * The deploy pipeline is wired to the things it claims to run.
@@ -39,26 +41,23 @@ const runnableText = (text: string) => withoutCommentLines(text);
 
 const workflowSteps = (name: string) => runnableText(workflow(name));
 
+/**
+ * The workflow filenames, proved non-empty (#84).
+ *
+ * Three guards in this file assert ABSENCE over this list -- `release.yml`
+ * is gone, no dangling workflow reference, no default-config bypass -- and
+ * one empty read satisfies all three at once.
+ */
+const workflowFileNames = (): string[] =>
+  nonEmpty(readdirSync(WORKFLOWS), `workflow files in ${WORKFLOWS}`);
+
 const allWorkflows = () =>
-  readdirSync(WORKFLOWS)
+  workflowFileNames()
     .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
     .map((f) => ({
       name: f,
       text: runnableText(readFileSync(join(WORKFLOWS, f), 'utf8')),
     }));
-
-/**
- * The site's pages, read off the routes that serve the default locale.
- *
- * `404.astro` is excluded: it is the not-found document, served at one URL
- * for the whole site, and there is no `/id/404` to match it.
- */
-const pageRoutes = (): string[] =>
-  readdirSync('src/pages', { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith('.astro'))
-    .map((e) => e.name.replace(/\.astro$/, ''))
-    .filter((n) => n !== '404')
-    .sort();
 
 /** `index` is served at `/`, every other route at `/<name>`. */
 const urlFor = (route: string) => (route === 'index' ? '/' : `/${route}`);
@@ -157,7 +156,7 @@ describe('the deploy pipeline runs what it claims to', () => {
 
     const expected = new Set<string>();
     for (const locale of LOCALES) {
-      for (const route of pageRoutes()) {
+      for (const route of pageNames()) {
         const path = localisePath(urlFor(route), locale);
         if (path !== home) expected.add(path);
       }
@@ -174,7 +173,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // Two pipelines both able to deploy prod, disagreeing about when, is worse
   // than either.
   it('the deploy-before-merge workflow is gone', () => {
-    expect(readdirSync(WORKFLOWS)).not.toContain('release.yml');
+    expect(workflowFileNames()).not.toContain('release.yml');
   });
 
   // …and exactly one workflow deploys prod on a PUSH, so a merge can never
@@ -254,7 +253,7 @@ describe('the deploy pipeline runs what it claims to', () => {
     ];
     const dangling: string[] = [];
 
-    for (const file of readdirSync(WORKFLOWS)) {
+    for (const file of workflowFileNames()) {
       if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
       const raw = readFileSync(join(WORKFLOWS, file), 'utf8');
       for (const [, ref] of raw.matchAll(/\b([\w.-]+\.ya?ml)\b/g)) {
@@ -363,7 +362,7 @@ describe('the e2e reconciliation guard cannot be bypassed', () => {
     // own config (playwright.dev/prod.config.ts) and are not the full corpus.
     // Anything invoking the DEFAULT config, though, is the full suite and must
     // come through the guard.
-    const bypasses = readdirSync(WORKFLOWS)
+    const bypasses = workflowFileNames()
       .flatMap((file) =>
         workflow(file)
           .split('\n')

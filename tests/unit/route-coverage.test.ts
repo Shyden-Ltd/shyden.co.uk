@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOCALES, PREFIXED_LOCALES, localisePath } from '../../src/lib/i18n';
 import { withoutTsComments } from './source-text';
+import { nonEmpty } from '../source-files';
 
 /**
  * #21 Stage 4. Adding a locale must not mean writing routes by hand.
@@ -30,15 +31,17 @@ const LOCALE_ROUTE = join(PAGES_DIR, '[locale]');
 
 describe('every locale is routed from LOCALES, not from a directory per locale', () => {
   it('serves the default locale from the unprefixed routes', () => {
-    expect(pageNames().length).toBeGreaterThan(0);
     expect(pageNames()).toContain('index');
   });
 
   it('serves every other locale from ONE dynamic route per page', () => {
-    const dynamic = readdirSync(LOCALE_ROUTE)
-      .filter((n) => n.endsWith('.astro'))
-      .map((n) => n.replace(/\.astro$/, ''))
-      .sort();
+    const dynamic = nonEmpty(
+      readdirSync(LOCALE_ROUTE)
+        .filter((n) => n.endsWith('.astro'))
+        .map((n) => n.replace(/\.astro$/, ''))
+        .sort(),
+      `dynamic locale routes in ${LOCALE_ROUTE}`,
+    );
     expect(
       dynamic,
       'a page served at / with no [locale] twin 404s in every other language',
@@ -91,9 +94,12 @@ describe('every locale is routed from LOCALES, not from a directory per locale',
  */
 const gateSpecs = () =>
   ['tests/dev', 'tests/prod'].flatMap((dir) =>
-    readdirSync(dir)
-      .filter((f) => f.endsWith('.spec.ts'))
-      .map((f) => join(dir, f)),
+    nonEmpty(
+      readdirSync(dir)
+        .filter((f) => f.endsWith('.spec.ts'))
+        .map((f) => join(dir, f)),
+      `gate specs in ${dir}`,
+    ),
   );
 
 describe('the post-deploy gates derive their routes', () => {

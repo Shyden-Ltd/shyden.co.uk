@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs';
+import { nonEmpty } from './source-files';
 
 const PAGES_DIR = 'src/pages';
 
@@ -13,13 +14,15 @@ const PAGES_DIR = 'src/pages';
  * three pages out by hand — so adding a fourth page left the hand-written
  * pair silently asserting nothing about it (#68).
  */
-export const pageNames = (): string[] =>
-  readdirSync(PAGES_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.astro'))
-    .map((entry) => entry.name.replace(/\.astro$/, ''))
-    .filter((name) => name !== '404')
-
-    .sort();
+export const pageNames = (dir: string = PAGES_DIR): string[] =>
+  nonEmpty(
+    readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.astro'))
+      .map((entry) => entry.name.replace(/\.astro$/, ''))
+      .filter((name) => name !== '404')
+      .sort(),
+    `routable .astro pages in ${dir}`,
+  );
 
 /** The same pages as request paths in the default locale: `index` is `/`. */
 export const sitePaths = (): string[] =>
