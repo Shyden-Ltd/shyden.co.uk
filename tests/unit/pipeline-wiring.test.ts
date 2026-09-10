@@ -3,7 +3,7 @@ import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withoutCommentLines } from './source-text';
-import { nonEmpty } from '../source-files';
+import { nonEmpty, searched } from '../source-files';
 import { sitePaths } from '../site-pages';
 
 /**
@@ -250,7 +250,8 @@ describe('the deploy pipeline runs what it claims to', () => {
     ];
     const dangling: string[] = [];
 
-    for (const file of workflowFileNames()) {
+    const workflows = workflowFileNames();
+    for (const file of workflows) {
       if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
       const raw = readFileSync(join(WORKFLOWS, file), 'utf8');
       for (const [, ref] of raw.matchAll(/\b([\w.-]+\.ya?ml)\b/g)) {
@@ -260,7 +261,9 @@ describe('the deploy pipeline runs what it claims to', () => {
       }
     }
 
-    expect(dangling).toEqual([]);
+    expect(
+      searched(dangling, { of: workflows, what: 'workflow files' }),
+    ).toEqual([]);
   });
 
   // Production was verified by `curl`: status codes and grepping fetched HTML.
@@ -371,7 +374,10 @@ describe('the e2e reconciliation guard cannot be bypassed', () => {
       );
 
     expect(
-      bypasses.map(({ file, line }) => `${file}: ${line.trim()}`),
+      searched(
+        bypasses.map(({ file, line }) => `${file}: ${line.trim()}`),
+        { of: workflowFileNames(), what: 'workflow files' },
+      ),
       'a workflow running the default config outside `npm run test:e2e` is a ' +
         'full suite whose completeness nobody checks',
     ).toEqual([]);

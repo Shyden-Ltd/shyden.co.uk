@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LOCALES, type Locale } from '../../src/lib/i18n/index';
 import { getSiteStrings } from '../../src/lib/i18n';
+import { searched } from '../source-files';
 import {
   MVP_LOCALES,
   LOCALE_METADATA,
@@ -44,7 +45,7 @@ describe('the locale metadata table', () => {
       (l) => !(l in LOCALE_METADATA),
     );
     expect(
-      undescribed,
+      searched(undescribed, { of: LOCALES, what: 'routed locales' }),
       'a routed locale with no metadata falls back to English defaults ' +
         'without failing anything',
     ).toEqual([]);
@@ -151,7 +152,7 @@ describe('resolving a locale to its site copy', () => {
       (l) => l !== 'en' && getSiteStrings(l).nav.services === 'Services',
     );
     expect(
-      wrong,
+      searched(wrong, { of: LOCALES, what: 'routed locales' }),
       'a non-English locale receiving the English table is the ternary bug',
     ).toEqual([]);
   });

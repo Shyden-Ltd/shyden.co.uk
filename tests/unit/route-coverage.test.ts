@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOCALES, PREFIXED_LOCALES } from '../../src/lib/i18n';
 import { withoutTsComments, withoutMarkupComments } from './source-text';
-import { nonEmpty } from '../source-files';
+import { nonEmpty, searched } from '../source-files';
 
 /**
  * #21 Stage 4. Adding a locale must not mean writing routes by hand.
@@ -132,12 +132,13 @@ describe('the post-deploy gates derive their routes', () => {
       `['"\`]/(?:${PREFIXED_LOCALES.join('|')})/`,
       'g',
     );
-    for (const file of gateSpecs()) {
+    const specs = gateSpecs();
+    for (const file of specs) {
       const found = [
         ...withoutTsComments(readFileSync(file, 'utf8')).matchAll(pattern),
       ].map((m) => m[0]);
       expect(
-        found,
+        searched(found, { of: specs, what: 'deploy-gate specs' }),
         `${file} hardcodes a locale-prefixed path. Derive it from LOCALES ` +
           `and localisePath instead — a hand-written list stops covering new ` +
           `locales silently, and this gate is what stands between develop and ` +

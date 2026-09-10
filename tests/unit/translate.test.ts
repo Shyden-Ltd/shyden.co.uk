@@ -6,7 +6,7 @@ import { MVP_LOCALES } from '../../src/lib/i18n/metadata';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
-import { filesUnder } from '../source-files';
+import { filesUnder, searched } from '../source-files';
 import {
   CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
@@ -288,7 +288,10 @@ describe('protected terms are wrapped before they are sent', () => {
         unescapeXml(unprotectTerms(protectTerms(escapeXml(source)))) !== source,
     );
     expect(
-      broken,
+      searched(broken, {
+        of: collectCatalogue(),
+        what: 'catalogue strings',
+      }),
       'these strings do not survive the request pipeline unchanged',
     ).toEqual([]);
   });
@@ -348,6 +351,11 @@ describe('the harness never runs itself', () => {
     // belongs -- it is guidance for a human pasting a key, not config. Said
     // out loud so nobody later "fixes" it into an anchored config check and
     // reddens CI on a file that was correct.
+    //
+    // The MATCHER is still anchored, which is a different thing from the
+    // config check that warning is about: `:fx` as a bare substring is also
+    // satisfied by `:fxyz`, and the suffix is the whole point. #118 surfaced
+    // this once the derivation could see two hops back to the file read.
     const documentation = example
       .split('\n')
       .filter((line) => isMarkerCommentLine(line, '#'))
@@ -355,7 +363,7 @@ describe('the harness never runs itself', () => {
     expect(
       documentation,
       '.env.example stopped explaining the :fx suffix',
-    ).toContain(':fx');
+    ).toMatch(/:fx\b/);
 
     // Anchored for the same reason as the key above: `# .env.*` would satisfy
     // `toContain` while the rule it names had stopped ignoring anything, and
@@ -369,14 +377,17 @@ describe('the harness never runs itself', () => {
   it('is not imported by anything the site ships', () => {
     // This module is for the CLI. Reaching it from a page would put the
     // glossary — and whatever it grows into — in the browser bundle.
-    const offenders: string[] = [];
-    for (const path of filesUnder(
+    const shipped = filesUnder(
       'src',
       (p) => /\.(ts|astro)$/.test(p) && p !== 'src/lib/i18n/translate.ts',
-    )) {
+    );
+    const offenders: string[] = [];
+    for (const path of shipped) {
       if (readFileSync(path, 'utf8').includes('i18n/translate'))
         offenders.push(path);
     }
-    expect(offenders).toEqual([]);
+    expect(
+      searched(offenders, { of: shipped, what: 'shipped source files' }),
+    ).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nonEmpty } from '../source-files';
+import { nonEmpty, searched } from '../source-files';
 import { en } from '../../src/lib/i18n/en';
 import { id } from '../../src/lib/i18n/id';
 import {
@@ -278,11 +278,17 @@ describe('locales are complete', () => {
     // Exceptions are listed by name, so each one is a decision rather than a
     // loosened rule.
     const enMap = new Map(deepStrings(en));
-    const identical = deepStrings(id)
+    const idStrings = deepStrings(id);
+    const identical = idStrings
       .filter(([k, v]) => enMap.get(k) === v)
       .map(([k]) => k);
 
-    expect(identical.filter((k) => !ALLOWED_IDENTICAL.has(k))).toEqual([]);
+    expect(
+      searched(
+        identical.filter((k) => !ALLOWED_IDENTICAL.has(k)),
+        { of: idStrings, what: 'Indonesian catalogue strings' },
+      ),
+    ).toEqual([]);
   });
 
   // Task 11, the final sweep. Logged in progress.md against Task 6's own
@@ -297,7 +303,8 @@ describe('locales are complete', () => {
     const missingProbe: string[] = [];
     const identical: string[] = [];
 
-    for (const [path, enFn] of deepFunctions(en)) {
+    const probed = deepFunctions(en);
+    for (const [path, enFn] of probed) {
       const args = FUNCTION_PROBES[path];
       // A function this repo added with no entry in FUNCTION_PROBES above
       // is UNTESTED by this check, not exempt from it -- failing here, not
@@ -322,12 +329,16 @@ describe('locales are complete', () => {
 
     // A function silently skipped is a translation nobody checked -- same
     // failure mode `deepStrings` already had, now caught instead of hidden.
-    expect(missingProbe).toEqual([]);
+    expect(
+      searched(missingProbe, { of: probed, what: 'catalogue functions' }),
+    ).toEqual([]);
     // English text called with Indonesian's own function and getting back
     // the SAME string means id.ts's copy was never actually written --
     // fix by translating that path's function body in id.ts, the same
     // remedy as the plain-string check above.
-    expect(identical).toEqual([]);
+    expect(
+      searched(identical, { of: probed, what: 'catalogue functions' }),
+    ).toEqual([]);
   });
 
   it('and the list of exceptions has no dead entries', () => {
@@ -1665,11 +1676,14 @@ describe('site-wide copy is fully translated', () => {
       'glory.inputLabel',
     ]);
     const enMap = new Map(walk(siteEn));
-    const identical = walk(siteId)
+    const idLeaves = walk(siteId);
+    const identical = idLeaves
       .filter(([k, v]) => enMap.get(k) === v)
       .map(([k]) => k)
       .filter((k) => !allowedIdentical.has(k));
-    expect(identical).toEqual([]);
+    expect(
+      searched(identical, { of: idLeaves, what: 'Indonesian site strings' }),
+    ).toEqual([]);
   });
 });
 

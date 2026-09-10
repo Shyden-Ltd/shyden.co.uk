@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { isCommentLine } from './source-text';
 import { readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
-import { specFilesUnder } from '../source-files';
+import { searched, specFilesUnder } from '../source-files';
 
 /**
  * Real Chrome on Android hands a download to the DEVICE's own Downloads
@@ -72,9 +72,12 @@ const owning = (decls: Decl[], line: number): Decl | undefined =>
   [...decls].reverse().find((d) => d.line <= line);
 
 const scan = () => {
+  // Returned alongside the findings so the caller can prove the walk was
+  // live without walking a second time (#118).
+  const files = specFilesUnder('tests/e2e');
   const untagged: string[] = [];
   const stale: string[] = [];
-  for (const file of specFilesUnder('tests/e2e')) {
+  for (const file of files) {
     const source = withoutTsComments(readFileSync(file, 'utf8'));
     const lines = source.split('\n');
     const decls = declarations(source);
@@ -109,14 +112,16 @@ const scan = () => {
       }
     }
   }
-  return { untagged, stale };
+  return { untagged, stale, files };
 };
 
 describe('every test that reads a download’s bytes is tagged', () => {
   it(`is tagged ${TAG}, and no tag is stale`, () => {
-    const { untagged, stale } = scan();
-    expect(untagged).toEqual([]);
-    expect(stale).toEqual([]);
+    const { untagged, stale, files } = scan();
+    expect(searched(untagged, { of: files, what: 'e2e spec files' })).toEqual(
+      [],
+    );
+    expect(searched(stale, { of: files, what: 'e2e spec files' })).toEqual([]);
   });
 
   // Guards the guard: without this, a scan that found nothing at all --

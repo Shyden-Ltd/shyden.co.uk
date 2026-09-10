@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filesUnder, nonEmpty } from '../source-files';
+import { filesUnder, nonEmpty, searched } from '../source-files';
 
 /**
  * The shared directory walk (#80). Nine private copies had grown, in three
@@ -32,9 +32,17 @@ describe('filesUnder', () => {
   it('skips dotfiles and node_modules, which only four of the nine did', () => {
     const all = filesUnder('tests', () => true);
     expect(
-      all.filter((path) => path.split('/').some((s) => s.startsWith('.'))),
+      searched(
+        all.filter((path) => path.split('/').some((s) => s.startsWith('.'))),
+        { of: all, what: 'walked paths' },
+      ),
     ).toEqual([]);
-    expect(all.filter((path) => path.includes('node_modules'))).toEqual([]);
+    expect(
+      searched(
+        all.filter((path) => path.includes('node_modules')),
+        { of: all, what: 'walked paths' },
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -77,5 +85,72 @@ describe('filesUnder refuses to answer blind', () => {
     expect(
       filesUnder('tests', (path) => path.endsWith('.spec.ts')).length,
     ).toBeGreaterThan(10);
+  });
+});
+
+/**
+ * The liveness control for absence assertions (#118).
+ *
+ * `nonEmpty` above guards a WALK. This guards an ASSERTION: `expect(x).
+ * toEqual([])` is green when the guard works and when the guard looked at
+ * nothing, and 108 absence assertions in this suite could not tell those
+ * apart. The population goes in the same expression as the finding, so a
+ * call site has nowhere to forget it.
+ *
+ * The content rule is #112's lesson made mechanical. That guard asserted its
+ * header list had six entries and stayed green with all six Thai headers
+ * blanked -- six empty strings are six entries. Counting the array is not
+ * counting the content, so the count here is of SUBSTANTIVE members and the
+ * rule lives in the one home rather than at 55 call sites.
+ */
+describe('searched -- the population a finding list was drawn from', () => {
+  it('returns the findings untouched, so the caller still owns the verdict', () => {
+    const findings = ['a'];
+    expect(searched(findings, { of: ['x', 'y'], what: 'rows' })).toBe(findings);
+  });
+
+  it('refuses a population that is empty', () => {
+    expect(() => searched([], { of: [], what: 'files' })).toThrow(/no files/);
+  });
+
+  it('refuses a population of BLANK strings -- #112 exactly', () => {
+    // The Thai headers, blanked. Six entries, no content.
+    expect(() => searched([], { of: ['', '  ', ''], what: 'headers' })).toThrow(
+      /no headers/,
+    );
+  });
+
+  it('refuses a population of empty containers', () => {
+    expect(() => searched([], { of: [[], {}], what: 'catalogues' })).toThrow(
+      /no catalogues/,
+    );
+  });
+
+  it('refuses a population of null and undefined', () => {
+    expect(() =>
+      searched([], { of: [null, undefined], what: 'locales' }),
+    ).toThrow(/no locales/);
+  });
+
+  it('accepts a population where only SOME members carry content', () => {
+    // A partly-blank population is a real subject, not a dead walk: the
+    // blanks may be what the caller is hunting.
+    expect(searched([], { of: ['', 'real'], what: 'rows' })).toEqual([]);
+  });
+
+  it('accepts a plain count, which cannot be content-checked', () => {
+    expect(searched([], { of: 3, what: 'pairs' })).toEqual([]);
+    expect(() => searched([], { of: 0, what: 'pairs' })).toThrow(/no pairs/);
+  });
+
+  it('counts a zero and a false as content -- they are values, not blanks', () => {
+    expect(searched([], { of: [0], what: 'widths' })).toEqual([]);
+    expect(searched([], { of: [false], what: 'flags' })).toEqual([]);
+  });
+
+  it('names the population in the message, so a failure says what died', () => {
+    expect(() => searched([], { of: [], what: 'built pages' })).toThrow(
+      /built pages/,
+    );
   });
 });

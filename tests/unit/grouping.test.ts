@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { searched } from '../source-files';
 import {
   buildGroups,
   ERROR_CODES,
@@ -1931,7 +1932,7 @@ describe('sex mode: mix', () => {
         (g) => g.filter((s) => s.sex === 'F').length === 2,
       );
     });
-    expect(bothTogether).toEqual([]);
+    expect(searched(bothTogether, { of: seeds, what: 'seeds' })).toEqual([]);
   });
 
   // Correction 2: the dedicated variety regression guard the together-letters

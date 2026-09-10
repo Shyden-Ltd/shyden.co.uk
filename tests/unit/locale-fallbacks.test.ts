@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nonEmpty } from '../source-files';
+import { nonEmpty, searched } from '../source-files';
 import { en } from '../../src/lib/i18n/en';
 import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
@@ -146,10 +146,14 @@ describe('what is still English in each catalogue', () => {
     });
 
     it(`${locale}: has no empty or whitespace-only copy`, () => {
-      const blank = leafPaths(en)
+      const paths = leafPaths(en);
+      const blank = paths
         .filter((p) => typeof valueAt(table, p) === 'string')
         .filter((p) => (valueAt(table, p) as string).trim() === '');
-      expect(blank, 'a blank string renders as nothing at all').toEqual([]);
+      expect(
+        searched(blank, { of: paths, what: 'catalogue leaf paths' }),
+        'a blank string renders as nothing at all',
+      ).toEqual([]);
     });
   }
 });

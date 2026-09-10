@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { recordErrors } from './recorders';
 import { sampledPaths } from './locale-sampling';
+import { searched } from '../source-files';
 import {
   addSeveral,
   buildRoster,
@@ -607,7 +608,10 @@ test.describe('classroom groups — mobile-first layout', () => {
           );
           if (all > 0)
             failures.push(`${path} @${width}px with ALL open: ${all}px`);
-          expect(failures, failures.join('\n')).toEqual([]);
+          expect(
+            searched(failures, { of: ids, what: 'disclosure sections' }),
+            failures.join('\n'),
+          ).toEqual([]);
         },
       );
     }
@@ -1688,7 +1692,13 @@ test.describe('classroom groups — what a teacher actually sees', () => {
             );
         }
       }
-      expect(failures, failures.join('\n')).toEqual([]);
+      expect(
+        searched(failures, {
+          of: sampledPaths('/classroom-groups'),
+          what: 'sampled tool paths',
+        }),
+        failures.join('\n'),
+      ).toEqual([]);
     },
   );
 

@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
+import { searched } from '../source-files';
 
 /**
  * The scan that found the shipped defects, encoded so it runs every time.
@@ -183,7 +184,10 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
 
     // Reported all at once: a scan that stops at the first hit turns one
     // review pass into six.
-    expect(findings, findings.join('\n')).toEqual([]);
+    expect(
+      searched(findings, { of: paths, what: 'built pages visited' }),
+      findings.join('\n'),
+    ).toEqual([]);
   });
 
   test('no two words are rendered touching, on any page', async ({ page }) => {
@@ -204,7 +208,10 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
       }
     }
 
-    expect(findings, findings.join('\n')).toEqual([]);
+    expect(
+      searched(findings, { of: paths, what: 'built pages visited' }),
+      findings.join('\n'),
+    ).toEqual([]);
   });
 
   test('no unfilled [[placeholder]] reaches a page', async ({ page }) => {
@@ -221,7 +228,10 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
         findings.push(`${path}: ${m[0]}`);
       }
     }
-    expect(findings, findings.join('\n')).toEqual([]);
+    expect(
+      searched(findings, { of: paths, what: 'built pages visited' }),
+      findings.join('\n'),
+    ).toEqual([]);
   });
 
   test('the scan can actually see a broken seam', async ({ page }) => {

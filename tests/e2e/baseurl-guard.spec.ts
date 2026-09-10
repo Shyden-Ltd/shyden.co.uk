@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { specDirs } from '../spec-dirs';
 import { join } from 'node:path';
 import { test, expect, BASE_URL_AWARE_APIS } from './fixtures';
-import { tsFilesUnder } from '../source-files';
+import { searched, tsFilesUnder } from '../source-files';
 
 // This file's own path, relative to the repo root -- excluded from the scan below. The guard
 // necessarily talks ABOUT the APIs it looks for (see BASE_URL_AWARE_APIS's `reason` strings,
@@ -49,5 +49,8 @@ test('every baseURL-aware API call on a relative literal is one the device fixtu
     }
   }
 
-  expect(findings, findings.join('\n')).toEqual([]);
+  expect(
+    searched(findings, { of: files, what: 'spec files scanned' }),
+    findings.join('\n'),
+  ).toEqual([]);
 });
