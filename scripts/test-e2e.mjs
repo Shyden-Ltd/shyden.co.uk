@@ -144,9 +144,22 @@ export function isFilteredRun(argv = []) {
 }
 
 /**
+ * The reporter that keeps #44's per-navigation durations. A path rather than a
+ * built-in name: Playwright resolves an unknown CLI reporter id against the
+ * cwd, which is the repo root under `npm run test:e2e`.
+ */
+export const NAV_TIMING_REPORTER = './tests/reporters/nav-timing-reporter.ts';
+
+/**
  * `--reporter` REPLACES rather than appends, so the caller's own choice would
  * leave no json for this guard to read — and a guard with no numbers is a guard
  * that cannot fire. Their reporter is kept; json is added beside it.
+ *
+ * The nav-timing reporter is added the same way and for a sharper version of
+ * the same reason: #44's per-navigation numbers cannot be read out of the json
+ * report AT ALL. Measured on Playwright 1.63.0 — the json reporter strips every
+ * `pw:api` step and keeps only the user's `test.step` entries, so a probe test
+ * that made two navigations produced a report containing neither.
  */
 export function mergeReporters(argv = []) {
   const passthrough = [];
@@ -166,6 +179,8 @@ export function mergeReporters(argv = []) {
 
   const reporters = chosen.split(',').filter(Boolean);
   if (!reporters.includes('json')) reporters.push('json');
+  if (!reporters.includes(NAV_TIMING_REPORTER))
+    reporters.push(NAV_TIMING_REPORTER);
   return { passthrough, reporter: reporters.join(',') };
 }
 
@@ -250,6 +265,7 @@ function main() {
 
   const reportDir = mkdtempSync(join(tmpdir(), 'e2e-reconcile-'));
   const reportPath = join(reportDir, 'report.json');
+  const navPath = join(reportDir, 'nav-timings.json');
 
   try {
     const run = spawnSync(
@@ -257,7 +273,11 @@ function main() {
       ['playwright', 'test', `--reporter=${reporter}`, ...passthrough],
       {
         stdio: 'inherit',
-        env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: reportPath },
+        env: {
+          ...process.env,
+          PLAYWRIGHT_JSON_OUTPUT_NAME: reportPath,
+          NAV_TIMING_FILE: navPath,
+        },
       },
     );
 
@@ -293,6 +313,34 @@ function main() {
         );
     }
 
+    // The question the table above cannot answer: whether the clock ran out
+    // INSIDE a navigation or around one. Same emission rules — every run, and
+    // into the job summary when there is one.
+    let navigations = [];
+    try {
+      navigations = JSON.parse(readFileSync(navPath, 'utf8')).navigations ?? [];
+    } catch {
+      // Deliberately not fatal HERE. `navTimingVerdict` below decides, and it
+      // is handed the json report's own count of tests that ran — an
+      // independent observer — so a reporter that never wrote a file cannot
+      // pass by reporting nothing about itself.
+    }
+    const navTable = formatNavTimings(navTimings(navigations));
+    console.error(
+      `\n${RULE}\n  NAVIGATION DURATIONS BY PROJECT\n${RULE}\n${navTable}\n`,
+    );
+    if (process.env.GITHUB_STEP_SUMMARY)
+      appendFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        `\n### navigation durations by project\n\n${navTable}\n`,
+      );
+
+    const { expected = 0, unexpected = 0, flaky = 0 } = parsed.stats ?? {};
+    const liveness = navTimingVerdict({
+      navigations: navigations.length,
+      testsWithResults: expected + unexpected + flaky,
+    });
+
     const verdict = reconcile({
       enumerated,
       executed,
@@ -300,7 +348,14 @@ function main() {
       playwrightExitCode: run.status ?? 1,
     });
     if (verdict.message) console.error(verdict.message);
-    process.exit(verdict.exitCode);
+    if (!liveness.ok)
+      console.error(
+        `\n${RULE}\n  NAVIGATION TIMINGS: THE COLLECTOR RECORDED NOTHING\n${RULE}\n` +
+          `  ${liveness.message}\n${RULE}\n`,
+      );
+    // Neither verdict masks the other: reconcile keeps its exit code, and a
+    // dead collector turns an otherwise-clean run red on its own.
+    process.exit(verdict.exitCode || (liveness.ok ? 0 : 1));
   } finally {
     rmSync(reportDir, { recursive: true, force: true });
   }
@@ -384,6 +439,110 @@ export function formatTimings(rows) {
       'and this repo sets no override, so a max approaching it is #44 rather ' +
       'than a merely slow page.',
   ].join('\n');
+}
+
+/**
+ * Per-NAVIGATION distribution, which is the question `projectTimings` above
+ * cannot answer. #44.
+ *
+ * `playwright.config.ts` records where the whole-test numbers left the
+ * diagnosis: they "bound the problem, they do not separate a slow navigation
+ * from a slow test around one". `page.goto: Test timeout of 30000ms exceeded`
+ * names the TEST budget, so a 900ms navigation inside a 29s test and a 29s
+ * navigation print the same line and call for opposite fixes — sharding or a
+ * `navigationTimeout` on the heavy projects. These rows are what tells them
+ * apart, on the run it happens rather than in an argument afterwards.
+ *
+ * Ordered by the slowest navigation, worst project first: the tail is the
+ * finding, and #44 is about one navigation, not an average of thousands.
+ */
+export function navTimings(records) {
+  const byProject = new Map();
+  for (const record of records ?? []) {
+    const rows = byProject.get(record.project) ?? [];
+    rows.push(record);
+    byProject.set(record.project, rows);
+  }
+
+  return [...byProject]
+    .map(([project, navigations]) => {
+      const ascending = navigations
+        .map((n) => n.durationMs)
+        .sort((a, b) => a - b);
+      return {
+        project,
+        count: navigations.length,
+        // Nearest-rank, the same `rank` the per-test table uses: an
+        // interpolated median reports a duration no navigation actually took,
+        // and every argument on #44 so far has been about specific observed
+        // navigations.
+        medianMs: rank(ascending, 0.5),
+        p95Ms: rank(ascending, 0.95),
+        maxMs: ascending[ascending.length - 1],
+        erroredCount: navigations.filter((n) => n.errored).length,
+        slowest: [...navigations]
+          .sort((a, b) => b.durationMs - a.durationMs)
+          .slice(0, 3),
+      };
+    })
+    .sort((a, b) => b.maxMs - a.maxMs);
+}
+
+/**
+ * The navigation distribution as a markdown table.
+ *
+ * Unlike `formatTimings`, an empty result prints a SENTENCE rather than an
+ * empty string. A blank space where a table should be reads as "nothing to
+ * report"; on a collector, nothing to report is the failure mode.
+ */
+export function formatNavTimings(rows) {
+  if (!rows.length)
+    return 'No navigations were recorded — see the collector verdict below.';
+  return [
+    '| project | navigations | median | p95 | max | errored | slowest |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | --- |',
+    ...rows.map(
+      (r) =>
+        `| ${r.project} | ${r.count} | ${r.medianMs} | ${r.p95Ms} | ${r.maxMs} | ` +
+        `${r.erroredCount} | ` +
+        `${r.slowest.map((n) => `${n.test} (${n.durationMs}ms)`).join('; ')} |`,
+    ),
+    '',
+    `Durations in ms, per \`page.goto\`. The per-test budget is ${TEST_BUDGET_MS}ms ` +
+      'and a navigation is only part of a test, so a max approaching it is a ' +
+      'stalled navigation — #44 — rather than a test that is merely long.',
+  ].join('\n');
+}
+
+/**
+ * Whether the collector was alive this run.
+ *
+ * THIS IS THE CONTROL ON EVERYTHING ABOVE, and it exists because every way of
+ * getting the collection wrong fails identically: no records, an empty table,
+ * a green run. Three were live possibilities while this was written — matching
+ * `page.goto` instead of Playwright's actual step title `Navigate`, scanning
+ * only top-level steps when `test.step` and `beforeEach` nest them, and
+ * reading the json report, which strips `pw:api` steps entirely. A Playwright
+ * upgrade that renames the step is the same failure arriving later.
+ *
+ * `testsWithResults` MUST come from an observer other than this collector —
+ * `main` passes the json reporter's own stats. Asked to count its own tests, a
+ * reporter that never ran answers zero and certifies its own silence.
+ */
+export function navTimingVerdict({ navigations, testsWithResults }) {
+  if (navigations > 0) return { ok: true };
+  // No test produced a result: a `--grep` that matched nothing, or a failure
+  // before any test ran. There is no collector to prove alive.
+  if (!testsWithResults) return { ok: true };
+  return {
+    ok: false,
+    message:
+      `${testsWithResults} test(s) ran and not one navigation was recorded. Every ` +
+      'test in this suite navigates, so the collector is broken, not the suite: ' +
+      'check that Playwright still titles a `page.goto` step `Navigate` in the ' +
+      '`pw:api` category (tests/reporters/nav-timing-reporter.ts), and that the ' +
+      'reporter is still in the list `mergeReporters` builds.',
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

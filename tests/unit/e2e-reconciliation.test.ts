@@ -5,6 +5,7 @@ import {
   countExecuted,
   reconcile,
   mergeReporters,
+  NAV_TIMING_REPORTER,
   enumerationArgs,
 } from '../../scripts/test-e2e.mjs';
 
@@ -184,33 +185,49 @@ describe('a flag and its value are one argument, not two', () => {
   });
 });
 
-describe('keeping the json reporter without stealing the console one', () => {
-  it('adds json alongside the default console reporter', () => {
+describe("keeping this repo's reporters without stealing the console one", () => {
+  // Both are added, and both for the same reason: `--reporter` REPLACES
+  // rather than appends, so the caller's flag passed through untouched would
+  // leave the suite-size guard with no json and #44 with no navigation
+  // durations. A guard with no numbers is a guard that cannot fire.
+  const ADDED = `json,${NAV_TIMING_REPORTER}`;
+
+  it('adds them alongside the default console reporter', () => {
     expect(mergeReporters([])).toEqual({
       passthrough: [],
-      reporter: 'list,json',
+      reporter: `list,${ADDED}`,
     });
   });
 
-  it("keeps the caller's chosen reporter and adds json to it", () => {
-    // `--reporter` REPLACES rather than appends, so passing the caller's flag
-    // through untouched would leave no json for the guard to read — and a
-    // guard with no numbers is a guard that cannot fire.
+  it("keeps the caller's chosen reporter and adds them to it", () => {
     expect(mergeReporters(['--reporter=line'])).toEqual({
       passthrough: [],
-      reporter: 'line,json',
+      reporter: `line,${ADDED}`,
     });
   });
 
   it('handles the space-separated form and leaves other args alone', () => {
     expect(mergeReporters(['--reporter', 'dot', '--workers=2'])).toEqual({
       passthrough: ['--workers=2'],
-      reporter: 'dot,json',
+      reporter: `dot,${ADDED}`,
     });
   });
 
-  it('does not add json twice when the caller already asked for it', () => {
-    expect(mergeReporters(['--reporter=line,json']).reporter).toBe('line,json');
+  it('adds neither twice when the caller already asked for them', () => {
+    expect(
+      mergeReporters([`--reporter=line,json,${NAV_TIMING_REPORTER}`]).reporter,
+    ).toBe(`line,json,${NAV_TIMING_REPORTER}`);
+  });
+
+  it('adds the missing one when the caller asked for only the other', () => {
+    // The two are independent: asking for json must not suppress the nav
+    // reporter, which is how a merge written as one `if` would behave.
+    expect(mergeReporters(['--reporter=line,json']).reporter).toBe(
+      `line,json,${NAV_TIMING_REPORTER}`,
+    );
+    expect(
+      mergeReporters([`--reporter=line,${NAV_TIMING_REPORTER}`]).reporter,
+    ).toBe(`line,${NAV_TIMING_REPORTER},json`);
   });
 });
 

@@ -42,6 +42,7 @@ import type {
   TestCase,
   TestResult,
 } from '@playwright/test/reporter';
+import { projectNameOf } from './test-identity';
 
 type DashboardStatus = 'passed' | 'failed' | 'skipped';
 
@@ -59,20 +60,6 @@ function toDashboardStatus(status: TestResult['status']): DashboardStatus {
   if (status === 'passed') return 'passed';
   if (status === 'skipped') return 'skipped';
   return 'failed'; // 'failed' | 'timedOut' | 'interrupted'
-}
-
-/**
- * Suite hierarchy is documented (testReporter.d.ts, `Suite.type`) as
- * root -> project -> file -> describe -> ...describe -> test. Walking up to
- * the first `project`-typed suite and reading its title (documented as
- * "Project name for project suite") is more direct than indexing into
- * `test.titlePath()`, which would silently misattribute the project name if
- * the hierarchy ever gained or lost a level.
- */
-function projectNameOf(test: TestCase): string {
-  let suite: Suite | undefined = test.parent;
-  while (suite && suite.type !== 'project') suite = suite.parent;
-  return suite?.title || 'unknown-project';
 }
 
 export default class JsonlReporter implements Reporter {
