@@ -44,6 +44,29 @@ export const withoutYamlComments = (text: string): string =>
     .join('\n');
 
 /**
+ * `.npmrc`/INI text with its comments removed, inline ones included.
+ *
+ * A genuinely different dialect, not a parameter on `withoutYamlComments`:
+ * npm's config format opens a comment with EITHER `#` or `;`. It lived as a
+ * private regex in `node-contract.test.ts` until #85 — one of two `#`-dialect
+ * strippers `one-home.test.ts` could not see, because that rule only ever
+ * looked for `//`.
+ *
+ * A marker opens a comment only at the start of a line or after whitespace.
+ * `//registry.npmjs.org/:_authToken` is a real key and `key=a;b` is a real
+ * value, so a naive split on the marker would corrupt both.
+ *
+ * Blank lines are KEPT, unlike `withoutYamlComments`: callers here read the
+ * file line by line and drop what does not parse, so removing lines would
+ * only make a reported line number wrong.
+ */
+export const withoutIniComments = (text: string): string =>
+  text
+    .split('\n')
+    .map((line) => line.replace(/(^|\s)[#;].*$/, ''))
+    .join('\n');
+
+/**
  * YAML with its scalar quote characters removed.
  *
  * Quoting in YAML is a STYLE, not a meaning: `'actions/cache*'` and
