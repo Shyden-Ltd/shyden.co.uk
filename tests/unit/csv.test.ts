@@ -137,8 +137,17 @@ describe('CSV_LOCALES', () => {
     // nothing. Count the pairs actually walked, and the words in each table.
     expect(pairs).toBe((LOCALES.length * (LOCALES.length - 1)) / 2);
     expect(pairs).toBeGreaterThan(0);
-    for (const locale of LOCALES)
-      expect(headerWords(locale), locale).toHaveLength(6);
+    for (const locale of LOCALES) {
+      const words = headerWords(locale);
+      expect(words, locale).toHaveLength(6);
+      // CONTENT, not entry count. Six empty strings are still six entries,
+      // and an emptied table collides with nothing -- so the first form of
+      // this control passed a mutation that blanked every Thai header.
+      expect(
+        words.filter((w) => w !== ''),
+        locale,
+      ).toHaveLength(6);
+    }
   });
 
   // The same ambiguity, one level down and NOT covered by the header test
@@ -197,13 +206,11 @@ describe('CSV_LOCALES', () => {
   // Guards the two invariants above against a mutant that empties a table:
   // `[].filter(...)` is `[]`, so "shares nothing" passes vacuously against
   // a locale with no columns at all.
-  it('both tables are actually populated', () => {
-    expect(Object.keys(CSV_LOCALES.en.columns)).toHaveLength(6);
-    expect(Object.keys(CSV_LOCALES.id.columns)).toHaveLength(6);
-    for (const locale of Object.values(CSV_LOCALES)) {
-      for (const header of Object.values(locale.columns)) {
-        expect(header).not.toBe('');
-      }
+  it('every table is actually populated', () => {
+    for (const locale of LOCALES) {
+      expect(Object.keys(CSV_LOCALES[locale].columns), locale).toHaveLength(6);
+      for (const header of Object.values(CSV_LOCALES[locale].columns))
+        expect(header, locale).not.toBe('');
     }
   });
 
