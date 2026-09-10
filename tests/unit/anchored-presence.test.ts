@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
-import { filesUnder } from '../source-files';
+import { filesUnder, searched } from '../source-files';
 import {
   callGraph,
   declarationsIn,
@@ -129,6 +129,12 @@ describe('presence assertions over source text are stripped or anchored', () => 
   });
 
   it('finds none reading raw source with an unanchored matcher', () => {
-    expect(result.findings, result.findings.join('\n')).toEqual([]);
+    expect(
+      searched(result.findings, {
+        of: result.scanned,
+        what: 'presence assertions over source text',
+      }),
+      result.findings.join('\n'),
+    ).toEqual([]);
   });
 });

@@ -32,9 +32,17 @@ describe('filesUnder', () => {
   it('skips dotfiles and node_modules, which only four of the nine did', () => {
     const all = filesUnder('tests', () => true);
     expect(
-      all.filter((path) => path.split('/').some((s) => s.startsWith('.'))),
+      searched(
+        all.filter((path) => path.split('/').some((s) => s.startsWith('.'))),
+        { of: all, what: 'walked paths' },
+      ),
     ).toEqual([]);
-    expect(all.filter((path) => path.includes('node_modules'))).toEqual([]);
+    expect(
+      searched(
+        all.filter((path) => path.includes('node_modules')),
+        { of: all, what: 'walked paths' },
+      ),
+    ).toEqual([]);
   });
 });
 

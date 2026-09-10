@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { specDirs } from '../spec-dirs';
-import { tsFilesUnder } from '../source-files';
+import { searched, tsFilesUnder } from '../source-files';
 import { withoutTsComments } from './source-text';
 
 /**
@@ -213,6 +213,9 @@ describe('a locator list cannot be looped unproved', () => {
         .filter((loop) => !loop.proved)
         .map((loop) => `${path}: ${loop.subject}`),
     );
-    expect(unproved, unproved.join('\n')).toEqual([]);
+    expect(
+      searched(unproved, { of: SCANNED, what: 'scanned e2e specs' }),
+      unproved.join('\n'),
+    ).toEqual([]);
   });
 });

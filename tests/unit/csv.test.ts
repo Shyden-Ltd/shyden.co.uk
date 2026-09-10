@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
+import { searched } from '../source-files';
 import { LOCALES, getStrings, type Locale } from '../../src/lib/i18n';
 import {
   serialiseRoster,
@@ -131,7 +132,9 @@ describe('CSV_LOCALES', () => {
       for (const word of headerWords(b))
         if (first.has(word)) collisions.push(`${a}/${b} both use "${word}"`);
     }
-    expect(collisions).toEqual([]);
+    expect(
+      searched(collisions, { of: localePairs(), what: 'locale pairs' }),
+    ).toEqual([]);
     // Anti-vacuity, the same reason the populated-tables test below exists:
     // an empty table makes every comparison above pass having compared
     // nothing. Count the pairs actually walked, and the words in each table.
@@ -178,7 +181,9 @@ describe('CSV_LOCALES', () => {
       .map(
         ([token, seen]) => `"${token}" means ${[...seen].sort().join(' and ')}`,
       );
-    expect(conflicts).toEqual([]);
+    expect(
+      searched(conflicts, { of: [...meanings], what: 'distinct CSV tokens' }),
+    ).toEqual([]);
     // Anti-vacuity: a table of empty strings collides with nothing, so
     // assert every locale actually contributed a token for every meaning.
     for (const locale of LOCALES) {

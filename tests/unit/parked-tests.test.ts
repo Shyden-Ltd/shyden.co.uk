@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { specDirs } from '../spec-dirs';
 import { blankCommentLines, isCommentLine } from './source-text';
 import { readFileSync } from 'node:fs';
-import { tsFilesUnder } from '../source-files';
+import { searched, tsFilesUnder } from '../source-files';
 
 /**
  * "Tracked, not hidden" has to be TRUE, not merely written.
@@ -219,6 +219,9 @@ describe('parked tests must name an issue', () => {
     const findings = files.flatMap((file) =>
       findUnreferencedParkedTests(file, readFileSync(file, 'utf8')),
     );
-    expect(findings, findings.join('\n')).toEqual([]);
+    expect(
+      searched(findings, { of: files, what: 'e2e corpus files' }),
+      findings.join('\n'),
+    ).toEqual([]);
   });
 });

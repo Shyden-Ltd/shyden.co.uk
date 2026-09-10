@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import config, { CONTENT_ONLY_SPECS } from '../../playwright.config';
+import { searched } from '../source-files';
 
 /**
  * Five browser projects × every spec is not five times the signal.
@@ -25,11 +26,14 @@ const E2E = 'tests/e2e';
 const read = (spec: string) => readFileSync(join(E2E, spec), 'utf8');
 describe('the content-only project', () => {
   it('names specs that actually exist', () => {
-    expect(CONTENT_ONLY_SPECS.length).toBeGreaterThan(0);
     const missing = CONTENT_ONLY_SPECS.filter((s) => !existsSync(join(E2E, s)));
-    expect(missing, 'a renamed spec would silently stop being scoped').toEqual(
-      [],
-    );
+    expect(
+      searched(missing, {
+        of: CONTENT_ONLY_SPECS,
+        what: 'content-only specs',
+      }),
+      'a renamed spec would silently stop being scoped',
+    ).toEqual([]);
   });
 
   it('does not simply list every spec, which would assert nothing', () => {
@@ -52,7 +56,10 @@ describe('the content-only project', () => {
     });
 
     expect(
-      engineDependent,
+      searched(engineDependent, {
+        of: CONTENT_ONLY_SPECS,
+        what: 'content-only specs',
+      }),
       'a spec that resizes is engine-dependent and must run on all five',
     ).toEqual([]);
   });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { searched } from '../source-files';
 
 /**
  * Which dependencies are allowed to EXECUTE CODE when they install.
@@ -108,11 +109,14 @@ describe('the install-script allowlist', () => {
   });
 
   it('pins every approval to a version', () => {
-    const unpinned = Object.keys(allowScripts()).filter(
-      (key) => !/.@\d/.test(key),
-    );
+    const approved = Object.keys(allowScripts());
+    const unpinned = approved.filter((key) => !/.@\d/.test(key));
     expect(
-      unpinned,
+      // If this repo ever legitimately approves NOTHING, the refusal here is
+      // the right outcome: the guard has become decorative and someone
+      // should decide whether to keep it, rather than have it pass forever
+      // over an empty table.
+      searched(unpinned, { of: approved, what: 'approved packages' }),
       'a bare package name grants install-time code execution to every ' +
         'FUTURE version of that package, reviewed by nobody. Pin it, the ' +
         'same way this repo pins actions to a SHA rather than a tag',
@@ -123,9 +127,12 @@ describe('the install-script allowlist', () => {
     // `npm install-scripts deny` writes the same field with `false`, which
     // would leave esbuild without its platform binary and the build broken in
     // a way that looks like a download failure.
-    const denied = Object.entries(allowScripts())
+    const approvals = Object.entries(allowScripts());
+    const denied = approvals
       .filter(([, allowed]) => allowed !== true)
       .map(([key]) => key);
-    expect(denied).toEqual([]);
+    expect(
+      searched(denied, { of: approvals, what: 'approval entries' }),
+    ).toEqual([]);
   });
 });
