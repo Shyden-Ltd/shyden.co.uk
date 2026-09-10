@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { recordErrors } from './recorders';
 import { sampledPaths } from './locale-sampling';
 import {
   addSeveral,
@@ -531,14 +532,15 @@ test.describe('classroom groups — mobile-first layout', () => {
   test('no console errors on either language', async ({ page }) => {
     // This is the page that ships a script, and it was the page without this
     // test.
+    // ONE recorder for the whole loop. The previous shape subscribed a fresh
+    // pair of listeners on every iteration against the same page, so by the
+    // last sampled path five were live at once.
+    const reported = recordErrors(page);
     for (const path of sampledPaths('/classroom-groups')) {
-      const errors: string[] = [];
-      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-      page.on('pageerror', (e) => errors.push(e.message));
       await page.goto(path);
       await makeGroups(page, '12', '4');
       await expect(page.locator('#cg-results .student')).toHaveCount(12);
-      expect(errors, `${path}: ${errors.join(' | ')}`).toEqual([]);
+      await reported.expectNone(path);
     }
   });
 

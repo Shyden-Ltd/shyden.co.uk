@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { recordErrors } from './recorders';
 import {
   openRoster,
   addSeveral,
@@ -154,9 +155,7 @@ test.describe('the roster table', () => {
   });
 
   test('no console errors while building a roster', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-    page.on('pageerror', (e) => errors.push(e.message));
+    const reported = recordErrors(page);
 
     await openRoster(page);
     await addSeveral(page, 3);
@@ -168,7 +167,7 @@ test.describe('the roster table', () => {
     await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make groups' }).click();
 
-    expect(errors, errors.join(' | ')).toEqual([]);
+    await reported.expectNone('building a roster reports nothing');
   });
 });
 

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { recordErrors, recordRequests, urlMatching } from './recorders';
 import type { Page } from '@playwright/test';
 
 import { join, relative, sep, basename } from 'node:path';
@@ -328,10 +329,7 @@ test.describe('classroom group creator', () => {
     await page.locator('#cg-sound-toggle').click();
     await page.uncheck('#cg-sound-check');
 
-    const audioRequests: string[] = [];
-    page.on('request', (r) => {
-      if (AUDIO_URL_PATTERN.test(r.url())) audioRequests.push(r.url());
-    });
+    const seen = recordRequests(page);
 
     // The reload is what matters: classroom-groups.ts's own "sound asset
     // network prefetch" section reads the REMEMBERED preference at MODULE
@@ -344,25 +342,33 @@ test.describe('classroom group creator', () => {
     await fill(page, { count: '6', size: '3', speed: 'fast' });
     await page.click('#cg-go');
     await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
-    expect(audioRequests).toEqual([]);
+    seen.expectNone(
+      urlMatching(AUDIO_URL_PATTERN),
+      'sound off means the assets are never downloaded',
+    );
   });
 
   test('with sound on, the audio requests that happen are exactly ours and same-origin', async ({
     page,
   }) => {
-    const audioRequests: string[] = [];
-    page.on('request', (r) => {
-      if (AUDIO_URL_PATTERN.test(r.url())) audioRequests.push(r.url());
-    });
+    const seen = recordRequests(page);
 
     // Sound stays ON (the default) and speed stays 'normal' (not 'skip') --
     // the on-load prefetch trigger fires for all six purely from loading the
     // page, with no form interaction at all.
     await page.goto('/classroom-groups');
 
-    expect(audioRequests).toHaveLength(6);
+    // Polled, not read once. The six `fetch` calls are issued during module
+    // evaluation, but their request events reach Node asynchronously over the
+    // browser protocol -- reading the array the instant `goto` resolved is
+    // exactly what CI caught returning `[]` (run 34391533802). Polling to an
+    // exact 6 still fails on five or seven: it waits for the count, it does
+    // not accept whatever count has arrived.
+    await expect
+      .poll(() => seen.matching(urlMatching(AUDIO_URL_PATTERN)).length)
+      .toBe(6);
     const pageOrigin = new URL(page.url()).origin;
-    for (const url of audioRequests) {
+    for (const url of seen.matching(urlMatching(AUDIO_URL_PATTERN))) {
       // The CLAUDE.md/no-third-party-requests promise, asserted directly --
       // the origin, not just that six requests happened to fire.
       expect(new URL(url).origin).toBe(pageOrigin);
@@ -371,10 +377,7 @@ test.describe('classroom group creator', () => {
 
   test.describe('a reduced-motion visitor', () => {
     test('downloads no audio at all', async ({ page }) => {
-      const audioRequests: string[] = [];
-      page.on('request', (r) => {
-        if (AUDIO_URL_PATTERN.test(r.url())) audioRequests.push(r.url());
-      });
+      const seen = recordRequests(page);
 
       // `page.emulateMedia`, not `test.use({ reducedMotion: 'reduce' })`:
       // verified by hand that the declarative context option does not
@@ -394,7 +397,10 @@ test.describe('classroom group creator', () => {
       await page.fill('#cg-count', '6');
       await page.click('#cg-go');
       await expect(page.locator('#cg-results .student')).toHaveCount(6);
-      expect(audioRequests).toEqual([]);
+      seen.expectNone(
+        urlMatching(AUDIO_URL_PATTERN),
+        'a reduced-motion visitor downloads no audio at all',
+      );
     });
   });
 
@@ -408,8 +414,7 @@ test.describe('classroom group creator', () => {
     // mechanism both real-world causes fall back through.
     await page.route('**/*.m4a', (route) => route.abort());
 
-    const pageErrors: string[] = [];
-    page.on('pageerror', (err) => pageErrors.push(String(err)));
+    const reported = recordErrors(page);
 
     await page.goto('/classroom-groups');
     await fill(page, { count: '6', size: '3', speed: 'fast' });
@@ -420,7 +425,11 @@ test.describe('classroom group creator', () => {
     // audio request changes nothing about this outcome.
     await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
     await expect(page.locator('#cg-go')).toBeEnabled();
-    expect(pageErrors).toEqual([]);
+    // Uncaught only: this test aborts every `.m4a` on purpose, and a blocked
+    // request logs to the console by design. What must not happen is a crash.
+    await reported.expectNoUncaught(
+      'blocking every audio request must not surface as an uncaught error',
+    );
   });
 
   test('splits by number of groups, not just by group size', async ({
@@ -1826,11 +1835,22 @@ test.describe('the no-scroll rule, measured', () => {
   // global script tag), so it earns a direct check rather than an inference
   // from the tool page's own tests passing.
   test('the homepage still ships no JavaScript', async ({ page }) => {
-    const scripts: string[] = [];
-    page.on('request', (r) => {
-      if (r.resourceType() === 'script') scripts.push(r.url());
-    });
-    await page.goto('/');
-    expect(scripts).toEqual([]);
+    const seen = recordRequests(page);
+    const response = await page.goto('/');
+    // Two measurements, because one of them cannot see half the ways this
+    // promise breaks. Astro INLINES a small script straight into the HTML --
+    // verified by building with one added: `dist/index.html` grew a
+    // `<script type="module">` and no new `_astro/*.js` was emitted -- so an
+    // inline script makes no network request at all and the recorder below
+    // stays legitimately empty. Watching only requests named the promise
+    // without measuring it (#79).
+    expect(
+      await response!.text(),
+      'the served homepage HTML carries no <script> tag',
+    ).not.toMatch(/<script/i);
+    seen.expectNone(
+      ({ resourceType }) => resourceType === 'script',
+      'the homepage still ships no JavaScript',
+    );
   });
 });

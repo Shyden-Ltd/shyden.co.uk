@@ -1,0 +1,146 @@
+import { expect, type Page } from '@playwright/test';
+
+/**
+ * Browser-event recorders — the only place in the suite that subscribes to a
+ * collected event. `tests/unit/event-collectors.test.ts` fails if a spec
+ * hand-rolls one.
+ *
+ * WHY A HOME AT ALL. A collected event reaches Node asynchronously over the
+ * browser protocol, so reading the array the instant an action returns races
+ * delivery. CI proved it (run 34391533802, 2026-09-09): six `fetch` calls had
+ * already been issued and `expect(audioRequests).toHaveLength(6)` saw `[]`.
+ *
+ * As a flake that costs a re-run. The same expression asserting ABSENCE costs
+ * the guard entirely — `expect(scripts).toEqual([])` is satisfied by "the
+ * events have not arrived yet", so `the homepage still ships no JavaScript`
+ * would have passed on a homepage full of JavaScript, silently, forever.
+ *
+ * So absence is never asserted here without a control proving the recorder
+ * was live. A convention at the call site cannot do that job: forgetting it
+ * is invisible, which is how nine of these came to be written the same way.
+ */
+
+export interface RecordedRequest {
+  readonly url: string;
+  readonly resourceType: string;
+}
+
+export type RequestPredicate = (request: RecordedRequest) => boolean;
+
+/** `url` matches `pattern` — the common case, spelled once. */
+export const urlMatching =
+  (pattern: RegExp): RequestPredicate =>
+  (request) =>
+    pattern.test(request.url);
+
+export interface RequestRecorder {
+  /** Every request seen, in arrival order. */
+  readonly all: readonly RecordedRequest[];
+  /** The URLs of the requests `predicate` accepts. Pure: never asserts. */
+  matching(predicate: RequestPredicate): string[];
+  /**
+   * Assert nothing matched — WITH the liveness control that makes it mean
+   * something (operator decision, 2026-09-10: the total-count form).
+   *
+   * A navigation always produces at least the document request, so a recorder
+   * holding nothing at all has not proved absence; it has proved only that it
+   * was not listening yet. That case now fails loudly instead of passing.
+   */
+  expectNone(predicate: RequestPredicate, because: string): void;
+}
+
+export function recordRequests(page: Page): RequestRecorder {
+  const all: RecordedRequest[] = [];
+  page.on('request', (request) =>
+    all.push({ url: request.url(), resourceType: request.resourceType() }),
+  );
+  return {
+    all,
+    matching: (predicate) => all.filter(predicate).map(({ url }) => url),
+    expectNone(predicate, because) {
+      expect(this.matching(predicate), because).toEqual([]);
+      expect(
+        all.length,
+        `${because}: the recorder saw NO requests at all, so this absence ` +
+          'assertion would have passed whatever the page did (#79)',
+      ).toBeGreaterThan(0);
+    },
+  };
+}
+
+export interface ErrorRecorder {
+  /** Messages the page logged through `console.error`. */
+  readonly consoleErrors: readonly string[];
+  /** Exceptions that reached the top level and were never caught. */
+  readonly uncaught: readonly string[];
+  /** Neither channel reported anything. */
+  expectNone(because: string): Promise<void>;
+  /**
+   * No UNCAUGHT exception — console output is allowed.
+   *
+   * Kept separate because the two are not interchangeable: the fallback test
+   * aborts every `.m4a` request on purpose, and a blocked request logs to the
+   * console by design. Asserting both there would fail the test for doing
+   * exactly what it set out to do, while asserting only console output on the
+   * pages that care about crashes would miss the crash.
+   */
+  expectNoUncaught(because: string): Promise<void>;
+}
+
+/**
+ * Collects both error channels, separately.
+ *
+ * LIVENESS. A total-count control cannot work here: silence is the healthy
+ * state, so "zero events" is what a passing test looks like AND what a dead
+ * listener looks like. The control is a sentinel this helper emits itself and
+ * waits for. Page events share one protocol channel and arrive in order, so
+ * the sentinel's arrival also proves everything raised BEFORE it has already
+ * been delivered — the barrier all nine of the old sites lacked.
+ *
+ * KNOWN LIMIT, stated so nobody trusts it further than it goes: the sentinel
+ * travels the CONSOLE channel. It vouches for `pageerror` only through that
+ * shared ordering, not by exercising it.
+ */
+export function recordErrors(page: Page): ErrorRecorder {
+  const SENTINEL = `__liveness_${Math.random().toString(36).slice(2)}__`;
+  // Any sentinel, not just this recorder's own. `classroom-groups-controls`
+  // once built one recorder per sampled path against the same page, so
+  // recorder A could still be listening when recorder B emits — and A, not
+  // recognising B's sentinel, would have filed it as a genuine error.
+  const ANY_SENTINEL = /__liveness_[a-z0-9]+__/;
+  const consoleErrors: string[] = [];
+  const uncaught: string[] = [];
+  let sentinelSeen = false;
+  page.on('console', (message) => {
+    const text = message.text();
+    if (text.includes(SENTINEL)) sentinelSeen = true;
+    else if (message.type() === 'error' && !ANY_SENTINEL.test(text))
+      consoleErrors.push(text);
+  });
+  page.on('pageerror', (error) => uncaught.push(String(error)));
+
+  const flush = async (because: string): Promise<void> => {
+    // Emitted through `console.error`, not `console.log`, so the sentinel
+    // travels the same filter as a real error. A control that took an easier
+    // path than the thing it vouches for proves nothing about it.
+    await page.evaluate((s) => console.error(s), SENTINEL);
+    await expect
+      .poll(() => sentinelSeen, {
+        message: `${because}: the console channel never delivered this helper's own sentinel, so an empty error list would mean nothing (#79)`,
+      })
+      .toBe(true);
+  };
+
+  return {
+    consoleErrors,
+    uncaught,
+    async expectNone(because) {
+      await flush(because);
+      expect([...consoleErrors, ...uncaught], because).toEqual([]);
+    },
+    async expectNoUncaught(because) {
+      await flush(because);
+      expect(uncaught, because).toEqual([]);
+    },
+  };
+}
