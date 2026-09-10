@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { nonEmpty } from '../source-files';
+import { withoutIniComments, withoutYamlComments } from './source-text';
 
 /**
  * The Node version this repo runs on is stated ONCE, and everything agrees.
@@ -73,8 +74,10 @@ const enginesFloorMajor = (): number => {
 const npmrc = (): Map<string, string> => {
   const entries = new Map<string, string>();
   if (!existsSync('.npmrc')) return entries;
-  for (const line of readFileSync('.npmrc', 'utf8').split('\n')) {
-    const stripped = line.replace(/(^|\s)[#;].*$/, '').trim();
+  for (const line of withoutIniComments(readFileSync('.npmrc', 'utf8')).split(
+    '\n',
+  )) {
+    const stripped = line.trim();
     if (!stripped.includes('=')) continue;
     const [key, ...rest] = stripped.split('=');
     entries.set(key.trim(), rest.join('=').trim());
@@ -91,10 +94,7 @@ const workflowBodies = (): [string, string][] =>
     `workflow files in ${WORKFLOWS}`,
   ).map((f) => [
     f,
-    readFileSync(join(WORKFLOWS, f), 'utf8')
-      .split('\n')
-      .map((line) => line.replace(/(^|\s)#.*$/, ''))
-      .join('\n'),
+    withoutYamlComments(readFileSync(join(WORKFLOWS, f), 'utf8')),
   ]);
 
 describe('the Node version contract is stated once and agreed everywhere', () => {

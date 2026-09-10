@@ -5,6 +5,7 @@ import {
   withoutYamlComments,
   withoutYamlQuotes,
   withoutCommentLines,
+  withoutIniComments,
   withoutTsComments,
   withoutMarkupComments,
 } from './source-text';
@@ -74,6 +75,37 @@ describe('withoutCommentLines', () => {
     const out = withoutCommentLines('# gone\nrun: echo "a # b"');
     expect(out).not.toContain('gone');
     expect(out).toContain('echo "a # b"');
+  });
+});
+
+describe('withoutIniComments', () => {
+  // npm's config format opens a comment with EITHER marker, which YAML does
+  // not. `node-contract.test.ts` carried this as a private regex until #85 --
+  // one of two `#`-dialect strippers the one-home guard could not see,
+  // because that guard only ever looked for `//`.
+  it('removes a # comment, a ; comment, and both inline', () => {
+    // Distinctive tokens on purpose: `not.toContain('a')` would fail on
+    // `save-exact` and prove nothing about comment stripping.
+    const out = withoutIniComments(
+      '# ALPHA\n; BETA\nengine-strict=true # GAMMA\nsave-exact=true ; DELTA',
+    );
+    for (const gone of ['ALPHA', 'BETA', 'GAMMA', 'DELTA'])
+      expect(out, `${gone} survived`).not.toContain(gone);
+    expect(out).toContain('engine-strict=true');
+    expect(out).toContain('save-exact=true');
+  });
+
+  it('leaves a value alone when it carries neither marker', () => {
+    expect(withoutIniComments('registry=https://registry.npmjs.org/')).toBe(
+      'registry=https://registry.npmjs.org/',
+    );
+  });
+
+  it('only treats a marker as one when it opens a field', () => {
+    // `//registry...:_authToken` is a real .npmrc key. A `;` or `#` must be at
+    // the start of a line or after whitespace to open a comment, which is why
+    // this is not a naive split on the marker.
+    expect(withoutIniComments('key=a;b')).toBe('key=a;b');
   });
 });
 

@@ -24,6 +24,20 @@ import { filesUnder } from '../source-files';
  */
 const COMMENT_SYNTAX_LITERAL = /(['"`])\/[/*]\1|\\\/\\[/*]|<!--/;
 
+/**
+ * A `#`-dialect stripper written as a REGEX LITERAL: `#.*$`, or the same
+ * inside a character class for the `.npmrc`/INI dialect, `[#;].*$`.
+ *
+ * The limit above was stated broader than its own evidence. It is true that
+ * `line.startsWith('#')` cannot be told apart from a legitimate caller
+ * passing `'#'` as a marker to `withoutCommentLines`. It is NOT true of
+ * `line.replace(/(^|\\s)#.*$/, '')`, which is a distinctive literal and
+ * perfectly detectable — and two of them lived in `node-contract.test.ts`
+ * for exactly as long as this rule only looked for `//` (#85). A rule
+ * written wider than its evidence is a gap with a justification attached.
+ */
+const HASH_STRIPPER_LITERAL = /(?:#|\[[^\]\n]*#[^\]\n]*\])\.\*\$/;
+
 /** `https:\/\/` inside a regex is a URL, not a comment. */
 const URL_ESCAPE = /https?:\\\/\\\//g;
 
@@ -35,11 +49,17 @@ const SCANNED = ['tests', 'scripts']
   .flatMap((dir) => filesUnder(dir, (path) => /\.(ts|mjs)$/.test(path)))
   .sort();
 
-function definesACommentStripper(path: string): boolean {
-  const code = withoutTsComments(readFileSync(path, 'utf8'))
+/**
+ * Takes SOURCE, not a path — for the reason `definesADirectoryWalker` already
+ * gives, and which this detector did not follow until #85: a detector nobody
+ * has watched catch anything is worth exactly as much as the guards #79 found
+ * asserting on an empty array. The fixtures below are that watching.
+ */
+export function definesACommentStripper(source: string): boolean {
+  const code = withoutTsComments(source)
     .replace(URL_ESCAPE, '')
     .replace(MARKER_ARGUMENT, '');
-  return COMMENT_SYNTAX_LITERAL.test(code);
+  return COMMENT_SYNTAX_LITERAL.test(code) || HASH_STRIPPER_LITERAL.test(code);
 }
 
 describe('comment stripping has exactly one home', () => {
@@ -52,7 +72,11 @@ describe('comment stripping has exactly one home', () => {
   it('is implemented only in source-text.ts', () => {
     // Sorted, because `SCANNED` is — an allow-list written in reading order
     // fails for a reason that has nothing to do with what it guards.
-    expect(SCANNED.filter(definesACommentStripper)).toEqual([
+    expect(
+      SCANNED.filter((path) =>
+        definesACommentStripper(readFileSync(path, 'utf8')),
+      ),
+    ).toEqual([
       // The detector itself: the one other file that must name comment
       // syntax, in order to find it anywhere else. Renamed from
       // `stripper-homes.test.ts` in #80, when it grew a second rule.
@@ -63,6 +87,41 @@ describe('comment stripping has exactly one home', () => {
       // The shared home. Everything else imports from here.
       'tests/unit/source-text.ts',
     ]);
+  });
+
+  it('catches a #-dialect stripper written as a regex literal', () => {
+    expect(
+      definesACommentStripper("const s = line.replace(/(^|\\s)#.*$/, '');"),
+    ).toBe(true);
+    // The .npmrc/INI form, where `;` opens a comment too.
+    expect(
+      definesACommentStripper("const s = line.replace(/(^|\\s)[#;].*$/, '');"),
+    ).toBe(true);
+  });
+
+  it('still catches the // dialect it was written for', () => {
+    expect(definesACommentStripper("const s = text.replace('//', '');")).toBe(
+      true,
+    );
+  });
+
+  it('is not fired by a caller passing a marker', () => {
+    // The reason the KNOWN LIMIT above stops at `startsWith('#')` and no
+    // further: a caller naming the marker is legitimate, and must stay so.
+    expect(definesACommentStripper("withoutCommentLines(text, '#');")).toBe(
+      false,
+    );
+    expect(definesACommentStripper("withoutCommentLines(text, '//');")).toBe(
+      false,
+    );
+  });
+
+  it('is not fired by a comment describing one', () => {
+    expect(
+      definesACommentStripper(
+        "// line.replace(/(^|\\s)#.*$/, '') would be a private stripper\nconst x = 1;",
+      ),
+    ).toBe(false);
   });
 });
 
