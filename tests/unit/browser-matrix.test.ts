@@ -23,9 +23,6 @@ import config, { CONTENT_ONLY_SPECS } from '../../playwright.config';
 
 const E2E = 'tests/e2e';
 const read = (spec: string) => readFileSync(join(E2E, spec), 'utf8');
-const projectNamed = (name: string) =>
-  config.projects?.find((p) => p.name === name);
-
 describe('the content-only project', () => {
   it('names specs that actually exist', () => {
     expect(CONTENT_ONLY_SPECS.length).toBeGreaterThan(0);
