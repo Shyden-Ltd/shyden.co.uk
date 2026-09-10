@@ -39,7 +39,10 @@ jobs:
           name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 14
-          if-no-files-found: ignore
+          # `warn`, never `ignore`: `ignore` is the one value that lets this
+          # step go GREEN having preserved nothing, and this step IS the
+          # evidence path for a red run (#131).
+          if-no-files-found: warn
 
   # The visual-regression suite, in the SAME pinned image the baselines are
   # captured in (#33). Not a tidiness choice: a bare `ubuntu-latest` runner
@@ -80,4 +83,7 @@ jobs:
           name: visual-diff-${{ github.run_id }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 14
-          if-no-files-found: ignore
+          # `warn`, never `ignore`: `ignore` is the one value that lets this
+          # step go GREEN having preserved nothing, and this step IS the
+          # evidence path for a red run (#131).
+          if-no-files-found: warn
