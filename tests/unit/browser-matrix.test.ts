@@ -179,4 +179,19 @@ describe('the visual-regression project', () => {
     // on a runner nobody was watching.
     expect(config.snapshotPathTemplate).toContain('{platform}');
   });
+
+  it('refuses to write a baseline nobody asked for', () => {
+    // Playwright 1.63 defaults `updateSnapshots` to 'missing'
+    // (`runner/index.js:583`). Under that default a run whose baseline is
+    // absent WRITES the PNG first and only then fails on a soft error, so
+    // nothing is silently accepted -- but CI produces a baseline no one
+    // reviewed, and the only guard on that behaviour watches the
+    // `--update-snapshots` FLAG in the workflow. The config default is a
+    // second door into the same room, and it was unwatched.
+    //
+    // 'none' refuses outright and writes nothing, and it is the only value
+    // for which `applySuggestedRebaselines` returns early rather than being
+    // willing to rewrite expectations during an ordinary run.
+    expect(config.updateSnapshots).toBe('none');
+  });
 });
