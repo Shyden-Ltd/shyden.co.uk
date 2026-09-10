@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { nonEmpty } from '../source-files';
 import { en } from '../../src/lib/i18n/en';
 import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
@@ -51,14 +52,32 @@ const MACHINE_SEEDED = { zh, vi, th } as const;
 const CHECKED_ELSEWHERE = ['en', 'id'] as const;
 
 /** Every leaf path in the English catalogue, `errors.TOO_MANY_STUDENTS` style. */
-function leafPaths(table: unknown, path = ''): string[] {
+/**
+ * The recursion, kept private so an empty sub-walk stays ordinary HERE.
+ *
+ * A function, a number or an empty object contributes nothing, and must be
+ * allowed to. The refusal belongs to the top-level form and nowhere else --
+ * the shape `walk`/`filesUnder` settled on in tests/source-files.ts (#84).
+ */
+function walkLeaves(table: unknown, path = ''): string[] {
   if (Array.isArray(table))
-    return table.flatMap((v, i) => leafPaths(v, `${path}[${i}]`));
+    return table.flatMap((v, i) => walkLeaves(v, `${path}[${i}]`));
   if (table && typeof table === 'object')
     return Object.entries(table).flatMap(([k, v]) =>
-      leafPaths(v, path ? `${path}.${k}` : k),
+      walkLeaves(v, path ? `${path}.${k}` : k),
     );
   return [path];
+}
+
+/**
+ * Every leaf path in a catalogue, PROVED non-empty before a guard reads it.
+ *
+ * Same reasoning as `deepStrings` in i18n.test.ts and as `filesUnder` in
+ * tests/source-files.ts: a walker that returns `[]` makes every absence
+ * assertion downstream of it pass having read nothing (#84).
+ */
+function leafPaths(table: unknown): string[] {
+  return nonEmpty(walkLeaves(table), 'catalogue leaf paths');
 }
 
 function valueAt(table: unknown, path: string): unknown {
