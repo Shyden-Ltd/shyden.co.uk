@@ -118,6 +118,14 @@ export default defineConfig({
       // moves a handful of pixels between otherwise identical runs; a whole
       // changed element moves far more than 0.2% of them.
       maxDiffPixelRatio: 0.002,
+      // The PER-PIXEL tolerance, and the half that was nearly left defaulted.
+      // Playwright scores pixels in YIQ space and allows 35215 * threshold^2;
+      // the default 0.2 permits ~1409, while recolouring the accent from
+      // #0a7d66 to #0a66c2 -- a green button turning blue -- scores only ~488.
+      // Every screenshot passed on that change until this line existed. A
+      // ratio without a threshold is half a policy: it bounds HOW MANY pixels
+      // may differ while letting each one differ almost arbitrarily.
+      threshold: 0.1,
       animations: 'disabled',
       caret: 'hide',
       scale: 'css',

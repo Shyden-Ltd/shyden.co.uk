@@ -84,7 +84,17 @@ const run = spawnSync(
     image,
     'sh',
     '-c',
-    `npm ci --no-audit --no-fund && ${playwright}`,
+    [
+      // `astro preview` writes `.astro/preview.json` naming its PID, and that
+      // file lives on the mounted repo -- so the NEXT container inherits a
+      // lock held by a process that no longer exists anywhere, refuses to
+      // start the server, and reports a stack trace about `astro preview
+      // stop` instead of anything to do with the site. CI never sees this
+      // (a fresh checkout each run); a second local run always would.
+      'rm -f .astro/preview.json',
+      'npm ci --no-audit --no-fund',
+      playwright,
+    ].join(' && '),
   ],
   { stdio: 'inherit' },
 );

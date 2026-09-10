@@ -160,6 +160,11 @@ describe('the visual-regression project', () => {
     // more. A threshold left at the default is a policy nobody chose.
     expect(shot?.maxDiffPixelRatio).toBeGreaterThan(0);
     expect(shot?.maxDiffPixelRatio).toBeLessThan(0.01);
+    // The per-pixel half. Without it the ratio bounds how many pixels may
+    // differ while each one differs almost arbitrarily -- measured: at the
+    // default 0.2, recolouring the accent green-to-blue changed NO screenshot.
+    expect(shot?.threshold).toBeGreaterThan(0);
+    expect(shot?.threshold).toBeLessThanOrEqual(0.1);
     expect(shot?.animations).toBe('disabled');
     expect(shot?.caret).toBe('hide');
     // Pins the device-pixel ratio, so a HiDPI runner and a normal one produce
