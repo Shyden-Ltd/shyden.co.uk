@@ -751,6 +751,20 @@ describe('DONE_RISER', () => {
   });
 });
 
+// The three reverb sends below are pinned to the brief's numbers. The three
+// PEAK GAINS were not pinned to anything -- and the relationship assertions
+// elsewhere in this file cannot do it, because they compare a plan's gain
+// against the same constant the plan was built from. Move the constant and
+// both sides move together, so those guards pass at any level. Mutation
+// proved it: 0.12 -> 0.13 turned nothing red until this test existed.
+describe('peak gains -- the levels themselves, not their shaping', () => {
+  it("matches the brief's own numbers exactly: 0.14 / 0.12 / 0.055", () => {
+    expect(LAND_PEAK_GAIN).toBe(0.14);
+    expect(DONE_PEAK_GAIN).toBe(0.12);
+    expect(SHUFFLE_GRAIN_PEAK_GAIN).toBe(0.055);
+  });
+});
+
 describe('reverb send ordering -- "the longest tail of the three" is done, by construction', () => {
   it('DONE_REVERB_SEND > LAND_REVERB_SEND > SHUFFLE_REVERB_SEND', () => {
     expect(DONE_REVERB_SEND).toBeGreaterThan(LAND_REVERB_SEND);
