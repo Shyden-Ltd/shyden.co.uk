@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { LOCALES, localisePath, getStrings } from '../../src/lib/i18n/index';
+import {
+  LOCALES,
+  localisePath,
+  getStrings,
+  isBetaLocale,
+} from '../../src/lib/i18n/index';
 import { deployedRoutes } from '../site-pages';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
@@ -58,6 +63,18 @@ test('the Classroom Group Creator loads on dev', async ({ page }) => {
  */
 const ROUTES = deployedRoutes();
 
+/**
+ * How many BETA badges every deployed page must carry, in every locale.
+ *
+ * Each unverified language is marked exactly once -- in the switcher's control
+ * when it is the language being read, in its list when it is an alternative --
+ * so the total is the size of the beta set and does not vary by page or by
+ * locale. An EXACT count, never "at least one": a marker painted on
+ * everything, English included, satisfies any weaker check while telling the
+ * visitor nothing.
+ */
+const BETA_BADGES = LOCALES.filter(isBetaLocale).length;
+
 test.describe('every locale the site claims to serve is deployed', () => {
   for (const { locale, path, heading, englishHeading } of ROUTES) {
     test(`${path} is served in ${locale}`, async ({ page }) => {
@@ -73,6 +90,24 @@ test.describe('every locale the site claims to serve is deployed', () => {
         // so the two checks cannot fail together silently.
         await expect(page.locator('h1')).not.toHaveText(englishHeading);
       }
+
+      // #102. `dev-verified` proved the marker was BUILT and that wrangler did
+      // not error -- not that the deployed site serves it. Asserted on THIS
+      // page load rather than in a loop of its own, so full locale x page
+      // coverage costs no extra navigation.
+      //
+      // The status assertion above is load-bearing here: a failed request
+      // yields an empty document, and an empty document contains zero badges,
+      // which is indistinguishable from the marker having been removed. Counted
+      // only after the page is known to be a real 200.
+      await expect(
+        page.locator('[data-beta]'),
+        `${path}: expected one BETA badge per unverified locale`,
+      ).toHaveCount(BETA_BADGES);
+      await expect(
+        page.locator('[data-beta-notice]'),
+        `${path}: ${locale === 'en' ? 'English is verified and must carry no notice' : 'the beta notice is missing'}`,
+      ).toHaveCount(isBetaLocale(locale) ? 1 : 0);
     });
   }
 });
