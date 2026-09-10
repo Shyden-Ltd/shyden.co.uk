@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test';
-import {
-  LOCALES,
-  localisePath,
-  getSiteStrings,
-  getStrings,
-} from '../../src/lib/i18n/index';
+import { LOCALES, localisePath, getStrings } from '../../src/lib/i18n/index';
+import { deployedRoutes } from '../site-pages';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -51,33 +47,16 @@ test('the Classroom Group Creator loads on dev', async ({ page }) => {
  * gate between develop and production, so a list that silently stops covering
  * new routes is not a coverage gap, it is a gate that stopped gating.
  *
- * DERIVED, so a sixth language is covered the day it joins LOCALES and nobody
- * has to remember this file. The expected heading comes from the same
+ * DERIVED ON BOTH AXES, so a sixth language is covered the day it joins
+ * LOCALES and a fourth page the day it appears under `src/pages/` — nobody has
+ * to remember this file. The page axis was hand-written until #89, which is
+ * how a new page could be smoked by curl and never rendered in a browser. The expected heading comes from the same
  * catalogue the page renders from, which closes the "second hand-written
  * table" drift but opens a smaller hole: a catalogue accidentally left as
  * English would agree with itself and pass. The differs-from-English check
  * below is the independent half.
  */
-const ROUTES = LOCALES.flatMap((locale) => [
-  {
-    locale,
-    path: localisePath('/', locale),
-    heading: getSiteStrings(locale).home.heroHeading,
-    englishHeading: getSiteStrings('en').home.heroHeading,
-  },
-  {
-    locale,
-    path: localisePath('/glory-points', locale),
-    heading: getSiteStrings(locale).glory.heading,
-    englishHeading: getSiteStrings('en').glory.heading,
-  },
-  {
-    locale,
-    path: localisePath('/classroom-groups', locale),
-    heading: getStrings(locale).heading,
-    englishHeading: getStrings('en').heading,
-  },
-]);
+const ROUTES = deployedRoutes();
 
 test.describe('every locale the site claims to serve is deployed', () => {
   for (const { locale, path, heading, englishHeading } of ROUTES) {
