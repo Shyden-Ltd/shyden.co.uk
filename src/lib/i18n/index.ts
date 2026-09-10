@@ -47,6 +47,31 @@ export const PREFIXED_LOCALES: readonly Locale[] = LOCALES.filter(
  * The `(?=\/|$)` boundary is load-bearing: without it `/identity-check` parses
  * as Indonesian and gets rewritten.
  */
+/**
+ * The badge shown beside every BETA locale, in every locale.
+ *
+ * Deliberately ONE untranslated token (operator decision, 2026-09-10). The
+ * badge labels a LANGUAGE, and it is rendered beside languages the reader may
+ * not speak -- on an English page it marks Bahasa Indonesia and the rest, so
+ * "BETA" in the page's current language would describe the wrong thing to the
+ * one visitor who most needs it. The NOTICE and the accessible label are
+ * translated; see `language.betaNotice` / `language.betaLabel` in `site.ts`.
+ */
+export const BETA_BADGE = 'BETA';
+
+/**
+ * Whether a locale's copy is unverified -- true for everything but the default.
+ *
+ * Derived, never enumerated. Shyden Ltd has no native speakers for any locale
+ * but English, so "unverified" is a property of the whole non-English set and
+ * not of four particular codes. A hand-written set would miss the next locale
+ * added on the day it is added, which is the exact failure behind #24, #49 and
+ * #60 -- and Indonesian, which is LIVE on production and unverified, is the
+ * proof the distinction is not academic.
+ */
+export const isBetaLocale = (locale: Locale): boolean =>
+  locale !== DEFAULT_LOCALE;
+
 const PREFIX_PATTERN = new RegExp(`^/(${PREFIXED_LOCALES.join('|')})(?=/|$)`);
 
 const TABLE: Record<Locale, Strings> = { en, id, zh, vi, th };

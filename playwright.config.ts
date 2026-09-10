@@ -112,6 +112,14 @@ export default defineConfig({
     // hundreds of megabytes of artefact for runs that told us nothing. This
     // costs nothing on a green run.
     trace: 'retain-on-failure',
+
+    // A video per journey is a standing requirement of the evidence page
+    // (operator, 2026-08-22), and is worth nothing on a normal run: recording
+    // ~2200 tests is minutes of wall clock and gigabytes of disk. Gated on the
+    // same switch tests/e2e/evidence.ts uses, so an evidence run is exactly
+    // `EVIDENCE_DIR=<dir> npx playwright test <spec>` and needs no second flag
+    // anybody could forget.
+    video: process.env.EVIDENCE_DIR ? 'on' : 'off',
   },
   projects: [
     // Bytes and DOM text are identical on every engine, so running these five

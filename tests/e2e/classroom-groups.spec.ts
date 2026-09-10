@@ -9,6 +9,7 @@ import {
   addSeveral,
   buildRoster,
   giveEveryoneASex,
+  contrastRatio,
 } from './helpers';
 
 /**
@@ -1243,42 +1244,9 @@ test.describe('out-of-date groups', () => {
     await shuffle(page);
     await page.getByLabel('Students in each group').fill('3');
     await expect(page.locator('#cg-results')).toHaveClass(/stale/);
-    const contrast = await page
-      .locator('#cg-results .group')
-      .first()
-      .evaluate((el) => {
-        const style = getComputedStyle(el);
-        const opacity = Number(style.opacity);
-        // `.group` paints no background of its own (see this page's own
-        // :global CSS comment on why the results area is styled that way)
-        // -- walk up for the first ancestor that actually sets one, the
-        // same resolution the browser performs when compositing.
-        let bgEl = el.parentElement;
-        let backgroundCss = 'rgba(0, 0, 0, 0)';
-        while (bgEl) {
-          const c = getComputedStyle(bgEl).backgroundColor;
-          if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') {
-            backgroundCss = c;
-            break;
-          }
-          bgEl = bgEl.parentElement;
-        }
-        const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
-        const [ir, ig, ib] = nums(style.color);
-        const [br, bgn, bb] = nums(backgroundCss);
-        const mix = (i: number, b: number) => opacity * i + (1 - opacity) * b;
-        const lin = (c: number) => {
-          const s = c / 255;
-          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-        };
-        const luminance = (r: number, g: number, b: number) =>
-          0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-        const textLum = luminance(mix(ir, br), mix(ig, bgn), mix(ib, bb));
-        const bgLum = luminance(br, bgn, bb);
-        const lighter = Math.max(textLum, bgLum);
-        const darker = Math.min(textLum, bgLum);
-        return (lighter + 0.05) / (darker + 0.05);
-      });
+    const contrast = await contrastRatio(
+      page.locator('#cg-results .group').first(),
+    );
     expect(contrast).toBeGreaterThanOrEqual(4.5);
   });
 

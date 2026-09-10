@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 /**
  * Fixtures for driving the roster into a starting state -- Stage 3, 4 and 5
@@ -283,3 +283,50 @@ export const handoverTo = async (page: Page, language: string | RegExp) => {
   await page.locator('#cg-io-both-toggle').click();
   await page.getByRole('button', { name: language }).click();
 };
+
+/**
+ * The contrast ratio the browser actually PAINTS for an element's text.
+ *
+ * Not the token values: it resolves `opacity` and walks up for the first
+ * ancestor that actually sets a background, which is the composite the browser
+ * performs. A dimmed element whose colour token passes AA on paper can still
+ * fail once its own opacity is mixed against what is behind it -- that is the
+ * bug this was first written for, in classroom-groups.
+ *
+ * Here rather than copied into a second spec: two contrast computations that
+ * differ by one term would disagree about the same pixels, and the suite that
+ * got the lenient one would pass while the page failed a real audit.
+ */
+export const contrastRatio = async (target: Locator): Promise<number> =>
+  target.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const opacity = Number(style.opacity);
+    // Start at the element itself -- it may paint its own background -- and
+    // walk up until something does, the same resolution the browser performs
+    // when compositing.
+    let bgEl: Element | null = el;
+    let backgroundCss = 'rgba(0, 0, 0, 0)';
+    while (bgEl) {
+      const c = getComputedStyle(bgEl).backgroundColor;
+      if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') {
+        backgroundCss = c;
+        break;
+      }
+      bgEl = bgEl.parentElement;
+    }
+    const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
+    const [ir, ig, ib] = nums(style.color);
+    const [br, bgn, bb] = nums(backgroundCss);
+    const mix = (i: number, b: number) => opacity * i + (1 - opacity) * b;
+    const lin = (c: number) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = (r: number, g: number, b: number) =>
+      0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    const textLum = luminance(mix(ir, br), mix(ig, bgn), mix(ib, bb));
+    const bgLum = luminance(br, bgn, bb);
+    const lighter = Math.max(textLum, bgLum);
+    const darker = Math.min(textLum, bgLum);
+    return (lighter + 0.05) / (darker + 0.05);
+  });

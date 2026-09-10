@@ -93,7 +93,14 @@ export const siteEn = {
   // Stage 2: it could only ever label one alternative. The switcher now reads
   // each language's own name from LOCALE_METADATA. `label` names the control
   // itself and stays.
-  language: { label: 'Language' },
+  language: {
+    label: 'Language',
+    // `betaLabel` is the accessible name for the BETA badge; the badge's own
+    // text is BETA_BADGE and is deliberately NOT translated (it labels a
+    // language the reader may not speak). This label and the notice ARE.
+    betaLabel: 'beta translation',
+    betaNotice: 'Translations may not be accurate. If you notice it, tell us.',
+  },
 };
 
 export type SiteStrings = typeof siteEn;
@@ -172,7 +179,12 @@ export const siteId: SiteStrings = {
     },
   },
 
-  language: { label: 'Bahasa' },
+  language: {
+    label: 'Bahasa',
+    betaLabel: 'terjemahan beta',
+    betaNotice:
+      'Terjemahan mungkin tidak akurat. Jika Anda melihatnya, beri tahu kami.',
+  },
 };
 
 /**
@@ -253,6 +265,8 @@ export const siteZh: SiteStrings = {
   },
   language: {
     label: '语言',
+    betaLabel: '测试版翻译',
+    betaNotice: '翻译可能不准确。如果您发现问题，请告诉我们。',
   },
 };
 
@@ -338,6 +352,9 @@ export const siteVi: SiteStrings = {
   },
   language: {
     label: 'Ngôn ngữ',
+    betaLabel: 'bản dịch beta',
+    betaNotice:
+      'Bản dịch có thể không chính xác. Nếu bạn phát hiện lỗi, hãy cho chúng tôi biết.',
   },
 };
 
@@ -420,6 +437,8 @@ export const siteTh: SiteStrings = {
   },
   language: {
     label: 'ภาษา',
+    betaLabel: 'คำแปลเวอร์ชันเบต้า',
+    betaNotice: 'คำแปลอาจไม่ถูกต้อง หากคุณพบข้อผิดพลาด โปรดแจ้งให้เราทราบ',
   },
 };
 
