@@ -28,7 +28,29 @@ if (!existsSync('.git')) {
   process.exit(0);
 }
 
-execFileSync('git', ['config', 'core.hooksPath', HOOKS]);
+// `.git` existing is a PROXY for "git will work here", and it is weaker than
+// the thing it stands for: git refuses a repository whose files are owned by
+// another user unless it is named in `safe.directory`, and a container job
+// checks out as one uid and runs as another. The guard above passed, this
+// line then died with `fatal: not in a git directory`, and it failed
+// `npm ci` -- so a job that only wanted to run tests could not install at
+// all. Found by adding a containerised CI job (#33), never by reading.
+//
+// A hook installer must never fail an install. Not installing a convenience
+// is not an error; claiming to have installed one would be.
+try {
+  execFileSync('git', ['config', 'core.hooksPath', HOOKS], {
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+} catch (error) {
+  const detail = String(error?.stderr ?? '').trim() || 'git refused';
+  console.log(
+    `install-hooks: git would not accept a config here (${detail}), so no ` +
+      `hooks were installed. That is expected inside a container or a CI ` +
+      `checkout, and it is not a reason to fail the install.`,
+  );
+  process.exit(0);
+}
 console.log(
   `install-hooks: git will run hooks from ${HOOKS}/ — ` +
     `pre-push checks formatting and unit tests. Bypass one push with --no-verify.`,

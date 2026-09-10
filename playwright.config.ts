@@ -31,6 +31,43 @@ const contentOnly = new RegExp(
   `(?:${CONTENT_ONLY_SPECS.map((s) => s.replace(/\./g, '\\.')).join('|')})$`,
 );
 
+/**
+ * The visual-regression suite, scoped to its own single-engine project (#33).
+ *
+ * It cannot join `content`: that project's specs are guarded as ones which
+ * never drive the viewport, and a baseline needs a desktop width AND a mobile
+ * one. It must not join the five engines either -- that would demand five sets
+ * of baselines for a question about OUR css, not about WebKit's.
+ */
+// Anchored on a path boundary, not just the suffix. `/visual\.spec\.ts$/`
+// also claims `audiovisual.spec.ts` -- and because the five engines IGNORE
+// this pattern, a spec so named would silently stop running everywhere.
+// Same substring trap as `/glory-points` matching `/id/glory-points` in
+// #21 Stage 4; caught here by the guard rather than in production.
+const visualOnly = /(?:^|\/)visual\.spec\.ts$/;
+
+/**
+ * One engine, one set of baselines -- and OPT-IN, behind `VISUAL=1`.
+ *
+ * Exported so `tests/unit/browser-matrix.test.ts` can pin its shape without
+ * the env var set, and conditional so the ordinary `npm run test:e2e` run is
+ * unchanged: a bare GitHub runner and the pinned container render text
+ * differently, and comparing container-made baselines on a bare runner fails
+ * for a reason that has nothing to do with the site.
+ *
+ * A wrong env var cannot make this pass vacuously. `--project=visual` against
+ * a config that does not declare it is a hard Playwright error, not an empty
+ * run -- the liveness control is the tool's own.
+ *
+ * The widths come from `test.use` inside the spec rather than from a device
+ * here, so the two viewports sit beside the assertions that depend on them.
+ */
+export const VISUAL_PROJECT = {
+  name: 'visual',
+  use: { ...devices['Desktop Chrome'] },
+  testMatch: visualOnly,
+};
+
 const ENGINES = [
   { name: 'chromium', device: 'Desktop Chrome' },
   { name: 'firefox', device: 'Desktop Firefox' },
@@ -65,6 +102,35 @@ export default defineConfig({
   // of this config that does NOT go through the runner (e.g. a bare
   // `npx playwright test`) never has `PW_REUSE_SERVER` set, so it keeps the
   // original safe behaviour unchanged: refuse an already-listening server.
+  /**
+   * `{platform}` is in the path DELIBERATELY, not for tidiness.
+   *
+   * Playwright renders differently on macOS and Linux -- font rasterisation
+   * and scrollbars alone are enough -- so a baseline captured on a laptop is
+   * not the baseline CI compares against. Spelling the platform into the
+   * filename makes that visible in the diff instead of surfacing as a missing
+   * snapshot on a runner nobody was looking at.
+   */
+  snapshotPathTemplate: 'tests/e2e/__screenshots__/{arg}-{platform}{ext}',
+  expect: {
+    toHaveScreenshot: {
+      // The flake policy, stated rather than discovered (#33). Anti-aliasing
+      // moves a handful of pixels between otherwise identical runs; a whole
+      // changed element moves far more than 0.2% of them.
+      maxDiffPixelRatio: 0.002,
+      // The PER-PIXEL tolerance, and the half that was nearly left defaulted.
+      // Playwright scores pixels in YIQ space and allows 35215 * threshold^2;
+      // the default 0.2 permits ~1409, while recolouring the accent from
+      // #0a7d66 to #0a66c2 -- a green button turning blue -- scores only ~488.
+      // Every screenshot passed on that change until this line existed. A
+      // ratio without a threshold is half a policy: it bounds HOW MANY pixels
+      // may differ while letting each one differ almost arbitrarily.
+      threshold: 0.1,
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+    },
+  },
   webServer: {
     command: 'npm run build && npm run preview',
     url: 'http://localhost:4321',
@@ -137,7 +203,8 @@ export default defineConfig({
     ...ENGINES.map(({ name, device }) => ({
       name,
       use: { ...devices[device] },
-      testIgnore: contentOnly,
+      testIgnore: [contentOnly, visualOnly],
     })),
+    ...(process.env.VISUAL === '1' ? [VISUAL_PROJECT] : []),
   ],
 });
