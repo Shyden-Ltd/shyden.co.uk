@@ -1,5 +1,5 @@
 /**
- * The CSV format's two language tables, and nothing else.
+ * The CSV format's language tables, one per site locale, and nothing else.
  *
  * Separate from `csv.ts` deliberately (design spec section 9, "Language"):
  * when a third locale arrives, the language question has ONE file to read
@@ -9,15 +9,25 @@
  * Everything here is copied verbatim from design spec section 9's own
  * table. Two invariants that table implies are asserted in
  * tests/unit/csv.test.ts rather than left to inspection, because nothing in
- * this repo or in CI type-checks (CLAUDE.md) and both are load-bearing:
+ * this repo or in CI type-checks (CLAUDE.md) and both are load-bearing.
+ * Both are asserted over every unordered PAIR of locales, derived from
+ * `LOCALES` -- written against `en` and `id` by name, they covered one pair
+ * of the ten once #22 shipped five languages:
  *
- *  - The two locales share NO header word. `detectLocale` (Task 4) tells a
- *    file's language from its headers alone, so a word appearing in both
+ *  - No two locales share a header word. `detectLocale` (Task 4) tells a
+ *    file's language from its headers alone, so a word appearing in two
  *    tables would make a real file genuinely ambiguous. It is a design
  *    rule, not a coincidence of translation.
- *  - They share no sex or absent VALUE either. Detection reads headers, but
- *    the parser reads values -- a token meaning one thing in English and
- *    another in Indonesian would mis-import a file that passed detection.
+ *  - No token means two different things. Detection reads headers, but the
+ *    parser reads values -- a `P` reading as female in one table and as
+ *    male in another would mis-import a file that passed detection.
+ *
+ *    Note what this does NOT forbid: two locales may share a token that
+ *    means the SAME thing, and four of them do. `M`/`F` is the correct sex
+ *    token in English, Chinese, Vietnamese and Thai; only Indonesian
+ *    differs (`L`/`P`). The original wording -- "they share no value" --
+ *    was true of `en` and `id` by accident of translation, and enforcing it
+ *    across five would reject correct data.
  *
  * The `# Class:` / `# Kelas:` comment carries the class name so it
  * round-trips (spec section 9), and is the ONE `#` line that is not
@@ -27,10 +37,10 @@
 /**
  * The site's languages — RE-EXPORTED from `i18n`, never declared again here.
  *
- * A second `'en' | 'id'` union would be structurally identical, so nothing
- * in this repo would ever report the two drifting apart: TypeScript would
- * accept it and there is no type checker in CI regardless. Deriving it means
- * a third site locale makes `CSV_LOCALES` fail its own completeness test
+ * A second union of the same members would be structurally identical, so
+ * nothing in this repo would ever report the two drifting apart: TypeScript
+ * would accept it and there is no type checker in CI regardless. Deriving it
+ * means a NEW site locale makes `CSV_LOCALES` fail its own completeness test
  * below, rather than shipping a page whose export button has no table to
  * read.
  */
