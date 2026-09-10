@@ -33,42 +33,60 @@ import { filesUnder } from '../source-files';
  * warning channels have renderer-specific guards of their own.
  */
 
-/** Every built page, grouped by the locale whose directory it sits in. */
-const PAGES_BY_LOCALE = (() => {
-  const html = filesUnder('dist', (path) => /\.html$/.test(path));
-  const prefixes = PREFIXED_LOCALES.map((l) => `dist/${l}/`);
-  const table = {} as Record<Locale, string[]>;
-  for (const locale of LOCALES)
-    table[locale] = html.filter((path) =>
-      locale === 'en'
-        ? !prefixes.some((p) => path.startsWith(p))
-        : path.startsWith(`dist/${locale}/`),
-    );
-  return table;
-})();
+/**
+ * Every built page, and the locales the bilingual 404 answers in.
+ *
+ * The corpus is the WHOLE of `dist/`, not one locale's directory. That was the
+ * first version and it was wrong: `src/pages/404.astro` is deliberately
+ * bilingual -- Cloudflare Pages serves that one file for ANY unknown path, so
+ * answering in both languages is the only thing correct regardless of how the
+ * host resolves a miss. Grouping by directory filed `dist/404.html` under
+ * English alone, so the Indonesian copy inside it was invisible while checking
+ * `id`, and the guard invented a defect that did not exist.
+ *
+ * The claim being tested is "every string reaches A PAGE". Scoping the search
+ * per directory quietly tested something narrower and stricter than that.
+ */
+const BUILT_PAGES = filesUnder('dist', (path) => /\.html$/.test(path));
 
 /**
- * Rendered text of a locale's pages, entity-decoded and whitespace-flattened.
+ * Which locales the 404 actually answers in, DERIVED from its own imports.
+ *
+ * `src/pages/404.astro` imports `siteEn` and `siteId`, so it speaks en and id.
+ * Read from the source rather than listed here, so extending that page to a
+ * third language shrinks the allowlist below on its own -- the same
+ * derive-don't-list rule that #24, #49, #60 and #65 all came from. #22 added
+ * zh, vi and th to LOCALES and did not touch this page, which is exactly the
+ * drift a hand-written list would have hidden.
+ */
+const LOCALES_THE_404_ANSWERS = [
+  ...new Set(
+    (
+      readFileSync('src/pages/404.astro', 'utf8').match(
+        /\bsite([A-Z][a-z]+)\b/g,
+      ) ?? []
+    ).map((m) => m.replace(/^site/, '').toLowerCase()),
+  ),
+].filter((l): l is Locale => (LOCALES as readonly string[]).includes(l));
+
+/**
+ * Rendered text of every built page, entity-decoded and whitespace-flattened.
  *
  * Both normalisations are load-bearing. An apostrophe is served as `&#39;`, so
  * "what you're building" never matches the source string raw; and HTML wraps
  * freely, so a sentence can be split across lines between any two words.
  */
-const renderedText = (locale: Locale) =>
-  PAGES_BY_LOCALE[locale]
-    .map((path) => readFileSync(path, 'utf8'))
-    .join('\n')
-    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) =>
-      String.fromCharCode(parseInt(h, 16)),
-    )
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ');
+const RENDERED = BUILT_PAGES.map((path) => readFileSync(path, 'utf8'))
+  .join('\n')
+  .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+  .replace(/&quot;/g, '"')
+  .replace(/&apos;/g, "'")
+  .replace(/&nbsp;/g, ' ')
+  .replace(/&amp;/g, '&')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/\s+/g, ' ');
 
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -120,7 +138,7 @@ const ABSENCE_RULES: ReadonlyArray<{
       'locale; dead-copy.test.ts keeps the reference check for them.',
   },
   {
-    locales: PREFIXED_LOCALES,
+    locales: LOCALES.filter((l) => !LOCALES_THE_404_ANSWERS.includes(l)),
     paths: [
       'notFound.title',
       'notFound.description',
@@ -134,6 +152,16 @@ const ABSENCE_RULES: ReadonlyArray<{
       'a URL gets an English 404, on production, today. Left visible here ' +
       'rather than deleted: these entries FAIL the day #104 ships, which ' +
       'forces their own removal.',
+  },
+  {
+    locales: LOCALES_THE_404_ANSWERS.filter((l) => l !== DEFAULT_LOCALE),
+    paths: ['notFound.title', 'notFound.description'],
+    why:
+      'A document has ONE <title> and one meta description, and the bilingual ' +
+      '404 writes both in the default locale. The second language it answers ' +
+      'in therefore renders its heading, body and link but never its title. ' +
+      'Structural, not drift: SiteStrings is derived from siteEn, so every ' +
+      'locale must define every key whether or not a given page can use it.',
   },
   {
     locales: [DEFAULT_LOCALE],
@@ -161,11 +189,10 @@ test.describe('every site string reaches a built page', () => {
   for (const locale of LOCALES) {
     test(`${locale}: no defined copy renders nowhere`, () => {
       expect(
-        PAGES_BY_LOCALE[locale].length,
-        `${locale} built no pages — the scan below would pass vacuously`,
+        BUILT_PAGES.length,
+        'no built pages — the scan below would pass vacuously',
       ).toBeGreaterThan(0);
 
-      const haystack = renderedText(locale);
       const missing: string[] = [];
       const wronglyAllowed: string[] = [];
       const seen = new Set<string>();
@@ -175,7 +202,7 @@ test.describe('every site string reaches a built page', () => {
         if (!needle) continue;
         const key = `${locale}:${path}`;
         seen.add(key);
-        const present = haystack.includes(needle);
+        const present = RENDERED.includes(needle);
         if (ALLOWED.has(key)) {
           if (present) wronglyAllowed.push(key);
         } else if (!present) {
