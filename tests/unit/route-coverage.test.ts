@@ -3,7 +3,7 @@ import { pageNames } from '../site-pages';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOCALES, PREFIXED_LOCALES } from '../../src/lib/i18n';
-import { withoutTsComments } from './source-text';
+import { withoutTsComments, withoutMarkupComments } from './source-text';
 import { nonEmpty } from '../source-files';
 
 /**
@@ -63,7 +63,16 @@ describe('every locale is routed from LOCALES, not from a directory per locale',
 
   it('generates its paths from PREFIXED_LOCALES, not from a literal list', () => {
     for (const route of pageNames()) {
-      const src = readFileSync(join(LOCALE_ROUTE, `${route}.astro`), 'utf8');
+      // Comments stripped BOTH ways before matching: an `.astro` file is
+      // TypeScript frontmatter plus markup, and a line of either kind
+      // mentioning `PREFIXED_LOCALES` would satisfy a raw `toContain` after
+      // the real derivation had been replaced by a literal list -- which is
+      // the exact thing this test exists to forbid (#98).
+      const src = withoutMarkupComments(
+        withoutTsComments(
+          readFileSync(join(LOCALE_ROUTE, `${route}.astro`), 'utf8'),
+        ),
+      );
       expect(src, `${route}.astro`).toContain('PREFIXED_LOCALES');
       expect(src, `${route}.astro has no getStaticPaths`).toContain(
         'getStaticPaths',

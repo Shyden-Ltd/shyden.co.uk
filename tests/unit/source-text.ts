@@ -92,11 +92,20 @@ export const withoutYamlQuotes = (text: string): string =>
  * Deliberately leaves trailing comments alone: a GitHub workflow's `run:`
  * blocks are shell, where `#` inside a quoted string is not a comment, and
  * removing those would change the very commands being asserted about.
+ *
+ * Shares its per-line test with `isMarkerCommentLine` above rather than
+ * spelling the same `trimStart().startsWith(marker)` twice — a caller that
+ * needs the comments themselves, instead of the text without them, takes the
+ * predicate. `marker` is REQUIRED there: it is never used point-free, and a
+ * defaulted second parameter is what broke `isCommentLine`.
  */
+export const isMarkerCommentLine = (line: string, marker: string): boolean =>
+  line.trimStart().startsWith(marker);
+
 export const withoutCommentLines = (text: string, marker = '#'): string =>
   text
     .split('\n')
-    .filter((line) => !line.trimStart().startsWith(marker))
+    .filter((line) => !isMarkerCommentLine(line, marker))
     .join('\n');
 
 /**
@@ -223,6 +232,13 @@ export function withoutTsComments(source: string): string {
  * backwards over the comment block above a line rather than transform a whole
  * file — `parked-tests.test.ts` does, to attribute a parked test to the note
  * that explains it.
+ *
+ * Takes ONE parameter, and must keep taking one: it is used point-free as
+ * `lines.map(isCommentLine)`, where a second optional parameter would silently
+ * receive the ARRAY INDEX. An `marker?: string` overload was written here and
+ * `astro check` caught it the same minute — `startsWith(0)` coerces to `'0'`
+ * and every call site quietly returns false. `isMarkerCommentLine` below is
+ * the marker-taking form, and it requires its marker for the same reason.
  */
 export function isCommentLine(line: string): boolean {
   const trimmed = line.trimStart();
