@@ -76,10 +76,29 @@ export default defineConfig({
     // occurrences have now been reasoned about from a stack trace and a
     // memory of what the test does.
     //
-    // The measured distribution says this is not load — mobile-safari's max
-    // sits around 10-11.6s against a 30s budget across runs, and the failing
-    // test never appears in the slowest three. So the next occurrence needs
-    // to be diagnosable, not re-argued.
+    // What points away from load is the SIGNATURE, not the margin: the first
+    // occurrence was "WebKit encountered an internal error" inside
+    // `page.goto` — a browser-process failure, before any assertion ran —
+    // and the failing test appears in no project's slowest three.
+    //
+    // The MARGIN no longer supports the comfort this comment used to claim.
+    // It said mobile-safari's max "sits around 10-11.6s against a 30s
+    // budget". Measured on the build CI actually runs — the Linux image
+    // `mcr.microsoft.com/playwright:v1.63.0-noble` at `--workers=2`, which is
+    // what a 4-core GitHub runner takes — whole-test maxima across two full
+    // runs were **17.1s and 19.1s**: about 64% of the 30s budget, and roughly
+    // twice every other project's tail. `page.goto: Test timeout of 30000ms
+    // exceeded` is the TEST timeout, so that is the budget to compare with.
+    //
+    // A green run on this machine is not evidence either way: CI is
+    // `ubuntu-latest`, so `webkit` and `mobile-safari` there are WebKit-GTK,
+    // while a macOS checkout runs WebKit-Mac. Different binaries.
+    //
+    // None of that licenses raising a timeout. These are whole-test
+    // durations: they bound the problem, they do not separate a slow
+    // navigation from a slow test around one. The next occurrence needs to be
+    // diagnosable, not re-argued. See #44 for the full table and the harness
+    // that produced it.
     //
     // `retain-on-failure`, not `on`: a trace per test across ~2200 tests is
     // hundreds of megabytes of artefact for runs that told us nothing. This
