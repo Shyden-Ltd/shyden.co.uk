@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { searched } from '../source-files';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -60,12 +61,17 @@ test.describe('privacy — the class list cannot leave the page', () => {
         })),
       );
 
-      expect(named.length).toBeGreaterThan(0); // the radios are still there
-
       // A `name` on anything but a radio is a leak waiting for a broken
       // script. This fails the moment someone adds one back.
+      //
+      // The separate `named.length > 0` this replaces was the convention #84
+      // moved away from: a control a call site can forget. The population now
+      // sits in the assertion, and `radioNames` below independently fails on
+      // an empty form.
       const leaky = named.filter((c) => c.type !== 'radio');
-      expect(leaky).toEqual([]);
+      expect(
+        searched(leaky, { of: named, what: 'named form controls' }),
+      ).toEqual([]);
 
       const radioNames = [...new Set(named.map((c) => c.name))].sort();
       expect(radioNames).toEqual([...NON_PERSONAL_NAMES].sort());

@@ -7,7 +7,7 @@ import {
   getSiteStrings,
 } from '../../src/lib/i18n/index';
 import type { Locale } from '../../src/lib/i18n/index';
-import { filesUnder } from '../source-files';
+import { filesUnder, searched } from '../source-files';
 
 /**
  * Site copy that reaches no page -- measured against the BUILT BYTES.
@@ -232,7 +232,8 @@ test.describe('every site string reaches a built page', () => {
       const wronglyAllowed: string[] = [];
       const seen = new Set<string>();
 
-      for (const [path, value] of leaves(getSiteStrings(locale))) {
+      const defined = leaves(getSiteStrings(locale));
+      for (const [path, value] of defined) {
         const needle = flat(value);
         if (!needle) continue;
         const key = `${locale}:${path}`;
@@ -252,15 +253,24 @@ test.describe('every site string reaches a built page', () => {
       );
 
       expect(
-        missing,
+        searched(missing, { of: defined, what: `${locale} copy strings` }),
         `${locale}: defined copy that no built page renders`,
       ).toEqual([]);
       expect(
-        wronglyAllowed,
+        searched(wronglyAllowed, {
+          of: defined,
+          what: `${locale} copy strings`,
+        }),
         'allowlisted as deliberately absent, but rendered — remove the entry',
       ).toEqual([]);
       expect(
-        phantom,
+        // `seen`, not `ALLOWED`. An empty allowlist is a legitimate state and
+        // rightly reports nothing; an empty `seen` is what makes this
+        // judgement meaningless, because then EVERY entry looks phantom.
+        searched(phantom, {
+          of: [...seen],
+          what: `${locale} copy keys examined`,
+        }),
         'allowlisted key does not exist in the copy table — stale rule',
       ).toEqual([]);
     });

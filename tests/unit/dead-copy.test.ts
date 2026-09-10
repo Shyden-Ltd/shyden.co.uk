@@ -8,7 +8,7 @@ import {
 import { join } from 'node:path';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
-import { filesUnder } from '../source-files';
+import { filesUnder, searched } from '../source-files';
 
 /**
  * A defined string that nothing renders.
@@ -72,18 +72,20 @@ const isReferenced = (key: string) =>
 
 describe('every translated string reaches a page', () => {
   it('the tool locale defines nothing that no page renders', () => {
-    const unused = Object.keys(en).filter((key) => !isReferenced(key));
-    expect(unused).toEqual([]);
+    const defined = Object.keys(en);
+    const unused = defined.filter((key) => !isReferenced(key));
+    expect(searched(unused, { of: defined, what: 'tool copy keys' })).toEqual(
+      [],
+    );
   });
 
   it('every error code the copy defines is rendered by renderError', () => {
     const renderer = strippedSource(
       readFileSync('src/lib/i18n/index.ts', 'utf8'),
     );
-    const unused = Object.keys(en.errors).filter(
-      (code) => !renderer.includes(code),
-    );
-    expect(unused).toEqual([]);
+    const defined = Object.keys(en.errors);
+    const unused = defined.filter((code) => !renderer.includes(code));
+    expect(searched(unused, { of: defined, what: 'error codes' })).toEqual([]);
   });
 
   // Task 8a. Same check, same reasoning, for the warnings channel:
@@ -99,16 +101,18 @@ describe('every translated string reaches a page', () => {
     const renderer = strippedSource(
       readFileSync('src/lib/i18n/index.ts', 'utf8'),
     );
-    const unused = Object.keys(en.warnings).filter(
-      (code) => !renderer.includes(code),
+    const defined = Object.keys(en.warnings);
+    const unused = defined.filter((code) => !renderer.includes(code));
+    expect(searched(unused, { of: defined, what: 'warning codes' })).toEqual(
+      [],
     );
-    expect(unused).toEqual([]);
   });
 
   it('the site-wide copy defines nothing that no page renders', () => {
     // Nested one level: `footer.companyNo`, `glory.needsJs`.
     const unused: string[] = [];
-    for (const [group, value] of Object.entries(siteEn)) {
+    const groups = Object.entries(siteEn);
+    for (const [group, value] of groups) {
       if (!isReferenced(group)) {
         unused.push(group);
         continue;
@@ -119,6 +123,8 @@ describe('every translated string reaches a page', () => {
         }
       }
     }
-    expect(unused).toEqual([]);
+    expect(searched(unused, { of: groups, what: 'site copy groups' })).toEqual(
+      [],
+    );
   });
 });
