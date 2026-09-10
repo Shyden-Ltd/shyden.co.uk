@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withoutCommentLines } from './source-text';
 import { nonEmpty, searched } from '../source-files';
+import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 
 /**
@@ -362,6 +363,19 @@ describe('the e2e reconciliation guard cannot be bypassed', () => {
     // own config (playwright.dev/prod.config.ts) and are not the full corpus.
     // Anything invoking the DEFAULT config, though, is the full suite and must
     // come through the guard.
+    //
+    // One exception, and it is DERIVED rather than written down: the visual
+    // project (#33) is not part of the default corpus at all -- it exists
+    // only under `VISUAL=1`, so `test-e2e.mjs` never enumerates it and there
+    // is nothing for the reconciliation to reconcile. Naming it here by
+    // importing it means renaming the project moves this exemption with it,
+    // instead of leaving a stale allowance behind. Playwright supplies the
+    // liveness itself: an unknown project, or one matching no tests, is a
+    // hard error rather than a green empty run.
+    //
+    // `--project=` alone is NOT enough to be exempt. `--project=chromium`
+    // would run a fifth of the real corpus with nobody counting it.
+    const subset = new RegExp(`--project=${VISUAL_PROJECT.name}\\b`);
     const bypasses = workflowFileNames()
       .flatMap((file) =>
         workflow(file)
@@ -370,7 +384,9 @@ describe('the e2e reconciliation guard cannot be bypassed', () => {
       )
       .filter(
         ({ line }) =>
-          /\bplaywright\s+test\b/.test(line) && !line.includes('--config='),
+          /\bplaywright\s+test\b/.test(line) &&
+          !line.includes('--config=') &&
+          !subset.test(line),
       );
 
     expect(
@@ -381,5 +397,54 @@ describe('the e2e reconciliation guard cannot be bypassed', () => {
       'a workflow running the default config outside `npm run test:e2e` is a ' +
         'full suite whose completeness nobody checks',
     ).toEqual([]);
+  });
+});
+
+/**
+ * The visual-regression job, and the one flag that would hollow it out (#33).
+ *
+ * A screenshot suite that can rewrite its own baseline asserts nothing, and
+ * the flag that does it is three words long. This is the same family as every
+ * other guard here: the pipeline is only as good as the thing nobody has
+ * quietly edited.
+ *
+ * Read over COMMENT-STRIPPED text, and in the inverse direction from the
+ * usual reason. These are ABSENCE assertions, so a comment naming the flag
+ * makes them go RED on a workflow that is correct -- and `ci.yml`'s own
+ * comment explains that it never passes `--update-snapshots`, which would
+ * fail this guard on the sentence promising the thing it checks for.
+ */
+describe('the visual-regression job cannot rewrite what it checks', () => {
+  it('never passes --update-snapshots, in any workflow', () => {
+    // `workflowFileNames` refuses an empty read (#84), so this loop cannot
+    // run over nothing and report success.
+    for (const name of workflowFileNames()) {
+      if (!name.endsWith('.yml') && !name.endsWith('.yaml')) continue;
+      expect(
+        withoutCommentLines(workflow(name), '#'),
+        `${name} can rewrite the baseline it is checking against`,
+      ).not.toContain('--update-snapshots');
+    }
+  });
+
+  it('pins the same image the baselines are captured in', () => {
+    // Written down once. A browser bundle from a different release than the
+    // library driving it fails in ways neither one reports clearly, and the
+    // capture script derives the image from this same version rather than
+    // repeating it.
+    const { version } = JSON.parse(
+      readFileSync('node_modules/@playwright/test/package.json', 'utf8'),
+    ) as { version: string };
+    expect(withoutCommentLines(workflow('ci.yml'), '#')).toContain(
+      `image: mcr.microsoft.com/playwright:v${version}-noble`,
+    );
+  });
+
+  it('runs the visual project, with the switch that declares it', () => {
+    const ci = withoutCommentLines(workflow('ci.yml'), '#');
+    expect(ci).toMatch(/npx playwright test --project=visual\s*$/m);
+    // Without it the project is not declared at all, and `--project=visual`
+    // is a hard Playwright error rather than an empty, green run.
+    expect(ci).toMatch(/VISUAL:\s*'1'/);
   });
 });

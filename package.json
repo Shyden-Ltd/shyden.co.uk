@@ -13,6 +13,8 @@
     "typecheck": "astro check",
     "test:unit": "vitest run",
     "test:e2e": "node scripts/test-e2e.mjs",
+    "test:visual": "VISUAL=1 playwright test --project=visual",
+    "test:visual:update": "node scripts/visual-baselines.mjs",
     "test:ios": "vitest run --config vitest.ios.config.ts --reporter=verbose",
     "test:devices": "node scripts/test-devices.mjs",
     "i18n:translate": "node scripts/i18n-translate.mjs",

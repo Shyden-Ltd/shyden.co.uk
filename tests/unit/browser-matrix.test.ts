@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import config, { CONTENT_ONLY_SPECS } from '../../playwright.config';
+import config, {
+  CONTENT_ONLY_SPECS,
+  VISUAL_PROJECT,
+} from '../../playwright.config';
 import { searched } from '../source-files';
 
 /**
@@ -68,10 +71,24 @@ describe('the content-only project', () => {
     // Compare spec NAMES, not regex source: the pattern is escaped, so strip
     // the backslashes rather than re-deriving the escaping here and testing
     // this file's own idea of it.
-    const ignored = (p: { testIgnore?: unknown }) =>
-      String(p.testIgnore ?? '').replace(/\\/g, '');
-    const runners = (config.projects ?? []).filter(
-      (p) => !CONTENT_ONLY_SPECS.every((s) => ignored(p).includes(s)),
+    //
+    // And ask what a project actually MATCHES, not what its `testIgnore`
+    // spells. Reading `testIgnore` alone made a project scoped the OTHER way
+    // -- by `testMatch`, which is how `visual` is scoped -- look like it ran
+    // everything (#33). A guard that infers coverage from one of the two
+    // mechanisms is blind to the other.
+    const matches = (
+      p: { testIgnore?: unknown; testMatch?: unknown },
+      spec: string,
+    ) => {
+      const ignored = String(p.testIgnore ?? '').replace(/\\/g, '');
+      if (ignored.includes(spec)) return false;
+      if (p.testMatch instanceof RegExp) return p.testMatch.test(spec);
+      if (typeof p.testMatch === 'string') return spec.includes(p.testMatch);
+      return true;
+    };
+    const runners = (config.projects ?? []).filter((p) =>
+      CONTENT_ONLY_SPECS.some((s) => matches(p, s)),
     );
 
     expect(runners.map((p) => p.name)).toEqual(['content']);
@@ -80,7 +97,7 @@ describe('the content-only project', () => {
   it('leaves every rendering engine still covering the rest of the suite', () => {
     const engines = (config.projects ?? [])
       .map((p) => p.name)
-      .filter((n) => n !== 'content');
+      .filter((n) => n !== 'content' && n !== 'visual');
 
     expect(engines).toEqual([
       'chromium',
@@ -89,5 +106,72 @@ describe('the content-only project', () => {
       'mobile-chrome',
       'mobile-safari',
     ]);
+  });
+});
+
+/**
+ * The visual-regression wiring (#33).
+ *
+ * A screenshot suite fails in two directions and only one of them is loud.
+ * It can go red on a font-rendering difference nobody caused -- which gets it
+ * switched off within a week -- or it can quietly stop asserting, which is
+ * this repo's recurring defect in a new medium. Both are wiring, so both are
+ * pinned here rather than left to whoever next edits the config.
+ */
+describe('the visual-regression project', () => {
+  it('matches its own spec and nothing else', () => {
+    expect(VISUAL_PROJECT.testMatch.test('visual.spec.ts')).toBe(true);
+    expect(VISUAL_PROJECT.testMatch.test('tests/e2e/visual.spec.ts')).toBe(
+      true,
+    );
+    // Not a spec that merely CONTAINS the word, and not the whole corpus.
+    expect(VISUAL_PROJECT.testMatch.test('audiovisual.spec.ts')).toBe(false);
+    expect(VISUAL_PROJECT.testMatch.test('seo.spec.ts')).toBe(false);
+  });
+
+  it('runs on exactly one engine, so one set of baselines exists', () => {
+    expect(VISUAL_PROJECT.name).toBe('visual');
+    expect(VISUAL_PROJECT.use.defaultBrowserType).toBe('chromium');
+  });
+
+  it('is excluded from every OTHER project', () => {
+    // Measured, not assumed: with the spec present and this exclusion absent,
+    // `playwright test --list` grows by 40 tests -- the same 8 claimed by all
+    // five engines, demanding five sets of baselines for a question about our
+    // CSS rather than about WebKit's.
+    const others = (config.projects ?? []).filter((p) => p.name !== 'visual');
+    expect(others.length).toBeGreaterThan(3);
+    for (const project of others) {
+      const ignored = String(project.testIgnore ?? '');
+      const matched = project.testMatch;
+      const claims =
+        !ignored.includes('visual') &&
+        (matched instanceof RegExp
+          ? matched.test('visual.spec.ts')
+          : matched === undefined);
+      expect(claims, `${project.name} would claim visual.spec.ts`).toBe(false);
+    }
+  });
+
+  it('states its flake policy rather than discovering it', () => {
+    const shot = config.expect?.toHaveScreenshot;
+    expect(shot, 'no screenshot policy at all').toBeDefined();
+    // Anti-aliasing moves a handful of pixels; a changed element moves far
+    // more. A threshold left at the default is a policy nobody chose.
+    expect(shot?.maxDiffPixelRatio).toBeGreaterThan(0);
+    expect(shot?.maxDiffPixelRatio).toBeLessThan(0.01);
+    expect(shot?.animations).toBe('disabled');
+    expect(shot?.caret).toBe('hide');
+    // Pins the device-pixel ratio, so a HiDPI runner and a normal one produce
+    // comparable images rather than a doubled one.
+    expect(shot?.scale).toBe('css');
+  });
+
+  it('keeps the platform in the baseline filename', () => {
+    // macOS and Linux rasterise text differently, so a laptop-made baseline
+    // is not the one CI compares against. Spelling the platform into the path
+    // makes that visible in a diff instead of surfacing as a missing snapshot
+    // on a runner nobody was watching.
+    expect(config.snapshotPathTemplate).toContain('{platform}');
   });
 });

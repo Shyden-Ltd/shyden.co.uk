@@ -40,3 +40,44 @@ jobs:
           path: test-results/
           retention-days: 14
           if-no-files-found: ignore
+
+  # The visual-regression suite, in the SAME pinned image the baselines are
+  # captured in (#33). Not a tidiness choice: a bare `ubuntu-latest` runner
+  # and this image ship different font packages, and text rasterised by a
+  # different font stack fails every screenshot for a reason that has nothing
+  # to do with the site. Pinning both sides is what makes the comparison mean
+  # anything.
+  #
+  # `image` tracks the `@playwright/test` version in package.json, and
+  # `tests/unit/browser-matrix.test.ts` fails if the two drift apart -- a
+  # library and a browser bundle from different releases is the one mismatch
+  # this job cannot report clearly.
+  #
+  # It NEVER passes `--update-snapshots`. A CI run that can rewrite the
+  # baseline it is checking against asserts nothing at all, which is the whole
+  # failure class this repo keeps finding; `npm run test:visual:update` is the
+  # only way a baseline changes, and it changes as a reviewable diff in a PR.
+  visual:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright test --project=visual
+        env:
+          VISUAL: '1'
+      # expected / actual / diff PNGs, which is the whole point: a visual
+      # failure that can only be reproduced locally gets ignored.
+      - name: Keep the visual diff
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-diff-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore
