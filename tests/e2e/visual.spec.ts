@@ -65,9 +65,21 @@ for (const { label, viewport } of WIDTHS) {
           await document.fonts.ready;
         });
 
+        // A mask that matches NOTHING masks nothing, silently, and the
+        // baseline quietly regains the copyright year -- which then fails
+        // every 1 January with the mask sitting right there looking like it
+        // handles the case. Same liveness rule as any other collector (#84):
+        // prove the population before trusting the result.
+        const dated = page.locator('p.disclosure');
+        await expect(
+          dated,
+          'nothing to mask — the footer copyright moved, so the year is ' +
+            'about to be baked into a baseline',
+        ).toHaveCount(1);
+
         await expect(page).toHaveScreenshot(`${name}-${label}.png`, {
           fullPage: true,
-          mask: [page.locator('p.disclosure')],
+          mask: [dated],
         });
       });
     }
