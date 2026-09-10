@@ -112,6 +112,21 @@ export default defineConfig({
    * snapshot on a runner nobody was looking at.
    */
   snapshotPathTemplate: 'tests/e2e/__screenshots__/{arg}-{platform}{ext}',
+  /**
+   * Playwright 1.63 defaults this to `'missing'` (`runner/index.js:583`), and
+   * under that default a run whose baseline is absent WRITES the PNG before
+   * failing on a soft error. The failure means nothing is silently accepted --
+   * but an ordinary CI run still produces a baseline nobody reviewed, and the
+   * only guard on that behaviour watched the `--update-snapshots` flag in the
+   * workflow. The flag and this default are two doors into the same room, and
+   * only one of them was being watched.
+   *
+   * `'none'` refuses outright and writes nothing, and it is the only value for
+   * which `applySuggestedRebaselines` returns early instead of being willing
+   * to rewrite expectations during a normal run. Baselines change exactly one
+   * way: `npm run test:visual:update`, reviewed as a diff in a PR.
+   */
+  updateSnapshots: 'none',
   expect: {
     toHaveScreenshot: {
       // The flake policy, stated rather than discovered (#33). Anti-aliasing
