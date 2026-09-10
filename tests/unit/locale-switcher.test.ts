@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { withoutTsComments } from './source-text';
+import { withoutTsComments, withoutMarkupComments } from './source-text';
 import {
   LOCALES,
   otherLocales,
@@ -34,7 +34,23 @@ import { id } from '../../src/lib/i18n/id';
  * which is the only way a tripwire may ever be removed from this file.
  */
 
-const source = (path: string) => readFileSync(path, 'utf8');
+/**
+ * A component's source with its comments removed, BOTH syntaxes.
+ *
+ * An `.astro` file is TypeScript frontmatter plus markup, and either kind of
+ * comment can name the very thing a guard below looks for — `otherLocales(`,
+ * `<LanguageSwitcher`, `<details`. Unstripped, this file's own explanatory
+ * prose satisfies the presence assertions after the code they describe has
+ * gone, and falsely reddens the absence ones beside them (#98).
+ *
+ * Stripped HERE rather than at each call site: two of the six already wrote
+ * `withoutTsComments(source(IO))` by hand and the other four did not, which
+ * is how the gap opened. Measured before trusting it in this medium — all
+ * six asserted tokens survive, and neither component contains a URL, so the
+ * `https://`-as-line-comment hazard does not arise.
+ */
+const source = (path: string) =>
+  withoutMarkupComments(withoutTsComments(readFileSync(path, 'utf8')));
 const SWITCHER = 'src/components/LanguageSwitcher.astro';
 const HEADER = 'src/components/Header.astro';
 const IO = 'src/scripts/io-ui.ts';
@@ -95,7 +111,7 @@ describe('the handover offers every language (tripwire 2, retired)', () => {
   it('no longer chooses a destination on the teacher behalf', () => {
     // The exact shape of the retired bug: the FIRST alternative, taken
     // without asking. Correct for one, a silent decision for two.
-    const src = withoutTsComments(source(IO));
+    const src = source(IO);
     expect(
       src.includes('otherLocales(locale)[0]'),
       'the handover took the first alternative — Stage 3 offers all of them',
@@ -103,7 +119,7 @@ describe('the handover offers every language (tripwire 2, retired)', () => {
   });
 
   it('builds one entry per alternative, labelled in that language own name', () => {
-    const src = withoutTsComments(source(IO));
+    const src = source(IO);
     expect(src).toContain('otherLocales(');
     expect(
       src,
