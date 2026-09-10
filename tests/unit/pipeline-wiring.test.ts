@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withoutCommentLines } from './source-text';
 import { nonEmpty } from '../source-files';
-import { pageNames } from '../site-pages';
+import { sitePaths } from '../site-pages';
 
 /**
  * The deploy pipeline is wired to the things it claims to run.
@@ -58,9 +58,6 @@ const allWorkflows = () =>
       name: f,
       text: runnableText(readFileSync(join(WORKFLOWS, f), 'utf8')),
     }));
-
-/** `index` is served at `/`, every other route at `/<name>`. */
-const urlFor = (route: string) => (route === 'index' ? '/' : `/${route}`);
 
 describe('the deploy pipeline runs what it claims to', () => {
   it('some workflow actually runs the dev sanity suite', () => {
@@ -156,8 +153,8 @@ describe('the deploy pipeline runs what it claims to', () => {
 
     const expected = new Set<string>();
     for (const locale of LOCALES) {
-      for (const route of pageNames()) {
-        const path = localisePath(urlFor(route), locale);
+      for (const page of sitePaths()) {
+        const path = localisePath(page, locale);
         if (path !== home) expected.add(path);
       }
     }
