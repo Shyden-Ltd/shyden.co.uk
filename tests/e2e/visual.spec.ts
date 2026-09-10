@@ -57,7 +57,13 @@ for (const { label, viewport } of WIDTHS) {
         // ships no JavaScript at all, it is already there and this returns
         // immediately.
         await expect(page.locator('h1').first()).toBeVisible();
-        await page.evaluate(() => document.fonts.ready);
+        // Awaited INSIDE the callback, not returned from it.
+        // `document.fonts.ready` resolves with the FontFaceSet itself, which
+        // is not serialisable across the protocol -- returning it makes
+        // Playwright try to marshal a live object back to Node.
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+        });
 
         await expect(page).toHaveScreenshot(`${name}-${label}.png`, {
           fullPage: true,
