@@ -1986,7 +1986,7 @@ if (form) {
     dealSkip = true;
   };
 
-  const animate = async (groups: Student[][], speed: string) => {
+  const animate = async (speed: string) => {
     const myDeal = ++dealToken;
     dealSkip = false;
     const cards = Array.from(tables.querySelectorAll<HTMLElement>('.student'));
@@ -2141,7 +2141,7 @@ if (form) {
     updateStaleness();
 
     try {
-      await animate(groups, speedSelect.value);
+      await animate(speedSelect.value);
     } finally {
       // The deal no longer disables this button at all (see `animate`), so
       // this is not an "undo the disable" step — it re-derives the button's

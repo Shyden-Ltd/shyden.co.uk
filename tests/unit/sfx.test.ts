@@ -644,6 +644,30 @@ describe('buildVoicePlan / landVoicePlan / doneVoicePlans -- the struck-voice ar
     );
   });
 
+  // DONE_PEAK_GAIN had no assertion at all: it was imported beside
+  // LAND_PEAK_GAIN and never used, so the chime's level was free to drift to
+  // any value while every test stayed green. Same shape as the LAND bounds
+  // above, over every voice in the chord rather than one.
+  it("every done voice's bodyPeakGain stays within DONE_PEAK_GAIN's bounds", () => {
+    const lo = doneVoicePlans(constRng(0));
+    const hi = doneVoicePlans(constRng(1));
+    // Liveness, and CONTENT rather than entry count: an empty chord asserts
+    // nothing, and so does a chord of voices carrying no gain.
+    expect(lo).toHaveLength(DONE_CHORD_SEMITONES.length);
+    expect(lo.length).toBeGreaterThan(1);
+    expect(hi).toHaveLength(lo.length);
+    for (const plan of lo)
+      expect(plan.bodyPeakGain).toBeCloseTo(
+        DONE_PEAK_GAIN * (1 - MICRO_VARIATION_MAX.gainFraction),
+        10,
+      );
+    for (const plan of hi)
+      expect(plan.bodyPeakGain).toBeCloseTo(
+        DONE_PEAK_GAIN * (1 + MICRO_VARIATION_MAX.gainFraction),
+        10,
+      );
+  });
+
   it('is deterministic: two calls fed fresh, identically-seeded PRNGs produce an identical plan', () => {
     const planA = landVoicePlan(4, createPrng(99));
     const planB = landVoicePlan(4, createPrng(99));
@@ -760,6 +784,42 @@ describe('SHUFFLE_DURATION_S / SHUFFLE_GRAIN_BOUNDS', () => {
 });
 
 describe('shuffleGrainPlans -- a granular riffle, not a swoosh', () => {
+  // SHUFFLE_GRAIN_PEAK_GAIN had no assertion at all -- imported and never
+  // used -- so the riffle's level was free to drift while every test stayed
+  // green. It is a CEILING, not a flat level: each grain is scaled by
+  // `0.15 + 0.85 * sin(PI * onset / duration)`, an arch that opens at 15% of
+  // the constant, reaches it mid-gesture and falls back. Both ends are
+  // asserted, because a guard on the peak alone would pass an envelope that
+  // never rose, and one on the floor alone would pass an envelope stuck open.
+  it('scales every grain by an arch that touches SHUFFLE_GRAIN_PEAK_GAIN once', () => {
+    const gains = shuffleGrainPlans(constRng(0)).map((g) => g.peakGain);
+    // countMin is 16, so grain 8 sits exactly at sin(PI/2) -- the ceiling is
+    // hit exactly here rather than approached, which is why this is an
+    // equality and not a bound.
+    expect(gains).toHaveLength(SHUFFLE_GRAIN_BOUNDS.countMin);
+    expect(Math.max(...gains)).toBeCloseTo(SHUFFLE_GRAIN_PEAK_GAIN, 10);
+    expect(gains[0]).toBeCloseTo(0.15 * SHUFFLE_GRAIN_PEAK_GAIN, 10);
+    // CONTENT, not entry count: a run of zero-gain grains is still a full
+    // array, and silence is what a broken envelope sounds like.
+    for (const gain of gains) {
+      expect(gain).toBeGreaterThan(0);
+      expect(gain).toBeLessThanOrEqual(SHUFFLE_GRAIN_PEAK_GAIN + 1e-12);
+    }
+  });
+
+  it('holds that ceiling at the maximum grain count too', () => {
+    // seqRng is what this builder's rng contract asks for -- the first draw
+    // picks the count, the rest shape each grain -- and the helper was
+    // written for exactly that and then never called.
+    const gains = shuffleGrainPlans(seqRng([0.999999, 0])).map(
+      (g) => g.peakGain,
+    );
+    expect(gains).toHaveLength(SHUFFLE_GRAIN_BOUNDS.countMax);
+    expect(Math.max(...gains)).toBeCloseTo(SHUFFLE_GRAIN_PEAK_GAIN, 10);
+    for (const gain of gains)
+      expect(gain).toBeLessThanOrEqual(SHUFFLE_GRAIN_PEAK_GAIN + 1e-12);
+  });
+
   it('emits exactly countMin grains when every draw is 0, and exactly countMax when every draw is just under 1', () => {
     expect(shuffleGrainPlans(constRng(0)).length).toBe(
       SHUFFLE_GRAIN_BOUNDS.countMin,
