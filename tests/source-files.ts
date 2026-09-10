@@ -104,3 +104,56 @@ export const tsFilesUnder = (dir: string): string[] =>
  */
 export const specFilesUnder = (dir: string): string[] =>
   filesUnder(dir, (path) => path.endsWith('.spec.ts'));
+
+/**
+ * True for a population member that carries something to find.
+ *
+ * #112's guard counted six entries and stayed green with all six Thai
+ * headers blanked, because six empty strings are six entries. So a blank
+ * string, an empty array, an empty object, a `null` -- none of them is a
+ * subject a guard can search. `0` and `false` ARE: they are values, and a
+ * guard hunting a zero width or an unset flag would be reading them.
+ */
+function isSubstantive(member: unknown): boolean {
+  if (member === null || member === undefined) return false;
+  if (typeof member === 'string') return member.trim() !== '';
+  if (Array.isArray(member)) return member.length > 0;
+  if (member instanceof Map || member instanceof Set) return member.size > 0;
+  if (typeof member === 'object') return Object.keys(member).length > 0;
+  return true;
+}
+
+/**
+ * The population a finding list was drawn from, proved live (#118).
+ *
+ * `expect(findings).toEqual([])` is green in two different worlds: the guard
+ * ran and found nothing, and the guard was handed nothing to run over. This
+ * suite had 108 assertions that could not tell those apart, and the four
+ * vacuities #84 found in the file walkers were all of this shape.
+ *
+ *     expect(searched(findings, { of: pages, what: 'built pages' })).toEqual([]);
+ *
+ * The population sits INSIDE the assertion's own expression, which is the
+ * move #79 made for browser events and #84 made for the walk: a call site
+ * cannot forget a control it has nowhere to omit. It returns the findings
+ * untouched, so the verdict -- and the runner's diff of the offending
+ * entries -- stays with the caller and its own `expect`.
+ *
+ * Prefer handing it the population ITSELF over a count. A count is taken on
+ * trust; an array is content-checked by `isSubstantive` above, which is the
+ * only form that closes #112.
+ */
+export function searched<T>(
+  findings: readonly T[],
+  population: { of: number | readonly unknown[]; what: string },
+): readonly T[] {
+  const { of, what } = population;
+  const live = typeof of === 'number' ? of : of.filter(isSubstantive).length;
+  if (live <= 0)
+    throw new Error(
+      `searched no ${what} — an absence assertion over an empty population ` +
+        'is green whatever the guard does. Counting entries is not counting ' +
+        'content: six blank headers are six entries (#118, #112).',
+    );
+  return findings;
+}
