@@ -1,6 +1,12 @@
 ---
 import Flag from './Flag.astro';
-import { localisePath, otherLocales, type Locale } from '../lib/i18n';
+import BetaBadge from './BetaBadge.astro';
+import {
+  localisePath,
+  otherLocales,
+  isBetaLocale,
+  type Locale,
+} from '../lib/i18n';
 import { metadataFor } from '../lib/i18n/metadata';
 import { getSiteStrings } from '../lib/i18n';
 
@@ -34,6 +40,7 @@ const alternatives = otherLocales(lang).map((code) => ({
   code,
   meta: metadataFor(code),
   href: localisePath(pathname, code),
+  beta: isBetaLocale(code),
 }));
 ---
 
@@ -41,15 +48,17 @@ const alternatives = otherLocales(lang).map((code) => ({
   <summary aria-label={t.language.label}>
     <Flag code={current.flag} />
     <span class="name">{current.nativeName}</span>
+    {isBetaLocale(lang) && <BetaBadge lang={lang} />}
     <span class="caret" aria-hidden="true"></span>
   </summary>
   <ul>
     {
-      alternatives.map(({ code, meta, href }) => (
+      alternatives.map(({ code, meta, href, beta }) => (
         <li>
           <a href={href} hreflang={code} lang={code} rel="alternate">
             <Flag code={meta.flag} />
             <span class="name">{meta.nativeName}</span>
+            {beta && <BetaBadge lang={lang} />}
           </a>
         </li>
       ))

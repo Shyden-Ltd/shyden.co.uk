@@ -1,6 +1,6 @@
 ---
 import { type Locale } from '../lib/i18n';
-import { getSiteStrings } from '../lib/i18n';
+import { BETA_BADGE, getSiteStrings, isBetaLocale } from '../lib/i18n';
 
 interface Props {
   lang: Locale;
@@ -36,11 +36,30 @@ const disclosure = [
   `${t.footer.companyNo} ${companyNo}.`,
   `${t.footer.regOffice} ${regOffice}.`,
 ].join(' ');
+
+// Assembled here for the same reason as `disclosure` above: written inline as
+// two expressions with a newline between them, JSX drops the space and this
+// renders as "BETATranslations may not be accurate." Building it in the
+// frontmatter makes the rendered sentence independent of how the markup wraps.
+//
+// Null on English, which is the one locale Shyden Ltd can confirm verified --
+// a notice on every page would say nothing, and would make the marker
+// meaningless where it matters.
+const betaNotice = isBetaLocale(lang)
+  ? `${BETA_BADGE} — ${t.language.betaNotice}`
+  : null;
 ---
 
 <footer id="contact-legal">
   <div class="inner">
     <p class="disclosure">{disclosure}</p>
+    {
+      betaNotice && (
+        <p class="beta-notice" data-beta-notice>
+          {betaNotice}
+        </p>
+      )
+    }
     <p><a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a></p>
   </div>
 </footer>
