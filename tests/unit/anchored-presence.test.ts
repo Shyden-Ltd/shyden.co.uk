@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
-import { readFileSync } from 'node:fs';
-import { relative } from 'node:path';
 import { filesUnder } from '../source-files';
-
+import { callGraph, declarationsIn, parseFile, rootsOf, where } from './ast';
 /**
  * A presence assertion over source text must be STRIPPED or ANCHORED.
  *
@@ -52,106 +50,21 @@ const STRIPPERS = new Set([
 
 const tsFiles = filesUnder('tests', (path) => path.endsWith('.ts'));
 
-const parse = (file: string) =>
-  ts.createSourceFile(
-    file,
-    readFileSync(file, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-  );
-
-const declaredName = (node: ts.Node): string | null => {
-  if (ts.isFunctionDeclaration(node) && node.name) return node.name.text;
-  const parent = node.parent;
-  if (
-    parent &&
-    ts.isVariableDeclaration(parent) &&
-    ts.isIdentifier(parent.name)
-  )
-    return parent.name.text;
-  return null;
-};
-
-/** Which named functions read file CONTENT, and which strip comments. */
-function buildIndex() {
-  const calls = new Map<string, Set<string>>();
-  const reads = new Set<string>();
-  const strips = new Set<string>();
-  for (const file of tsFiles) {
-    const visit = (node: ts.Node, owner: string | null) => {
-      let mine = owner;
-      const isFn =
-        ts.isFunctionDeclaration(node) ||
-        ts.isArrowFunction(node) ||
-        ts.isFunctionExpression(node);
-      if (isFn) {
-        const name = declaredName(node);
-        if (name) {
-          mine = name;
-          if (!calls.has(mine)) calls.set(mine, new Set());
-        }
-      }
-      if (
-        mine &&
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression)
-      ) {
-        const called = node.expression.text;
-        calls.get(mine)?.add(called);
-        if (READS_CONTENT.has(called)) reads.add(mine);
-        if (STRIPPERS.has(called)) strips.add(mine);
-      }
-      ts.forEachChild(node, (child) => visit(child, mine));
-    };
-    visit(parse(file), null);
-  }
-  // Transitive closure: a caller inherits the property of what it calls.
-  const close = (seed: Iterable<string>): Set<string> => {
-    const set = new Set(seed);
-    for (let pass = 0; pass < 6; pass += 1)
-      for (const [fn, called] of calls)
-        for (const name of called) if (set.has(name)) set.add(fn);
-    return set;
-  };
-  return { readers: close(reads), strippers: close([...strips, ...STRIPPERS]) };
-}
-
-/** Every identifier feeding an expression, innermost callee first. */
-const roots = (node: ts.Node | undefined, acc: string[] = []): string[] => {
-  if (!node) return acc;
-  if (ts.isCallExpression(node)) {
-    if (ts.isIdentifier(node.expression)) acc.push(node.expression.text);
-    else if (ts.isPropertyAccessExpression(node.expression))
-      roots(node.expression.expression, acc);
-    node.arguments.forEach((arg) => roots(arg, acc));
-    return acc;
-  }
-  if (ts.isPropertyAccessExpression(node)) return roots(node.expression, acc);
-  if (ts.isIdentifier(node)) {
-    acc.push(node.text);
-    return acc;
-  }
-  ts.forEachChild(node, (child) => roots(child, acc));
-  return acc;
-};
+/**
+ * Both properties are inherited by CALLERS, so both are closed transitively
+ * over the whole of `tests/**` -- see `./ast`, which #118 extracted from here
+ * so a second meta-guard could reason the same way without a second copy.
+ */
+const graph = callGraph(tsFiles);
+const readers = graph.close(READS_CONTENT);
+const strippers = graph.close(STRIPPERS);
 
 function scan() {
-  const { readers, strippers } = buildIndex();
   const findings: string[] = [];
   let scanned = 0;
   for (const file of tsFiles.filter((f) => /\.(test|spec)\.ts$/.test(f))) {
-    const sf = parse(file);
-    const decls = new Map<string, ts.Expression>();
-    const collect = (node: ts.Node) => {
-      if (
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.initializer
-      )
-        decls.set(node.name.text, node.initializer);
-      ts.forEachChild(node, collect);
-    };
-    collect(sf);
+    const sf = parseFile(file);
+    const decls = declarationsIn(sf);
 
     const check = (node: ts.Node) => {
       if (
@@ -165,14 +78,12 @@ function scan() {
             ? expectCall.arguments[0]
             : undefined;
           if (subject) {
-            let names = roots(subject);
+            let names = rootsOf(subject);
             for (const name of [...names]) {
               const decl = decls.get(name);
-              if (decl) names = names.concat(roots(decl));
+              if (decl) names = names.concat(rootsOf(decl));
             }
-            const fromContent = names.some(
-              (n) => readers.has(n) || READS_CONTENT.has(n),
-            );
+            const fromContent = names.some((n) => readers.has(n));
             const parsed = names.some((n) => PARSED.has(n));
             if (fromContent && !parsed) {
               scanned += 1;
@@ -181,11 +92,8 @@ function scan() {
               const anchored =
                 arg !== undefined && ts.isRegularExpressionLiteral(arg);
               if (!stripped && !anchored) {
-                const { line } = sf.getLineAndCharacterOfPosition(
-                  node.getStart(),
-                );
                 findings.push(
-                  `${relative(process.cwd(), file)}:${line + 1} — ` +
+                  `${where(sf, node)} — ` +
                     node.getText().replace(/\s+/g, ' ').slice(0, 90),
                 );
               }
