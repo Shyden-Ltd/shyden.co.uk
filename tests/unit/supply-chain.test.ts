@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withoutYamlComments, withoutYamlQuotes } from './source-text';
-import { nonEmpty } from '../source-files';
+import { nonEmpty, searched } from '../source-files';
 
 /**
  * The CI supply chain is pinned, and something keeps it current.
@@ -107,7 +107,10 @@ describe('the CI supply chain is pinned', () => {
       .filter(({ text }) => !/@[0-9a-f]{40}(?=\s|$)/.test(text))
       .map(({ where, text }) => `${where} ${text}`);
 
-    expect(unpinned, 'a mutable tag can be repointed under us').toEqual([]);
+    expect(
+      searched(unpinned, { of: externalUses(), what: 'third-party actions' }),
+      'a mutable tag can be repointed under us',
+    ).toEqual([]);
   });
 
   it('every pinned action names the version its SHA resolves to', () => {
@@ -115,7 +118,10 @@ describe('the CI supply chain is pinned', () => {
       .filter(({ text }) => !/@[0-9a-f]{40}\s+#\s*v\d/.test(text))
       .map(({ where, text }) => `${where} ${text}`);
 
-    expect(opaque, 'a bare SHA bump is unreviewable by a human').toEqual([]);
+    expect(
+      searched(opaque, { of: externalUses(), what: 'third-party actions' }),
+      'a bare SHA bump is unreviewable by a human',
+    ).toEqual([]);
   });
 });
 
@@ -141,7 +147,11 @@ describe('Dependabot keeps the pins from rotting', () => {
       .map(([key, refs]) => `${key} used at ${refs.size} sub-paths, ungrouped`);
 
     expect(
-      ungrouped,
+      // The population is every external action, NOT `subPathRepos()`. This
+      // repo uses no sub-path actions today, so naming that as the subject
+      // would rightly refuse -- and the guard would look broken rather than
+      // dormant. Every action was still examined for a sub-path.
+      searched(ungrouped, { of: externalUses(), what: 'third-party actions' }),
       'separate PRs per sub-path break the one-SHA-per-repo invariant',
     ).toEqual([]);
   });
@@ -175,7 +185,10 @@ describe('Dependabot keeps the pins from rotting', () => {
     );
 
     expect(
-      misordered,
+      searched(misordered, {
+        of: ecosystemBlocks(),
+        what: 'Dependabot ecosystem blocks',
+      }),
       'Dependabot assigns to the FIRST matching group and stops',
     ).toEqual([]);
   });

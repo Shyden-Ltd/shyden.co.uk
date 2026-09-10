@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
 import { filesUnder } from '../source-files';
-import { callGraph, declarationsIn, parseFile, rootsOf, where } from './ast';
+import {
+  callGraph,
+  declarationsIn,
+  parseFile,
+  rootsThrough,
+  where,
+} from './ast';
 /**
  * A presence assertion over source text must be STRIPPED or ANCHORED.
  *
@@ -78,16 +84,12 @@ function scan() {
             ? expectCall.arguments[0]
             : undefined;
           if (subject) {
-            let names = rootsOf(subject);
-            for (const name of [...names]) {
-              const decl = decls.get(name);
-              if (decl) names = names.concat(rootsOf(decl));
-            }
-            const fromContent = names.some((n) => readers.has(n));
+            const names = rootsThrough(subject, decls);
+            const fromContent = names.some((n) => readers.reaches(file, n));
             const parsed = names.some((n) => PARSED.has(n));
             if (fromContent && !parsed) {
               scanned += 1;
-              const stripped = names.some((n) => strippers.has(n));
+              const stripped = names.some((n) => strippers.reaches(file, n));
               const arg = node.arguments[0];
               const anchored =
                 arg !== undefined && ts.isRegularExpressionLiteral(arg);
@@ -116,7 +118,11 @@ describe('presence assertions over source text are stripped or anchored', () => 
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    expect(result.scanned).toBeGreaterThan(20);
+    // 32 today. The floor sat at 20 while the real figure was 27, so the
+    // dip to 25 that #118's resolver fixes exposed would not have tripped
+    // it. A liveness floor well under the truth is a control with slack in
+    // it, which is most of the way back to no control at all.
+    expect(result.scanned).toBeGreaterThan(28);
     expect(tsFiles.length).toBeGreaterThan(30);
   });
 
