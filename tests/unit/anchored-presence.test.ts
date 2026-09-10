@@ -118,11 +118,13 @@ describe('presence assertions over source text are stripped or anchored', () => 
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    // 32 today. The floor sat at 20 while the real figure was 27, so the
-    // dip to 25 that #118's resolver fixes exposed would not have tripped
-    // it. A liveness floor well under the truth is a control with slack in
-    // it, which is most of the way back to no control at all.
-    expect(result.scanned).toBeGreaterThan(28);
+    // 28 today, and the figure is worth stating: the floor sat at 20 while
+    // the truth was 27, so a control with that much slack in it is most of
+    // the way back to no control at all. #118 moved the number twice --
+    // UP as the derivation learned to follow local bindings to a fixed
+    // point, then back DOWN as it stopped reading object-literal keys and
+    // parameter names as references. Both were corrections, not drift.
+    expect(result.scanned).toBeGreaterThan(24);
     expect(tsFiles.length).toBeGreaterThan(30);
   });
 

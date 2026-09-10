@@ -74,6 +74,12 @@ export const rootsOf = (
     return acc;
   }
   if (ts.isPropertyAccessExpression(node)) return rootsOf(node.expression, acc);
+  // A key is a BINDING, not a reference. `{ config: {} }` in a test factory
+  // was resolving its key to a `config` helper that reads a file, which made
+  // a deliberately-empty boundary case read as a filesystem scan. Parameter
+  // names leak the same way, so only a default value counts there.
+  if (ts.isPropertyAssignment(node)) return rootsOf(node.initializer, acc);
+  if (ts.isParameter(node)) return rootsOf(node.initializer, acc);
   if (ts.isIdentifier(node)) {
     acc.push(node.text);
     return acc;
