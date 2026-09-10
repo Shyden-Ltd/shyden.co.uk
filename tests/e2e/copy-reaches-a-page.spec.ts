@@ -50,26 +50,6 @@ import { filesUnder } from '../source-files';
 const BUILT_PAGES = filesUnder('dist', (path) => /\.html$/.test(path));
 
 /**
- * Which locales the 404 actually answers in, DERIVED from its own imports.
- *
- * `src/pages/404.astro` imports `siteEn` and `siteId`, so it speaks en and id.
- * Read from the source rather than listed here, so extending that page to a
- * third language shrinks the allowlist below on its own -- the same
- * derive-don't-list rule that #24, #49, #60 and #65 all came from. #22 added
- * zh, vi and th to LOCALES and did not touch this page, which is exactly the
- * drift a hand-written list would have hidden.
- */
-const LOCALES_THE_404_ANSWERS = [
-  ...new Set(
-    (
-      readFileSync('src/pages/404.astro', 'utf8').match(
-        /\bsite([A-Z][a-z]+)\b/g,
-      ) ?? []
-    ).map((m) => m.replace(/^site/, '').toLowerCase()),
-  ),
-].filter((l): l is Locale => (LOCALES as readonly string[]).includes(l));
-
-/**
  * Rendered text of every built page, entity-decoded and whitespace-flattened.
  *
  * Both normalisations are load-bearing. An apostrophe is served as `&#39;`, so
@@ -87,6 +67,22 @@ const RENDERED = BUILT_PAGES.map((path) => readFileSync(path, 'utf8'))
   .replace(/&lt;/g, '<')
   .replace(/&gt;/g, '>')
   .replace(/\s+/g, ' ');
+
+const decode = (text: string) =>
+  text
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) =>
+      String.fromCharCode(parseInt(h, 16)),
+    )
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ');
+
+const RENDERED_404 = () => decode(readFileSync('dist/404.html', 'utf8'));
 
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -138,30 +134,17 @@ const ABSENCE_RULES: ReadonlyArray<{
       'locale; dead-copy.test.ts keeps the reference check for them.',
   },
   {
-    locales: LOCALES.filter((l) => !LOCALES_THE_404_ANSWERS.includes(l)),
-    paths: [
-      'notFound.title',
-      'notFound.description',
-      'notFound.heading',
-      'notFound.body',
-      'notFound.backHome',
-    ],
-    why:
-      'TRACKED IN #104. Only `dist/404.html` is built and it is English, so ' +
-      'these translations reach nobody -- an Indonesian visitor who mistypes ' +
-      'a URL gets an English 404, on production, today. Left visible here ' +
-      'rather than deleted: these entries FAIL the day #104 ships, which ' +
-      'forces their own removal.',
-  },
-  {
-    locales: LOCALES_THE_404_ANSWERS.filter((l) => l !== DEFAULT_LOCALE),
+    locales: LOCALES.filter((l) => l !== DEFAULT_LOCALE),
     paths: ['notFound.title', 'notFound.description'],
     why:
-      'A document has ONE <title> and one meta description, and the bilingual ' +
-      '404 writes both in the default locale. The second language it answers ' +
-      'in therefore renders its heading, body and link but never its title. ' +
-      'Structural, not drift: SiteStrings is derived from siteEn, so every ' +
-      'locale must define every key whether or not a given page can use it.',
+      'A document has ONE <title> and one meta description, and the 404 ' +
+      'writes both in the default locale. Every other language it answers in ' +
+      'renders its heading, body and link but never its title. Structural, ' +
+      'not drift: SiteStrings is derived from siteEn, so every locale must ' +
+      'define every key whether or not a given page can use it. That the ' +
+      'heading/body/link entries are GONE from this list is #104 shipping -- ' +
+      'the reverse-check below failed them the moment the 404 started ' +
+      'answering in all five, which is what forced their removal.',
   },
   {
     locales: [DEFAULT_LOCALE],
@@ -184,6 +167,58 @@ const ALLOWED = new Map<string, string>(
     ),
   ),
 );
+
+/**
+ * The 404 answers in every language the site claims to serve.
+ *
+ * Asserted ABSOLUTELY against LOCALES, never derived from the page itself: a
+ * rule that reads which languages the 404 happens to speak, and then excuses
+ * exactly those, cannot notice one going missing. It would auto-excuse the
+ * drift it exists to catch.
+ *
+ * That drift is real and shipped. The page was written when LOCALES was en+id,
+ * #22 added zh, vi and th, and nothing connected the two -- so a Chinese,
+ * Vietnamese or Thai visitor who mistypes a URL is answered in English and
+ * Indonesian. Cloudflare Pages serves this ONE file for any unknown path, so
+ * this page is the only place that can be fixed.
+ */
+test.describe('the 404 answers in every locale', () => {
+  const page404 = 'dist/404.html';
+
+  for (const locale of LOCALES) {
+    test(`${locale}: the 404 speaks it`, () => {
+      const t = getSiteStrings(locale).notFound;
+      const served = RENDERED_404();
+      for (const [key, value] of [
+        ['heading', t.heading],
+        ['body', t.body],
+        ['backHome', t.backHome],
+      ] as const)
+        expect(
+          served.includes(flat(value)),
+          `${page404} does not carry notFound.${key} in ${locale}`,
+        ).toBe(true);
+    });
+  }
+
+  test('every language it answers in is marked with its own lang', () => {
+    // Without `lang`, a screen reader reads Bahasa Indonesia with English
+    // pronunciation rules. The default locale is carried by the document.
+    //
+    // Anchored to the SECTION HEADING, not to `lang="xx"` anywhere on the
+    // page. The first version searched the whole file and passed with zh, vi
+    // and th entirely absent from the content: the language switcher renders
+    // `<a hreflang="zh" lang="zh">` for every alternative, so every locale's
+    // lang attribute is already present on every page. It was satisfied by the
+    // navigation while the thing it names was missing.
+    const raw = readFileSync(page404, 'utf8');
+    for (const locale of LOCALES.filter((l) => l !== DEFAULT_LOCALE))
+      expect(
+        new RegExp(`<h2[^>]*lang="${locale}"`).test(raw),
+        `the 404 has no <h2 lang="${locale}"> section heading`,
+      ).toBe(true);
+  });
+});
 
 test.describe('every site string reaches a built page', () => {
   for (const locale of LOCALES) {
