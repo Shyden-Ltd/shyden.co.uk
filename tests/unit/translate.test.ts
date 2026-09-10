@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blankCommentLines } from './source-text';
+import { blankCommentLines, isMarkerCommentLine } from './source-text';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MVP_LOCALES } from '../../src/lib/i18n/metadata';
@@ -329,15 +329,41 @@ describe('the harness never runs itself', () => {
     // name the variable — nobody can guess `DEEPL_API_KEY` — and must never
     // hold a value, which is the failure mode a committed example file has.
     const example = readFileSync('.env.example', 'utf8');
-    expect(example).toContain('DEEPL_API_KEY=');
+    // ANCHORED, not `toContain`. `.env.example` is a `#`-commented file and
+    // its own prose names this variable, so an unanchored match is satisfied
+    // by the documentation after the real line is commented out or deleted --
+    // the presence variant of the comment-suppression class (#98). A `#`
+    // line cannot put the key at the start of a line.
+    expect(
+      /^DEEPL_API_KEY=/m.test(example),
+      '.env.example does not DEFINE the key, it only mentions it',
+    ).toBe(true);
     expect(
       /^DEEPL_API_KEY=.+$/m.test(example),
       '.env.example carries a VALUE — that is a leaked key',
     ).toBe(false);
     // The suffix rule is the one thing a newcomer gets wrong, so it is
     // written where they will be looking when they paste the key.
-    expect(example).toContain(':fx');
-    expect(readFileSync('.gitignore', 'utf8')).toContain('.env.*');
+    // Deliberately asserted against the COMMENTS, which is where this rule
+    // belongs -- it is guidance for a human pasting a key, not config. Said
+    // out loud so nobody later "fixes" it into an anchored config check and
+    // reddens CI on a file that was correct.
+    const documentation = example
+      .split('\n')
+      .filter((line) => isMarkerCommentLine(line, '#'))
+      .join('\n');
+    expect(
+      documentation,
+      '.env.example stopped explaining the :fx suffix',
+    ).toContain(':fx');
+
+    // Anchored for the same reason as the key above: `# .env.*` would satisfy
+    // `toContain` while the rule it names had stopped ignoring anything, and
+    // this is the guard standing between a real key and a public repo.
+    expect(
+      /^\.env\.\*\s*$/m.test(readFileSync('.gitignore', 'utf8')),
+      '.gitignore no longer IGNORES .env.* — it only mentions it',
+    ).toBe(true);
   });
 
   it('is not imported by anything the site ships', () => {
