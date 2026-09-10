@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test';
-import {
-  LOCALES,
-  localisePath,
-  getSiteStrings,
-  getStrings,
-} from '../../src/lib/i18n/index';
+import { LOCALES } from '../../src/lib/i18n/index';
+import { deployedRoutes } from '../site-pages';
 
 /**
  * Every route the site serves, derived. #49.
@@ -14,28 +10,11 @@ import {
  * the moment #22 added zh, vi and th: nine routes, never requested here, while
  * the gate stayed green. Extending the list by hand is how it broke the first
  * time, so it is derived now and a sixth language is covered the day it joins
- * LOCALES.
+ * LOCALES. The PAGE axis stayed hand-written until #89 — three literals, so a
+ * fourth page was smoked by curl in release-prod.yml and never rendered in a
+ * browser here. Both axes are derived now.
  */
-const ROUTES = LOCALES.flatMap((locale) => [
-  {
-    locale,
-    path: localisePath('/', locale),
-    heading: getSiteStrings(locale).home.heroHeading,
-    englishHeading: getSiteStrings('en').home.heroHeading,
-  },
-  {
-    locale,
-    path: localisePath('/glory-points', locale),
-    heading: getSiteStrings(locale).glory.heading,
-    englishHeading: getSiteStrings('en').glory.heading,
-  },
-  {
-    locale,
-    path: localisePath('/classroom-groups', locale),
-    heading: getStrings(locale).heading,
-    englishHeading: getStrings('en').heading,
-  },
-]);
+const ROUTES = deployedRoutes();
 
 /**
  * Production, verified in a real browser before `prod-verified` is posted.

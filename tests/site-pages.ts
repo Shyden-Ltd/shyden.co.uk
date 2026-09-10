@@ -1,5 +1,12 @@
 import { readdirSync } from 'node:fs';
 import { nonEmpty } from './source-files';
+import {
+  LOCALES,
+  localisePath,
+  getSiteStrings,
+  getStrings,
+  type Locale,
+} from '../src/lib/i18n/index';
 
 const PAGES_DIR = 'src/pages';
 
@@ -27,3 +34,69 @@ export const pageNames = (dir: string = PAGES_DIR): string[] =>
 /** The same pages as request paths in the default locale: `index` is `/`. */
 export const sitePaths = (): string[] =>
   pageNames().map((name) => (name === 'index' ? '/' : `/${name}`));
+
+/**
+ * The `<h1>` a page renders, per locale, keyed by its UNLOCALISED path.
+ *
+ * Deliberately a lookup rather than three literals inside each gate. The dev
+ * and prod sanity suites carried byte-identical hand-written tables, so
+ * `sitePaths()` grew to four and both gates went on testing three: the new
+ * page was fetched by `release-prod.yml`'s curl smoke and **never rendered in
+ * a browser** by the suites that exist because curl is not enough. Measured
+ * with a probe page: `--list` reported `Total: 28 tests` before and after.
+ *
+ * Keyed by page rather than derived from one catalogue because the three
+ * pages genuinely read from different ones — the home and glory headings come
+ * from `getSiteStrings`, the tool's from `getStrings`. A new page has no entry
+ * here, and `headingFor` refuses rather than skipping it.
+ */
+export const HEADING_FOR: Record<string, (locale: Locale) => string> = {
+  '/': (locale) => getSiteStrings(locale).home.heroHeading,
+  '/glory-points': (locale) => getSiteStrings(locale).glory.heading,
+  '/classroom-groups': (locale) => getStrings(locale).heading,
+};
+
+/**
+ * The heading for one page, or a refusal.
+ *
+ * A page with no entry is a page nobody taught the deploy gates about, and
+ * silently dropping it from the route list is exactly the failure #89 exists
+ * to close. `site-pages.test.ts` asserts this map covers `sitePaths()`, so
+ * the unit suite fails first and this throw is the backstop.
+ */
+export function headingFor(path: string): (locale: Locale) => string {
+  const heading = HEADING_FOR[path];
+  if (!heading)
+    throw new Error(
+      `no heading known for ${path} — add it to HEADING_FOR in ` +
+        'tests/site-pages.ts. A deploy gate must cover every page the site ' +
+        'serves, and dropping one silently is the defect this refuses (#89).',
+    );
+  return heading;
+}
+
+/** One route per page per locale, with the heading each should render. */
+export interface DeployedRoute {
+  readonly locale: Locale;
+  readonly path: string;
+  readonly heading: string;
+  readonly englishHeading: string;
+}
+
+/**
+ * Every route the deployed site serves, for the dev and prod sanity gates.
+ *
+ * The one table both gates read. `englishHeading` is carried alongside so a
+ * build that fell back to English fails against the ENGLISH copy rather than
+ * agreeing with its own regressed catalogue — the independent half of the
+ * check, kept from the tables this replaces.
+ */
+export const deployedRoutes = (): DeployedRoute[] =>
+  LOCALES.flatMap((locale) =>
+    sitePaths().map((page) => ({
+      locale,
+      path: localisePath(page, locale),
+      heading: headingFor(page)(locale),
+      englishHeading: headingFor(page)('en'),
+    })),
+  );
