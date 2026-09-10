@@ -100,6 +100,14 @@ export default defineConfig({
     // diagnosable, not re-argued. See #44 for the full table and the harness
     // that produced it.
     //
+    // SINCE THEN THAT SEPARATION IS COLLECTED ON EVERY RUN.
+    // `tests/reporters/nav-timing-reporter.ts` reads each navigation's own
+    // duration out of the step tree -- it cannot come from the json report,
+    // which strips every `pw:api` step -- and `npm run test:e2e` prints them
+    // per project beside the whole-test table, into the job summary in CI.
+    // So the next occurrence arrives with the navigation's own number
+    // attached, and the paragraph above can be settled instead of repeated.
+    //
     // `retain-on-failure`, not `on`: a trace per test across ~2200 tests is
     // hundreds of megabytes of artefact for runs that told us nothing. This
     // costs nothing on a green run.
