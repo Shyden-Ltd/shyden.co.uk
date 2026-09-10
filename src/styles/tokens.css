@@ -10,6 +10,12 @@
   --ink: #16171c;
   --ink-soft: #565a66;
   --border: #e7e4dc;
+  /* Control boundaries only. #e7e4dc scores 1.17:1 on --bg, and WCAG 2.1
+     SC 1.4.11 needs 3:1 for anything REQUIRED to identify a component --
+     which a form field's only edge is (#133). 3.64:1 on --surface,
+     3.36:1 on --bg: the lightest hairline in this warm family that is not
+     one rounding error from the floor, which --accent already is. */
+  --border-strong: #8a867b;
   --accent: #0a7d66; /* do NOT lighten past AA */
   --accent-ink: #096452;
   --danger: #c0392b;
