@@ -1414,7 +1414,7 @@ if (form) {
   let audio: AudioContext | null = null;
   let master: GainNode | null = null;
   let reverbConvolver: ConvolverNode | null = null;
-  let saturatorCurve: Float32Array | null = null;
+  let saturatorCurve: Float32Array<ArrayBuffer> | null = null;
   let variationRng: (() => number) | null = null;
 
   /** Seeded once, lazily, from `Math.random()` -- fine here, this is Web

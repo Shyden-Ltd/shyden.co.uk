@@ -3,7 +3,6 @@ import { specDirs } from '../spec-dirs';
 import { blankCommentLines } from './source-text';
 import { readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
-import { join } from 'node:path';
 import { tsFilesUnder } from '../source-files';
 
 /**

@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { LOCALES } from '../../src/lib/i18n/index';
 import { deployedRoutes } from '../site-pages';
 
 /**

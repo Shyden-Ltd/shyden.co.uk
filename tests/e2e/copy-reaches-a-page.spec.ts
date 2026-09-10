@@ -134,7 +134,7 @@ const ABSENCE_RULES: ReadonlyArray<{
       'locale; dead-copy.test.ts keeps the reference check for them.',
   },
   {
-    locales: LOCALES.filter((l) => l !== DEFAULT_LOCALE),
+    locales: PREFIXED_LOCALES,
     paths: ['notFound.title', 'notFound.description'],
     why:
       'A document has ONE <title> and one meta description, and the 404 ' +
@@ -212,7 +212,7 @@ test.describe('the 404 answers in every locale', () => {
     // lang attribute is already present on every page. It was satisfied by the
     // navigation while the thing it names was missing.
     const raw = readFileSync(page404, 'utf8');
-    for (const locale of LOCALES.filter((l) => l !== DEFAULT_LOCALE))
+    for (const locale of PREFIXED_LOCALES)
       expect(
         new RegExp(`<h2[^>]*lang="${locale}"`).test(raw),
         `the 404 has no <h2 lang="${locale}"> section heading`,
