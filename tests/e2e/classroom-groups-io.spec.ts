@@ -794,7 +794,16 @@ test.describe('the handover destination is chosen, not assumed', () => {
     const summary = page.locator('#cg-io-both-toggle');
     expect((await summary.boundingBox())?.height).toBeGreaterThanOrEqual(44);
     await summary.click();
-    for (const choice of await page.locator('.cg-io-both-target').all()) {
+    const choices = page.locator('.cg-io-both-target');
+    // `.all()` resolves to [] when nothing matches -- it neither waits nor
+    // fails -- so without this count the loop below runs zero times and a
+    // WCAG touch-target test passes having measured nothing. Proven, not
+    // assumed: pointing this locator at a class that does not exist left the
+    // test green (#87). Derived from LOCALES rather than hardcoded, because
+    // one button is rendered per OTHER locale and that number is going to
+    // change.
+    await expect(choices).toHaveCount(otherLocales('en').length);
+    for (const choice of await choices.all()) {
       expect((await choice.boundingBox())?.height).toBeGreaterThanOrEqual(44);
     }
   });
