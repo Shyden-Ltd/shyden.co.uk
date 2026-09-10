@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
-import { LOCALES } from '../../src/lib/i18n';
+import { LOCALES, getStrings, type Locale } from '../../src/lib/i18n';
 import {
   serialiseRoster,
   serialiseGroups,
@@ -25,6 +25,32 @@ import { id } from '../../src/lib/i18n/id';
  * eleven separate occasions where a plan snippet gave a label, selector or
  * whole sentence that did not exist in the product.
  */
+/** Every unordered pair of locales, derived -- `en/id`, `en/zh`, ... */
+const localePairs = (): [Locale, Locale][] =>
+  LOCALES.flatMap((a, i) =>
+    LOCALES.slice(i + 1).map((b): [Locale, Locale] => [a, b]),
+  );
+
+/** A table's header words as `detectLocale` compares them: trimmed, lowered. */
+const headerWords = (locale: Locale): string[] =>
+  Object.values(CSV_LOCALES[locale].columns).map((w) => w.trim().toLowerCase());
+
+/** The four tokens the PARSER reads, named by what each one MEANS. */
+const VALUE_MEANINGS = ['sex.M', 'sex.F', 'absentYes', 'absentNo'] as const;
+type ValueMeaning = (typeof VALUE_MEANINGS)[number];
+
+/** One locale's parser tokens, keyed by meaning and normalised as the parser reads them. */
+const valueTokens = (locale: Locale): Record<ValueMeaning, string> => {
+  const t = CSV_LOCALES[locale];
+  const lower = (s: string) => s.trim().toLowerCase();
+  return {
+    'sex.M': lower(t.sex.M),
+    'sex.F': lower(t.sex.F),
+    absentYes: lower(t.absentYes),
+    absentNo: lower(t.absentNo),
+  };
+};
+
 describe('CSV_LOCALES', () => {
   it('has English headers', () => {
     expect(Object.values(CSV_LOCALES.en.columns)).toEqual([
@@ -53,10 +79,22 @@ describe('CSV_LOCALES', () => {
   // in this order and the parser reads headers positionally-by-name, so two
   // tables that agreed on the SET and disagreed on the ORDER would produce
   // a file one page writes and the other reads with the columns swapped.
-  it('lists the columns in the same order in both locales', () => {
-    expect(Object.keys(CSV_LOCALES.id.columns)).toEqual(
-      Object.keys(CSV_LOCALES.en.columns),
-    );
+  //
+  // Derived from LOCALES rather than written out: the two-locale version
+  // compared `id` against `en` by name and said nothing about the other
+  // three once #22 shipped five. Exact-order equality subsumes the separate
+  // sorted-set comparison that version carried alongside it -- same array,
+  // same order, therefore same keys -- so this is the whole contract rather
+  // than half of it. A missing column in one language is a file the other
+  // pages cannot read, and nothing else in this repo would catch it: there
+  // is no type checker in CI.
+  it('lists the same column keys, in the same order, in every locale', () => {
+    const expected = Object.keys(CSV_LOCALES.en.columns);
+    expect(expected).toHaveLength(6);
+    for (const locale of LOCALES)
+      expect(Object.keys(CSV_LOCALES[locale].columns), locale).toEqual(
+        expected,
+      );
   });
 
   it('translates the values, not only the headers', () => {
@@ -75,49 +113,85 @@ describe('CSV_LOCALES', () => {
     expect(CSV_LOCALES.id.groupColumn).toBe('kelompok');
   });
 
-  it('has the same column keys in both locales', () => {
-    // A missing column in one language is a file the other page cannot read,
-    // and nothing else in this repo would catch it -- there is no type checker.
-    expect(Object.keys(CSV_LOCALES.en.columns).sort()).toEqual(
-      Object.keys(CSV_LOCALES.id.columns).sort(),
-    );
-  });
-
-  it('shares no header word between the locales', () => {
-    // detectLocale distinguishes files by their headers. Any word appearing in
-    // both tables would make that ambiguous, so this is a design invariant and
-    // not a nicety.
-    const en = new Set<string>(Object.values(CSV_LOCALES.en.columns));
-    const shared = Object.values(CSV_LOCALES.id.columns).filter((c) =>
-      en.has(c),
-    );
-    expect(shared).toEqual([]);
+  it('shares no header word between any two locales', () => {
+    // detectLocale distinguishes files by their headers, so a word appearing
+    // in two tables would make a real file genuinely ambiguous. Over every
+    // unordered PAIR: the two-locale version read `CSV_LOCALES.en` and
+    // `.id` by name and left nine of the ten pairs unguarded.
+    //
+    // Compared the way detection compares -- trimmed and lower-cased.
+    // The version this replaces compared raw strings, so two tables
+    // differing only in case would have passed a guard protecting a
+    // detector that cannot tell them apart.
+    const collisions: string[] = [];
+    let pairs = 0;
+    for (const [a, b] of localePairs()) {
+      pairs += 1;
+      const first = new Set(headerWords(a));
+      for (const word of headerWords(b))
+        if (first.has(word)) collisions.push(`${a}/${b} both use "${word}"`);
+    }
+    expect(collisions).toEqual([]);
+    // Anti-vacuity, the same reason the populated-tables test below exists:
+    // an empty table makes every comparison above pass having compared
+    // nothing. Count the pairs actually walked, and the words in each table.
+    expect(pairs).toBe((LOCALES.length * (LOCALES.length - 1)) / 2);
+    expect(pairs).toBeGreaterThan(0);
+    for (const locale of LOCALES)
+      expect(headerWords(locale), locale).toHaveLength(6);
   });
 
   // The same ambiguity, one level down and NOT covered by the header test
   // above: `detectLocale` reads headers, but the PARSER reads values, and a
-  // sex or absent token meaning two different things in the two languages
-  // would silently mis-import a file that passed detection. 'no' (English
-  // "not absent") against a hypothetical Indonesian 'no' is the shape this
-  // rules out. Checked case-insensitively, because the parser accepts
-  // either case.
-  it('shares no sex or absent VALUE between the locales', () => {
-    const lower = (xs: string[]) => xs.map((x) => x.toLowerCase());
-    const enValues = new Set(
-      lower([
-        CSV_LOCALES.en.sex.M,
-        CSV_LOCALES.en.sex.F,
-        CSV_LOCALES.en.absentYes,
-        CSV_LOCALES.en.absentNo,
-      ]),
-    );
-    const idValues = lower([
-      CSV_LOCALES.id.sex.M,
-      CSV_LOCALES.id.sex.F,
-      CSV_LOCALES.id.absentYes,
-      CSV_LOCALES.id.absentNo,
-    ]);
-    expect(idValues.filter((v) => enValues.has(v))).toEqual([]);
+  // token meaning two different things in two languages would silently
+  // mis-import a file that passed detection.
+  //
+  // Stated as MEANING, not as sharing. The two-locale version forbade any
+  // shared token at all -- true of en/id by accident of translation, and
+  // false the moment #22 shipped five: `M`/`F` is the correct sex token in
+  // English, Chinese, Vietnamese and Thai, and only Indonesian differs
+  // (`L`/`P`). Widening that version to every pair would redden CI on
+  // correct data. What actually mis-imports a file is a token that means
+  // one thing in one table and another thing in another -- a `P` reading
+  // as female here and as male there. Case-insensitive, because the parser
+  // accepts either case.
+  it('gives no token two different meanings across locales', () => {
+    const meanings = new Map<string, Set<ValueMeaning>>();
+    for (const locale of LOCALES)
+      for (const meaning of VALUE_MEANINGS) {
+        const token = valueTokens(locale)[meaning];
+        const seen = meanings.get(token) ?? new Set<ValueMeaning>();
+        seen.add(meaning);
+        meanings.set(token, seen);
+      }
+    const conflicts = [...meanings]
+      .filter(([, seen]) => seen.size > 1)
+      .map(
+        ([token, seen]) => `"${token}" means ${[...seen].sort().join(' and ')}`,
+      );
+    expect(conflicts).toEqual([]);
+    // Anti-vacuity: a table of empty strings collides with nothing, so
+    // assert every locale actually contributed a token for every meaning.
+    for (const locale of LOCALES) {
+      const tokens = Object.values(valueTokens(locale));
+      expect(
+        tokens.filter((t) => t !== ''),
+        locale,
+      ).toHaveLength(VALUE_MEANINGS.length);
+    }
+  });
+
+  it('allows two locales to share a token that means the same thing', () => {
+    // The liveness control for the guard above, and the record of a
+    // deliberate allowance. The tables really do overlap, so that guard is
+    // exercised against real sharing rather than passing over disjoint
+    // sets -- which is what a "shares nothing" guard would have demanded,
+    // and would have been wrong to.
+    const sharing = localePairs().filter(([a, b]) => {
+      const first = new Set(Object.values(valueTokens(a)));
+      return Object.values(valueTokens(b)).some((t) => first.has(t));
+    });
+    expect(sharing.length).toBeGreaterThan(0);
   });
 
   // Guards the two invariants above against a mutant that empties a table:
@@ -705,10 +779,13 @@ describe('parseRoster', () => {
   });
 
   // A round trip is the claim the whole stage rests on. Asserted as an
-  // object comparison over the WHOLE roster, in both languages, rather
+  // object comparison over the WHOLE roster, in EVERY language, rather
   // than field by field -- a field the serialiser drops and the parser
-  // defaults would survive any narrower check.
-  for (const locale of ['en', 'id'] as const) {
+  // defaults would survive any narrower check. Derived from LOCALES: the
+  // hard-coded `['en', 'id']` this replaces stopped covering three of the
+  // five the moment #22 shipped them, and every token in this file's
+  // tables -- headers, sex, absent, class comment -- differs per locale.
+  for (const locale of LOCALES) {
     it(`round-trips a full roster through serialise and parse (${locale})`, () => {
       const original = [
         student({ number: 1, name: 'Ana', sex: 'F', together: 'A' }),
@@ -717,7 +794,7 @@ describe('parseRoster', () => {
         student({ number: 9 }),
       ];
       const text = serialiseRoster(original, '7B', locale);
-      const out = parseRoster(text, locale, locale === 'en' ? en : id);
+      const out = parseRoster(text, locale, getStrings(locale));
       expect(out.ok).toBe(true);
       if (!out.ok) return;
       expect(out.roster).toEqual(original);
@@ -730,8 +807,9 @@ describe('parseRoster', () => {
  * Stage 4, Task 4. C-11, C-12, C-13.
  *
  * Detection rests entirely on the invariant asserted at the top of this
- * file -- the two locales share no header word. That is why this can be
- * decided from headers alone rather than by guessing from content.
+ * file -- no two locales share a header word, over every pair. That is why
+ * this can be decided from headers alone rather than by guessing from
+ * content.
  */
 describe('detectLocale', () => {
   it('recognises an English file', () =>
