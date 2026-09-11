@@ -165,14 +165,21 @@ test.describe('homepage content', () => {
       await page.goto('/');
       const btns = page.locator('.btn');
       await expect(btns.first()).toBeVisible();
-      const all = await btns.all();
-      for (const b of all) {
+      // Written inline rather than hoisted to a variable: the unproved-loop
+      // scanner in `tests/unit/event-collectors.test.ts` matches this exact
+      // shape, so hoisting makes the loop invisible to it and it silently
+      // stops being checked for a liveness proof. Use the recognised idiom
+      // instead of widening the guard to fit new code.
+      for (const b of await btns.all()) {
         const box = await b.boundingBox();
         expect(box).not.toBeNull();
         expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
         expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
       }
-      await shoot(page, `375px: all ${all.length} buttons clear 44x44px`);
+      await shoot(
+        page,
+        `375px: all ${await btns.count()} buttons clear 44x44px`,
+      );
     },
   );
 });

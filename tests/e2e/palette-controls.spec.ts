@@ -155,15 +155,17 @@ test('the controls the browser draws use the brand accent', async ({
     return rgb;
   }, accent);
 
-  const all = await boxes.all();
-  for (const box of all) {
+  // Inline, not hoisted: `event-collectors.test.ts` matches this exact shape
+  // when scanning for locator loops that were never proved non-empty, and a
+  // hoisted list drops out of that scan without anything going red.
+  for (const box of await boxes.all()) {
     await expect(box).toHaveCSS('accent-color', resolved);
   }
   // `accent-color: auto` drew the selected radio in the browser's blue. The
   // clipped shot is of the control itself, so the brand mint is visible.
   await shoot(
     page,
-    `all ${all.length} browser-drawn controls use --accent ${resolved}`,
+    `all ${await boxes.count()} browser-drawn controls use --accent ${resolved}`,
     boxes.first(),
   );
 });
