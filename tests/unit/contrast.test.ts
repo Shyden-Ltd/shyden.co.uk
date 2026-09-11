@@ -482,6 +482,7 @@ const CONTROL_SELECTORS = [
 const DECORATIVE_SELECTORS = [
   'components/WorkCard.astro :: .work-card',
   'components/WorkCard.astro :: .work-card-badge',
+  'components/pages/HomePage.astro :: .contact',
   'components/Footer.astro :: footer',
   'components/Header.astro :: header',
   'components/Header.astro :: .menu[open] ~ nav',
