@@ -1,31 +1,51 @@
-/* src/styles/tokens.css — design tokens (see spec §4). Palette AA-verified. */
-@import '@fontsource/space-grotesk/400.css';
-@import '@fontsource/space-grotesk/600.css';
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/600.css';
+/* src/styles/tokens.css — design tokens (see spec §4).
+   Aurora (#17): the approved dark identity. Every value below is derived
+   against the ground it sits on and ASSERTED in tests/unit/contrast.test.ts —
+   a comment claiming a ratio is not a control, which is how a 1.17:1 control
+   boundary shipped to production (#133). */
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource/space-mono/400.css';
+@import '@fontsource/space-mono/700.css';
 
 :root {
-  --bg: #f7f6f2;
-  --surface: #ffffff;
-  --ink: #16171c;
-  --ink-soft: #565a66;
-  --border: #e7e4dc;
-  /* Control boundaries only. #e7e4dc scores 1.17:1 on --bg, and WCAG 2.1
-     SC 1.4.11 needs 3:1 for anything REQUIRED to identify a component --
-     which a form field's only edge is (#133). 3.64:1 on --surface,
-     3.36:1 on --bg: the lightest hairline in this warm family that is not
-     one rounding error from the floor, which --accent already is. */
-  --border-strong: #8a867b;
-  --accent: #0a7d66; /* do NOT lighten past AA */
-  --accent-ink: #096452;
-  --danger: #c0392b;
+  /* Ground and ink. --surface is only 1.04:1 against --bg, so a card is
+     identified by its EDGE, not by its fill — which is why the border tokens
+     below carry more weight on this palette than they did on the light one. */
+  --bg: #04070d;
+  --surface: #070d16;
+  --ink: #eaf2ff;
+  --ink-soft: #8fa6c6;
 
-  --font-head: 'Space Grotesk', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
+  /* Brand. --on-accent is the ink for anything sitting ON mint: white scores
+     1.39:1 there, so a filled button labelled #fff would be unreadable. */
+  --accent: #38f5c8;
+  --accent-ink: #7fffe0;
+  --on-accent: #04140f;
+  --violet: #7a5cff;
+  --deep: #184a6e;
+
+  /* #c0392b was tuned for a near-white page and scores 3.71:1 on this ground —
+     below the 4.5:1 body floor. The artifact never specified an error colour;
+     the roles a design does not mention are the ones with nobody checking. */
+  --danger: #ff6b5a;
+
+  /* Borders, composited: alphas are judged OVER their ground, never raw.
+     --border at .11 is 1.27:1 and is decorative only. Control boundaries need
+     3:1 (WCAG 1.4.11), which white reaches at alpha .35 — 3.10:1 on --bg and
+     3.17:1 on --surface. Aurora's own --line-2 at .18 was 1.61:1. */
+  --border: rgb(255 255 255 / 0.11);
+  --border-strong: rgb(255 255 255 / 0.35);
+  --glass: rgb(255 255 255 / 0.055);
+  --glass-2: rgb(255 255 255 / 0.09);
+
+  --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
   --measure: 66ch;
   --radius: 10px;
   --space: clamp(1rem, 0.6rem + 2vw, 2rem);
-  --maxw: 1080px;
+  --maxw: 1120px;
 }
 
 *,
@@ -34,7 +54,7 @@
   box-sizing: border-box;
 }
 html {
-  color-scheme: light;
+  color-scheme: dark;
 }
 body {
   margin: 0;
@@ -102,7 +122,7 @@ img {
   z-index: 100;
   padding: 0.75rem 1rem;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   text-decoration: none;
   border-bottom-right-radius: 6px;
 }
