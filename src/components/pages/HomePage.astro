@@ -33,11 +33,6 @@ const features = [
   t.shytalkFeature3,
   t.shytalkFeature4,
 ];
-
-// TODO(#17): replace with the real ShyTalk room screenshot, captured from the
-// DEV app. `tests/unit/aurora-screenshot.test.ts` goes RED while this constant
-// exists, so an empty phone frame cannot reach develop by being forgotten.
-const SCREENSHOT_IS_PLACEHOLDER = true;
 ---
 
 <BaseLayout title={t.title} description={t.description} lang={lang}>
@@ -66,17 +61,6 @@ const SCREENSHOT_IS_PLACEHOLDER = true;
           >{t.visitShytalk}</Button
         >
       </p>
-    </div>
-    <div class="showcase-shot">
-      <div class="phone">
-        {
-          SCREENSHOT_IS_PLACEHOLDER && (
-            <div class="phone-placeholder" aria-hidden="true">
-              ShyTalk
-            </div>
-          )
-        }
-      </div>
     </div>
   </section>
 
@@ -185,29 +169,6 @@ const SCREENSHOT_IS_PLACEHOLDER = true;
     background: var(--accent);
     box-shadow: 0 0 12px var(--accent-glow);
   }
-  .showcase-shot {
-    display: flex;
-    justify-content: center;
-  }
-  /* Phone frame. aspect-ratio holds the shape without a fixed height, so the
-     frame cannot letterbox the screenshot on a narrow viewport. */
-  .phone {
-    width: min(300px, 78vw);
-    aspect-ratio: 9 / 19.5;
-    border: 1px solid var(--border-strong);
-    border-radius: 2.25rem;
-    background: var(--surface);
-    box-shadow: 0 0 60px var(--accent-glow);
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .phone-placeholder {
-    color: var(--ink-soft);
-    font-family: var(--font-head);
-    font-size: 1.5rem;
-  }
   .grid-2 {
     display: grid;
     grid-template-columns: 1fr;
@@ -216,9 +177,6 @@ const SCREENSHOT_IS_PLACEHOLDER = true;
   @media (min-width: 720px) {
     .grid-2 {
       grid-template-columns: 1fr 1fr;
-    }
-    .showcase {
-      grid-template-columns: 1.1fr 0.9fr;
     }
   }
   /* ShyTalk brand wordmark — the exact two-tone mark from shytalk.shyden.co.uk:
