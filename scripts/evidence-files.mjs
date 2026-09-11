@@ -26,6 +26,22 @@ export const EVIDENCE_REPORT = 'report.json';
 export const EVIDENCE_MANIFEST = 'manifest.jsonl';
 
 /**
+ * The capture format, and the quality it is encoded at.
+ *
+ * A screenshot of a page containing photographs stores losslessly at roughly
+ * ten times the size of a quality-90 JPEG, for a fidelity nobody consumes: the
+ * page is read by an eye, and pixel-exact comparison belongs to the
+ * visual-regression suite, which keeps its own PNG baselines. Measured on #138
+ * before the change: 80 shots = 18.9 MiB, a 25.34 MiB page that exceeded the
+ * publish limit, and every one of its 80 journey videos dropped against a
+ * budget the shots had already spent (#146).
+ *
+ * 90, not 80: the operator judges whether a Thai capture is really Thai, so
+ * the glyphs are the thing the encoder must not soften.
+ */
+export const EVIDENCE_JPEG_QUALITY = 90;
+
+/**
  * This file's own basename.
  *
  * The guard against re-spelling has to exempt the module that does the

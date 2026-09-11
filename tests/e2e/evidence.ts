@@ -1,7 +1,10 @@
 import { test, type Locator, type Page } from '@playwright/test';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { EVIDENCE_MANIFEST } from '../../scripts/evidence-files.mjs';
+import {
+  EVIDENCE_JPEG_QUALITY,
+  EVIDENCE_MANIFEST,
+} from '../../scripts/evidence-files.mjs';
 
 /**
  * Capture, as a journey runs, what an operator needs to believe it ran.
@@ -64,11 +67,11 @@ export const shoot = async (
   mkdirSync(dir, { recursive: true });
   const file = join(
     slug(project),
-    `${slug(title)}__${String(n).padStart(2, '0')}-${slug(label)}.png`,
+    `${slug(title)}__${String(n).padStart(2, '0')}-${slug(label)}.jpg`,
   );
 
   const shot = target ?? page;
-  await shot.screenshot({ path: join(DIR, file), scale: 'css' });
+  await shot.screenshot(captureOptions(join(DIR, file)));
 
   appendFileSync(
     join(DIR, EVIDENCE_MANIFEST),
@@ -76,3 +79,21 @@ export const shoot = async (
     'utf8',
   );
 };
+
+/**
+ * How every assertion shot is taken.
+ *
+ * Exported so `tests/unit/evidence-page.test.ts` can pin the format without a
+ * browser: the quality is a judgement about legible Thai glyphs, and a
+ * judgement that lives only inside a call nobody can reach is a judgement
+ * nothing protects.
+ *
+ * `scale: 'css'` throughout -- a device pixel ratio of 3 triples the bytes to
+ * say the same thing.
+ */
+export const captureOptions = (path: string) => ({
+  path,
+  scale: 'css' as const,
+  type: 'jpeg' as const,
+  quality: EVIDENCE_JPEG_QUALITY,
+});
