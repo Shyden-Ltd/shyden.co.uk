@@ -31,17 +31,38 @@
   --danger: #ff6b5a;
 
   /* Borders, composited: alphas are judged OVER their ground, never raw.
-     --border at .11 is 1.27:1 and is decorative only. Control boundaries need
-     3:1 (WCAG 1.4.11), which white reaches at alpha .35 — 3.10:1 on --bg and
-     3.17:1 on --surface. Aurora's own --line-2 at .18 was 1.61:1. */
+     --border at .11 is 1.27:1 and is decorative only. Aurora's own --line-2
+     at .18 was 1.61:1.
+
+     Control boundaries need 3:1 (WCAG 1.4.11). White reached that at alpha
+     .35 while the page ground was FLAT — 3.10:1 on --bg, 3.17:1 on --surface.
+     The atmosphere lightens the ground beneath a control, and at .35 the
+     boundary drops to 2.95:1 there: a 1.4.11 failure introduced by a change
+     three declarations away that touched no border at all. At .40 it is
+     3.39:1 over the atmosphere, 3.73:1 on --bg, 3.79:1 on --surface. */
   --border: rgb(255 255 255 / 0.11);
-  --border-strong: rgb(255 255 255 / 0.35);
+  --border-strong: rgb(255 255 255 / 0.4);
   --glass: rgb(255 255 255 / 0.055);
   --glass-2: rgb(255 255 255 / 0.09);
 
   /* The mint bloom behind the marquee band. Decorative: it is a shadow, so
      nothing is ever read against it and 1.4.11 does not reach it. */
   --accent-glow: rgb(56 245 200 / 0.3);
+
+  /* The Aurora atmosphere: three radial stops and a white shaft, painted on
+     body::before. Text IS read over these, so the alphas are not a taste
+     decision — they were chosen by compositing all four onto --bg at once
+     (the worst case; the real stops sit apart) and measuring every text
+     token against that composite. The pairs are asserted in
+     tests/unit/contrast.test.ts.
+
+     The knife edge is --ink-soft. At mint .10 / violet .14 / deep .18 with
+     the shaft it scores 4.48:1 — a FAILURE by 0.02, and one that no layer
+     shows on its own. These values leave it at 5.11:1. */
+  --aurora-mint: rgb(56 245 200 / 0.08);
+  --aurora-violet: rgb(122 92 255 / 0.1);
+  --aurora-deep: rgb(24 74 110 / 0.14);
+  --aurora-shaft: rgb(255 255 255 / 0.05);
 
   --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
   --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
@@ -59,14 +80,52 @@
 }
 html {
   color-scheme: dark;
+  background: var(--bg);
 }
 body {
   margin: 0;
-  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
   line-height: 1.6;
   -webkit-text-size-adjust: 100%;
+}
+/* One fixed layer behind everything. Fixed, not absolute: the aurora is the
+   light in the room rather than part of the document, so it does not scroll
+   away and it paints exactly once however long the page is.
+
+   The ground sits on `html`, not `body`: at z-index -1 this layer would
+   otherwise paint BEHIND the body's own background and never be seen.
+
+   Zero JavaScript, and `prefers-reduced-motion` needs no rule here because
+   nothing moves — it is a still gradient, not an animation. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      60rem 40rem at 12% -8%,
+      var(--aurora-mint),
+      transparent 70%
+    ),
+    radial-gradient(
+      52rem 36rem at 88% 2%,
+      var(--aurora-violet),
+      transparent 70%
+    ),
+    radial-gradient(
+      72rem 46rem at 50% 108%,
+      var(--aurora-deep),
+      transparent 70%
+    ),
+    linear-gradient(
+      100deg,
+      transparent 30%,
+      var(--aurora-shaft) 50%,
+      transparent 70%
+    );
 }
 h1,
 h2,

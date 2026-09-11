@@ -169,6 +169,23 @@ type Pair = {
  * overlay, so the real ground under a given text run is lighter than `--bg`
  * in places. A token table can only judge the flat case.
  */
+/**
+ * The atmosphere as a layer stack, TOP-FIRST.
+ *
+ * Every stop composited at once is the WORST case, not the real one: the
+ * three radials are positioned apart, so no pixel receives all of them. A
+ * guard that measured the real overlap would need a browser and would answer
+ * a question about one viewport width; this answers it for all of them, and
+ * errs towards refusing a palette that would in fact have passed.
+ */
+const ATMOSPHERE = [
+  '--aurora-shaft',
+  '--aurora-mint',
+  '--aurora-violet',
+  '--aurora-deep',
+  '--bg',
+] as const;
+
 const PAIRS: Pair[] = [
   {
     fg: ['--ink'],
@@ -268,10 +285,29 @@ const PAIRS: Pair[] = [
     where: 'error text on a card',
   },
   {
-    fg: ['--violet'],
-    bg: ['--bg'],
+    fg: ['--ink'],
+    bg: ATMOSPHERE,
     level: 'body',
-    where: 'the section kicker at 0.66rem — small text, so 4.5:1 and not 3:1',
+    where: 'body copy over the brightest possible point of the atmosphere',
+  },
+  {
+    fg: ['--ink-soft'],
+    bg: ATMOSPHERE,
+    level: 'body',
+    where:
+      'secondary copy over the atmosphere — the knife edge. At mint .10 / violet .14 / deep .18 this scored 4.48:1, a failure by 0.02 that no single layer shows',
+  },
+  {
+    fg: ['--accent'],
+    bg: ATMOSPHERE,
+    level: 'body',
+    where: 'link text and section kickers over the atmosphere',
+  },
+  {
+    fg: ['--border-strong', ...ATMOSPHERE],
+    bg: ATMOSPHERE,
+    level: 'ui',
+    where: 'control boundaries over the atmosphere (WCAG 1.4.11)',
   },
   {
     fg: ['--border-strong', '--bg'],
@@ -298,7 +334,9 @@ const DECORATIVE: Record<string, string> = {
   '--border':
     'decorative separators only — card outlines, header and footer rules, table rules. Every control boundary uses --border-strong.',
   '--deep':
-    'a gradient stop in the page atmosphere. Never drawn as text, a fill behind text, or a control edge.',
+    'a gradient stop in the page atmosphere, never drawn as text or a control edge. It IS a fill behind text — the earlier note here said otherwise — so it is measured as a layer in ATMOSPHERE rather than trusted as decorative.',
+  '--violet':
+    'a gradient stop in the page atmosphere. It was specified as the section kicker colour; measured, it scores 4.61:1 flat and 2.91:1 over the atmosphere, so it cannot carry small text. Kickers use --accent.',
   '--accent-glow':
     'the mint bloom behind the marquee band. A box-shadow: nothing is ever read against it, and 1.4.11 reaches only what identifies a control.',
 };
