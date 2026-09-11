@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { shoot } from './evidence';
 
 /**
  * Every control's colour comes from the palette, not from the browser.
@@ -115,6 +116,12 @@ for (const path of PAGES) {
       offPalette,
       `off-palette control colours on ${path}; the palette resolved to ${allowed.length} values`,
     ).toEqual([]);
+    // The defect this documents was a UA default passing for styled: an input
+    // with a border and no background drew rgb(59 59 59) on a dark card.
+    await shoot(
+      page,
+      `${path}: all ${readings.length} controls drawn from the palette's ${allowed.length} values`,
+    );
   });
 }
 
@@ -143,7 +150,15 @@ test('the controls the browser draws use the brand accent', async ({
     return rgb;
   }, accent);
 
-  for (const box of await boxes.all()) {
+  const all = await boxes.all();
+  for (const box of all) {
     await expect(box).toHaveCSS('accent-color', resolved);
   }
+  // `accent-color: auto` drew the selected radio in the browser's blue. The
+  // clipped shot is of the control itself, so the brand mint is visible.
+  await shoot(
+    page,
+    `all ${all.length} browser-drawn controls use --accent ${resolved}`,
+    boxes.first(),
+  );
 });

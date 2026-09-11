@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 
@@ -24,6 +25,11 @@ test.describe('homepage content', () => {
     for (const id of ['shytalk', 'tools', 'contact']) {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
+    await shoot(
+      page,
+      'the Aurora hero leads with ShyTalk',
+      page.locator('.hero'),
+    );
   });
 
   // Both halves of a nav fragment, in every locale.
@@ -71,6 +77,14 @@ test.describe('homepage content', () => {
           `${home}: nav points at #${fragment}, which the page does not render`,
         ).toHaveCount(1);
       }
+      // A section id is a contract with no compiler between the files —
+      // retiring #services left the header linking at nothing, and `astro
+      // check` cannot see it.
+      await shoot(
+        page,
+        `${home}: all ${fragmented.length} nav fragments resolve in-locale`,
+        page.locator('header'),
+      );
     });
   }
 
@@ -94,6 +108,11 @@ test.describe('homepage content', () => {
     await expect(
       showcase.locator(`a[href="${SHYTALK_URL}"]`).last(),
     ).toHaveAttribute('rel', 'noopener noreferrer');
+    await shoot(
+      page,
+      'the ShyTalk showcase and its two-tone wordmark',
+      showcase,
+    );
   });
 
   test('exactly two tool cards, each badged and linked in-locale', async ({
@@ -107,6 +126,11 @@ test.describe('homepage content', () => {
     await expect(
       page.locator('#tools a[href="/classroom-groups"]'),
     ).toHaveCount(1);
+    await shoot(
+      page,
+      'both tool cards, badged and in-locale',
+      page.locator('#tools'),
+    );
   });
 
   test('contact section CTA links to the support mailbox', async ({ page }) => {
@@ -141,12 +165,14 @@ test.describe('homepage content', () => {
       await page.goto('/');
       const btns = page.locator('.btn');
       await expect(btns.first()).toBeVisible();
-      for (const b of await btns.all()) {
+      const all = await btns.all();
+      for (const b of all) {
         const box = await b.boundingBox();
         expect(box).not.toBeNull();
         expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
         expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
       }
+      await shoot(page, `375px: all ${all.length} buttons clear 44x44px`);
     },
   );
 });
@@ -165,6 +191,10 @@ test.describe('mobile-first layout', () => {
             document.documentElement.clientWidth,
         );
         expect(overflow).toBeLessThanOrEqual(0);
+        // This is the guard the marquee tripped: a rotated-and-scaled element
+        // is not clipped by an ancestor's `overflow`, so it pushed 10px of
+        // sideways scroll at every width. 1217 unit tests could not see it.
+        await shoot(page, `${width}px: horizontal overflow is ${overflow}px`);
       },
     );
   }

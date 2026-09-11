@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { searched } from '../source-files';
+import { shoot } from './evidence';
 
 /**
  * What comes off the printer has to be readable.
@@ -107,6 +108,12 @@ for (const { path, prepare } of [
       inks.length,
       `${path} rendered no text under print media — the guard measured nothing`,
     ).toBeGreaterThan(0);
+    // Captured while print media is still emulated, which is the whole point:
+    // this image is the sheet, not the screen. A blank one here IS the defect.
+    await shoot(
+      page,
+      `${path} under print media: ${inks.length} inks measured`,
+    );
 
     const illegible = inks
       .map(({ colour, where }) => ({ colour, where, rgb: parse(colour) }))
@@ -120,6 +127,10 @@ for (const { path, prepare } of [
       searched(illegible, { of: inks, what: `distinct inks on ${path}` }),
       `${path}: ink that will not survive the printer`,
     ).toEqual([]);
+    await shoot(
+      page,
+      `${path}: all ${inks.length} inks clear ${BODY_TEXT}:1 on white paper`,
+    );
   });
 }
 
@@ -131,4 +142,9 @@ test('the screen palette is not dragged down with the print one', async ({
   // Aurora's near-white ink on its dark ground.
   await page.goto('/classroom-groups');
   await expect(page.locator('h1')).toHaveCSS('color', 'rgb(234, 242, 255)');
+  await shoot(
+    page,
+    'on screen the heading keeps Aurora ink rgb(234, 242, 255)',
+    page.locator('h1'),
+  );
 });

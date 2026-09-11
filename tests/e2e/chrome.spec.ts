@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { shoot } from './evidence';
 import type { Locator } from '@playwright/test';
 
 test.describe('header + footer', () => {
@@ -19,6 +20,14 @@ test.describe('header + footer', () => {
       await expect(nav.locator('a').nth(0)).toHaveAttribute(
         'href',
         '/#shytalk',
+      );
+      // Aurora renamed these from Services/Work; this spec is the established
+      // home for nav-link facts, so the proof belongs here and not in a second
+      // guard elsewhere.
+      await shoot(
+        page,
+        'nav reads ShyTalk / Tools / Contact, in scroll order',
+        nav,
       );
     },
   );
