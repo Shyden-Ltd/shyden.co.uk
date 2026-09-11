@@ -262,3 +262,58 @@ export function blankCommentLines(text: string): string {
     .map((line) => (isCommentLine(line) ? '' : line))
     .join('\n');
 }
+
+/**
+ * CSS with block comments removed, STRING LITERALS INTACT.
+ *
+ * A much smaller grammar than `withoutTsComments` above — CSS has no line
+ * comments and no regex literals — but still not a plain regex. A block
+ * delimiter can appear inside a `content:` string or a `url("…")`, and a
+ * naive replace would cut the file from there to the next delimiter anywhere
+ * below it, silently un-stripping everything in between. That is the same
+ * failure the `#65` scanner had, and it is invisible: the guard reading the
+ * result asserts against raw prose again and stays green.
+ *
+ * Lives here rather than beside its caller because comment stripping has
+ * exactly one home in this repo — `one-home.test.ts` enforces it, and seven
+ * private copies are how that rule came to exist.
+ */
+export function withoutCssComments(source: string): string {
+  let out = '';
+  let i = 0;
+  let quote: string | null = null;
+
+  while (i < source.length) {
+    const ch = source[i];
+
+    if (quote !== null) {
+      out += ch;
+      if (ch === '\\') {
+        out += source[i + 1] ?? '';
+        i += 2;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 2;
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
+}
