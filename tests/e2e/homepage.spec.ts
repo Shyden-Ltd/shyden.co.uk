@@ -26,27 +26,53 @@ test.describe('homepage content', () => {
     }
   });
 
-  test('every header nav item lands on a section that exists', async ({
-    page,
-  }) => {
-    await page.goto('/');
-    const hrefs = await page
-      .locator('header nav a')
-      .evaluateAll((links) =>
-        links.map((l) => (l as HTMLAnchorElement).getAttribute('href') ?? ''),
-      );
-    const fragments = hrefs
-      .filter((h) => h.includes('#'))
-      .map((h) => h.slice(h.indexOf('#') + 1));
-    // A liveness control: an empty nav would pass a per-item loop vacuously.
-    expect(fragments.length).toBeGreaterThan(0);
-    for (const fragment of fragments) {
-      await expect(
-        page.locator(`#${fragment}`),
-        `header nav points at #${fragment}, which the page does not render`,
-      ).toHaveCount(1);
-    }
-  });
+  // Both halves of a nav fragment, in every locale.
+  //
+  // An anchor is a contract between two files with no compiler between them:
+  // retiring #services left Header.astro pointing at it, and the typechecker
+  // caught all eleven i18n key removals in the same refactor while being blind
+  // to this one.
+  //
+  // The PATH is asserted as well as the fragment, because checking only the
+  // fragment on the page you are already on cannot fail: a bare `/#shytalk`
+  // served on /id/ would resolve its fragment here and throw a real visitor
+  // back to the ENGLISH homepage. Header.astro documents that hazard in a
+  // comment and nothing tested it.
+  for (const [locale, home] of [
+    ['English', '/'],
+    ['Indonesian', '/id/'],
+    ['Thai', '/th/'],
+  ]) {
+    test(`${locale}: every header nav item lands on a section of this page`, async ({
+      page,
+    }) => {
+      await page.goto(home);
+      const hrefs = await page
+        .locator('header nav a')
+        .evaluateAll((links) =>
+          links.map((l) => (l as HTMLAnchorElement).getAttribute('href') ?? ''),
+        );
+      const fragmented = hrefs.filter((h) => h.includes('#'));
+      // Liveness: an empty nav passes a per-item loop having checked nothing.
+      expect(
+        fragmented.length,
+        `${home} rendered no fragment nav links at all`,
+      ).toBeGreaterThan(0);
+
+      for (const href of fragmented) {
+        const [path, fragment] = href.split('#');
+        // `/id/#tools` and `/id#tools` both stay put; `/#tools` does not.
+        expect(
+          path.endsWith('/') ? path : `${path}/`,
+          `${home}: nav link ${href} leaves this locale`,
+        ).toBe(home);
+        await expect(
+          page.locator(`#${fragment}`),
+          `${home}: nav points at #${fragment}, which the page does not render`,
+        ).toHaveCount(1);
+      }
+    });
+  }
 
   test('the ShyTalk showcase carries the brand wordmark and links out', async ({
     page,

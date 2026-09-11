@@ -117,8 +117,19 @@ const features = [
   }
   .hero h1 {
     font-size: clamp(2.25rem, 1.2rem + 5vw, 4rem);
-    line-height: 1.05;
     max-width: var(--measure);
+  }
+  /* The tight display line-height, everywhere EXCEPT Thai.
+     Thai stacks up to two marks above the base glyph and one below, so its ink
+     box is far deeper than the Latin box 1.05 is tuned for — tokens.css sets
+     `:lang(th) h1 { line-height: 1.5 }` from #22's measurements. Astro scopes
+     this component's rules with a [data-astro-cid-*] attribute, which outranks
+     that (0,1,1) global, so a bare `.hero h1` here silently undid it and the
+     /th/ hero collided with itself at 320, 375, 768 and 1280px.
+     `:not(:lang(th))` rather than restating 1.5: the measured value keeps one
+     home, and this rule simply stops applying where that one governs. */
+  .hero h1:not(:lang(th)) {
+    line-height: 1.05;
   }
   .lead {
     font-size: 1.15rem;
