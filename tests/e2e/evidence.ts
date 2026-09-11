@@ -1,6 +1,7 @@
 import { test, type Locator, type Page } from '@playwright/test';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { EVIDENCE_MANIFEST } from '../../scripts/evidence-files.mjs';
 
 /**
  * Capture, as a journey runs, what an operator needs to believe it ran.
@@ -70,7 +71,7 @@ export const shoot = async (
   await shot.screenshot({ path: join(DIR, file), scale: 'css' });
 
   appendFileSync(
-    join(DIR, 'manifest.jsonl'),
+    join(DIR, EVIDENCE_MANIFEST),
     JSON.stringify({ project, title, order: n, label, file }) + '\n',
     'utf8',
   );

@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { withoutTsComments } from './source-text';
+import { filesUnder, tsFilesUnder, searched } from '../source-files';
+import { reportLocation } from '../../scripts/test-e2e.mjs';
+import {
+  CONTRACT_MODULE,
+  EVIDENCE_MANIFEST,
+  EVIDENCE_REPORT,
+} from '../../scripts/evidence-files.mjs';
 import {
   renderEvidencePage,
   selectMedia,
@@ -183,5 +191,88 @@ describe('the generator carries no ticket prose', () => {
         source,
         `the generator hardcodes ${JSON.stringify(phrase)}`,
       ).not.toContain(phrase);
+  });
+});
+
+/**
+ * The run has to LEAVE BEHIND what the builder reads.
+ *
+ * `playwright.config.ts` states that an evidence run is exactly
+ * `EVIDENCE_DIR=<dir> npm run test:e2e -- <spec>` and "needs no second flag
+ * anybody could forget". That sentence was false when it was written: the
+ * builder reads `<EVIDENCE_DIR>/report.json`, the config declares no reporter,
+ * and the runner wrote its json into a `mkdtemp` directory it deleted in a
+ * `finally`. The captures landed, the run went green, and the page could not
+ * be built -- the failure surfacing one step away from its cause.
+ *
+ * A comment is not an implementation, so the promise is asserted here instead
+ * of restated there.
+ */
+describe('an evidence run leaves the builder exactly what it reads', () => {
+  it('writes the report INTO the evidence directory, and keeps it', () => {
+    expect(reportLocation({ EVIDENCE_DIR: '/e' })).toEqual({
+      dir: '/e',
+      path: join('/e', EVIDENCE_REPORT),
+      ephemeral: false,
+    });
+  });
+
+  it('still uses a throwaway directory when no evidence was asked for', () => {
+    const location = reportLocation({});
+    // The point of the flag is that the ordinary run is unchanged: ~2200 tests
+    // must not start littering the tree with reports nobody reads.
+    expect(location.ephemeral).toBe(true);
+    expect(location.dir).not.toBe('/e');
+    expect(location.path).toBe(join(location.dir, EVIDENCE_REPORT));
+  });
+
+  it('never deletes a directory the operator was asked to keep', () => {
+    // `reportLocation` returning `ephemeral: false` is only half the control:
+    // it is the CALL SITE that deletes, and an unconditional `rmSync` there
+    // would take the captures and the video with it. Asserted against the
+    // construct -- the guard around the call -- not the bare name, and against
+    // the stripped source, because the paragraph above the line says
+    // "ephemeral" too.
+    const runner = withoutTsComments(
+      readFileSync('scripts/test-e2e.mjs', 'utf8'),
+    );
+    const deletions = [...runner.matchAll(/rmSync\(reportDir[^)]*\)/g)];
+
+    expect(
+      searched(deletions, { of: deletions.length, what: 'report cleanups' }),
+      'the runner stopped deleting its temp report directory at all',
+    ).toHaveLength(1);
+    expect(runner, 'the report directory is deleted unconditionally').toMatch(
+      /if \(ephemeral\)\s*rmSync\(reportDir/,
+    );
+  });
+
+  it('pins the two filenames the evidence directory is defined by', () => {
+    // A literal pin against the contract, separate from any guard that derives
+    // from it: both sides moving together would otherwise pass at any name.
+    expect(EVIDENCE_REPORT).toBe('report.json');
+    expect(EVIDENCE_MANIFEST).toBe('manifest.jsonl');
+  });
+
+  it('has no consumer spelling an evidence filename for itself', () => {
+    // Derived from the filesystem, not from a list: the sweep that missed five
+    // survivors (#65) was driven by the file list in its own ticket.
+    const consumers = [
+      ...filesUnder('scripts', (p) => p.endsWith('.mjs')),
+      ...tsFilesUnder('tests/e2e'),
+    ].filter((p) => !p.endsWith(CONTRACT_MODULE));
+
+    const respellings = consumers.filter((path) => {
+      const code = withoutTsComments(readFileSync(path, 'utf8'));
+      return (
+        code.includes(`'${EVIDENCE_REPORT}'`) ||
+        code.includes(`'${EVIDENCE_MANIFEST}'`)
+      );
+    });
+
+    expect(
+      searched(respellings, { of: consumers, what: 'evidence consumers' }),
+      'a filename spelled twice is two filenames the day one of them moves',
+    ).toEqual([]);
   });
 });
