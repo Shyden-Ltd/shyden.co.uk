@@ -28,6 +28,7 @@
 
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 
 const esc = (s) =>
   String(s)
@@ -468,12 +469,12 @@ const main = () => {
     process.exit(2);
   }
 
-  const manifest = readFileSync(join(dir, 'manifest.jsonl'), 'utf8')
+  const manifest = readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')
     .trim()
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l));
-  const report = JSON.parse(readFileSync(join(dir, 'report.json'), 'utf8'));
+  const report = JSON.parse(readFileSync(join(dir, EVIDENCE_REPORT), 'utf8'));
   const content = JSON.parse(readFileSync(contentPath, 'utf8'));
 
   const b64 = (p) => readFileSync(p).toString('base64');
