@@ -35,6 +35,8 @@ export const siteEn = {
     shytalkFeature2: "Ask for a seat, or just listen until you're ready",
     shytalkFeature3: 'Free lessons with real teachers',
     shytalkFeature4: 'Moderated, age-segregated, and built to stay friendly',
+    shytalkShotAlt:
+      'The ShyTalk app on a phone, showing a live audio room with people on its seats and the room chat below them.',
     visitShytalk: 'Visit the ShyTalk site',
     toolsHeading: "While you're waiting, try these.",
     toolsLead:
@@ -142,6 +144,8 @@ export const siteId: SiteStrings = {
     shytalkFeature3: 'Pelajaran gratis bersama guru sungguhan',
     shytalkFeature4:
       'Dimoderasi, dipisahkan menurut usia, dan dibuat agar tetap ramah',
+    shytalkShotAlt:
+      'Aplikasi ShyTalk di ponsel, menampilkan ruang audio langsung dengan orang-orang di kursinya dan obrolan ruangan di bawahnya.',
     visitShytalk: 'Kunjungi situs ShyTalk',
     toolsHeading: 'Sambil menunggu, coba ini.',
     toolsLead:
@@ -238,6 +242,8 @@ export const siteZh: SiteStrings = {
     shytalkFeature2: '申请一个座位，或者先听着，等你准备好',
     shytalkFeature3: '由真人老师带的免费课程',
     shytalkFeature4: '有人管理、按年龄分区，为友善而设计',
+    shytalkShotAlt:
+      'ShyTalk 应用在手机上显示一个实时语音房间，座位上有人，下面是房间聊天。',
     visitShytalk: '访问 ShyTalk 网站',
     toolsHeading: '等待期间，先试试这些。',
     toolsLead: '我们已经做好的两款工具。免费，无需注册，现在就能用。',
@@ -328,6 +334,8 @@ export const siteVi: SiteStrings = {
     shytalkFeature3: 'Buổi học miễn phí cùng giáo viên thật',
     shytalkFeature4:
       'Có kiểm duyệt, phân tách theo độ tuổi, và được xây dựng để luôn thân thiện',
+    shytalkShotAlt:
+      'Ứng dụng ShyTalk trên điện thoại, hiển thị một phòng âm thanh trực tuyến với những người trên các chỗ ngồi và khung trò chuyện của phòng ở bên dưới.',
     visitShytalk: 'Truy cập trang ShyTalk',
     toolsHeading: 'Trong lúc chờ, hãy thử những công cụ này.',
     toolsLead:
@@ -419,6 +427,8 @@ export const siteTh: SiteStrings = {
     shytalkFeature2: 'ขอที่นั่ง หรือจะฟังไปก่อนจนกว่าคุณจะพร้อม',
     shytalkFeature3: 'บทเรียนฟรีกับครูตัวจริง',
     shytalkFeature4: 'มีการดูแล แบ่งตามช่วงอายุ และสร้างมาให้เป็นมิตรเสมอ',
+    shytalkShotAlt:
+      'แอป ShyTalk บนโทรศัพท์ แสดงห้องเสียงสดที่มีผู้คนอยู่บนที่นั่งและแชตของห้องอยู่ด้านล่าง',
     visitShytalk: 'เยี่ยมชมเว็บไซต์ ShyTalk',
     toolsHeading: 'ระหว่างที่รอ ลองสิ่งเหล่านี้ดู',
     toolsLead:
