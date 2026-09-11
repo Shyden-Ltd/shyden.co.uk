@@ -90,6 +90,7 @@ export const renderEvidencePage = ({
   report,
   content,
   shots,
+  dims = new Map(),
   videos = new Map(),
 }) => {
   const specs = flattenReport(report);
@@ -168,7 +169,7 @@ export const renderEvidencePage = ({
       ${a.shots
         .map((s, k) =>
           s
-            ? `<figure class="shot"><img loading="lazy" src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
+            ? `<figure class="shot"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
             : `<figure class="shot absent"><div class="novid mono">not captured</div><figcaption class="mono">${esc(engines[k])}</figcaption></figure>`,
         )
         .join('')}
@@ -495,6 +496,32 @@ const main = () => {
   const content = JSON.parse(readFileSync(contentPath, 'utf8'));
 
   const b64 = (p) => readFileSync(p).toString('base64');
+
+  /**
+   * A PNG's intrinsic size, straight out of its IHDR chunk.
+   *
+   * Without `width`/`height` on the tag the browser reserves NO space for a
+   * lazily-loaded image, so every one of them grows the page as it decodes.
+   * Measured on this ticket's page: 110 shots, 0 with dimensions, and the
+   * document grew 23642px -> 31760px while they loaded. An operator scrolling
+   * to a journey and clicking its tick had the row jump out from under the
+   * pointer, so the click landed on nothing -- which reads exactly like "the
+   * checkbox does not work", and only for the ones below the fold.
+   *
+   * Bytes 12-15 are the IHDR type, 16-19 the width, 20-23 the height, all
+   * big-endian. Reading them costs nothing: the file is already being read to
+   * base64 it.
+   */
+  const pngSize = (p) => {
+    const b = readFileSync(p);
+    if (b.length < 24 || b.readUInt32BE(12) !== 0x49484452) return null;
+    return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  };
+  const dims = new Map(
+    manifest
+      .map((m) => [m.file, pngSize(join(dir, m.file))])
+      .filter(([, size]) => size),
+  );
   const shots = new Map(
     manifest.map((m) => [
       m.file,
@@ -527,7 +554,14 @@ const main = () => {
     kept.map((v) => [v.key, 'data:video/webm;base64,' + b64(v.abs)]),
   );
 
-  const html = renderEvidencePage({ manifest, report, content, shots, videos });
+  const html = renderEvidencePage({
+    manifest,
+    report,
+    content,
+    shots,
+    dims,
+    videos,
+  });
   writeFileSync(out, html, 'utf8');
   console.log(
     `written ${out} ${(Buffer.byteLength(html) / 1048576).toFixed(2)}MB ` +
