@@ -25,14 +25,32 @@ const run = `${localeNativeNames().join(' ✱ ')} ✱ `;
 const half = run.repeat(2);
 ---
 
-<div class="marquee" aria-hidden="true">
-  <div class="marquee-track">
-    <span>{half}</span>
-    <span>{half}</span>
+<div class="marquee-clip" aria-hidden="true">
+  <div class="marquee">
+    <div class="marquee-track">
+      <span>{half}</span>
+      <span>{half}</span>
+    </div>
   </div>
 </div>
 
 <style>
+  /* The band owns its own overflow.
+     `.marquee` is rotated AND scaled 1.05 to cover the corners the rotation
+     leaves bare, so it paints ~10px outside itself on a narrow viewport —
+     `overflow: hidden` on `.marquee` clips its CHILDREN, never the
+     transformed element itself. The original note here said "the parent clips
+     the overflow", which was a contract with nothing enforcing it: the
+     component was written and never wired into a page, so nothing had ever
+     tested it. Wiring it into the homepage produced 10px of horizontal scroll
+     at every width.
+
+     `clip`, not `hidden`: `hidden` creates a scroll container and would break
+     `position: sticky` for anything inside or below it — which this site uses
+     on /classroom-groups. `clip` clips without that side effect. */
+  .marquee-clip {
+    overflow: clip;
+  }
   .marquee {
     position: relative;
     z-index: 2;
