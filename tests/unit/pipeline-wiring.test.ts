@@ -448,3 +448,125 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     expect(ci).toMatch(/VISUAL:\s*'1'/);
   });
 });
+
+/**
+ * A failure capture that catches nothing must not report success (#131).
+ *
+ * `if-no-files-found: ignore` is the one value that makes an
+ * `actions/upload-artifact` step go GREEN having preserved nothing. Every
+ * one of these steps runs under `if: failure()` — they exist solely to keep
+ * the only evidence a red run ever produces — so a silent empty capture is
+ * the vacuous-guard pattern living inside the evidence path itself. Verified
+ * 2026-09-10: that path had fired exactly ONCE in this repository's history,
+ * and nothing would have said so if it had fired and caught nothing.
+ *
+ * `warn` over `error` deliberately: the job is already red when these run,
+ * and a job that died in `test:unit` before Playwright created
+ * `test-results/` is legitimately empty. An annotation says so; a second red
+ * X would blame the capture for the unit failure.
+ */
+type ArtifactStep = {
+  workflow: string;
+  step: string;
+  /** The declared `if-no-files-found`, or `null` when the key is absent. */
+  declared: string | null;
+};
+
+/**
+ * Every `actions/upload-artifact` step in one workflow's text.
+ *
+ * SOURCE TEXT, not YAML parsing, for the reason given at the top of this
+ * file. The walk is indentation-scoped: from the `uses:` line, keys belong to
+ * that step until a line appears at or left of that indentation, which is
+ * where the next step or the next block begins. Taking the file's first
+ * `if-no-files-found` instead would let step three inherit step two's answer.
+ */
+const artifactStepsIn = (workflow: string, text: string): ArtifactStep[] => {
+  const lines = text.split('\n');
+  const steps: ArtifactStep[] = [];
+  let step = '(unnamed step)';
+
+  lines.forEach((line, i) => {
+    const named = line.match(/^\s*-\s+name:\s*(.+?)\s*$/);
+    if (named) step = named[1];
+    if (!/^\s*uses:\s*actions\/upload-artifact@/.test(line)) return;
+
+    const indent = line.search(/\S/);
+    let declared: string | null = null;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = lines[j];
+      if (next.trim() === '') continue;
+      if (next.search(/\S/) < indent) break;
+      const value = next.match(/^\s*if-no-files-found:\s*(\S+)/);
+      if (value) {
+        declared = value[1].replace(/^['"]|['"]$/g, '');
+        break;
+      }
+    }
+    steps.push({ workflow, step, declared });
+  });
+
+  return steps;
+};
+
+/** Derived from disk, never from a list: the handover's list said two (#131). */
+const allArtifactSteps = (): ArtifactStep[] =>
+  nonEmpty(
+    allWorkflows().flatMap(({ name, text }) => artifactStepsIn(name, text)),
+    'upload-artifact steps in .github/workflows',
+  );
+
+const artifactSite = (s: ArtifactStep) => `${s.workflow} → ${s.step}`;
+
+describe('a failure capture cannot succeed having caught nothing', () => {
+  it('tells ignore, a quoted value and an absent key apart', () => {
+    const fixture = [
+      'jobs:',
+      '  test:',
+      '    steps:',
+      '      - name: silent',
+      '        uses: actions/upload-artifact@abc # v7.0.1',
+      '        with:',
+      '          if-no-files-found: ignore',
+      '      - name: loud',
+      '        uses: actions/upload-artifact@abc # v7.0.1',
+      '        with:',
+      "          if-no-files-found: 'warn'",
+      '      - name: silent by default',
+      '        uses: actions/upload-artifact@abc # v7.0.1',
+      '        with:',
+      '          path: test-results/',
+      '      - name: a later step is not this one',
+      '        run: echo if-no-files-found: ignore',
+      '',
+    ].join('\n');
+
+    expect(artifactStepsIn('fixture.yml', fixture)).toEqual([
+      { workflow: 'fixture.yml', step: 'silent', declared: 'ignore' },
+      { workflow: 'fixture.yml', step: 'loud', declared: 'warn' },
+      { workflow: 'fixture.yml', step: 'silent by default', declared: null },
+    ]);
+  });
+
+  it('no artifact capture in any workflow is set to ignore', () => {
+    const steps = allArtifactSteps();
+    const silent = steps
+      .filter((s) => s.declared === 'ignore')
+      .map(artifactSite);
+
+    expect(
+      searched(silent, { of: steps, what: 'upload-artifact steps' }),
+    ).toEqual([]);
+  });
+
+  it('every artifact capture states what an empty capture means', () => {
+    const steps = allArtifactSteps();
+    const undeclared = steps
+      .filter((s) => s.declared === null)
+      .map(artifactSite);
+
+    expect(
+      searched(undeclared, { of: steps, what: 'upload-artifact steps' }),
+    ).toEqual([]);
+  });
+});
