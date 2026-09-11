@@ -627,10 +627,16 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
       const cli = withoutTsComments(
         readFileSync(`node_modules/astro/dist/cli/${mode}/index.js`, 'utf8'),
       );
+      // THE WHOLE CONSTRUCT, because the bare negation is a SUBSTRING of the
+      // `!!process.env.ASTRO_*_BACKGROUND` that records the flag in the lock
+      // file, and that line would keep this green with the opt-out deleted.
+      // Measured: mutating the branch away left the guard passing (M7).
       expect(
         cli,
         `astro ${mode} no longer honours ASTRO_${mode.toUpperCase()}_BACKGROUND`,
-      ).toContain(`!process.env.ASTRO_${mode.toUpperCase()}_BACKGROUND`);
+      ).toContain(
+        `!process.env.ASTRO_${mode.toUpperCase()}_BACKGROUND && isRunByAgent()`,
+      );
     }
   });
 });
