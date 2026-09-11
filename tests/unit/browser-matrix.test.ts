@@ -156,10 +156,24 @@ describe('the visual-regression project', () => {
   it('states its flake policy rather than discovering it', () => {
     const shot = config.expect?.toHaveScreenshot;
     expect(shot, 'no screenshot policy at all').toBeDefined();
-    // Anti-aliasing moves a handful of pixels; a changed element moves far
-    // more. A threshold left at the default is a policy nobody chose.
-    expect(shot?.maxDiffPixelRatio).toBeGreaterThan(0);
-    expect(shot?.maxDiffPixelRatio).toBeLessThan(0.01);
+    // ZERO, and pinned exactly rather than to a range (#134).
+    //
+    // A range was the original shape here, guarding against the value being
+    // left unset -- "a policy nobody chose". The range itself then became the
+    // policy nobody chose: 0.002 is a fraction of the IMAGE, and on a
+    // full-page 390x2250 screenshot it permitted 1,755 differing pixels,
+    // while a 1px border around a button is ~456. #133 recoloured THIRTEEN
+    // control borders and seven of eight screenshots reported green.
+    //
+    // Zero is safe because the render is deterministic, and that was
+    // measured: two consecutive `--update-snapshots=all` runs in the pinned
+    // container rewrote all eight baselines byte-identically. Proven in both
+    // directions on one 1px border -- red on exactly the four screenshots
+    // containing it at 0, entirely green on the same mutation at 0.002.
+    //
+    // `toBe(0)` and not `toBeLessThan`: `undefined` is not 0, and an absent
+    // ratio applies no limit at all.
+    expect(shot?.maxDiffPixelRatio).toBe(0);
     // The per-pixel half. Without it the ratio bounds how many pixels may
     // differ while each one differs almost arbitrarily -- measured: at the
     // default 0.2, recolouring the accent green-to-blue changed NO screenshot.
