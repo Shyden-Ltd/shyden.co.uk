@@ -570,3 +570,31 @@ describe('a failure capture cannot succeed having caught nothing', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The visual comparison policy is pinned to a VALUE, not to a comment (#134).
+ *
+ * `maxDiffPixelRatio` sat at 0.002 under a comment calling it "the flake
+ * policy, stated rather than discovered" — and that allowance was large
+ * enough to hide a recolour of every control boundary on a page. The comment
+ * was true about its intent and wrong about its effect, which is the only
+ * kind of wrong a comment can be.
+ *
+ * Imported rather than read as source text, so this asserts what Playwright
+ * actually receives: a second `expect` block or a project-level override
+ * cannot satisfy a source-text match while the real value says otherwise.
+ */
+describe('the visual comparison policy', () => {
+  it('tolerates no differing pixels, because the render is deterministic', async () => {
+    const config = (await import('../../playwright.config')).default;
+    expect(config.expect?.toHaveScreenshot?.maxDiffPixelRatio).toBe(0);
+  });
+
+  it('still absorbs sub-visible per-pixel noise', async () => {
+    // The two halves are a pair: the ratio bounds HOW MANY pixels may differ,
+    // the threshold bounds HOW MUCH each one may. Dropping the ratio to zero
+    // without a threshold would make anti-aliasing a failure.
+    const config = (await import('../../playwright.config')).default;
+    expect(config.expect?.toHaveScreenshot?.threshold).toBe(0.1);
+  });
+});
