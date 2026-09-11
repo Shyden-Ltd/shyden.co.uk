@@ -480,6 +480,24 @@ ${journeyHtml}
  * the same reason a manifest entry with no image is -- silence here is
  * indistinguishable from evidence.
  */
+/**
+ * What the publish has to grant, said out loud at build time.
+ *
+ * The page writes the ticks and the verdict through `claude.use('db')`, which
+ * resolves `null` unless the PUBLISH declared the `db` capability. The page
+ * then degrades honestly -- "ticks are local to this view" -- which reads as a
+ * quirk rather than as "nothing you decide here is recorded". #138's page was
+ * published that way first: the operator's sign-off would have been kept
+ * nowhere and could not have been read back.
+ *
+ * The declaration is an argument to the publish, so nothing in this repo can
+ * enforce it. Printing it is what stops the next person having to remember.
+ */
+export const PUBLISH_NOTE =
+  'publish with capabilities {"db": {}} — without it claude.use(\'db\') ' +
+  'resolves null, the page says "ticks are local to this view", and the ' +
+  'sign-off is recorded NOWHERE.';
+
 export const mediaType = (bytes) => {
   if (
     bytes.length >= 8 &&
@@ -641,6 +659,7 @@ const main = () => {
         ? ` DROPPED=${dropped.length} (budget ${budgetMb}MB)`
         : ''),
   );
+  console.log(PUBLISH_NOTE);
 };
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
