@@ -81,6 +81,12 @@
 html {
   color-scheme: dark;
   background: var(--bg);
+  /* Checkboxes and radios are drawn by the browser, and `auto` means it picks
+     its own blue — measured as the selected state on /classroom-groups, the
+     one brand colour on the page that was not ours. `color-scheme: dark`
+     fixes their GROUND but says nothing about the fill. The UA derives the
+     tick's own colour from this, so it stays legible on mint. */
+  accent-color: var(--accent);
 }
 body {
   margin: 0;
