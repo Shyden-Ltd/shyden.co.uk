@@ -129,10 +129,30 @@ export default defineConfig({
   updateSnapshots: 'none',
   expect: {
     toHaveScreenshot: {
-      // The flake policy, stated rather than discovered (#33). Anti-aliasing
-      // moves a handful of pixels between otherwise identical runs; a whole
-      // changed element moves far more than 0.2% of them.
-      maxDiffPixelRatio: 0.002,
+      // The flake policy, MEASURED rather than assumed (#134).
+      //
+      // 0.002 sounds small and is not: it is a fraction of the IMAGE, and
+      // these are full-page screenshots. On `home-en-mobile` (390x2250) it
+      // permitted 1,755 differing pixels. A 1px border around a ~180x48
+      // button is roughly 2*(180+48) = 456 pixels, so a recolour of every
+      // control boundary on the page could never reach the allowance. Not
+      // hypothetical: 13 control borders were recoloured for #133 and SEVEN
+      // OF EIGHT screenshots reported green. Proven by regenerating every
+      // baseline with `--update-snapshots=all` and asking git which files
+      // actually changed -- all eight had.
+      //
+      // Zero, because the render is deterministic and that was measured too:
+      // two consecutive `--update-snapshots=all` runs in the pinned container
+      // on a clean tree rewrote all eight baselines byte-identically, `git
+      // status` empty both times. An allowance only buys flake resistance if
+      // there is flake to resist. `threshold` below still absorbs sub-visible
+      // per-pixel noise -- it decides what COUNTS as a differing pixel, which
+      // is the correct place for that tolerance.
+      //
+      // If a dependency bump ever changes text rasterisation, every
+      // screenshot fails at once. That is the intended behaviour: it is a
+      // real change to what users see, and it belongs in a reviewed diff.
+      maxDiffPixelRatio: 0,
       // The PER-PIXEL tolerance, and the half that was nearly left defaulted.
       // Playwright scores pixels in YIQ space and allows 35215 * threshold^2;
       // the default 0.2 permits ~1409, while recolouring the accent from
