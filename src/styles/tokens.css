@@ -39,6 +39,10 @@
   --glass: rgb(255 255 255 / 0.055);
   --glass-2: rgb(255 255 255 / 0.09);
 
+  /* The mint bloom behind the marquee band. Decorative: it is a shadow, so
+     nothing is ever read against it and 1.4.11 does not reach it. */
+  --accent-glow: rgb(56 245 200 / 0.3);
+
   --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
   --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
   --font-mono: 'Space Mono', ui-monospace, monospace;

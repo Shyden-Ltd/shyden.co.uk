@@ -299,6 +299,8 @@ const DECORATIVE: Record<string, string> = {
     'decorative separators only — card outlines, header and footer rules, table rules. Every control boundary uses --border-strong.',
   '--deep':
     'a gradient stop in the page atmosphere. Never drawn as text, a fill behind text, or a control edge.',
+  '--accent-glow':
+    'the mint bloom behind the marquee band. A box-shadow: nothing is ever read against it, and 1.4.11 reaches only what identifies a control.',
 };
 
 const pairName = (p: Pair) =>
