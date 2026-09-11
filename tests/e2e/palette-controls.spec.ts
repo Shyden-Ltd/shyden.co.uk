@@ -118,9 +118,14 @@ for (const path of PAGES) {
     ).toEqual([]);
     // The defect this documents was a UA default passing for styled: an input
     // with a border and no background drew rgb(59 59 59) on a dark card.
+    // Clipped to the control, not the page. `shoot`'s own note says an
+    // operator scanning for one control should not hunt for it in a shot of
+    // the whole page -- and on Aurora's gradients a full viewport PNG is
+    // ~700KB, because a gradient does not compress the way a flat ground does.
     await shoot(
       page,
       `${path}: all ${readings.length} controls drawn from the palette's ${allowed.length} values`,
+      page.locator(PAINTED).first(),
     );
   });
 }
