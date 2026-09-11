@@ -5,6 +5,7 @@ import ServiceCard from '../ServiceCard.astro';
 import WorkCard from '../WorkCard.astro';
 import { localisePath, type Locale } from '../../lib/i18n';
 import { getSiteStrings } from '../../lib/i18n';
+import { SHYTALK_MARK, asRgba } from '../../lib/shytalk-brand';
 
 interface Props {
   lang: Locale;
@@ -68,7 +69,13 @@ const classroom = localisePath('/classroom-groups', lang);
     <p><Button href="mailto:support@shyden.co.uk">{t.emailUs}</Button></p>
   </section>
 </BaseLayout>
-<style>
+<style
+  define:vars={{
+    shytalkShy: SHYTALK_MARK.shy,
+    shytalkTalk: SHYTALK_MARK.talk,
+    shytalkGlow: asRgba(SHYTALK_MARK.talk, 0.3),
+  }}
+>
   .wrap {
     max-width: var(--maxw);
     margin: 0 auto;
@@ -101,16 +108,16 @@ const classroom = localisePath('/classroom-groups', lang);
   /* ShyTalk brand wordmark — the exact two-tone mark from shytalk.shyden.co.uk:
      light "Shy" + light-purple glowing "Talk", bold with tight tracking. Sits
      on the dark .work-card--shytalk tile so it reads as the real logo. Colours
-     taken from the live logo (#e8e0f0 / #d0bcff). */
+     taken from the live logo; the values live in src/lib/shytalk-brand.ts. */
   .shytalk-wordmark {
     display: inline-block;
     font-size: 1.9rem;
     font-weight: 700;
     letter-spacing: -0.03em;
-    color: #e8e0f0;
+    color: var(--shytalkShy);
   }
   .shytalk-wordmark span {
-    color: #d0bcff;
-    text-shadow: 0 0 24px rgba(208, 188, 255, 0.3);
+    color: var(--shytalkTalk);
+    text-shadow: 0 0 24px var(--shytalkGlow);
   }
 </style>

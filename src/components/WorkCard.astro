@@ -1,4 +1,6 @@
 ---
+import { SHYTALK_MARK } from '../lib/shytalk-brand';
+
 interface Props {
   title: string;
   href: string;
@@ -25,7 +27,14 @@ const target = external ? '_blank' : undefined;
   <h3><slot name="logo">{title}</slot></h3>
   <p><slot /></p>
 </a>
-<style>
+<style
+  define:vars={{
+    shytalkTile: SHYTALK_MARK.tile,
+    shytalkEdge: SHYTALK_MARK.edge,
+    shytalkMuted: SHYTALK_MARK.muted,
+    shytalkTalk: SHYTALK_MARK.talk,
+  }}
+>
   .work-card {
     display: block;
     background: var(--surface);
@@ -46,11 +55,11 @@ const target = external ? '_blank' : undefined;
      real logo, not a recoloured approximation. The wordmark's own colours are
      set on .shytalk-wordmark in the consuming page (Astro slot scoping). */
   .work-card--shytalk {
-    background: #0f0d15;
-    border-color: #2a2438;
-    color: #b8b0c8;
+    background: var(--shytalkTile);
+    border-color: var(--shytalkEdge);
+    color: var(--shytalkMuted);
   }
   .work-card--shytalk:hover {
-    border-color: #d0bcff;
+    border-color: var(--shytalkTalk);
   }
 </style>

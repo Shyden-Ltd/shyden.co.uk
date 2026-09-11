@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { recordErrors } from './recorders';
+import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 test.describe('homepage content', () => {
   test('hero CTA is a mailto and sections exist', async ({ page }) => {
     await page.goto('/');
@@ -30,14 +31,18 @@ test.describe('homepage content', () => {
     const wordmark = shytalk.locator('.shytalk-wordmark');
     await expect(wordmark).toHaveText('ShyTalk');
     await expect(wordmark.locator('span')).toHaveText('Talk');
-    // The exact two-tone logo colours from shytalk.shyden.co.uk:
-    // light "Shy" (#e8e0f0) + purple "Talk" (#d0bcff), on the dark brand tile.
-    await expect(wordmark).toHaveCSS('color', 'rgb(232, 224, 240)');
+    // The two-tone logo colours, READ FROM the single source they are
+    // rendered from. A literal triple here is unsearchable and survives a
+    // rebrand as a silently wrong expectation.
+    await expect(wordmark).toHaveCSS('color', asComputedRgb(SHYTALK_MARK.shy));
     await expect(wordmark.locator('span')).toHaveCSS(
       'color',
-      'rgb(208, 188, 255)',
+      asComputedRgb(SHYTALK_MARK.talk),
     );
-    await expect(shytalk).toHaveCSS('background-color', 'rgb(15, 13, 21)');
+    await expect(shytalk).toHaveCSS(
+      'background-color',
+      asComputedRgb(SHYTALK_MARK.tile),
+    );
     await expect(page.locator('#work a[href="/glory-points"]')).toHaveCount(1);
   });
   test('contact section CTA links to the support mailbox', async ({ page }) => {
