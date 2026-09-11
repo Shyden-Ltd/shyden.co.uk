@@ -200,4 +200,17 @@ const features = [
     color: var(--shytalkTalk);
     text-shadow: 0 0 24px var(--shytalkGlow);
   }
+  /* On paper the two-tone mark cannot be reproduced: both tones are designed
+     for a dark ground and measure 1.28:1 and 1.70:1 on white. It prints as
+     the page's own ink — which @media print in tokens.css has already made
+     black — rather than as a ghost of a logo. No !important needed: the
+     define:vars above sets custom PROPERTIES, not `color`, so a later rule
+     at equal specificity wins. */
+  @media print {
+    .shytalk-wordmark,
+    .shytalk-wordmark span {
+      color: var(--ink);
+      text-shadow: none;
+    }
+  }
 </style>

@@ -213,3 +213,85 @@ main:focus {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Paper.
+ *
+ * MEASURED, not assumed: under emulated print media every element on
+ * /classroom-groups computed to rgb(234 242 255) — --ink, near-white — with
+ * backgrounds already forced transparent by the page's own print rules. On
+ * white paper the group sheets printed BLANK. The Aurora palette introduced
+ * that; nothing in the print stylesheet reset the ink, because on the old
+ * light ground it never had to.
+ *
+ * Written as a TOKEN REDEFINITION rather than as a list of `color: #000`
+ * overrides. Every rule on the site already draws from these, so the whole
+ * page follows from one block — and a component added next year is covered
+ * without anyone remembering that print exists. A list of overrides is the
+ * enumerate-don't-derive mistake, and it is the same list shape that let
+ * "Full screen" print on the sheet for months.
+ *
+ * Ratios against white, all measured: --ink 21:1, --ink-soft 12.63:1,
+ * --accent 7.44:1, --accent-ink 10.84:1, --danger 7.41:1, --border-strong
+ * 5.33:1 (needs 3:1 for a control boundary). --accent is darkened from mint
+ * because #38f5c8 is 1.36:1 on paper — a link that vanishes.
+ */
+@media print {
+  :root {
+    --bg: #fff;
+    --surface: #fff;
+    --ink: #000;
+    --ink-soft: #333;
+
+    --accent: #00614f;
+    --accent-ink: #00463a;
+    /* White, not the near-black screen value: on paper --accent is dark. */
+    --on-accent: #fff;
+    --danger: #a4231a;
+
+    --border: #b4b4b4;
+    --border-strong: #6b6b6b;
+
+    /* Atmosphere and glass are screen-only. Browsers drop background images
+       by default anyway, but `default` is a setting a user can change, and
+       a page that depends on a default is not a page that decided. */
+    --glass: transparent;
+    --glass-2: transparent;
+    --accent-glow: transparent;
+    --aurora-mint: transparent;
+    --aurora-violet: transparent;
+    --aurora-deep: transparent;
+    --aurora-shaft: transparent;
+  }
+  html {
+    background: #fff;
+  }
+  /* The atmosphere layer itself, not just its colours: a fixed element can
+     otherwise repeat on every printed page in some engines. */
+  body::before {
+    display: none;
+  }
+  /* A keyboard affordance, not a record of anything. Globally, so it holds on
+     the pages that carry no print stylesheet of their own — which is exactly
+     where it was printing white-on-white. */
+  .skip-link {
+    display: none;
+  }
+
+  /* A FILLED control is legible only if its background prints, and browsers
+     leave "Background graphics" OFF by default — so `--on-accent` white on
+     `--accent` green reaches the paper as white on white. Outlined instead:
+     legible whatever the user's print settings, and it does not depend on
+     `print-color-adjust`, which the classroom print block already documents
+     as inconsistently honoured.
+     `!important` is load-bearing, not laziness: Astro scopes a component's
+     own rules with a `[data-astro-cid-*]` attribute, so `.primary` there
+     outranks a bare `.btn` here. /classroom-groups hides its buttons outright
+     — a different property, so that rule is untouched by this one. */
+  .btn,
+  button {
+    background: transparent !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--border-strong) !important;
+    box-shadow: none !important;
+  }
+}

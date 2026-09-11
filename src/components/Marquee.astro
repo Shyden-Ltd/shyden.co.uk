@@ -66,6 +66,17 @@ const half = run.repeat(2);
     text-transform: uppercase;
   }
 
+  /* Nothing on paper. The band is already declared decorative and
+     aria-hidden — a screen reader gets nothing from it and neither does a
+     reader holding a sheet. It was also printing white-on-white: its ink is
+     --on-accent, legible only on the mint ground, and a background browsers
+     do not print by default. Hiding it settles both at once. */
+  @media print {
+    .marquee {
+      display: none;
+    }
+  }
+
   @keyframes marquee-slide {
     to {
       transform: translateX(-50%);
