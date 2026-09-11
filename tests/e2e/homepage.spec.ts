@@ -146,6 +146,15 @@ test.describe('homepage content', () => {
         )
         .toBeGreaterThan(0);
 
+      // One frame per locale is the whole ticket, so it is the whole evidence:
+      // the operator judges the Thai capture is Thai by looking at it. Clipped
+      // to the section so the two-column layout he chose is visible alongside.
+      await shoot(
+        page,
+        `${locale}: the showcase shows a real room capture in that locale`,
+        page.locator('#shytalk'),
+      );
+
       rendered.set(
         locale,
         await img.evaluate(
