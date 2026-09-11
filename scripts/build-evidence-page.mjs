@@ -452,6 +452,91 @@ ${journeyHtml}
 </script>`;
 };
 
+/**
+ * What a capture actually is, read from its own first bytes.
+ *
+ * Never from the extension and never hardcoded: a data URI that claims a type
+ * the bytes are not paints nothing, and a page of blank frames looks exactly
+ * like a page of captures that failed. An unrecognised format is a THROW for
+ * the same reason a manifest entry with no image is -- silence here is
+ * indistinguishable from evidence.
+ */
+export const mediaType = (bytes) => {
+  if (
+    bytes.length >= 8 &&
+    bytes.readUInt32BE(0) === 0x89504e47 &&
+    bytes.readUInt32BE(4) === 0x0d0a1a0a
+  )
+    return 'image/png';
+  if (
+    bytes.length >= 3 &&
+    bytes.readUInt16BE(0) === 0xffd8 &&
+    bytes[2] === 0xff
+  )
+    return 'image/jpeg';
+  throw new Error(
+    `build-evidence-page: unrecognised capture format, first bytes ` +
+      `${bytes.subarray(0, 4).toString('hex')}. Refusing to emit a src the ` +
+      'browser cannot paint.',
+  );
+};
+
+/** Markers that stand alone: TEM and the eight restart markers carry NO length. */
+const STANDALONE = new Set([
+  0x01, 0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7,
+]);
+
+/** SOFn, excluding DHT (C4), JPG (C8) and DAC (CC), which share the range. */
+const isFrameHeader = (marker) =>
+  marker >= 0xc0 &&
+  marker <= 0xcf &&
+  marker !== 0xc4 &&
+  marker !== 0xc8 &&
+  marker !== 0xcc;
+
+/**
+ * A capture's intrinsic size.
+ *
+ * Without `width`/`height` on the tag the browser reserves NO space for a
+ * lazily-loaded image, so every one of them grows the page as it decodes.
+ * Measured on #96's page: 110 shots, 0 with dimensions, and the document grew
+ * 23642px -> 31760px while they loaded. An operator scrolling to a journey and
+ * clicking its tick had the row jump out from under the pointer, so the click
+ * landed on nothing -- which reads exactly like "the checkbox does not work",
+ * and only for the ones below the fold.
+ *
+ * PNG keeps its size at a fixed offset: bytes 12-15 are the IHDR type, 16-19
+ * the width, 20-23 the height, all big-endian. JPEG does NOT -- it is a stream
+ * of marker segments, so the frame header sits behind whatever EXIF, ICC or
+ * restart-interval segments the encoder emitted and has to be walked to.
+ */
+export const imageSize = (bytes) => {
+  if (bytes.length >= 24 && bytes.readUInt32BE(12) === 0x49484452)
+    return { w: bytes.readUInt32BE(16), h: bytes.readUInt32BE(20) };
+  if (!(bytes.length >= 4 && bytes.readUInt16BE(0) === 0xffd8)) return null;
+
+  let at = 2;
+  while (at + 1 < bytes.length) {
+    if (bytes[at] !== 0xff) return null; // out of step with the segment stream
+    let marker = bytes[at + 1];
+    // 0xFF is legal padding before a marker, so skip a run of it.
+    while (marker === 0xff && at + 2 < bytes.length) {
+      at += 1;
+      marker = bytes[at + 1];
+    }
+    if (marker === 0xd8 || STANDALONE.has(marker)) {
+      at += 2;
+      continue;
+    }
+    if (marker === 0xd9 || marker === 0xda) return null; // EOI, or the scan begins
+    if (at + 3 >= bytes.length) return null;
+    if (isFrameHeader(marker))
+      return { w: bytes.readUInt16BE(at + 7), h: bytes.readUInt16BE(at + 5) };
+    at += 2 + bytes.readUInt16BE(at + 2);
+  }
+  return null;
+};
+
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : fallback;
@@ -478,10 +563,21 @@ const main = () => {
   const content = JSON.parse(readFileSync(contentPath, 'utf8'));
 
   const b64 = (p) => readFileSync(p).toString('base64');
+
+  // Read ONCE: the same buffer answers what the file is, how big it renders
+  // and what goes in the src.
+  const bytes = new Map(
+    manifest.map((m) => [m.file, readFileSync(join(dir, m.file))]),
+  );
+  const dims = new Map(
+    [...bytes]
+      .map(([file, b]) => [file, imageSize(b)])
+      .filter(([, size]) => size),
+  );
   const shots = new Map(
-    manifest.map((m) => [
-      m.file,
-      'data:image/png;base64,' + b64(join(dir, m.file)),
+    [...bytes].map(([file, b]) => [
+      file,
+      `data:${mediaType(b)};base64,${b.toString('base64')}`,
     ]),
   );
   let used = 0;
