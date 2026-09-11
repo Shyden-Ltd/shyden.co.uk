@@ -14,6 +14,7 @@ import { captureOptions } from '../e2e/evidence';
 import {
   imageSize,
   mediaType,
+  PUBLISH_NOTE,
   renderEvidencePage,
   selectMedia,
 } from '../../scripts/build-evidence-page.mjs';
@@ -297,6 +298,39 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
  * whose name and content disagree must still render, and an unknown format
  * must throw rather than emit a data URI the browser will not paint.
  */
+/**
+ * The page asks for a decision it can only keep if the PUBLISH granted it.
+ *
+ * The sign-off ticks and the verdict are written through `claude.use('db')`,
+ * which resolves `null` unless the publish declared the `db` capability. The
+ * page degrades honestly -- it says "ticks are local to this view" -- and that
+ * line is easy to read as a quirk rather than as "nothing you decide here is
+ * recorded". Found on #138's page at publish time: the first version was
+ * published without the declaration, so the operator's sign-off would have
+ * been kept nowhere and could not have been read back.
+ *
+ * The declaration is a publish ARGUMENT, so no code in this repo can enforce
+ * it. What can be enforced is that the build SAYS so, and that the note and
+ * the page never drift apart.
+ */
+describe('the build says what the publish has to grant', () => {
+  it('names the capability the sign-off is written through', () => {
+    expect(PUBLISH_NOTE).toContain('capabilities');
+    expect(PUBLISH_NOTE).toContain('db');
+  });
+
+  it('names a capability the RENDERED page actually reaches for', () => {
+    // The seam. A note naming a capability the page stopped using is the same
+    // defect in the other direction -- advice nobody can act on, still read as
+    // authoritative.
+    //
+    // Asserted against the rendered output, NOT the generator's source: the
+    // note itself spells use('db'), so a source-text check would be satisfied
+    // by the very sentence it is supposed to be corroborating.
+    expect(build(), 'the page no longer reaches for db').toContain("use('db')");
+  });
+});
+
 describe('an evidence capture is identified by its own bytes', () => {
   const PNG = Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
