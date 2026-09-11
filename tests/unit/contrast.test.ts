@@ -443,7 +443,7 @@ const CONTROL_SELECTORS = [
 /** Selectors whose border separates or outlines but identifies no control. */
 const DECORATIVE_SELECTORS = [
   'components/WorkCard.astro :: .work-card',
-  'components/ServiceCard.astro :: .service-card',
+  'components/WorkCard.astro :: .work-card-badge',
   'components/Footer.astro :: footer',
   'components/Header.astro :: header',
   'components/Header.astro :: .menu[open] ~ nav',

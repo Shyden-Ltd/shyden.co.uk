@@ -1,34 +1,59 @@
 import { test, expect } from './fixtures';
 import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
+
+// Unset in test builds, so the page falls back to the production host. The
+// dev deploy sets PUBLIC_SHYTALK_URL and is covered by the deploy-gate specs.
+const SHYTALK_URL = 'https://shytalk.shyden.co.uk';
+const SHYTALK_HOST = 'shytalk.shyden.co.uk';
+
 test.describe('homepage content', () => {
-  test('hero CTA is a mailto and sections exist', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('h1')).toContainText(/Shyden|bespoke/i);
-    await expect(
-      page.getByRole('link', { name: /get in touch/i }).first(),
-    ).toHaveAttribute('href', 'mailto:support@shyden.co.uk');
-    for (const id of ['services', 'work', 'contact']) {
-      await expect(page.locator(`#${id}`)).toBeVisible();
-    }
-  });
-  test('exactly two service cards', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('#services .service-card')).toHaveCount(2);
-  });
-  test('work cards: ShyTalk shown as its brand wordmark (external), calculator internal', async ({
+  test('the hero leads with ShyTalk and every section is present', async ({
     page,
   }) => {
     await page.goto('/');
-    const shytalk = page.locator(
-      '#work a[href="https://shytalk.shyden.co.uk"]',
-    );
-    await expect(shytalk).toHaveCount(1);
-    // Accessible name stays "ShyTalk" even though the visible title is a wordmark.
-    await expect(shytalk).toHaveAttribute('aria-label', 'ShyTalk');
-    // The card's title is the ShyTalk wordmark: "Shy" + a spanned, brand-purple
-    // "Talk" (the two-tone mark from shytalk.shyden.co.uk), not plain text.
-    const wordmark = shytalk.locator('.shytalk-wordmark');
+    await expect(page.locator('h1')).toContainText(/Shyden/i);
+    const cta = page.locator('.hero').getByRole('link', {
+      name: /explore shytalk/i,
+    });
+    await expect(cta).toHaveAttribute('href', SHYTALK_URL);
+    // Both halves, or neither: noopener denies the opened page a handle back
+    // to ours, noreferrer withholds the referrer.
+    await expect(cta).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(cta).toHaveAttribute('target', '_blank');
+    for (const id of ['shytalk', 'tools', 'contact']) {
+      await expect(page.locator(`#${id}`)).toBeVisible();
+    }
+  });
+
+  test('every header nav item lands on a section that exists', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const hrefs = await page
+      .locator('header nav a')
+      .evaluateAll((links) =>
+        links.map((l) => (l as HTMLAnchorElement).getAttribute('href') ?? ''),
+      );
+    const fragments = hrefs
+      .filter((h) => h.includes('#'))
+      .map((h) => h.slice(h.indexOf('#') + 1));
+    // A liveness control: an empty nav would pass a per-item loop vacuously.
+    expect(fragments.length).toBeGreaterThan(0);
+    for (const fragment of fragments) {
+      await expect(
+        page.locator(`#${fragment}`),
+        `header nav points at #${fragment}, which the page does not render`,
+      ).toHaveCount(1);
+    }
+  });
+
+  test('the ShyTalk showcase carries the brand wordmark and links out', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const showcase = page.locator('#shytalk');
+    const wordmark = showcase.locator('.shytalk-wordmark');
     await expect(wordmark).toHaveText('ShyTalk');
     await expect(wordmark.locator('span')).toHaveText('Talk');
     // The two-tone logo colours, READ FROM the single source they are
@@ -39,12 +64,25 @@ test.describe('homepage content', () => {
       'color',
       asComputedRgb(SHYTALK_MARK.talk),
     );
-    await expect(shytalk).toHaveCSS(
-      'background-color',
-      asComputedRgb(SHYTALK_MARK.tile),
-    );
-    await expect(page.locator('#work a[href="/glory-points"]')).toHaveCount(1);
+    await expect(showcase.locator('.features li')).toHaveCount(4);
+    await expect(
+      showcase.locator(`a[href="${SHYTALK_URL}"]`).last(),
+    ).toHaveAttribute('rel', 'noopener noreferrer');
   });
+
+  test('exactly two tool cards, each badged and linked in-locale', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const cards = page.locator('#tools .work-card');
+    await expect(cards).toHaveCount(2);
+    await expect(page.locator('#tools .work-card-badge')).toHaveCount(2);
+    await expect(page.locator('#tools a[href="/glory-points"]')).toHaveCount(1);
+    await expect(
+      page.locator('#tools a[href="/classroom-groups"]'),
+    ).toHaveCount(1);
+  });
+
   test('contact section CTA links to the support mailbox', async ({ page }) => {
     await page.goto('/');
     await expect(
@@ -52,30 +90,23 @@ test.describe('homepage content', () => {
     ).toHaveAttribute('href', 'mailto:support@shyden.co.uk');
   });
 
-  // Asserting the READ sentence, not just that the link exists: the invitation
-  // and the address are separate nodes, and the space between them is dropped
-  // whenever a formatter puts them on separate lines — which shipped
-  // "building.support@shyden.co.uk" to real phones. Checking the href alone
-  // cannot see that; only the rendered text can.
+  // Asserting the READ sentence, not just that the parts exist: the label and
+  // the host are separate expression nodes, and the space between them is
+  // dropped whenever a formatter puts them on separate lines — which shipped
+  // "building.support@shyden.co.uk" to real phones on the old contact copy.
+  // Checking either node alone cannot see that; only the rendered text can.
   for (const { locale, path, sentence } of [
-    {
-      locale: 'English',
-      path: '/',
-      sentence: "Tell us what you're building. support@shyden.co.uk",
-    },
-    {
-      locale: 'Indonesian',
-      path: '/id/',
-      sentence: 'Ceritakan apa yang sedang Anda bangun. support@shyden.co.uk',
-    },
+    { locale: 'English', path: '/', sentence: `opens ${SHYTALK_HOST}` },
+    { locale: 'Indonesian', path: '/id/', sentence: `membuka ${SHYTALK_HOST}` },
   ]) {
-    test(`${locale}: the contact invitation reads as one sentence`, async ({
+    test(`${locale}: the hero link annotation reads as one line`, async ({
       page,
     }) => {
       await page.goto(path);
-      await expect(page.locator('#contact p').first()).toHaveText(sentence);
+      await expect(page.locator('.hero .opens')).toHaveText(sentence);
     });
   }
+
   test(
     'call-to-action buttons meet the 44×44px touch target',
     { tag: '@emulated-viewport' },
@@ -93,6 +124,7 @@ test.describe('homepage content', () => {
     },
   );
 });
+
 test.describe('mobile-first layout', () => {
   for (const width of [320, 375, 768, 1280]) {
     test(

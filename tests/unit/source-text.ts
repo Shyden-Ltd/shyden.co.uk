@@ -317,3 +317,21 @@ export function withoutCssComments(source: string): string {
 
   return out;
 }
+
+/**
+ * `.astro` is three languages in one file — TypeScript frontmatter, markup,
+ * and CSS — so no single scanner strips it. THREE PASSES, in this order:
+ *
+ *  1. whole-line `//`, which lands regardless of quote state. `.astro`
+ *     TEMPLATE TEXT can carry an apostrophe ("don't") that opens a quote the
+ *     TS scanner never sees closed; from there it stops stripping. It never
+ *     DELETES anything in that state — quote mode copies verbatim — so the
+ *     failure mode is under-stripping, and this pass limits the blast radius.
+ *  2. `<!-- ... -->`, invisible to a TypeScript scanner.
+ *  3. `//` and the block form, quote- and regex-aware.
+ *
+ * Residual, named rather than chased: a TRAILING comment that follows an
+ * unbalanced apostrophe in template text.
+ */
+export const withoutAstroComments = (text: string): string =>
+  withoutTsComments(withoutMarkupComments(withoutCommentLines(text, '//')));

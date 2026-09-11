@@ -10,34 +10,44 @@
  * English sentence on an Indonesian page.
  */
 export const siteEn = {
-  nav: { services: 'Services', work: 'Work', contact: 'Contact' },
+  nav: {
+    shytalk: 'ShyTalk',
+    tools: 'Tools',
+    contact: 'Contact',
+  },
   menuLabel: 'Toggle navigation menu',
   skipToContent: 'Skip to content',
 
   home: {
-    title: 'Shyden Ltd — Bespoke, AI-powered software',
+    title: 'Shyden Ltd — a new technology company',
     description:
-      'Shyden Ltd builds bespoke, AI-accelerated software end-to-end — or embeds specialists in your existing team.',
-    heroHeading:
-      'We build bespoke software — AI-accelerated, yours end-to-end.',
-    heroLead: 'Or embed our specialists in the team you already have.',
-    getInTouch: 'Get in touch',
-    seeOurWork: 'See our work',
-    servicesHeading: 'What we do',
-    serviceBuildTitle: 'We build your product',
-    serviceBuildBody:
-      'Plan, build and maintain your software end-to-end — AI-accelerated, delivered by us.',
-    serviceHireTitle: 'Hire our specialists',
-    serviceHireBody:
-      'Embed our people in your existing software and processes to move faster with less risk.',
-    workHeading: 'Our work',
-    workShytalkBody: 'Our flagship product.',
+      'We build things worth talking about. ShyTalk is our first product — live rooms where you learn a language by speaking it with someone learning yours.',
+    eyebrow: 'A new company',
+    heroHeading: 'Shyden builds things worth talking about.',
+    heroLead:
+      'ShyTalk is the first out of the door — live rooms where you learn a language by speaking it with someone learning yours. Somewhere to actually talk.',
+    exploreShytalk: 'Explore ShyTalk',
+    opensAt: 'opens',
+    flagshipKicker: 'The flagship',
+    shytalkBody:
+      'Take a seat in a live room and talk — with people learning your language, or in a free lesson with a real teacher when you want the structure.',
+    shytalkFeature1: 'Live audio rooms with up to eight seats',
+    shytalkFeature2: "Ask for a seat, or just listen until you're ready",
+    shytalkFeature3: 'Free lessons with real teachers',
+    shytalkFeature4: 'Moderated, age-segregated, and built to stay friendly',
+    visitShytalk: 'Visit the ShyTalk site',
+    toolsHeading: "While you're waiting, try these.",
+    toolsLead:
+      "Two tools we've already built. Free, no sign-up, and working right now.",
+    toolBadge: 'Live now',
     workGloryTitle: 'Glory Points Calculator',
-    workGloryBody: 'A companion tool we built for YeeTalk.',
+    workGloryBody:
+      'Turn YeeTalk glory points into the coins, beans and gift value you need to reach your target.',
+    openGlory: 'Open the calculator',
     workClassroomTitle: 'Classroom Group Creator',
-    workClassroomBody: 'A free tool for teachers, built by us.',
-    contactHeading: 'Get in touch',
-    contactBody: "Tell us what you're building.",
+    workClassroomBody:
+      'Paste a class list and get fair, random groups in seconds. Built for teachers, free forever.',
+    openClassroom: 'Open the group creator',
     emailUs: 'Email us',
   },
 
@@ -106,34 +116,45 @@ export const siteEn = {
 export type SiteStrings = typeof siteEn;
 
 export const siteId: SiteStrings = {
-  nav: { services: 'Layanan', work: 'Karya', contact: 'Kontak' },
+  nav: {
+    shytalk: 'ShyTalk',
+    tools: 'Alat',
+    contact: 'Kontak',
+  },
   menuLabel: 'Buka atau tutup menu navigasi',
   skipToContent: 'Lewati ke konten',
 
   home: {
-    title: 'Shyden Ltd — Perangkat lunak khusus bertenaga AI',
+    title: 'Shyden Ltd — perusahaan teknologi baru',
     description:
-      'Shyden Ltd membangun perangkat lunak khusus yang dipercepat AI dari awal hingga akhir — atau menempatkan spesialis kami di tim Anda yang sudah ada.',
-    heroHeading:
-      'Kami membangun perangkat lunak khusus — dipercepat AI, sepenuhnya milik Anda.',
-    heroLead: 'Atau tempatkan spesialis kami di tim yang sudah Anda miliki.',
-    getInTouch: 'Hubungi kami',
-    seeOurWork: 'Lihat karya kami',
-    servicesHeading: 'Apa yang kami lakukan',
-    serviceBuildTitle: 'Kami membangun produk Anda',
-    serviceBuildBody:
-      'Merencanakan, membangun, dan memelihara perangkat lunak Anda dari awal hingga akhir — dipercepat AI, dikerjakan oleh kami.',
-    serviceHireTitle: 'Rekrut spesialis kami',
-    serviceHireBody:
-      'Tempatkan orang-orang kami di perangkat lunak dan proses Anda yang sudah berjalan agar bergerak lebih cepat dengan risiko lebih kecil.',
-    workHeading: 'Karya kami',
-    workShytalkBody: 'Produk unggulan kami.',
+      'Kami membangun hal-hal yang layak dibicarakan. ShyTalk adalah produk pertama kami — ruang langsung tempat Anda belajar bahasa dengan berbicara bersama orang yang sedang belajar bahasa Anda.',
+    eyebrow: 'Perusahaan baru',
+    heroHeading: 'Shyden membangun hal-hal yang layak dibicarakan.',
+    heroLead:
+      'ShyTalk adalah yang pertama kami luncurkan — ruang langsung tempat Anda belajar bahasa dengan berbicara bersama orang yang sedang belajar bahasa Anda. Tempat untuk benar-benar berbicara.',
+    exploreShytalk: 'Jelajahi ShyTalk',
+    opensAt: 'membuka',
+    flagshipKicker: 'Produk unggulan',
+    shytalkBody:
+      'Ambil kursi di ruang langsung dan mulailah berbicara — dengan orang yang sedang belajar bahasa Anda, atau dalam pelajaran gratis bersama guru sungguhan bila Anda menginginkan yang lebih terstruktur.',
+    shytalkFeature1: 'Ruang audio langsung dengan hingga delapan kursi',
+    shytalkFeature2: 'Minta kursi, atau cukup mendengarkan sampai Anda siap',
+    shytalkFeature3: 'Pelajaran gratis bersama guru sungguhan',
+    shytalkFeature4:
+      'Dimoderasi, dipisahkan menurut usia, dan dibuat agar tetap ramah',
+    visitShytalk: 'Kunjungi situs ShyTalk',
+    toolsHeading: 'Sambil menunggu, coba ini.',
+    toolsLead:
+      'Dua alat yang sudah kami buat. Gratis, tanpa pendaftaran, dan berfungsi sekarang juga.',
+    toolBadge: 'Aktif sekarang',
     workGloryTitle: 'Kalkulator Glory Points',
-    workGloryBody: 'Alat pendamping yang kami buat untuk YeeTalk.',
+    workGloryBody:
+      'Ubah glory points YeeTalk menjadi koin, bean, dan nilai hadiah yang Anda butuhkan untuk mencapai target.',
+    openGlory: 'Buka kalkulator',
     workClassroomTitle: 'Pembuat Kelompok Kelas',
-    workClassroomBody: 'Alat gratis untuk guru, dibuat oleh kami.',
-    contactHeading: 'Hubungi kami',
-    contactBody: 'Ceritakan apa yang sedang Anda bangun.',
+    workClassroomBody:
+      'Tempelkan daftar kelas dan dapatkan kelompok acak yang adil dalam hitungan detik. Dibuat untuk guru, gratis selamanya.',
+    openClassroom: 'Buka pembuat kelompok',
     emailUs: 'Kirim email',
   },
 
@@ -194,35 +215,41 @@ export const siteId: SiteStrings = {
  */
 export const siteZh: SiteStrings = {
   nav: {
-    services: '服务',
-    work: '工作',
+    shytalk: 'ShyTalk',
+    tools: '工具',
     contact: '联系我们',
   },
   menuLabel: '切换导航菜单',
   skipToContent: '跳转至正文',
   home: {
-    title: 'Shyden Ltd — 量身定制的、基于人工智能的软件',
+    title: 'Shyden Ltd — 一家新的科技公司',
     description:
-      'Shyden Ltd 提供端到端的定制化、AI加速软件开发服务——或向您的现有团队派遣专业人员。',
-    heroHeading: '我们开发定制化软件——由人工智能加速，全程由您掌控。',
-    heroLead: '或者将我们的专家派驻到您现有的团队中。',
-    getInTouch: '联系我们',
-    seeOurWork: '查看我们的作品',
-    servicesHeading: '我们的业务',
-    serviceBuildTitle: '我们为您打造产品',
-    serviceBuildBody:
-      '端到端地规划、构建和维护您的软件——由我们提供，并借助人工智能加速。',
-    serviceHireTitle: '聘请我们的专家',
-    serviceHireBody:
-      '将我们的团队融入您现有的软件和流程中，以更快的速度、更低的风险推进工作。',
-    workHeading: '我们的工作',
-    workShytalkBody: '我们的旗舰产品。',
+      '我们打造值得谈论的产品。ShyTalk 是我们的第一款产品——在实时房间里，你通过开口说来学习一门语言，对方也正在学你的语言。',
+    eyebrow: '一家新公司',
+    heroHeading: 'Shyden 打造值得谈论的产品。',
+    heroLead:
+      'ShyTalk 是我们推出的第一款产品——在实时房间里，你通过开口说来学习一门语言，对方也正在学你的语言。一个真正可以开口的地方。',
+    exploreShytalk: '了解 ShyTalk',
+    opensAt: '打开',
+    flagshipKicker: '旗舰产品',
+    shytalkBody:
+      '在实时房间里坐下来开口说——和正在学你语言的人交流，或者在想要更有条理时，参加由真人老师带的免费课程。',
+    shytalkFeature1: '实时语音房间，最多八个座位',
+    shytalkFeature2: '申请一个座位，或者先听着，等你准备好',
+    shytalkFeature3: '由真人老师带的免费课程',
+    shytalkFeature4: '有人管理、按年龄分区，为友善而设计',
+    visitShytalk: '访问 ShyTalk 网站',
+    toolsHeading: '等待期间，先试试这些。',
+    toolsLead: '我们已经做好的两款工具。免费，无需注册，现在就能用。',
+    toolBadge: '已上线',
     workGloryTitle: 'Glory Points 计算器',
-    workGloryBody: '我们为YeeTalk开发的一款配套工具。',
+    workGloryBody:
+      '把 YeeTalk 的 glory points 换算成达成目标所需的金币、beans 和礼物价值。',
+    openGlory: '打开计算器',
     workClassroomTitle: '课堂小组创建器',
-    workClassroomBody: '一款由我们开发的、面向教师的免费工具。',
-    contactHeading: '联系我们',
-    contactBody: '请告诉我们您正在开发什么。',
+    workClassroomBody:
+      '粘贴一份班级名单，几秒钟就能得到公平的随机分组。为教师而做，永久免费。',
+    openClassroom: '打开小组创建器',
     emailUs: '给我们发邮件',
   },
   notFound: {
@@ -277,39 +304,43 @@ export const siteZh: SiteStrings = {
  */
 export const siteVi: SiteStrings = {
   nav: {
-    services: 'Dịch vụ',
-    work: 'Công việc',
+    shytalk: 'ShyTalk',
+    tools: 'Công cụ',
     contact: 'Liên hệ',
   },
   menuLabel: 'Chuyển đổi menu điều hướng',
   skipToContent: 'Chuyển thẳng đến nội dung',
   home: {
-    title:
-      'Shyden Ltd — Phần mềm được thiết kế riêng, ứng dụng trí tuệ nhân tạo',
+    title: 'Shyden Ltd — một công ty công nghệ mới',
     description:
-      'Shyden Ltd phát triển phần mềm theo yêu cầu, được tăng tốc bằng trí tuệ nhân tạo từ đầu đến cuối — hoặc cử các chuyên gia tham gia vào đội ngũ hiện tại của quý vị.',
-    heroHeading:
-      'Chúng tôi phát triển phần mềm theo yêu cầu — được tăng tốc bằng trí tuệ nhân tạo (AI), hoàn toàn thuộc sở hữu của quý khách từ đầu đến cuối.',
+      'Chúng tôi xây dựng những thứ đáng để nói đến. ShyTalk là sản phẩm đầu tiên của chúng tôi — những phòng trực tuyến nơi bạn học một ngôn ngữ bằng cách nói nó với người đang học ngôn ngữ của bạn.',
+    eyebrow: 'Một công ty mới',
+    heroHeading: 'Shyden xây dựng những thứ đáng để nói đến.',
     heroLead:
-      'Hoặc bố trí các chuyên gia của chúng tôi làm việc trực tiếp trong đội ngũ hiện có của quý vị.',
-    getInTouch: 'Liên hệ với chúng tôi',
-    seeOurWork: 'Xem các dự án của chúng tôi',
-    servicesHeading: 'Chúng tôi làm gì',
-    serviceBuildTitle: 'Chúng tôi phát triển sản phẩm của bạn',
-    serviceBuildBody:
-      'Lập kế hoạch, phát triển và bảo trì phần mềm của bạn từ đầu đến cuối — được tăng tốc bằng trí tuệ nhân tạo (AI), do chúng tôi cung cấp.',
-    serviceHireTitle: 'Hãy thuê các chuyên gia của chúng tôi',
-    serviceHireBody:
-      'Hãy tích hợp đội ngũ chuyên gia của chúng tôi vào phần mềm và quy trình hiện có của quý vị để tiến triển nhanh hơn với rủi ro thấp hơn.',
-    workHeading: 'Công việc của chúng tôi',
-    workShytalkBody: 'Sản phẩm chủ lực của chúng tôi.',
-    workGloryTitle: 'Glory Points Máy tính',
-    workGloryBody: 'Một công cụ hỗ trợ mà chúng tôi đã phát triển cho YeeTalk.',
+      'ShyTalk là sản phẩm đầu tiên chúng tôi ra mắt — những phòng trực tuyến nơi bạn học một ngôn ngữ bằng cách nói nó với người đang học ngôn ngữ của bạn. Một nơi để thực sự trò chuyện.',
+    exploreShytalk: 'Khám phá ShyTalk',
+    opensAt: 'mở',
+    flagshipKicker: 'Sản phẩm chủ lực',
+    shytalkBody:
+      'Nhận một chỗ ngồi trong phòng trực tuyến và bắt đầu nói — với những người đang học ngôn ngữ của bạn, hoặc trong một buổi học miễn phí cùng giáo viên thật khi bạn muốn có cấu trúc hơn.',
+    shytalkFeature1: 'Phòng âm thanh trực tuyến với tối đa tám chỗ ngồi',
+    shytalkFeature2: 'Xin một chỗ ngồi, hoặc cứ nghe cho đến khi bạn sẵn sàng',
+    shytalkFeature3: 'Buổi học miễn phí cùng giáo viên thật',
+    shytalkFeature4:
+      'Có kiểm duyệt, phân tách theo độ tuổi, và được xây dựng để luôn thân thiện',
+    visitShytalk: 'Truy cập trang ShyTalk',
+    toolsHeading: 'Trong lúc chờ, hãy thử những công cụ này.',
+    toolsLead:
+      'Hai công cụ chúng tôi đã xây dựng. Miễn phí, không cần đăng ký, và dùng được ngay bây giờ.',
+    toolBadge: 'Đang hoạt động',
+    workGloryTitle: 'Máy tính Glory Points',
+    workGloryBody:
+      'Chuyển glory points của YeeTalk thành số xu, bean và giá trị quà tặng bạn cần để đạt mục tiêu.',
+    openGlory: 'Mở máy tính',
     workClassroomTitle: 'Trình tạo nhóm trong lớp học',
     workClassroomBody:
-      'Một công cụ miễn phí dành cho giáo viên, do chính chúng tôi phát triển.',
-    contactHeading: 'Liên hệ với chúng tôi',
-    contactBody: 'Hãy cho chúng tôi biết bạn đang phát triển dự án gì.',
+      'Dán danh sách lớp và nhận các nhóm ngẫu nhiên, công bằng chỉ trong vài giây. Dành cho giáo viên, miễn phí mãi mãi.',
+    openClassroom: 'Mở trình tạo nhóm',
     emailUs: 'Gửi email cho chúng tôi',
   },
   notFound: {
@@ -365,36 +396,42 @@ export const siteVi: SiteStrings = {
  */
 export const siteTh: SiteStrings = {
   nav: {
-    services: 'บริการ',
-    work: 'งาน',
+    shytalk: 'ShyTalk',
+    tools: 'เครื่องมือ',
     contact: 'ติดต่อ',
   },
   menuLabel: 'สลับเมนูนำทาง',
   skipToContent: 'ไปตรงสู่เนื้อหา',
   home: {
-    title: 'Shyden Ltd — ซอฟต์แวร์ที่ออกแบบตามความต้องการและใช้เทคโนโลยี AI',
+    title: 'Shyden Ltd — บริษัทเทคโนโลยีน้องใหม่',
     description:
-      'Shyden Ltd พัฒนาซอฟต์แวร์ตามความต้องการของลูกค้าแบบครบวงจรด้วยเทคโนโลยี AI — หรือจัดส่งผู้เชี่ยวชาญมาทำงานร่วมกับทีมที่มีอยู่ของคุณ',
-    heroHeading:
-      'เราพัฒนาซอฟต์แวร์ตามความต้องการ — ด้วยเทคโนโลยี AI ที่ช่วยเร่งความเร็ว และให้บริการแบบครบวงจรสำหรับคุณ',
-    heroLead: 'หรือให้ผู้เชี่ยวชาญของเราเข้าร่วมทำงานในทีมที่มีอยู่แล้ว',
-    getInTouch: 'ติดต่อเรา',
-    seeOurWork: 'ดูผลงานของเรา',
-    servicesHeading: 'สิ่งที่เราทำ',
-    serviceBuildTitle: 'เราพัฒนาผลิตภัณฑ์ของคุณ',
-    serviceBuildBody:
-      'วางแผน พัฒนา และดูแลรักษาซอฟต์แวร์ของคุณอย่างครบวงจร — ด้วยเทคโนโลยี AI ที่ช่วยเร่งความเร็ว และให้บริการโดยเรา',
-    serviceHireTitle: 'จ้างผู้เชี่ยวชาญของเรา',
-    serviceHireBody:
-      'นำทีมงานของเราไปผสานเข้ากับซอฟต์แวร์และกระบวนการที่มีอยู่ของคุณ เพื่อดำเนินการได้เร็วขึ้นด้วยความเสี่ยงที่น้อยลง',
-    workHeading: 'งานของเรา',
-    workShytalkBody: 'ผลิตภัณฑ์หลักของเรา',
-    workGloryTitle: 'Glory Points เครื่องคิดเลข',
-    workGloryBody: 'เครื่องมือเสริมที่เราพัฒนาขึ้นสำหรับ YeeTalk',
+      'เราสร้างสิ่งที่ควรค่าแก่การพูดถึง ShyTalk คือผลิตภัณฑ์แรกของเรา — ห้องสนทนาสดที่คุณเรียนภาษาด้วยการพูดกับคนที่กำลังเรียนภาษาของคุณ',
+    eyebrow: 'บริษัทน้องใหม่',
+    heroHeading: 'Shyden สร้างสิ่งที่ควรค่าแก่การพูดถึง',
+    heroLead:
+      'ShyTalk คือสิ่งแรกที่เราปล่อยออกมา — ห้องสนทนาสดที่คุณเรียนภาษาด้วยการพูดกับคนที่กำลังเรียนภาษาของคุณ ที่ที่ได้พูดจริง ๆ',
+    exploreShytalk: 'สำรวจ ShyTalk',
+    opensAt: 'เปิด',
+    flagshipKicker: 'ผลิตภัณฑ์หลัก',
+    shytalkBody:
+      'นั่งลงในห้องสนทนาสดแล้วเริ่มพูดคุย — กับคนที่กำลังเรียนภาษาของคุณ หรือในบทเรียนฟรีกับครูตัวจริงเมื่อคุณอยากได้ความเป็นระบบมากขึ้น',
+    shytalkFeature1: 'ห้องเสียงสดรองรับได้สูงสุดแปดที่นั่ง',
+    shytalkFeature2: 'ขอที่นั่ง หรือจะฟังไปก่อนจนกว่าคุณจะพร้อม',
+    shytalkFeature3: 'บทเรียนฟรีกับครูตัวจริง',
+    shytalkFeature4: 'มีการดูแล แบ่งตามช่วงอายุ และสร้างมาให้เป็นมิตรเสมอ',
+    visitShytalk: 'เยี่ยมชมเว็บไซต์ ShyTalk',
+    toolsHeading: 'ระหว่างที่รอ ลองสิ่งเหล่านี้ดู',
+    toolsLead:
+      'เครื่องมือสองอย่างที่เราทำไว้แล้ว ฟรี ไม่ต้องสมัคร และใช้ได้ทันที',
+    toolBadge: 'พร้อมใช้งาน',
+    workGloryTitle: 'เครื่องคำนวณ Glory Points',
+    workGloryBody:
+      'แปลง glory points ของ YeeTalk เป็นจำนวนเหรียญ bean และมูลค่าของขวัญที่คุณต้องใช้เพื่อไปให้ถึงเป้าหมาย',
+    openGlory: 'เปิดเครื่องคำนวณ',
     workClassroomTitle: 'เครื่องมือสร้างกลุ่มในห้องเรียน',
-    workClassroomBody: 'เครื่องมือฟรีสำหรับครู ที่เราพัฒนาขึ้นเอง',
-    contactHeading: 'ติดต่อเรา',
-    contactBody: 'บอกเราว่าคุณกำลังสร้างอะไรอยู่',
+    workClassroomBody:
+      'วางรายชื่อนักเรียนแล้วได้กลุ่มแบบสุ่มที่ยุติธรรมภายในไม่กี่วินาที สร้างมาเพื่อครู ฟรีตลอดไป',
+    openClassroom: 'เปิดเครื่องมือสร้างกลุ่ม',
     emailUs: 'ส่งอีเมลให้เรา',
   },
   notFound: {

@@ -130,15 +130,20 @@ describe('looking a locale up', () => {
 
 describe('resolving a locale to its site copy', () => {
   it('returns each language its own strings', () => {
-    expect(getSiteStrings('en').nav.services).toBe('Services');
-    expect(getSiteStrings('id').nav.services).toBe('Layanan');
+    expect(getSiteStrings('en').nav.tools).toBe('Tools');
+    expect(getSiteStrings('id').nav.tools).toBe('Alat');
   });
 
   it('falls back to the default locale rather than throwing', () => {
-    expect(getSiteStrings('xx').nav.services).toBe('Services');
+    expect(getSiteStrings('xx').nav.tools).toBe('Tools');
   });
 
   it('covers every routed locale', () => {
+    // `nav.tools` is the probe because its value differs in every locale.
+    // `nav.shytalk` would NOT work here: a proper noun is identical in all
+    // five, so the sameness filter below would match every locale and the
+    // check would stop meaning anything.
+    //
     // The seam. `lang === 'id' ? siteId : siteEn` served ENGLISH to every
     // locale that was not Indonesian — silently, and correctly for exactly as
     // long as there were two.
@@ -149,7 +154,7 @@ describe('resolving a locale to its site copy', () => {
       ).toBeDefined();
     }
     const wrong = (LOCALES as readonly Locale[]).filter(
-      (l) => l !== 'en' && getSiteStrings(l).nav.services === 'Services',
+      (l) => l !== 'en' && getSiteStrings(l).nav.tools === 'Tools',
     );
     expect(
       searched(wrong, { of: LOCALES, what: 'routed locales' }),

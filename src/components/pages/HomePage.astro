@@ -1,7 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Button from '../Button.astro';
-import ServiceCard from '../ServiceCard.astro';
+import Marquee from '../Marquee.astro';
 import WorkCard from '../WorkCard.astro';
 import { localisePath, type Locale } from '../../lib/i18n';
 import { getSiteStrings } from '../../lib/i18n';
@@ -19,54 +19,90 @@ const t = getSiteStrings(lang).home;
 const shytalkUrl =
   import.meta.env.PUBLIC_SHYTALK_URL ?? 'https://shytalk.shyden.co.uk';
 
+// Shown beside the hero CTA so the visitor knows the link leaves the site, and
+// WHERE to. Derived from the URL above, so it cannot name the wrong host.
+const shytalkHost = new URL(shytalkUrl).host;
+
 // Internal links stay inside the visitor's language.
 const glory = localisePath('/glory-points', lang);
 const classroom = localisePath('/classroom-groups', lang);
+
+const features = [
+  t.shytalkFeature1,
+  t.shytalkFeature2,
+  t.shytalkFeature3,
+  t.shytalkFeature4,
+];
+
+// TODO(#17): replace with the real ShyTalk room screenshot, captured from the
+// DEV app. `tests/unit/aurora-screenshot.test.ts` goes RED while this constant
+// exists, so an empty phone frame cannot reach develop by being forgotten.
+const SCREENSHOT_IS_PLACEHOLDER = true;
 ---
 
 <BaseLayout title={t.title} description={t.description} lang={lang}>
   <section class="hero wrap">
+    <p class="eyebrow">{t.eyebrow}</p>
     <h1>{t.heroHeading}</h1>
     <p class="lead">{t.heroLead}</p>
     <p class="cta">
-      <Button href="mailto:support@shyden.co.uk">{t.getInTouch}</Button>
-      <Button href="#work" variant="secondary">{t.seeOurWork}</Button>
+      <Button href={shytalkUrl} external>{t.exploreShytalk}</Button>
+      <span class="opens">{t.opensAt} {shytalkHost}</span>
     </p>
   </section>
 
-  <section id="services" class="wrap">
-    <h2>{t.servicesHeading}</h2>
-    <div class="grid-2">
-      <ServiceCard title={t.serviceBuildTitle}>{t.serviceBuildBody}</ServiceCard
-      >
-      <ServiceCard title={t.serviceHireTitle}>{t.serviceHireBody}</ServiceCard>
+  <Marquee />
+
+  <section id="shytalk" class="wrap showcase">
+    <div class="showcase-copy">
+      <p class="kicker">{t.flagshipKicker}</p>
+      <h2><span class="shytalk-wordmark">Shy<span>Talk</span></span></h2>
+      <p class="lead">{t.shytalkBody}</p>
+      <ul class="features">
+        {features.map((feature) => <li>{feature}</li>)}
+      </ul>
+      <p>
+        <Button href={shytalkUrl} variant="secondary" external
+          >{t.visitShytalk}</Button
+        >
+      </p>
+    </div>
+    <div class="showcase-shot">
+      <div class="phone">
+        {
+          SCREENSHOT_IS_PLACEHOLDER && (
+            <div class="phone-placeholder" aria-hidden="true">
+              ShyTalk
+            </div>
+          )
+        }
+      </div>
     </div>
   </section>
 
-  <section id="work" class="wrap">
-    <h2>{t.workHeading}</h2>
+  <section id="tools" class="wrap">
+    <h2>{t.toolsHeading}</h2>
+    <p class="lead">{t.toolsLead}</p>
     <div class="grid-2">
-      <WorkCard title="ShyTalk" href={shytalkUrl} external variant="shytalk">
-        <span slot="logo" class="shytalk-wordmark">Shy<span>Talk</span></span>
-        {t.workShytalkBody}
-      </WorkCard>
-      <WorkCard title={t.workClassroomTitle} href={classroom}
-        >{t.workClassroomBody}</WorkCard
+      <WorkCard
+        title={t.workGloryTitle}
+        href={glory}
+        badge={t.toolBadge}
+        cta={t.openGlory}>{t.workGloryBody}</WorkCard
       >
-      <WorkCard title={t.workGloryTitle} href={glory}
-        >{t.workGloryBody}</WorkCard
+      <WorkCard
+        title={t.workClassroomTitle}
+        href={classroom}
+        badge={t.toolBadge}
+        cta={t.openClassroom}>{t.workClassroomBody}</WorkCard
       >
     </div>
   </section>
 
-  <section id="contact" class="wrap">
-    <h2>{t.contactHeading}</h2>
+  <section id="contact" class="wrap contact">
     <p>
-      {/* {' '} is load-bearing: a newline here would glue the two together. */}
-      {t.contactBody}{' '}
-      <a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a>
+      <Button href="mailto:support@shyden.co.uk">{t.emailUs}</Button>
     </p>
-    <p><Button href="mailto:support@shyden.co.uk">{t.emailUs}</Button></p>
   </section>
 </BaseLayout>
 <style
@@ -81,8 +117,23 @@ const classroom = localisePath('/classroom-groups', lang);
     margin: 0 auto;
     padding: 3rem var(--space);
   }
+  .hero {
+    padding-top: 4.5rem;
+  }
+  /* Monospace, tracked-out, small: the Aurora eyebrow. Uses --ink-soft, which
+     is pinned against --bg in tests/unit/contrast.test.ts. */
+  .eyebrow,
+  .kicker {
+    margin: 0 0 0.75rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
   .hero h1 {
-    font-size: clamp(2rem, 1.2rem + 4vw, 3.25rem);
+    font-size: clamp(2.25rem, 1.2rem + 5vw, 4rem);
+    line-height: 1.05;
     max-width: var(--measure);
   }
   .lead {
@@ -93,7 +144,69 @@ const classroom = localisePath('/classroom-groups', lang);
   .cta {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 1rem;
+  }
+  /* Not a link, so it needs no focus treatment — it annotates the button it
+     sits beside. --ink-soft on --bg clears AA at this size. */
+  .opens {
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+  }
+  .showcase {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    align-items: center;
+  }
+  .features {
+    list-style: none;
+    padding: 0;
+    margin: 1.5rem 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .features li {
+    position: relative;
+    padding-left: 1.6rem;
+    color: var(--ink-soft);
+  }
+  /* Decorative tick: the text beside it carries the meaning, so it is a
+     pseudo-element rather than a character a screen reader would announce. */
+  .features li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.45em;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+  .showcase-shot {
+    display: flex;
+    justify-content: center;
+  }
+  /* Phone frame. aspect-ratio holds the shape without a fixed height, so the
+     frame cannot letterbox the screenshot on a narrow viewport. */
+  .phone {
+    width: min(300px, 78vw);
+    aspect-ratio: 9 / 19.5;
+    border: 1px solid var(--border-strong);
+    border-radius: 2.25rem;
+    background: var(--surface);
+    box-shadow: 0 0 60px var(--accent-glow);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .phone-placeholder {
+    color: var(--ink-soft);
+    font-family: var(--font-head);
+    font-size: 1.5rem;
   }
   .grid-2 {
     display: grid;
@@ -104,14 +217,16 @@ const classroom = localisePath('/classroom-groups', lang);
     .grid-2 {
       grid-template-columns: 1fr 1fr;
     }
+    .showcase {
+      grid-template-columns: 1.1fr 0.9fr;
+    }
   }
   /* ShyTalk brand wordmark — the exact two-tone mark from shytalk.shyden.co.uk:
-     light "Shy" + light-purple glowing "Talk", bold with tight tracking. Sits
-     on the dark .work-card--shytalk tile so it reads as the real logo. Colours
-     taken from the live logo; the values live in src/lib/shytalk-brand.ts. */
+     light "Shy" + light-purple glowing "Talk", bold with tight tracking.
+     Colours taken from the live logo; values live in src/lib/shytalk-brand.ts. */
   .shytalk-wordmark {
     display: inline-block;
-    font-size: 1.9rem;
+    font-size: 2.6rem;
     font-weight: 700;
     letter-spacing: -0.03em;
     color: var(--shytalkShy);

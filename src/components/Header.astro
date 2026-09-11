@@ -11,17 +11,17 @@ const t = getSiteStrings(lang);
 
 // Root-relative (/#…) not bare (#…): the Header renders on every page via
 // BaseLayout, but these section anchors live only on the homepage — so bare
-// fragments would dead-link on /glory-points and /404. /#services scrolls in
+// fragments would dead-link on /glory-points and /404. /#shytalk scrolls in
 // place on the homepage and navigates home-then-scrolls from any other page.
 //
 // The home path is locale-aware for the same reason: on /id/* pages a bare
-// `/#services` would silently throw the visitor back to the ENGLISH homepage,
+// `/#shytalk` would silently throw the visitor back to the ENGLISH homepage,
 // which looks like the site forgetting their language mid-visit.
 const home = localisePath('/', lang);
 const base = home === '/' ? '' : home.replace(/\/$/, '');
 const links = [
-  { href: `${base}/#services`, label: t.nav.services },
-  { href: `${base}/#work`, label: t.nav.work },
+  { href: `${base}/#shytalk`, label: t.nav.shytalk },
+  { href: `${base}/#tools`, label: t.nav.tools },
   { href: `${base}/#contact`, label: t.nav.contact },
 ];
 ---

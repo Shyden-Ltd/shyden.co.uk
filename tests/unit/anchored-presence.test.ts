@@ -50,7 +50,7 @@ const STRIPPERS = new Set([
   'withoutYamlComments',
   'withoutIniComments',
   'blankCommentLines',
-  'strippedSource',
+  'withoutAstroComments',
   'withoutYamlQuotes',
 ]);
 
