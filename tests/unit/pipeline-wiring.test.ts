@@ -43,6 +43,17 @@ const runnableText = (text: string) => withoutCommentLines(text);
 const workflowSteps = (name: string) => runnableText(workflow(name));
 
 /**
+ * A workflow's `on:` block alone, comment-stripped.
+ *
+ * Scoped to the block because an absence assertion over the whole file is
+ * answered by any `branches:` anywhere in it, and stripped because ci.yml's own
+ * prose names `develop` and `main` -- a raw read would be satisfied by the
+ * documentation describing the bug (#23, #21, #35, #49, #129).
+ */
+const onBlock = (name: string) =>
+  workflowSteps(name).match(/^on:\n([\s\S]*?)(?=^\S)/m)?.[1] ?? '';
+
+/**
  * The workflow filenames, proved non-empty (#84).
  *
  * Three guards in this file assert ABSENCE over this list -- `release.yml`
@@ -228,9 +239,34 @@ describe('the deploy pipeline runs what it claims to', () => {
   // silently stays correct here, which is the problem: nothing records that
   // `build-and-test` is required on BOTH bases. Name them, so removing one is
   // a red test rather than a quiet hole in the gate.
-  it('CI runs on pull requests into develop and main', () => {
-    const ci = workflowSteps('ci.yml');
-    expect(ci).toMatch(/pull_request:[\s\S]*?branches:\s*\[develop,\s*main\]/);
+  it('CI runs on a pull request into ANY base, not just develop and main', () => {
+    // #144, measured: PR #143 was stacked on `17-aurora`, matched no workflow
+    // trigger, ran ZERO checks -- and still reported `mergeStateStatus: CLEAN`.
+    // An empty check list is indistinguishable at a glance from "CI passed",
+    // which is this repo's recurring class arriving in a medium where there is
+    // no step at all to read.
+    //
+    // Naming the bases here was meant to record which ones are REQUIRED. That
+    // is a fact about branch protection and is not expressible by a trigger;
+    // encoding it here bought documentation at the cost of coverage.
+    const on = onBlock('ci.yml');
+
+    // Liveness first: an empty block would make the absence below vacuous.
+    expect(on, 'the on: block could not be read at all').toContain(
+      'pull_request:',
+    );
+    expect(
+      on,
+      'a base filter makes every other base a gate-free zone by construction',
+    ).not.toContain('branches:');
+  });
+
+  it('names the job that branch protection has to require', () => {
+    // The other half of the control, and the half no diff shows: a suite that
+    // runs proves it DETECTS, only `required_status_checks.contexts` proves it
+    // STOPS anything. Renaming this job silently de-gates develop and main,
+    // because protection matches a context by NAME (#33).
+    expect(workflowSteps('ci.yml')).toContain('build-and-test:');
   });
 
   // RAW text on purpose — the opposite of every other check in this file.
