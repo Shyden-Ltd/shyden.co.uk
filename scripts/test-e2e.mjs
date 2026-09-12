@@ -198,13 +198,51 @@ export function countExecuted(stats = {}) {
 
 const RULE = '='.repeat(72);
 
-/** The verdict, and the exit code the process should carry. */
+/**
+ * The verdict, and the exit code the process should carry.
+ *
+ * Typed explicitly because this is a `.mjs` file: a destructured parameter is
+ * inferred from its own shape, so `listing` was first inferred REQUIRED
+ * (breaking all seven existing call sites) and then, once defaulted, inferred
+ * as `null | undefined` (rejecting the only values it is meant to take).
+ * Neither showed up in the suite -- esbuild strips types without checking them.
+ *
+ * @param {{
+ *   enumerated: number | null,
+ *   executed: number | null,
+ *   filtered: boolean,
+ *   playwrightExitCode: number,
+ *   listing?: { status: number | null, stderr?: string } | null,
+ * }} verdict
+ */
 export function reconcile({
   enumerated,
   executed,
   filtered,
   playwrightExitCode,
+  // Defaulted, not merely optional-by-convention: a destructured parameter
+  // without a default is inferred as REQUIRED, so adding this key made every
+  // existing call site a type error while the suite stayed green -- esbuild
+  // strips types without checking them (#115).
+  listing = null,
 }) {
+  // THE LISTING'S OWN FAILURE, before anything derived from it is trusted.
+  // `spawnSync` reported it all along and nothing read it, so a listing that
+  // died while still printing a footer was indistinguishable from a suite that
+  // genuinely had that many tests. Fatal even on a narrowed run: a number that
+  // cannot be believed is worse than no number, because it prints like one.
+  if (listing && listing.status !== 0) {
+    return {
+      exitCode: 1,
+      partial: false,
+      message:
+        `\n${RULE}\n  E2E RECONCILIATION FAILED — the suite could not be enumerated\n\n` +
+        `  \`playwright test --list\` exited ${listing.status}. Whatever it printed\n` +
+        '  cannot be held against this run.\n\n' +
+        `${(listing.stderr ?? '').trim() || '  (it printed nothing on stderr)'}\n${RULE}\n`,
+    };
+  }
+
   if (filtered) {
     return {
       exitCode: playwrightExitCode,
@@ -225,6 +263,29 @@ export function reconcile({
         '  `playwright test --list` did not report a total, so there is nothing\n' +
         '  to hold this run against. An unknown total blocks the run rather than\n' +
         `  waving it through.\n${RULE}\n`,
+    };
+  }
+
+  // ZERO IS A BROKEN MEASUREMENT, NOT A SUITE SIZE. `null` was already fatal
+  // above; the number zero is both a valid `number` and equal to an executed
+  // count of zero, so `{0, 0}` fell through the inequality below and returned
+  // Playwright's own exit code -- a full run that enumerated nothing, ran
+  // nothing and exited clean, reported as a PASS by the guard whose message
+  // calls that the single outcome it exists to reject (#150, measured).
+  //
+  // This repo has 24 spec files. If an empty suite ever becomes legitimate it
+  // needs a flag saying so out loud, not a silent zero.
+  if (enumerated === 0 || executed === 0) {
+    return {
+      exitCode: 1,
+      partial: false,
+      message:
+        `\n${RULE}\n  E2E RECONCILIATION FAILED — a run of ZERO tests is not a pass\n\n` +
+        `    tests enumerated by \`playwright test --list\` : ${enumerated}\n` +
+        `    tests accounted for by this run              : ${executed}\n\n` +
+        '  One of those is zero, so there is nothing here to have passed.\n' +
+        `  Playwright exited ${playwrightExitCode}, which says nothing about a suite\n` +
+        `  that never ran.\n${RULE}\n`,
     };
   }
 
@@ -346,6 +407,7 @@ function main() {
       executed,
       filtered,
       playwrightExitCode: run.status ?? 1,
+      listing,
     });
     if (verdict.message) console.error(verdict.message);
     if (!liveness.ok)
