@@ -18,24 +18,74 @@ import { withoutCssComments } from './source-text';
 const TOKENS_FILE = 'src/styles/tokens.css';
 const SRC = 'src';
 
+type RGB = readonly [number, number, number];
+type RGBA = { rgb: RGB; alpha: number };
+
 /** One sRGB channel, linearised per WCAG 2.x relative luminance. */
 const channel = (value: number): number => {
   const c = value / 255;
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 };
 
-const luminance = (hex: string): number => {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-};
+const luminance = ([r, g, b]: RGB): number =>
+  0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 
-const contrast = (a: string, b: string): number => {
+const contrast = (a: RGB, b: RGB): number => {
   const [la, lb] = [luminance(a), luminance(b)];
   const [hi, lo] = la > lb ? [la, lb] : [lb, la];
   return (hi + 0.05) / (lo + 0.05);
 };
+
+/**
+ * A CSS colour as this repo writes them: `#abc`, `#aabbcc`, or the space-
+ * separated form `rgb(255 255 255 / 0.35)`.
+ *
+ * Aurora's borders and glass surfaces are ALPHAS, not hex (#17). A guard that
+ * read only hex would silently classify every one of them as "not a colour"
+ * and drop it from the pair check AND from the exhaustiveness check — green,
+ * while blind to exactly the tokens that design leans on hardest.
+ */
+const parseColour = (value: string): RGBA | null => {
+  const text = value.trim();
+
+  const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex !== null) {
+    const h = hex[1];
+    const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+    return { rgb: [r, g, b], alpha: 1 };
+  }
+
+  const fn = text.match(
+    /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[/,]\s*([\d.]+)(%?)\s*)?\)$/i,
+  );
+  if (fn === null) return null;
+
+  const [r, g, b] = [fn[1], fn[2], fn[3]].map(Number);
+  const alpha =
+    fn[4] === undefined
+      ? 1
+      : fn[5] === '%'
+        ? Number(fn[4]) / 100
+        : Number(fn[4]);
+  return { rgb: [r, g, b], alpha };
+};
+
+const isColour = (value: string): boolean => parseColour(value) !== null;
+
+/** Contrast between two literal CSS colours — for the WCAG pin only. */
+const ratioOf = (a: string, b: string): number => {
+  const [x, y] = [parseColour(a), parseColour(b)];
+  if (x === null || y === null)
+    throw new Error(`unreadable colour: ${a} / ${b}`);
+  return contrast(x.rgb, y.rgb);
+};
+
+/** Source-over compositing, which is what a browser does with an alpha. */
+const over = (fg: RGBA, ground: RGB): RGB =>
+  [0, 1, 2].map((i) =>
+    Math.round(fg.alpha * fg.rgb[i] + (1 - fg.alpha) * ground[i]),
+  ) as unknown as RGB;
 
 /**
  * The `:root` custom properties, read with CSS comments stripped.
@@ -58,20 +108,50 @@ const tokens = (): Map<string, string> => {
   return found;
 };
 
-const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
-
 const colourTokens = (): [string, string][] =>
   nonEmpty(
-    [...tokens()].filter(([, value]) => HEX.test(value)),
+    [...tokens()].filter(([, value]) => isColour(value)),
     `colour tokens in ${TOKENS_FILE}`,
   );
+
+/**
+ * Flatten a layer stack, written TOP-FIRST, onto its opaque base.
+ *
+ * `['--border-strong', '--bg']` is the border as the eye actually receives it.
+ * Comparing the declared `rgb(255 255 255 / .35)` against `--bg` directly
+ * scores 21:1 — the ratio of pure white to near-black, a colour that is never
+ * drawn anywhere. An alpha judged un-composited is a guard measuring a pixel
+ * that does not exist, and it fails OPEN.
+ */
+const flatten = (
+  layers: readonly string[],
+  from: Map<string, string>,
+): RGB | string => {
+  const parsed: RGBA[] = [];
+  for (const layer of layers) {
+    const value = layer.startsWith('--') ? from.get(layer) : layer;
+    if (value === undefined) return `${layer} is not defined in ${TOKENS_FILE}`;
+    const colour = parseColour(value);
+    if (colour === null) return `${layer} is not a readable colour: ${value}`;
+    parsed.push(colour);
+  }
+
+  const base = parsed[parsed.length - 1];
+  if (base.alpha !== 1)
+    return `the base of [${layers.join(', ')}] is translucent — nothing is behind it`;
+
+  return parsed
+    .slice(0, -1)
+    .reduceRight<RGB>((ground, layer) => over(layer, ground), base.rgb);
+};
 
 /** 4.5 for body copy, 3 for large text and for anything identifying a control. */
 const LEVELS = { body: 4.5, large: 3, ui: 3 } as const;
 
 type Pair = {
-  fg: string;
-  bg: string;
+  /** Layer stack, TOP-FIRST, ending in an opaque base. */
+  fg: readonly string[];
+  bg: readonly string[];
   level: keyof typeof LEVELS;
   where: string;
 };
@@ -80,89 +160,164 @@ type Pair = {
  * Which colour sits on which, and at what level.
  *
  * Hand-written deliberately: WHICH pairs the design puts together is a design
- * fact that no filesystem walk can answer, and resolving it from the cascade
- * would need a full browser. What IS derived is exhaustiveness — every colour
- * token below must appear here or in `DECORATIVE`, so a new token cannot be
- * added without being classified.
+ * fact no filesystem walk can answer, and resolving it from the cascade would
+ * need a browser. What IS derived is exhaustiveness — every colour token must
+ * appear here or in `DECORATIVE`, so a new token cannot be added unclassified.
+ *
+ * NOT covered here, and covered by the measurement pass instead: the page
+ * atmosphere is a conic gradient, a radial gradient and a 5% white shaft
+ * overlay, so the real ground under a given text run is lighter than `--bg`
+ * in places. A token table can only judge the flat case.
  */
+/**
+ * The atmosphere as a layer stack, TOP-FIRST.
+ *
+ * Every stop composited at once is the WORST case, not the real one: the
+ * three radials are positioned apart, so no pixel receives all of them. A
+ * guard that measured the real overlap would need a browser and would answer
+ * a question about one viewport width; this answers it for all of them, and
+ * errs towards refusing a palette that would in fact have passed.
+ */
+const ATMOSPHERE = [
+  '--aurora-shaft',
+  '--aurora-mint',
+  '--aurora-violet',
+  '--aurora-deep',
+  '--bg',
+] as const;
+
 const PAIRS: Pair[] = [
   {
-    fg: '--ink',
-    bg: '--bg',
+    fg: ['--ink'],
+    bg: ['--bg'],
     level: 'body',
     where: 'body copy on the page ground',
   },
-  { fg: '--ink', bg: '--surface', level: 'body', where: 'body copy on a card' },
   {
-    fg: '--ink-soft',
-    bg: '--bg',
+    fg: ['--ink'],
+    bg: ['--surface'],
+    level: 'body',
+    where: 'body copy on a card',
+  },
+  {
+    fg: ['--ink'],
+    bg: ['--glass', '--bg'],
+    level: 'body',
+    where: 'a tool-card heading on the glass panel',
+  },
+  {
+    fg: ['--ink-soft'],
+    bg: ['--bg'],
     level: 'body',
     where: 'secondary copy on the page ground',
   },
   {
-    fg: '--ink-soft',
-    bg: '--surface',
+    fg: ['--ink-soft'],
+    bg: ['--surface'],
     level: 'body',
     where: 'secondary copy on a card',
   },
   {
-    fg: '--accent',
-    bg: '--bg',
+    fg: ['--ink-soft'],
+    bg: ['--glass', '--bg'],
+    level: 'body',
+    where: 'tool-card body copy on the glass panel',
+  },
+  {
+    fg: ['--ink-soft'],
+    bg: ['--glass-2', '--bg'],
+    level: 'body',
+    where: 'tool-card body copy, panel hovered',
+  },
+  {
+    fg: ['--accent'],
+    bg: ['--bg'],
     level: 'body',
     where:
       'link text, and the :focus-visible ring — the ring needs only 3:1 under 1.4.11 but shares this pair, so the stricter 4.5 governs',
   },
   {
-    fg: '--accent',
-    bg: '--surface',
+    fg: ['--accent'],
+    bg: ['--surface'],
     level: 'body',
     where: 'link text on a card',
   },
   {
-    fg: '--accent-ink',
-    bg: '--bg',
+    fg: ['--accent'],
+    bg: ['--glass', '--bg'],
+    level: 'body',
+    where: 'the tool-card open link on the glass panel',
+  },
+  {
+    fg: ['--accent-ink'],
+    bg: ['--bg'],
     level: 'body',
     where: 'link hover on the page ground',
   },
   {
-    fg: '--accent-ink',
-    bg: '--surface',
+    fg: ['--accent-ink'],
+    bg: ['--surface'],
     level: 'body',
     where: 'link hover on a card',
   },
   {
-    fg: '#ffffff',
-    bg: '--accent',
+    fg: ['--on-accent'],
+    bg: ['--accent'],
     level: 'body',
-    where: 'primary button label, skip link',
+    where: 'the label on a filled button',
   },
   {
-    fg: '#ffffff',
-    bg: '--accent-ink',
+    fg: ['--on-accent'],
+    bg: ['--accent-ink'],
     level: 'body',
-    where: 'primary button label on hover',
+    where: 'the label on a filled button, hovered',
   },
   {
-    fg: '--danger',
-    bg: '--bg',
+    fg: ['--danger'],
+    bg: ['--bg'],
     level: 'body',
     where: 'error text on the page ground',
   },
   {
-    fg: '--danger',
-    bg: '--surface',
+    fg: ['--danger'],
+    bg: ['--surface'],
     level: 'body',
     where: 'error text on a card',
   },
   {
-    fg: '--border-strong',
-    bg: '--bg',
+    fg: ['--ink'],
+    bg: ATMOSPHERE,
+    level: 'body',
+    where: 'body copy over the brightest possible point of the atmosphere',
+  },
+  {
+    fg: ['--ink-soft'],
+    bg: ATMOSPHERE,
+    level: 'body',
+    where:
+      'secondary copy over the atmosphere — the knife edge. At mint .10 / violet .14 / deep .18 this scored 4.48:1, a failure by 0.02 that no single layer shows',
+  },
+  {
+    fg: ['--accent'],
+    bg: ATMOSPHERE,
+    level: 'body',
+    where: 'link text and section kickers over the atmosphere',
+  },
+  {
+    fg: ['--border-strong', ...ATMOSPHERE],
+    bg: ATMOSPHERE,
+    level: 'ui',
+    where: 'control boundaries over the atmosphere (WCAG 1.4.11)',
+  },
+  {
+    fg: ['--border-strong', '--bg'],
+    bg: ['--bg'],
     level: 'ui',
     where: 'control boundaries on the page ground (WCAG 1.4.11)',
   },
   {
-    fg: '--border-strong',
-    bg: '--surface',
+    fg: ['--border-strong', '--surface'],
+    bg: ['--surface'],
     level: 'ui',
     where: 'control boundaries on a card (WCAG 1.4.11)',
   },
@@ -173,17 +328,21 @@ const PAIRS: Pair[] = [
  *
  * `--border` is here because 1.4.11 reaches only information REQUIRED to
  * identify a component. A card outline or a table rule is not that; a form
- * field's only edge is, which is why those moved to `--border-strong`.
+ * field's only edge is, which is why those use `--border-strong`.
  */
 const DECORATIVE: Record<string, string> = {
   '--border':
     'decorative separators only — card outlines, header and footer rules, table rules. Every control boundary uses --border-strong.',
+  '--deep':
+    'a gradient stop in the page atmosphere, never drawn as text or a control edge. It IS a fill behind text — the earlier note here said otherwise — so it is measured as a layer in ATMOSPHERE rather than trusted as decorative.',
+  '--violet':
+    'a gradient stop in the page atmosphere. It was specified as the section kicker colour; measured, it scores 4.61:1 flat and 2.91:1 over the atmosphere, so it cannot carry small text. Kickers use --accent.',
+  '--accent-glow':
+    'the mint bloom behind the marquee band. A box-shadow: nothing is ever read against it, and 1.4.11 reaches only what identifies a control.',
 };
 
-const resolve = (ref: string, from: Map<string, string>): string | null =>
-  ref.startsWith('--') ? (from.get(ref) ?? null) : ref;
-
-const pairName = (p: Pair) => `${p.fg} on ${p.bg} (${p.where})`;
+const pairName = (p: Pair) =>
+  `${p.fg.join(' over ')} on ${p.bg.join(' over ')} (${p.where})`;
 
 describe('the palette meets WCAG AA by computation, not by comment', () => {
   /**
@@ -197,23 +356,44 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
    * 0.07 of the threshold that matters.
    */
   it('computes the ratios WCAG itself publishes', () => {
-    expect(contrast('#000000', '#ffffff')).toBeCloseTo(21, 5);
-    expect(contrast('#ffffff', '#000000')).toBeCloseTo(21, 5);
-    expect(contrast('#767676', '#ffffff')).toBeGreaterThanOrEqual(4.5);
-    expect(contrast('#777777', '#ffffff')).toBeLessThan(4.5);
-    expect(contrast('#fff', '#000')).toBeCloseTo(21, 5);
-    expect(contrast('#0a7d66', '#0a7d66')).toBeCloseTo(1, 5);
+    expect(ratioOf('#000000', '#ffffff')).toBeCloseTo(21, 5);
+    expect(ratioOf('#ffffff', '#000000')).toBeCloseTo(21, 5);
+    expect(ratioOf('#767676', '#ffffff')).toBeGreaterThanOrEqual(4.5);
+    expect(ratioOf('#777777', '#ffffff')).toBeLessThan(4.5);
+    expect(ratioOf('#fff', '#000')).toBeCloseTo(21, 5);
+    expect(ratioOf('#0a7d66', '#0a7d66')).toBeCloseTo(1, 5);
+  });
+
+  /**
+   * Compositing pinned independently of the palette, for the same reason.
+   *
+   * 50% white over black is the one case anyone can check by hand, and an
+   * opaque layer must pass through unchanged or every stack is silently wrong.
+   */
+  it('composites an alpha the way a browser does', () => {
+    const from = new Map([
+      ['--half', 'rgb(255 255 255 / 0.5)'],
+      ['--black', '#000000'],
+      ['--opaque', '#123456'],
+    ]);
+    expect(flatten(['--half', '--black'], from)).toEqual([128, 128, 128]);
+    expect(flatten(['--opaque', '--black'], from)).toEqual([18, 52, 86]);
+    expect(flatten(['--black'], from)).toEqual([0, 0, 0]);
+    expect(flatten(['--missing', '--black'], from)).toBe(
+      '--missing is not defined in src/styles/tokens.css',
+    );
+    expect(flatten(['--half'], from)).toBe(
+      'the base of [--half] is translucent — nothing is behind it',
+    );
   });
 
   it('every declared pair clears its required ratio', () => {
     const from = tokens();
     const failures = PAIRS.flatMap((pair) => {
-      const fg = resolve(pair.fg, from);
-      const bg = resolve(pair.bg, from);
-      if (fg === null || bg === null)
-        return [
-          `${pairName(pair)} — ${fg === null ? pair.fg : pair.bg} is not defined in ${TOKENS_FILE}`,
-        ];
+      const fg = flatten(pair.fg, from);
+      const bg = flatten(pair.bg, from);
+      if (typeof fg === 'string') return [`${pairName(pair)} — ${fg}`];
+      if (typeof bg === 'string') return [`${pairName(pair)} — ${bg}`];
 
       const ratio = contrast(fg, bg);
       const need = LEVELS[pair.level];
@@ -228,7 +408,7 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
   });
 
   it('every colour token is classified — paired or explicitly decorative', () => {
-    const paired = new Set(PAIRS.flatMap((p) => [p.fg, p.bg]));
+    const paired = new Set(PAIRS.flatMap((p) => [...p.fg, ...p.bg]));
     const all = colourTokens();
     const unclassified = all
       .map(([name]) => name)
@@ -301,7 +481,8 @@ const CONTROL_SELECTORS = [
 /** Selectors whose border separates or outlines but identifies no control. */
 const DECORATIVE_SELECTORS = [
   'components/WorkCard.astro :: .work-card',
-  'components/ServiceCard.astro :: .service-card',
+  'components/WorkCard.astro :: .work-card-badge',
+  'components/pages/HomePage.astro :: .contact',
   'components/Footer.astro :: footer',
   'components/Header.astro :: header',
   'components/Header.astro :: .menu[open] ~ nav',

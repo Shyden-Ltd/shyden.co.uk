@@ -91,6 +91,7 @@ export const renderEvidencePage = ({
   report,
   content,
   shots,
+  dims = new Map(),
   videos = new Map(),
 }) => {
   const specs = flattenReport(report);
@@ -169,7 +170,7 @@ export const renderEvidencePage = ({
       ${a.shots
         .map((s, k) =>
           s
-            ? `<figure class="shot"><img loading="lazy" src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
+            ? `<figure class="shot"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
             : `<figure class="shot absent"><div class="novid mono">not captured</div><figcaption class="mono">${esc(engines[k])}</figcaption></figure>`,
         )
         .join('')}
@@ -389,6 +390,14 @@ ${journeyHtml}
   var DOC = 'signoff/' + ${JSON.stringify(content.signoffKey ?? 'ticket')};
   var state = { journeys: {}, verdict: null, note: '' };
   var db = null, saveTimer = null;
+  // Local edits outstanding against the server copy. Writes are debounced, so
+  // a snapshot can arrive carrying the document as it was BEFORE the tick the
+  // operator just made; applying it would replace state wholesale and repaint
+  // that tick off. Measured: only the first tick stuck, because the first is
+  // the only one the server had -- every later one was clobbered by the echo
+  // of the earlier write. While these two differ, the local copy is newer and
+  // the snapshot is ignored.
+  var localRev = 0, syncedRev = 0;
   var stateEl = document.getElementById('state');
   var progressEl = document.getElementById('progress');
   var noteEl = document.getElementById('note');
@@ -412,12 +421,17 @@ ${journeyHtml}
     if (document.activeElement !== noteEl) noteEl.value = state.note || '';
   }
   function save() {
+    localRev++;
     if (!db) { say('Not saved \u2014 this view cannot reach storage. Your ticks are visible but will not persist.', false); return; }
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
+      // The revision this write carries. Captured at FIRE time, not at change
+      // time: the debounce coalesces several ticks into one write, and it is
+      // the newest of them that reaches the server.
+      var writing = localRev;
       say('Saving\u2026', false);
       Promise.resolve(db.doc(DOC).set({ journeys: state.journeys, verdict: state.verdict, note: state.note, updatedAt: new Date().toISOString() }))
-        .then(function () { say('Saved. Your decision persists on this page.', true); })
+        .then(function () { syncedRev = writing; say('Saved. Your decision persists on this page.', true); })
         .catch(function (e) { say('Could not save: ' + (e && e.code ? e.code : 'unknown'), false); });
     }, 400);
   }
@@ -441,6 +455,11 @@ ${journeyHtml}
     if (!db) { say('Ticks are local to this view \u2014 storage is not available here.', false); return; }
     var ref = db.doc(DOC);
     var apply = function (snap) {
+      // Never let the server's copy overwrite ticks that have not been
+      // confirmed saved. Another viewer's change is picked up the moment this
+      // view is in sync again, which is the correct trade: an operator's own
+      // input is the one thing that must not disappear under them.
+      if (localRev !== syncedRev) return;
       var d = snap && typeof snap.data === 'function' ? snap.data() : (snap && snap.data) || snap;
       if (d && typeof d === 'object') { state.journeys = d.journeys || {}; state.verdict = d.verdict || null; state.note = d.note || ''; paint(); }
     };
@@ -624,7 +643,14 @@ const main = () => {
     kept.map((v) => [v.key, 'data:video/webm;base64,' + b64(v.abs)]),
   );
 
-  const html = renderEvidencePage({ manifest, report, content, shots, videos });
+  const html = renderEvidencePage({
+    manifest,
+    report,
+    content,
+    shots,
+    dims,
+    videos,
+  });
   writeFileSync(out, html, 'utf8');
   console.log(
     `written ${out} ${(Buffer.byteLength(html) / 1048576).toFixed(2)}MB ` +

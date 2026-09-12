@@ -78,6 +78,16 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
   },
 };
 
+/**
+ * Every served locale's own name for itself, in `MVP_LOCALES` order.
+ *
+ * Derived rather than listed so the homepage marquee cannot name a language
+ * the site does not serve, and cannot fall behind one that is added. The
+ * approved Aurora artifact writes the list by hand (#17).
+ */
+export const localeNativeNames = (): string[] =>
+  MVP_LOCALES.map((locale) => LOCALE_METADATA[locale].nativeName);
+
 export const isMvpLocale = (value: unknown): value is MvpLocale =>
   typeof value === 'string' &&
   (MVP_LOCALES as readonly string[]).includes(value);

@@ -1360,10 +1360,7 @@ test.describe('site-wide language switching', () => {
   });
 
   for (const [path, heading] of [
-    [
-      '/id/',
-      'Kami membangun perangkat lunak khusus — dipercepat AI, sepenuhnya milik Anda.',
-    ],
+    ['/id/', 'Shyden membangun hal-hal yang layak dibicarakan.'],
     ['/id/glory-points', 'Kalkulator Glory Points'],
   ] as const) {
     test(`${path} is translated`, async ({ page }) => {
@@ -1377,12 +1374,14 @@ test.describe('site-wide language switching', () => {
     page,
   }) => {
     await page.goto('/id/');
-    await expect(page.locator('nav a[href="/id/#services"]')).toHaveCount(1);
+    await expect(page.locator('nav a[href="/id/#shytalk"]')).toHaveCount(1);
     // The hrefs were asserted; the WORDS were not. An entirely English nav
     // bar on every Indonesian page passed the whole suite.
     await expect(page.locator('nav a')).toHaveText([
-      'Layanan',
-      'Karya',
+      // "ShyTalk" is a proper noun, identical in all five locales by design;
+      // 'Alat' and 'Kontak' are what prove this nav is Indonesian.
+      'ShyTalk',
+      'Alat',
       'Kontak',
     ]);
   });
@@ -1395,14 +1394,14 @@ test.describe('site-wide language switching', () => {
     // card landed on the English page.
     await page.goto('/id/');
     await expect(
-      page.locator('#work a[href="/id/classroom-groups"]'),
+      page.locator('#tools a[href="/id/classroom-groups"]'),
     ).toHaveCount(1);
-    await expect(page.locator('#work a[href="/id/glory-points"]')).toHaveCount(
+    await expect(page.locator('#tools a[href="/id/glory-points"]')).toHaveCount(
       1,
     );
-    await expect(page.locator('#work a[href="/classroom-groups"]')).toHaveCount(
-      0,
-    );
+    await expect(
+      page.locator('#tools a[href="/classroom-groups"]'),
+    ).toHaveCount(0);
   });
 
   test.describe('what each page tells a search engine', () => {

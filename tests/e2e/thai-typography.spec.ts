@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { shoot } from './evidence';
 import { sitePaths } from '../site-pages';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 
@@ -108,6 +109,16 @@ test.describe('Thai typography', () => {
             offenders,
             `${route} at ${width}px: Thai marks would collide with the line above`,
           ).toEqual([]);
+          // Thai stacks up to two marks above the base glyph and one below, so
+          // the collision is visible in the image itself, not only the numbers.
+          // Clipped to the heading: that is where #22's measured line-height
+          // applies and where the collision appeared, and at full-page size a
+          // reader cannot judge a mark against the line above anyway.
+          await shoot(
+            page,
+            `${route} at ${width}px: ${examined} Thai runs clear of the line above`,
+            page.locator('h1').first(),
+          );
         }
       },
     );

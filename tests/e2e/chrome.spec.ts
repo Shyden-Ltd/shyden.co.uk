@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { shoot } from './evidence';
 import type { Locator } from '@playwright/test';
 
 test.describe('header + footer', () => {
@@ -12,13 +13,21 @@ test.describe('header + footer', () => {
       await page.goto('/');
       const nav = page.locator('header nav');
       await expect(nav.locator('a')).toHaveText([
-        'Services',
-        'Work',
+        'ShyTalk',
+        'Tools',
         'Contact',
       ]);
       await expect(nav.locator('a').nth(0)).toHaveAttribute(
         'href',
-        '/#services',
+        '/#shytalk',
+      );
+      // Aurora renamed these from Services/Work; this spec is the established
+      // home for nav-link facts, so the proof belongs here and not in a second
+      // guard elsewhere.
+      await shoot(
+        page,
+        'nav reads ShyTalk / Tools / Contact, in scroll order',
+        nav,
       );
     },
   );
@@ -26,15 +35,15 @@ test.describe('header + footer', () => {
   test('nav links are root-relative so they work from every page, not just /', async ({
     page,
   }) => {
-    // The Header renders on every page via BaseLayout, but #services/#work/#contact
+    // The Header renders on every page via BaseLayout, but #shytalk/#tools/#contact
     // exist only on the homepage — so the nav hrefs must be root-relative (/#…) or
     // they dead-link on sub-pages. Regression guard for the cross-task defect the
-    // whole-branch review caught (nav was #services → /glory-points#services = dead).
+    // whole-branch review caught (nav was #shytalk → /glory-points#shytalk = dead).
     await page.goto('/glory-points');
     const hrefs = await page
       .locator('header nav a')
       .evaluateAll((els) => els.map((e) => e.getAttribute('href')));
-    expect(hrefs).toEqual(['/#services', '/#work', '/#contact']);
+    expect(hrefs).toEqual(['/#shytalk', '/#tools', '/#contact']);
   });
 
   // The disclosure is asserted as ONE whole sentence rather than as a handful
@@ -150,7 +159,7 @@ test.describe('header + footer', () => {
       // asserts OUR running order.
       await page.locator('header details.lang-switch > summary').focus();
 
-      for (const label of ['Services', 'Work', 'Contact']) {
+      for (const label of ['ShyTalk', 'Tools', 'Contact']) {
         await page.keyboard.press('Tab');
         await expect(
           page.locator('header nav a', { hasText: label }),

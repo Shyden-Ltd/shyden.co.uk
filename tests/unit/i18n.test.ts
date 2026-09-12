@@ -1674,6 +1674,9 @@ describe('site-wide copy is fully translated', () => {
       // explicitly rather than loosening the check: the guard's value is that
       // every exception is a decision someone made on purpose.
       'glory.inputLabel',
+      // "ShyTalk" is the product's name. A nav item that translated it would
+      // be naming a different product. Identical in all five by design.
+      'nav.shytalk',
     ]);
     const enMap = new Map(walk(siteEn));
     const idLeaves = walk(siteId);

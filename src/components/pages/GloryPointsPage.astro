@@ -109,11 +109,18 @@ const t = getSiteStrings(lang).glory;
   label {
     font-weight: 600;
   }
+  /* The fill and the ink are set EXPLICITLY. Without them the UA's dark-mode
+     default applies — measured at rgb(59 59 59) on white, a light grey box on
+     a --surface card — while the same control on /classroom-groups sits on
+     --bg. A control that inherits its colour from the browser has no palette
+     at all; it just happened to look acceptable on the old light ground. */
   input {
     min-height: 44px;
     padding: 0 0.75rem;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--ink);
     font-size: 1rem;
   }
   button {
@@ -121,7 +128,7 @@ const t = getSiteStrings(lang).glory;
     border: 0;
     border-radius: var(--radius);
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-weight: 600;
     cursor: pointer;
   }

@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import {
-  withoutCommentLines,
-  withoutMarkupComments,
-  withoutTsComments,
-} from './source-text';
+import { withoutAstroComments } from './source-text';
 import { join } from 'node:path';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
@@ -49,8 +45,6 @@ import { filesUnder, searched } from '../source-files';
  * state. A trailing comment after an unbalanced apostrophe in an .astro
  * template is the residual, and is narrow enough to name rather than chase.
  */
-const strippedSource = (text: string) =>
-  withoutTsComments(withoutMarkupComments(withoutCommentLines(text, '//')));
 
 const sourceText = (() => {
   // Excludes the files that DEFINE the copy, and nothing else. i18n/index.ts
@@ -62,7 +56,7 @@ const sourceText = (() => {
 
   return filesUnder('src', (path) => /\.(astro|ts)$/.test(path))
     .filter((path) => !definitions.includes(path))
-    .map((path) => strippedSource(readFileSync(path, 'utf8')))
+    .map((path) => withoutAstroComments(readFileSync(path, 'utf8')))
     .join('\n');
 })();
 
@@ -80,7 +74,7 @@ describe('every translated string reaches a page', () => {
   });
 
   it('every error code the copy defines is rendered by renderError', () => {
-    const renderer = strippedSource(
+    const renderer = withoutAstroComments(
       readFileSync('src/lib/i18n/index.ts', 'utf8'),
     );
     const defined = Object.keys(en.errors);
@@ -98,7 +92,7 @@ describe('every translated string reaches a page', () => {
   // still pass every other check in this file, same as an error code
   // would.
   it('every warning code the copy defines is rendered by renderWarning', () => {
-    const renderer = strippedSource(
+    const renderer = withoutAstroComments(
       readFileSync('src/lib/i18n/index.ts', 'utf8'),
     );
     const defined = Object.keys(en.warnings);

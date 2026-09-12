@@ -1652,13 +1652,29 @@ test.describe('classroom groups — what a teacher actually sees', () => {
   // At 10% it did not fit and spilled 34.5px past the card's RIGHT BORDER at
   // 1512px, 49.4px at 768px — and never once produced page-level horizontal
   // scroll, which is the only thing the older checks measured.
-  test(
-    'nothing in the roster escapes its card',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      const failures: string[] = [];
-      for (const path of sampledPaths('/classroom-groups')) {
-        for (const width of [320, 390, 600, 768, 1024, 1280, 1512]) {
+  // One test PER WIDTH, which is the convention `homepage.spec.ts` already
+  // sets. This was a SINGLE test walking seven widths across every sampled
+  // locale -- 21 viewport changes, each forcing a full relayout and repaint --
+  // all sharing one 30s budget.
+  //
+  // It was already 16.5s on mobile-safari before Aurora and 11.6s on desktop
+  // webkit, so over half the budget was spent before this ticket touched
+  // anything. Aurora's atmosphere adds ~5.1s of gradient raster on WebKit
+  // (measured in the pinned container: 30.7s with the gradients and failing,
+  // 25.6s without them and passing), and that was enough to go over.
+  //
+  // A shared budget also makes the failure lie about its own cause: the report
+  // names whichever click happened to hold the clock when time ran out, so a
+  // PAINT cost surfaced as "element not stable" against a button that was
+  // perfectly fine. Per-width tests each get their own budget AND say which
+  // width actually broke.
+  for (const width of [320, 390, 600, 768, 1024, 1280, 1512]) {
+    test(
+      `nothing in the roster escapes its card at ${width}px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        const failures: string[] = [];
+        for (const path of sampledPaths('/classroom-groups')) {
           await page.setViewportSize({ width, height: 950 });
           await openRoster(page, path);
           // openRoster already adds one, so three more makes four — enough rows
@@ -1691,16 +1707,16 @@ test.describe('classroom groups — what a teacher actually sees', () => {
               `${path} @${width}px: ${worst.who} is ${worst.over.toFixed(1)}px past the card`,
             );
         }
-      }
-      expect(
-        searched(failures, {
-          of: sampledPaths('/classroom-groups'),
-          what: 'sampled tool paths',
-        }),
-        failures.join('\n'),
-      ).toEqual([]);
-    },
-  );
+        expect(
+          searched(failures, {
+            of: sampledPaths('/classroom-groups'),
+            what: `sampled tool paths @${width}px`,
+          }),
+          failures.join('\n'),
+        ).toEqual([]);
+      },
+    );
+  }
 
   // Two separate mechanisms, both required. The spinner reset MUST live in the
   // global style block: roster rows are built at runtime and carry no Astro

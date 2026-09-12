@@ -1,31 +1,76 @@
-/* src/styles/tokens.css — design tokens (see spec §4). Palette AA-verified. */
-@import '@fontsource/space-grotesk/400.css';
-@import '@fontsource/space-grotesk/600.css';
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/600.css';
+/* src/styles/tokens.css — design tokens (see spec §4).
+   Aurora (#17): the approved dark identity. Every value below is derived
+   against the ground it sits on and ASSERTED in tests/unit/contrast.test.ts —
+   a comment claiming a ratio is not a control, which is how a 1.17:1 control
+   boundary shipped to production (#133). */
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource/space-mono/400.css';
+@import '@fontsource/space-mono/700.css';
 
 :root {
-  --bg: #f7f6f2;
-  --surface: #ffffff;
-  --ink: #16171c;
-  --ink-soft: #565a66;
-  --border: #e7e4dc;
-  /* Control boundaries only. #e7e4dc scores 1.17:1 on --bg, and WCAG 2.1
-     SC 1.4.11 needs 3:1 for anything REQUIRED to identify a component --
-     which a form field's only edge is (#133). 3.64:1 on --surface,
-     3.36:1 on --bg: the lightest hairline in this warm family that is not
-     one rounding error from the floor, which --accent already is. */
-  --border-strong: #8a867b;
-  --accent: #0a7d66; /* do NOT lighten past AA */
-  --accent-ink: #096452;
-  --danger: #c0392b;
+  /* Ground and ink. --surface is only 1.04:1 against --bg, so a card is
+     identified by its EDGE, not by its fill — which is why the border tokens
+     below carry more weight on this palette than they did on the light one. */
+  --bg: #04070d;
+  --surface: #070d16;
+  --ink: #eaf2ff;
+  --ink-soft: #8fa6c6;
 
-  --font-head: 'Space Grotesk', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
+  /* Brand. --on-accent is the ink for anything sitting ON mint: white scores
+     1.39:1 there, so a filled button labelled #fff would be unreadable. */
+  --accent: #38f5c8;
+  --accent-ink: #7fffe0;
+  --on-accent: #04140f;
+  --violet: #7a5cff;
+  --deep: #184a6e;
+
+  /* #c0392b was tuned for a near-white page and scores 3.71:1 on this ground —
+     below the 4.5:1 body floor. The artifact never specified an error colour;
+     the roles a design does not mention are the ones with nobody checking. */
+  --danger: #ff6b5a;
+
+  /* Borders, composited: alphas are judged OVER their ground, never raw.
+     --border at .11 is 1.27:1 and is decorative only. Aurora's own --line-2
+     at .18 was 1.61:1.
+
+     Control boundaries need 3:1 (WCAG 1.4.11). White reached that at alpha
+     .35 while the page ground was FLAT — 3.10:1 on --bg, 3.17:1 on --surface.
+     The atmosphere lightens the ground beneath a control, and at .35 the
+     boundary drops to 2.95:1 there: a 1.4.11 failure introduced by a change
+     three declarations away that touched no border at all. At .40 it is
+     3.39:1 over the atmosphere, 3.73:1 on --bg, 3.79:1 on --surface. */
+  --border: rgb(255 255 255 / 0.11);
+  --border-strong: rgb(255 255 255 / 0.4);
+  --glass: rgb(255 255 255 / 0.055);
+  --glass-2: rgb(255 255 255 / 0.09);
+
+  /* The mint bloom behind the marquee band. Decorative: it is a shadow, so
+     nothing is ever read against it and 1.4.11 does not reach it. */
+  --accent-glow: rgb(56 245 200 / 0.3);
+
+  /* The Aurora atmosphere: three radial stops and a white shaft, painted on
+     body::before. Text IS read over these, so the alphas are not a taste
+     decision — they were chosen by compositing all four onto --bg at once
+     (the worst case; the real stops sit apart) and measuring every text
+     token against that composite. The pairs are asserted in
+     tests/unit/contrast.test.ts.
+
+     The knife edge is --ink-soft. At mint .10 / violet .14 / deep .18 with
+     the shaft it scores 4.48:1 — a FAILURE by 0.02, and one that no layer
+     shows on its own. These values leave it at 5.11:1. */
+  --aurora-mint: rgb(56 245 200 / 0.08);
+  --aurora-violet: rgb(122 92 255 / 0.1);
+  --aurora-deep: rgb(24 74 110 / 0.14);
+  --aurora-shaft: rgb(255 255 255 / 0.05);
+
+  --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
   --measure: 66ch;
   --radius: 10px;
   --space: clamp(1rem, 0.6rem + 2vw, 2rem);
-  --maxw: 1080px;
+  --maxw: 1120px;
 }
 
 *,
@@ -34,15 +79,59 @@
   box-sizing: border-box;
 }
 html {
-  color-scheme: light;
+  color-scheme: dark;
+  background: var(--bg);
+  /* Checkboxes and radios are drawn by the browser, and `auto` means it picks
+     its own blue — measured as the selected state on /classroom-groups, the
+     one brand colour on the page that was not ours. `color-scheme: dark`
+     fixes their GROUND but says nothing about the fill. The UA derives the
+     tick's own colour from this, so it stays legible on mint. */
+  accent-color: var(--accent);
 }
 body {
   margin: 0;
-  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
   line-height: 1.6;
   -webkit-text-size-adjust: 100%;
+}
+/* One fixed layer behind everything. Fixed, not absolute: the aurora is the
+   light in the room rather than part of the document, so it does not scroll
+   away and it paints exactly once however long the page is.
+
+   The ground sits on `html`, not `body`: at z-index -1 this layer would
+   otherwise paint BEHIND the body's own background and never be seen.
+
+   Zero JavaScript, and `prefers-reduced-motion` needs no rule here because
+   nothing moves — it is a still gradient, not an animation. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      60rem 40rem at 12% -8%,
+      var(--aurora-mint),
+      transparent 70%
+    ),
+    radial-gradient(
+      52rem 36rem at 88% 2%,
+      var(--aurora-violet),
+      transparent 70%
+    ),
+    radial-gradient(
+      72rem 46rem at 50% 108%,
+      var(--aurora-deep),
+      transparent 70%
+    ),
+    linear-gradient(
+      100deg,
+      transparent 30%,
+      var(--aurora-shaft) 50%,
+      transparent 70%
+    );
 }
 h1,
 h2,
@@ -102,7 +191,7 @@ img {
   z-index: 100;
   padding: 0.75rem 1rem;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   text-decoration: none;
   border-bottom-right-radius: 6px;
 }
@@ -122,5 +211,87 @@ main:focus {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Paper.
+ *
+ * MEASURED, not assumed: under emulated print media every element on
+ * /classroom-groups computed to rgb(234 242 255) — --ink, near-white — with
+ * backgrounds already forced transparent by the page's own print rules. On
+ * white paper the group sheets printed BLANK. The Aurora palette introduced
+ * that; nothing in the print stylesheet reset the ink, because on the old
+ * light ground it never had to.
+ *
+ * Written as a TOKEN REDEFINITION rather than as a list of `color: #000`
+ * overrides. Every rule on the site already draws from these, so the whole
+ * page follows from one block — and a component added next year is covered
+ * without anyone remembering that print exists. A list of overrides is the
+ * enumerate-don't-derive mistake, and it is the same list shape that let
+ * "Full screen" print on the sheet for months.
+ *
+ * Ratios against white, all measured: --ink 21:1, --ink-soft 12.63:1,
+ * --accent 7.44:1, --accent-ink 10.84:1, --danger 7.41:1, --border-strong
+ * 5.33:1 (needs 3:1 for a control boundary). --accent is darkened from mint
+ * because #38f5c8 is 1.36:1 on paper — a link that vanishes.
+ */
+@media print {
+  :root {
+    --bg: #fff;
+    --surface: #fff;
+    --ink: #000;
+    --ink-soft: #333;
+
+    --accent: #00614f;
+    --accent-ink: #00463a;
+    /* White, not the near-black screen value: on paper --accent is dark. */
+    --on-accent: #fff;
+    --danger: #a4231a;
+
+    --border: #b4b4b4;
+    --border-strong: #6b6b6b;
+
+    /* Atmosphere and glass are screen-only. Browsers drop background images
+       by default anyway, but `default` is a setting a user can change, and
+       a page that depends on a default is not a page that decided. */
+    --glass: transparent;
+    --glass-2: transparent;
+    --accent-glow: transparent;
+    --aurora-mint: transparent;
+    --aurora-violet: transparent;
+    --aurora-deep: transparent;
+    --aurora-shaft: transparent;
+  }
+  html {
+    background: #fff;
+  }
+  /* The atmosphere layer itself, not just its colours: a fixed element can
+     otherwise repeat on every printed page in some engines. */
+  body::before {
+    display: none;
+  }
+  /* A keyboard affordance, not a record of anything. Globally, so it holds on
+     the pages that carry no print stylesheet of their own — which is exactly
+     where it was printing white-on-white. */
+  .skip-link {
+    display: none;
+  }
+
+  /* A FILLED control is legible only if its background prints, and browsers
+     leave "Background graphics" OFF by default — so `--on-accent` white on
+     `--accent` green reaches the paper as white on white. Outlined instead:
+     legible whatever the user's print settings, and it does not depend on
+     `print-color-adjust`, which the classroom print block already documents
+     as inconsistently honoured.
+     `!important` is load-bearing, not laziness: Astro scopes a component's
+     own rules with a `[data-astro-cid-*]` attribute, so `.primary` there
+     outranks a bare `.btn` here. /classroom-groups hides its buttons outright
+     — a different property, so that rule is untouched by this one. */
+  .btn,
+  button {
+    background: transparent !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--border-strong) !important;
+    box-shadow: none !important;
   }
 }
