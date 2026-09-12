@@ -125,6 +125,77 @@ describe('the reconciliation itself', () => {
     expect(reconcile({ ...full, executed: 2094 }).exitCode).toBe(0);
   });
 
+  /**
+   * ZERO is a broken measurement, not a suite size.
+   *
+   * Measured by execution, not argued: `reconcile({enumerated: 0, executed: 0,
+   * filtered: false, playwrightExitCode: 0})` returned exitCode 0 -- a full run
+   * that enumerated nothing, ran nothing and exited clean, reported as a PASS
+   * by the guard whose own message calls that "the single outcome this guard
+   * exists to reject".
+   *
+   * The neighbours were all correct, which is what hid it: `{0, 12}` fails on
+   * the inequality and `{null, *}` fails on the type check. Only the number
+   * zero is both a valid `number` and equal to an executed count of zero.
+   *
+   * The state is reachable -- a run immediately after `npm ci` printed
+   * "PARTIAL RUN — 12 of 0 tests", so the listing really did emit a footer
+   * reading zero. The trigger was never reproduced and is not claimed here
+   * (#150).
+   */
+  it.each([
+    ['the listing said zero and the run did nothing', 0, 0],
+    ['the listing said zero while the run did work', 0, 12],
+    ['the listing was believable but nothing ran', 2094, 0],
+  ])('refuses to pass when %s', (_what, enumerated, executed) => {
+    const result = reconcile({
+      enumerated,
+      executed,
+      filtered: false,
+      playwrightExitCode: 0,
+    });
+
+    expect(
+      result.exitCode,
+      'a run of zero tests is the vacuous pass this file exists to stop',
+    ).toBe(1);
+    // The operator has to be able to tell WHICH input was unbelievable.
+    expect(result.message).toMatch(/enumerat|suite size|executed|ran/i);
+  });
+
+  it('names the listing’s own failure instead of deriving from its output', () => {
+    // `spawnSync` reported the failure all along and nothing read it: a
+    // listing that dies while still printing a footer is indistinguishable
+    // from a suite that genuinely has that many tests. Same shape as the
+    // `gh run list --commit` hazard -- an empty result reads exactly like a
+    // real absence, and only one of those is good news.
+    const result = reconcile({
+      enumerated: 2094,
+      executed: 2094,
+      filtered: false,
+      playwrightExitCode: 0,
+      listing: { status: 1, stderr: 'error: cannot find module playwright' },
+    });
+
+    expect(result.exitCode, 'a broken enumeration cannot be a pass').toBe(1);
+    expect(
+      result.message,
+      'the listing’s own words are the diagnosis',
+    ).toContain('cannot find module playwright');
+  });
+
+  it('still passes when the listing succeeded', () => {
+    // Liveness for the check above: it must be the FAILURE that reddens it,
+    // not the presence of a listing argument.
+    expect(
+      reconcile({
+        ...full,
+        executed: 2094,
+        listing: { status: 0, stderr: '' },
+      }).exitCode,
+    ).toBe(0);
+  });
+
   it('leaves a genuinely failing run failing', () => {
     const result = reconcile({
       ...full,
