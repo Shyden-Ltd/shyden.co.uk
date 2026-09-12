@@ -130,18 +130,46 @@ test('an unauthenticated request is challenged with 401', async () => {
   expect(res.headers.get('www-authenticate')).toMatch(/^Basic realm=/);
 });
 
-test('outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-env leak)', async ({
+const DEV_SHYTALK_HOST = 'dev.shytalk.shyden.co.uk';
+
+test('every outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-env leak)', async ({
   page,
 }) => {
-  // The dev build injects PUBLIC_SHYTALK_URL=dev, so the work-card must link to
-  // DEV ShyTalk — and the prod URL must NOT appear anywhere on the dev site.
+  // The dev build injects PUBLIC_SHYTALK_URL=dev, so EVERY outbound ShyTalk
+  // link must resolve to the dev host.
+  //
+  // DERIVED, not pinned to a count. This read `toHaveCount(1)` on the dev URL,
+  // because when it was written the only outbound link sat on a work card. The
+  // Aurora merge added a hero call-to-action, the count became 2, and the guard
+  // reddened the dev deploy on a legitimate design change (run 34678649630).
+  //
+  // Worse than the false red: `toHaveCount(0)` on the PROD url — the assertion
+  // that actually protects against a cross-env leak — NEVER RAN. Playwright
+  // stops a test at its first failed expectation, so the guard failed on its
+  // liveness proxy while its real invariant went unmeasured. A count is a proxy
+  // for "the links are right"; asserting the hosts measures it directly, and
+  // cannot be broken by adding or removing a button.
   await page.goto('/');
-  await expect(
-    page.locator('a[href="https://dev.shytalk.shyden.co.uk"]'),
-  ).toHaveCount(1);
-  await expect(
-    page.locator('a[href="https://shytalk.shyden.co.uk"]'),
-  ).toHaveCount(0);
+
+  const hosts = await page
+    .locator('a[href*="shytalk.shyden.co.uk"]')
+    .evaluateAll((els) =>
+      els.map((el) => new URL((el as HTMLAnchorElement).href).host),
+    );
+
+  // Liveness control. The assertion below is an ABSENCE, and a page carrying no
+  // outbound ShyTalk link at all would satisfy it having measured nothing —
+  // which is exactly how a guard goes quiet without going red.
+  expect(
+    hosts.length,
+    'no outbound ShyTalk link on the page at all — the host assertion below would pass vacuously',
+  ).toBeGreaterThan(0);
+
+  const wrongHost = hosts.filter((host) => host !== DEV_SHYTALK_HOST);
+  expect(
+    wrongHost,
+    `every outbound ShyTalk link on a dev build must point at ${DEV_SHYTALK_HOST}; found ${JSON.stringify(wrongHost)} across ${hosts.length} link(s)`,
+  ).toEqual([]);
 });
 
 /**
