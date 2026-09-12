@@ -219,8 +219,13 @@ export default defineConfig({
     // (operator, 2026-08-22), and is worth nothing on a normal run: recording
     // ~2200 tests is minutes of wall clock and gigabytes of disk. Gated on the
     // same switch tests/e2e/evidence.ts uses, so an evidence run is exactly
-    // `EVIDENCE_DIR=<dir> npx playwright test <spec>` and needs no second flag
-    // anybody could forget.
+    // `EVIDENCE_DIR=<dir> npm run test:e2e -- <spec>` and needs no second flag
+    // anybody could forget. That sentence was false until the switch also
+    // moved the json report into the same directory: the page is built from
+    // the report AND the captures, so the documented invocation produced a
+    // directory the builder could not read. See `reportLocation` in
+    // `scripts/test-e2e.mjs` and the seam guard in
+    // `tests/unit/evidence-page.test.ts`.
     video: process.env.EVIDENCE_DIR ? 'on' : 'off',
   },
   projects: [
