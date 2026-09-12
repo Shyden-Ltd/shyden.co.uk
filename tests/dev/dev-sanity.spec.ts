@@ -6,6 +6,7 @@ import {
   isBetaLocale,
 } from '../../src/lib/i18n/index';
 import { deployedRoutes } from '../site-pages';
+import { searched } from '../source-files';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -157,17 +158,23 @@ test('every outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-en
       els.map((el) => new URL((el as HTMLAnchorElement).href).host),
     );
 
-  // Liveness control. The assertion below is an ABSENCE, and a page carrying no
-  // outbound ShyTalk link at all would satisfy it having measured nothing —
-  // which is exactly how a guard goes quiet without going red.
-  expect(
-    hosts.length,
-    'no outbound ShyTalk link on the page at all — the host assertion below would pass vacuously',
-  ).toBeGreaterThan(0);
-
+  // `searched()` carries the LIVENESS CONTROL, and it is the repo's recognised
+  // idiom rather than a hand-rolled one (#118). The assertion is an ABSENCE, so
+  // a page carrying no outbound ShyTalk link would satisfy it having measured
+  // nothing. Putting the population inside the assertion makes that impossible,
+  // and `searched` counts its members by CONTENT, not by entries — an array of
+  // empty strings is not a population.
+  //
+  // A hand-written `expect(hosts.length).toBeGreaterThan(0)` above this was
+  // equivalent in spirit and INVISIBLE to `absence-liveness.test.ts`, which
+  // flagged this line. The fix is to adopt the idiom, never to widen the
+  // detector so one's own code slips past it.
   const wrongHost = hosts.filter((host) => host !== DEV_SHYTALK_HOST);
   expect(
-    wrongHost,
+    searched(wrongHost, {
+      of: hosts,
+      what: 'outbound ShyTalk links on the dev homepage',
+    }),
     `every outbound ShyTalk link on a dev build must point at ${DEV_SHYTALK_HOST}; found ${JSON.stringify(wrongHost)} across ${hosts.length} link(s)`,
   ).toEqual([]);
 });
