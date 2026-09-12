@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { withoutCommentLines } from './source-text';
+import { withoutCommentLines, withoutTsComments } from './source-text';
 import { nonEmpty, searched } from '../source-files';
 import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
@@ -604,5 +604,75 @@ describe('a failure capture cannot succeed having caught nothing', () => {
     expect(
       searched(undeclared, { of: steps, what: 'upload-artifact steps' }),
     ).toEqual([]);
+  });
+});
+
+/**
+ * A server Playwright cannot supervise is a suite that cannot run.
+ *
+ * Astro 7.3 detects that an AI agent is running the command -- `isRunByAgent()`
+ * in `astro/dist/cli/agent.js`, via `am-i-vibing` -- and DAEMONISES `astro dev`
+ * and `astro preview` without being asked. `playwright.config.ts` supervises
+ * the process it spawned, so the fork-and-exit reads as
+ * "Process from config.webServer exited early" and the whole run aborts at
+ * zero tests, while the detached server keeps port 4321. It binds IPv6 only,
+ * so `lsof -ti tcp:4321` reports the port free and the next run fails the same
+ * way (#139).
+ *
+ * The opt-out is badly named: `ASTRO_PREVIEW_BACKGROUND` is what the parent
+ * sets ON the daemon child, so its presence means "detection already ran, do
+ * not re-detect" and therefore keeps the server in the FOREGROUND.
+ */
+describe('the e2e server is supervised, not handed to a daemon', () => {
+  /** `astro dev` and `astro preview` each have their OWN opt-out variable. */
+  const SERVER = /\bastro\s+(dev|preview)\b/;
+
+  const serverScripts = (): [string, string][] =>
+    Object.entries(
+      JSON.parse(readFileSync('package.json', 'utf8')).scripts ?? {},
+    ).filter(([, command]) => SERVER.test(command as string)) as [
+      string,
+      string,
+    ][];
+
+  it('every astro server script opts out of the agent auto-background', () => {
+    // Derived from package.json, never a list: a third server script added
+    // next year is covered without anybody remembering this file exists.
+    const scripts = serverScripts();
+    const unguarded = scripts.filter(([, command]) => {
+      const mode = SERVER.exec(command)![1].toUpperCase();
+      return !command.includes(`ASTRO_${mode}_BACKGROUND=`);
+    });
+
+    expect(
+      searched(unguarded, {
+        of: scripts.map(([, command]) => command),
+        what: 'astro server scripts',
+      }),
+      'an auto-backgrounded server exits early under Playwright and orphans the port',
+    ).toEqual([]);
+  });
+
+  it('the opt-out it relies on still exists in the installed Astro', () => {
+    // The seam, not our side of it. An Astro upgrade that renames or drops
+    // this check must turn THIS red, rather than the suite starting to abort
+    // at zero tests with a message about a web server.
+    for (const mode of ['dev', 'preview']) {
+      // STRIPPED, like every other source-text assertion here: a match landing
+      // in a comment would report an opt-out Astro had already dropped.
+      const cli = withoutTsComments(
+        readFileSync(`node_modules/astro/dist/cli/${mode}/index.js`, 'utf8'),
+      );
+      // THE WHOLE CONSTRUCT, because the bare negation is a SUBSTRING of the
+      // `!!process.env.ASTRO_*_BACKGROUND` that records the flag in the lock
+      // file, and that line would keep this green with the opt-out deleted.
+      // Measured: mutating the branch away left the guard passing (M7).
+      expect(
+        cli,
+        `astro ${mode} no longer honours ASTRO_${mode.toUpperCase()}_BACKGROUND`,
+      ).toContain(
+        `!process.env.ASTRO_${mode.toUpperCase()}_BACKGROUND && isRunByAgent()`,
+      );
+    }
   });
 });
