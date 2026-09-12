@@ -6,12 +6,22 @@ name: CI
 # gate on every push to develop, and release-prod.yml gates the push to main, so
 # a push: trigger here would only double the work on each merge.
 #
-# The bases are NAMED rather than left as a bare `pull_request:`. A bare trigger
-# happens to cover both today, which is precisely the problem — nothing records
-# that both are required, so losing one would be silent.
+# NO base filter, deliberately. The bases were once named here to record which
+# ones are REQUIRED — but that is a fact about branch protection, not something
+# a trigger can express, and encoding it here bought documentation at the cost
+# of coverage: a PR into any other base matched nothing, ran ZERO checks, and
+# still reported `mergeStateStatus: CLEAN`. An empty check list is
+# indistinguishable at a glance from "CI ran and passed" (#144, measured on
+# PR #143 stacked on `17-aurora`).
+#
+# Widening costs nothing on the merge path: a PR into develop or main already
+# ran exactly one run, and a stacked PR had none to add to. Which checks BLOCK
+# a merge still lives where it belongs, in `required_status_checks.contexts`,
+# and `tests/unit/pipeline-wiring.test.ts` pins the job name that list matches.
+#
+# `pull_request`, never `pull_request_target`: a fork PR must not see secrets.
 on:
   pull_request:
-    branches: [develop, main]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest

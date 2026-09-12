@@ -7,9 +7,9 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "astro dev",
+    "dev": "ASTRO_DEV_BACKGROUND=1 astro dev",
     "build": "astro build",
-    "preview": "astro preview",
+    "preview": "ASTRO_PREVIEW_BACKGROUND=1 astro preview",
     "typecheck": "astro check",
     "test:unit": "vitest run",
     "test:e2e": "node scripts/test-e2e.mjs",
