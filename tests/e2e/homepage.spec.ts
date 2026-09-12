@@ -2,6 +2,7 @@ import { test, expect } from './fixtures';
 import { shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
+import { LOCALES, localisePath } from '../../src/lib/i18n';
 
 // Unset in test builds, so the page falls back to the production host. The
 // dev deploy sets PUBLIC_SHYTALK_URL and is covered by the deploy-gate specs.
@@ -113,6 +114,61 @@ test.describe('homepage content', () => {
       'the ShyTalk showcase and its two-tone wordmark',
       showcase,
     );
+  });
+
+  test('the showcase frame shows a real room capture, one PER LOCALE', async ({
+    page,
+  }) => {
+    // The point of #138 is that the Thai page shows the app IN THAI. "An image
+    // exists" is satisfied by one capture under five names, which fails the
+    // ticket entirely -- so the load-bearing assertion here is DISTINCTNESS of
+    // what actually rendered, not presence.
+    const rendered = new Map<string, string>();
+
+    for (const locale of LOCALES) {
+      await page.goto(localisePath('/', locale));
+      const img = page.locator('#shytalk .frame img');
+      await expect(img).toHaveCount(1);
+
+      const alt = (await img.getAttribute('alt')) ?? '';
+      expect(alt.trim().length, `alt text for ${locale}`).toBeGreaterThan(0);
+
+      // The frame is below the fold and the image is lazy, so it must be
+      // scrolled to before it will load at all.
+      await img.scrollIntoViewIfNeeded();
+      // A broken src still renders an <img> element and still passes
+      // toHaveCount(1). naturalWidth is the only thing that separates "the
+      // markup is there" from "the picture arrived".
+      await expect
+        .poll(
+          () => img.evaluate((el) => (el as HTMLImageElement).naturalWidth),
+          { message: `capture never decoded for ${locale}` },
+        )
+        .toBeGreaterThan(0);
+
+      // One frame per locale is the whole ticket, so it is the whole evidence:
+      // the operator judges the Thai capture is Thai by looking at it. Clipped
+      // to the section so the two-column layout he chose is visible alongside.
+      await shoot(
+        page,
+        `${locale}: the showcase shows a real room capture in that locale`,
+        page.locator('#shytalk'),
+      );
+
+      rendered.set(
+        locale,
+        await img.evaluate(
+          (el) =>
+            (el as HTMLImageElement).currentSrc || (el as HTMLImageElement).src,
+        ),
+      );
+    }
+
+    expect(rendered.size).toBe(LOCALES.length);
+    expect(
+      new Set(rendered.values()).size,
+      `distinct captures across ${[...rendered.keys()].join(', ')}`,
+    ).toBe(LOCALES.length);
   });
 
   test('exactly two tool cards, each badged and linked in-locale', async ({

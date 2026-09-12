@@ -47,12 +47,20 @@ if (spawnSync('docker', ['--version'], { stdio: 'ignore' }).status !== 0) {
   process.exit(1);
 }
 
-console.log(`${update ? 'Capturing baselines' : 'Comparing'} in ${image}`);
+console.log(
+  `${update ? 'Capturing baselines (--update-snapshots=all)' : 'Comparing'} in ${image}`,
+);
 if (forwarded.length) console.log(`  forwarding: ${forwarded.join(' ')}`);
 
 const playwright = [
   'npx playwright test --project=visual',
-  update ? '--update-snapshots' : '',
+  // `=all`, never the bare flag: Playwright 1.63 documents `preset: "changed"`
+  // for a bare `--update-snapshots`, which rewrites only baselines whose
+  // comparison FAILED and leaves a stale-but-passing one in place -- the drift
+  // #134 exists to stop. The zero-allowance evidence in
+  // `tests/unit/browser-matrix.test.ts` was gathered with `all` by hand,
+  // through a flag this script did not pass (#152).
+  update ? '--update-snapshots=all' : '',
   // Chromium is memory-hungry and the host has under 4 GiB; the default
   // worker count is derived from CPUs and has killed a container run here
   // before. Two is what CI's e2e job was measured at.

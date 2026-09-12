@@ -3,6 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import Button from '../Button.astro';
 import Marquee from '../Marquee.astro';
 import WorkCard from '../WorkCard.astro';
+import PhoneFrame from '../PhoneFrame.astro';
 import { localisePath, type Locale } from '../../lib/i18n';
 import { getSiteStrings } from '../../lib/i18n';
 import { SHYTALK_MARK, asRgba } from '../../lib/shytalk-brand';
@@ -62,6 +63,7 @@ const features = [
         >
       </p>
     </div>
+    <PhoneFrame lang={lang} alt={t.shytalkShotAlt} />
   </section>
 
   <section id="tools" class="wrap">
@@ -195,6 +197,15 @@ const features = [
   @media (min-width: 720px) {
     .grid-2 {
       grid-template-columns: 1fr 1fr;
+    }
+  }
+  /* The showcase gets its own, wider breakpoint. The frame is a fixed 280px,
+     so splitting at .grid-2's 720px would leave the copy column under 340px
+     and the feature list would wrap on every line. */
+  @media (min-width: 880px) {
+    .showcase {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4rem;
     }
   }
   /* ShyTalk brand wordmark — the exact two-tone mark from shytalk.shyden.co.uk:

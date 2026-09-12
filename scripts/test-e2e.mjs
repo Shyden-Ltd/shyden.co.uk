@@ -34,10 +34,11 @@
  * held to the full total.
  */
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EVIDENCE_REPORT } from './evidence-files.mjs';
 
 /** `playwright test --list` closes with e.g. `Total: 2094 tests in 18 files`. */
 const LIST_FOOTER = /^Total:\s+(\d+)\s+tests?\b/m;
@@ -250,6 +251,27 @@ export function reconcile({
   return { exitCode: playwrightExitCode, partial: false, message: null };
 }
 
+/**
+ * Where this run's json report goes, and whether it survives the run.
+ *
+ * The report has always been written to a throwaway directory and deleted in a
+ * `finally`: it exists for the reconciliation below and nothing else reads it.
+ * An EVIDENCE run does read it -- `scripts/build-evidence-page.mjs` builds the
+ * operator's sign-off page from the report plus the capture manifest -- and
+ * `playwright.config.ts` states that such a run "needs no second flag anybody
+ * could forget". It could not be built without one, because the report landed
+ * in a temp directory and was deleted. So the single switch that turns on
+ * captures and video now also decides where the report lands.
+ *
+ * PURE, so `tests/unit/evidence-page.test.ts` can assert the seam without
+ * running Playwright: the caller creates the directory.
+ */
+export function reportLocation(env = process.env) {
+  const evidence = env.EVIDENCE_DIR;
+  const dir = evidence || join(tmpdir(), `e2e-reconcile-${process.pid}`);
+  return { dir, path: join(dir, EVIDENCE_REPORT), ephemeral: !evidence };
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const filtered = isFilteredRun(argv);
@@ -263,9 +285,18 @@ function main() {
   );
   const enumerated = parseListTotal(listing.stdout);
 
-  const reportDir = mkdtempSync(join(tmpdir(), 'e2e-reconcile-'));
-  const reportPath = join(reportDir, 'report.json');
+  const {
+    dir: reportDir,
+    path: reportPath,
+    ephemeral,
+  } = reportLocation(process.env);
   const navPath = join(reportDir, 'nav-timings.json');
+  mkdirSync(reportDir, { recursive: true });
+  // A report left by an earlier run reads exactly like one this run produced,
+  // and reconciling against it is a green verdict about somebody else's tests.
+  // Removed first so "the reporter never wrote" stays distinguishable from
+  // "the reporter wrote this", which the parse below already treats as fatal.
+  rmSync(reportPath, { force: true });
 
   try {
     const run = spawnSync(
@@ -357,7 +388,9 @@ function main() {
     // dead collector turns an otherwise-clean run red on its own.
     process.exit(verdict.exitCode || (liveness.ok ? 0 : 1));
   } finally {
-    rmSync(reportDir, { recursive: true, force: true });
+    // An evidence directory is the operator's, not ours: it holds the captures
+    // and the video the sign-off page is built from.
+    if (ephemeral) rmSync(reportDir, { recursive: true, force: true });
   }
 }
 
