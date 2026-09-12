@@ -676,3 +676,89 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
     }
   });
 });
+
+/**
+ * The dev deploy gate must have time to finish the suite it runs.
+ *
+ * MEASURED 2026-09-12. `release-dev.yml`'s "Comprehensive web tests" job carried
+ * `timeout-minutes: 25`, while `npm run test:e2e` alone took **26m13s** on the
+ * identical tree (PR run 34674831504, which went green). Aurora's merge pushed
+ * the suite past that budget, so run 34676066071 for `c100e59` was CANCELLED at
+ * 24m02s and BOTH `Deploy to Dev` and `Verify dev + dev-verified` were SKIPPED.
+ * `develop` moved; dev did not.
+ *
+ * Two things made it invisible. A cancelled run posts no red gate — it reads as
+ * "nothing happened" rather than as a failure. And `ci.yml` carries no
+ * `timeout-minutes` at all, so the merge gate ran the very same suite unbounded
+ * and went green. One suite, two budgets, and only the smaller one could stop a
+ * deploy.
+ *
+ * The budget is a POLICY, pinned as a literal below and asserted separately from
+ * the guard that derives from it, so moving the constant cannot move both sides
+ * and quietly restore the hole (#117).
+ */
+const DEV_E2E_JOB_MIN_MINUTES = 45;
+
+/** The job block owning `needle`, from a workflow's comment-stripped text. */
+const jobBlockRunning = (yaml: string, needle: string): string => {
+  const stripped = withoutCommentLines(yaml);
+  const lines = stripped.split('\n');
+  const starts = lines
+    .map((line, i) => ({ line, i }))
+    .filter(({ line }) => /^ {2}[A-Za-z][\w-]*:\s*$/.test(line))
+    .map(({ i }) => i);
+  const blocks = starts.map((start, n) =>
+    lines.slice(start, starts[n + 1] ?? lines.length).join('\n'),
+  );
+  const owning = blocks.filter((block) => block.includes(needle));
+  expect(
+    searched(owning, { of: blocks, what: 'job blocks in the workflow' }),
+  ).toHaveLength(1);
+  return owning[0];
+};
+
+/**
+ * The `timeout-minutes` a job block declares.
+ *
+ * Says WHICH job is missing a budget rather than throwing `TypeError: Cannot
+ * read properties of null` off a `!` assertion. Found by mutation M2 (delete
+ * the budget line): the guard went red, correctly, with a message that named
+ * neither the job nor the problem — and a confusing failure is how the next
+ * session misdiagnoses a real breakage.
+ */
+const budgetOf = (block: string, what: string): number => {
+  const found = block.match(/^\s*timeout-minutes:\s*(\d+)\s*$/m);
+  expect(found, `${what} declares no timeout-minutes`).not.toBeNull();
+  return Number(found![1]);
+};
+
+const E2E_JOB = 'the job running the e2e suite';
+
+describe('the dev deploy gate can outlast the suite it runs', () => {
+  it('pins the budget as a chosen policy, not a number nobody picked', () => {
+    expect(DEV_E2E_JOB_MIN_MINUTES).toBe(45);
+  });
+
+  it('gives the comprehensive-test job at least that many minutes', () => {
+    const block = jobBlockRunning(
+      workflow('release-dev.yml'),
+      'npm run test:e2e',
+    );
+    expect(budgetOf(block, E2E_JOB)).toBeGreaterThanOrEqual(
+      DEV_E2E_JOB_MIN_MINUTES,
+    );
+  });
+
+  it('never lets the deploy job outlast the tests that gate it', () => {
+    const yaml = workflow('release-dev.yml');
+    const testBudget = budgetOf(
+      jobBlockRunning(yaml, 'npm run test:e2e'),
+      E2E_JOB,
+    );
+    const deployBudget = budgetOf(
+      jobBlockRunning(yaml, 'Deploy dist/ to Cloudflare Pages'),
+      'the deploy job',
+    );
+    expect(deployBudget).toBeLessThan(testBudget);
+  });
+});
