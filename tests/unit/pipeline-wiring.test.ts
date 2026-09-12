@@ -717,6 +717,23 @@ const jobBlockRunning = (yaml: string, needle: string): string => {
   return owning[0];
 };
 
+/**
+ * The `timeout-minutes` a job block declares.
+ *
+ * Says WHICH job is missing a budget rather than throwing `TypeError: Cannot
+ * read properties of null` off a `!` assertion. Found by mutation M2 (delete
+ * the budget line): the guard went red, correctly, with a message that named
+ * neither the job nor the problem — and a confusing failure is how the next
+ * session misdiagnoses a real breakage.
+ */
+const budgetOf = (block: string, what: string): number => {
+  const found = block.match(/^\s*timeout-minutes:\s*(\d+)\s*$/m);
+  expect(found, `${what} declares no timeout-minutes`).not.toBeNull();
+  return Number(found![1]);
+};
+
+const E2E_JOB = 'the job running the e2e suite';
+
 describe('the dev deploy gate can outlast the suite it runs', () => {
   it('pins the budget as a chosen policy, not a number nobody picked', () => {
     expect(DEV_E2E_JOB_MIN_MINUTES).toBe(45);
@@ -727,25 +744,20 @@ describe('the dev deploy gate can outlast the suite it runs', () => {
       workflow('release-dev.yml'),
       'npm run test:e2e',
     );
-    const found = block.match(/^\s*timeout-minutes:\s*(\d+)\s*$/m);
-    expect(
-      found,
-      'the job that runs the e2e suite declares no budget',
-    ).not.toBeNull();
-    expect(Number(found![1])).toBeGreaterThanOrEqual(DEV_E2E_JOB_MIN_MINUTES);
+    expect(budgetOf(block, E2E_JOB)).toBeGreaterThanOrEqual(
+      DEV_E2E_JOB_MIN_MINUTES,
+    );
   });
 
   it('never lets the deploy job outlast the tests that gate it', () => {
     const yaml = workflow('release-dev.yml');
-    const testBudget = Number(
-      jobBlockRunning(yaml, 'npm run test:e2e').match(
-        /^\s*timeout-minutes:\s*(\d+)\s*$/m,
-      )![1],
+    const testBudget = budgetOf(
+      jobBlockRunning(yaml, 'npm run test:e2e'),
+      E2E_JOB,
     );
-    const deployBudget = Number(
-      jobBlockRunning(yaml, 'Deploy dist/ to Cloudflare Pages').match(
-        /^\s*timeout-minutes:\s*(\d+)\s*$/m,
-      )![1],
+    const deployBudget = budgetOf(
+      jobBlockRunning(yaml, 'Deploy dist/ to Cloudflare Pages'),
+      'the deploy job',
     );
     expect(deployBudget).toBeLessThan(testBudget);
   });
