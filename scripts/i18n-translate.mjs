@@ -31,10 +31,10 @@ import {
   buildRequestBody,
   deeplEndpoint,
   deeplLanguage,
-  needsTranslation,
   unescapeXml,
   unprotectTerms,
   untranslatedKeys,
+  translationUnits,
   TRANSLATABLE_LOCALES,
 } from '../src/lib/i18n/translate.ts';
 import { en } from '../src/lib/i18n/en.ts';
@@ -78,7 +78,8 @@ const cache = existsSync(CACHE) ? JSON.parse(readFileSync(CACHE, 'utf8')) : {};
 const known = cache[target] ?? {};
 
 /**
- * Every distinct string in the catalogue that a translator can take.
+ * Every distinct sentence the translator is sent: copy as it is, and each
+ * message as the whole sentences it can say (`translationUnits`, #136).
  *
  * A Set: the same word appears under several keys, and DeepL charges per
  * character sent, not per distinct string. Cached by the SOURCE TEXT rather
@@ -90,7 +91,7 @@ const collect = (value) => {
   if (Array.isArray(value)) return value.forEach(collect);
   if (value && typeof value === 'object')
     return Object.values(value).forEach(collect);
-  if (needsTranslation(value)) strings.add(value);
+  for (const unit of translationUnits(value)) strings.add(unit);
 };
 
 /**
@@ -126,7 +127,7 @@ console.log(`cached        ${strings.size - pending.length}`);
 console.log(
   `to send       ${pending.length} strings, ${characters} characters`,
 );
-console.log(`needs a human ${manual.length} keys (functions, symbols)`);
+console.log(`needs a human ${manual.length} keys (symbols)`);
 console.log(`do-not-send   ${DO_NOT_TRANSLATE.length} protected terms`);
 
 if (!send) {

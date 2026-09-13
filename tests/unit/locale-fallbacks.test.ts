@@ -5,10 +5,8 @@ import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
 import { th } from '../../src/lib/i18n/th';
 import { LOCALES } from '../../src/lib/i18n';
-import {
-  needsTranslation,
-  untranslatedKeys,
-} from '../../src/lib/i18n/translate';
+import { isMessageTemplate } from '../../src/lib/i18n/message';
+import { needsTranslation } from '../../src/lib/i18n/translate';
 
 /**
  * What is still English in a catalogue that claims to be another language.
@@ -17,11 +15,11 @@ import {
  * translated, and both are invisible on the page — a Chinese error message in
  * English looks like a message, not like a gap:
  *
- * 1. THE 51 PARAMETERISED MESSAGES. Every one is an arrow function, a
- *    translator returns prose rather than a function body, and the operator's
- *    instruction (2026-09-09) was that these are listed for a human rather
- *    than guessed at. `scripts/i18n-scaffold.mjs` emits them as `en.<key>`, so
- *    they are the English function BY REFERENCE.
+ * 1. THE 51 PARAMETERISED MESSAGES, until #136. Each was an arrow function a
+ *    translator could not take, so the scaffold emitted `en.<key>` and the
+ *    catalogue carried the English function BY REFERENCE. They are templates
+ *    now, drafted by DeepL like the rest of the copy and waiting for a
+ *    speaker's review (#161), and none of them may be English.
  *
  * 2. STRINGS DEEPL HANDED BACK UNCHANGED. Mostly legitimate — `M` and `F` are
  *    the roster's sex labels, single letters with nothing to translate — but
@@ -97,6 +95,10 @@ const sameAsEnglish = (table: unknown, predicate: (v: unknown) => boolean) =>
     .filter((p) => predicate(valueAt(en, p)))
     .filter((p) => valueAt(table, p) === valueAt(en, p));
 
+/** A template string: a message with a slot a page fills (#136). */
+const isMessage = (value: unknown): boolean =>
+  typeof value === 'string' && isMessageTemplate(value);
+
 /**
  * The English strings each locale still carries, by key.
  *
@@ -122,18 +124,18 @@ describe('what is still English in each catalogue', () => {
   });
 
   for (const [locale, table] of Object.entries(MACHINE_SEEDED)) {
-    it(`${locale}: every parameterised message is the English function, by reference`, () => {
-      const stillEnglish = sameAsEnglish(
-        table,
-        (v) => typeof v === 'function',
-      ).sort();
-      const everyFunction = untranslatedKeys(en)
-        .filter((p) => typeof valueAt(en, p) === 'function')
-        .sort();
-
-      // All 51, exactly: one translated is progress and must come off this
-      // list; one MISSING would mean a hand-written body nobody reviewed.
-      expect(stillEnglish).toEqual(everyFunction);
+    it(`${locale}: no message is still English`, () => {
+      // Until #136 this pinned all 51 messages as the English function by
+      // reference. Messages are templates now, each drafted in the language,
+      // so the list is empty and stays empty: a message is never an accepted
+      // English leftover, whatever ENGLISH_STRINGS records for a label.
+      const messages = leafPaths(en).filter((p) => isMessage(valueAt(en, p)));
+      expect(
+        searched(sameAsEnglish(table, isMessage), {
+          of: messages,
+          what: 'English messages',
+        }),
+      ).toEqual([]);
     });
 
     it(`${locale}: carries exactly the documented English strings`, () => {

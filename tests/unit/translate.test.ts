@@ -19,6 +19,7 @@ import {
   unescapeXml,
   unprotectTerms,
   untranslatedKeys,
+  translationUnits,
   TRANSLATABLE_LOCALES,
 } from '../../src/lib/i18n/translate';
 
@@ -38,8 +39,8 @@ import {
  */
 
 /**
- * Every distinct translatable string the harness collects -- all three
- * catalogues, not just `en`.
+ * Every distinct unit the harness sends -- from all three catalogues, not
+ * just `en`, and each message as the sentences it can say (#136).
  *
  * Walked here rather than imported from the script, so this does not depend
  * on the thing it checks. Scoped to `en` alone until #22, which is half of
@@ -54,7 +55,7 @@ function collectCatalogue(): string[] {
     if (Array.isArray(value)) return value.forEach(walk);
     if (value && typeof value === 'object')
       return Object.values(value).forEach(walk);
-    if (needsTranslation(value)) out.add(value as string);
+    for (const unit of translationUnits(value)) out.add(unit);
   };
   walk(en);
   walk(siteEn);
@@ -142,9 +143,9 @@ describe('what must never be sent to a translator', () => {
   });
 
   it('leaves a function alone, because a function is code', () => {
-    // The catalogues hold arrow functions for every parameterised message
-    // (`ioHandoverSent`, the whole of `errors`). A translator returns prose,
-    // not a function body, so these are copied and flagged for a human.
+    // No catalogue holds one since #136 -- every parameterised message is a
+    // template, sent as the sentences it can say -- but a function is code,
+    // not copy, and a translator returns prose rather than a function body.
     expect(needsTranslation('Add a student')).toBe(true);
     expect(needsTranslation((n: number) => `${n}`)).toBe(false);
     expect(needsTranslation('')).toBe(false);
@@ -275,6 +276,7 @@ describe('protected terms are wrapped before they are sent', () => {
       ['collect(en)', "the tool's own catalogue"],
       ['collect(siteEn)', 'header, footer, homepage and 404 copy'],
       ['CSV_LOCALES', 'every word a downloaded file carries'],
+      ['translationUnits(', 'each message as its sentences, never its syntax'],
     ]) {
       expect(script, `the harness must collect ${why}`).toContain(source);
     }
@@ -285,7 +287,9 @@ describe('protected terms are wrapped before they are sent', () => {
     // harness sends: escape, protect, then back again must be the identity.
     const broken = collectCatalogue().filter(
       (source) =>
-        unescapeXml(unprotectTerms(protectTerms(escapeXml(source)))) !== source,
+        unescapeXml(
+          unprotectTerms(buildRequestBody([source], 'zh').text[0]),
+        ) !== source,
     );
     expect(
       searched(broken, {
@@ -303,6 +307,7 @@ describe('the harness reports what a human still has to write', () => {
       greeting: 'Hello',
       count: (n: number) => `${n}`,
       symbol: '#',
+      message: '{n, plural, one {# left} other {# left}}',
       nested: { deep: 'Yes', fn: () => 'x' },
     });
     expect(report.sort()).toEqual(['count', 'nested.fn', 'symbol']);

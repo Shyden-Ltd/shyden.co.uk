@@ -54,26 +54,32 @@ export type Message<P extends MessageParams> = string & {
 };
 
 export class MessageSyntaxError extends Error {
-  constructor(
-    reason: string,
-    readonly template: string,
-    readonly index: number,
-  ) {
+  readonly template: string;
+  readonly index: number;
+
+  constructor(reason: string, template: string, index: number) {
     super(`${reason} (at ${index} in ${JSON.stringify(template)})`);
     this.name = 'MessageSyntaxError';
+    this.template = template;
+    this.index = index;
   }
 }
 
 type SlotKind = 'plural' | 'select' | 'value';
 
-type Part =
+/**
+ * One piece of a parsed template: literal text, a `#` count, a named value,
+ * or a plural or select with its branches. Exported for the translation
+ * harness, which cuts a message into the sentences it can say (#136).
+ */
+export type MessagePart =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'count' }
   | { readonly kind: 'value'; readonly name: string }
   | {
       readonly kind: 'plural' | 'select';
       readonly name: string;
-      readonly branches: ReadonlyMap<string, readonly Part[]>;
+      readonly branches: ReadonlyMap<string, readonly MessagePart[]>;
     };
 
 const PLURAL_CATEGORIES: ReadonlySet<string> = new Set([
@@ -90,18 +96,24 @@ const SELECT_KEY = /[A-Za-z0-9_-]+/y;
 
 class Parser {
   private index = 0;
+  private readonly template: string;
 
-  constructor(private readonly template: string) {}
+  // Plain fields, not parameter properties, here and in MessageSyntaxError:
+  // the DeepL scripts load this module with Node's type stripping, which
+  // refuses TypeScript that has to compile to run.
+  constructor(template: string) {
+    this.template = template;
+  }
 
-  parse(): readonly Part[] {
+  parse(): readonly MessagePart[] {
     const parts = this.parts(false);
     if (this.index < this.template.length) this.fail('unmatched "}"');
     return parts;
   }
 
   /** Parts up to the end of input, or up to a `}` this level does not own. */
-  private parts(inPlural: boolean): Part[] {
-    const parts: Part[] = [];
+  private parts(inPlural: boolean): MessagePart[] {
+    const parts: MessagePart[] = [];
     let text = '';
     const flush = () => {
       if (text) parts.push({ kind: 'text', text });
@@ -126,7 +138,7 @@ class Parser {
     return parts;
   }
 
-  private slot(): Part {
+  private slot(): MessagePart {
     const open = this.index;
     this.index += 1;
     this.skipSpace();
@@ -148,7 +160,7 @@ class Parser {
       this.fail(`expected "," after ${kind}`);
     this.index += 1;
 
-    const branches = new Map<string, readonly Part[]>();
+    const branches = new Map<string, readonly MessagePart[]>();
     for (;;) {
       this.skipSpace();
       if (this.template[this.index] === '}') break;
@@ -199,9 +211,13 @@ class Parser {
   }
 }
 
-const parsed = new Map<string, readonly Part[]>();
+const parsed = new Map<string, readonly MessagePart[]>();
 
-function parseMessage(template: string): readonly Part[] {
+/**
+ * A template's parts, parsed once and cached. Throws `MessageSyntaxError`
+ * for a template this format does not accept.
+ */
+export function parseMessage(template: string): readonly MessagePart[] {
   let parts = parsed.get(template);
   if (!parts) {
     parts = new Parser(template).parse();
@@ -246,7 +262,7 @@ function countOf(value: MessageValue, name: string): number {
 }
 
 function render(
-  parts: readonly Part[],
+  parts: readonly MessagePart[],
   params: MessageParams,
   locale: string,
   count: number | undefined,
@@ -325,7 +341,7 @@ export function describeMessage(template: string): MessageDescription {
   const slots = new Map<string, Set<SlotKind>>();
   const plurals: { name: string; keys: string[] }[] = [];
   const selects: { name: string; keys: string[] }[] = [];
-  const walk = (parts: readonly Part[]): void => {
+  const walk = (parts: readonly MessagePart[]): void => {
     for (const part of parts) {
       if (part.kind === 'text' || part.kind === 'count') continue;
       const kinds = slots.get(part.name) ?? new Set<SlotKind>();
