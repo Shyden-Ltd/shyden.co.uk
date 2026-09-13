@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
+import { catalogueLeaves, stringLeaves } from '../catalogue-leaves';
 import { en as enCatalogue } from '../../src/lib/i18n/en';
 import { id as idCatalogue } from '../../src/lib/i18n/id';
 import {
@@ -48,49 +49,6 @@ const locales = [
 ] as const;
 
 /**
- * Every leaf in a locale, addressed by path — `errors.NO_STUDENTS`,
- * `themes.animals[3]`, `howToSteps[1]`.
- *
- * The old checks read `Object.entries` at the TOP level only and skipped
- * anything that was not a string, which left `errors.*`, `themes.*`,
- * `themeNames.*` and every `howToSteps` entry — roughly 45 keys — unchecked.
- * An empty `id.errors.NO_STUDENTS` passed. So did a `howToSteps` with two
- * entries where English has three, which would silently show an Indonesian
- * teacher fewer instructions.
- */
-const deepKeys = (value: unknown, path = ''): string[] => {
-  if (Array.isArray(value))
-    return value.flatMap((v, i) => deepKeys(v, `${path}[${i}]`));
-  if (value && typeof value === 'object')
-    return Object.entries(value).flatMap(([k, v]) =>
-      deepKeys(v, path ? `${path}.${k}` : k),
-    );
-  return [path];
-};
-
-/**
- * The recursion, kept private so an empty sub-walk stays ordinary HERE.
- *
- * A function, a number or an empty object contributes nothing, and must be
- * allowed to. The refusal belongs to the top-level form and nowhere else --
- * the shape `walk`/`filesUnder` settled on in tests/source-files.ts (#84).
- */
-const walkStrings = (value: unknown, path = ''): Array<[string, string]> => {
-  if (typeof value === 'string') return [[path, value]];
-  if (Array.isArray(value))
-    return value.flatMap((v, i) => walkStrings(v, `${path}[${i}]`));
-  if (value && typeof value === 'object')
-    return Object.entries(value).flatMap(([k, v]) =>
-      walkStrings(v, path ? `${path}.${k}` : k),
-    );
-  // A function contributes nothing. A catalogue holds none: since #136 every
-  // parameterised message is a template string, which this walk collects
-  // like any other. A table from `getStrings` does hold functions, so a
-  // check that must see the messages walks `catalogues`, never `locales`.
-  return [];
-};
-
-/**
  * Every string in a catalogue, PROVED non-empty before a guard reads it.
  *
  * Three guards below assert absence over the result of filtering this --
@@ -101,9 +59,13 @@ const walkStrings = (value: unknown, path = ''): Array<[string, string]> => {
  *
  * A plain `throw` via `nonEmpty`, not an `expect`: the refusal belongs to
  * the derivation, where a call site cannot forget it.
+ *
+ * Strings alone: a table from `getStrings` holds each message as a function,
+ * which is not copy, so a check that must see the messages walks
+ * `catalogues`, never `locales`.
  */
 const deepStrings = (value: unknown): Array<[string, string]> =>
-  nonEmpty(walkStrings(value), 'catalogue strings');
+  nonEmpty(stringLeaves(value), 'catalogue strings');
 
 /**
  * Strings that are legitimately the same in both languages. Measured, not
@@ -120,9 +82,18 @@ const ALLOWED_IDENTICAL = new Set([
 
 describe('locales are complete', () => {
   it('Indonesian defines every key English defines, at every depth', () => {
-    // Includes array positions, so a themes list or a howToSteps that lost an
-    // entry is a failure rather than a shorter page.
-    expect(deepKeys(idCatalogue).sort()).toEqual(deepKeys(enCatalogue).sort());
+    // Every leaf, array positions included, so a themes list or a howToSteps
+    // that lost an entry is a failure rather than a shorter page. The first
+    // version read `Object.entries` at the top level only and skipped anything
+    // that was not a string, which left roughly 45 keys -- `errors.*`,
+    // `themes.*`, `themeNames.*`, every `howToSteps` entry -- unchecked.
+    const paths = (table: unknown): string[] =>
+      catalogueLeaves(table)
+        .map(([path]) => path)
+        .sort();
+    expect(paths(idCatalogue)).toEqual(
+      nonEmpty(paths(enCatalogue), 'English leaf paths'),
+    );
   });
 
   it.each(catalogues)('%s has no blank string anywhere', (_name, catalogue) => {
@@ -1482,32 +1453,20 @@ describe('every engine warning can be rendered in every language', () => {
 });
 
 describe('site-wide copy is fully translated', () => {
-  const walk = (obj: unknown, path = ''): Array<[string, string]> => {
-    if (typeof obj === 'string') return [[path, obj]];
-    if (obj && typeof obj === 'object') {
-      return Object.entries(obj).flatMap(([k, v]) =>
-        walk(v, path ? `${path}.${k}` : k),
-      );
-    }
-    return [];
-  };
-
   it('every English site key exists in Indonesian', () => {
-    expect(
-      walk(siteId)
-        .map(([k]) => k)
-        .sort(),
-    ).toEqual(
-      walk(siteEn)
-        .map(([k]) => k)
-        .sort(),
-    );
+    const keys = (table: unknown): string[] =>
+      stringLeaves(table)
+        .map(([key]) => key)
+        .sort();
+    expect(keys(siteId)).toEqual(nonEmpty(keys(siteEn), 'English site keys'));
   });
 
   it('no site string is blank in either language', () => {
-    for (const [, value] of [...walk(siteEn), ...walk(siteId)]) {
-      expect(value.trim()).not.toBe('');
-    }
+    const strings = [...deepStrings(siteEn), ...deepStrings(siteId)];
+    const blank = strings
+      .filter(([, value]) => value.trim() === '')
+      .map(([key]) => key);
+    expect(searched(blank, { of: strings, what: 'site strings' })).toEqual([]);
   });
 
   it('the visible prose is genuinely translated, not copied English', () => {
@@ -1527,8 +1486,8 @@ describe('site-wide copy is fully translated', () => {
       // be naming a different product. Identical in all five by design.
       'nav.shytalk',
     ]);
-    const enMap = new Map(walk(siteEn));
-    const idLeaves = walk(siteId);
+    const enMap = new Map(stringLeaves(siteEn));
+    const idLeaves = stringLeaves(siteId);
     const identical = idLeaves
       .filter(([k, v]) => enMap.get(k) === v)
       .map(([k]) => k)

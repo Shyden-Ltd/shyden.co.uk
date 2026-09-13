@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { filesUnder, nonEmpty, searched } from '../source-files';
-import { stringLeaves } from './catalogue-leaves';
+import { stringLeaves } from '../catalogue-leaves';
 import { blankCommentLines } from './source-text';
 import { en } from '../../src/lib/i18n/en';
 import {

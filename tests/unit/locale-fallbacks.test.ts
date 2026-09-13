@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
+import { catalogueLeaves } from '../catalogue-leaves';
 import { en } from '../../src/lib/i18n/en';
 import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
@@ -49,51 +50,24 @@ const MACHINE_SEEDED = { zh, vi, th } as const;
  */
 const CHECKED_ELSEWHERE = ['en', 'id'] as const;
 
-/** Every leaf path in the English catalogue, `errors.TOO_MANY_STUDENTS` style. */
 /**
- * The recursion, kept private so an empty sub-walk stays ordinary HERE.
- *
- * A function, a number or an empty object contributes nothing, and must be
- * allowed to. The refusal belongs to the top-level form and nowhere else --
- * the shape `walk`/`filesUnder` settled on in tests/source-files.ts (#84).
- */
-function walkLeaves(table: unknown, path = ''): string[] {
-  if (Array.isArray(table))
-    return table.flatMap((v, i) => walkLeaves(v, `${path}[${i}]`));
-  if (table && typeof table === 'object')
-    return Object.entries(table).flatMap(([k, v]) =>
-      walkLeaves(v, path ? `${path}.${k}` : k),
-    );
-  return [path];
-}
-
-/**
- * Every leaf path in a catalogue, PROVED non-empty before a guard reads it.
+ * Every leaf in a catalogue with its value, PROVED non-empty before a guard
+ * reads it.
  *
  * Same reasoning as `deepStrings` in i18n.test.ts and as `filesUnder` in
  * tests/source-files.ts: a walker that returns `[]` makes every absence
  * assertion downstream of it pass having read nothing (#84).
  */
-function leafPaths(table: unknown): string[] {
-  return nonEmpty(walkLeaves(table), 'catalogue leaf paths');
-}
+const leavesOf = (table: unknown): Array<[string, unknown]> =>
+  nonEmpty(catalogueLeaves(table), 'catalogue leaves');
 
-function valueAt(table: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((node, part) => {
-    const match = /^(.*?)((?:\[\d+\])*)$/.exec(part)!;
-    let next: unknown = match[1]
-      ? (node as Record<string, unknown>)?.[match[1]]
-      : node;
-    for (const index of match[2].match(/\d+/g) ?? [])
-      next = (next as unknown[])?.[Number(index)];
-    return next;
-  }, table);
-}
-
-const sameAsEnglish = (table: unknown, predicate: (v: unknown) => boolean) =>
-  leafPaths(en)
-    .filter((p) => predicate(valueAt(en, p)))
-    .filter((p) => valueAt(table, p) === valueAt(en, p));
+/** The paths of the English leaves `predicate` selects that `table` left as English. */
+const sameAsEnglish = (table: unknown, predicate: (v: unknown) => boolean) => {
+  const theirs = new Map(catalogueLeaves(table));
+  return leavesOf(en)
+    .filter(([path, value]) => predicate(value) && theirs.get(path) === value)
+    .map(([path]) => path);
+};
 
 /** A template string: a message with a slot a page fills (#136). */
 const isMessage = (value: unknown): boolean =>
@@ -129,7 +103,9 @@ describe('what is still English in each catalogue', () => {
       // reference. Messages are templates now, each drafted in the language,
       // so the list is empty and stays empty: a message is never an accepted
       // English leftover, whatever ENGLISH_STRINGS records for a label.
-      const messages = leafPaths(en).filter((p) => isMessage(valueAt(en, p)));
+      const messages = leavesOf(en)
+        .filter(([, value]) => isMessage(value))
+        .map(([path]) => path);
       expect(
         searched(sameAsEnglish(table, isMessage), {
           of: messages,
@@ -148,10 +124,12 @@ describe('what is still English in each catalogue', () => {
     });
 
     it(`${locale}: has no empty or whitespace-only copy`, () => {
-      const paths = leafPaths(en);
-      const blank = paths
-        .filter((p) => typeof valueAt(table, p) === 'string')
-        .filter((p) => (valueAt(table, p) as string).trim() === '');
+      const theirs = new Map(catalogueLeaves(table));
+      const paths = leavesOf(en).map(([path]) => path);
+      const blank = paths.filter((path) => {
+        const value = theirs.get(path);
+        return typeof value === 'string' && value.trim() === '';
+      });
       expect(
         searched(blank, { of: paths, what: 'catalogue leaf paths' }),
         'a blank string renders as nothing at all',

@@ -27,14 +27,17 @@ import { relative } from 'node:path';
  * lexical questions and this exists for the structural ones.
  */
 
-/** A file parsed with parent pointers, which `declaredName` needs. */
+/**
+ * Source text parsed with parent pointers, which `declaredName` needs. Takes
+ * text rather than a path so a detector can be handed a fixture that is not
+ * on disk.
+ */
+export const parseSource = (text: string, file = 'source.ts'): ts.SourceFile =>
+  ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+
+/** A file parsed with parent pointers (`parseSource`). */
 export const parseFile = (file: string): ts.SourceFile =>
-  ts.createSourceFile(
-    file,
-    readFileSync(file, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-  );
+  parseSource(readFileSync(file, 'utf8'), file);
 
 /**
  * The name a function is known by, whether declared or assigned.

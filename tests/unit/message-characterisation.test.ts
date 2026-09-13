@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { stringLeaves } from '../catalogue-leaves';
 import { ERROR_CODES, type GroupingError } from '../../src/lib/grouping';
 import { getStrings, renderError } from '../../src/lib/i18n';
 import { en } from '../../src/lib/i18n/en';
@@ -96,17 +97,6 @@ function withListDecision(
   return before.replace(oldForms[0], () => after);
 }
 
-const messagePaths = (table: unknown, path = ''): string[] =>
-  typeof table === 'string'
-    ? isMessageTemplate(table)
-      ? [path]
-      : []
-    : table && typeof table === 'object' && !Array.isArray(table)
-      ? Object.entries(table).flatMap(([key, value]) =>
-          messagePaths(value, path ? `${path}.${key}` : key),
-        )
-      : [];
-
 const messageAt = (table: unknown, path: string) =>
   path
     .split('.')
@@ -121,9 +111,10 @@ describe('messages render what the function-era catalogues rendered (#136)', () 
   });
 
   it('covers exactly the messages English declares as templates', () => {
-    expect(messagePaths(en).sort()).toEqual(
-      Object.keys(snapshot.messages).sort(),
-    );
+    const messages = stringLeaves(en)
+      .filter(([, value]) => isMessageTemplate(value))
+      .map(([path]) => path);
+    expect(messages.sort()).toEqual(Object.keys(snapshot.messages).sort());
   });
 
   for (const locale of ['en', 'id'] as const) {

@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { declaredName, parseSource } from './ast';
 import { withoutTsComments } from './source-text';
 import { filesUnder } from '../source-files';
 
@@ -209,6 +211,136 @@ describe('walking a directory tree has exactly one home', () => {
     expect(
       definesADirectoryWalker(`
         const assets = readdirSync('dist/_astro').filter((n) => n.endsWith('.m4a'));
+      `),
+    ).toBe(false);
+  });
+});
+
+/**
+ * Walking a copy table lives in one place too: `tests/catalogue-leaves.ts`.
+ *
+ * The directory walk above got its home after nine private copies. Catalogue
+ * walks reached seven before anyone counted -- three in `i18n.test.ts`, one
+ * each in `locale-fallbacks.test.ts`, `message-characterisation.test.ts`,
+ * `translate.test.ts` and `copy-reaches-a-page.spec.ts` -- and #136 wrote an
+ * eighth while adding a guard. They disagreed the way the directory walkers
+ * did: one never entered arrays, so a message added to a list would have been
+ * invisible to the check built on it, and one spelled a position `a.0` where
+ * the rest wrote `a[0]`. A search for `Array.isArray` found six of them; this
+ * rule found the seventh, which never asks.
+ *
+ * Structural, like the rule above, and parsed rather than matched: what makes
+ * a walk is a function referring to ITSELF, and only a parse knows which
+ * function a name sits inside. A named function that calls or hands on its
+ * own name (`walk(v)`, `value.forEach(walk)`) while taking a table apart with
+ * `Object.entries`, `Object.values` or `Object.keys` is a walk, whatever it is
+ * called.
+ *
+ * KNOWN LIMIT: the test tree only. `scripts/` and `src/` walk catalogues for
+ * themselves -- the harness's `collect`, the scaffold's `render`,
+ * `untranslatedKeys` -- because shipped code cannot import the test tree, and
+ * a guard importing the shipped walk would depend on the thing it checks.
+ */
+const TAKES_A_TABLE_APART = new Set([
+  'Object.entries',
+  'Object.values',
+  'Object.keys',
+]);
+
+/** Every node inside `node`, depth first. */
+function nodesWithin(node: ts.Node): ts.Node[] {
+  const found: ts.Node[] = [];
+  const visit = (child: ts.Node): void => {
+    found.push(child);
+    ts.forEachChild(child, visit);
+  };
+  ts.forEachChild(node, visit);
+  return found;
+}
+
+export function definesACatalogueWalker(source: string): boolean {
+  return nodesWithin(parseSource(source)).some((node) => {
+    const name = ts.isFunctionLike(node) ? declaredName(node) : null;
+    if (!name) return false;
+    const calls = nodesWithin(node).filter(ts.isCallExpression);
+    const takesATableApart = calls.some((call) =>
+      TAKES_A_TABLE_APART.has(call.expression.getText()),
+    );
+    const refersToItself = calls.some((call) =>
+      [call.expression, ...call.arguments].some(
+        (part) => ts.isIdentifier(part) && part.text === name,
+      ),
+    );
+    return takesATableApart && refersToItself;
+  });
+}
+
+describe('walking a catalogue has exactly one home', () => {
+  it('is implemented only in catalogue-leaves.ts', () => {
+    const testTree = SCANNED.filter((path) => path.startsWith('tests/'));
+    expect(
+      testTree.filter((path) =>
+        definesACatalogueWalker(readFileSync(path, 'utf8')),
+      ),
+    ).toEqual(['tests/catalogue-leaves.ts']);
+  });
+
+  it('catches a walker whatever it is called', () => {
+    expect(
+      definesACatalogueWalker(`
+        const gather = (node: unknown, at = ''): Array<[string, string]> => {
+          if (typeof node === 'string') return [[at, node]];
+          if (Array.isArray(node))
+            return node.flatMap((v, i) => gather(v, at + '[' + i + ']'));
+          return node && typeof node === 'object'
+            ? Object.entries(node).flatMap(([k, v]) => gather(v, k))
+            : [];
+        };
+      `),
+    ).toBe(true);
+  });
+
+  it('catches one that hands itself on instead of calling itself', () => {
+    expect(
+      definesACatalogueWalker(`
+        function collect(value: unknown): void {
+          if (Array.isArray(value)) return value.forEach(collect);
+          if (value && typeof value === 'object')
+            return Object.values(value).forEach(collect);
+          strings.add(String(value));
+        }
+      `),
+    ).toBe(true);
+  });
+
+  it('is not fired by a comment describing one', () => {
+    expect(
+      definesACatalogueWalker(`
+        // function walk(value) { return Object.values(value).forEach(walk); }
+        const groups = Object.keys(siteEn);
+      `),
+    ).toBe(false);
+  });
+
+  it('is not fired by reading a table one level deep', () => {
+    expect(
+      definesACatalogueWalker(`
+        function unusedGroups(): string[] {
+          return Object.entries(siteEn)
+            .filter(([, value]) => value && typeof value === 'object')
+            .map(([group]) => group);
+        }
+      `),
+    ).toBe(false);
+  });
+
+  it('is not fired by a recursion over something other than a table', () => {
+    expect(
+      definesACatalogueWalker(`
+        const visit = (node: ts.Node): void => {
+          kinds.push(node.kind);
+          ts.forEachChild(node, visit);
+        };
       `),
     ).toBe(false);
   });

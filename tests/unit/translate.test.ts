@@ -7,6 +7,7 @@ import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import { filesUnder, searched } from '../source-files';
+import { stringLeaves } from '../catalogue-leaves';
 import {
   CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
@@ -50,23 +51,15 @@ import {
  * and the second time this repo has paid for it.
  */
 function collectCatalogue(): string[] {
-  const out = new Set<string>();
-  const walk = (value: unknown): void => {
-    if (Array.isArray(value)) return value.forEach(walk);
-    if (value && typeof value === 'object')
-      return Object.values(value).forEach(walk);
-    for (const unit of translationUnits(value)) out.add(unit);
-  };
-  walk(en);
-  walk(siteEn);
-  walk(
-    Object.fromEntries(
-      Object.entries(CSV_LOCALES.en).filter(
-        ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
-      ),
+  const csv = Object.fromEntries(
+    Object.entries(CSV_LOCALES.en).filter(
+      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
     ),
   );
-  return [...out];
+  const units = [en, siteEn, csv].flatMap((table) =>
+    stringLeaves(table).flatMap(([, value]) => translationUnits(value)),
+  );
+  return [...new Set(units)];
 }
 
 describe('the DeepL key decides the host', () => {

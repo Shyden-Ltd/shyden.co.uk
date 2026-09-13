@@ -2,7 +2,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
 import { parseFile } from './ast';
-import { stringLeaves } from './catalogue-leaves';
+import { stringLeaves } from '../catalogue-leaves';
 import { DEFAULT_LOCALE, LOCALES, type Locale } from '../../src/lib/i18n';
 import { en, type Catalogue } from '../../src/lib/i18n/en';
 import { id } from '../../src/lib/i18n/id';
