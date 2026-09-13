@@ -1,7 +1,8 @@
 name: Release — dev (deploy + verify, gates the merge)
-# THE PROMOTION GATE. Fires on every push to `develop`. Runs the full
-# comprehensive suite, deploys to dev, then VERIFIES the deployed dev site and
-# posts a `dev-verified` commit status on the SHA.
+# THE PROMOTION GATE. Fires on every push to `develop`. Proves the merged tree
+# is the tree that passed on its PR (a dispatched branch runs the full suite
+# instead), deploys to dev, then VERIFIES the deployed dev site and posts a
+# `dev-verified` commit status on the SHA.
 #
 # Why dev and not prod is the gate: a pipeline that deploys to production
 # before the code is on `main` makes production the place a mistake first
@@ -163,6 +164,16 @@ jobs:
   verify-dev:
     name: Verify dev + dev-verified
     needs: deploy-dev
+    # One of the two gates above skips on every event, by design, and a job
+    # with no condition carries an implicit `success()` the runner judges over
+    # EVERY upstream job — so without this, verify skipped on every run: 866bc23
+    # deployed, verified nothing and posted no `dev-verified`, in a run that
+    # still concluded `success` (run 34742940098). `!cancelled()` replaces that
+    # check; the `needs` half keeps a skipped or failed deploy from being
+    # "verified". Both halves measured on the runner (run 34743720266). Folded,
+    # because a plain scalar starting with `!` is a YAML tag (#157).
+    if: >-
+      !cancelled() && needs.deploy-dev.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

@@ -6,7 +6,7 @@
  * `npm install` — a hook only one machine has is not a control.
  *
  * No hook runner. husky is the usual answer and it is a new dependency, which
- * this repo does not take ("no new npm dependencies", supply-chain.test.ts);
+ * this repo does not take (a new npm package is an operator decision; see CLAUDE.md);
  * `core.hooksPath` is built into git and needs nothing installed. That also
  * keeps `prepare` running only THIS file, which is three lines of our own code
  * visible in the diff, rather than a third party's postinstall — the line #39

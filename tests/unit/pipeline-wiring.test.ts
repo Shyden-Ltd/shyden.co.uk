@@ -6,6 +6,12 @@ import { withoutCommentLines, withoutTsComments } from './source-text';
 import { nonEmpty, searched } from '../source-files';
 import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
+import {
+  jobsDownstreamOfAConditionalJob,
+  skippedUpstreamFindings,
+  workflowJobs,
+  type WorkflowJob,
+} from '../workflow-jobs';
 
 /**
  * The deploy pipeline is wired to the things it claims to run.
@@ -20,9 +26,11 @@ import { sitePaths } from '../site-pages';
  * A test suite nobody runs is worse than no suite: it reads as coverage. The
  * checks below are cheap, and each one names a way that could happen again.
  *
- * SOURCE TEXT, not YAML parsing: no YAML parser is available here and none is
- * worth adding for this ("no new npm dependencies"). The assertions are about
- * whether a filename or a job name APPEARS, which text answers exactly.
+ * SOURCE TEXT where the question is whether a filename or a job name APPEARS,
+ * which comment-stripped text answers exactly. PARSED YAML where the question
+ * is the job graph — what a job needs and what its condition says — which text
+ * cannot answer: see tests/workflow-jobs.ts, and #157 for the job that line
+ * matching let ship un-runnable.
  */
 
 const WORKFLOWS = '.github/workflows';
@@ -63,13 +71,21 @@ const onBlock = (name: string) =>
 const workflowFileNames = (): string[] =>
   nonEmpty(readdirSync(WORKFLOWS), `workflow files in ${WORKFLOWS}`);
 
+const workflowYamlNames = (): string[] =>
+  workflowFileNames().filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
+
 const allWorkflows = () =>
-  workflowFileNames()
-    .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-    .map((f) => ({
-      name: f,
-      text: runnableText(readFileSync(join(WORKFLOWS, f), 'utf8')),
-    }));
+  workflowYamlNames().map((f) => ({
+    name: f,
+    text: runnableText(workflow(f)),
+  }));
+
+/** One job of a workflow, parsed, naming itself in the failure when missing. */
+const jobNamed = (file: string, id: string): WorkflowJob => {
+  const job = workflowJobs(workflow(file), file).find((each) => each.id === id);
+  expect(job, `${file} defines no job '${id}'`).toBeDefined();
+  return job!;
+};
 
 describe('the deploy pipeline runs what it claims to', () => {
   it('some workflow actually runs the dev sanity suite', () => {
@@ -91,17 +107,54 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the dev deploy is gated on a gate that SUCCEEDED, never on one that skipped', () => {
-    const dev = workflowSteps('release-dev.yml');
-    expect(dev).toMatch(/deploy-dev:[\s\S]*?needs:\s*\[gate,\s*test\]/);
-    expect(dev).toMatch(/verify-dev:[\s\S]*?needs:\s*deploy-dev/);
+    const deploy = jobNamed('release-dev.yml', 'deploy-dev');
+    expect(deploy.needs).toEqual(['gate', 'test']);
 
     // Exactly one of the two gates runs per event, so the other is ALWAYS
     // skipped. `!failure() && !cancelled()` alone is therefore satisfied by a
     // run where BOTH skipped — absent evidence reading as a pass, which is the
     // shape of every defect this file exists for (#146, #157). One of them has
-    // to have actually succeeded.
-    expect(dev).toContain("needs.gate.result == 'success'");
-    expect(dev).toContain("needs.test.result == 'success'");
+    // to have actually succeeded. Pinned EXACTLY on deploy-dev's OWN parsed
+    // condition: the whole-file substring match this replaced was satisfied by
+    // any job's, and a substring would still accept `always() || …`.
+    expect(deploy.condition).toBe(
+      "!failure() && !cancelled() && (needs.gate.result == 'success' || needs.test.result == 'success')",
+    );
+  });
+
+  it('verifies a deploy that succeeded although a gate upstream of it skipped (#157)', () => {
+    // Shipped with no condition, this job inherited an implicit `success()`
+    // that the runner judges over EVERY upstream job. One gate skips on every
+    // event by design, so it skipped on every run: 866bc23 deployed and was
+    // never verified (run 34742940098). Pinned exactly: the rule below accepts
+    // any condition of the right shape, and this is the one the runner was
+    // measured running after a skipped gate (run 34743720266).
+    const verify = jobNamed('release-dev.yml', 'verify-dev');
+    expect(verify.needs).toEqual(['deploy-dev']);
+    expect(verify.condition).toBe(
+      "!cancelled() && needs.deploy-dev.result == 'success'",
+    );
+  });
+
+  it('no job in any workflow is silently skipped by a skip upstream of it (#157)', () => {
+    const graphs = workflowYamlNames().map((name) => ({
+      name,
+      jobs: workflowJobs(workflow(name), name),
+    }));
+    const downstream = graphs.flatMap(({ name, jobs }) =>
+      jobsDownstreamOfAConditionalJob(jobs).map(
+        ({ job }) => `${name} ${job.id}`,
+      ),
+    );
+    const findings = graphs.flatMap(({ name, jobs }) =>
+      skippedUpstreamFindings(jobs).map((finding) => `${name}: ${finding}`),
+    );
+    expect(
+      searched(findings, {
+        of: downstream,
+        what: 'jobs downstream of a conditional job',
+      }),
+    ).toEqual([]);
   });
 
   it('the push path proves the tree instead of re-running the suite', () => {

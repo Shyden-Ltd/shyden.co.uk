@@ -22,8 +22,10 @@ import { nonEmpty, searched } from '../source-files';
  *    beside each SHA is what makes a bump reviewable by a human instead of an
  *    opaque hex swap.
  *
- * SOURCE TEXT, not YAML parsing: no YAML parser is available here and none is
- * worth adding ("no new npm dependencies"), matching pipeline-wiring.test.ts.
+ * SOURCE TEXT, comment-stripped: these checks ask whether a `uses:` line is
+ * pinned and whether one group sits above another, which text answers. When a
+ * question turns structural, parse instead — `yaml` is declared for exactly
+ * that (tests/workflow-jobs.ts, #157).
  */
 
 const WORKFLOWS = '.github/workflows';
