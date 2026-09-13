@@ -28,9 +28,12 @@ import { argv, env, exit } from 'node:process';
 import {
   CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
+  betterDraft,
   buildRequestBody,
   deeplEndpoint,
   deeplLanguage,
+  needsSending,
+  slotsKept,
   unescapeXml,
   unprotectTerms,
   untranslatedKeys,
@@ -117,7 +120,11 @@ collect(
   ),
 );
 
-const pending = [...strings].filter((s) => !(s in known));
+/**
+ * Never drafted, or cached with a draft whose slots changed: a cached draft
+ * `assembleMessage` would refuse is sent again rather than trusted (#136).
+ */
+const pending = [...strings].filter((s) => needsSending(s, known[s]));
 const characters = pending.reduce((n, s) => n + s.length, 0);
 const manual = untranslatedKeys(en);
 
@@ -139,28 +146,57 @@ if (!send) {
 if (!apiKey.trim()) die('DEEPL_API_KEY is not set (env or .env.local)');
 const endpoint = deeplEndpoint(apiKey);
 
-for (let i = 0; i < pending.length; i += BATCH) {
-  const batch = pending.slice(i, i + BATCH);
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `DeepL-Auth-Key ${apiKey.trim()}`,
-      'Content-Type': 'application/json',
-    },
-    // The names and legal facts come back exactly as they went in, because
-    // `buildRequestBody` wraps them in the tag this request ignores. Built
-    // there, not here: in this file it could only be checked by calling the
-    // network, and for one release it was not checked at all (#22).
-    body: JSON.stringify(buildRequestBody(batch, target)),
-  });
-  // The status only, never the body: a DeepL error can echo the request.
-  if (!response.ok) die(`DeepL responded ${response.status}`);
-  const { translations } = await response.json();
-  batch.forEach((source, n) => {
-    known[source] = unescapeXml(unprotectTerms(translations[n].text));
-  });
-  console.log(`  ${Math.min(i + BATCH, pending.length)}/${pending.length}`);
+/** Every source drafted, in order, 50 texts to a request. */
+async function draftAll(sources, options) {
+  const drafts = [];
+  for (let i = 0; i < sources.length; i += BATCH) {
+    const batch = sources.slice(i, i + BATCH);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `DeepL-Auth-Key ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      // The names and legal facts come back exactly as they went in, because
+      // `buildRequestBody` wraps them in the tag this request ignores. Built
+      // there, not here: in this file it could only be checked by calling the
+      // network, and for one release it was not checked at all (#22).
+      body: JSON.stringify(buildRequestBody(batch, target, options)),
+    });
+    // The status only, never the body: a DeepL error can echo the request.
+    if (!response.ok) die(`DeepL responded ${response.status}`);
+    const { translations } = await response.json();
+    drafts.push(
+      ...translations.map(({ text }) => unescapeXml(unprotectTerms(text))),
+    );
+    console.log(`  ${Math.min(i + BATCH, sources.length)}/${sources.length}`);
+  }
+  return drafts;
 }
+
+(await draftAll(pending, { tagSlots: false })).forEach((draft, n) => {
+  known[pending[n]] = draft;
+});
+
+/**
+ * Sent bare, a slot keeps its spacing and the words beside it whole, but DeepL
+ * now and then drops one; sent tagged, it is kept but can be glued to a word.
+ * So a sentence whose bare draft changed a slot is sent again with its slots
+ * tagged, and the better of the two drafts kept (#136, measured in
+ * translate.ts).
+ */
+const retry = pending.filter((s) => !slotsKept(s, known[s]));
+if (retry.length > 0) {
+  console.log(`retrying ${retry.length} with tagged slots`);
+  (await draftAll(retry, { tagSlots: true })).forEach((draft, n) => {
+    known[retry[n]] = betterDraft(retry[n], known[retry[n]], draft);
+  });
+}
+const unresolved = retry.filter((s) => !slotsKept(s, known[s]));
+for (const s of unresolved)
+  console.log(
+    `  both drafts changed a slot — needs a human: ${JSON.stringify(s)}`,
+  );
 
 cache[target] = known;
 writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);

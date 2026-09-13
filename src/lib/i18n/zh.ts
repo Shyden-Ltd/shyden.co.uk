@@ -43,9 +43,9 @@ export const zh: Catalogue = {
   sexWhyNoList:
     '在“学生详情”中添加您的学生，并为每位学生设置“M”或“F”，以便使用这些功能。',
   sexWhyUnset:
-    '{unset} 正在分组的学生（{grouped}）中，部分学生的性别未设置。请打开“学生详情”页面，为这些学生设置“M”或“F”，以便他们使用这些功能。',
+    '在被分组的{grouped}名学生中，有{unset}名学生的性别未设置。请打开“学生详情”页面，为他们设置“M”或“F”，以便使用这些功能。',
   sexWhyReturning:
-    '{who} 该功能已恢复，但未设置性别选项。这些选项需要为每个被分组的学生分别设置。',
+    '{who} 已恢复，但未设置性别。这些选项需要为每个被分组的学生分别设置。',
   leftoversLabel: '如果还有剩余的学生',
   leftoversSpread: '将它们平均分发出去',
   leftoversBunch: '把它们全都归入一个组',
@@ -75,26 +75,26 @@ export const zh: Catalogue = {
   rosterAddConfirm: '添加',
   rosterAbsentPill: '缺席',
   rosterAbsentConsequence: '在分组时，被标记为缺席的学生不会被纳入其中。',
-  rosterCountLine: '{total} 学生 · {here} 在校 · {absent} 缺席',
+  rosterCountLine: '{total} 名学生 · {here} 在场 · {absent} 缺席',
   rosterDuplicateMessage:
-    '编号{number}已被{name}占用。每位学生都需要一个专属编号。',
+    '编号 {number} 已被 {name} 占用。每位学生都需要一个专属编号。',
   rosterNoSexMessage:
-    '{names} 仍然需要 M 或 F。在分组之前，每位学生都需要一个。',
-  rosterClashMessage: '{names} 既然它们被放在一起，就无法将它们分开。',
+    '{names} 仍需标注 M 或 F。在分组之前，每位学生都必须标注一项。',
+  rosterClashMessage: '{names} 被放在一起，因此无法将它们分开。',
   rosterGapWarning:
-    '你的班级名单似乎不完整。缺失了编号为{missing}的学生。如果这些学生已经离校，那也没关系——请打开“学生详情”进行核对。',
+    '你的班级名单似乎不完整。缺少 {missing} 号的学生。如果这些学生已经转学，那也没关系——请打开“学生详情”进行核对。',
   rosterOpenRefusedMessage:
-    '“学生详情”最多可包含{max}名学生。若要单独列出该班级，请减少该数字。',
+    '“学生详情”最多可显示 {max} 名学生。若要单独列出该班级，请降低该数值。',
   rosterAtLimitMessage:
-    '“学生信息”最多可保存{max}名学生。删除一名学生后，即可添加另一名学生。',
-  rosterRoomMessage: '还有名额，可以再招收{room}名学生。',
+    '“学生信息”最多可容纳 {max} 名学生。若要添加另一名学生，请先移除一名学生。',
+  rosterRoomMessage: '还有{room}个名额。',
   rosterRemove: '删除',
   rosterClearAll: '清除全部',
   stateNoneAdded: '未添加',
   stateNamed: '{n} 名为',
   stateAbsent: '{n} 缺席',
   stateTogether: '{n} 一起',
-  stateApart: '{n} 分开',
+  stateApart: '{n} 之遥',
   stateAdded: '{n} 已添加',
   stateNone: '无',
   stateMixed: '按性别分类',
@@ -106,8 +106,8 @@ export const zh: Catalogue = {
   again: '再次洗牌',
   needsJs: '此工具需要启用 JavaScript。',
   resultsHeading: '您的群组',
-  resultsHeadingNamed: '{className} — 您的群组',
-  resultsSummary: '{groups} 由{students}学生组成的团体。',
+  resultsHeadingNamed: '{className} — 您的组',
+  resultsSummary: '{groups} 个小组，由 {students} 名学生组成。',
   groupLabel: '{n} 组',
   studentNumber: '学生 {n}',
   staleMode: '这些群组已经过时了——群组人数发生了变化。',
@@ -117,18 +117,18 @@ export const zh: Catalogue = {
   csvProblemEmptyFile: '该文件为空。',
   csvProblemUnreadable: '无法读取该文件。请重新选择该文件。',
   csvProblemNoNumberColumn: '该文件中没有编号列。每个学生都需要一份。',
-  csvProblemNumberBlank: '第{row}行——编号处为空。每位学生都需要一个。',
-  csvProblemNumberNotWhole: '第{row}行——数字“{value}”不是整数。',
+  csvProblemNumberBlank: '行 {row} — 编号处为空。每位学生都需要一个。',
+  csvProblemNumberNotWhole: "行 {row} — 数字 '{value}' 不是整数。",
   csvProblemDuplicateNumber: '行 {row} — 编号 {value} 已被行 {firstRow} 占用。',
   csvProblemSex:
-    "第{row}行——性别 '{value}' 无法识别。请使用 {accepted}，或留空。",
+    "行 {row} — 性别 '{value}' 无法识别。请使用 {accepted}，或留空。",
   csvProblemAbsent:
-    '第{row}行——缺少“{value}”，无法识别。请使用{accepted}，或留空。',
+    "行 {row} — 缺少 '{value}'，系统无法识别。请使用 {accepted}，或留空。",
   csvProblemLetter: "第{row}行 — {column} '{value}' 不是单个字母。",
   csvProblemTooMany:
-    '该文件包含{found}名学生。每名学生的详细信息最多可包含{max}项内容。',
+    '该文件中包含 {found} 名学生。学生详细信息最多可存储 {max} 条。',
   csvWrongLanguage:
-    '这看起来像是一个{language}类列表。请打开该页面的{version}版本以导入它。',
+    '这看起来像是一个 {language} 类列表。请打开该页面的 {version} 版本以导入它。',
   csvLanguageName: {
     en: '英语',
     id: '印尼语',
@@ -148,10 +148,11 @@ export const zh: Catalogue = {
   ioDownloadTemplate: '下载模板',
   ioImportLabel: '导入班级名单',
   ioProblemsHeading: '未导入此文件：',
-  ioReplaceWarning: '这将替换您当前的班级名单——{total}名学生，{named}名学生。',
+  ioReplaceWarning:
+    '这将取代您当前的班级名单——{total}名学生，包括{named}名学生。',
   ioReplaceConfirm: '替换它',
   ioReplaceCancel: '保留我所拥有的',
-  ioImported: '已导入{total}中的学生数据。',
+  ioImported: '已导入 {total} 名学生。',
   ioBothLanguages: '还以另一种语言导出',
   ioBothLanguagesHint:
     '您的文件现已以该语言保存。系统会以您选择的语言打开第二个标签页，其中显示相同的课程列表，供您核对并保存。系统不会存储任何内容，也不会将任何信息发送至任何地方。',
@@ -160,7 +161,7 @@ export const zh: Catalogue = {
   ioHandoverTimedOut:
     '第二个标签页从未要求您提供班级名单。您的班级名单仍在该标签页中——请关闭该标签页，然后重试。',
   ioHandoverNotOffered: '没有收到班级名单。请返回另一个标签页，然后重试。',
-  ioHandoverSent: '您的班级名单现已在{language}上开放。',
+  ioHandoverSent: '{language} 的班级名单现已开放。',
   printOpen: '打印',
   printHeading: '打印',
   printWhat: '打印内容',
@@ -176,7 +177,7 @@ export const zh: Catalogue = {
   printClassListHeading: '班级名单',
   printGroupsHeading: '组',
   printedOn: '打印自 {on}',
-  printHereToday: '{here} 今天到校的学生人数 · {absent} 缺席',
+  printHereToday: '{here} 今天到校的学生 · {absent} 缺席的学生',
   boardOpen: '全屏',
   boardExit: '退出全屏模式',
   boardShuffle: '再次洗牌',
@@ -185,54 +186,53 @@ export const zh: Catalogue = {
   staleRefuseBoard: '这些组已经过时了。显示前请重新打乱顺序。',
   errors: {
     NO_STUDENTS: '添加一些学生，或者确保其中至少有一人未被标记为缺勤。',
-    TOO_MANY_STUDENTS:
-      '这超过了该工具所能处理的学生人数上限。最多支持 {max} 名学生。',
+    TOO_MANY_STUDENTS: '该工具最多只能处理 {max} 名学生。',
     DUPLICATE_NUMBER:
-      '学生编号{number}被重复使用了两次。请给每位学生分配一个唯一的编号。',
+      '学生编号 {number} 被重复使用了两次。请给每位学生分配一个唯一的编号。',
     INVALID_GROUP_SIZE: '每个小组至少需要1名学生。',
     INVALID_GROUP_COUNT: '您至少需要创建1个小组。',
-    TOO_MANY_GROUPS: '学生人数不足以分成那么多组。最多只能分成{max}组。',
+    TOO_MANY_GROUPS: '学生人数不足以分成这么多组。最多只能分成 {max} 组。',
     TOGETHER_APART_CLASH:
-      '{names} 它们既注定要在一起，又注定要分开。请从其中一个中移除“在一起”或“分开”的字母。',
+      '{names} 既被标记为“在一起”，又被标记为“分开”。请从其中一个中移除“在一起”或“分开”的字母。',
     TOGETHER_UNIT_TOO_LARGE:
-      '字母“{letter}”有{unit}名学生，但这里最大的小组只有{groupSize}名学生。请将小组规模扩大，或者将字母“{letter}”分配给更少的学生。',
+      '字母“{letter}”班有 {unit} 名学生，但这里最大的小组只能容纳 {groupSize} 人。请扩大小组规模，或者将“{letter}”班分配给更少的学生。',
     TOGETHER_NO_ARRANGEMENT:
-      '在保持所有需要在一起的学生保持在一起的同时，无法将你的班级划入{groupsTried}个小组。要么扩大小组规模，要么将每个字母分配给更少的学生。',
+      '无论如何都无法将你的班级分成 {groupsTried} 个小组，同时又让所有需要待在一起的学生保持在一起。要么扩大每个小组的规模，要么将每个字母分配给更少的学生。',
     TOGETHER_SEARCH_GAVE_UP:
       '这里连在一起的字母太多，难以处理。试着减少字母数量，或者将字母组合得更大一些。',
     KEEP_APART_IMPOSSIBLE:
-      '{names} 这些都需要彼此分开，因此你至少需要{groupsNeeded}个组。要么创建更多组，要么删除其中一条规则。',
+      '{names} 都需要彼此分开，因此你至少需要 {groupsNeeded} 个组。要么增加组数，要么删除其中一条规则。',
     KEEP_APART_NO_ARRANGEMENT:
-      '在{groupsTried}的分组中，根本无法同时满足“让所有需要保持距离的人都保持距离”的要求。要么增加分组数量，要么取消其中一条规则。',
+      '要将你的班级分成 {groupsTried} 个小组，同时确保所有需要分开的人都保持距离，这是行不通的。要么增加小组数量，要么取消其中一条规则。',
     KEEP_APART_SEARCH_GAVE_UP:
       '这里的“保持距离”规则太多，难以逐一处理。试着删除其中一些吧。',
     BOTH_RULES_NO_ARRANGEMENT:
-      '无法将你的班级按{groupsTried}规则分组，同时满足所有“同组”和“分组”规则。搜索无法判断是哪种规则导致了问题，因此请尝试以下任一解决方案：扩大每个小组的人数，或者将“同组”分配给更少的学生；或者增加小组数量，或者取消其中一条“分组”规则。',
+      '无法将你的班级分成 {groupsTried} 个小组，同时满足所有“字母组合”规则和所有“字母分离”规则。搜索无法判断是哪种规则导致了问题，因此请尝试以下两种解决方法之一：扩大每个小组的规模，或者将“字母组合”规则分配给更少的学生；或者增加小组数量，或者取消其中一条“字母分离”规则。',
     BOTH_RULES_SEARCH_GAVE_UP:
       '这里“连在一起”和“分开”的字母太多，一次难以全部处理。不妨尝试减少其中任一类字母的数量，或者将字母分组时每组数量增加一些。',
     SEX_NEEDS_ALL_SET:
-      '{names} 尚未设置性别，因此除非每位学生都设置了性别，否则此模式无法运行。请为每位学生设置性别，或关闭此功能。',
+      '{names} 未设置性别，因此在此模式下，必须先为每位学生设置性别，该模式才能运行。请为每位学生设置性别，或关闭此功能。',
     SEX_SEPARATE_SPLITS_UNIT:
-      '{names} 这些角色被标记为“在一起”，但并非全是同一性别，因此无法组成单一性别的小组。请从其中一个角色身上移除“在一起”的标记，或者关闭此模式。',
+      '{names} 已被标记为“结伴”，但并非全是同性，因此无法组成单一性别的小组。请从其中一人身上移除“结伴”标记，或关闭此模式。',
     SEX_SEPARATE_IMPOSSIBLE:
-      '在“{groupsRequested}”分组中，既要满足您的其他规则，又不能将男孩和女孩分在不同的组里。搜索功能无法确定是哪条规则导致了问题，因此请尝试以下任一解决方案：指定不同的组数，或者关闭此模式。',
+      '在 {groupsRequested} 个小组中，无法同时满足将男生和女生分在不同小组以及您设定的其他规则的要求。搜索功能无法确定是哪条规则导致了问题，因此请尝试以下任一解决方法：指定不同数量的小组，或者关闭此模式。',
     SEX_SEPARATE_SEARCH_GAVE_UP:
       '这里包含的“连在一起”和“分开”的字母太多，难以在保持男孩和女孩分组的同时完成练习。请尝试减少字母数量，或者关闭此模式。',
     PINNED_SPLITS_UNIT:
-      '{names} 这些人被标记为“在一起”，但其中只有一部分被归入固定组。请取消固定该组，或者将组外人员的“在一起”标记移除。',
+      '{names} 已被标记为“保持在一起”，但其中只有一部分被归入固定组。请取消固定该组，或者将组外人员的“保持在一起”标记移除。',
     PINNED_APART_CLASH:
-      '{names} 这些项目已被标记为需分开显示，但固定后会将其归入同一组。请取消固定该组，或从其中一个项目上移除“分开”标记。',
+      '{names} 已被标记为需分开显示，但固定组会将它们归入同一组。请取消固定该组，或从其中一个名称中移除“分开”字样。',
     PINNED_IN_TWO_GROUPS:
-      '{name} 该学生同时被标记在两个不同的组中。一名学生只能被标记在一个组中。请将其从其中一个组中移除。',
+      '{name} 同时被固定在两个不同的组中。一名学生只能被固定在一个组中。请将其从其中一个组中移除。',
     PINNED_TOO_MANY_GROUPS:
-      '{situation, select, over {您的“钉选”内容已经使用了 {pinnedGroupCount} 组——数量超过了您要求的 {requestedGroups} 组——这导致 {remainingStudents} 学生没有可用的组了。请取消“钉选”某个组，或者申请更多组。} full {您已将所请求的{requestedGroups}个小组中的{pinnedGroupCount}个小组标记为“已选定”，这意味着{remainingStudents}名学生将没有小组可加入。请取消标记一个小组，或者申请更多小组。} other {您已选定的组中，已有{pinnedGroupCount}个组符合您要求的{requestedGroups}组，这意味着仅剩{remainingStudents}名学生——这还不足以满足{poolGroupsNeeded}所需的组数。请取消选定一个组，或者减少所需组的数量。}}',
+      '{situation, select, over {您的分组已使用了 {pinnedGroupCount} 个分组——超过了您请求的 {requestedGroups} 个分组——这导致 {remainingStudents} 名学生没有分组可加入。请取消固定一个分组，或者申请更多分组。} full {您的分组已占用了您申请的 {requestedGroups} 个分组中的 {pinnedGroupCount} 个，这意味着只有 {remainingStudents} 名学生没有被分配到分组。请取消一个分组的固定状态，或者申请更多分组。} other {您已将所请求的 {requestedGroups} 个小组中的 {pinnedGroupCount} 个小组固定，这意味着只剩下 {remainingStudents} 名学生——这不足以组成仍需的 {poolGroupsNeeded} 个小组。请取消固定一个小组，或者减少请求的小组数量。}}',
   },
   warnings: {
     SEX_SPILLOVER:
-      '{sex, select, M {{names} 因为男生人数不够组成一个独立的小组，所以他们加入了一个女生小组。这纯粹是人数分配的结果，并非需要纠正的错误。} other {{names} 因为女生人数不够，无法组成自己的小组，所以她们加入了一群男生。这只是人数分配的结果，并非需要纠正的错误。}}',
+      '{sex, select, M {{names}加入了一个女生组，因为男生人数不足，无法单独组成一个组。这纯粹是人数分配的结果，并非需要纠正的错误。} other {{names} 加入了一个男孩小组，因为女孩人数不足，无法单独组成一个小组。这只是人数分配的结果，并非需要纠正的错误。}}',
     PINNED_MIXED_SEX:
-      '{names} 它们被固定在一起形成一个组，但并非全是同一性别，因此该组并未像其他组那样按性别划分。这正是该图钉的要求，并非需要纠正的错误。',
+      '{names} 被归为一组，但组内成员并非全为同一性别，因此该组并未像其他组那样按性别划分。这正是该标签的要求，并非需要更正的错误。',
     SEX_BOTH_TOO_SMALL:
-      '{names} 由于男女两性的人数均不足以单独组成一个组，因此被合并为一个组。这仅仅是人数分布的结果，并非需要纠正的错误。',
+      '{names} 被归入一个合并组，是因为无论哪一性别的人数都不够多，无法单独组成一个组。这只是人数分布的自然结果，并非需要更正的错误。',
   },
 };

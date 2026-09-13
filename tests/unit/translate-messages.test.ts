@@ -14,10 +14,12 @@ import {
 } from '../../src/lib/i18n/message';
 import {
   assembleMessage,
+  betterDraft,
   buildRequestBody,
   messageUnits,
+  needsSending,
+  slotsKept,
   translationUnits,
-  unprotectTerms,
 } from '../../src/lib/i18n/translate';
 
 /**
@@ -82,11 +84,20 @@ describe('a message is sent as the sentences it can say', () => {
     ).toThrow(/=0/);
   });
 
-  it('protects every slot in the request, so a placeholder comes back as it went', () => {
-    const [text] = buildRequestBody(['{names} joined {n} groups.'], 'zh').text;
-    expect(text).toBe('<x>{names}</x> joined <x>{n}</x> groups.');
-    expect(unprotectTerms('<x>{names}</x> 加入了 <x>{n}</x> 个小组。')).toBe(
-      '{names} 加入了 {n} 个小组。',
+  it('sends every slot bare, and tags them only for a retry', () => {
+    // Measured on DeepL (2026-09-13) over all 162 message sentences in zh, vi
+    // and th. Inside the tag that protects a name, a slot was glued to the word
+    // beside it in 44 ("Nhóm{n}") and once took a letter with it ("ít
+    // nhấ{groupsNeeded}"). Bare, 3 were glued but 7 lost a slot, so a sentence
+    // whose bare draft changed a slot is retried tagged -- see the block below.
+    const sentence = '{names} joined {n} groups at Shyden.';
+    const [bare] = buildRequestBody([sentence], 'zh').text;
+    expect(bare).toBe('{names} joined {n} groups at <x>Shyden</x>.');
+    const [tagged] = buildRequestBody([sentence], 'zh', {
+      tagSlots: true,
+    }).text;
+    expect(tagged).toBe(
+      '<x>{names}</x> joined <x>{n}</x> groups at <x>Shyden</x>.',
     );
   });
 
@@ -207,6 +218,49 @@ describe('a translated message is rebuilt, and checked', () => {
       scaffold,
       'the scaffold must rebuild each message from its translated sentences',
     ).toMatch(/assembleMessage\(/);
+  });
+});
+
+describe('a draft that changed a slot is not trusted', () => {
+  const sentence = '{names} left after {n} rounds.';
+  const kept = '{names} 在 {n} 轮后离开了。';
+
+  it('knows whether a draft kept its slots', () => {
+    expect(slotsKept(sentence, kept)).toBe(true);
+    expect(slotsKept('Add a student', '添加学生')).toBe(true);
+    for (const draft of [
+      '{names} 离开了。',
+      '{names} 和 {who} 在 {n} 轮后离开了。',
+      '{names} 在 {n} 轮后离开了 {names}。',
+      '{names 在 {n} 轮后离开了。',
+    ])
+      expect(slotsKept(sentence, draft), draft).toBe(false);
+  });
+
+  it('sends a sentence again when its cached draft changed a slot', () => {
+    expect(needsSending(sentence, undefined)).toBe(true);
+    expect(needsSending(sentence, '{names} 离开了。')).toBe(true);
+    expect(needsSending(sentence, kept)).toBe(false);
+  });
+
+  it('keeps the bare draft unless it lost a slot the tagged one kept', () => {
+    const lost = '{names} 离开了。';
+    const glued = '{names}在{n}轮后离开了。';
+    expect(betterDraft(sentence, kept, glued)).toBe(kept);
+    expect(betterDraft(sentence, lost, glued)).toBe(glued);
+    expect(betterDraft(sentence, lost, '{names}离开了。')).toBe(lost);
+  });
+
+  it('is how the translator decides what to send and which draft to keep', () => {
+    const script = blankCommentLines(
+      readFileSync(join('scripts', 'i18n-translate.mjs'), 'utf8'),
+    );
+    for (const [call, why] of [
+      ['needsSending(', 'a cached draft that changed a slot is sent again'],
+      ['tagSlots: true', 'the retry sends its slots tagged'],
+      ['betterDraft(', 'the retry keeps the better draft'],
+    ])
+      expect(script, why).toContain(call);
   });
 });
 

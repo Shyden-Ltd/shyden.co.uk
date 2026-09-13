@@ -2,6 +2,7 @@ import type { MvpLocale } from './metadata';
 // With its extension: the DeepL scripts load this module under plain Node,
 // which resolves nothing without one.
 import {
+  MessageSyntaxError,
   describeMessage,
   isMessageTemplate,
   parseMessage,
@@ -204,16 +205,11 @@ export function protectTerms(text: string): string {
 export const unprotectTerms = (text: string): string =>
   text.replace(new RegExp(`</?${PROTECT_TAG}>`, 'g'), '');
 
-/**
- * A slot in a sentence sent for translation: `{names}`, `{n}`.
- *
- * Wrapped in the tag DeepL is told to ignore, exactly like a protected term:
- * the translator moves the placeholder to wherever its sentence needs it and
- * hands it back unchanged, and `unprotectTerms` takes the tag off again.
- */
+/** A slot in a sentence: `{names}`, `{n}`. */
 const SLOT = /\{[A-Za-z_][A-Za-z0-9_]*\}/g;
 
-export const protectSlots = (text: string): string =>
+/** Every slot wrapped in the tag DeepL ignores, for a retry (`betterDraft`). */
+const tagEverySlot = (text: string): string =>
   text.replace(SLOT, (slot) => `<${PROTECT_TAG}>${slot}</${PROTECT_TAG}>`);
 
 /**
@@ -228,6 +224,7 @@ export const protectSlots = (text: string): string =>
 export function buildRequestBody(
   texts: readonly string[],
   target: MvpLocale,
+  { tagSlots = false }: { readonly tagSlots?: boolean } = {},
 ): {
   text: string[];
   source_lang: string;
@@ -236,7 +233,10 @@ export function buildRequestBody(
   tag_handling: string;
 } {
   return {
-    text: texts.map((t) => protectSlots(protectTerms(escapeXml(t)))),
+    text: texts.map((t) => {
+      const text = protectTerms(escapeXml(t));
+      return tagSlots ? tagEverySlot(text) : text;
+    }),
     source_lang: 'EN',
     target_lang: deeplLanguage(target),
     ignore_tags: [PROTECT_TAG],
@@ -325,6 +325,13 @@ export function translationUnits(value: unknown): string[] {
  *   `assembleMessage` refuses one that has more.
  * - A choice (`select`) is sent as one whole sentence per branch, so each
  *   reaches the translator with its context rather than as a fragment.
+ *
+ * Slots travel as bare `{name}` text first. Measured on DeepL (2026-09-13)
+ * over all 162 message sentences in zh, vi and th: inside the tag that
+ * protects a name, a slot was glued to the word beside it in 44 and once cut
+ * a letter from it; bare, 3 were glued but 7 lost a slot. So a bare draft that
+ * changed a slot is sent again tagged and the better draft kept (`slotsKept`,
+ * `betterDraft`), and anything still changed is refused by `assembleMessage`.
  *
  * A message making more than one choice, or a plural with an exact-match
  * branch (`=0`), is refused. Neither occurs in the catalogues, and a guess at
@@ -474,6 +481,40 @@ function sentenceOf(parts: readonly MessagePart[], template: string): string {
     })
     .join('');
 }
+
+/**
+ * Whether a draft fills exactly the slots of the sentence it came from --
+ * none lost, invented or repeated -- and parses at all.
+ */
+export function slotsKept(sentence: string, draft: string): boolean {
+  try {
+    return slotsFilled(draft) === slotsFilled(sentence);
+  } catch (error) {
+    if (error instanceof MessageSyntaxError) return false;
+    throw error;
+  }
+}
+
+/**
+ * Whether a run must send a sentence: never drafted, or drafted with its
+ * slots changed. A cached draft `assembleMessage` would refuse is not trusted.
+ */
+export const needsSending = (
+  sentence: string,
+  cached: string | undefined,
+): boolean => cached === undefined || !slotsKept(sentence, cached);
+
+/**
+ * The better of a sentence's two drafts. Bare keeps spaces and words whole, so
+ * it wins whenever it kept its slots; the tagged retry wins only where bare
+ * changed a slot and it did not.
+ */
+export const betterDraft = (
+  sentence: string,
+  bare: string,
+  tagged: string,
+): string =>
+  !slotsKept(sentence, bare) && slotsKept(sentence, tagged) ? tagged : bare;
 
 /** Every slot a sentence fills, repeats included, in a comparable order. */
 const slotsFilled = (text: string): string =>

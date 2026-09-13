@@ -45,9 +45,9 @@ export const vi: Catalogue = {
   sexWhyNoList:
     'Hãy thêm học sinh của bạn vào phần “Thông tin học sinh” và chọn M hoặc F cho từng em để sử dụng các tính năng này.',
   sexWhyUnset:
-    '{unset} Trong số các học sinh thuộc nhóm “{grouped}” đang được phân nhóm, có những em chưa được thiết lập giới tính. Hãy mở chi tiết học sinh và thiết lập giới tính là “M” hoặc “F” cho các em để họ có thể sử dụng các tính năng này.',
+    '{unset} trong số các học sinh {grouped} đang được phân nhóm chưa được chỉ định giới tính. Hãy mở Chi tiết học sinh và chọn M hoặc F cho các em để có thể sử dụng các tùy chọn này.',
   sexWhyReturning:
-    '{who} đã trở lại nhưng chưa có cài đặt giới tính. Các tùy chọn này cần có cài đặt giới tính cho từng học sinh được phân nhóm.',
+    '{who} đã quay lại nhưng chưa được gán giới tính. Các tùy chọn này yêu cầu phải có thông tin về giới tính cho từng học sinh trong nhóm.',
   leftoversLabel: 'Nếu vẫn còn học sinh',
   leftoversSpread: 'Chia đều chúng ra',
   leftoversBunch: 'Gộp tất cả vào một nhóm',
@@ -79,28 +79,28 @@ export const vi: Catalogue = {
   rosterAbsentPill: 'vắng mặt',
   rosterAbsentConsequence:
     'Học sinh được ghi là vắng mặt sẽ không được tính vào khi chia nhóm.',
-  rosterCountLine: '{total} học sinh · {here} có mặt · {absent} vắng mặt',
+  rosterCountLine: '{total} học sinh · {here} tại đây · {absent} vắng mặt',
   rosterDuplicateMessage:
     'Số {number} đã được {name} sử dụng. Mỗi học sinh cần có một số riêng.',
   rosterNoSexMessage:
-    '{names} Vẫn cần M hoặc F. Mỗi học sinh phải có một cái trước khi có thể chia nhóm.',
+    '{names} vẫn cần ghi M hoặc F. Mỗi học sinh đều phải có một trong hai ký hiệu này thì mới có thể chia nhóm được.',
   rosterClashMessage:
-    '{names} được giữ lại với nhau, nên không thể tách chúng ra được.',
+    '{names} được giữ lại cùng nhau, do đó không thể tách chúng ra được.',
   rosterGapWarning:
-    'Danh sách lớp của bạn có vẻ chưa đầy đủ. Thiếu các học sinh số {missing}. Nếu những em này đã nghỉ học thì không sao cả — hãy mở phần “Thông tin học sinh” để kiểm tra.',
+    'Danh sách lớp của bạn có vẻ chưa đầy đủ. Thiếu các học sinh mang số {missing}. Nếu những em học sinh đó đã chuyển trường thì không sao cả — hãy mở phần “Thông tin học sinh” để kiểm tra.',
   rosterOpenRefusedMessage:
-    'Thông tin học sinh có thể lưu trữ tối đa {max} học sinh. Hãy giảm số lượng này để hiển thị lớp học này dưới dạng danh sách riêng lẻ.',
+    'Thông tin học sinh có thể chứa tối đa {max} học sinh. Hãy giảm con số này để hiển thị lớp học này dưới dạng danh sách riêng lẻ.',
   rosterAtLimitMessage:
-    'Thông tin học sinh có thể lưu trữ tối đa {max} học sinh. Hãy xóa một học sinh để thêm học sinh khác.',
-  rosterRoomMessage: '{room} vẫn còn chỗ cho thêm nhiều học sinh nữa.',
+    'Thông tin học sinh có thể chứa tối đa {max} học sinh. Hãy xóa một học sinh để thêm học sinh khác.',
+  rosterRoomMessage: 'Vẫn còn chỗ cho {room} học sinh nữa.',
   rosterRemove: 'Xóa',
   rosterClearAll: 'Xóa tất cả',
   stateNoneAdded: 'chưa có mục nào được thêm vào',
-  stateNamed: '{n} có tên là',
+  stateNamed: '{n} được đặt tên là',
   stateAbsent: '{n} vắng mặt',
   stateTogether: '{n} cùng nhau',
-  stateApart: '{n} riêng biệt',
-  stateAdded: '{n} đã thêm',
+  stateApart: '{n} cách nhau',
+  stateAdded: '{n} đã được thêm vào',
   stateNone: 'không có',
   stateMixed: 'phân loại theo giới tính',
   stateSeparated: 'phân chia theo giới tính',
@@ -112,10 +112,9 @@ export const vi: Catalogue = {
   needsJs: 'Công cụ này yêu cầu bật JavaScript.',
   resultsHeading: 'Các nhóm của bạn',
   resultsHeadingNamed: '{className} — các nhóm của bạn',
-  resultsSummary:
-    '{groups} các nhóm gồm các sinh viên thuộc chương trình “{students}”.',
-  groupLabel: 'Nhóm{n}',
-  studentNumber: 'Học sinh{n}',
+  resultsSummary: '{groups} nhóm từ {students} học sinh.',
+  groupLabel: 'Nhóm {n}',
+  studentNumber: 'Học sinh {n}',
   staleMode: 'Các nhóm này đã lỗi thời — quy mô nhóm đã thay đổi.',
   staleLeftovers:
     'Các nhóm này đã lỗi thời — lựa chọn “thức ăn thừa” đã thay đổi.',
@@ -127,21 +126,21 @@ export const vi: Catalogue = {
   csvProblemNoNumberColumn:
     'Tệp này không có cột số. Mỗi học sinh cần có một cột như vậy.',
   csvProblemNumberBlank:
-    'Dòng {row} — ô số để trống. Mỗi học sinh cần có một cái.',
+    'Dòng {row} — ô này để trống. Mỗi học sinh cần có một ô.',
   csvProblemNumberNotWhole:
     "Dòng {row} — số '{value}' không phải là số nguyên.",
   csvProblemDuplicateNumber:
-    'Dòng {row} — số {value} đã được sử dụng bởi dòng {firstRow}.',
+    'Dòng {row} — số {value} đã được dòng {firstRow} sử dụng.',
   csvProblemSex:
-    "Dòng {row} — thuộc tính '{value}' không được hiểu. Hãy sử dụng {accepted} hoặc để trống.",
+    "Dòng {row} — giới tính '{value}' không được nhận diện. Hãy sử dụng {accepted} hoặc để trống.",
   csvProblemAbsent:
-    "Dòng {row} — thiếu '{value}', không thể hiểu được. Vui lòng sử dụng {accepted} hoặc để trống.",
+    "Dòng {row} — không có '{value}' — không được hiểu. Vui lòng sử dụng {accepted} hoặc để trống.",
   csvProblemLetter:
-    "Dòng {row} — {column} '{value}' không phải là một ký tự duy nhất.",
+    "Hàng {row} — {column} '{value}' không phải là một ký tự duy nhất.",
   csvProblemTooMany:
-    'Tệp này chứa {found} học sinh. Thông tin chi tiết về học sinh có thể chứa tối đa {max}.',
+    'Tệp này có {found} học sinh. Thông tin chi tiết về học sinh chứa tối đa {max} mục.',
   csvWrongLanguage:
-    'Đây có vẻ là danh sách các lớp trong thư viện {language}. Hãy mở phiên bản {version} của trang này để nhập nó.',
+    'Đây có vẻ là danh sách các lớp {language}. Hãy mở phiên bản {version} của trang này để nhập nó.',
   csvLanguageName: {
     en: 'Tiếng Anh',
     id: 'Tiếng Indonesia',
@@ -162,10 +161,10 @@ export const vi: Catalogue = {
   ioImportLabel: 'Nhập danh sách lớp học',
   ioProblemsHeading: 'Tệp này chưa được nhập:',
   ioReplaceWarning:
-    'Danh sách này sẽ thay thế danh sách lớp hiện tại của bạn — các học sinh thuộc nhóm “{total}” và “{named}” được liệt kê trong danh sách.',
+    'Danh sách này sẽ thay thế danh sách lớp hiện tại của bạn — {total} học sinh, bao gồm {named} em.',
   ioReplaceConfirm: 'Thay thế nó',
   ioReplaceCancel: 'Giữ lại những gì tôi đang có',
-  ioImported: 'Đã nhập danh sách học sinh từ {total}.',
+  ioImported: 'Đã nhập {total} học sinh.',
   ioBothLanguages: 'Cũng xuất sang ngôn ngữ khác',
   ioBothLanguagesHint:
     'Tệp của bạn hiện đã được lưu lại bằng ngôn ngữ này. Một tab thứ hai sẽ mở ra bằng ngôn ngữ bạn đã chọn, với danh sách lớp học giống hệt, để bạn kiểm tra và lưu lại tại đó. Không có dữ liệu nào được lưu trữ và cũng không có dữ liệu nào được gửi đi đâu cả.',
@@ -175,8 +174,7 @@ export const vi: Catalogue = {
     'Tab thứ hai chưa bao giờ yêu cầu danh sách lớp. Danh sách lớp của bạn vẫn còn ở đây — hãy đóng tab đó lại và thử lại.',
   ioHandoverNotOffered:
     'Chưa nhận được danh sách lớp. Hãy quay lại tab khác và thử lại.',
-  ioHandoverSent:
-    'Danh sách lớp của bạn hiện đã được mở trên trang {language}.',
+  ioHandoverSent: 'Danh sách lớp học của bạn hiện đã được mở tại {language}.',
   printOpen: 'In',
   printHeading: 'In',
   printWhat: 'In những gì',
@@ -192,7 +190,7 @@ export const vi: Catalogue = {
   printConfirm: 'In',
   printClassListHeading: 'Danh sách lớp',
   printGroupsHeading: 'Các nhóm',
-  printedOn: 'Được đăng tải tại {on}',
+  printedOn: 'Được in tại {on}',
   printHereToday: '{here} học sinh có mặt hôm nay · {absent} vắng mặt',
   boardOpen: 'Toàn màn hình',
   boardExit: 'Thoát chế độ toàn màn hình',
@@ -207,54 +205,54 @@ export const vi: Catalogue = {
     NO_STUDENTS:
       'Thêm một số học sinh vào, hoặc đảm bảo rằng ít nhất một trong số các em đó không bị ghi là vắng mặt.',
     TOO_MANY_STUDENTS:
-      'Số lượng học sinh đó vượt quá giới hạn mà công cụ này cho phép. Số lượng tối đa là {max}.',
+      'Số học sinh đó vượt quá số lượng mà công cụ này có thể xử lý. Số lượng tối đa là {max}.',
     DUPLICATE_NUMBER:
-      'Số học sinh {number} được sử dụng hai lần. Hãy cấp cho mỗi học sinh một số riêng.',
+      'Số học sinh {number} đã được sử dụng hai lần. Hãy cấp cho mỗi học sinh một số riêng.',
     INVALID_GROUP_SIZE: 'Mỗi nhóm cần có ít nhất 1 học sinh.',
     INVALID_GROUP_COUNT: 'Bạn cần có ít nhất 1 nhóm.',
     TOO_MANY_GROUPS:
-      'Số lượng sinh viên không đủ để chia thành nhiều nhóm như vậy. Số lượng tối đa mà bạn có thể chia thành là {max}.',
+      'Số lượng học sinh không đủ để chia thành nhiều nhóm như vậy. Số lượng nhóm tối đa mà bạn có thể lập là {max}.',
     TOGETHER_APART_CLASH:
-      '{names} được đánh dấu để vừa ở bên nhau vừa phải tách xa nhau cùng một lúc. Hãy loại bỏ chữ cái “cùng nhau” hoặc chữ cái “tách xa” khỏi một trong hai từ đó.',
+      '{names} được đánh dấu để vừa ở cùng nhau, vừa phải tách biệt khỏi nhau. Hãy loại bỏ chữ cái biểu thị “ở cùng nhau” hoặc chữ cái biểu thị “tách biệt” khỏi một trong số chúng.',
     TOGETHER_UNIT_TOO_LARGE:
-      'Chữ cái “{letter}” có {unit} học sinh, nhưng nhóm lớn nhất ở đây chỉ có {groupSize}. Hãy tăng số lượng các nhóm lên, hoặc phân chữ cái “{letter}” cho ít học sinh hơn.',
+      'Chữ cái "{letter}" có {unit} học sinh, nhưng nhóm lớn nhất ở đây chỉ chứa được {groupSize} học sinh. Hãy tăng quy mô các nhóm lên, hoặc phân chữ cái "{letter}" cho ít học sinh hơn.',
     TOGETHER_NO_ARRANGEMENT:
-      'Không có cách nào để chia lớp của bạn thành các nhóm theo chữ cái ({groupsTried}) mà vẫn giữ được những học sinh cần ở cùng nhau. Hãy tăng quy mô các nhóm lên, hoặc phân bổ mỗi chữ cái cho ít học sinh hơn.',
+      'Không có cách nào để chia lớp của bạn thành {groupsTried} nhóm mà vẫn giữ được những học sinh cần ở cùng nhau lại với nhau. Hãy tăng quy mô các nhóm lên, hoặc chia mỗi chữ cái cho ít học sinh hơn.',
     TOGETHER_SEARCH_GAVE_UP:
       'Ở đây có quá nhiều chữ cái ghép lại với nhau nên khó xử lý. Hãy thử dùng ít chữ cái hơn, hoặc gộp các nhóm lại thành nhóm lớn hơn.',
     KEEP_APART_IMPOSSIBLE:
-      '{names} Tất cả đều cần được tách biệt với nhau, vì vậy bạn sẽ cần ít nhấ{groupsNeeded}nhóm. Hãy tạo thêm nhóm hoặc loại bỏ một trong các quy tắc.',
+      '{names} đều phải được tách biệt với nhau, do đó bạn sẽ cần ít nhất {groupsNeeded} nhóm. Hãy tạo thêm nhóm hoặc loại bỏ một trong các quy tắc.',
     KEEP_APART_NO_ARRANGEMENT:
-      'Không có cách nào để chia lớp của bạn thành các nhóm “{groupsTried}” mà vẫn đảm bảo giữ khoảng cách cho những người cần phải cách ly. Hoặc là tạo thêm nhóm, hoặc là bỏ bớt một trong các quy tắc.',
+      'Không có cách nào để chia lớp của bạn thành {groupsTried} nhóm mà vẫn đảm bảo giữ khoảng cách giữa những người cần phải cách ly. Bạn phải hoặc là tạo thêm nhóm, hoặc là loại bỏ một trong các quy tắc đó.',
     KEEP_APART_SEARCH_GAVE_UP:
       'Ở đây có quá nhiều quy tắc ngăn cách, khó mà xử lý hết được. Hãy thử loại bỏ một số quy tắc trong số đó.',
     BOTH_RULES_NO_ARRANGEMENT:
-      'Không có cách nào để chia lớp của bạn thành các nhóm theo quy tắc “{groupsTried}” mà vẫn đáp ứng được đồng thời tất cả các quy tắc “cùng chữ cái” và “riêng chữ cái”. Quá trình tìm kiếm không thể xác định được quy tắc nào là nguyên nhân gây ra vấn đề, vì vậy hãy thử một trong hai giải pháp sau: tăng kích thước các nhóm hoặc chỉ áp dụng quy tắc “cùng chữ cái” cho ít học sinh hơn, hoặc chia thành nhiều nhóm hơn, hoặc loại bỏ một trong các quy tắc “riêng chữ cái”.',
+      'Không có cách nào để chia lớp của bạn thành {groupsTried} nhóm mà vẫn đáp ứng đồng thời tất cả các quy tắc ghép chữ và tách chữ. Quá trình tìm kiếm không thể xác định được quy tắc nào là nguyên nhân gây ra vấn đề, vì vậy hãy thử một trong hai giải pháp sau: tăng quy mô các nhóm hoặc chỉ áp dụng quy tắc ghép chữ cho ít học sinh hơn, hoặc tạo thêm nhóm hoặc loại bỏ một trong các quy tắc tách chữ.',
     BOTH_RULES_SEARCH_GAVE_UP:
       'Ở đây có quá nhiều chữ cái ghép và chữ cái tách để có thể xử lý hết cùng một lúc. Hãy thử sử dụng ít chữ cái hơn cho cả hai loại, hoặc chia thành các nhóm lớn hơn.',
     SEX_NEEDS_ALL_SET:
-      '{names} Chưa thiết lập giới tính, do đó chế độ này sẽ không hoạt động cho đến khi tất cả học sinh đều được thiết lập. Hãy thiết lập giới tính cho từng em hoặc tắt tính năng này đi.',
+      '{names} chưa được chỉ định giới tính, do đó chế độ này sẽ không thể hoạt động cho đến khi tất cả học sinh đều được chỉ định. Hãy chỉ định giới tính cho từng em hoặc tắt tính năng này đi.',
     SEX_SEPARATE_SPLITS_UNIT:
-      '{names} được đánh dấu là ở cùng nhau, nhưng không phải tất cả đều cùng giới tính, nên chúng không thể tạo thành một nhóm cùng giới. Hãy gỡ bỏ chữ “cùng” khỏi một trong số chúng, hoặc tắt chế độ này đi.',
+      '{names} được đánh dấu để ở cùng nhau, nhưng không phải tất cả đều cùng giới tính, nên họ không thể tạo thành một nhóm cùng giới. Hãy gỡ bỏ chữ “cùng nhau” khỏi một trong số họ, hoặc tắt chế độ này đi.',
     SEX_SEPARATE_IMPOSSIBLE:
-      'Không thể chia các em trai và em gái thành các nhóm riêng biệt trong các nhóm “{groupsRequested}” mà vẫn đảm bảo tuân thủ các quy tắc khác của bạn. Chức năng tìm kiếm không thể xác định quy tắc nào là nguyên nhân gây ra vấn đề, vì vậy hãy thử một trong hai cách khắc phục sau: yêu cầu số lượng nhóm khác hoặc tắt chế độ này.',
+      'Không thể chia các em trai và em gái thành các nhóm riêng biệt trong {groupsRequested} nhóm mà vẫn đảm bảo tuân thủ các quy tắc khác của bạn. Hệ thống tìm kiếm không thể xác định được quy tắc nào là nguyên nhân gây ra vấn đề, vì vậy hãy thử một trong hai cách khắc phục sau: yêu cầu số lượng nhóm khác hoặc tắt chế độ này.',
     SEX_SEPARATE_SEARCH_GAVE_UP:
       'Ở đây có quá nhiều chữ cái ghép và tách rời, khiến việc xử lý chúng trở nên khó khăn trong khi vẫn phải giữ các nhóm nam và nữ riêng biệt. Hãy thử sử dụng ít chữ cái hơn hoặc tắt chế độ này đi.',
     PINNED_SPLITS_UNIT:
-      '{names} được đánh dấu để ở cùng nhau, nhưng chỉ một số trong số đó nằm trong nhóm đã được ghim. Hãy bỏ ghim nhóm đó, hoặc gỡ bỏ chữ “cùng nhau” khỏi những người nằm ngoài nhóm.',
+      '{names} được đánh dấu để ở cùng nhau, nhưng chỉ một số người trong số họ nằm trong nhóm được ghim. Hãy bỏ ghim nhóm đó, hoặc gỡ bỏ ký hiệu “ở cùng nhau” khỏi những người nằm ngoài nhóm.',
     PINNED_APART_CLASH:
-      '{names} được đánh dấu để tách biệt với nhau, nhưng khi ghim nhóm lại, chúng sẽ nằm chung trong cùng một nhóm. Hãy bỏ ghim nhóm đó, hoặc xóa ký hiệu “tách biệt” khỏi một trong số chúng.',
+      '{names} đã được đánh dấu để tách riêng khỏi nhau, nhưng khi ghim nhóm, chúng sẽ được gộp vào cùng một nhóm. Hãy bỏ ghim nhóm đó hoặc gỡ bỏ ký hiệu “tách riêng” khỏi một trong số chúng.',
     PINNED_IN_TWO_GROUPS:
-      '{name} đang được gắn vào hai nhóm khác nhau cùng một lúc. Một học sinh chỉ có thể được gắn vào một nhóm duy nhất. Hãy gỡ học sinh đó ra khỏi một trong hai nhóm.',
+      '{name} hiện đang được ghim vào hai nhóm khác nhau cùng một lúc. Một học sinh chỉ có thể được ghim vào một nhóm. Hãy gỡ học sinh đó ra khỏi một trong hai nhóm.',
     PINNED_TOO_MANY_GROUPS:
-      '{situation, select, over {Các nhóm của bạn hiện đã sử dụng các nhóm {pinnedGroupCount} — nhiều hơn số nhóm {requestedGroups} mà bạn đã yêu cầu — khiến các học sinh tại {remainingStudents} không còn nhóm nào dành cho họ. Hãy hủy ghim một nhóm hoặc yêu cầu thêm nhóm.} full {Các nhóm mà bạn đã chọn đã chiếm hết {pinnedGroupCount} trong số các nhóm {requestedGroups} mà bạn yêu cầu, do đó chỉ còn lại {remainingStudents} sinh viên chưa có nhóm nào dành cho họ. Hãy hủy chọn một nhóm hoặc yêu cầu thêm nhóm.} other {Các nhóm mà bạn đã chọn đã chiếm {pinnedGroupCount} trong tổng số {requestedGroups} nhóm mà bạn yêu cầu, do đó chỉ còn lại {remainingStudents} sinh viên — con số này chưa đủ để thành lập các nhóm {poolGroupsNeeded} còn thiếu. Hãy hủy chọn một nhóm hoặc yêu cầu ít nhóm hơn.}}',
+      '{situation, select, over {Các nhóm của bạn hiện đã sử dụng {pinnedGroupCount} nhóm — nhiều hơn số {requestedGroups} nhóm mà bạn đã yêu cầu — khiến {remainingStudents} học sinh không còn nhóm nào dành cho mình. Hãy hủy ghim một nhóm hoặc yêu cầu thêm nhóm.} full {Các nhóm mà bạn đã chọn hiện đã chiếm {pinnedGroupCount} trong tổng số {requestedGroups} nhóm mà bạn đã yêu cầu, do đó chỉ còn {remainingStudents} học sinh chưa được phân vào nhóm nào. Hãy hủy chọn một nhóm hoặc yêu cầu thêm nhóm.} other {Các nhóm mà bạn đã chọn đã chiếm hết {pinnedGroupCount} trong số {requestedGroups} nhóm mà bạn yêu cầu, do đó chỉ còn lại {remainingStudents} học sinh — con số này không đủ để tạo {poolGroupsNeeded} nhóm còn thiếu. Hãy bỏ chọn một nhóm hoặc yêu cầu ít nhóm hơn.}}',
   },
   warnings: {
     SEX_SPILLOVER:
-      '{sex, select, M {{names} đã gia nhập một nhóm các bạn nữ vì không có đủ bạn nam để thành lập một nhóm riêng. Đó chỉ đơn giản là cách phân chia số lượng, chứ không phải là một sai lầm cần khắc phục.} other {{names} đã gia nhập một nhóm các cậu bé vì không có đủ các bạn nữ để thành lập một nhóm riêng. Đó chỉ đơn giản là cách phân chia số lượng, chứ không phải là một sai lầm cần khắc phục.}}',
+      '{sex, select, M {{names} đã gia nhập một nhóm các bạn nữ vì không có đủ bạn nam để thành lập một nhóm riêng. Đó chỉ đơn giản là do tỷ lệ giới tính như vậy, chứ không phải là một sai lầm cần khắc phục.} other {{names} đã gia nhập một nhóm các cậu bé vì không có đủ số lượng các bạn nữ để thành lập một nhóm riêng. Đó chỉ đơn giản là cách phân chia số lượng, chứ không phải là một sai lầm cần khắc phục.}}',
     PINNED_MIXED_SEX:
       '{names} được ghim lại thành một nhóm, nhưng không phải tất cả đều cùng giới tính, nên nhóm này không được chia theo giới tính như các nhóm khác. Đó chính là yêu cầu trong bài đăng, chứ không phải là một sai sót cần sửa.',
     SEX_BOTH_TOO_SMALL:
-      '{names} đã được xếp vào một nhóm chung vì số lượng của cả hai giới đều không đủ để lập thành một nhóm riêng. Đó chỉ đơn giản là cách phân chia số lượng, chứ không phải là một sai sót cần khắc phục.',
+      '{names} đã được xếp vào một nhóm chung vì số lượng của cả hai giới đều không đủ để thành lập một nhóm riêng. Đó chỉ đơn giản là cách phân chia theo số lượng, chứ không phải là một sai sót cần sửa chữa.',
   },
 };
