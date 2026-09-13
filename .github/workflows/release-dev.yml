@@ -41,9 +41,44 @@ permissions:
   contents: read
 
 jobs:
-  # ---- Gate 1: comprehensive web tests -----------------------------------
+  # ---- Gate 1a (push): the tree being deployed already passed -------------
+  # A merge into `develop` arrives with its suite already run — on the PR, not
+  # on this commit. `ci.yml` triggers on `pull_request` ONLY, so there is no
+  # status here to read; what there IS, because `develop` sets `strict: true`,
+  # is a second parent whose TREE is identical to this one. `deploy-gate.mjs`
+  # proves that equality and reads the check-runs from that parent, refusing on
+  # anything ambiguous. See scripts/deploy-gate.mjs for why every doubtful case
+  # refuses: the only dangerous failure here is a false green (#157).
+  gate:
+    name: Gate — this tree already passed on its PR
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The gate reads parents and trees, so a shallow clone would make it
+          # refuse for want of objects rather than for want of evidence.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Refuse unless the deployed tree is the tree that passed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/deploy-gate.mjs
+
+  # ---- Gate 1b (dispatch): no tested parent, so run the suite -------------
+  # `workflow_dispatch` exists to put an ARBITRARY branch on dev, and an
+  # arbitrary branch has no second parent and no PR checks — nothing for the
+  # gate above to verify. That path therefore still runs everything. Dropping
+  # it would quietly remove a documented capability rather than speed it up.
   test:
     name: Comprehensive web tests
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     # 45, not 25. MEASURED 2026-09-12: `npm run test:e2e` alone took 26m13s on
     # the tree that became c100e59, so the old 25-minute budget cancelled this
@@ -85,7 +120,16 @@ jobs:
   # ---- Dev deploy --------------------------------------------------------
   deploy-dev:
     name: Deploy to Dev
-    needs: test
+    needs: [gate, test]
+    # Exactly one of the two gates runs, so the other is always `skipped` — and
+    # a skipped `needs` would skip this job too without an explicit condition.
+    # Written so that a SKIP of both cannot deploy: one of them must have
+    # actually SUCCEEDED. `!failure() && !cancelled()` alone would let a
+    # both-skipped run through, which is the absent-evidence-reads-as-pass
+    # shape this whole ticket is about (#146, #157).
+    if: >-
+      !failure() && !cancelled() &&
+      (needs.gate.result == 'success' || needs.test.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
