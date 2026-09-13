@@ -13,10 +13,9 @@ import { withoutCommentLines } from './source-text';
  * as a debugging loop, and a hook is the cheap end of it.
  *
  * NO HOOK RUNNER. husky is the conventional answer and it is a new dependency,
- * against this repo's stated rule ("no new npm dependencies",
- * supply-chain.test.ts) and its deliberately small tree of four runtime and
- * four dev packages. `core.hooksPath` is built into git and does the same job
- * with nothing added.
+ * against this repo's stated rule (a new npm package is an operator decision;
+ * see CLAUDE.md) and its deliberately small tree. `core.hooksPath` is built
+ * into git and does the same job with nothing added.
  *
  * That also settles the open question on #35 — whether a `prepare`-installed
  * hook is acceptable given this repo's supply-chain posture. It is, because
