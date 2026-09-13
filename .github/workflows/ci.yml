@@ -2,9 +2,11 @@ name: CI
 # The REQUIRED status check on BOTH long-lived branches: `develop`, where work
 # integrates, and `main`, which describes what is live.
 #
-# PR-only on purpose: release-dev.yml re-runs this same full suite as its own
-# gate on every push to develop, and release-prod.yml gates the push to main, so
-# a push: trigger here would only double the work on each merge.
+# PR-only on purpose: a push to develop runs no suite. release-dev.yml proves
+# the merged tree is the very tree this workflow passed on its PR, reading these
+# checks off the PR head (scripts/deploy-gate.mjs), and release-prod.yml gates
+# the push to main -- so a push: trigger here would only run the suite again on
+# a tree that has already passed it (#157).
 #
 # NO base filter, deliberately. The bases were once named here to record which
 # ones are REQUIRED — but that is a fact about branch protection, not something
@@ -25,6 +27,12 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # The e2e budget, one number wherever the suite runs: release-dev.yml's
+    # dispatch path runs these same commands under it. Without one a hung job
+    # burns the runner's 360-minute default, and since #159 this is the only
+    # suite a merge runs (#157). A policy, not a measurement --
+    # tests/unit/pipeline-wiring.test.ts pins it and fails if the copies drift.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -72,6 +80,10 @@ jobs:
   # only way a baseline changes, and it changes as a reviewable diff in a PR.
   visual:
     runs-on: ubuntu-latest
+    # Ten minutes for a job whose last ten green runs took 44 to 72 seconds
+    # (measured 2026-09-13): slack for a slow image pull, while a hung browser
+    # is still stopped long before the runner's 360-minute default (#157).
+    timeout-minutes: 10
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     steps:

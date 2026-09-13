@@ -85,9 +85,11 @@ jobs:
     # the tree that became c100e59, so the old 25-minute budget cancelled this
     # job at 24m02s and SKIPPED both the deploy and the verify. A cancelled run
     # posts no red gate, so it read as "nothing happened" while `develop` moved
-    # and dev stayed on the previous commit. `ci.yml` runs the same suite with
-    # no budget at all, which is why the merge gate never saw it coming.
-    # Guarded by tests/unit/pipeline-wiring.test.ts.
+    # and dev stayed on the previous commit. `ci.yml` then ran the same suite
+    # with no budget at all, which is why the merge gate never saw it coming;
+    # it now carries this same budget (#157). Guarded by
+    # tests/unit/pipeline-wiring.test.ts, which fails if any job running the
+    # suite carries a different one.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

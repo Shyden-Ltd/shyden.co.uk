@@ -9,6 +9,7 @@ import { sitePaths } from '../site-pages';
 import {
   jobsDownstreamOfAConditionalJob,
   skippedUpstreamFindings,
+  unboundedJobFindings,
   workflowJobs,
   type WorkflowJob,
 } from '../workflow-jobs';
@@ -87,6 +88,31 @@ const jobNamed = (file: string, id: string): WorkflowJob => {
   return job!;
 };
 
+/** Every workflow's jobs, parsed, beside the file they came from. */
+const workflowGraphs = () =>
+  workflowYamlNames().map((name) => ({
+    name,
+    jobs: workflowJobs(workflow(name), name),
+  }));
+
+/** The job block owning `needle`, from a workflow's comment-stripped text. */
+const jobBlockRunning = (yaml: string, needle: string): string => {
+  const stripped = withoutCommentLines(yaml);
+  const lines = stripped.split('\n');
+  const starts = lines
+    .map((line, i) => ({ line, i }))
+    .filter(({ line }) => /^ {2}[A-Za-z][\w-]*:\s*$/.test(line))
+    .map(({ i }) => i);
+  const blocks = starts.map((start, n) =>
+    lines.slice(start, starts[n + 1] ?? lines.length).join('\n'),
+  );
+  const owning = blocks.filter((block) => block.includes(needle));
+  expect(
+    searched(owning, { of: blocks, what: 'job blocks in the workflow' }),
+  ).toHaveLength(1);
+  return owning[0];
+};
+
 describe('the deploy pipeline runs what it claims to', () => {
   it('some workflow actually runs the dev sanity suite', () => {
     const runners = allWorkflows().filter((w) =>
@@ -137,10 +163,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('no job in any workflow is silently skipped by a skip upstream of it (#157)', () => {
-    const graphs = workflowYamlNames().map((name) => ({
-      name,
-      jobs: workflowJobs(workflow(name), name),
-    }));
+    const graphs = workflowGraphs();
     const downstream = graphs.flatMap(({ name, jobs }) =>
       jobsDownstreamOfAConditionalJob(jobs).map(
         ({ job }) => `${name} ${job.id}`,
@@ -178,6 +201,17 @@ describe('the deploy pipeline runs what it claims to', () => {
       'npm run test:e2e',
     );
     expect(suite).toContain("if: github.event_name != 'push'");
+  });
+
+  it('the merge path trusts a check that runs exactly what the dispatch path runs', () => {
+    // A push deploys because `ci.yml`'s `build-and-test` passed on the tree,
+    // and the gate reads that conclusion, never the steps behind it. So it is
+    // evidence of the suite only while the job RUNS the suite: drop a step and
+    // every later merge passes the gate untested. The dispatch path runs its
+    // own copy for want of that evidence, so the two must not drift (#157).
+    const trusted = jobNamed('ci.yml', 'build-and-test').runs;
+    expect(trusted.filter(runsTheE2eSuite)).toEqual(['npm run test:e2e']);
+    expect(jobNamed('release-dev.yml', 'test').runs).toEqual(trusted);
   });
 
   // The merge gate. `dev-verified` has to be POSTED by something, or branch
@@ -762,87 +796,77 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
 });
 
 /**
- * The dev deploy gate must have time to finish the suite it runs.
+ * Every job runs under a budget of its own, and the e2e suite's is one number.
  *
- * MEASURED 2026-09-12. `release-dev.yml`'s "Comprehensive web tests" job carried
- * `timeout-minutes: 25`, while `npm run test:e2e` alone took **26m13s** on the
- * identical tree (PR run 34674831504, which went green). Aurora's merge pushed
- * the suite past that budget, so run 34676066071 for `c100e59` was CANCELLED at
- * 24m02s and BOTH `Deploy to Dev` and `Verify dev + dev-verified` were SKIPPED.
- * `develop` moved; dev did not.
+ * MEASURED 2026-09-12 (#155). `release-dev.yml`'s "Comprehensive web tests" job
+ * carried `timeout-minutes: 25`, while `npm run test:e2e` alone took **26m13s**
+ * on the identical tree (PR run 34674831504, which went green). Aurora's merge
+ * pushed the suite past that budget, so run 34676066071 for `c100e59` was
+ * CANCELLED at 24m02s and BOTH `Deploy to Dev` and `Verify dev + dev-verified`
+ * were SKIPPED. A cancelled run posts no red gate, and `ci.yml` ran the very
+ * same suite with no budget at all and went green: one suite, two budgets, and
+ * only the smaller one could stop a deploy.
  *
- * Two things made it invisible. A cancelled run posts no red gate — it reads as
- * "nothing happened" rather than as a failure. And `ci.yml` carries no
- * `timeout-minutes` at all, so the merge gate ran the very same suite unbounded
- * and went green. One suite, two budgets, and only the smaller one could stop a
- * deploy.
+ * MEASURED 2026-09-13 (#157). Since #159 a push to `develop` runs no suite -- the
+ * gate proves the merged tree is the one `ci.yml` passed -- so the only e2e run
+ * on the merge path was the one job with no budget, where a hang burns the
+ * runner's 360-minute default. Its last ten green runs took 22.9 to 28.5
+ * minutes; `visual` took 44 to 72 seconds.
  *
- * The budget is a POLICY, pinned as a literal below and asserted separately from
- * the guard that derives from it, so moving the constant cannot move both sides
- * and quietly restore the hole (#117).
+ * So both rules are DERIVED from every workflow, parsed, never pinned to one
+ * named job. `DEV_E2E_JOB_MIN_MINUTES` pinned release-dev.yml's e2e job, and
+ * when #159 made that job dispatch-only it went on guarding the path merges no
+ * longer take. Every job running the suite carries EXACTLY the budget below, so
+ * no copy can drift from another.
+ *
+ * The budget is a POLICY, pinned as a literal and asserted separately from the
+ * guard that derives from it, so moving the constant cannot move both sides and
+ * quietly restore the hole (#117).
  */
-const DEV_E2E_JOB_MIN_MINUTES = 45;
-
-/** The job block owning `needle`, from a workflow's comment-stripped text. */
-const jobBlockRunning = (yaml: string, needle: string): string => {
-  const stripped = withoutCommentLines(yaml);
-  const lines = stripped.split('\n');
-  const starts = lines
-    .map((line, i) => ({ line, i }))
-    .filter(({ line }) => /^ {2}[A-Za-z][\w-]*:\s*$/.test(line))
-    .map(({ i }) => i);
-  const blocks = starts.map((start, n) =>
-    lines.slice(start, starts[n + 1] ?? lines.length).join('\n'),
-  );
-  const owning = blocks.filter((block) => block.includes(needle));
-  expect(
-    searched(owning, { of: blocks, what: 'job blocks in the workflow' }),
-  ).toHaveLength(1);
-  return owning[0];
-};
+const E2E_JOB_BUDGET_MINUTES = 45;
 
 /**
- * The `timeout-minutes` a job block declares.
- *
- * Says WHICH job is missing a budget rather than throwing `TypeError: Cannot
- * read properties of null` off a `!` assertion. Found by mutation M2 (delete
- * the budget line): the guard went red, correctly, with a message that named
- * neither the job nor the problem — and a confusing failure is how the next
- * session misdiagnoses a real breakage.
+ * A step script that runs the e2e suite: the command itself, never a longer
+ * script name that merely starts with it.
  */
-const budgetOf = (block: string, what: string): number => {
-  const found = block.match(/^\s*timeout-minutes:\s*(\d+)\s*$/m);
-  expect(found, `${what} declares no timeout-minutes`).not.toBeNull();
-  return Number(found![1]);
-};
+const runsTheE2eSuite = (script: string): boolean =>
+  /(?<![\w:-])npm run test:e2e(?![\w:-])/.test(script);
 
-const E2E_JOB = 'the job running the e2e suite';
-
-describe('the dev deploy gate can outlast the suite it runs', () => {
-  it('pins the budget as a chosen policy, not a number nobody picked', () => {
-    expect(DEV_E2E_JOB_MIN_MINUTES).toBe(45);
+describe('every job runs under a budget of its own (#157)', () => {
+  it('pins the e2e budget as a chosen policy, not a number nobody picked', () => {
+    expect(E2E_JOB_BUDGET_MINUTES).toBe(45);
   });
 
-  it('gives the comprehensive-test job at least that many minutes', () => {
-    const block = jobBlockRunning(
-      workflow('release-dev.yml'),
-      'npm run test:e2e',
+  it('no job in any workflow runs on the runner default budget', () => {
+    const graphs = workflowGraphs();
+    const findings = graphs.flatMap(({ name, jobs }) =>
+      unboundedJobFindings(jobs).map((finding) => `${name}: ${finding}`),
     );
-    expect(budgetOf(block, E2E_JOB)).toBeGreaterThanOrEqual(
-      DEV_E2E_JOB_MIN_MINUTES,
-    );
+    expect(
+      searched(findings, {
+        of: graphs.flatMap(({ jobs }) => jobs),
+        what: 'jobs across every workflow',
+      }),
+    ).toEqual([]);
   });
 
-  it('never lets the deploy job outlast the tests that gate it', () => {
-    const yaml = workflow('release-dev.yml');
-    const testBudget = budgetOf(
-      jobBlockRunning(yaml, 'npm run test:e2e'),
-      E2E_JOB,
+  it('every job running the e2e suite carries exactly the e2e budget', () => {
+    const suites = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter((job) => job.runs.some(runsTheE2eSuite))
+        .map((job) => ({ name, job })),
     );
-    const deployBudget = budgetOf(
-      jobBlockRunning(yaml, 'Deploy dist/ to Cloudflare Pages'),
-      'the deploy job',
-    );
-    expect(deployBudget).toBeLessThan(testBudget);
+    const offBudget = suites
+      .filter(({ job }) => job.timeoutMinutes !== E2E_JOB_BUDGET_MINUTES)
+      .map(
+        ({ name, job }) =>
+          `${name}: ${job.id} has timeout-minutes ${job.timeoutMinutes ?? 'absent'}, not ${E2E_JOB_BUDGET_MINUTES}`,
+      );
+    expect(
+      searched(offBudget, {
+        of: suites,
+        what: 'jobs running npm run test:e2e',
+      }),
+    ).toEqual([]);
   });
 });
