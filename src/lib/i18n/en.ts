@@ -1,32 +1,25 @@
 /**
  * English — the REFERENCE locale.
  *
- * `Strings` is derived from this object, so `id: Strings` cannot be written
- * with a key missing: a missing translation must never degrade into an
- * English sentence on the Indonesian page.
+ * Every other catalogue is typed `Catalogue`, which is derived from this
+ * object, so a translation cannot be written with a key missing: a missing
+ * translation must never degrade into an English sentence on another
+ * language's page.
  *
- * That is a promise the TYPES make, and nothing in this repo runs a type
- * checker — `astro build` strips types without checking them, and CI runs
- * format, build, unit and e2e. So the promise is kept by tests instead:
- * i18n.test.ts walks both locales for missing keys, blank values and
- * untranslated copy, at every depth. Treat this file as a review surface.
+ * A message that takes values is a TEMPLATE (#136): declared here with the
+ * values its slots take -- `'Group {n}' as Message<{ n: number }>` -- and
+ * written as plain prose with the same slots in every other catalogue. The
+ * format is documented in `message.ts`. `getStrings` compiles templates into
+ * functions, so a page calls `t.groupLabel({ n: 3 })` and formats nothing
+ * itself.
+ *
+ * Types promise the shape; tests keep the rest: i18n.test.ts walks every
+ * locale for missing keys, blank values and untranslated copy, and the message
+ * guards hold every translation to the English template's slots. Treat this
+ * file as a review surface.
  */
 
-/**
- * "Ana and Budi" / "4, 6 and 7" -- every item but the last comma-separated,
- * "and" before the last, no Oxford comma. Used only by the two roster
- * VALIDATION messages below (`rosterClashMessage`, `rosterGapWarning`) --
- * every other list in this file (`TOGETHER_APART_CLASH`,
- * `KEEP_APART_IMPOSSIBLE`, and so on) deliberately keeps its own
- * established `', '`-only join (see each of their own doc comments), so
- * this is not a retrofit onto existing copy -- only what the design spec's
- * own approved sentences for THESE two need ("Ana and Budi…", "Numbers 4, 6
- * and 7…").
- */
-const joinAnd = (items: string[]): string =>
-  items.length <= 1
-    ? (items[0] ?? '')
-    : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+import type { Compiled, Message, Translatable } from './message';
 
 export const en = {
   title: 'Classroom Group Creator',
@@ -138,8 +131,11 @@ export const en = {
   // grammaticality at the edges -- id.ts needs neither branch: Bahasa
   // Indonesia does not inflect for plural (see every sibling comment on
   // this in this file's own `errors` table).
-  sexWhyUnset: (unset: number, grouped: number) =>
-    `${unset} of the ${grouped} ${grouped === 1 ? 'student' : 'students'} being grouped ${unset === 1 ? 'has' : 'have'} no sex set. Open Student details and set M or F for them to use these.`,
+  sexWhyUnset:
+    '{unset} of the {grouped} {grouped, plural, one {student} other {students}} being grouped {unset, plural, one {has} other {have}} no sex set. Open Student details and set M or F for them to use these.' as Message<{
+      unset: number;
+      grouped: number;
+    }>,
   // Design spec sections 6 and 13, the third message: for the moment
   // un-ticking ONE student's absence is what closes the switches. Read by
   // `sexWhyReturning` (src/lib/sexOptions.ts) -- see that function's own
@@ -149,8 +145,10 @@ export const en = {
   // labelled (a typed name, or "Student 7"), never a raw field, so this
   // string is the same shape in both locales and neither has to know the
   // fallback rule.
-  sexWhyReturning: (who: string) =>
-    `${who} is back and has no sex set. These options need one for every student being grouped.`,
+  sexWhyReturning:
+    '{who} is back and has no sex set. These options need one for every student being grouped.' as Message<{
+      who: string;
+    }>,
 
   leftoversLabel: 'If students are left over',
   leftoversSpread: 'Share them out evenly',
@@ -249,8 +247,12 @@ export const en = {
   // noun; "here"/"absent" are used predicatively and never pluralise, the
   // same as `stateAbsent`/`stateTogether` below never branch on their own
   // count.
-  rosterCountLine: (total: number, here: number, absent: number) =>
-    `${total} ${total === 1 ? 'student' : 'students'} · ${here} here · ${absent} absent`,
+  rosterCountLine:
+    '{total} {total, plural, one {student} other {students}} · {here} here · {absent} absent' as Message<{
+      total: number;
+      here: number;
+      absent: number;
+    }>,
 
   // Stage 3, Task 5 (design spec section 4). Both are BLOCKING --
   // rosterProblems (src/lib/roster.ts) is what "Make groups" is disabled
@@ -262,24 +264,29 @@ export const en = {
   // roster to resolve a name from. The approved copy (task-5-brief.md,
   // verbatim) is a fixed two-part sentence with no singular/plural branch,
   // because a duplicate always names exactly one prior holder.
-  rosterDuplicateMessage: (number: number, name: string) =>
-    `Number ${number} is already used by ${name}. Every student needs their own.`,
+  rosterDuplicateMessage:
+    'Number {number} is already used by {name}. Every student needs their own.' as Message<{
+      number: number;
+      name: string;
+    }>,
   // Sex is required for every student (operator, 2026-08-13). Phrased like
   // every other roster refusal on this page: it names WHO, and what to do.
-  rosterNoSexMessage: (names: string[]) =>
-    `${joinAnd(names)} still ${names.length === 1 ? 'needs' : 'need'} M or F. Every student needs one before you can make groups.`,
+  rosterNoSexMessage:
+    '{names} still {names, plural, one {needs} other {need}} M or F. Every student needs one before you can make groups.' as Message<{
+      names: string[];
+    }>,
   // `names` arrives pre-resolved (rosterProblems), the same "the caller
   // resolves numbers to labels" contract TOGETHER_APART_CLASH above already
-  // keeps. Joined with "and" (joinAnd, above), not TOGETHER_APART_CLASH's
-  // own ", " -- the two sentences are deliberately different wording
-  // (this one is written for the moment of typing, see the comment above),
-  // so sharing one join style between them is not a promise either message
-  // makes; only the literal approved copy is. `names.length` is always >= 2
-  // by construction -- a clash needs at least two holders of the same
-  // apart-letter within one together-block -- so, like
-  // TOGETHER_APART_CLASH, this never branches for singular/plural.
-  rosterClashMessage: (names: string[]) =>
-    `${joinAnd(names)} are kept together, so they cannot also be kept apart.`,
+  // keeps. The two sentences are deliberately different wording (this one
+  // is written for the moment of typing, see the comment above); the list
+  // inside both is punctuated by the platform, in the page's language
+  // (#136). `names.length` is always >= 2 by construction -- a clash needs
+  // at least two holders of the same apart-letter within one together-block
+  // -- so, like TOGETHER_APART_CLASH, this never branches for singular/plural.
+  rosterClashMessage:
+    '{names} are kept together, so they cannot also be kept apart.' as Message<{
+      names: string[];
+    }>,
   // Design spec section 4, "Numbers": "A gap raises a non-blocking warning:
   // the class list appears to be incomplete, check it by opening Student
   // details." NON-blocking -- rosterWarnings (src/lib/roster.ts) never
@@ -287,12 +294,10 @@ export const en = {
   // singular/plural (English inflects, same reasoning as every other
   // counted message in this file) since a roster can genuinely be missing
   // exactly one number.
-  rosterGapWarning: (missing: number[]) =>
-    `Your class list looks incomplete. ${
-      missing.length === 1
-        ? `Number ${missing[0]} is`
-        : `Numbers ${joinAnd(missing.map(String))} are`
-    } missing. That is fine if those children have left — open Student details to check.`,
+  rosterGapWarning:
+    'Your class list looks incomplete. {missing, plural, one {Number {missing} is} other {Numbers {missing} are}} missing. That is fine if those children have left — open Student details to check.' as Message<{
+      missing: number[];
+    }>,
 
   // Stage 3, Task 6 (design spec section 4, "Two size limits, not one").
   // Three refusals, three sentences, deliberately NOT sharing one message:
@@ -303,24 +308,30 @@ export const en = {
   // verbatim: "the section refuses to open and says why... Lower the
   // number to list this class individually" is the only remedy that makes
   // sense here, because there is no list yet, only a count.
-  rosterOpenRefusedMessage: (max: number) =>
-    `Student details holds up to ${max} students. Lower the number to list this class individually.`,
+  rosterOpenRefusedMessage:
+    'Student details holds up to {max} students. Lower the number to list this class individually.' as Message<{
+      max: number;
+    }>,
   // `rosterAtLimitMessage` — a LIST already exists and already holds the
   // maximum, so "lower the number" is not even a control on screen at this
   // point (design spec section 4's own "the moment a list exists, the box
   // becomes a read-out"); the only way out is to remove somebody first.
   // Shares its OPENING clause with `rosterOpenRefusedMessage` above
   // (deliberately — both name the same fact) but never its remedy.
-  rosterAtLimitMessage: (max: number) =>
-    `Student details holds up to ${max} students. Remove a student to add another.`,
+  rosterAtLimitMessage:
+    'Student details holds up to {max} students. Remove a student to add another.' as Message<{
+      max: number;
+    }>,
   // `rosterRoomMessage` — "+ Add several…" refusing a batch that would
   // cross the ceiling even from under it, naming exactly how many rows are
   // free rather than the ceiling itself (the teacher already knows how
   // many they asked for; what they need is how many will actually fit).
   // English inflects (this file's established convention, e.g.
   // `rosterCountLine`) for exactly one free row.
-  rosterRoomMessage: (room: number) =>
-    `There is room for ${room} more ${room === 1 ? 'student' : 'students'}.`,
+  rosterRoomMessage:
+    'There is room for {room} more {room, plural, one {student} other {students}}.' as Message<{
+      room: number;
+    }>,
   // The per-row "Remove" button (design spec section 4: "Removing a row
   // removes the student"). Matched EXACTLY the same way `rosterAddConfirm`
   // already is by later tests, scoped to one `.cg-student` row at a time —
@@ -344,14 +355,14 @@ export const en = {
   // matches the design doc's own progression: none -> named -> +absent ->
   // +letters, mirrored exactly by sections.test.ts.
   stateNoneAdded: 'none added',
-  stateNamed: (n: number) => `${n} named`,
-  stateAbsent: (n: number) => `${n} absent`,
-  stateTogether: (n: number) => `${n} together`,
-  stateApart: (n: number) => `${n} apart`,
+  stateNamed: '{n} named' as Message<{ n: number }>,
+  stateAbsent: '{n} absent' as Message<{ n: number }>,
+  stateTogether: '{n} together' as Message<{ n: number }>,
+  stateApart: '{n} apart' as Message<{ n: number }>,
   // The roster exists but nothing else is true of it yet: everyone present,
   // nobody named, no letters set. Distinct from `stateNoneAdded` (no roster
   // at all) -- see sections.ts's own fallback branch.
-  stateAdded: (n: number) => `${n} added`,
+  stateAdded: '{n} added' as Message<{ n: number }>,
   stateNone: 'none',
   stateMixed: 'mixed by sex',
   stateSeparated: 'separated by sex',
@@ -371,13 +382,18 @@ export const en = {
   // therefore capitalised. Composed against the class name exactly as
   // typed, never trimmed here: see resultsHeadingText's own doc comment
   // (src/lib/i18n/index.ts) for where the two are combined, and why.
-  resultsHeadingNamed: (className: string) => `${className} — your groups`,
+  resultsHeadingNamed: '{className} — your groups' as Message<{
+    className: string;
+  }>,
   // English inflects; the tool's own headline case (7 students in groups of
   // 4 is ONE group of 7) hits the singular every time.
-  resultsSummary: (groups: number, students: number) =>
-    `${groups} ${groups === 1 ? 'group' : 'groups'} from ${students} ${students === 1 ? 'student' : 'students'}.`,
-  groupLabel: (n: number) => `Group ${n}`,
-  studentNumber: (n: number) => `Student ${n}`,
+  resultsSummary:
+    '{groups} {groups, plural, one {group} other {groups}} from {students} {students, plural, one {student} other {students}}.' as Message<{
+      groups: number;
+      students: number;
+    }>,
+  groupLabel: 'Group {n}' as Message<{ n: number }>,
+  studentNumber: 'Student {n}' as Message<{ n: number }>,
 
   // Design spec section 8, "When the class changes after a shuffle". Each
   // reason names WHAT changed, not merely that something did -- "These
@@ -426,26 +442,53 @@ export const en = {
   csvProblemUnreadable: 'That file could not be read. Try choosing it again.',
   csvProblemNoNumberColumn:
     'This file has no number column. Every student needs one.',
-  csvProblemNumberBlank: (row: number) =>
-    `Row ${row} — number is blank. Every student needs one.`,
-  csvProblemNumberNotWhole: (row: number, value: string) =>
-    `Row ${row} — number '${value}' is not a whole number.`,
-  csvProblemDuplicateNumber: (row: number, value: number, firstRow: number) =>
-    `Row ${row} — number ${value} is already used by row ${firstRow}.`,
-  csvProblemSex: (row: number, value: string, accepted: string) =>
-    `Row ${row} — sex '${value}' not understood. Use ${accepted}, or leave blank.`,
-  csvProblemAbsent: (row: number, value: string, accepted: string) =>
-    `Row ${row} — absent '${value}' not understood. Use ${accepted}, or leave blank.`,
-  csvProblemLetter: (row: number, column: string, value: string) =>
-    `Row ${row} — ${column} '${value}' is not a single letter.`,
-  csvProblemTooMany: (found: number, max: number) =>
-    `This file has ${found} students. Student details holds up to ${max}.`,
+  csvProblemNumberBlank:
+    'Row {row} — number is blank. Every student needs one.' as Message<{
+      row: number;
+    }>,
+  csvProblemNumberNotWhole:
+    "Row {row} — number '{value}' is not a whole number." as Message<{
+      row: number;
+      value: string;
+    }>,
+  csvProblemDuplicateNumber:
+    'Row {row} — number {value} is already used by row {firstRow}.' as Message<{
+      row: number;
+      value: number;
+      firstRow: number;
+    }>,
+  csvProblemSex:
+    "Row {row} — sex '{value}' not understood. Use {accepted}, or leave blank." as Message<{
+      row: number;
+      value: string;
+      accepted: string;
+    }>,
+  csvProblemAbsent:
+    "Row {row} — absent '{value}' not understood. Use {accepted}, or leave blank." as Message<{
+      row: number;
+      value: string;
+      accepted: string;
+    }>,
+  csvProblemLetter:
+    "Row {row} — {column} '{value}' is not a single letter." as Message<{
+      row: number;
+      column: string;
+      value: string;
+    }>,
+  csvProblemTooMany:
+    'This file has {found} students. Student details holds up to {max}.' as Message<{
+      found: number;
+      max: number;
+    }>,
   // Design spec section 9's own approved refusal, verbatim. The LANGUAGE
   // NAMES are parameters rather than baked in, so this one sentence serves
   // however many locales the site grows: `csvLanguageName` below is what
   // each locale calls the OTHER language, in its own words.
-  csvWrongLanguage: (language: string, version: string) =>
-    `This looks like a ${language} class list. Open the ${version} version of this page to import it.`,
+  csvWrongLanguage:
+    'This looks like a {language} class list. Open the {version} version of this page to import it.' as Message<{
+      language: string;
+      version: string;
+    }>,
   // How this locale names each language, for the sentence above. Written
   // as English speakers write them: "Bahasa Indonesia" is the endonym in
   // ordinary English use, and the design spec's own approved copy uses it.
@@ -483,12 +526,17 @@ export const en = {
   ioDownloadTemplate: 'Download template',
   ioImportLabel: 'Import a class list',
   ioProblemsHeading: 'This file was not imported:',
-  ioReplaceWarning: (total: number, named: number) =>
-    `This will replace your current class list — ${total} ${total === 1 ? 'student' : 'students'}, ${named} named.`,
+  ioReplaceWarning:
+    'This will replace your current class list — {total} {total, plural, one {student} other {students}}, {named} named.' as Message<{
+      total: number;
+      named: number;
+    }>,
   ioReplaceConfirm: 'Replace it',
   ioReplaceCancel: 'Keep what I have',
-  ioImported: (total: number) =>
-    `Imported ${total} ${total === 1 ? 'student' : 'students'}.`,
+  ioImported:
+    'Imported {total} {total, plural, one {student} other {students}}.' as Message<{
+      total: number;
+    }>,
 
   // ── The two-language handover (stage 4, Task 6; design spec section 9) ──
   //
@@ -515,8 +563,9 @@ export const en = {
   // what goes in (`LOCALE_METADATA.nativeName`, the same label the button
   // they just pressed carried): a teacher who chose 中文 is looking for
   // 中文 in the confirmation, not for the English word "Chinese".
-  ioHandoverSent: (language: string) =>
-    `Your class list is now open in ${language}.`,
+  ioHandoverSent: 'Your class list is now open in {language}.' as Message<{
+    language: string;
+  }>,
 
   // ── The print panel (stage 5; design spec section 10) ───────────────────
   //
@@ -546,13 +595,16 @@ export const en = {
   // date formats.
   printClassListHeading: 'Class list',
   printGroupsHeading: 'Groups',
-  printedOn: (on: string) => `Printed ${on}`,
+  printedOn: 'Printed {on}' as Message<{ on: string }>,
   // Design spec section 10: with absent students dropped, "the sheet says
   // how many are absent so the gap is never a mystery" -- because the
   // remaining numbers then jump (1, 2, 3, 5) and an unexplained gap reads
   // as a mistake.
-  printHereToday: (here: number, absent: number) =>
-    `${here} ${here === 1 ? 'student' : 'students'} here today · ${absent} absent`,
+  printHereToday:
+    '{here} {here, plural, one {student} other {students}} here today · {absent} absent' as Message<{
+      here: number;
+      absent: number;
+    }>,
 
   // ── The projector view (stage 5; design spec section 10's board) ────────
   //
@@ -595,42 +647,57 @@ export const en = {
     // BOTH_RULES_NO_ARRANGEMENT below, for one).
     NO_STUDENTS:
       'Add some students, or make sure at least one of them is not marked absent.',
-    TOO_MANY_STUDENTS: (max: number) =>
-      `That is more students than this tool will take. The most is ${max}.`,
-    DUPLICATE_NUMBER: (number: number) =>
-      `Student number ${number} is used twice. Give each student their own number.`,
+    TOO_MANY_STUDENTS:
+      'That is more students than this tool will take. The most is {max}.' as Message<{
+        max: number;
+      }>,
+    DUPLICATE_NUMBER:
+      'Student number {number} is used twice. Give each student their own number.' as Message<{
+        number: number;
+      }>,
     INVALID_GROUP_SIZE: 'Each group needs at least 1 student.',
     INVALID_GROUP_COUNT: 'You need at least 1 group.',
-    TOO_MANY_GROUPS: (max: number) =>
-      `There are not enough students for that many groups. The most you can have is ${max}.`,
+    TOO_MANY_GROUPS:
+      'There are not enough students for that many groups. The most you can have is {max}.' as Message<{
+        max: number;
+      }>,
     // Carries `students: number[]`, never names -- identity is the number
     // (Student.number). Same resolver pattern as KEEP_APART_IMPOSSIBLE below:
     // renderError maps each number through `resolveStudent` before this
     // function ever sees it, so `names` here is already display text.
-    TOGETHER_APART_CLASH: (names: string[]) =>
-      `${names.join(', ')} are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.`,
-    TOGETHER_UNIT_TOO_LARGE: (
-      letter: string,
-      unit: number,
-      groupSize: number,
-    ) =>
-      `The letter "${letter}" has ${unit} students, but the largest group here only holds ${groupSize}. Make the groups bigger, or give the letter "${letter}" to fewer students.`,
+    TOGETHER_APART_CLASH:
+      '{names} are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.' as Message<{
+        names: string[];
+      }>,
+    TOGETHER_UNIT_TOO_LARGE:
+      'The letter "{letter}" has {unit} students, but the largest group here only holds {groupSize}. Make the groups bigger, or give the letter "{letter}" to fewer students.' as Message<{
+        letter: string;
+        unit: number;
+        groupSize: number;
+      }>,
     // Says only what an exhaustive search proved: not that any particular
     // letter is the problem, just that this many groups cannot hold every
     // together-unit whole. The remedy is the opposite of KEEP_APART's: more
     // groups makes a together clash WORSE, never better, so this never
     // suggests it.
-    TOGETHER_NO_ARRANGEMENT: (groupsTried: number) =>
-      `There is no way to fit your class into ${groupsTried} ${groupsTried === 1 ? 'group' : 'groups'} while keeping everyone together who needs to be. Make the groups bigger, or give each letter to fewer students.`,
+    TOGETHER_NO_ARRANGEMENT:
+      'There is no way to fit your class into {groupsTried} {groupsTried, plural, one {group} other {groups}} while keeping everyone together who needs to be. Make the groups bigger, or give each letter to fewer students.' as Message<{
+        groupsTried: number;
+      }>,
     // Claims nothing at all, because nothing was established.
     TOGETHER_SEARCH_GAVE_UP:
       'There are too many together-letters here to work through. Try using fewer letters, or make the groups bigger.',
-    KEEP_APART_IMPOSSIBLE: (names: string[], groupsNeeded: number) =>
-      `${names.join(', ')} all need to be kept apart from each other, so you would need at least ${groupsNeeded} groups. Either make more groups or remove one of the rules.`,
+    KEEP_APART_IMPOSSIBLE:
+      '{names} all need to be kept apart from each other, so you would need at least {groupsNeeded} groups. Either make more groups or remove one of the rules.' as Message<{
+        names: string[];
+        groupsNeeded: number;
+      }>,
     // Says only what an exhaustive search proved: not that any particular
     // students conflict, just that this many groups cannot hold them all.
-    KEEP_APART_NO_ARRANGEMENT: (groupsTried: number) =>
-      `There is no way to fit your class into ${groupsTried} ${groupsTried === 1 ? 'group' : 'groups'} while keeping everyone apart who needs to be. Either make more groups or remove one of the rules.`,
+    KEEP_APART_NO_ARRANGEMENT:
+      'There is no way to fit your class into {groupsTried} {groupsTried, plural, one {group} other {groups}} while keeping everyone apart who needs to be. Either make more groups or remove one of the rules.' as Message<{
+        groupsTried: number;
+      }>,
     // Claims nothing at all, because nothing was established.
     KEEP_APART_SEARCH_GAVE_UP:
       'There are too many keep-apart rules here to work through. Try removing some of them.',
@@ -641,8 +708,10 @@ export const en = {
     // Guessing would send the teacher the wrong way as often as the right
     // one, so this names both rules and offers both remedies without
     // choosing between them.
-    BOTH_RULES_NO_ARRANGEMENT: (groupsTried: number) =>
-      `There is no way to fit your class into ${groupsTried} ${groupsTried === 1 ? 'group' : 'groups'} while satisfying every together-letter and every apart-letter at once. The search cannot tell which kind of rule is the problem, so try either remedy: make the groups bigger or give a together-letter to fewer students, or make more groups or remove one of the apart-rules.`,
+    BOTH_RULES_NO_ARRANGEMENT:
+      'There is no way to fit your class into {groupsTried} {groupsTried, plural, one {group} other {groups}} while satisfying every together-letter and every apart-letter at once. The search cannot tell which kind of rule is the problem, so try either remedy: make the groups bigger or give a together-letter to fewer students, or make more groups or remove one of the apart-rules.' as Message<{
+        groupsTried: number;
+      }>,
     // Claims nothing at all, because nothing was established -- and, same
     // reasoning as above, does not guess which kind of rule to blame.
     BOTH_RULES_SEARCH_GAVE_UP:
@@ -659,8 +728,10 @@ export const en = {
     // are always 2 or more by construction -- so, like TOO_MANY_GROUPS and
     // the together/keep-apart "no arrangement" messages, this branches for
     // singular/plural rather than assuming a list.
-    SEX_NEEDS_ALL_SET: (names: string[]) =>
-      `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} no sex set, so this mode cannot run until every student does. Set a sex for ${names.length === 1 ? 'them' : 'each of them'}, or turn it off.`,
+    SEX_NEEDS_ALL_SET:
+      '{names} {names, plural, one {has} other {have}} no sex set, so this mode cannot run until every student does. Set a sex for {names, plural, one {them} other {each of them}}, or turn it off.' as Message<{
+        names: string[];
+      }>,
     // Task 8b. Carries `students: number[]`, never names -- same resolver
     // pattern as TOGETHER_APART_CLASH above. `names.length` is always >= 2
     // by construction (a together-unit spanning both sexes needs at least
@@ -670,8 +741,10 @@ export const en = {
     // above, its closer sibling (both are guard-style refusals about the
     // `sex` field itself, not about a group a teacher is looking at, unlike
     // SEX_SPILLOVER).
-    SEX_SEPARATE_SPLITS_UNIT: (names: string[]) =>
-      `${names.join(', ')} are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.`,
+    SEX_SEPARATE_SPLITS_UNIT:
+      '{names} are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.' as Message<{
+        names: string[];
+      }>,
     // Fix round 1, F-2. Carries `groupsRequested: number` -- the number the
     // TEACHER typed, never a side's own smaller allocation (see the doc
     // comment on ERROR_CODES.sexSeparateImpossible for the defect that
@@ -709,8 +782,10 @@ export const en = {
     // not earned one -- honest in the same spirit as this code's own
     // groupsRequested (see ERROR_CODES.sexSeparateImpossible's doc comment
     // in grouping.ts), just about a direction instead of a number.
-    SEX_SEPARATE_IMPOSSIBLE: (groupsRequested: number) =>
-      `Boys and girls cannot be kept in separate groups across ${groupsRequested} ${groupsRequested === 1 ? 'group' : 'groups'} while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for a different number of groups, or turn this mode off.`,
+    SEX_SEPARATE_IMPOSSIBLE:
+      'Boys and girls cannot be kept in separate groups across {groupsRequested} {groupsRequested, plural, one {group} other {groups}} while also satisfying your other rules. The search cannot tell which rule is the problem, so try either remedy: ask for a different number of groups, or turn this mode off.' as Message<{
+        groupsRequested: number;
+      }>,
     // Fix round 2. Claims nothing at all, same reasoning as
     // TOGETHER_SEARCH_GAVE_UP/KEEP_APART_SEARCH_GAVE_UP/
     // BOTH_RULES_SEARCH_GAVE_UP above -- carries no data because nothing
@@ -728,20 +803,26 @@ export const en = {
     // pattern as TOGETHER_APART_CLASH above. Always >= 2 by construction: at
     // least one student locked inside the pinned group and one outside it,
     // sharing the together letter that straddles the boundary.
-    PINNED_SPLITS_UNIT: (names: string[]) =>
-      `${names.join(', ')} are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.`,
+    PINNED_SPLITS_UNIT:
+      '{names} are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.' as Message<{
+        names: string[];
+      }>,
     // Task 9. Carries `students: number[]`, never names -- same resolver
     // pattern. Always >= 2 by construction: an apart-letter needs at least
     // two holders, and this only fires when both are in the SAME pinned
     // group.
-    PINNED_APART_CLASH: (names: string[]) =>
-      `${names.join(', ')} are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.`,
+    PINNED_APART_CLASH:
+      '{names} are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.' as Message<{
+        names: string[];
+      }>,
     // Task 9. Carries a single resolved name, not a list -- `number: number`
     // on the error (like DUPLICATE_NUMBER) always names exactly one student,
     // never a pair, so there is no second party for this sentence to name
     // and no plural form to branch for.
-    PINNED_IN_TWO_GROUPS: (name: string) =>
-      `${name} is pinned into two different groups at once. A student can only be pinned into one group. Remove them from one of the two.`,
+    PINNED_IN_TWO_GROUPS:
+      '{name} is pinned into two different groups at once. A student can only be pinned into one group. Remove them from one of the two.' as Message<{
+        name: string;
+      }>,
     // Fix round 1, F-1/F-2. Replaces TOO_MANY_GROUPS on the pinned path --
     // see ERROR_CODES.pinnedTooManyGroups's doc comment in grouping.ts. The
     // old sentence here (still TOO_MANY_GROUPS at the time) named a `max`
@@ -764,22 +845,16 @@ export const en = {
     // -- both directions move `poolGroupsNeeded` the same way (up, toward
     // 1), so the same two actions (unpin, or ask for more) are still true
     // here; only "X of the Y" needed to change, not the remedy.
-    PINNED_TOO_MANY_GROUPS: (
-      requestedGroups: number,
-      pinnedGroupCount: number,
-      remainingStudents: number,
-    ) => {
-      const groupWord = (n: number) => (n === 1 ? 'group' : 'groups');
-      const studentWord = remainingStudents === 1 ? 'student' : 'students';
-      const poolGroupsNeeded = requestedGroups - pinnedGroupCount;
-      if (poolGroupsNeeded < 0) {
-        return `Your pins already use ${pinnedGroupCount} ${groupWord(pinnedGroupCount)} — more than the ${requestedGroups} ${groupWord(requestedGroups)} you asked for — which leaves ${remainingStudents} ${studentWord} with no group left for them. Unpin a group, or ask for more groups.`;
-      }
-      const opening = `Your pins already fill ${pinnedGroupCount} of the ${requestedGroups} ${groupWord(requestedGroups)} you asked for, which only leaves ${remainingStudents} ${studentWord}`;
-      return poolGroupsNeeded === 0
-        ? `${opening} with no group left for them. Unpin a group, or ask for more groups.`
-        : `${opening} — not enough for the ${poolGroupsNeeded} ${groupWord(poolGroupsNeeded)} still needed. Unpin a group, or ask for fewer groups.`;
-    },
+    PINNED_TOO_MANY_GROUPS: ('{situation, select, ' +
+      'over {Your pins already use {pinnedGroupCount} {pinnedGroupCount, plural, one {group} other {groups}} — more than the {requestedGroups} {requestedGroups, plural, one {group} other {groups}} you asked for — which leaves {remainingStudents} {remainingStudents, plural, one {student} other {students}} with no group left for them. Unpin a group, or ask for more groups.} ' +
+      'full {Your pins already fill {pinnedGroupCount} of the {requestedGroups} {requestedGroups, plural, one {group} other {groups}} you asked for, which only leaves {remainingStudents} {remainingStudents, plural, one {student} other {students}} with no group left for them. Unpin a group, or ask for more groups.} ' +
+      'other {Your pins already fill {pinnedGroupCount} of the {requestedGroups} {requestedGroups, plural, one {group} other {groups}} you asked for, which only leaves {remainingStudents} {remainingStudents, plural, one {student} other {students}} — not enough for the {poolGroupsNeeded} {poolGroupsNeeded, plural, one {group} other {groups}} still needed. Unpin a group, or ask for fewer groups.}}') as Message<{
+      requestedGroups: number;
+      pinnedGroupCount: number;
+      remainingStudents: number;
+      poolGroupsNeeded: number;
+      situation: 'over' | 'full' | 'short';
+    }>,
   },
 
   warnings: {
@@ -792,8 +867,12 @@ export const en = {
     // WARNING_CODES.sexSpillover's doc comment in grouping.ts. Six boys and
     // two girls not dividing evenly is arithmetic, not a mistake, so unlike
     // every error above this carries no remedy: there is nothing to fix.
-    SEX_SPILLOVER: (names: string[], sex: 'M' | 'F') =>
-      `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} joined a group of ${sex === 'M' ? 'girls' : 'boys'} because there were not enough ${sex === 'M' ? 'boys' : 'girls'} to make a group of their own. That is simply how the numbers divided, not a mistake to fix.`,
+    SEX_SPILLOVER: ('{sex, select, ' +
+      'M {{names} {names, plural, one {has} other {have}} joined a group of girls because there were not enough boys to make a group of their own. That is simply how the numbers divided, not a mistake to fix.} ' +
+      'other {{names} {names, plural, one {has} other {have}} joined a group of boys because there were not enough girls to make a group of their own. That is simply how the numbers divided, not a mistake to fix.}}') as Message<{
+      names: string[];
+      sex: 'M' | 'F';
+    }>,
     // Task 9. Carries `students: number[]`, never names -- same resolver
     // pattern as SEX_SPILLOVER above. Always >= 2 by construction (a pinned
     // group needs at least one of each sex to be mixed), so, like
@@ -803,8 +882,10 @@ export const en = {
     // way, and the copy does not need to say which sex is which to make
     // that point -- see WARNING_CODES.pinnedMixedSex's doc comment in
     // grouping.ts for the decision this is the honest wording of.
-    PINNED_MIXED_SEX: (names: string[]) =>
-      `${names.join(', ')} are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.`,
+    PINNED_MIXED_SEX:
+      '{names} are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.' as Message<{
+        names: string[];
+      }>,
     // Whole-branch review, I-2. Carries `students: number[]` -- everyone in
     // the one merged group, both sexes -- and no `sex` field, unlike
     // SEX_SPILLOVER above: there is no host side and no spilled side here,
@@ -812,9 +893,19 @@ export const en = {
     // WARNING_CODES.sexBothTooSmall's doc comment in grouping.ts). Always
     // >= 2 by construction, like SEX_SEPARATE_SPLITS_UNIT and
     // TOGETHER_APART_CLASH above, so no singular/plural branch.
-    SEX_BOTH_TOO_SMALL: (names: string[]) =>
-      `${names.join(', ')} were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.`,
+    SEX_BOTH_TOO_SMALL:
+      '{names} were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.' as Message<{
+        names: string[];
+      }>,
   },
 };
 
-export type Strings = typeof en;
+/**
+ * A translation: English's keys, with every message a plain template
+ * string. What id.ts, zh.ts, vi.ts and th.ts are typed as, so a translator
+ * writes prose and never a type.
+ */
+export type Catalogue = Translatable<typeof en>;
+
+/** What a page calls: every message compiled to a function of its named slots. */
+export type Strings = Compiled<typeof en>;

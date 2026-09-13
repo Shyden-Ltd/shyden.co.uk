@@ -4,7 +4,6 @@ import {
   describeMessage,
   formatMessage,
   isMessageTemplate,
-  message,
 } from '../../src/lib/i18n/message';
 
 /**
@@ -240,11 +239,5 @@ describe('describeMessage', () => {
       plurals: [],
       selects: [],
     });
-  });
-});
-
-describe('message', () => {
-  it('is the template itself at runtime: the parameter type exists only for the compiler', () => {
-    expect(message<{ n: number }>('Group {n}')).toBe('Group {n}');
   });
 });

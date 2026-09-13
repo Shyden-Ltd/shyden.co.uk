@@ -40,19 +40,18 @@ export type MessageParams = Readonly<Record<string, MessageValue>>;
 declare const messageParams: unique symbol;
 
 /**
- * A template whose slots take `P`.
+ * A template whose slots take `P`, declared in `en.ts` (the reference) as
+ * `'Group {n}' as Message<{ n: number }>`.
  *
- * A plain string at runtime. The brand exists only for the compiler, so a
- * call site cannot pass a slot the English template does not declare.
+ * A plain string at runtime. The brand exists only for the compiler, so a call
+ * site cannot pass a slot the English template does not declare. It is an
+ * assertion rather than a helper function on purpose: `en.ts` is loaded by the
+ * i18n scripts under plain Node, which cannot resolve an extensionless VALUE
+ * import, and a type-only import is erased before Node reads the file.
  */
 export type Message<P extends MessageParams> = string & {
   readonly [messageParams]: P;
 };
-
-/** Declare a template and the values its slots take (in `en.ts`, the reference). */
-export const message = <P extends MessageParams>(
-  template: string,
-): Message<P> => template as Message<P>;
 
 export class MessageSyntaxError extends Error {
   constructor(
@@ -228,8 +227,9 @@ const conjunctionList = perLocale(
   (locale) => new Intl.ListFormat(locale, { type: 'conjunction' }),
 );
 
-const isList = (value: MessageValue): value is readonly (string | number)[] =>
-  Array.isArray(value);
+const isList = (
+  value: MessageValue,
+): value is readonly string[] | readonly number[] => Array.isArray(value);
 
 function valueOf(params: MessageParams, name: string): MessageValue {
   if (!Object.prototype.hasOwnProperty.call(params, name))
@@ -347,4 +347,69 @@ export function describeMessage(template: string): MessageDescription {
     plurals,
     selects,
   };
+}
+
+/**
+ * What the reference catalogue's type becomes once compiled: every template
+ * a function of its named slots, everything else unchanged.
+ */
+export type Compiled<T> = {
+  readonly [K in keyof T]: T[K] extends Message<infer P extends MessageParams>
+    ? (params: P) => string
+    : T[K] extends readonly unknown[]
+      ? T[K]
+      : T[K] extends object
+        ? Compiled<T[K]>
+        : T[K];
+};
+
+/**
+ * The shape a translation takes: the reference's keys, with every template a
+ * plain string -- a translator writes prose, never a type.
+ */
+export type Translatable<T> = {
+  readonly [K in keyof T]: T[K] extends Message<MessageParams>
+    ? string
+    : T[K] extends readonly unknown[]
+      ? T[K]
+      : T[K] extends object
+        ? Translatable<T[K]>
+        : T[K];
+};
+
+/**
+ * Compile a catalogue against the reference that declares its templates.
+ *
+ * The REFERENCE decides what is a message (a string with any slot), so a
+ * translation cannot promote plain copy into a function, or demote a message
+ * into copy, by what it happens to contain; the parity guard in the i18n
+ * tests holds both sides to the same slots. Every template is parsed here,
+ * eagerly: a malformed translation fails when the page loads its strings,
+ * never halfway through a teacher's click.
+ */
+export function compileCatalogue<T>(
+  reference: T,
+  table: Translatable<T>,
+  locale: string,
+): Compiled<T> {
+  const compile = (ref: unknown, value: unknown, path: string): unknown => {
+    if (typeof ref === 'string') {
+      if (!isMessageTemplate(ref)) return value;
+      if (typeof value !== 'string')
+        throw new Error(
+          `${path}: the catalogue has no template for this message`,
+        );
+      parseMessage(value);
+      return (params: MessageParams) => formatMessage(value, params, locale);
+    }
+    if (!ref || typeof ref !== 'object' || Array.isArray(ref)) return value;
+    const values = (value ?? {}) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(ref).map(([key, child]) => [
+        key,
+        compile(child, values[key], path ? `${path}.${key}` : key),
+      ]),
+    );
+  };
+  return compile(reference, table, '') as Compiled<T>;
 }

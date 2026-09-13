@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { sexWhy, sexWhyReturning } from '../../src/lib/sexOptions';
-import { en } from '../../src/lib/i18n/en';
-import { id } from '../../src/lib/i18n/id';
 import { student } from './factories';
 import type { Student } from '../../src/lib/grouping';
+import { getStrings } from '../../src/lib/i18n';
+
+// The catalogues as a page receives them: every message compiled into a
+// function of its named slots (#136). A raw catalogue holds templates.
+const en = getStrings('en');
+const id = getStrings('id');
 
 describe('sexWhy — why the two sex switches are disabled', () => {
   it('says so with its own wording when there is no list at all', () => {
