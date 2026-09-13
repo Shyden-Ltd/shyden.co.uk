@@ -240,11 +240,15 @@ describe("a job's own budget and scripts, as the runner reads them (#157)", () =
   });
 
   it('reads a script from run: alone, never from a step name or a comment', () => {
+    // The named step has NO run: of its own. Named beside a run, as this case
+    // first was, a parser reading the names of run-less steps passed it (MR7).
     expect(
       onlyJob(
         '    steps:\n' +
           '      # - run: npm run test:e2e\n' +
           '      - name: npm run test:e2e\n' +
+          '        uses: actions/checkout@v7\n' +
+          '      - name: install\n' +
           '        run: npm ci\n',
       ).runs,
     ).toEqual(['npm ci']);
