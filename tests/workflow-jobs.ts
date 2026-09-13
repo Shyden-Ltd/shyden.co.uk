@@ -16,6 +16,14 @@ export interface WorkflowJob {
   readonly needs: readonly string[];
   /** The job-level `if:`, unwrapped from `${{ }}`; `undefined` when absent. */
   readonly condition: string | undefined;
+  /**
+   * The job's OWN `timeout-minutes`; `undefined` when absent, which the runner
+   * reads as its default. A step's budget is not the job's: a step can declare
+   * one while the job around it runs unbounded.
+   */
+  readonly timeoutMinutes: number | undefined;
+  /** Each step's `run:` script, in file order; a `uses:` step runs none. */
+  readonly runs: readonly string[];
 }
 
 const isMapping = (value: unknown): value is Record<string, unknown> =>
@@ -45,6 +53,31 @@ function conditionOf(
     .trim();
 }
 
+function timeoutMinutesOf(
+  job: Record<string, unknown>,
+  where: string,
+): number | undefined {
+  const budget = job['timeout-minutes'];
+  if (budget === undefined) return undefined;
+  if (typeof budget !== 'number')
+    throw new Error(`${where}: timeout-minutes is not a number of minutes`);
+  return budget;
+}
+
+function runsOf(job: Record<string, unknown>, where: string): string[] {
+  const { steps } = job;
+  if (steps === undefined) return [];
+  if (!Array.isArray(steps)) throw new Error(`${where}: steps is not a list`);
+  return steps.flatMap((step: unknown, index) => {
+    const which = `${where}: step ${index + 1}`;
+    if (!isMapping(step)) throw new Error(`${which} is not a mapping`);
+    if (step.run === undefined) return [];
+    if (typeof step.run !== 'string')
+      throw new Error(`${which}'s run is not a script`);
+    return [step.run];
+  });
+}
+
 /**
  * Every job in a workflow, in file order.
  *
@@ -70,7 +103,38 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
       id,
       needs: needsOf(body, where),
       condition: conditionOf(body, where),
+      timeoutMinutes: timeoutMinutesOf(body, where),
+      runs: runsOf(body, where),
     };
+  });
+}
+
+/** What the runner gives a job that declares no `timeout-minutes` of its own. */
+export const RUNNER_DEFAULT_TIMEOUT_MINUTES = 360;
+
+/**
+ * A finding for every job the runner would let hang for its default budget.
+ *
+ * Absent is 360 minutes of a hung runner, and so is 360 written out. Zero, a
+ * negative or a fraction is no budget the runner documents, so it is reported
+ * rather than trusted as a bound (#157).
+ */
+export function unboundedJobFindings(jobs: readonly WorkflowJob[]): string[] {
+  const ceiling = RUNNER_DEFAULT_TIMEOUT_MINUTES - 1;
+  return jobs.flatMap(({ id, timeoutMinutes }) => {
+    if (timeoutMinutes === undefined)
+      return [
+        `${id} declares no timeout-minutes, so the runner gives it ${RUNNER_DEFAULT_TIMEOUT_MINUTES} minutes`,
+      ];
+    const bounded =
+      Number.isInteger(timeoutMinutes) &&
+      timeoutMinutes >= 1 &&
+      timeoutMinutes <= ceiling;
+    return bounded
+      ? []
+      : [
+          `${id}'s timeout-minutes of ${timeoutMinutes} is not a whole number of minutes from 1 to ${ceiling}`,
+        ];
   });
 }
 
