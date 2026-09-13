@@ -90,10 +90,41 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(tests.length).toBeGreaterThan(3);
   });
 
-  it('the dev deploy is gated on the tests passing first', () => {
+  it('the dev deploy is gated on a gate that SUCCEEDED, never on one that skipped', () => {
     const dev = workflowSteps('release-dev.yml');
-    expect(dev).toMatch(/deploy-dev:[\s\S]*?needs:\s*test/);
+    expect(dev).toMatch(/deploy-dev:[\s\S]*?needs:\s*\[gate,\s*test\]/);
     expect(dev).toMatch(/verify-dev:[\s\S]*?needs:\s*deploy-dev/);
+
+    // Exactly one of the two gates runs per event, so the other is ALWAYS
+    // skipped. `!failure() && !cancelled()` alone is therefore satisfied by a
+    // run where BOTH skipped — absent evidence reading as a pass, which is the
+    // shape of every defect this file exists for (#146, #157). One of them has
+    // to have actually succeeded.
+    expect(dev).toContain("needs.gate.result == 'success'");
+    expect(dev).toContain("needs.test.result == 'success'");
+  });
+
+  it('the push path proves the tree instead of re-running the suite', () => {
+    const dev = workflowSteps('release-dev.yml');
+    const gate = jobBlockRunning(dev, 'scripts/deploy-gate.mjs');
+    expect(gate).toContain("if: github.event_name == 'push'");
+    // The gate reads parents and trees; a shallow clone would make it refuse
+    // for want of objects rather than for want of evidence.
+    expect(gate).toContain('fetch-depth: 0');
+    // check-runs live behind their own scope; without it the API 404s and the
+    // gate refuses every deploy.
+    expect(gate).toContain('checks: read');
+  });
+
+  it('a dispatched branch still runs everything, because it has no tested parent', () => {
+    // `workflow_dispatch` puts an ARBITRARY branch on dev. It has no second
+    // parent and no PR checks, so there is nothing for the tree gate to verify.
+    // Dropping this path would quietly remove a documented capability.
+    const suite = jobBlockRunning(
+      workflowSteps('release-dev.yml'),
+      'npm run test:e2e',
+    );
+    expect(suite).toContain("if: github.event_name != 'push'");
   });
 
   // The merge gate. `dev-verified` has to be POSTED by something, or branch
