@@ -316,7 +316,7 @@ function buildToolbar(
     severalButton.disabled = true;
     const limitMessage = document.createElement('p');
     limitMessage.className = 'cg-roster-limit-message';
-    limitMessage.textContent = t.rosterAtLimitMessage(MAX_ROSTER);
+    limitMessage.textContent = t.rosterAtLimitMessage({ max: MAX_ROSTER });
     wrap.appendChild(limitMessage);
   }
 
@@ -388,7 +388,7 @@ function buildRow(
   nameInput.type = 'text';
   nameInput.className = 'cg-roster-name';
   nameInput.setAttribute('aria-label', t.rosterColName);
-  nameInput.placeholder = t.studentNumber(student.number);
+  nameInput.placeholder = t.studentNumber({ n: student.number });
   nameInput.value = student.name ?? '';
   nameInput.addEventListener('input', () => {
     // An emptied field is `null` (no name), never `''` — matches
@@ -795,12 +795,15 @@ export function renderRoster(
   const hereLine = document.createElement('p');
   hereLine.className = 'cg-roster-count-here print-foot-here';
   hereLine.setAttribute('aria-hidden', 'true');
-  hereLine.textContent = t.printHereToday(roster.length - absent, absent);
-
-  countLine.textContent = t.rosterCountLine(
-    roster.length,
-    roster.length - absent,
+  hereLine.textContent = t.printHereToday({
+    here: roster.length - absent,
     absent,
-  );
+  });
+
+  countLine.textContent = t.rosterCountLine({
+    total: roster.length,
+    here: roster.length - absent,
+    absent,
+  });
   container.append(countLine, hereLine);
 }

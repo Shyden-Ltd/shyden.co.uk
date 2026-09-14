@@ -5,6 +5,14 @@ import type { Page } from '@playwright/test';
 import { join, relative, sep, basename } from 'node:path';
 import { filesUnder } from '../source-files';
 import {
+  DEFAULT_LOCALE,
+  LOCALES,
+  getStrings,
+  localisePath,
+} from '../../src/lib/i18n';
+import { shoot } from './evidence';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+import {
   openRoster,
   addSeveral,
   buildRoster,
@@ -1809,4 +1817,118 @@ test.describe('the no-scroll rule, measured', () => {
       'the homepage still ships no JavaScript',
     );
   });
+});
+
+/**
+ * Every language the page is served in renders its OWN messages (#136).
+ *
+ * The ticket's defect, in the medium it was reported in: the 51 parameterised
+ * messages were English functions that zh, vi and th took by reference, so a
+ * Chinese page numbered its groups "Group 1". The unit guards hold each
+ * catalogue to English's structure; only a render proves the page reads the
+ * catalogue of the language it is served in. Derived from LOCALES, with every
+ * expectation taken from that locale's own table, so a sixth language is
+ * covered the day it is added. The Indonesian pins above stay: a pin catches a
+ * wrong catalogue value that this comparison would agree with.
+ *
+ * One of each shape a message takes: a slot (a student's number, a group's),
+ * a plural (the summary), a refusal carrying a value, and a list (the roster's
+ * missing-sex problem, joined by the browser's own `Intl.ListFormat`).
+ */
+test.describe('every language renders its own messages', () => {
+  for (const locale of LOCALES) {
+    test(`${locale}: numbers, groups, a summary, a refusal and a list`, async ({
+      page,
+    }) => {
+      const t = getStrings(locale);
+      const english = getStrings(DEFAULT_LOCALE);
+      const path = localisePath('/classroom-groups', locale);
+      /** What English would have said in its place -- the fallback removed. */
+      const notEnglish = (own: string, inEnglish: string) => {
+        if (locale !== DEFAULT_LOCALE) expect(own).not.toBe(inEnglish);
+      };
+
+      await page.goto(path);
+      await fill(page, { count: '4', size: '2' });
+      await page.click('#cg-go');
+      const labels = await page
+        .locator('#cg-results .student')
+        .allTextContents();
+      expect(labels.sort()).toEqual(
+        [1, 2, 3, 4].map((n) => t.studentNumber({ n })).sort(),
+      );
+      notEnglish(t.studentNumber({ n: 1 }), english.studentNumber({ n: 1 }));
+      await expect(page.locator('#cg-results .group h3').first()).toHaveText(
+        t.groupLabel({ n: 1 }),
+      );
+      notEnglish(t.groupLabel({ n: 1 }), english.groupLabel({ n: 1 }));
+      await shoot(
+        page,
+        'students and groups are numbered in the page language',
+        page.locator('#cg-results'),
+      );
+
+      const summary = t.resultsSummary({ groups: 2, students: 4 });
+      await expect(page.locator('#cg-summary')).toHaveText(summary);
+      notEnglish(summary, english.resultsSummary({ groups: 2, students: 4 }));
+      await shoot(
+        page,
+        'the summary counts in the page language',
+        page.locator('#cg-summary'),
+      );
+
+      await fill(page, { count: '100000000', size: '4' });
+      await page.click('#cg-go');
+      const refusal = t.errors.TOO_MANY_STUDENTS({ max: 100 });
+      await expect(page.locator('#cg-error')).toHaveText(refusal);
+      notEnglish(refusal, english.errors.TOO_MANY_STUDENTS({ max: 100 }));
+      await shoot(
+        page,
+        'a refusal carries its value in the page language',
+        page.locator('#cg-error'),
+      );
+
+      await page.goto(path);
+      await page.locator('#cg-students-toggle').click();
+      const add = page.getByRole('button', {
+        name: t.rosterAddStudent.replace(/^[+\s]+/, ''),
+      });
+      await add.click();
+      await add.click();
+      await expect(page.locator('.cg-student')).toHaveCount(2);
+      const names = [t.studentNumber({ n: 1 }), t.studentNumber({ n: 2 })];
+      // The page joins a list with the browser's own Intl.ListFormat, and
+      // engines disagree: measured 2026-09-14, WebKit 26.6 spaces Thai
+      // "และ" where Chromium 153, Firefox 155 and Node's CLDR 48 do not. So
+      // the join comes from the page's engine, and every word around it from
+      // this locale's catalogue.
+      const { numberLocale } = LOCALE_METADATA[locale];
+      const join = new Intl.ListFormat(numberLocale, { type: 'conjunction' });
+      const pageJoin = await page.evaluate(
+        ([tag, items]) =>
+          new Intl.ListFormat(tag, { type: 'conjunction' }).format(items),
+        [numberLocale, names] as [string, string[]],
+      );
+      const rendered = t.rosterNoSexMessage({ names });
+      expect(rendered.split(join.format(names)), 'the list, once').toHaveLength(
+        2,
+      );
+      const problem = rendered.replace(join.format(names), () => pageJoin);
+      await expect(page.locator('#cg-roster-problem')).toHaveText(problem);
+      notEnglish(
+        problem,
+        english.rosterNoSexMessage({
+          names: [
+            english.studentNumber({ n: 1 }),
+            english.studentNumber({ n: 2 }),
+          ],
+        }),
+      );
+      await shoot(
+        page,
+        'a list of students is joined in the page language',
+        page.locator('#cg-roster-problem'),
+      );
+    });
+  }
 });

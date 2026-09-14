@@ -349,7 +349,7 @@ if (form) {
   // could resolve the two differently.
   const rosterNames = new Map<number, string>();
   const resolveStudent = (n: number): string =>
-    rosterNames.get(n) ?? t.studentNumber(n);
+    rosterNames.get(n) ?? t.studentNumber({ n });
   const errorBox = $<HTMLParagraphElement>('cg-error')!;
   const results = $<HTMLElement>('cg-results')!;
   const resultsHeadingEl = $<HTMLHeadingElement>('cg-results-h')!;
@@ -1259,7 +1259,7 @@ if (form) {
       printHead.appendChild(who);
     }
     const when = document.createElement('span');
-    when.textContent = t.printedOn(todayISO());
+    when.textContent = t.printedOn({ on: todayISO() });
     printHead.appendChild(when);
   };
 
@@ -2102,9 +2102,12 @@ if (form) {
     // the old one loses its bottom group off the board with no scrollbar,
     // in front of a class. It was called before `render` until this fix.
     projector?.refit();
-    summary.textContent = t.resultsSummary(groups.length, groups.flat().length);
+    summary.textContent = t.resultsSummary({
+      groups: groups.length,
+      students: groups.flat().length,
+    });
 
-    // A success can still carry `warnings` -- "Gita, Sari have joined a
+    // A success can still carry `warnings` -- "Gita and Sari have joined a
     // group of boys because there were not enough girls…" -- see
     // grouping.ts's own module doc. RENDERED as of Stage 3, Task 9 (G-11):
     // `sexMode` above is live now, so this array can finally be non-empty,

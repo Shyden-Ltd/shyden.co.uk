@@ -19,9 +19,12 @@ import { student, shape, groupOf, seeded } from './factories';
 // WARNINGS -- the pinned describe block and the sex-both-too-small fixture
 // below never rendered one at all before this fix, which is exactly why
 // I-2's contradiction survived per-task review.
-import { renderError, renderWarning } from '../../src/lib/i18n';
-import { en } from '../../src/lib/i18n/en';
-import { id } from '../../src/lib/i18n/id';
+import { renderError, renderWarning, getStrings } from '../../src/lib/i18n';
+
+// The catalogues as a page receives them: every message compiled into a
+// function of its named slots (#136). A raw catalogue holds templates.
+const en = getStrings('en');
+const id = getStrings('id');
 
 const base = (over: Partial<GroupingInput> = {}): GroupingInput => ({
   students: 22,
@@ -2999,22 +3002,22 @@ describe('sex mode: separate', () => {
       // this fixture at all). One sentence now, in both languages, naming
       // the whole roster via the default numbered resolver.
       const names = Array.from({ length: 12 }, (_, i) =>
-        en.studentNumber(i + 1),
+        en.studentNumber({ n: i + 1 }),
       );
       expect(renderWarning(out.result.warnings[0], en)).toBe(
-        'Student 1, Student 2, Student 3, Student 4, Student 5, Student 6, Student 7, Student 8, Student 9, Student 10, Student 11, Student 12 were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.',
+        'Student 1, Student 2, Student 3, Student 4, Student 5, Student 6, Student 7, Student 8, Student 9, Student 10, Student 11 and Student 12 were placed in one combined group because there were not enough of either sex to make a group of their own. That is simply how the numbers divided, not a mistake to fix.',
       );
       expect(renderWarning(out.result.warnings[0], en)).toBe(
-        en.warnings.SEX_BOTH_TOO_SMALL(names),
+        en.warnings.SEX_BOTH_TOO_SMALL({ names }),
       );
       const idNames = Array.from({ length: 12 }, (_, i) =>
-        id.studentNumber(i + 1),
+        id.studentNumber({ n: i + 1 }),
       );
       expect(renderWarning(out.result.warnings[0], id)).toBe(
-        'Siswa 1, Siswa 2, Siswa 3, Siswa 4, Siswa 5, Siswa 6, Siswa 7, Siswa 8, Siswa 9, Siswa 10, Siswa 11, Siswa 12 digabungkan menjadi satu kelompok karena jumlah laki-laki maupun perempuan tidak cukup untuk membentuk kelompok sendiri-sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.',
+        'Siswa 1, Siswa 2, Siswa 3, Siswa 4, Siswa 5, Siswa 6, Siswa 7, Siswa 8, Siswa 9, Siswa 10, Siswa 11, dan Siswa 12 digabungkan menjadi satu kelompok karena jumlah laki-laki maupun perempuan tidak cukup untuk membentuk kelompok sendiri-sendiri. Ini murni soal angka, bukan kesalahan yang perlu diperbaiki.',
       );
       expect(renderWarning(out.result.warnings[0], id)).toBe(
-        id.warnings.SEX_BOTH_TOO_SMALL(idNames),
+        id.warnings.SEX_BOTH_TOO_SMALL({ names: idNames }),
       );
     });
 
@@ -3215,10 +3218,10 @@ describe('sex mode: separate', () => {
       expect(out.ok).toBe(false);
       if (out.ok) return;
       expect(renderError(out.error, en)).toBe(
-        'Student 1, Student 2 are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
+        'Student 1 and Student 2 are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
       );
       expect(renderError(out.error, id)).toBe(
-        'Siswa 1, Siswa 2 ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.',
+        'Siswa 1 dan Siswa 2 ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.',
       );
     });
 
@@ -3247,11 +3250,11 @@ describe('sex mode: separate', () => {
       if (out.ok) return;
       const enMsg = renderError(out.error, en);
       expect(enMsg).toBe(
-        'Student 1, Student 5 all need to be kept apart from each other, so you would need at least 2 groups. Either make more groups or remove one of the rules.',
+        'Student 1 and Student 5 all need to be kept apart from each other, so you would need at least 2 groups. Either make more groups or remove one of the rules.',
       );
       const idMsg = renderError(out.error, id);
       expect(idMsg).toBe(
-        'Siswa 1, Siswa 5 semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal 2 kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.',
+        'Siswa 1 dan Siswa 5 semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal 2 kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.',
       );
     });
   });
@@ -4111,15 +4114,15 @@ describe('pinned groups', () => {
         students: [1, 7],
       });
       expect(renderError(out.error, en)).toBe(
-        'Student 1, Student 7 are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.',
+        'Student 1 and Student 7 are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.',
       );
       expect(renderError(out.error, id)).toBe(
-        'Siswa 1, Siswa 7 ditandai untuk disatukan, tetapi hanya sebagian dari mereka yang berada di kelompok yang dikunci. Batalkan kunci kelompok itu, atau hapus huruf penyatu itu dari yang berada di luar kelompok.',
+        'Siswa 1 dan Siswa 7 ditandai untuk disatukan, tetapi hanya sebagian dari mereka yang berada di kelompok yang dikunci. Batalkan kunci kelompok itu, atau hapus huruf penyatu itu dari yang berada di luar kelompok.',
       );
       expect(
         renderError(out.error, en, (n) => (n === 1 ? 'Wayan' : 'Made')),
       ).toBe(
-        'Wayan, Made are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.',
+        'Wayan and Made are marked to stay together, but only some of them are in a pinned group. Unpin the group, or remove the together letter from whoever is outside it.',
       );
     };
 
@@ -4141,15 +4144,15 @@ describe('pinned groups', () => {
         students: [1, 2],
       });
       expect(renderError(out.error, en)).toBe(
-        'Student 1, Student 2 are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.',
+        'Student 1 and Student 2 are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.',
       );
       expect(renderError(out.error, id)).toBe(
-        'Siswa 1, Siswa 2 ditandai untuk dipisahkan satu sama lain, tetapi kelompok yang dikunci menempatkan mereka bersama. Batalkan kunci kelompok itu, atau hapus huruf pemisah itu dari salah satu siswa tersebut.',
+        'Siswa 1 dan Siswa 2 ditandai untuk dipisahkan satu sama lain, tetapi kelompok yang dikunci menempatkan mereka bersama. Batalkan kunci kelompok itu, atau hapus huruf pemisah itu dari salah satu siswa tersebut.',
       );
       expect(
         renderError(out.error, en, (n) => (n === 1 ? 'Ana' : 'Budi')),
       ).toBe(
-        'Ana, Budi are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.',
+        'Ana and Budi are marked to be kept apart from each other, but a pinned group puts them in the same one. Unpin the group, or remove the apart letter from one of them.',
       );
     };
 
@@ -4292,15 +4295,15 @@ describe('pinned groups', () => {
       ]);
       const [warning] = out.result.warnings;
       expect(renderWarning(warning, en)).toBe(
-        'Student 1, Student 4 are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.',
+        'Student 1 and Student 4 are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.',
       );
       expect(renderWarning(warning, id)).toBe(
-        'Siswa 1, Siswa 4 dikunci bersama dalam satu kelompok, tetapi tidak semuanya berjenis kelamin sama, sehingga kelompok ini tidak dipisahkan berdasarkan jenis kelamin seperti kelompok lainnya. Itu sesuai permintaan kunci kelompoknya, bukan kesalahan yang perlu diperbaiki.',
+        'Siswa 1 dan Siswa 4 dikunci bersama dalam satu kelompok, tetapi tidak semuanya berjenis kelamin sama, sehingga kelompok ini tidak dipisahkan berdasarkan jenis kelamin seperti kelompok lainnya. Itu sesuai permintaan kunci kelompoknya, bukan kesalahan yang perlu diperbaiki.',
       );
       expect(
         renderWarning(warning, en, (n) => (n === 1 ? 'Dewi' : 'Eko')),
       ).toBe(
-        'Dewi, Eko are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.',
+        'Dewi and Eko are pinned together as one group, but are not all the same sex, so this group was not split by sex like the others. That is what the pin asked for, not a mistake to fix.',
       );
     };
 
@@ -4341,10 +4344,10 @@ describe('pinned groups', () => {
         groupsNeeded: 4,
       });
       expect(renderError(out.error, en)).toBe(
-        'Student 3, Student 4, Student 5 all need to be kept apart from each other, so you would need at least 4 groups. Either make more groups or remove one of the rules.',
+        'Student 3, Student 4 and Student 5 all need to be kept apart from each other, so you would need at least 4 groups. Either make more groups or remove one of the rules.',
       );
       expect(renderError(out.error, id)).toBe(
-        'Siswa 3, Siswa 4, Siswa 5 semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal 4 kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.',
+        'Siswa 3, Siswa 4, dan Siswa 5 semuanya harus dipisahkan satu sama lain, sehingga Anda membutuhkan minimal 4 kelompok. Tambah jumlah kelompok atau hapus salah satu aturannya.',
       );
       expect(
         renderError(
@@ -4353,7 +4356,7 @@ describe('pinned groups', () => {
           (n) => ({ 3: 'Fitri', 4: 'Gita', 5: 'Hani' })[n] ?? `#${n}`,
         ),
       ).toBe(
-        'Fitri, Gita, Hani all need to be kept apart from each other, so you would need at least 4 groups. Either make more groups or remove one of the rules.',
+        'Fitri, Gita and Hani all need to be kept apart from each other, so you would need at least 4 groups. Either make more groups or remove one of the rules.',
       );
     };
 
@@ -4725,15 +4728,15 @@ describe('pinned groups', () => {
         students: [1, 2],
       });
       expect(renderError(out.error, en)).toBe(
-        'Student 1, Student 2 are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
+        'Student 1 and Student 2 are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
       );
       expect(renderError(out.error, id)).toBe(
-        'Siswa 1, Siswa 2 ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.',
+        'Siswa 1 dan Siswa 2 ditandai untuk disatukan, tetapi tidak semuanya berjenis kelamin sama, sehingga tidak bisa membentuk kelompok satu jenis kelamin. Hapus huruf yang menyatukan mereka, atau matikan mode ini.',
       );
       expect(
         renderError(out.error, en, (n) => (n === 1 ? 'Ika' : 'Joko')),
       ).toBe(
-        'Ika, Joko are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
+        'Ika and Joko are marked to stay together, but are not all the same sex, so they cannot form a single-sex group. Remove the together letter from one of them, or turn this mode off.',
       );
     };
 
@@ -4760,15 +4763,15 @@ describe('pinned groups', () => {
         students: [1, 2],
       });
       expect(renderError(out.error, en)).toBe(
-        'Student 1, Student 2 are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.',
+        'Student 1 and Student 2 are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.',
       );
       expect(renderError(out.error, id)).toBe(
-        'Siswa 1, Siswa 2 ditandai untuk disatukan sekaligus dipisahkan satu sama lain. Hapus huruf yang menyatukan mereka, atau huruf yang memisahkan mereka.',
+        'Siswa 1 dan Siswa 2 ditandai untuk disatukan sekaligus dipisahkan satu sama lain. Hapus huruf yang menyatukan mereka, atau huruf yang memisahkan mereka.',
       );
       expect(
         renderError(out.error, en, (n) => (n === 1 ? 'Kadek' : 'Luh')),
       ).toBe(
-        'Kadek, Luh are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.',
+        'Kadek and Luh are marked to stay together and to be kept apart from each other at the same time. Remove the together letter or the apart letter from one of them.',
       );
     };
 

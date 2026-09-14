@@ -1423,7 +1423,7 @@ test.describe('Grouping options', () => {
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(
       page.getByText(
-        'Gita, Sari have joined a group of boys because there were not ' +
+        'Gita and Sari have joined a group of boys because there were not ' +
           'enough girls to make a group of their own. That is simply how ' +
           'the numbers divided, not a mistake to fix.',
       ),
