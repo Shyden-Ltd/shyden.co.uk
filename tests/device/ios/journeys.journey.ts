@@ -420,7 +420,9 @@ describe.each(LOCALES)(
           describe: `#cg-error to become visible after asking for more groups than students (${locale}, mode: ${session.mode})`,
         },
       );
-      expect(await errorBox.text()).toBe(strings.errors.TOO_MANY_GROUPS(5));
+      expect(await errorBox.text()).toBe(
+        strings.errors.TOO_MANY_GROUPS({ max: 5 }),
+      );
 
       const results = await session.driver.findElement('#cg-results');
       expect(await results.property('hidden')).toBe(true);
@@ -567,7 +569,7 @@ describe.each(LOCALES)(
         },
       );
       expect(await errorBox.text()).toBe(
-        strings.errors.TOO_MANY_STUDENTS(MAX_STUDENTS),
+        strings.errors.TOO_MANY_STUDENTS({ max: MAX_STUDENTS }),
       );
 
       const groupCards = await session.driver.findElements('#cg-tables .group');

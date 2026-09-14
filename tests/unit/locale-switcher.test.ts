@@ -7,8 +7,12 @@ import {
   DEFAULT_LOCALE,
 } from '../../src/lib/i18n/index';
 import { siteEn, siteId } from '../../src/lib/i18n/site';
-import { en } from '../../src/lib/i18n/en';
-import { id } from '../../src/lib/i18n/id';
+import { getStrings } from '../../src/lib/i18n';
+
+// The catalogues as a page receives them: every message compiled into a
+// function of its named slots (#136). A raw catalogue holds templates.
+const en = getStrings('en');
+const id = getStrings('id');
 
 /**
  * Both tripwires retired.
@@ -150,7 +154,9 @@ describe('the handover offers every language (tripwire 2, retired)', () => {
       expect(typeof t.ioHandoverSent, `${label}.ioHandoverSent`).toBe(
         'function',
       );
-      expect(t.ioHandoverSent(NATIVE_NAME_PROBE)).toContain(NATIVE_NAME_PROBE);
+      expect(t.ioHandoverSent({ language: NATIVE_NAME_PROBE })).toContain(
+        NATIVE_NAME_PROBE,
+      );
     }
   });
 

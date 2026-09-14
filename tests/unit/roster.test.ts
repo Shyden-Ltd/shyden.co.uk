@@ -14,8 +14,12 @@ import {
 } from '../../src/lib/roster';
 import * as roster from '../../src/lib/roster';
 import { student } from './factories';
-import { en } from '../../src/lib/i18n/en';
-import { id } from '../../src/lib/i18n/id';
+import { getStrings } from '../../src/lib/i18n';
+
+// The catalogues as a page receives them: every message compiled into a
+// function of its named slots (#136). A raw catalogue holds templates.
+const en = getStrings('en');
+const id = getStrings('id');
 
 // Mirrors grouping.test.ts's own "the module surface" test (F-2 there):
 // pins exactly what this module exports, so an addition or a removal has

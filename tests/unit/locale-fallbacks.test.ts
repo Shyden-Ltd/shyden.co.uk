@@ -1,14 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
+import { catalogueLeaves } from '../catalogue-leaves';
 import { en } from '../../src/lib/i18n/en';
 import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
 import { th } from '../../src/lib/i18n/th';
 import { LOCALES } from '../../src/lib/i18n';
-import {
-  needsTranslation,
-  untranslatedKeys,
-} from '../../src/lib/i18n/translate';
+import { isMessageTemplate } from '../../src/lib/i18n/message';
+import { needsTranslation } from '../../src/lib/i18n/translate';
 
 /**
  * What is still English in a catalogue that claims to be another language.
@@ -17,11 +16,11 @@ import {
  * translated, and both are invisible on the page — a Chinese error message in
  * English looks like a message, not like a gap:
  *
- * 1. THE 51 PARAMETERISED MESSAGES. Every one is an arrow function, a
- *    translator returns prose rather than a function body, and the operator's
- *    instruction (2026-09-09) was that these are listed for a human rather
- *    than guessed at. `scripts/i18n-scaffold.mjs` emits them as `en.<key>`, so
- *    they are the English function BY REFERENCE.
+ * 1. THE 51 PARAMETERISED MESSAGES, until #136. Each was an arrow function a
+ *    translator could not take, so the scaffold emitted `en.<key>` and the
+ *    catalogue carried the English function BY REFERENCE. They are templates
+ *    now, drafted by DeepL like the rest of the copy and waiting for a
+ *    speaker's review (#161), and none of them may be English.
  *
  * 2. STRINGS DEEPL HANDED BACK UNCHANGED. Mostly legitimate — `M` and `F` are
  *    the roster's sex labels, single letters with nothing to translate — but
@@ -51,51 +50,28 @@ const MACHINE_SEEDED = { zh, vi, th } as const;
  */
 const CHECKED_ELSEWHERE = ['en', 'id'] as const;
 
-/** Every leaf path in the English catalogue, `errors.TOO_MANY_STUDENTS` style. */
 /**
- * The recursion, kept private so an empty sub-walk stays ordinary HERE.
- *
- * A function, a number or an empty object contributes nothing, and must be
- * allowed to. The refusal belongs to the top-level form and nowhere else --
- * the shape `walk`/`filesUnder` settled on in tests/source-files.ts (#84).
- */
-function walkLeaves(table: unknown, path = ''): string[] {
-  if (Array.isArray(table))
-    return table.flatMap((v, i) => walkLeaves(v, `${path}[${i}]`));
-  if (table && typeof table === 'object')
-    return Object.entries(table).flatMap(([k, v]) =>
-      walkLeaves(v, path ? `${path}.${k}` : k),
-    );
-  return [path];
-}
-
-/**
- * Every leaf path in a catalogue, PROVED non-empty before a guard reads it.
+ * Every leaf in a catalogue with its value, PROVED non-empty before a guard
+ * reads it.
  *
  * Same reasoning as `deepStrings` in i18n.test.ts and as `filesUnder` in
  * tests/source-files.ts: a walker that returns `[]` makes every absence
  * assertion downstream of it pass having read nothing (#84).
  */
-function leafPaths(table: unknown): string[] {
-  return nonEmpty(walkLeaves(table), 'catalogue leaf paths');
-}
+const leavesOf = (table: unknown): Array<[string, unknown]> =>
+  nonEmpty(catalogueLeaves(table), 'catalogue leaves');
 
-function valueAt(table: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((node, part) => {
-    const match = /^(.*?)((?:\[\d+\])*)$/.exec(part)!;
-    let next: unknown = match[1]
-      ? (node as Record<string, unknown>)?.[match[1]]
-      : node;
-    for (const index of match[2].match(/\d+/g) ?? [])
-      next = (next as unknown[])?.[Number(index)];
-    return next;
-  }, table);
-}
+/** The paths of the English leaves `predicate` selects that `table` left as English. */
+const sameAsEnglish = (table: unknown, predicate: (v: unknown) => boolean) => {
+  const theirs = new Map(catalogueLeaves(table));
+  return leavesOf(en)
+    .filter(([path, value]) => predicate(value) && theirs.get(path) === value)
+    .map(([path]) => path);
+};
 
-const sameAsEnglish = (table: unknown, predicate: (v: unknown) => boolean) =>
-  leafPaths(en)
-    .filter((p) => predicate(valueAt(en, p)))
-    .filter((p) => valueAt(table, p) === valueAt(en, p));
+/** A template string: a message with a slot a page fills (#136). */
+const isMessage = (value: unknown): boolean =>
+  typeof value === 'string' && isMessageTemplate(value);
 
 /**
  * The English strings each locale still carries, by key.
@@ -122,18 +98,20 @@ describe('what is still English in each catalogue', () => {
   });
 
   for (const [locale, table] of Object.entries(MACHINE_SEEDED)) {
-    it(`${locale}: every parameterised message is the English function, by reference`, () => {
-      const stillEnglish = sameAsEnglish(
-        table,
-        (v) => typeof v === 'function',
-      ).sort();
-      const everyFunction = untranslatedKeys(en)
-        .filter((p) => typeof valueAt(en, p) === 'function')
-        .sort();
-
-      // All 51, exactly: one translated is progress and must come off this
-      // list; one MISSING would mean a hand-written body nobody reviewed.
-      expect(stillEnglish).toEqual(everyFunction);
+    it(`${locale}: no message is still English`, () => {
+      // Until #136 this pinned all 51 messages as the English function by
+      // reference. Messages are templates now, each drafted in the language,
+      // so the list is empty and stays empty: a message is never an accepted
+      // English leftover, whatever ENGLISH_STRINGS records for a label.
+      const messages = leavesOf(en)
+        .filter(([, value]) => isMessage(value))
+        .map(([path]) => path);
+      expect(
+        searched(sameAsEnglish(table, isMessage), {
+          of: messages,
+          what: 'English messages',
+        }),
+      ).toEqual([]);
     });
 
     it(`${locale}: carries exactly the documented English strings`, () => {
@@ -146,10 +124,12 @@ describe('what is still English in each catalogue', () => {
     });
 
     it(`${locale}: has no empty or whitespace-only copy`, () => {
-      const paths = leafPaths(en);
-      const blank = paths
-        .filter((p) => typeof valueAt(table, p) === 'string')
-        .filter((p) => (valueAt(table, p) as string).trim() === '');
+      const theirs = new Map(catalogueLeaves(table));
+      const paths = leavesOf(en).map(([path]) => path);
+      const blank = paths.filter((path) => {
+        const value = theirs.get(path);
+        return typeof value === 'string' && value.trim() === '';
+      });
       expect(
         searched(blank, { of: paths, what: 'catalogue leaf paths' }),
         'a blank string renders as nothing at all',
