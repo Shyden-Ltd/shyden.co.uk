@@ -27,7 +27,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 
 const esc = (s) =>
@@ -77,11 +77,64 @@ export const selectMedia = (items, budgetBytes, usedBytes = 0) => {
   return { kept, dropped, used };
 };
 
+/**
+ * What the build line adds about a drop: how many, against which budget, and
+ * WHICH recordings, as `journey|engine`.
+ *
+ * It printed the count alone, so an operator learned THAT recordings were left
+ * out and had to scroll the page to find which.
+ */
+export const droppedLine = (dropped, budgetMb) =>
+  dropped.length
+    ? ` DROPPED=${dropped.length} (budget ${budgetMb}MB): ` +
+      dropped.map((v) => v.key).join(', ')
+    : '';
+
 const slugOf = (s) =>
   String(s)
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase();
+
+/**
+ * Every recording the report names, resolved and charged for the base64 it
+ * becomes -- or a refusal naming each one the disk does not have.
+ *
+ * A dangling path is lost evidence, not a smaller page. Playwright wrote the
+ * videos into `test-results/`, the next ordinary run cleared that directory as
+ * it started, and this skipped all 25 missing files and built anyway: every
+ * journey read "0 of 5 engines embedded", indistinguishable from a budget
+ * decision (#165). A result with NO recording attached is not a loss -- an
+ * ordinary run records nothing.
+ */
+export const videoCandidates = (report) => {
+  const candidates = [];
+  const missing = [];
+  for (const s of flattenReport(report)) {
+    if (!s.video) continue;
+    const abs = isAbsolute(s.video) ? s.video : join(process.cwd(), s.video);
+    if (!existsSync(abs)) {
+      missing.push(`"${s.title}" on ${s.project}: ${abs}`);
+      continue;
+    }
+    // Base64 grows a file by 4/3; the budget is charged a little over that.
+    candidates.push({
+      key: `${slugOf(s.title)}|${s.project}`,
+      abs,
+      bytes: Math.ceil(statSync(abs).size * 1.37),
+    });
+  }
+  if (missing.length)
+    throw new Error(
+      `build-evidence-page: ${EVIDENCE_REPORT} names ${missing.length} ` +
+        `recording(s) that are not on disk:\n  ${missing.join('\n  ')}\n` +
+        'Refusing to emit a page without the recordings its report claims. ' +
+        'Capture again: Playwright clears its output directory when a run ' +
+        'starts, so a recording kept outside the evidence directory does not ' +
+        'survive the next run.',
+    );
+  return candidates;
+};
 
 /**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
@@ -598,6 +651,8 @@ const main = () => {
     .map((l) => JSON.parse(l));
   const report = JSON.parse(readFileSync(join(dir, EVIDENCE_REPORT), 'utf8'));
   const content = JSON.parse(readFileSync(contentPath, 'utf8'));
+  // Before any capture is encoded: a missing recording refuses the whole page.
+  const candidates = videoCandidates(report);
 
   const b64 = (p) => readFileSync(p).toString('base64');
 
@@ -620,20 +675,6 @@ const main = () => {
   let used = 0;
   for (const v of shots.values()) used += v.length;
 
-  const specs = flattenReport(report);
-  const candidates = [];
-  for (const s of specs) {
-    if (!s.video) continue;
-    const abs = s.video.startsWith('/')
-      ? s.video
-      : join(process.cwd(), s.video);
-    if (!existsSync(abs)) continue;
-    candidates.push({
-      key: `${slugOf(s.title)}|${s.project}`,
-      abs,
-      bytes: Math.ceil(statSync(abs).size * 1.37),
-    });
-  }
   const { kept, dropped } = selectMedia(
     candidates,
     budgetMb * 1024 * 1024,
@@ -655,9 +696,7 @@ const main = () => {
   console.log(
     `written ${out} ${(Buffer.byteLength(html) / 1048576).toFixed(2)}MB ` +
       `shots=${shots.size} videos=${videos.size}/${candidates.length}` +
-      (dropped.length
-        ? ` DROPPED=${dropped.length} (budget ${budgetMb}MB)`
-        : ''),
+      droppedLine(dropped, budgetMb),
   );
   console.log(PUBLISH_NOTE);
 };
