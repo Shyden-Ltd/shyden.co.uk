@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { staleReason, type Snapshot } from '../../src/lib/staleness';
-import { en } from '../../src/lib/i18n/en';
-import { id } from '../../src/lib/i18n/id';
+import { getStrings } from '../../src/lib/i18n';
+
+// The catalogues as a page receives them: every message compiled into a
+// function of its named slots (#136). A raw catalogue holds templates.
+const en = getStrings('en');
+const id = getStrings('id');
 
 /**
  * Every assertion below compares against a LITERAL string, never against

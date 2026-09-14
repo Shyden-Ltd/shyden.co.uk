@@ -372,7 +372,7 @@ export function renderIo(
     // mutations to something already in the accessibility tree, the same
     // ordering #cg-summary and #cg-error on this page already follow.
     imported.hidden = false;
-    imported.textContent = t.ioImported(roster.length);
+    imported.textContent = t.ioImported({ total: roster.length });
   };
 
   importInput.addEventListener('change', async () => {
@@ -418,10 +418,10 @@ export function renderIo(
       applyImport(outcome.roster, outcome.className);
       return;
     }
-    confirmText.textContent = t.ioReplaceWarning(
-      current.length,
-      current.filter((s) => s.name).length,
-    );
+    confirmText.textContent = t.ioReplaceWarning({
+      total: current.length,
+      named: current.filter((s) => s.name).length,
+    });
     confirm.hidden = false;
     confirmYes.onclick = () => applyImport(outcome.roster, outcome.className);
     confirmNo.onclick = () => clearPanels();
@@ -574,7 +574,8 @@ export function renderIo(
         );
         return;
       }
-      if (data.kind === 'cg-ack') finish(t.ioHandoverSent(languageName));
+      if (data.kind === 'cg-ack')
+        finish(t.ioHandoverSent({ language: languageName }));
     };
     window.addEventListener('message', onMessage);
 
@@ -620,7 +621,7 @@ export function renderIo(
 
       const applyAndAck = () => {
         handlers.onImport(incoming, incomingName);
-        say(t.ioImported(incoming.length));
+        say(t.ioImported({ total: incoming.length }));
         // The acknowledgement the sender waits for. Sent AFTER the roster
         // is applied, never before: an ack that arrived first would let the
         // sender report success for a handover that then failed to render.
@@ -638,10 +639,10 @@ export function renderIo(
         applyAndAck();
         return;
       }
-      confirmText.textContent = t.ioReplaceWarning(
-        current.length,
-        current.filter((s) => s.name).length,
-      );
+      confirmText.textContent = t.ioReplaceWarning({
+        total: current.length,
+        named: current.filter((s) => s.name).length,
+      });
       confirm.hidden = false;
       confirmYes.onclick = () => {
         clearPanels();

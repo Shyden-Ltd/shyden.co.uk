@@ -8,6 +8,7 @@ import {
 } from '../../src/lib/i18n/index';
 import type { Locale } from '../../src/lib/i18n/index';
 import { filesUnder, searched } from '../source-files';
+import { stringLeaves } from '../catalogue-leaves';
 
 /**
  * Site copy that reaches no page -- measured against the BUILT BYTES.
@@ -85,19 +86,6 @@ const decode = (text: string) =>
 const RENDERED_404 = () => decode(readFileSync('dist/404.html', 'utf8'));
 
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
-
-/** Every string leaf in a copy table, as `dotted.path` -> value. */
-const leaves = (node: unknown, prefix = ''): Array<[string, string]> => {
-  if (typeof node === 'string') return [[prefix, node]];
-  if (Array.isArray(node))
-    return node.flatMap((v, i) => leaves(v, `${prefix}[${i}]`));
-  if (node && typeof node === 'object')
-    return Object.entries(node).flatMap(([k, v]) =>
-      leaves(v, prefix ? `${prefix}.${k}` : k),
-    );
-  // Functions interpolate at runtime and have no fixed rendered form.
-  return [];
-};
 
 /**
  * Copy that is DELIBERATELY absent from a locale's pages, and why.
@@ -232,7 +220,9 @@ test.describe('every site string reaches a built page', () => {
       const wronglyAllowed: string[] = [];
       const seen = new Set<string>();
 
-      const defined = leaves(getSiteStrings(locale));
+      // Strings only: a message interpolates at runtime and has no fixed
+      // rendered form to find.
+      const defined = stringLeaves(getSiteStrings(locale));
       for (const [path, value] of defined) {
         const needle = flat(value);
         if (!needle) continue;

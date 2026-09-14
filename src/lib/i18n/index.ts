@@ -1,4 +1,4 @@
-import { en, type Strings } from './en';
+import { en, type Catalogue, type Strings } from './en';
 import { id } from './id';
 import { zh } from './zh';
 import { vi } from './vi';
@@ -17,36 +17,17 @@ import {
   WARNING_CODES,
   type GroupingWarning,
 } from '../grouping';
+import { DEFAULT_LOCALE, LOCALES, type Locale } from './locales';
+import { LOCALE_METADATA } from './metadata';
+import { compileCatalogue } from './message';
 
-/** English first: it is the default and lives at the unprefixed route. */
-export const LOCALES = ['en', 'id', 'zh', 'vi', 'th'] as const;
-export type Locale = (typeof LOCALES)[number];
-
-/**
- * The locale served without a URL prefix, by construction the first in LOCALES.
- *
- * Named rather than written as the literal `'en'` in six places: the default
- * being English is a routing decision, not a fact about the English language,
- * and every `=== 'en'` was a place a reader had to infer that.
- */
-export const DEFAULT_LOCALE: Locale = LOCALES[0];
+export { DEFAULT_LOCALE, LOCALES, type Locale };
 
 /** Locales that carry a URL prefix -- everything except the default. */
 export const PREFIXED_LOCALES: readonly Locale[] = LOCALES.filter(
   (l) => l !== DEFAULT_LOCALE,
 );
 
-/**
- * Matches a leading `/<locale>` segment for any PREFIXED locale.
- *
- * Built from LOCALES rather than written out, because the literal it replaces
- * (`/^\/id(?=\/|$)/`) failed silently rather than loudly: with `zh` in
- * LOCALES but not in the pattern, `localisePath('/', 'zh')` returned `/id/` --
- * the INDONESIAN homepage, served as Chinese, with every existing test green.
- *
- * The `(?=\/|$)` boundary is load-bearing: without it `/identity-check` parses
- * as Indonesian and gets rewritten.
- */
 /**
  * The badge shown beside every BETA locale, in every locale.
  *
@@ -72,16 +53,46 @@ export const BETA_BADGE = 'BETA';
 export const isBetaLocale = (locale: Locale): boolean =>
   locale !== DEFAULT_LOCALE;
 
+/**
+ * Matches a leading `/<locale>` segment for any PREFIXED locale.
+ *
+ * Built from LOCALES rather than written out, because the literal it replaces
+ * (`/^\/id(?=\/|$)/`) failed silently rather than loudly: with `zh` in
+ * LOCALES but not in the pattern, `localisePath('/', 'zh')` returned `/id/` --
+ * the INDONESIAN homepage, served as Chinese, with every existing test green.
+ *
+ * The `(?=\/|$)` boundary is load-bearing: without it `/identity-check` parses
+ * as Indonesian and gets rewritten.
+ */
 const PREFIX_PATTERN = new RegExp(`^/(${PREFIXED_LOCALES.join('|')})(?=/|$)`);
 
-const TABLE: Record<Locale, Strings> = { en, id, zh, vi, th };
+const CATALOGUES: Record<Locale, Catalogue> = { en, id, zh, vi, th };
+
+/** Each locale's strings, compiled on first use and kept. */
+const compiled = new Map<Locale, Strings>();
 
 export const isLocale = (value: unknown): value is Locale =>
   typeof value === 'string' && (LOCALES as readonly string[]).includes(value);
 
-/** Unknown or absent locale falls back to English rather than throwing. */
-export const getStrings = (locale: unknown): Strings =>
-  isLocale(locale) ? TABLE[locale] : en;
+/**
+ * A locale's strings, with every message compiled into a function of its
+ * named slots that formats with the locale's own plural rules and list
+ * punctuation (#136). Unknown or absent locale falls back to English rather
+ * than throwing.
+ */
+export const getStrings = (locale: unknown): Strings => {
+  const key = isLocale(locale) ? locale : DEFAULT_LOCALE;
+  let strings = compiled.get(key);
+  if (!strings) {
+    strings = compileCatalogue(
+      en,
+      CATALOGUES[key],
+      LOCALE_METADATA[key].numberLocale,
+    );
+    compiled.set(key, strings);
+  }
+  return strings;
+};
 
 /**
  * Site copy by locale — header, footer, homepage, 404, Glory Points.
@@ -164,7 +175,7 @@ export type ResolveStudentLabel = (studentNumber: number) => string;
  * It defaults to the same numbered label an anonymous student already gets
  * elsewhere on the page (`strings.studentNumber`) rather than a second,
  * independent spelling of "Student N" — so a caller that forgets to pass a
- * resolver still gets "Student 1, Student 2 all need to be kept apart…",
+ * resolver still gets "Student 1 and Student 2 all need to be kept apart…",
  * never bare digits. Stage 2's page passes its own resolver, one that reads
  * the roster and prefers `name ?? studentNumber(n)`, so a teacher who typed
  * names sees them. This keeps the engine pure — `GroupingError` still carries
@@ -175,7 +186,7 @@ export type ResolveStudentLabel = (studentNumber: number) => string;
 export function renderError(
   error: GroupingError,
   strings: Strings,
-  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber(n),
+  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber({ n }),
 ): string {
   const e = strings.errors;
   switch (error.code) {
@@ -186,53 +197,59 @@ export function renderError(
     case ERROR_CODES.invalidGroupCount:
       return e.INVALID_GROUP_COUNT;
     case ERROR_CODES.tooManyGroups:
-      return e.TOO_MANY_GROUPS(error.maxGroups);
+      return e.TOO_MANY_GROUPS({ max: error.maxGroups });
     // Carries `students: number[]`, exactly like keepApartImpossible below --
     // same reason (identity is the number) and the same fix (resolve each
     // one through `resolveStudent` before the copy ever sees it).
     case ERROR_CODES.togetherApartClash:
-      return e.TOGETHER_APART_CLASH(error.students.map(resolveStudent));
+      return e.TOGETHER_APART_CLASH({
+        names: error.students.map(resolveStudent),
+      });
     case ERROR_CODES.togetherUnitTooLarge:
-      return e.TOGETHER_UNIT_TOO_LARGE(
-        error.letter,
-        error.unit,
-        error.groupSize,
-      );
+      return e.TOGETHER_UNIT_TOO_LARGE({
+        letter: error.letter,
+        unit: error.unit,
+        groupSize: error.groupSize,
+      });
     case ERROR_CODES.togetherNoArrangement:
-      return e.TOGETHER_NO_ARRANGEMENT(error.groupsTried);
+      return e.TOGETHER_NO_ARRANGEMENT({ groupsTried: error.groupsTried });
     case ERROR_CODES.togetherSearchGaveUp:
       return e.TOGETHER_SEARCH_GAVE_UP;
     case ERROR_CODES.tooManyStudents:
-      return e.TOO_MANY_STUDENTS(error.maxStudents);
+      return e.TOO_MANY_STUDENTS({ max: error.maxStudents });
     case ERROR_CODES.duplicateNumber:
-      return e.DUPLICATE_NUMBER(error.number);
+      return e.DUPLICATE_NUMBER({ number: error.number });
     case ERROR_CODES.keepApartImpossible:
-      return e.KEEP_APART_IMPOSSIBLE(
-        error.students.map(resolveStudent),
-        error.groupsNeeded,
-      );
+      return e.KEEP_APART_IMPOSSIBLE({
+        names: error.students.map(resolveStudent),
+        groupsNeeded: error.groupsNeeded,
+      });
     case ERROR_CODES.keepApartNoArrangement:
-      return e.KEEP_APART_NO_ARRANGEMENT(error.groupsTried);
+      return e.KEEP_APART_NO_ARRANGEMENT({ groupsTried: error.groupsTried });
     case ERROR_CODES.keepApartSearchGaveUp:
       return e.KEEP_APART_SEARCH_GAVE_UP;
     case ERROR_CODES.bothRulesNoArrangement:
-      return e.BOTH_RULES_NO_ARRANGEMENT(error.groupsTried);
+      return e.BOTH_RULES_NO_ARRANGEMENT({ groupsTried: error.groupsTried });
     case ERROR_CODES.bothRulesSearchGaveUp:
       return e.BOTH_RULES_SEARCH_GAVE_UP;
     // Carries `students: number[]`, exactly like togetherApartClash and
     // keepApartImpossible above -- same reason (identity is the number) and
     // the same fix (resolve each one through `resolveStudent` first).
     case ERROR_CODES.sexNeedsAllSet:
-      return e.SEX_NEEDS_ALL_SET(error.students.map(resolveStudent));
+      return e.SEX_NEEDS_ALL_SET({ names: error.students.map(resolveStudent) });
     // Task 8b. Carries `students: number[]`, exactly like the codes above --
     // same reason (identity is the number) and the same fix.
     case ERROR_CODES.sexSeparateSplitsUnit:
-      return e.SEX_SEPARATE_SPLITS_UNIT(error.students.map(resolveStudent));
+      return e.SEX_SEPARATE_SPLITS_UNIT({
+        names: error.students.map(resolveStudent),
+      });
     // Fix round 1, F-2. Carries `groupsRequested: number`, never a student
     // list -- no resolver needed, unlike every other `separate`-mode code
     // above.
     case ERROR_CODES.sexSeparateImpossible:
-      return e.SEX_SEPARATE_IMPOSSIBLE(error.groupsRequested);
+      return e.SEX_SEPARATE_IMPOSSIBLE({
+        groupsRequested: error.groupsRequested,
+      });
     // Fix round 2. Carries no data at all, like togetherSearchGaveUp /
     // keepApartSearchGaveUp / bothRulesSearchGaveUp above -- nothing to pass
     // through.
@@ -241,28 +258,44 @@ export function renderError(
     // Task 9. Carries `students: number[]`, exactly like togetherApartClash
     // above -- same reason (identity is the number) and the same fix.
     case ERROR_CODES.pinnedSplitsUnit:
-      return e.PINNED_SPLITS_UNIT(error.students.map(resolveStudent));
+      return e.PINNED_SPLITS_UNIT({
+        names: error.students.map(resolveStudent),
+      });
     case ERROR_CODES.pinnedApartClash:
-      return e.PINNED_APART_CLASH(error.students.map(resolveStudent));
+      return e.PINNED_APART_CLASH({
+        names: error.students.map(resolveStudent),
+      });
     // Carries a single `number`, exactly like duplicateNumber, but --
     // unlike duplicateNumber -- resolved through `resolveStudent` before the
     // copy sees it: this fires after matching against the current roster,
     // so the number is a real, current student, not an ambiguous raw
     // digit (see ERROR_CODES.pinnedInTwoGroups's doc comment).
     case ERROR_CODES.pinnedInTwoGroups:
-      return e.PINNED_IN_TWO_GROUPS(resolveStudent(error.number));
+      return e.PINNED_IN_TWO_GROUPS({ name: resolveStudent(error.number) });
     // Fix round 1, F-1/F-2. Carries three numbers, never a student list --
     // no resolver needed, unlike most codes above (same shape as
     // sexSeparateImpossible's single `groupsRequested`, just three fields
     // instead of one). Replaces the two situations that used to share
     // `tooManyGroups` on the pinned path -- see
     // ERROR_CODES.pinnedTooManyGroups's doc comment in grouping.ts.
-    case ERROR_CODES.pinnedTooManyGroups:
-      return e.PINNED_TOO_MANY_GROUPS(
-        error.requestedGroups,
-        error.pinnedGroupCount,
-        error.remainingStudents,
-      );
+    case ERROR_CODES.pinnedTooManyGroups: {
+      // Which of three sentences applies used to be decided inside the
+      // English function, by subtraction. Arithmetic is not copy, so it is
+      // decided here and every locale's template selects on the outcome.
+      const poolGroupsNeeded = error.requestedGroups - error.pinnedGroupCount;
+      return e.PINNED_TOO_MANY_GROUPS({
+        requestedGroups: error.requestedGroups,
+        pinnedGroupCount: error.pinnedGroupCount,
+        remainingStudents: error.remainingStudents,
+        poolGroupsNeeded,
+        situation:
+          poolGroupsNeeded < 0
+            ? 'over'
+            : poolGroupsNeeded === 0
+              ? 'full'
+              : 'short',
+      });
+    }
   }
 }
 
@@ -286,23 +319,30 @@ export function renderError(
 export function renderWarning(
   warning: GroupingWarning,
   strings: Strings,
-  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber(n),
+  resolveStudent: ResolveStudentLabel = (n) => strings.studentNumber({ n }),
 ): string {
   const w = strings.warnings;
   switch (warning.code) {
     case WARNING_CODES.sexSpillover:
-      return w.SEX_SPILLOVER(warning.students.map(resolveStudent), warning.sex);
+      return w.SEX_SPILLOVER({
+        names: warning.students.map(resolveStudent),
+        sex: warning.sex,
+      });
     // Task 9. Carries `students: number[]`, same resolver pattern as
     // sexSpillover above -- no `sex` field to pass through, see
     // WARNING_CODES.pinnedMixedSex's doc comment in grouping.ts.
     case WARNING_CODES.pinnedMixedSex:
-      return w.PINNED_MIXED_SEX(warning.students.map(resolveStudent));
+      return w.PINNED_MIXED_SEX({
+        names: warning.students.map(resolveStudent),
+      });
     // Whole-branch review, I-2. Carries `students: number[]`, same resolver
     // pattern as sexSpillover/pinnedMixedSex above -- no `sex` field to pass
     // through, see WARNING_CODES.sexBothTooSmall's doc comment in
     // grouping.ts.
     case WARNING_CODES.sexBothTooSmall:
-      return w.SEX_BOTH_TOO_SMALL(warning.students.map(resolveStudent));
+      return w.SEX_BOTH_TOO_SMALL({
+        names: warning.students.map(resolveStudent),
+      });
   }
 }
 
@@ -320,7 +360,7 @@ export function renderWarning(
  * "which form do I show" at each of ITS own call sites.
  */
 export function groupName(index: number, strings: Strings): string {
-  return strings.groupLabel(index + 1);
+  return strings.groupLabel({ n: index + 1 });
 }
 
 /**
@@ -350,7 +390,7 @@ export function resultsHeadingText(
 ): string {
   return className.trim() === ''
     ? strings.resultsHeading
-    : strings.resultsHeadingNamed(className);
+    : strings.resultsHeadingNamed({ className });
 }
 
 export type { Strings };

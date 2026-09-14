@@ -57,7 +57,7 @@ export const sexWhy = (roster: Student[] | null, t: Strings): string | null => {
   // already uses for the identical question elsewhere in this codebase.
   const unset = grouped.filter((s) => !s.sex);
   if (unset.length === 0) return null;
-  return t.sexWhyUnset(unset.length, grouped.length);
+  return t.sexWhyUnset({ unset: unset.length, grouped: grouped.length });
 };
 
 /**
@@ -112,5 +112,7 @@ export const sexWhyReturning = (
   if (returned.length !== 1) return null;
   const [who] = returned;
   if (who.sex) return null;
-  return t.sexWhyReturning(who.name ? who.name : t.studentNumber(who.number));
+  return t.sexWhyReturning({
+    who: who.name ? who.name : t.studentNumber({ n: who.number }),
+  });
 };
