@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { withoutTsComments } from './source-text';
@@ -325,6 +333,66 @@ describe('a recording the report names is on disk, or the build refuses', () => 
         reportOf([{ journey: 'a journey', project: 'chromium' }]),
       ),
     ).toEqual([]);
+  });
+
+  it('refuses at the command line, before a page is written', () => {
+    // The seam: `main` has to ask `videoCandidates` BEFORE it writes. A page
+    // written anyway is the #165 page again, whatever the function would say.
+    const dir = mkdtempSync(join(scratch, 'run-'));
+    mkdirSync(join(dir, 'chromium'));
+    // The PNG signature and a 1x1 IHDR: all the builder reads of a capture.
+    writeFileSync(
+      join(dir, 'chromium', 'a__01.png'),
+      Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001', 'hex'),
+    );
+    writeFileSync(
+      join(dir, EVIDENCE_MANIFEST),
+      JSON.stringify({
+        project: 'chromium',
+        title: 'suite > a journey',
+        order: 1,
+        label: 'first thing',
+        file: 'chromium/a__01.png',
+      }) + '\n',
+    );
+    const content = join(dir, 'content.json');
+    writeFileSync(content, JSON.stringify(CONTENT));
+    const page = join(dir, 'page.html');
+    const buildWith = (video: string) => {
+      writeFileSync(
+        join(dir, EVIDENCE_REPORT),
+        JSON.stringify(
+          reportOf([{ journey: 'a journey', project: 'chromium', video }]),
+        ),
+      );
+      return spawnSync(
+        process.execPath,
+        [
+          'scripts/build-evidence-page.mjs',
+          '--evidence',
+          dir,
+          '--content',
+          content,
+          '--out',
+          page,
+        ],
+        { encoding: 'utf8' },
+      );
+    };
+
+    const refused = buildWith(join(dir, 'gone.webm'));
+    expect(refused.status, refused.stdout).not.toBe(0);
+    expect(refused.stderr).toContain('"a journey" on chromium');
+    expect(existsSync(page), 'a page was written without its recordings').toBe(
+      false,
+    );
+
+    // Positive control: the same directory builds once the recording exists,
+    // so the refusal above is about the recording and nothing else.
+    const built = buildWith(recording('present.webm', 10));
+    expect(built.status, built.stderr).toBe(0);
+    expect(built.stdout).toContain('videos=1/1');
+    expect(existsSync(page)).toBe(true);
   });
 });
 
