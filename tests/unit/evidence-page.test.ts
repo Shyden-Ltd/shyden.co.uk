@@ -1,6 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
 import { reportLocation } from '../../scripts/test-e2e.mjs';
@@ -12,11 +21,13 @@ import {
 } from '../../scripts/evidence-files.mjs';
 import { captureOptions } from '../e2e/evidence';
 import {
+  droppedLine,
   imageSize,
   mediaType,
   PUBLISH_NOTE,
   renderEvidencePage,
   selectMedia,
+  videoCandidates,
 } from '../../scripts/build-evidence-page.mjs';
 
 /**
@@ -174,6 +185,215 @@ describe('media selection respects a budget and says what it dropped', () => {
     expect(kept).toHaveLength(1);
     expect(dropped).toEqual([]);
   });
+
+  it('names every recording the budget left out, not only how many', () => {
+    // `selectMedia` hands back WHAT it dropped so the build can say which; a
+    // bare count sends the operator hunting through the page for the gaps.
+    const line = droppedLine(
+      [
+        { key: 'a-journey|webkit', bytes: 900 },
+        { key: 'b-journey|firefox', bytes: 900 },
+      ],
+      12,
+    );
+    expect(line).toContain('DROPPED=2 (budget 12MB)');
+    expect(line).toContain('a-journey|webkit');
+    expect(line).toContain('b-journey|firefox');
+  });
+
+  it('adds nothing to the build line when nothing was dropped', () => {
+    expect(droppedLine([], 12)).toBe('');
+  });
+
+  it('still shows, per journey, which engine the budget left out', () => {
+    // Left out for size is a decision the page reports. Only a recording the
+    // disk does not have is refused, below.
+    const html = build({
+      videos: new Map([['a-journey|chromium', 'data:video/webm;base64,AAAA']]),
+    });
+    expect(html).toContain('Journey recordings (1 of 2 engines embedded)');
+    expect(html).toContain(
+      '<div class="novid mono">not embedded</div><figcaption class="mono">webkit</figcaption>',
+    );
+  });
+});
+
+/**
+ * A recording the report names is on disk, or there is no page.
+ *
+ * #165: Playwright wrote the videos into `test-results/`, the next ordinary run
+ * cleared that directory as it started, and all 25 were gone while the captures
+ * and the report beside them survived. The builder skipped each missing file
+ * and built anyway -- "0 of 5 engines embedded" on every journey, which reads
+ * exactly like a budget decision. A dangling path is lost evidence, and the
+ * build names it.
+ */
+describe('a recording the report names is on disk, or the build refuses', () => {
+  let scratch = '';
+  beforeAll(() => {
+    scratch = mkdtempSync(join(tmpdir(), 'evidence-recordings-'));
+  });
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  /** A real file, so the check reads the disk rather than a stand-in for it. */
+  const recording = (name: string, size: number) => {
+    const path = join(scratch, name);
+    writeFileSync(path, Buffer.alloc(size));
+    return path;
+  };
+
+  /** A json report with one passing result per recording, grouped by journey. */
+  const reportOf = (
+    recordings: { journey: string; project: string; video?: string }[],
+  ) => ({
+    ...REPORT,
+    suites: [
+      {
+        specs: [...new Set(recordings.map((r) => r.journey))].map((title) => ({
+          title,
+          tests: recordings
+            .filter((r) => r.journey === title)
+            .map((r) => ({
+              projectName: r.project,
+              results: [
+                {
+                  status: 'passed',
+                  duration: 500,
+                  attachments: r.video
+                    ? [
+                        {
+                          name: 'video',
+                          contentType: 'video/webm',
+                          path: r.video,
+                        },
+                      ]
+                    : [],
+                },
+              ],
+            })),
+        })),
+      },
+    ],
+  });
+
+  it('names every journey and engine whose recording is gone', () => {
+    const report = reportOf([
+      {
+        journey: 'a journey',
+        project: 'chromium',
+        video: recording('kept.webm', 10),
+      },
+      {
+        journey: 'a journey',
+        project: 'webkit',
+        video: join(scratch, 'gone.webm'),
+      },
+      {
+        journey: 'another journey',
+        project: 'firefox',
+        video: join(scratch, 'also-gone.webm'),
+      },
+    ]);
+
+    let refusal = 'the build did not refuse';
+    try {
+      videoCandidates(report);
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('"a journey" on webkit');
+    expect(refusal).toContain('"another journey" on firefox');
+    expect(
+      refusal,
+      'a recording that IS on disk was reported missing',
+    ).not.toContain('on chromium');
+  });
+
+  it('keeps every recording on disk, charged for the base64 it becomes', () => {
+    const chromium = recording('a-chromium.webm', 1000);
+    const webkit = recording('a-webkit.webm', 2000);
+    expect(
+      videoCandidates(
+        reportOf([
+          { journey: 'a journey', project: 'chromium', video: chromium },
+          { journey: 'a journey', project: 'webkit', video: webkit },
+        ]),
+      ),
+    ).toEqual([
+      { key: 'a-journey|chromium', abs: chromium, bytes: 1370 },
+      { key: 'a-journey|webkit', abs: webkit, bytes: 2740 },
+    ]);
+  });
+
+  it('reads a result with no recording as nothing to embed, not as a loss', () => {
+    // An ordinary run records no video, so a missing attachment is not the
+    // defect; a path to a file that is not there is.
+    expect(
+      videoCandidates(
+        reportOf([{ journey: 'a journey', project: 'chromium' }]),
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses at the command line, before a page is written', () => {
+    // The seam: `main` has to ask `videoCandidates` BEFORE it writes. A page
+    // written anyway is the #165 page again, whatever the function would say.
+    const dir = mkdtempSync(join(scratch, 'run-'));
+    mkdirSync(join(dir, 'chromium'));
+    // The PNG signature and a 1x1 IHDR: all the builder reads of a capture.
+    writeFileSync(
+      join(dir, 'chromium', 'a__01.png'),
+      Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001', 'hex'),
+    );
+    writeFileSync(
+      join(dir, EVIDENCE_MANIFEST),
+      JSON.stringify({
+        project: 'chromium',
+        title: 'suite > a journey',
+        order: 1,
+        label: 'first thing',
+        file: 'chromium/a__01.png',
+      }) + '\n',
+    );
+    const content = join(dir, 'content.json');
+    writeFileSync(content, JSON.stringify(CONTENT));
+    const page = join(dir, 'page.html');
+    const buildWith = (video: string) => {
+      writeFileSync(
+        join(dir, EVIDENCE_REPORT),
+        JSON.stringify(
+          reportOf([{ journey: 'a journey', project: 'chromium', video }]),
+        ),
+      );
+      return spawnSync(
+        process.execPath,
+        [
+          'scripts/build-evidence-page.mjs',
+          '--evidence',
+          dir,
+          '--content',
+          content,
+          '--out',
+          page,
+        ],
+        { encoding: 'utf8' },
+      );
+    };
+
+    const refused = buildWith(join(dir, 'gone.webm'));
+    expect(refused.status, refused.stdout).not.toBe(0);
+    expect(refused.stderr).toContain('"a journey" on chromium');
+    expect(existsSync(page), 'a page was written without its recordings').toBe(
+      false,
+    );
+
+    // Positive control: the same directory builds once the recording exists,
+    // so the refusal above is about the recording and nothing else.
+    const built = buildWith(recording('present.webm', 10));
+    expect(built.status, built.stderr).toBe(0);
+    expect(built.stdout).toContain('videos=1/1');
+    expect(existsSync(page)).toBe(true);
+  });
 });
 
 describe('the generator carries no ticket prose', () => {
@@ -200,6 +420,23 @@ describe('the generator carries no ticket prose', () => {
 });
 
 /**
+ * The Playwright config as Playwright loads it, with `EVIDENCE_DIR` as given.
+ *
+ * The config reads the switch while it loads, so each call evaluates the module
+ * afresh: a copy loaded under some other environment would be a verdict about
+ * a run nobody is making.
+ */
+const configUnder = async (evidence: string | undefined) => {
+  vi.stubEnv('EVIDENCE_DIR', evidence);
+  vi.resetModules();
+  try {
+    return (await import('../../playwright.config')).default;
+  } finally {
+    vi.unstubAllEnvs();
+  }
+};
+
+/**
  * The run has to LEAVE BEHIND what the builder reads.
  *
  * `playwright.config.ts` states that an evidence run is exactly
@@ -209,6 +446,12 @@ describe('the generator carries no ticket prose', () => {
  * and the runner wrote its json into a `mkdtemp` directory it deleted in a
  * `finally`. The captures landed, the run went green, and the page could not
  * be built -- the failure surfacing one step away from its cause.
+ *
+ * The recordings had the same hole one step further out (#165). Playwright
+ * wrote them into its default `test-results/`, which every run clears as it
+ * starts, so the next ordinary run took all 25 while the captures and the
+ * report beside them survived: a directory that looks complete and builds a
+ * page with no video in it.
  *
  * A comment is not an implementation, so the promise is asserted here instead
  * of restated there.
@@ -250,6 +493,61 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
     expect(runner, 'the report directory is deleted unconditionally').toMatch(
       /if \(ephemeral\)\s*rmSync\(reportDir/,
     );
+  });
+
+  it('keeps the recordings in a directory of their own inside the evidence directory', async () => {
+    // #165. The seam is the config Playwright actually loads, not a helper it
+    // could stop calling. Playwright clears its output directory as a run
+    // starts, so the recordings need a subdirectory: pointed at the evidence
+    // directory itself, that clearing would take the captures with it.
+    for (const evidence of ['/e', 'evidence-run']) {
+      const { outputDir, use } = await configUnder(evidence);
+      expect(use?.video, `EVIDENCE_DIR=${evidence} stopped recording`).toBe(
+        'on',
+      );
+
+      const within = relative(
+        resolve(evidence),
+        resolve(outputDir ?? 'test-results'),
+      );
+      expect(
+        within !== '' && !within.startsWith('..') && !isAbsolute(within),
+        `EVIDENCE_DIR=${evidence} records into ${outputDir ?? 'test-results/'}`,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses an evidence directory that an ordinary run would clear', async () => {
+    // Inside test-results/, the next ordinary run deletes the whole evidence
+    // directory; `.` would put the recordings back into test-results/ itself.
+    for (const evidence of [
+      join('test-results', 'evidence'),
+      'test-results',
+      '.',
+    ])
+      await expect(
+        configUnder(evidence),
+        `EVIDENCE_DIR=${evidence}`,
+      ).rejects.toThrow(/test-results/);
+  });
+
+  it('accepts a directory that merely begins with the same name', async () => {
+    // A string-prefix containment check would refuse this one.
+    const { outputDir } = await configUnder('test-results-evidence');
+    expect(outputDir).toBe(resolve('test-results-evidence', 'test-results'));
+  });
+
+  it("leaves an ordinary run on Playwright's default, which CI uploads when a job fails", async () => {
+    // ci.yml and release-dev.yml keep test-results/ on failure. An ordinary run
+    // writing anywhere else would upload an empty directory and say nothing.
+    for (const evidence of [undefined, '']) {
+      const { outputDir, use } = await configUnder(evidence);
+      expect(
+        outputDir,
+        `EVIDENCE_DIR=${JSON.stringify(evidence)}`,
+      ).toBeUndefined();
+      expect(use?.video).toBe('off');
+    }
   });
 
   it('pins the two filenames the evidence directory is defined by', () => {
