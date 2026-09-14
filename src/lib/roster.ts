@@ -157,7 +157,7 @@ export interface Problem {
  * through to the numbered label.
  */
 const label = (student: Student, t: Strings): string =>
-  student.name ? student.name : t.studentNumber(student.number);
+  student.name ? student.name : t.studentNumber({ n: student.number });
 
 /**
  * Every duplicate number and together/apart clash currently in the roster
@@ -198,7 +198,10 @@ export function rosterProblems(roster: Student[], t: Strings): Problem[] {
     problems.push({
       kind: 'duplicate',
       students: [s.number],
-      message: t.rosterDuplicateMessage(s.number, label(holder, t)),
+      message: t.rosterDuplicateMessage({
+        number: s.number,
+        name: label(holder, t),
+      }),
     });
   }
 
@@ -223,7 +226,9 @@ export function rosterProblems(roster: Student[], t: Strings): Problem[] {
       problems.push({
         kind: 'clash',
         students: clashers.map((s) => s.number),
-        message: t.rosterClashMessage(clashers.map((s) => label(s, t))),
+        message: t.rosterClashMessage({
+          names: clashers.map((s) => label(s, t)),
+        }),
       });
     }
   }
@@ -248,7 +253,7 @@ export function rosterProblems(roster: Student[], t: Strings): Problem[] {
     problems.push({
       kind: 'no-sex',
       students: noSex.map((s) => s.number),
-      message: t.rosterNoSexMessage(noSex.map((s) => label(s, t))),
+      message: t.rosterNoSexMessage({ names: noSex.map((s) => label(s, t)) }),
     });
   }
 
@@ -296,7 +301,7 @@ export function rosterWarnings(roster: Student[], t: Strings): string[] {
   for (let n = min; n <= max; n++) {
     if (!present.has(n)) missing.push(n);
   }
-  return missing.length === 0 ? [] : [t.rosterGapWarning(missing)];
+  return missing.length === 0 ? [] : [t.rosterGapWarning({ missing })];
 }
 
 /**
@@ -338,7 +343,7 @@ export function rosterRoomProblem(
   t: Strings,
 ): string | null {
   const room = Math.max(0, MAX_ROSTER - roster.length);
-  return count <= room ? null : t.rosterRoomMessage(room);
+  return count <= room ? null : t.rosterRoomMessage({ room });
 }
 
 /**
@@ -364,7 +369,7 @@ export function rosterOpenProblem(
   t: Strings,
 ): string | null {
   return rosterLength === 0 && count > MAX_ROSTER
-    ? t.rosterOpenRefusedMessage(MAX_ROSTER)
+    ? t.rosterOpenRefusedMessage({ max: MAX_ROSTER })
     : null;
 }
 

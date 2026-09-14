@@ -410,7 +410,10 @@ export function parseRoster(
       problems: [
         {
           row: null,
-          message: t.csvProblemTooMany(dataRows.length, MAX_ROSTER),
+          message: t.csvProblemTooMany({
+            found: dataRows.length,
+            max: MAX_ROSTER,
+          }),
         },
       ],
     };
@@ -433,14 +436,20 @@ export function parseRoster(
     const rawNumber = (cells[numberAt] ?? '').trim();
     let number: number | null = null;
     if (rawNumber === '') {
-      problem(t.csvProblemNumberBlank(rowNumber));
+      problem(t.csvProblemNumberBlank({ row: rowNumber }));
     } else if (!/^\d+$/.test(rawNumber)) {
-      problem(t.csvProblemNumberNotWhole(rowNumber, rawNumber));
+      problem(t.csvProblemNumberNotWhole({ row: rowNumber, value: rawNumber }));
     } else {
       number = Number(rawNumber);
       const first = claimedBy.get(number);
       if (first !== undefined) {
-        problem(t.csvProblemDuplicateNumber(rowNumber, number, first));
+        problem(
+          t.csvProblemDuplicateNumber({
+            row: rowNumber,
+            value: number,
+            firstRow: first,
+          }),
+        );
       } else {
         claimedBy.set(number, rowNumber);
       }
@@ -454,7 +463,11 @@ export function parseRoster(
       else if (upper === table.sex.F.toUpperCase()) sex = 'F';
       else
         problem(
-          t.csvProblemSex(rowNumber, rawSex, `${table.sex.M}, ${table.sex.F}`),
+          t.csvProblemSex({
+            row: rowNumber,
+            value: rawSex,
+            accepted: `${table.sex.M}, ${table.sex.F}`,
+          }),
         );
     }
 
@@ -466,11 +479,11 @@ export function parseRoster(
       else if (lower === table.absentNo.toLowerCase()) absent = false;
       else
         problem(
-          t.csvProblemAbsent(
-            rowNumber,
-            rawAbsent,
-            `${table.absentYes}, ${table.absentNo}`,
-          ),
+          t.csvProblemAbsent({
+            row: rowNumber,
+            value: rawAbsent,
+            accepted: `${table.absentYes}, ${table.absentNo}`,
+          }),
         );
     }
 
@@ -482,7 +495,13 @@ export function parseRoster(
       const raw = at(cells, column);
       if (raw === '') return null;
       if (!/^\p{L}$/u.test(raw)) {
-        problem(t.csvProblemLetter(rowNumber, table.columns[column], raw));
+        problem(
+          t.csvProblemLetter({
+            row: rowNumber,
+            column: table.columns[column],
+            value: raw,
+          }),
+        );
         return null;
       }
       return raw.toUpperCase();
@@ -594,10 +613,10 @@ export function importFile(
       problems: [
         {
           row: null,
-          message: t.csvWrongLanguage(
-            t.csvLanguageName[found],
-            t.csvLanguageVersion[found],
-          ),
+          message: t.csvWrongLanguage({
+            language: t.csvLanguageName[found],
+            version: t.csvLanguageVersion[found],
+          }),
         },
       ],
     };

@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE } from './index';
+import { DEFAULT_LOCALE } from './locales';
 
 /**
  * Everything that differs per language, in one table.
