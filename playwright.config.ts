@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 /**
  * Specs that assert HTTP responses and DOM text, and never render.
@@ -76,8 +77,49 @@ const ENGINES = [
   { name: 'mobile-safari', device: 'iPhone 13' },
 ] as const;
 
+/** Whether `path` is `dir` itself or anywhere beneath it. */
+const isWithin = (dir: string, path: string): boolean => {
+  const rel = relative(dir, path);
+  return !(rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel));
+};
+
+/**
+ * Where an evidence run keeps what Playwright writes, recordings included --
+ * or `undefined`, which leaves an ordinary run on the default `test-results/`.
+ *
+ * Playwright clears its output directory when a run starts. Left at the
+ * default, an evidence run's recordings lasted until the next run of any kind:
+ * 25 of 25 were gone while the captures and the report beside them survived,
+ * a directory that looked complete and built a page with no video in it
+ * (#165). So the switch that turns recording on also moves the output into the
+ * evidence directory, in a subdirectory of its own -- that clearing must never
+ * reach the captures, the manifest or the report.
+ *
+ * Resolved against the working directory, as `tests/e2e/evidence.ts` and
+ * `scripts/test-e2e.mjs` resolve `EVIDENCE_DIR`, so all three name one place.
+ * An ordinary run keeps the default because `ci.yml` and `release-dev.yml`
+ * upload `test-results/` when a job fails.
+ */
+const evidenceOutputDir = (
+  evidence: string | undefined,
+): string | undefined => {
+  if (!evidence) return undefined;
+  const outputDir = resolve(evidence, 'test-results');
+  const cleared = resolve('test-results');
+  if (isWithin(cleared, outputDir))
+    throw new Error(
+      `EVIDENCE_DIR=${evidence} would keep the recordings in ${outputDir}, ` +
+        `inside ${cleared}, which every Playwright run clears as it starts ` +
+        '(#165). Choose an evidence directory outside test-results/.',
+    );
+  return outputDir;
+};
+
 export default defineConfig({
   testDir: './tests/e2e',
+  // An evidence run keeps its recordings inside EVIDENCE_DIR; an ordinary run
+  // stays on the default `test-results/`. See `evidenceOutputDir` above.
+  outputDir: evidenceOutputDir(process.env.EVIDENCE_DIR),
   fullyParallel: true,
   // Measure the bytes that ship, not the ones the dev server improvises.
   // `astro dev` renders on request and skips build-time steps — compressHTML,
@@ -220,12 +262,14 @@ export default defineConfig({
     // ~2200 tests is minutes of wall clock and gigabytes of disk. Gated on the
     // same switch tests/e2e/evidence.ts uses, so an evidence run is exactly
     // `EVIDENCE_DIR=<dir> npm run test:e2e -- <spec>` and needs no second flag
-    // anybody could forget. That sentence was false until the switch also
-    // moved the json report into the same directory: the page is built from
-    // the report AND the captures, so the documented invocation produced a
-    // directory the builder could not read. See `reportLocation` in
-    // `scripts/test-e2e.mjs` and the seam guard in
-    // `tests/unit/evidence-page.test.ts`.
+    // anybody could forget. It leaves in `<dir>` everything the page is built
+    // from: the captures and `manifest.jsonl` (tests/e2e/evidence.ts),
+    // `report.json` (`reportLocation` in scripts/test-e2e.mjs) and the
+    // recordings, under `<dir>/test-results/` (`evidenceOutputDir` above).
+    // That sentence was false twice -- the report first landed in a temp
+    // directory that was deleted, then the recordings stayed in the root
+    // `test-results/`, which the next run of any kind clears (#165). Both are
+    // pinned by the seam guards in `tests/unit/evidence-page.test.ts`.
     video: process.env.EVIDENCE_DIR ? 'on' : 'off',
   },
   projects: [
