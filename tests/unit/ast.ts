@@ -273,8 +273,8 @@ export function declarationsIn(sf: ts.SourceFile): Map<string, ts.Expression> {
  *
  * Two places look like trivia and are not. A JSDoc node's own children sit
  * INSIDE a comment, and JSX text is content the scanner copies verbatim, so
- * asking at either reads a `//` in a `{@link https://…}`, or a `/**` between
- * two tags, as a comment that does not exist.
+ * asking at either reads a `/**` written just after a `{@link}`, or between
+ * two JSX tags, as a comment that does not exist.
  */
 export function commentsIn(sf: ts.SourceFile): ts.CommentRange[] {
   const text = sf.getFullText();

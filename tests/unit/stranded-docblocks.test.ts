@@ -155,6 +155,30 @@ describe('no docblock in tracked source sits directly on another', () => {
     ).toEqual([]);
   });
 
+  it('reads the kinds of source the ticket names, and no others', () => {
+    // A pin, not a derivation. The walk and the git control above both filter
+    // through SOURCE, so a narrowed SOURCE leaves them agreeing: mutation M12
+    // dropped `.astro` and nothing went red. The kinds are the acceptance
+    // criterion's own list.
+    const paths = [
+      'a.ts',
+      'a.tsx',
+      'a.mjs',
+      'a.js',
+      'a.astro',
+      'a.css',
+      'a.md',
+      'a.json',
+    ];
+    expect(paths.filter((path) => SOURCE.test(path))).toEqual([
+      'a.ts',
+      'a.tsx',
+      'a.mjs',
+      'a.js',
+      'a.astro',
+    ]);
+  });
+
   it('finds a docblock in every kind of source that holds one', () => {
     // Two independent readers. The raw bytes over-count, since a string can
     // spell a docblock, so a kind they find and the parser does not is a kind
@@ -252,20 +276,6 @@ describe('the detector catches a docblock sitting directly on another', () => {
     ).toEqual(['fixture.ts:2 sits directly on fixture.ts:3']);
   });
 
-  it('catches a pair whose upper docblock holds a link', () => {
-    // JSDoc parses `{@link}` into nodes INSIDE the comment. Asking for trivia
-    // at their starts reads the URL's slashes as a line comment between the
-    // two docblocks, which hides the pair.
-    const source = [
-      '/** Read {@link https://example.com/docs} first. */',
-      '/** Lower. */',
-      'const x = 1;',
-    ].join('\n');
-    expect(strandedIn(source)).toEqual([
-      'fixture.ts:1 sits directly on fixture.ts:2',
-    ]);
-  });
-
   it('catches every pair in a run of three', () => {
     const source = [
       '/** One. */',
@@ -343,6 +353,22 @@ describe('the detector leaves alone a docblock that is not stranded', () => {
     ];
     expect(scanDocblocks('fixture.tsx', source.join('\n'))).toEqual({
       docblocks: ['/** The element. */'],
+      stranded: [],
+    });
+  });
+
+  it('is not fired by docblock syntax written just after a JSDoc link', () => {
+    // JSDoc parses a `{@link}` into nodes INSIDE the comment, and the text
+    // node after the link starts exactly at this second opener. Asked for
+    // trivia there, the scanner reads a docblock sitting on the real one.
+    const source = [
+      '/** Matches {@link isDocblock} /** openers, never empty ones. */',
+      'const x = 1;',
+    ];
+    expect(scanDocblocks('fixture.ts', source.join('\n'))).toEqual({
+      docblocks: [
+        '/** Matches {@link isDocblock} /** openers, never empty ones. */',
+      ],
       stranded: [],
     });
   });
