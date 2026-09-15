@@ -1,6 +1,8 @@
 import type { MvpLocale } from './metadata';
-// With its extension: the DeepL scripts load this module under plain Node,
+// With their extensions: the DeepL scripts load this module under plain Node,
 // which resolves nothing without one.
+import { CSV_LOCALES } from '../csv-locale.ts';
+import { en } from './en.ts';
 import {
   MessageSyntaxError,
   describeMessage,
@@ -8,6 +10,7 @@ import {
   parseMessage,
   type MessagePart,
 } from './message.ts';
+import { siteEn } from './site.ts';
 
 /**
  * The decisions the DeepL harness makes, with no I/O in sight.
@@ -313,6 +316,40 @@ export function translationUnits(value: unknown): string[] {
 }
 
 /**
+ * Every distinct sentence the harness sends, from every English catalogue the
+ * site ships. One home since #164, for two readers that must agree:
+ * `scripts/i18n-translate.mjs` sends from it and prunes the cache to it, and
+ * `tests/unit/translate.test.ts` fails when the committed cache holds a draft
+ * outside it.
+ *
+ * `en` alone was the whole collection until #22, which is how the header,
+ * footer, homepage and 404 copy came to be invisible to the translator: they
+ * live in `site.ts`. The CSV vocabulary is the third catalogue: every word a
+ * downloaded file carries has to match the language of the page it came
+ * from, which makes it copy. Its `sex` tokens are the one part held back --
+ * see CSV_KEYS_NOT_TRANSLATED.
+ *
+ * A Set: the same word appears under several keys, and DeepL charges per
+ * character sent, not per distinct string.
+ */
+export function translatableSentences(): ReadonlySet<string> {
+  const csv = Object.fromEntries(
+    Object.entries(CSV_LOCALES.en).filter(
+      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
+    ),
+  );
+  return new Set([en, siteEn, csv].flatMap(unitsIn));
+}
+
+/** Every unit a catalogue sends, walked depth-first in its own key order. */
+function unitsIn(table: unknown): string[] {
+  if (Array.isArray(table)) return table.flatMap(unitsIn);
+  if (table && typeof table === 'object')
+    return Object.values(table).flatMap(unitsIn);
+  return translationUnits(table);
+}
+
+/**
  * A message as a translator can take it, and how it is put back. #136.
  *
  * Template syntax is not prose: sent whole, DeepL translates "other", moves
@@ -503,6 +540,34 @@ export const needsSending = (
   sentence: string,
   cached: string | undefined,
 ): boolean => cached === undefined || !slotsKept(sentence, cached);
+
+/**
+ * A locale's drafts, split by whether the harness still sends their English
+ * (#164).
+ *
+ * The cache is keyed by English sentence, and the harness used to write back
+ * every draft it had read, so a draft outlived the copy it translated: 18 in
+ * each of zh, vi, th and id, all retired homepage copy, reading exactly like
+ * live translations in a file no page is ever checked against.
+ *
+ * `kept` holds the rest in the order they were cached, so a pruned cache is a
+ * diff of removed lines rather than a reshuffled file. A draft whose slots
+ * changed is kept: its sentence is still sent, and `needsSending` replaces it.
+ */
+export function pruneDrafts(
+  drafts: Readonly<Record<string, string>>,
+  sentences: ReadonlySet<string>,
+): { kept: Record<string, string>; stale: string[] } {
+  const entries = Object.entries(drafts);
+  return {
+    kept: Object.fromEntries(
+      entries.filter(([english]) => sentences.has(english)),
+    ),
+    stale: entries
+      .filter(([english]) => !sentences.has(english))
+      .map(([english]) => english),
+  };
+}
 
 /**
  * The better of a sentence's two drafts. Bare keeps spaces and words whole, so

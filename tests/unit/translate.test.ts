@@ -1,7 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { blankCommentLines, isMarkerCommentLine } from './source-text';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { MVP_LOCALES } from '../../src/lib/i18n/metadata';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
@@ -17,9 +27,11 @@ import {
   deeplLanguage,
   needsTranslation,
   protectTerms,
+  pruneDrafts,
   unescapeXml,
   unprotectTerms,
   untranslatedKeys,
+  translatableSentences,
   translationUnits,
   TRANSLATABLE_LOCALES,
 } from '../../src/lib/i18n/translate';
@@ -259,20 +271,18 @@ describe('protected terms are wrapped before they are sent', () => {
     // it cannot notice the HARNESS collecting less -- mutation-verified:
     // narrowing the walk to `en` alone left every test green, because no
     // string in `en` carries an ampersand and the round trip then holds
-    // trivially. This binds the script to the three sources by name, which is
-    // the direction that actually goes wrong: site copy was invisible to the
-    // translator for an entire release because nothing asserted it was seen.
-    const script = blankCommentLines(
-      readFileSync(join('scripts', 'i18n-translate.mjs'), 'utf8'),
+    // trivially. Site copy was invisible to the translator for an entire
+    // release because nothing asserted it was seen.
+    //
+    // Until #164 this scanned the script for `collect(en)` by name. The
+    // collection now has one home, `translatableSentences`, which the harness
+    // sends from and the stale-draft guard reads, so it is pinned here to this
+    // file's independent walk: a missing catalogue, or the CSV `sex` tokens
+    // sent after all, changes the set. That the script really uses it is
+    // proved by running the script -- see `--prune` below.
+    expect([...translatableSentences()].sort()).toEqual(
+      collectCatalogue().sort(),
     );
-    for (const [source, why] of [
-      ['collect(en)', "the tool's own catalogue"],
-      ['collect(siteEn)', 'header, footer, homepage and 404 copy'],
-      ['CSV_LOCALES', 'every word a downloaded file carries'],
-      ['translationUnits(', 'each message as its sentences, never its syntax'],
-    ]) {
-      expect(script, `the harness must collect ${why}`).toContain(source);
-    }
   });
 
   it('round-trips every real catalogue string through the whole pipeline', () => {
@@ -387,5 +397,263 @@ describe('the harness never runs itself', () => {
     expect(
       searched(offenders, { of: shipped, what: 'shipped source files' }),
     ).toEqual([]);
+  });
+});
+
+/**
+ * #164. The cache only ever grew.
+ *
+ * `.translations.json` is keyed by English sentence, and the harness wrote
+ * back every draft it had read, so a draft outlived the copy it translated:
+ * zh, vi, th and id each carried 18 drafts of retired homepage copy that no
+ * page shows and nobody reviews, in the file a reviewer is asked to read.
+ */
+describe('a draft whose English is retired is dropped', () => {
+  it('splits the drafts by whether their English is still sent, keeping their order', () => {
+    const drafts = {
+      'Get in touch': '联系我们',
+      'Add a student': '添加学生',
+      'See our work': '查看我们的作品',
+      'Split the class': '分班',
+    };
+    const handed = JSON.stringify(drafts);
+    const { kept, stale } = pruneDrafts(
+      drafts,
+      new Set(['Split the class', 'Add a student', 'Never drafted']),
+    );
+    // The CACHE's order, not the collection's: a pruned cache is a diff of
+    // removed lines, never a reshuffled file.
+    expect(Object.entries(kept)).toEqual([
+      ['Add a student', '添加学生'],
+      ['Split the class', '分班'],
+    ]);
+    expect(stale).toEqual(['Get in touch', 'See our work']);
+    expect(JSON.stringify(drafts), 'it changed the drafts it was handed').toBe(
+      handed,
+    );
+  });
+
+  it('keeps a draft that changed a slot, because its sentence is still sent', () => {
+    // Pending is not stale: `needsSending` sends that sentence again, and the
+    // run replaces the draft rather than losing it.
+    const sentence = '{names} left after {n} rounds.';
+    expect(
+      pruneDrafts({ [sentence]: '{names} 离开了。' }, new Set([sentence])),
+    ).toEqual({ kept: { [sentence]: '{names} 离开了。' }, stale: [] });
+  });
+
+  it('drops every draft when nothing is sent', () => {
+    // Why an emptied collection makes the stale-draft guard loud, not vacuous.
+    expect(pruneDrafts({ 'Get in touch': '联系我们' }, new Set())).toEqual({
+      kept: {},
+      stale: ['Get in touch'],
+    });
+  });
+
+  it('holds no draft in the committed cache for English the harness does not send', () => {
+    // The guard #164 exists for. It reads the harness's own collection, never
+    // a list of its own, so copy retired from any catalogue turns this red the
+    // day it goes, naming each draft left behind by locale.
+    //
+    // The population proved live is the DRAFTS: an empty cache is the one
+    // world in which this passes having read nothing. An empty collection is
+    // not -- every draft would then be stale, and this goes red.
+    const cache: Record<string, Record<string, string>> = JSON.parse(
+      readFileSync(join('src', 'lib', 'i18n', '.translations.json'), 'utf8'),
+    );
+    const sent = translatableSentences();
+    const stale = Object.entries(cache).flatMap(([locale, drafts]) =>
+      Object.keys(drafts)
+        .filter((english) => !sent.has(english))
+        .map((english) => `${locale}: ${english}`),
+    );
+    expect(
+      searched(stale, {
+        of: Object.values(cache).flatMap((drafts) => Object.keys(drafts)),
+        what: 'cached drafts',
+      }),
+      'drafts for English no catalogue sends -- run `npm run i18n:translate -- <locale> --prune`',
+    ).toEqual([]);
+  });
+
+  it('has nothing to drop for a locale with no drafts', () => {
+    expect(pruneDrafts({}, new Set(['Add a student']))).toEqual({
+      kept: {},
+      stale: [],
+    });
+  });
+});
+
+/**
+ * #164. The harness itself, run the way a person runs it.
+ *
+ * Everything above is pure because the script is a top-level-await module
+ * that calls the network on import -- but it can still be RUN. It reads its
+ * cache and `.env.local` from the working directory and its imports from its
+ * own location, so a scratch directory hands it a fixture cache and no key
+ * while it loads the real catalogues. `fetch` is the one thing replaced:
+ * `tests/fetch-trap.mjs` records a request and refuses it, which is how
+ * `--prune` is proved to make none.
+ */
+describe('the harness prunes the cache it writes', () => {
+  const script = resolve('scripts', 'i18n-translate.mjs');
+  const trap = pathToFileURL(resolve('tests', 'fetch-trap.mjs')).href;
+  /** Invented, so no catalogue will ever send them. */
+  const retired = [
+    'A sentence no catalogue sends.',
+    'Copy retired before #164.',
+  ];
+  let dir = '';
+  let cachePath = '';
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'i18n-translate-'));
+    // The script's own relative path, resolved against the scratch directory.
+    cachePath = join(dir, 'src', 'lib', 'i18n', '.translations.json');
+    mkdirSync(dirname(cachePath), { recursive: true });
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  /**
+   * zh with a draft for every sentence the catalogues send and the two retired
+   * ones among them; vi with one of each, to show a run touches only its own
+   * locale. Every draft is its own English, which keeps its slots, so nothing
+   * is pending and `--send` reaches its write-back without a request.
+   */
+  function writeFixture(): string {
+    const live = collectCatalogue();
+    const half = Math.floor(live.length / 2);
+    const cache = {
+      zh: Object.fromEntries([
+        [retired[0], '一句没有目录发送的话。'],
+        ...live.slice(0, half).map((s) => [s, s]),
+        [retired[1], '#164 之前退役的文案。'],
+        ...live.slice(half).map((s) => [s, s]),
+      ]),
+      vi: {
+        [retired[0]]: 'Một câu không danh mục nào gửi.',
+        [live[0]]: live[0],
+      },
+    };
+    const bytes = `${JSON.stringify(cache, null, 2)}\n`;
+    writeFileSync(cachePath, bytes);
+    return bytes;
+  }
+
+  /** One run of the real script, from the scratch directory, behind the trap. */
+  function harness(args: string[], apiKey?: string) {
+    const record = join(dir, 'fetch-trap.log');
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      FETCH_TRAP_RECORD: record,
+    };
+    delete env.DEEPL_API_KEY;
+    if (apiKey !== undefined) env.DEEPL_API_KEY = apiKey;
+    const run = spawnSync(
+      process.execPath,
+      ['--no-warnings', '--import', trap, script, ...args],
+      { cwd: dir, env, encoding: 'utf8' },
+    );
+    // Everything the trap wrote: `loaded` first, then a line per request. A
+    // run whose trap never loaded has an empty log, and `searched` refuses to
+    // call the requests drawn from an empty log "none".
+    const log = existsSync(record)
+      ? readFileSync(record, 'utf8')
+          .split('\n')
+          .filter((line) => line !== '')
+      : [];
+    return {
+      status: run.status,
+      output: `${run.stdout}${run.stderr}`,
+      log,
+      requests: log
+        .filter((line) => line.startsWith('request '))
+        .map((line) => line.slice('request '.length)),
+    };
+  }
+
+  const cached = () => JSON.parse(readFileSync(cachePath, 'utf8'));
+
+  it('reports the stale drafts on a dry run and writes nothing', () => {
+    const before = writeFixture();
+    const run = harness(['zh']);
+    expect(run.status, run.output).toBe(0);
+    expect(readFileSync(cachePath, 'utf8'), 'a dry run wrote the cache').toBe(
+      before,
+    );
+    expect(run.output).toMatch(/^stale +2 drafts no catalogue sends$/m);
+    expect(
+      searched(run.requests, { of: run.log, what: 'fetch trap log lines' }),
+      'a dry run made a request',
+    ).toEqual([]);
+  });
+
+  it('drops the stale drafts with --prune, with no key and no request', () => {
+    const before = writeFixture();
+    const run = harness(['zh', '--prune']);
+    expect(run.status, run.output).toBe(0);
+    expect(Object.keys(cached().zh), 'the drafts --prune kept').toEqual(
+      collectCatalogue(),
+    );
+    expect(cached().vi, 'a locale nobody named was pruned').toEqual(
+      JSON.parse(before).vi,
+    );
+    expect(
+      searched(run.requests, { of: run.log, what: 'fetch trap log lines' }),
+      '--prune made a request',
+    ).toEqual([]);
+    expect(run.output).toMatch(
+      /^✓ dropped 2 stale drafts — nothing sent, no key read\.$/m,
+    );
+  });
+
+  it('drops the stale drafts as --send writes, even with nothing to send', () => {
+    writeFixture();
+    const run = harness(['zh', '--send'], 'test-key:fx');
+    expect(run.status, run.output).toBe(0);
+    expect(Object.keys(cached().zh), 'the drafts --send kept').toEqual(
+      collectCatalogue(),
+    );
+    expect(
+      searched(run.requests, { of: run.log, what: 'fetch trap log lines' }),
+      'nothing was pending, yet it sent',
+    ).toEqual([]);
+  });
+
+  it('writes nothing when --prune has nothing to drop', () => {
+    const run = harness(['zh', '--prune']);
+    expect(run.status, run.output).toBe(0);
+    expect(existsSync(cachePath), '--prune wrote a cache with no drafts').toBe(
+      false,
+    );
+    expect(run.output).toMatch(/^stale +0 drafts no catalogue sends$/m);
+  });
+
+  it('refuses --send and --prune together', () => {
+    const before = writeFixture();
+    const run = harness(['zh', '--send', '--prune'], 'test-key:fx');
+    expect(run.status, run.output).toBe(1);
+    expect(readFileSync(cachePath, 'utf8'), 'a refused run wrote').toBe(before);
+    expect(run.output).toMatch(/^✗ --send and --prune cannot be combined: /m);
+  });
+
+  it('refuses an option it does not know, rather than dry-running past a typo', () => {
+    const run = harness(['zh', '--prnue']);
+    expect(run.status, run.output).toBe(1);
+    expect(run.output).toMatch(/^✗ unknown option --prnue — /m);
+  });
+
+  it('is watched by a trap that catches a real request', () => {
+    // The control for every "made a request" above: the same trap, a key and
+    // sentences to send. Without it, a trap that stopped recording would pass
+    // every one of them.
+    writeFileSync(cachePath, `${JSON.stringify({ zh: {} }, null, 2)}\n`);
+    const before = readFileSync(cachePath, 'utf8');
+    const run = harness(['zh', '--send'], 'test-key:fx');
+    expect(run.status, 'a refused request did not fail the run').not.toBe(0);
+    expect(run.requests).toHaveLength(1);
+    expect(run.requests[0]).toMatch(/^https:\/\/api-free\.deepl\.com\//);
+    expect(run.output, 'the key reached the output').not.toContain('test-key');
+    expect(readFileSync(cachePath, 'utf8'), 'a failed run wrote').toBe(before);
   });
 });

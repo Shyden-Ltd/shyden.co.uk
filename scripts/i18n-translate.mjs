@@ -4,12 +4,19 @@
  *
  *   npm run i18n:translate -- zh            # DRY RUN — sends nothing
  *   npm run i18n:translate -- zh --send     # actually calls DeepL
+ *   npm run i18n:translate -- zh --prune    # drops stale drafts — no key, no request
  *
  * DRY RUN IS THE DEFAULT, deliberately. A translation run spends a finite
  * free-tier quota and is the kind of thing that gets triggered by a stray
  * shell-history arrow key; the dry run prints exactly what would be sent and
  * how many characters it costs, so the spend is a decision rather than a
  * side effect. It is also what lets this stage ship "built but not run".
+ *
+ * A draft is kept only while its English is still sent (#164). The cache used
+ * to keep every draft it had ever been given, so retired copy lingered in it
+ * reading like live translation. A send drops the stale drafts as it writes;
+ * `--prune` drops them with no key and no request, which is how a locale that
+ * still has sentences to send is tidied without spending quota on them.
  *
  * Committed output, never a build step (#21's acceptance criteria). Nothing
  * here runs in CI: a deploy must not depend on a third-party API being up,
@@ -26,27 +33,27 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { argv, env, exit } from 'node:process';
 
 import {
-  CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
   betterDraft,
   buildRequestBody,
   deeplEndpoint,
   deeplLanguage,
   needsSending,
+  pruneDrafts,
   slotsKept,
+  translatableSentences,
   unescapeXml,
   unprotectTerms,
   untranslatedKeys,
-  translationUnits,
   TRANSLATABLE_LOCALES,
 } from '../src/lib/i18n/translate.ts';
 import { en } from '../src/lib/i18n/en.ts';
-import { siteEn } from '../src/lib/i18n/site.ts';
-import { CSV_LOCALES } from '../src/lib/csv-locale.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
 /** DeepL accepts up to 50 texts per request. */
 const BATCH = 50;
+const OPTIONS = ['--send', '--prune'];
+const USAGE = `usage: npm run i18n:translate -- <locale> [${OPTIONS.join(' | ')}]`;
 
 const die = (message) => {
   console.error(`✗ ${message}`);
@@ -56,69 +63,35 @@ const die = (message) => {
 // ── arguments ──────────────────────────────────────────────────────────────
 const args = argv.slice(2);
 const send = args.includes('--send');
+const prune = args.includes('--prune');
 const target = args.find((a) => !a.startsWith('--'));
 
-if (!target) die('usage: npm run i18n:translate -- <locale> [--send]');
+// Refused, not ignored: a mistyped `--prune` read as no option at all is a
+// dry run, which at a glance looks like the prune it was meant to be.
+const unknown = args.filter((a) => a.startsWith('--') && !OPTIONS.includes(a));
+if (unknown.length > 0) die(`unknown option ${unknown.join(', ')} — ${USAGE}`);
+if (send && prune)
+  die('--send and --prune cannot be combined: a send prunes as it writes');
+if (!target) die(USAGE);
 if (!TRANSLATABLE_LOCALES.includes(target))
   die(`${target} is not an MVP locale (${TRANSLATABLE_LOCALES.join(', ')})`);
 if (target === 'en') die('en is the source language, not a target');
 
-/**
- * The key, read from the environment or `.env.local`.
- *
- * Never printed, never interpolated into a URL or an error. `.env.local` is
- * gitignored (`.env.*`), and the same value lives as a repo secret.
- */
-const apiKey =
-  env.DEEPL_API_KEY ??
-  (existsSync('.env.local')
-    ? (/^DEEPL_API_KEY=(.*)$/m.exec(readFileSync('.env.local', 'utf8'))?.[1] ??
-      '')
-    : '');
-
 // ── what would be sent ─────────────────────────────────────────────────────
 const cache = existsSync(CACHE) ? JSON.parse(readFileSync(CACHE, 'utf8')) : {};
-const known = cache[target] ?? {};
 
 /**
- * Every distinct sentence the translator is sent: copy as it is, and each
- * message as the whole sentences it can say (`translationUnits`, #136).
+ * Every distinct sentence the translator is sent, from every catalogue the
+ * site ships (`translatableSentences`, one home since #164).
  *
- * A Set: the same word appears under several keys, and DeepL charges per
- * character sent, not per distinct string. Cached by the SOURCE TEXT rather
- * than a hash of it — no collisions, and the cache file stays reviewable in a
- * diff, which matters when the thing being reviewed is a translation.
+ * Cached by the SOURCE TEXT rather than a hash of it — no collisions, and the
+ * cache file stays reviewable in a diff, which matters when the thing being
+ * reviewed is a translation.
  */
-const strings = new Set();
-const collect = (value) => {
-  if (Array.isArray(value)) return value.forEach(collect);
-  if (value && typeof value === 'object')
-    return Object.values(value).forEach(collect);
-  for (const unit of translationUnits(value)) strings.add(unit);
-};
+const strings = translatableSentences();
 
-/**
- * Every English catalogue the site ships, not just the tool's.
- *
- * `en` alone was the whole collection until #22, which is how the header,
- * footer, homepage and 404 copy came to be invisible to the translator: they
- * live in `site.ts`, and that file imported `isLocale` as a VALUE from
- * `./index`, which plain Node cannot resolve. The fix was to move the lookup,
- * not to special-case it here -- see `src/lib/i18n/index.ts`.
- *
- * The CSV vocabulary is the third: every word a downloaded file carries has to
- * match the language of the page it came from, which makes it copy. Its `sex`
- * tokens are the one part held back -- see CSV_KEYS_NOT_TRANSLATED.
- */
-collect(en);
-collect(siteEn);
-collect(
-  Object.fromEntries(
-    Object.entries(CSV_LOCALES.en).filter(
-      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
-    ),
-  ),
-);
+/** The drafts still worth keeping, and the stale ones any write drops (#164). */
+const { kept: known, stale } = pruneDrafts(cache[target] ?? {}, strings);
 
 /**
  * Never drafted, or cached with a draft whose slots changed: a cached draft
@@ -134,8 +107,25 @@ console.log(`cached        ${strings.size - pending.length}`);
 console.log(
   `to send       ${pending.length} strings, ${characters} characters`,
 );
+console.log(`stale         ${stale.length} drafts no catalogue sends`);
 console.log(`needs a human ${manual.length} keys (symbols)`);
 console.log(`do-not-send   ${DO_NOT_TRANSLATE.length} protected terms`);
+
+/** The one way the cache is written, so a prune and a send cannot drift. */
+const writeCache = () => {
+  cache[target] = known;
+  writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);
+};
+
+if (prune) {
+  // Nothing stale, nothing written: a locale with no drafts is not given an
+  // empty entry, and a cache that is already clean is left untouched.
+  if (stale.length > 0) writeCache();
+  console.log(
+    `\n✓ dropped ${stale.length} stale drafts — nothing sent, no key read.`,
+  );
+  exit(0);
+}
 
 if (!send) {
   console.log('\nDRY RUN — nothing sent. Add --send to spend quota.');
@@ -143,6 +133,19 @@ if (!send) {
 }
 
 // ── the call ───────────────────────────────────────────────────────────────
+/**
+ * The key, read from the environment or `.env.local` -- and only here, in the
+ * one mode that sends. A dry run and a prune never load it.
+ *
+ * Never printed, never interpolated into a URL or an error. `.env.local` is
+ * gitignored (`.env.*`), and the same value lives as a repo secret.
+ */
+const apiKey =
+  env.DEEPL_API_KEY ??
+  (existsSync('.env.local')
+    ? (/^DEEPL_API_KEY=(.*)$/m.exec(readFileSync('.env.local', 'utf8'))?.[1] ??
+      '')
+    : '');
 if (!apiKey.trim()) die('DEEPL_API_KEY is not set (env or .env.local)');
 const endpoint = deeplEndpoint(apiKey);
 
@@ -198,9 +201,9 @@ for (const s of unresolved)
     `  both drafts changed a slot — needs a human: ${JSON.stringify(s)}`,
   );
 
-cache[target] = known;
-writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);
+writeCache();
 console.log(`\n✓ cache written to ${CACHE}`);
+console.log(`  dropped ${stale.length} stale drafts`);
 console.log(
   `  ${manual.length} keys still need a human — see untranslatedKeys`,
 );
