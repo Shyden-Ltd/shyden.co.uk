@@ -445,9 +445,9 @@ ${journeyHtml}
   var JOURNEY_KEY = 'journey:';
   var READY = 'Ready. Your ticks and decision are saved as you make them.';
   var SAVED = 'Saved. Your decision persists on this page.';
-  var LOCAL = 'Ticks are local to this view — storage is not available here.';
-  var NOT_SAVED = 'Not saved — this view cannot reach storage. Your ticks are visible but will not persist.';
-  var NOT_LOADED = 'Not saved yet — the saved sign-off has not loaded.';
+  var LOCAL = 'Ticks are local to this view \u2014 storage is not available here.';
+  var NOT_SAVED = 'Not saved \u2014 this view cannot reach storage. Your ticks are visible but will not persist.';
+  var NOT_LOADED = 'Not saved yet \u2014 the saved sign-off has not loaded.';
   // The stored sign-off as this view last received it, always as the page's
   // OWN copy: the runtime delivers snapshots frozen, and a page that keeps one
   // as its state drops every later edit without an error (#172).
@@ -505,7 +505,7 @@ ${journeyHtml}
     if (document.activeElement !== noteEl) noteEl.value = shown.note;
   }
   function schedule() {
-    say('Saving…', false);
+    say('Saving\u2026', false);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 400);
   }
