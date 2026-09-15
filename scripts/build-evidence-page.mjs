@@ -22,8 +22,9 @@
  *    nobody can see. A manifest entry with no image is a THROW, not a gap.
  *
  * Everything structural -- engines, journeys, assertion order -- is derived
- * from Playwright's JSON report and the capture manifest. A sixth engine, or a
- * spec that runs on fewer, is reflected without touching this code.
+ * from Playwright's JSON report and the capture manifest rows that report's run
+ * wrote, never an earlier run's (#171). A sixth engine, or a spec that runs on
+ * fewer, is reflected without touching this code.
  */
 
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
@@ -88,6 +89,97 @@ export const droppedLine = (dropped, budgetMb) =>
   dropped.length
     ? ` DROPPED=${dropped.length} (budget ${budgetMb}MB): ` +
       dropped.map((v) => v.key).join(', ')
+    : '';
+
+/** An instant exactly as `Date.prototype.toISOString` writes one. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * Milliseconds since the epoch, or NaN for anything that is not an ISO instant.
+ *
+ * Never `Date.parse` alone: it reads "0" as midnight on 1 January 2000 and
+ * "2026" as that year's first instant, so a mangled start time would date an
+ * earlier run's rows as this run's.
+ */
+const instantOf = (value) =>
+  typeof value === 'string' && ISO_INSTANT.test(value)
+    ? Date.parse(value)
+    : Number.NaN;
+
+/** `webkit 15, firefox 2`: rows counted by engine, in first-seen order. */
+const byEngine = (rows) => {
+  const counts = new Map();
+  for (const row of rows)
+    counts.set(row.project, (counts.get(row.project) ?? 0) + 1);
+  return [...counts].map(([engine, n]) => `${engine} ${n}`).join(', ');
+};
+
+/**
+ * The manifest rows the reported run wrote, and the ones an earlier run left.
+ *
+ * `tests/e2e/evidence.ts` APPENDS to the manifest and nothing clears it, so a
+ * second run into one evidence directory kept the first run's rows: webkit,
+ * then chromium, built a page embedding 15 webkit captures under a report that
+ * ran chromium alone (#171). Each row is stamped as it is written, and a run's
+ * rows are those stamped at or after its report's `stats.startTime`, which
+ * Playwright takes as the run is configured -- before the web server starts,
+ * so before any capture.
+ *
+ * Set aside, never deleted: an earlier run's files stay where they are, and
+ * the caller names what was left out. A row with no stamp predates stamping,
+ * so it is an earlier run's by definition. What cannot be dated is refused
+ * rather than guessed at: a report with no readable start, a stamp that is not
+ * an instant, and a manifest in which nothing is the run's own.
+ */
+export const capturesOfThisRun = (manifest, report) => {
+  const startTime = report.stats?.startTime;
+  const start = instantOf(startTime);
+  if (Number.isNaN(start))
+    throw new Error(
+      `build-evidence-page: ${EVIDENCE_REPORT} has no readable stats.startTime ` +
+        `(${JSON.stringify(startTime)}), so no capture can be told apart from ` +
+        "an earlier run's. Refusing to guess.",
+    );
+
+  const current = [];
+  const earlier = [];
+  for (const row of manifest) {
+    if (row.at === undefined) {
+      earlier.push(row);
+      continue;
+    }
+    const at = instantOf(row.at);
+    if (Number.isNaN(at))
+      throw new Error(
+        `build-evidence-page: ${EVIDENCE_MANIFEST} stamps ${row.file} with ` +
+          `${JSON.stringify(row.at)}, which is not an instant. Refusing to ` +
+          'guess which run captured it.',
+      );
+    (at >= start ? current : earlier).push(row);
+  }
+
+  if (!current.length)
+    throw new Error(
+      `build-evidence-page: nothing in ${EVIDENCE_MANIFEST} was captured by ` +
+        `the run ${EVIDENCE_REPORT} describes, which started ${startTime}` +
+        (earlier.length
+          ? `; its ${earlier.length} row(s) are an earlier run's: ${byEngine(earlier)}`
+          : '') +
+        '. Refusing to emit a page with no evidence of this run. Capture ' +
+        'again, into this directory or a fresh one.',
+    );
+  return { current, earlier };
+};
+
+/**
+ * What the build line adds about an earlier run: how many rows were set aside,
+ * and from which engines. Without it, a page built from part of a directory
+ * reads exactly like one built from all of it.
+ */
+export const earlierLine = (earlier) =>
+  earlier.length
+    ? ` EARLIER=${earlier.length} (captured before this run started): ` +
+      byEngine(earlier)
     : '';
 
 const slugOf = (s) =>
@@ -703,12 +795,17 @@ const main = () => {
     process.exit(2);
   }
 
-  const manifest = readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
   const report = JSON.parse(readFileSync(join(dir, EVIDENCE_REPORT), 'utf8'));
+  // Before any capture is read: an earlier run's rows are set aside here, so a
+  // capture of theirs that has gone since is never reached for.
+  const { current: manifest, earlier } = capturesOfThisRun(
+    readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l)),
+    report,
+  );
   const content = JSON.parse(readFileSync(contentPath, 'utf8'));
   // Before any capture is encoded: a missing recording refuses the whole page.
   const candidates = videoCandidates(report);
@@ -755,7 +852,8 @@ const main = () => {
   console.log(
     `written ${out} ${(Buffer.byteLength(html) / 1048576).toFixed(2)}MB ` +
       `shots=${shots.size} videos=${videos.size}/${candidates.length}` +
-      droppedLine(dropped, budgetMb),
+      droppedLine(dropped, budgetMb) +
+      earlierLine(earlier),
   );
   console.log(PUBLISH_NOTE);
 };
