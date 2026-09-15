@@ -79,21 +79,27 @@ function runsOf(job: Record<string, unknown>, where: string): string[] {
 }
 
 /**
- * Every job in a workflow, in file order.
+ * A YAML file's value, refusing YAML the parser only WARNS about.
  *
- * Refuses YAML the parser only WARNS about. `if: !cancelled() && …` is the
- * case in point: a plain scalar starting with `!` is a YAML tag, so the
- * expression the author wrote is not the value the runner reads. A guard that
- * judged the parser's best effort would judge a condition nobody wrote.
+ * `if: !cancelled() && …` is the case in point: a plain scalar starting with
+ * `!` is a YAML tag, so the expression the author wrote is not the value the
+ * runner reads. A guard that judged the parser's best effort would judge a
+ * condition nobody wrote. The Dependabot config's guards read through here
+ * too (`supply-chain.test.ts`).
  */
-export function workflowJobs(text: string, file: string): WorkflowJob[] {
+export function parseCleanYaml(text: string, file: string): unknown {
   const doc = parseDocument(text);
   const problems = [...doc.errors, ...doc.warnings];
   if (problems.length > 0)
     throw new Error(
       `${file} is not clean YAML: ${problems.map((p) => p.message).join('; ')}`,
     );
-  const root: unknown = doc.toJS();
+  return doc.toJS();
+}
+
+/** Every job in a workflow, in file order. */
+export function workflowJobs(text: string, file: string): WorkflowJob[] {
+  const root = parseCleanYaml(text, file);
   const jobs = isMapping(root) ? root.jobs : undefined;
   if (!isMapping(jobs)) throw new Error(`${file} has no jobs mapping`);
   return Object.entries(jobs).map(([id, body]) => {
