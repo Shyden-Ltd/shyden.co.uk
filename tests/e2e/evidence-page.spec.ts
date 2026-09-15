@@ -131,11 +131,8 @@ const test = base.extend<{ pageErrors: void }>({
   ],
 });
 
-async function openEvidencePage(
-  page: Page,
-  testInfo: TestInfo,
-  options: Pick<DbStandInOptions, 'order'> & Partial<DbStandInOptions>,
-): Promise<void> {
+/** Serves the page as the builder rendered it, and nothing from any other host. */
+async function serveEvidencePage(page: Page): Promise<void> {
   await page.route(/^https:\/\/evidence\.test\//, (route) =>
     route.request().url() === `${ORIGIN}/`
       ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: HTML })
@@ -145,10 +142,19 @@ async function openEvidencePage(
   await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) =>
     route.fulfill({ contentType: 'text/css', body: '' }),
   );
+}
+
+async function openEvidencePage(
+  page: Page,
+  testInfo: TestInfo,
+  options: Pick<DbStandInOptions, 'order'> & Partial<DbStandInOptions>,
+): Promise<void> {
+  await serveEvidencePage(page);
   await page.addInitScript(installDbStandIn, {
     storeKey: `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
     seed: {},
     holdUse: false,
+    subscriptionDies: false,
     ...options,
   });
   await page.goto(`${ORIGIN}/`);
@@ -182,11 +188,9 @@ const storedTicks = (page: Page) =>
   }, DOC);
 
 const journeySection = (page: Page, title: string) =>
-  page
-    .locator('section.journey')
-    .filter({
-      has: page.getByRole('heading', { level: 3, name: title, exact: true }),
-    });
+  page.locator('section.journey').filter({
+    has: page.getByRole('heading', { level: 3, name: title, exact: true }),
+  });
 
 const tickBox = (page: Page, title: string) =>
   journeySection(page, title).getByRole('checkbox');
@@ -427,10 +431,36 @@ for (const { order, when } of ORDERS) {
         `the status read "${claim.status}" while the store did not hold the tick on "${TITLES[1]}"`,
       ).toBe(true);
     });
+
+    test('ticks stay shown and stored after live updates stop', async ({
+      page,
+    }, testInfo) => {
+      // Once a subscription has ended, nothing echoes the page's own writes.
+      // A page that forgets a tick the moment its write is confirmed repaints
+      // that tick off, and its next save writes the store without it.
+      await openEvidencePage(page, testInfo, { order, subscriptionDies: true });
+      await toggleAndWait(page, TITLES[0]);
+      await expect(
+        tickBox(page, TITLES[0]),
+        'the confirmed tick is still shown with no live updates',
+      ).toBeChecked();
+      await toggleAndWait(page, TITLES[1]);
+      await expect
+        .poll(
+          () => storedTicks(page),
+          'the store keeps both ticks with no live updates',
+        )
+        .toEqual(idsOf(TITLES.slice(0, 2)));
+      for (const title of TITLES.slice(0, 2))
+        await expect(
+          tickBox(page, title),
+          `"${title}" is shown ticked`,
+        ).toBeChecked();
+    });
   });
 }
 
-test.describe('evidence page sign-off markup', () => {
+test.describe('evidence page sign-off markup and status', () => {
   test('each tick is named for the journey it marks', async ({
     page,
   }, testInfo) => {
@@ -446,5 +476,38 @@ test.describe('evidence page sign-off markup', () => {
   }, testInfo) => {
     await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
     await expect(page.getByRole('status')).toHaveText(/^Ready\b/);
+  });
+
+  test('the status says so when live updates stop', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      subscriptionDies: true,
+    });
+    await expect(
+      page.locator('#state'),
+      'the status names the subscription that ended',
+    ).toHaveText(/^Live updates stopped\b.*\bunavailable\b/);
+  });
+
+  test('a view without storage says its ticks are local and never reports one saved', async ({
+    page,
+  }) => {
+    // Opened outside claude.ai, the page finds no `window.claude` at all.
+    await serveEvidencePage(page);
+    await page.goto(`${ORIGIN}/`);
+    await expect(page.locator('#state')).toHaveText(
+      /^Ticks are local to this view\b/,
+    );
+    await toggle(page, TITLES[0]);
+    await expect(
+      tickBox(page, TITLES[0]),
+      'the tick is shown although it cannot be stored',
+    ).toBeChecked();
+    await expect(
+      page.locator('#state'),
+      'the tick is reported unsaved',
+    ).toHaveText(/^Not saved\b/);
   });
 });

@@ -39,6 +39,12 @@ export interface DbStandInOptions {
   seed: Record<string, StoredBody>;
   /** Leave `claude.use('db')` unanswered until the test calls `answer()`. */
   holdUse: boolean;
+  /**
+   * Every subscription ends at once with a terminal `unavailable` error, which
+   * the contract allows at any time. From then on nothing is delivered, not
+   * even the echo of the page's own writes.
+   */
+  subscriptionDies: boolean;
 }
 
 /** What a test reads and drives. The page under test never touches it. */
@@ -69,15 +75,20 @@ export interface StandInDocument {
   path: string;
   get(): Promise<StandInSnapshot>;
   set(data: StoredBody): Promise<void>;
-  onSnapshot(next: (snap: StandInSnapshot) => void): () => void;
+  onSnapshot(
+    next: (snap: StandInSnapshot) => void,
+    error?: (failure: { code: string; message: string }) => void,
+  ): () => void;
 }
 
-export type StandInWindow = Window & {
-  claude: {
-    use(name: string): Promise<{ doc(path: string): StandInDocument } | null>;
+/** The page's `window` once the stand-in is installed: the real global, plus what it adds. */
+export type StandInWindow = Window &
+  typeof globalThis & {
+    claude: {
+      use(name: string): Promise<{ doc(path: string): StandInDocument } | null>;
+    };
+    __dbStandIn: DbStandInControl;
   };
-  __dbStandIn: DbStandInControl;
-};
 
 /**
  * Installs the stand-in. Pass it to `page.addInitScript` together with its
@@ -85,7 +96,7 @@ export type StandInWindow = Window & {
  * reference anything outside its own body.
  */
 export function installDbStandIn(options: DbStandInOptions): void {
-  const { storeKey, order, seed, holdUse } = options;
+  const { storeKey, order, seed, holdUse, subscriptionDies } = options;
   const CONFIRM_AFTER_MS = 60;
 
   if (localStorage.getItem(storeKey) === null)
@@ -104,17 +115,15 @@ export function installDbStandIn(options: DbStandInOptions): void {
   const copyOf = (body: StoredBody): StoredBody =>
     JSON.parse(JSON.stringify(body)) as StoredBody;
 
-  const deepFreeze = <T>(value: T): T => {
-    if (
-      value !== null &&
-      typeof value === 'object' &&
-      !Object.isFrozen(value)
-    ) {
-      Object.freeze(value);
-      for (const child of Object.values(value)) deepFreeze(child);
-    }
-    return value;
-  };
+  // A frozen copy, down through every nested object. JSON.parse hands its
+  // reviver each value after that value's children, so freezing there freezes
+  // the whole body, with no walker of our own (one-home.test.ts).
+  const frozenCopyOf = (json: string): StoredBody =>
+    JSON.parse(json, (_key: string, value: unknown) =>
+      value !== null && typeof value === 'object'
+        ? Object.freeze(value)
+        : value,
+    ) as StoredBody;
 
   // The last frozen body delivered per path, reused while it is unchanged.
   const lastDelivered = new Map<string, { json: string; body: StoredBody }>();
@@ -122,7 +131,7 @@ export function installDbStandIn(options: DbStandInOptions): void {
     const json = JSON.stringify(body);
     const last = lastDelivered.get(path);
     if (last && last.json === json) return last.body;
-    const frozen = deepFreeze(copyOf(body));
+    const frozen = frozenCopyOf(json);
     lastDelivered.set(path, { json, body: frozen });
     return frozen;
   };
@@ -137,11 +146,14 @@ export function installDbStandIn(options: DbStandInOptions): void {
       queue.length > 0 ? queue[queue.length - 1] : confirmed()[path];
     const body = latest === undefined ? undefined : frozenBody(path, latest);
     deliveries += 1;
-    return deepFreeze({
+    return Object.freeze({
       id: path.split('/').pop() ?? path,
       exists: body !== undefined,
       data: () => body,
-      metadata: { fromCache: false, hasPendingWrites: queue.length > 0 },
+      metadata: Object.freeze({
+        fromCache: false,
+        hasPendingWrites: queue.length > 0,
+      }),
     });
   };
 
@@ -188,7 +200,20 @@ export function installDbStandIn(options: DbStandInOptions): void {
           }, CONFIRM_AFTER_MS);
         });
       },
-      onSnapshot: (next: (snap: StandInSnapshot) => void) => {
+      onSnapshot: (
+        next: (snap: StandInSnapshot) => void,
+        error?: (failure: { code: string; message: string }) => void,
+      ) => {
+        if (subscriptionDies) {
+          // Without an error callback the runtime reports a terminal error
+          // through reportError, so the page's own error event sees it.
+          const failure = Object.freeze({
+            code: 'unavailable',
+            message: 'the stand-in ended this subscription',
+          });
+          setTimeout(() => (error ? error(failure) : reportError(failure)), 0);
+          return () => {};
+        }
         const subscribed = listeners.get(path) ?? new Set();
         subscribed.add(next);
         listeners.set(path, subscribed);
