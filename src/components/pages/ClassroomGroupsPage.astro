@@ -147,7 +147,9 @@ const sexWhyText = sexWhy(roster, t);
       <div id="cg-howto-body" class="howto-body">
         <p>{t.howToWhat}</p>
         <ol>
-          {t.howToSteps.map((step) => <li>{step}</li>)}
+          {t.howToSteps.map((step) => (
+            <li>{step}</li>
+          ))}
         </ol>
       </div>
     </section>
@@ -196,7 +198,6 @@ const sexWhyText = sexWhy(roster, t);
         }
       })();
     </script>
-
     <!-- No `name` on any control that holds something a teacher typed. A form
          with no `action` submits to its OWN url as a GET, so a `name` here
          would put the class list in the address bar, the history and the
@@ -272,7 +273,9 @@ const sexWhyText = sexWhy(roster, t);
             value="30"
             aria-describedby="cg-count-help"
           />
-          <p class="help" id="cg-count-help">{t.studentsHelp}</p>
+          <p class="help" id="cg-count-help">
+            {t.studentsHelp}
+          </p>
           <!-- Stage 3, Task 7 (design spec section 4, "The Students box --
                an input, then a read-out"). Ships HIDDEN, matching every
                visit's real build-time state: no roster exists until a
@@ -310,22 +313,22 @@ const sexWhyText = sexWhy(roster, t);
              Class/Students, but not reached down into here). -->
         <div class="split-by">
           <div class="field">
-            <span class="label" id="cg-mode-label">{t.modeLabel}</span>
+            <span class="label" id="cg-mode-label">
+              {t.modeLabel}
+            </span>
             <div
               class="radios"
               role="radiogroup"
               aria-labelledby="cg-mode-label"
             >
-              <label
-                ><input type="radio" name="mode" value="perGroup" checked />{
-                  t.modePerGroup
-                }</label
-              >
-              <label
-                ><input type="radio" name="mode" value="groupCount" />{
-                  t.modeGroupCount
-                }</label
-              >
+              <label>
+                <input type="radio" name="mode" value="perGroup" checked />
+                {t.modePerGroup}
+              </label>
+              <label>
+                <input type="radio" name="mode" value="groupCount" />
+                {t.modeGroupCount}
+              </label>
             </div>
           </div>
 
@@ -467,9 +470,9 @@ const sexWhyText = sexWhy(roster, t);
               aria-expanded="false"
               aria-controls="cg-students-body"
             >
-              {t.sectionStudentsHeading}{' · '}<span class="state"
-                >{sectionStrings.studentDetails}</span
-              >
+              {t.sectionStudentsHeading}
+              {' · '}
+              <span class="state">{sectionStrings.studentDetails}</span>
             </button>
           </h2>
           <h2 class="print-only-heading">{t.printClassListHeading}</h2>
@@ -525,8 +528,12 @@ const sexWhyText = sexWhy(roster, t);
                the same ordering #cg-stale-text below already uses, so a
                live region here is never announced as already-populated. -->
           <p class="error" id="cg-roster-problem" role="alert" hidden></p>
-          <p class="roster-warning" id="cg-roster-warning" role="status" hidden>
-          </p>
+          <p
+            class="roster-warning"
+            id="cg-roster-warning"
+            role="status"
+            hidden
+          ></p>
         </section>
 
         <section id="cg-grouping" class="tool-section">
@@ -538,9 +545,9 @@ const sexWhyText = sexWhy(roster, t);
               aria-expanded="false"
               aria-controls="cg-grouping-body"
             >
-              {t.sectionGroupingHeading}{' · '}<span class="state"
-                >{sectionStrings.groupingOptions}</span
-              >
+              {t.sectionGroupingHeading}
+              {' · '}
+              <span class="state">{sectionStrings.groupingOptions}</span>
             </button>
           </h2>
           <div id="cg-grouping-body" class="tool-section-body" hidden>
@@ -558,22 +565,24 @@ const sexWhyText = sexWhy(roster, t);
                  it explaining why. -->
             <div class="field">
               <div class="switches">
-                <label class="switch"
-                  ><input
+                <label class="switch">
+                  <input
                     type="checkbox"
                     id="cg-sex-mix"
                     disabled={sexWhyText !== null}
                     aria-describedby="cg-sex-why"
-                  /><span>{t.sexMixLabel}</span></label
-                >
-                <label class="switch"
-                  ><input
+                  />
+                  <span>{t.sexMixLabel}</span>
+                </label>
+                <label class="switch">
+                  <input
                     type="checkbox"
                     id="cg-sex-separate"
                     disabled={sexWhyText !== null}
                     aria-describedby="cg-sex-why"
-                  /><span>{t.sexSeparateLabel}</span></label
-                >
+                  />
+                  <span>{t.sexSeparateLabel}</span>
+                </label>
               </div>
               <p class="why" id="cg-sex-why" hidden={sexWhyText === null}>
                 {sexWhyText}
@@ -585,25 +594,22 @@ const sexWhyText = sexWhy(roster, t);
                  locale keys (leftoversLabel/Spread/Bunch/Help). It works
                  today and this task is only about where it lives. -->
             <div class="field">
-              <span class="label" id="cg-left-label">{t.leftoversLabel}</span>
+              <span class="label" id="cg-left-label">
+                {t.leftoversLabel}
+              </span>
               <div
                 class="radios"
                 role="radiogroup"
                 aria-labelledby="cg-left-label"
               >
-                <label
-                  ><input
-                    type="radio"
-                    name="leftovers"
-                    value="spread"
-                    checked
-                  />{t.leftoversSpread}</label
-                >
-                <label
-                  ><input type="radio" name="leftovers" value="bunch" />{
-                    t.leftoversBunch
-                  }</label
-                >
+                <label>
+                  <input type="radio" name="leftovers" value="spread" checked />
+                  {t.leftoversSpread}
+                </label>
+                <label>
+                  <input type="radio" name="leftovers" value="bunch" />
+                  {t.leftoversBunch}
+                </label>
               </div>
               <p class="help">{t.leftoversHelp}</p>
             </div>
@@ -619,9 +625,9 @@ const sexWhyText = sexWhy(roster, t);
               aria-expanded="false"
               aria-controls="cg-io-body"
             >
-              {t.sectionImportExportHeading}{' · '}<span class="state"
-                >{sectionStrings.importExport}</span
-              >
+              {t.sectionImportExportHeading}
+              {' · '}
+              <span class="state">{sectionStrings.importExport}</span>
             </button>
           </h2>
           <div id="cg-io-body" class="tool-section-body" hidden></div>
@@ -641,11 +647,10 @@ const sexWhyText = sexWhy(roster, t);
           </h2>
           <div id="cg-sound-body" class="tool-section-body" hidden>
             <div class="field">
-              <label class="switch"
-                ><input id="cg-sound-check" type="checkbox" checked /><span
-                  id="cg-sound-text">{t.soundOn}</span
-                ></label
-              >
+              <label class="switch">
+                <input id="cg-sound-check" type="checkbox" checked />
+                <span id="cg-sound-text">{t.soundOn}</span>
+              </label>
             </div>
             <div class="field">
               <label for="cg-speed">{t.speedLabel}</label>
@@ -660,13 +665,19 @@ const sexWhyText = sexWhy(roster, t);
       </div>
 
       <p class="actions">
-        <button type="submit" id="cg-go">{t.makeGroups}</button>
+        <button type="submit" id="cg-go">
+          {t.makeGroups}
+        </button>
       </p>
 
       <!-- Without this, a visitor whose browser is not running the script
            presses the button and gets a page reload with nothing to show for
            it — no result and no reason. Says so instead, in their language. -->
-      <noscript><p class="error" id="cg-noscript">{t.needsJs}</p></noscript>
+      <noscript>
+        <p class="error" id="cg-noscript">
+          {t.needsJs}
+        </p>
+      </noscript>
     </form>
 
     <!-- Stage 3, Task 8 (design spec section 5). The three avatar faces,
@@ -785,7 +796,9 @@ const sexWhyText = sexWhy(roster, t);
            identical label. -->
       <div class="stale-notice" id="cg-stale" hidden>
         <p role="status" id="cg-stale-text"></p>
-        <button type="submit" form="cg-form">{t.again}</button>
+        <button type="submit" form="cg-form">
+          {t.again}
+        </button>
       </div>
 
       <p class="summary" id="cg-summary" role="status"></p>
@@ -854,46 +867,44 @@ const sexWhyText = sexWhy(roster, t);
 
       <fieldset>
         <legend>{t.printWhat}</legend>
-        <label
-          ><input type="radio" name="print-what" value="class-list" />{
-            t.printWhatClassList
-          }</label
-        >
-        <label
-          ><input type="radio" name="print-what" value="groups" />{
-            t.printWhatGroups
-          }</label
-        >
-        <label
-          ><input type="radio" name="print-what" value="both" checked />{
-            t.printWhatBoth
-          }</label
-        >
+        <label>
+          <input type="radio" name="print-what" value="class-list" />
+          {t.printWhatClassList}
+        </label>
+        <label>
+          <input type="radio" name="print-what" value="groups" />
+          {t.printWhatGroups}
+        </label>
+        <label>
+          <input type="radio" name="print-what" value="both" checked />
+          {t.printWhatBoth}
+        </label>
       </fieldset>
 
       <fieldset>
         <legend>{t.printOnTheClassList}</legend>
-        <label
-          ><input type="checkbox" id="cg-print-absent" checked />{
-            t.printShowAbsent
-          }</label
-        >
-        <label
-          ><input type="checkbox" id="cg-print-letters" checked />{
-            t.printShowLetters
-          }</label
-        >
+        <label>
+          <input type="checkbox" id="cg-print-absent" checked />
+          {t.printShowAbsent}
+        </label>
+        <label>
+          <input type="checkbox" id="cg-print-letters" checked />
+          {t.printShowLetters}
+        </label>
       </fieldset>
 
-      <label class="cg-print-avatars-label"
-        ><input type="checkbox" id="cg-print-avatars" checked />{
-          t.printIncludeAvatars
-        }</label
-      >
+      <label class="cg-print-avatars-label">
+        <input type="checkbox" id="cg-print-avatars" checked />
+        {t.printIncludeAvatars}
+      </label>
 
       <div class="cg-print-actions">
-        <button type="button" id="cg-print-cancel">{t.printCancel}</button>
-        <button type="button" id="cg-print-confirm">{t.printConfirm}</button>
+        <button type="button" id="cg-print-cancel">
+          {t.printCancel}
+        </button>
+        <button type="button" id="cg-print-confirm">
+          {t.printConfirm}
+        </button>
       </div>
     </form>
   </dialog>

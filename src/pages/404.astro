@@ -49,24 +49,22 @@ const others = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).map(
     <h1>{primary.heading}</h1>
     {/* {' '} is load-bearing: a newline glues sentence to link. */}
     <p>
-      {primary.body}{' '}<a href="/">{primary.backHome}</a>.
+      {primary.body} <a href="/">{primary.backHome}</a>.
     </p>
 
-    {
-      others.map(({ locale, copy, home }) => (
-        <Fragment>
-          <hr />
-          <h2 lang={locale}>{copy.heading}</h2>
-          <p lang={locale}>
-            {copy.body}{' '}
-            <a href={home} hreflang={locale} lang={locale}>
-              {copy.backHome}
-            </a>
-            .
-          </p>
-        </Fragment>
-      ))
-    }
+    {others.map(({ locale, copy, home }) => (
+      <Fragment>
+        <hr />
+        <h2 lang={locale}>{copy.heading}</h2>
+        <p lang={locale}>
+          {copy.body}{' '}
+          <a href={home} hreflang={locale} lang={locale}>
+            {copy.backHome}
+          </a>
+          .
+        </p>
+      </Fragment>
+    ))}
   </section>
 </BaseLayout>
 <style>

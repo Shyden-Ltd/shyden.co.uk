@@ -74,10 +74,8 @@ const xDefault = new URL(localisePath(Astro.url.pathname, 'en'), siteOrigin)
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    {
-      /* Same reasoning as the canonical: a page served for every unknown path
-        has no og:url to give, and /404/ is not one. */
-    }
+    {/* Same reasoning as the canonical: a page served for every unknown path
+        has no og:url to give, and /404/ is not one. */}
     {!noIndex && <meta property="og:url" content={canonical} />}
     <meta property="og:image" content={new URL(ogImage, siteOrigin).href} />
     <meta property="og:locale" content={metadataFor(lang).ogLocale} />
@@ -86,17 +84,19 @@ const xDefault = new URL(localisePath(Astro.url.pathname, 'en'), siteOrigin)
     <slot name="head" />
   </head>
   <body>
-    {
-      /* WCAG 2.4.1. The copy for this existed in both languages from the
+    {/* WCAG 2.4.1. The copy for this existed in both languages from the
         start while no page had the link, which made the repo look like it
         had met the criterion. It bites hardest on /classroom-groups, the
         most control-dense page here: without it a keyboard user crosses the
         wordmark, the hamburger, the language switcher and three nav links
-        before reaching the first form field, on every single page load. */
-    }
-    <a class="skip-link" href="#main">{site.skipToContent}</a>
+        before reaching the first form field, on every single page load. */}
+    <a class="skip-link" href="#main">
+      {site.skipToContent}
+    </a>
     <Header lang={lang} />
-    <main id="main" tabindex="-1"><slot /></main>
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
     <Footer lang={lang} />
   </body>
 </html>

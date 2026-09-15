@@ -53,14 +53,14 @@ const betaNotice = isBetaLocale(lang)
 <footer id="contact-legal">
   <div class="inner">
     <p class="disclosure">{disclosure}</p>
-    {
-      betaNotice && (
-        <p class="beta-notice" data-beta-notice>
-          {betaNotice}
-        </p>
-      )
-    }
-    <p><a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a></p>
+    {betaNotice && (
+      <p class="beta-notice" data-beta-notice>
+        {betaNotice}
+      </p>
+    )}
+    <p>
+      <a href="mailto:support@shyden.co.uk">support@shyden.co.uk</a>
+    </p>
   </div>
 </footer>
 <style>

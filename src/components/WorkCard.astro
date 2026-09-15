@@ -12,21 +12,21 @@ const target = external ? '_blank' : undefined;
 ---
 
 <a class="work-card" href={href} rel={rel} target={target} aria-label={title}>
-  {
-    /* `logo` slot lets a card render a brand wordmark in place of the text
+  {/* `logo` slot lets a card render a brand wordmark in place of the text
       title; falls back to the plain title. aria-label keeps the accessible
-      name = title regardless of the visual treatment. */
-  }
-  <h3><slot name="logo">{title}</slot></h3>
+      name = title regardless of the visual treatment. */}
+  <h3>
+    <slot name="logo">{title}</slot>
+  </h3>
   {badge && <p class="work-card-badge">{badge}</p>}
-  <p><slot /></p>
-  {
-    cta && (
-      <p class="work-card-cta">
-        {cta} <span aria-hidden="true">&rarr;</span>
-      </p>
-    )
-  }
+  <p>
+    <slot />
+  </p>
+  {cta && (
+    <p class="work-card-cta">
+      {cta} <span aria-hidden="true">&rarr;</span>
+    </p>
+  )}
 </a>
 <style>
   .work-card {
