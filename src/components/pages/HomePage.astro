@@ -42,8 +42,12 @@ const features = [
     <h1>{t.heroHeading}</h1>
     <p class="lead">{t.heroLead}</p>
     <p class="cta">
-      <Button href={shytalkUrl} external>{t.exploreShytalk}</Button>
-      <span class="opens">{t.opensAt} {shytalkHost}</span>
+      <Button href={shytalkUrl} external>
+        {t.exploreShytalk}
+      </Button>
+      <span class="opens">
+        {t.opensAt} {shytalkHost}
+      </span>
     </p>
   </section>
 
@@ -52,15 +56,21 @@ const features = [
   <section id="shytalk" class="wrap showcase">
     <div class="showcase-copy">
       <p class="kicker">{t.flagshipKicker}</p>
-      <h2><span class="shytalk-wordmark">Shy<span>Talk</span></span></h2>
+      <h2>
+        <span class="shytalk-wordmark">
+          Shy<span>Talk</span>
+        </span>
+      </h2>
       <p class="lead">{t.shytalkBody}</p>
       <ul class="features">
-        {features.map((feature) => <li>{feature}</li>)}
+        {features.map((feature) => (
+          <li>{feature}</li>
+        ))}
       </ul>
       <p>
-        <Button href={shytalkUrl} variant="secondary" external
-          >{t.visitShytalk}</Button
-        >
+        <Button href={shytalkUrl} variant="secondary" external>
+          {t.visitShytalk}
+        </Button>
       </p>
     </div>
     <PhoneFrame lang={lang} alt={t.shytalkShotAlt} />
@@ -74,14 +84,18 @@ const features = [
         title={t.workGloryTitle}
         href={glory}
         badge={t.toolBadge}
-        cta={t.openGlory}>{t.workGloryBody}</WorkCard
+        cta={t.openGlory}
       >
+        {t.workGloryBody}
+      </WorkCard>
       <WorkCard
         title={t.workClassroomTitle}
         href={classroom}
         badge={t.toolBadge}
-        cta={t.openClassroom}>{t.workClassroomBody}</WorkCard
+        cta={t.openClassroom}
       >
+        {t.workClassroomBody}
+      </WorkCard>
     </div>
   </section>
 

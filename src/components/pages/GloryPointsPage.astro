@@ -18,15 +18,19 @@ const t = getSiteStrings(lang).glory;
       <a
         href="https://yeetalkapp.com/"
         target="_blank"
-        rel="noopener noreferrer">{t.forYeetalk}</a
+        rel="noopener noreferrer"
       >
+        {t.forYeetalk}
+      </a>
     </p>
     <h1>{t.heading}</h1>
     <p class="lead">{t.lead}</p>
     <div class="how-to">
       <h2 id="how-to-heading">{t.howToHeading}</h2>
       <ol aria-labelledby="how-to-heading">
-        {t.howToSteps.map((step) => <li>{step}</li>)}
+        {t.howToSteps.map((step) => (
+          <li>{step}</li>
+        ))}
       </ol>
     </div>
     <div class="card">
@@ -39,10 +43,14 @@ const t = getSiteStrings(lang).glory;
         autocomplete="off"
         aria-describedby="glory-error"
       />
-      <button id="glory-submit" type="button">{t.calculate}</button>
+      <button id="glory-submit" type="button">
+        {t.calculate}
+      </button>
       <p id="glory-error" class="error" role="alert" aria-live="assertive"></p>
       <p id="glory-result" class="result" aria-live="polite"></p>
-      <noscript><p class="error">{t.needsJs}</p></noscript>
+      <noscript>
+        <p class="error">{t.needsJs}</p>
+      </noscript>
     </div>
     <p class="assumptions">{t.assumptions}</p>
   </section>

@@ -28,15 +28,19 @@ const links = [
 
 <header>
   <div class="bar">
-    <a class="wordmark" href={home}>Shyden</a>
+    <a class="wordmark" href={home}>
+      Shyden
+    </a>
     <details class="menu">
-      <summary aria-label={t.menuLabel} aria-controls="primary-nav"
-        ><span class="bars"></span></summary
-      >
+      <summary aria-label={t.menuLabel} aria-controls="primary-nav">
+        <span class="bars"></span>
+      </summary>
     </details>
     <LanguageSwitcher lang={lang} pathname={Astro.url.pathname} />
     <nav id="primary-nav">
-      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+      {links.map((l) => (
+        <a href={l.href}>{l.label}</a>
+      ))}
     </nav>
   </div>
 </header>

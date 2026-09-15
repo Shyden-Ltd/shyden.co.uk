@@ -12,7 +12,9 @@ const rel = external ? 'noopener noreferrer' : undefined;
 const target = external ? '_blank' : undefined;
 ---
 
-<a class={`btn ${variant}`} href={href} rel={rel} target={target}><slot /></a>
+<a class={`btn ${variant}`} href={href} rel={rel} target={target}>
+  <slot />
+</a>
 <style>
   .btn {
     display: inline-flex;
