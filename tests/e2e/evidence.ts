@@ -75,10 +75,38 @@ export const shoot = async (
 
   appendFileSync(
     join(DIR, EVIDENCE_MANIFEST),
-    JSON.stringify({ project, title, order: n, label, file }) + '\n',
+    JSON.stringify(
+      manifestRow({ project, title, order: n, label, file }, new Date()),
+    ) + '\n',
     'utf8',
   );
 };
+
+/** What one assertion shot records about itself. */
+type Capture = {
+  project: string;
+  title: string;
+  order: number;
+  label: string;
+  file: string;
+};
+
+/**
+ * One manifest line: a capture, stamped with the instant it was written.
+ *
+ * The manifest is appended to and never cleared, so a second run into the same
+ * evidence directory left the first run's rows -- and their pictures -- on a
+ * page built from the second run's report (#171). The stamp is how
+ * `scripts/build-evidence-page.mjs` tells them apart: a run's rows are the ones
+ * stamped once its report's `stats.startTime` had passed.
+ *
+ * PURE, with the clock as an argument, so `tests/unit/evidence-page.test.ts`
+ * feeds the builder rows this function wrote rather than a copy of their shape.
+ */
+export const manifestRow = (capture: Capture, now: Date) => ({
+  ...capture,
+  at: now.toISOString(),
+});
 
 /**
  * How every assertion shot is taken.

@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
 import { reportLocation } from '../../scripts/test-e2e.mjs';
@@ -19,9 +19,11 @@ import {
   EVIDENCE_MANIFEST,
   EVIDENCE_REPORT,
 } from '../../scripts/evidence-files.mjs';
-import { captureOptions } from '../e2e/evidence';
+import { captureOptions, manifestRow } from '../e2e/evidence';
 import {
+  capturesOfThisRun,
   droppedLine,
+  earlierLine,
   imageSize,
   mediaType,
   PUBLISH_NOTE,
@@ -136,6 +138,75 @@ const build = (over = {}) =>
     ...over,
   });
 
+/** A json report with one result per entry, grouped by journey. */
+const reportOf = (
+  results: {
+    journey: string;
+    project: string;
+    video?: string;
+    status?: string;
+  }[],
+) => ({
+  ...REPORT,
+  suites: [
+    {
+      specs: [...new Set(results.map((r) => r.journey))].map((title) => ({
+        title,
+        tests: results
+          .filter((r) => r.journey === title)
+          .map((r) => ({
+            projectName: r.project,
+            results: [
+              {
+                status: r.status ?? 'passed',
+                duration: 500,
+                attachments: r.video
+                  ? [
+                      {
+                        name: 'video',
+                        contentType: 'video/webm',
+                        path: r.video,
+                      },
+                    ]
+                  : [],
+              },
+            ],
+          })),
+      })),
+    },
+  ],
+});
+
+/** The PNG signature and an IHDR `width` px wide: all the builder reads of a capture. */
+const png = (width: number) => {
+  const size = Buffer.alloc(8);
+  size.writeUInt32BE(width, 0);
+  size.writeUInt32BE(1, 4);
+  return Buffer.concat([
+    Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'),
+    size,
+  ]);
+};
+
+/** The builder as an operator runs it: its own process, reading only the disk. */
+const runBuilder = (dir: string, page: string) => {
+  const content = join(dir, 'content.json');
+  writeFileSync(content, JSON.stringify(CONTENT));
+  return spawnSync(
+    process.execPath,
+    [
+      'scripts/build-evidence-page.mjs',
+      '--evidence',
+      dir,
+      '--content',
+      content,
+      '--out',
+      page,
+    ],
+    { encoding: 'utf8' },
+  );
+};
+
 describe('the evidence page is derived from the run', () => {
   it('emits exactly one image per captured assertion', () => {
     const html = build();
@@ -242,40 +313,6 @@ describe('a recording the report names is on disk, or the build refuses', () => 
     return path;
   };
 
-  /** A json report with one passing result per recording, grouped by journey. */
-  const reportOf = (
-    recordings: { journey: string; project: string; video?: string }[],
-  ) => ({
-    ...REPORT,
-    suites: [
-      {
-        specs: [...new Set(recordings.map((r) => r.journey))].map((title) => ({
-          title,
-          tests: recordings
-            .filter((r) => r.journey === title)
-            .map((r) => ({
-              projectName: r.project,
-              results: [
-                {
-                  status: 'passed',
-                  duration: 500,
-                  attachments: r.video
-                    ? [
-                        {
-                          name: 'video',
-                          contentType: 'video/webm',
-                          path: r.video,
-                        },
-                      ]
-                    : [],
-                },
-              ],
-            })),
-        })),
-      },
-    ],
-  });
-
   it('names every journey and engine whose recording is gone', () => {
     const report = reportOf([
       {
@@ -340,23 +377,23 @@ describe('a recording the report names is on disk, or the build refuses', () => 
     // written anyway is the #165 page again, whatever the function would say.
     const dir = mkdtempSync(join(scratch, 'run-'));
     mkdirSync(join(dir, 'chromium'));
-    // The PNG signature and a 1x1 IHDR: all the builder reads of a capture.
-    writeFileSync(
-      join(dir, 'chromium', 'a__01.png'),
-      Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001', 'hex'),
-    );
+    writeFileSync(join(dir, 'chromium', 'a__01.png'), png(1));
+    // Stamped five seconds into the reported run, as the harness stamps it.
     writeFileSync(
       join(dir, EVIDENCE_MANIFEST),
-      JSON.stringify({
-        project: 'chromium',
-        title: 'suite > a journey',
-        order: 1,
-        label: 'first thing',
-        file: 'chromium/a__01.png',
-      }) + '\n',
+      JSON.stringify(
+        manifestRow(
+          {
+            project: 'chromium',
+            title: 'suite > a journey',
+            order: 1,
+            label: 'first thing',
+            file: 'chromium/a__01.png',
+          },
+          new Date(Date.parse(REPORT.stats.startTime) + 5_000),
+        ),
+      ) + '\n',
     );
-    const content = join(dir, 'content.json');
-    writeFileSync(content, JSON.stringify(CONTENT));
     const page = join(dir, 'page.html');
     const buildWith = (video: string) => {
       writeFileSync(
@@ -365,19 +402,7 @@ describe('a recording the report names is on disk, or the build refuses', () => 
           reportOf([{ journey: 'a journey', project: 'chromium', video }]),
         ),
       );
-      return spawnSync(
-        process.execPath,
-        [
-          'scripts/build-evidence-page.mjs',
-          '--evidence',
-          dir,
-          '--content',
-          content,
-          '--out',
-          page,
-        ],
-        { encoding: 'utf8' },
-      );
+      return runBuilder(dir, page);
     };
 
     const refused = buildWith(join(dir, 'gone.webm'));
@@ -393,6 +418,267 @@ describe('a recording the report names is on disk, or the build refuses', () => 
     expect(built.status, built.stderr).toBe(0);
     expect(built.stdout).toContain('videos=1/1');
     expect(existsSync(page)).toBe(true);
+  });
+});
+
+/**
+ * An earlier run's captures never reach a page built from a later run (#171).
+ *
+ * The harness APPENDS to the manifest and nothing clears it, so a second run
+ * into one evidence directory kept the first run's rows and pictures. Measured:
+ * webkit, then chromium, into one directory built a page embedding 15 webkit
+ * captures under a report that ran chromium alone. Every row is now stamped as
+ * it is written, and the builder keeps only the rows the reported run wrote.
+ */
+describe('an earlier run in the same evidence directory stays off the page', () => {
+  let scratch = '';
+  beforeAll(() => {
+    scratch = mkdtempSync(join(tmpdir(), 'evidence-runs-'));
+  });
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  const START = Date.parse(REPORT.stats.startTime);
+  const MINUTE = 60_000;
+
+  /** What `shoot` records about one capture, before the stamp. */
+  const capture = (project: string, order: number) => ({
+    project,
+    title: 'suite > a journey',
+    order,
+    label: `thing ${order}`,
+    file: `${project}/a__0${order}.png`,
+  });
+
+  /** A row as the harness writes it, `offsetMs` after the reported run began. */
+  const stamped = (project: string, order: number, offsetMs: number) =>
+    manifestRow(capture(project, order), new Date(START + offsetMs));
+
+  /** A directory as runs leave it: a distinct capture per file, the rows, the report. */
+  const directory = (rows: { file: string }[], report: object) => {
+    const dir = mkdtempSync(join(scratch, 'run-'));
+    [...new Set(rows.map((row) => row.file))].forEach((file, i) => {
+      mkdirSync(join(dir, dirname(file)), { recursive: true });
+      writeFileSync(join(dir, file), png(10 + i));
+    });
+    writeFileSync(
+      join(dir, EVIDENCE_MANIFEST),
+      rows.map((row) => JSON.stringify(row) + '\n').join(''),
+    );
+    writeFileSync(join(dir, EVIDENCE_REPORT), JSON.stringify(report));
+    return dir;
+  };
+
+  /** A capture exactly as the page embeds it. */
+  const base64Of = (dir: string, file: string) =>
+    readFileSync(join(dir, file)).toString('base64');
+
+  it('stamps each manifest row with the instant it was written, keeping what it records', () => {
+    expect(
+      manifestRow(capture('webkit', 2), new Date('2026-01-01T00:00:05.000Z')),
+    ).toEqual({ ...capture('webkit', 2), at: '2026-01-01T00:00:05.000Z' });
+  });
+
+  it('keeps the rows the reported run wrote and sets aside the ones from before it began', () => {
+    const before = stamped('webkit', 1, -MINUTE);
+    const during = stamped('chromium', 1, 5_000);
+    expect(capturesOfThisRun([before, during], REPORT)).toEqual({
+      current: [during],
+      earlier: [before],
+    });
+  });
+
+  it("counts a row stamped at the very instant the run began as the run's own", () => {
+    const { current, earlier } = capturesOfThisRun(
+      [stamped('chromium', 1, 0), stamped('chromium', 2, -1)],
+      REPORT,
+    );
+    expect(current.map((row: { order: number }) => row.order)).toEqual([1]);
+    expect(earlier.map((row: { order: number }) => row.order)).toEqual([2]);
+  });
+
+  it("reads a row with no stamp as an earlier run's: the harness stamps every row it writes", () => {
+    const unstamped = capture('webkit', 1);
+    const during = stamped('chromium', 1, 5_000);
+    expect(capturesOfThisRun([unstamped, during], REPORT)).toEqual({
+      current: [during],
+      earlier: [unstamped],
+    });
+  });
+
+  it('refuses a report whose start it cannot read, rather than dating every row as current', () => {
+    const rows = [stamped('chromium', 1, 5_000)];
+    // Date.parse reads '0' as midnight on 1 January 2000 and '2026' as that
+    // year's first instant, so a lenient parse dates an earlier run's rows too.
+    for (const startTime of [
+      undefined,
+      '',
+      '0',
+      '2026',
+      '2026-13-01T00:00:00.000Z',
+      START,
+    ])
+      expect(
+        () =>
+          capturesOfThisRun(rows, {
+            ...REPORT,
+            stats: { ...REPORT.stats, startTime },
+          }),
+        `stats.startTime ${JSON.stringify(startTime)}`,
+      ).toThrow(/stats\.startTime/);
+    expect(() => capturesOfThisRun(rows, { suites: [] })).toThrow(
+      /stats\.startTime/,
+    );
+  });
+
+  it('refuses a stamp that is not an instant, rather than guessing which run wrote the row', () => {
+    for (const at of [null, '', 'yesterday', '0', START])
+      expect(
+        () => capturesOfThisRun([{ ...capture('chromium', 1), at }], REPORT),
+        `at ${JSON.stringify(at)}`,
+      ).toThrow('chromium/a__01.png');
+  });
+
+  it('refuses a directory where nothing belongs to the reported run, and names what is there', () => {
+    let refusal = 'the build did not refuse';
+    try {
+      capturesOfThisRun(
+        [
+          stamped('webkit', 1, -MINUTE),
+          stamped('webkit', 2, -MINUTE + 1),
+          capture('firefox', 1),
+        ],
+        REPORT,
+      );
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain(REPORT.stats.startTime);
+    expect(refusal).toContain('webkit 2');
+    expect(refusal).toContain('firefox 1');
+    // A manifest with no rows is a run that reached no assertion at all.
+    expect(() => capturesOfThisRun([], REPORT)).toThrow(REPORT.stats.startTime);
+  });
+
+  it('names on the build line how many rows it set aside, and from which engines', () => {
+    expect(
+      earlierLine([
+        capture('webkit', 1),
+        capture('webkit', 2),
+        capture('firefox', 1),
+      ]),
+    ).toBe(
+      ' EARLIER=3 (captured before this run started): webkit 2, firefox 1',
+    );
+    expect(earlierLine([])).toBe('');
+  });
+
+  it('builds the page from the second of two runs into one directory, and deletes nothing', () => {
+    // #171's measured scenario in miniature: webkit captured a minute before
+    // the reported run began, then chromium into the same directory.
+    const webkit = [
+      stamped('webkit', 1, -MINUTE),
+      stamped('webkit', 2, -MINUTE + 1),
+    ];
+    const chromium = [
+      stamped('chromium', 1, 5_000),
+      stamped('chromium', 2, 5_001),
+    ];
+    const rows = [...webkit, ...chromium];
+    const dir = directory(
+      rows,
+      reportOf([{ journey: 'a journey', project: 'chromium' }]),
+    );
+    const page = join(dir, 'page.html');
+
+    const built = runBuilder(dir, page);
+
+    expect(built.status, built.stderr).toBe(0);
+    expect(built.stdout).toContain('shots=2 videos=0/0');
+    expect(built.stdout).toContain(
+      'EARLIER=2 (captured before this run started): webkit 2',
+    );
+    const html = readFileSync(page, 'utf8');
+    for (const row of chromium)
+      expect(html, `${row.file} is missing from the page`).toContain(
+        base64Of(dir, row.file),
+      );
+    for (const row of webkit)
+      expect(
+        html,
+        `${row.file}, from the earlier run, is on the page`,
+      ).not.toContain(base64Of(dir, row.file));
+    // Set aside, never deleted: every capture and every row is still there.
+    for (const row of rows)
+      expect(existsSync(join(dir, row.file)), row.file).toBe(true);
+    expect(
+      readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8').trim().split('\n'),
+    ).toHaveLength(rows.length);
+  });
+
+  it('shows no picture for an assertion this run did not reach, though an earlier run captured it', () => {
+    // The first run reached both assertions. The second, after a change,
+    // failed before its second shot and overwrote only the first capture.
+    const first = [
+      stamped('chromium', 1, -MINUTE),
+      stamped('chromium', 2, -MINUTE + 1),
+    ];
+    const second = stamped('chromium', 1, 5_000);
+    const dir = directory(
+      [...first, second],
+      reportOf([
+        { journey: 'a journey', project: 'chromium', status: 'failed' },
+      ]),
+    );
+    const page = join(dir, 'page.html');
+
+    const built = runBuilder(dir, page);
+
+    expect(built.status, built.stderr).toBe(0);
+    expect(built.stdout).toContain('shots=1 videos=0/0');
+    const html = readFileSync(page, 'utf8');
+    expect(html).toContain(base64Of(dir, second.file));
+    expect(
+      html,
+      "the unreached assertion carries the earlier run's picture",
+    ).not.toContain(base64Of(dir, first[1].file));
+  });
+
+  it("never reads an earlier run's capture, so one deleted since is no reason to refuse", () => {
+    const gone = stamped('webkit', 1, -MINUTE);
+    const kept = stamped('chromium', 1, 5_000);
+    const dir = directory(
+      [gone, kept],
+      reportOf([{ journey: 'a journey', project: 'chromium' }]),
+    );
+    rmSync(join(dir, gone.file));
+    const page = join(dir, 'page.html');
+
+    const built = runBuilder(dir, page);
+
+    expect(built.status, built.stderr).toBe(0);
+    expect(built.stdout).toContain('shots=1 videos=0/0');
+    expect(built.stdout).toContain(
+      'EARLIER=1 (captured before this run started): webkit 1',
+    );
+  });
+
+  it("refuses at the command line when nothing is this run's, and writes no page", () => {
+    const dir = directory(
+      [stamped('webkit', 1, -MINUTE)],
+      reportOf([
+        { journey: 'a journey', project: 'chromium', status: 'failed' },
+      ]),
+    );
+    const page = join(dir, 'page.html');
+
+    const refused = runBuilder(dir, page);
+
+    expect(refused.status, refused.stdout).not.toBe(0);
+    expect(refused.stderr).toContain('webkit 1');
+    expect(
+      existsSync(page),
+      'a page was written with no capture from its run',
+    ).toBe(false);
   });
 });
 
