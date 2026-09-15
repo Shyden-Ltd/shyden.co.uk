@@ -6,6 +6,7 @@ import {
   TEST_BUDGET_MS,
 } from '../../scripts/test-e2e.mjs';
 import { withoutTsComments } from './source-text';
+import { commentsIn, parseSource } from './ast';
 
 /**
  * Where the e2e suite's time actually goes, per project.
@@ -171,9 +172,19 @@ describe('the budget every table is measured against is the real one', () => {
     // assertion vacuous: if the stripper stopped stripping, the guard would go
     // on passing while reading something other than what it claims to. The
     // config discusses `timeout` at length and configures none, so the word
-    // must be present raw and gone once stripped.
+    // must be present in the PROSE and gone once stripped.
+    //
+    // Sliced out of the comments rather than read off the raw file (#183): an
+    // unanchored `/\btimeout\b/i` over raw text is satisfied by a `timeout:`
+    // setting exactly as readily as by the prose, so this control would stay
+    // green in the one world the assertion above exists to catch. Asked of
+    // the parser, the `stranded-docblocks.test.ts` idiom, because only the
+    // grammar knows a `//` inside a string or a regex is not a comment (#65).
     const raw = readFileSync('playwright.config.ts', 'utf8');
-    expect(raw).toMatch(/\btimeout\b/i);
+    const prose = commentsIn(parseSource(raw, 'playwright.config.ts'))
+      .map((comment) => raw.slice(comment.pos, comment.end))
+      .join('\n');
+    expect(prose).toMatch(/\btimeout\b/i);
     expect(withoutTsComments(raw)).not.toMatch(/\btimeout\b/i);
   });
 });

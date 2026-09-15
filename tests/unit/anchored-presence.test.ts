@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import ts from 'typescript';
 import { filesUnder, searched } from '../source-files';
-import { bindFiles, callGraph, derivationOf, where } from './ast';
+import { bind, bindFiles, callGraph, type Closure } from './ast';
+import { scanPresence, type PresenceClosures } from './presence-detector';
 /**
  * A presence assertion over source text must be STRIPPED or ANCHORED.
  *
@@ -14,17 +14,25 @@ import { bindFiles, callGraph, derivationOf, where } from './ast';
  * satisfied by `# .env.*` while the rule ignored nothing, and that rule is
  * what stands between a real API key and a public repo.
  *
- * Two ways out, and this guard accepts either:
+ * Three ways out, and this guard accepts any of them:
  *
  *  - **Stripped** — the text reaches the assertion through a comment
  *    remover. Detected TRANSITIVELY, because `locale-switcher.test.ts`'s
  *    `source()` strips inside itself and its call sites therefore read as
  *    unstripped. Three hand-written derivations for #98 each got this wrong
  *    by looking only at the call site.
- *  - **Anchored** — the matcher is a regex naming the real syntax. Stronger,
- *    and preferred by #98's own AC: stripping removes ONE way of faking the
- *    claim, while an import left behind after the code was deleted is
- *    another. Only an anchor caught that one.
+ *  - **Anchored** — the matcher is a regex whose every top-level alternative
+ *    starts with `^`, pinning the real syntax to a line. Any regex used to
+ *    count, and `toMatch(/foo/)` matches exactly the text `toContain('foo')`
+ *    does (#183). Stronger than stripping, and preferred by #98's own AC:
+ *    stripping removes ONE way of faking the claim, while an import left
+ *    behind after the code was deleted is another. Only an anchor caught it.
+ *  - **Comment-derived** — the text is BUILT from comments
+ *    (`isMarkerCommentLine`, `commentsIn`), so the assertion is about the
+ *    documentation by design, and a comment satisfying it is the point:
+ *    `.env.example` explaining the `:fx` suffix. Recognised from the
+ *    derivation, closed over callers like the strippers, never from a list
+ *    of exempt sites.
  *
  * Deliberately NOT flagged, both measured rather than assumed:
  *
@@ -36,7 +44,6 @@ import { bindFiles, callGraph, derivationOf, where } from './ast';
  */
 
 const READS_CONTENT = new Set(['readFileSync']);
-const PARSED = new Set(['parse', 'JSON']);
 const STRIPPERS = new Set([
   'withoutTsComments',
   'withoutMarkupComments',
@@ -47,6 +54,7 @@ const STRIPPERS = new Set([
   'withoutAstroComments',
   'withoutYamlQuotes',
 ]);
+const COMMENT_READERS = new Set(['isMarkerCommentLine', 'commentsIn']);
 
 const tsFiles = filesUnder('tests', (path) => path.endsWith('.ts'));
 
@@ -58,6 +66,7 @@ const tsFiles = filesUnder('tests', (path) => path.endsWith('.ts'));
 const graph = callGraph(tsFiles);
 const readers = graph.close(READS_CONTENT);
 const strippers = graph.close(STRIPPERS);
+const commentReaders = graph.close(COMMENT_READERS);
 
 /**
  * Every file bound into one program, so a local name resolves to the
@@ -67,51 +76,122 @@ const strippers = graph.close(STRIPPERS);
  */
 const bound = bindFiles(tsFiles);
 
-function scan() {
-  const findings: string[] = [];
-  let scanned = 0;
-  for (const [file, sf] of bound.files) {
-    if (!/\.(test|spec)\.ts$/.test(file)) continue;
+const result = scanPresence(bound, { readers, strippers, commentReaders });
 
-    const check = (node: ts.Node) => {
-      if (
-        ts.isCallExpression(node) &&
-        ts.isPropertyAccessExpression(node.expression)
-      ) {
-        const matcher = node.expression.name.text;
-        if (matcher === 'toContain' || matcher === 'toMatch') {
-          const expectCall = node.expression.expression;
-          const subject = ts.isCallExpression(expectCall)
-            ? expectCall.arguments[0]
-            : undefined;
-          if (subject) {
-            const { names } = derivationOf(subject, bound);
-            const fromContent = names.some((n) => readers.reaches(file, n));
-            const parsed = names.some((n) => PARSED.has(n));
-            if (fromContent && !parsed) {
-              scanned += 1;
-              const stripped = names.some((n) => strippers.reaches(file, n));
-              const arg = node.arguments[0];
-              const anchored =
-                arg !== undefined && ts.isRegularExpressionLiteral(arg);
-              if (!stripped && !anchored) {
-                findings.push(
-                  `${where(sf, node)} — ` +
-                    node.getText().replace(/\s+/g, ' ').slice(0, 90),
-                );
-              }
-            }
-          }
-        }
-      }
-      ts.forEachChild(node, check);
-    };
-    check(sf);
-  }
-  return { scanned, findings };
+/** A closure whose seeds are the whole answer, so a fixture needs no graph. */
+const seeded = (...names: string[]): Closure => ({
+  reaches: (_file, name) => names.includes(name),
+});
+
+const FIXTURE_CLOSURES: PresenceClosures = {
+  readers: seeded('readFileSync'),
+  strippers: seeded('withoutTsComments'),
+  commentReaders: seeded('isMarkerCommentLine', 'commentsIn'),
+};
+
+/** The line of every assertion the detector flags in one fixture test file. */
+function flaggedLines(source: string): number[] {
+  const bound = bind(new Map([['fixture.test.ts', source]]));
+  return scanPresence(bound, FIXTURE_CLOSURES).findings.map((finding) =>
+    Number(/^fixture\.test\.ts:(\d+) /.exec(finding)?.[1]),
+  );
 }
 
-const result = scan();
+/** Each matcher on its own line under one raw read, so a line names a case. */
+const overRaw = (...matchers: string[]): string =>
+  [
+    "const raw = readFileSync('x.ts', 'utf8');",
+    ...matchers.map((matcher) => `expect(raw).${matcher};`),
+  ].join('\n');
+
+describe('the detector counts only a real anchor (#183)', () => {
+  it('flags an unanchored regex over raw source, as it flags toContain', () => {
+    expect(flaggedLines(overRaw("toContain('foo')", 'toMatch(/foo/)'))).toEqual(
+      [2, 3],
+    );
+  });
+
+  it('accepts a regex whose every alternative starts at a line', () => {
+    expect(
+      flaggedLines(
+        overRaw('toMatch(/^foo$/m)', 'toMatch(/^foo/)', 'toMatch(/^a|^b/m)'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not count `$` alone, or an anchor on only one alternative', () => {
+    expect(
+      flaggedLines(overRaw('toMatch(/foo$/m)', 'toMatch(/^a|b/m)')),
+    ).toEqual([2, 3]);
+  });
+
+  it('does not read an escaped caret or a negated class as an anchor', () => {
+    expect(
+      flaggedLines(overRaw('toMatch(/\\^foo/)', 'toMatch(/[^x]foo/)')),
+    ).toEqual([2, 3]);
+  });
+
+  it('splits alternatives only at the top level', () => {
+    expect(
+      flaggedLines(
+        overRaw(
+          'toMatch(/^[a|b]c/)',
+          'toMatch(/^(a|b)c/)',
+          'toMatch(/^a\\|b/)',
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('flags a string handed to toMatch, which is a substring test', () => {
+    expect(flaggedLines(overRaw("toMatch('foo')"))).toEqual([2]);
+  });
+
+  it('accepts stripped text with any matcher', () => {
+    expect(
+      flaggedLines(
+        [
+          "const code = withoutTsComments(readFileSync('x.ts', 'utf8'));",
+          "expect(code).toContain('foo');",
+          'expect(code).toMatch(/foo/);',
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('accepts text derived from the comments, which asserts documentation', () => {
+    expect(
+      flaggedLines(
+        [
+          "const example = readFileSync('.env.example', 'utf8');",
+          'const docs = example',
+          "  .split('\\n')",
+          "  .filter((line) => isMarkerCommentLine(line, '#'))",
+          "  .join('\\n');",
+          'expect(docs).toMatch(/:fx\\b/);',
+          'const prose = commentsIn(parseSource(example)).map((c) => c.pos);',
+          "expect(prose).toContain('timeout');",
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('scans only content reads in test files, and never parsed data', () => {
+    const scanOf = (file: string, source: string) =>
+      scanPresence(bind(new Map([[file, source]])), FIXTURE_CLOSURES);
+    const parsed = [
+      "const pkg = JSON.parse(readFileSync('package.json', 'utf8'));",
+      "expect(pkg.scripts).toContain('test');",
+    ].join('\n');
+
+    expect(scanOf('fixture.test.ts', overRaw("toContain('foo')"))).toEqual({
+      scanned: 1,
+      findings: [expect.stringMatching(/^fixture\.test\.ts:2 /)],
+    });
+    expect(scanOf('helper.ts', overRaw("toContain('foo')")).scanned).toBe(0);
+    expect(scanOf('fixture.test.ts', parsed).scanned).toBe(0);
+  });
+});
 
 describe('presence assertions over source text are stripped or anchored', () => {
   // The liveness control, and the reason it is a SEPARATE assertion: the
