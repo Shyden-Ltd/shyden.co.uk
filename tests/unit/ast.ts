@@ -257,6 +257,54 @@ export function declarationsIn(sf: ts.SourceFile): Map<string, ts.Expression> {
   return decls;
 }
 
+/**
+ * Every comment in a parsed file, in source order, each exactly once.
+ *
+ * Asked of the parser, never the text, because only the parser knows where a
+ * comment can be: `/**` inside a string, a template or a regex literal is
+ * content, and telling a regex from a division takes the grammar (#65).
+ *
+ * A comment is trivia before some token, so this asks at every token's full
+ * start, and asks twice. `getLeadingCommentRanges` returns only the comments
+ * after a line break; the ones still on the previous token's line come from
+ * `getTrailingCommentRanges`, and either call alone silently drops the other
+ * half. Tokens, not just nodes: the trivia before a closing `}` starts no
+ * node, and `ts.forEachChild` never visits a token.
+ *
+ * Two places look like trivia and are not. A JSDoc node's own children sit
+ * INSIDE a comment, and JSX text is content the scanner copies verbatim, so
+ * asking at either reads a `//` in a `{@link https://…}`, or a `/**` between
+ * two tags, as a comment that does not exist.
+ */
+export function commentsIn(sf: ts.SourceFile): ts.CommentRange[] {
+  const text = sf.getFullText();
+  const found = new Map<number, ts.CommentRange>();
+  const jsxText: ts.Node[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJSDoc(node)) return;
+    if (ts.isJsxText(node)) {
+      jsxText.push(node);
+      return;
+    }
+    const at = node.getFullStart();
+    for (const range of [
+      ...(ts.getLeadingCommentRanges(text, at) ?? []),
+      ...(ts.getTrailingCommentRanges(text, at) ?? []),
+    ])
+      found.set(range.pos, range);
+    node.getChildren(sf).forEach(visit);
+  };
+  visit(sf);
+  // A list's full start can fall where JSX text begins, so a range is dropped
+  // by where it STARTS, not by which node it was asked for.
+  return [...found.values()]
+    .filter(
+      (range) =>
+        !jsxText.some((node) => range.pos >= node.pos && range.pos < node.end),
+    )
+    .sort((a, b) => a.pos - b.pos);
+}
+
 /** `path/to/file.ts:42`, repo-relative, for a finding a human has to open. */
 export const where = (sf: ts.SourceFile, node: ts.Node): string =>
   `${relative(process.cwd(), sf.fileName)}:` +

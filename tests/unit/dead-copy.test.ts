@@ -24,6 +24,7 @@ import { filesUnder, searched } from '../source-files';
  * files, so a key can be complete, translated, non-blank, and never once
  * shown to anybody.
  */
+
 /**
  * Source with its comments removed, before anything is searched in it. #24.
  *

@@ -157,19 +157,6 @@ type Pair = {
 };
 
 /**
- * Which colour sits on which, and at what level.
- *
- * Hand-written deliberately: WHICH pairs the design puts together is a design
- * fact no filesystem walk can answer, and resolving it from the cascade would
- * need a browser. What IS derived is exhaustiveness — every colour token must
- * appear here or in `DECORATIVE`, so a new token cannot be added unclassified.
- *
- * NOT covered here, and covered by the measurement pass instead: the page
- * atmosphere is a conic gradient, a radial gradient and a 5% white shaft
- * overlay, so the real ground under a given text run is lighter than `--bg`
- * in places. A token table can only judge the flat case.
- */
-/**
  * The atmosphere as a layer stack, TOP-FIRST.
  *
  * Every stop composited at once is the WORST case, not the real one: the
@@ -186,6 +173,18 @@ const ATMOSPHERE = [
   '--bg',
 ] as const;
 
+/**
+ * Which colour sits on which, and at what level.
+ *
+ * Hand-written deliberately: WHICH pairs the design puts together is a design
+ * fact no filesystem walk can answer, and resolving it from the cascade would
+ * need a browser. What IS derived is exhaustiveness — every colour token must
+ * appear here or in `DECORATIVE`, so a new token cannot be added unclassified.
+ *
+ * The page atmosphere is judged here as well, not left to a later pass: a
+ * pair drawn over it names `ATMOSPHERE`, above, as its ground rather than the
+ * flat `--bg`.
+ */
 const PAIRS: Pair[] = [
   {
     fg: ['--ink'],
