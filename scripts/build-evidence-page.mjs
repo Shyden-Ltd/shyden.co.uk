@@ -22,8 +22,9 @@
  *    nobody can see. A manifest entry with no image is a THROW, not a gap.
  *
  * Everything structural -- engines, journeys, assertion order -- is derived
- * from Playwright's JSON report and the capture manifest. A sixth engine, or a
- * spec that runs on fewer, is reflected without touching this code.
+ * from Playwright's JSON report and the capture manifest rows that report's run
+ * wrote, never an earlier run's (#171). A sixth engine, or a spec that runs on
+ * fewer, is reflected without touching this code.
  */
 
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
@@ -88,6 +89,97 @@ export const droppedLine = (dropped, budgetMb) =>
   dropped.length
     ? ` DROPPED=${dropped.length} (budget ${budgetMb}MB): ` +
       dropped.map((v) => v.key).join(', ')
+    : '';
+
+/** An instant exactly as `Date.prototype.toISOString` writes one. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * Milliseconds since the epoch, or NaN for anything that is not an ISO instant.
+ *
+ * Never `Date.parse` alone: it reads "0" as midnight on 1 January 2000 and
+ * "2026" as that year's first instant, so a mangled start time would date an
+ * earlier run's rows as this run's.
+ */
+const instantOf = (value) =>
+  typeof value === 'string' && ISO_INSTANT.test(value)
+    ? Date.parse(value)
+    : Number.NaN;
+
+/** `webkit 15, firefox 2`: rows counted by engine, in first-seen order. */
+const byEngine = (rows) => {
+  const counts = new Map();
+  for (const row of rows)
+    counts.set(row.project, (counts.get(row.project) ?? 0) + 1);
+  return [...counts].map(([engine, n]) => `${engine} ${n}`).join(', ');
+};
+
+/**
+ * The manifest rows the reported run wrote, and the ones an earlier run left.
+ *
+ * `tests/e2e/evidence.ts` APPENDS to the manifest and nothing clears it, so a
+ * second run into one evidence directory kept the first run's rows: webkit,
+ * then chromium, built a page embedding 15 webkit captures under a report that
+ * ran chromium alone (#171). Each row is stamped as it is written, and a run's
+ * rows are those stamped at or after its report's `stats.startTime`, which
+ * Playwright takes as the run is configured -- before the web server starts,
+ * so before any capture.
+ *
+ * Set aside, never deleted: an earlier run's files stay where they are, and
+ * the caller names what was left out. A row with no stamp predates stamping,
+ * so it is an earlier run's by definition. What cannot be dated is refused
+ * rather than guessed at: a report with no readable start, a stamp that is not
+ * an instant, and a manifest in which nothing is the run's own.
+ */
+export const capturesOfThisRun = (manifest, report) => {
+  const startTime = report.stats?.startTime;
+  const start = instantOf(startTime);
+  if (Number.isNaN(start))
+    throw new Error(
+      `build-evidence-page: ${EVIDENCE_REPORT} has no readable stats.startTime ` +
+        `(${JSON.stringify(startTime)}), so no capture can be told apart from ` +
+        "an earlier run's. Refusing to guess.",
+    );
+
+  const current = [];
+  const earlier = [];
+  for (const row of manifest) {
+    if (row.at === undefined) {
+      earlier.push(row);
+      continue;
+    }
+    const at = instantOf(row.at);
+    if (Number.isNaN(at))
+      throw new Error(
+        `build-evidence-page: ${EVIDENCE_MANIFEST} stamps ${row.file} with ` +
+          `${JSON.stringify(row.at)}, which is not an instant. Refusing to ` +
+          'guess which run captured it.',
+      );
+    (at >= start ? current : earlier).push(row);
+  }
+
+  if (!current.length)
+    throw new Error(
+      `build-evidence-page: nothing in ${EVIDENCE_MANIFEST} was captured by ` +
+        `the run ${EVIDENCE_REPORT} describes, which started ${startTime}` +
+        (earlier.length
+          ? `; its ${earlier.length} row(s) are an earlier run's: ${byEngine(earlier)}`
+          : '') +
+        '. Refusing to emit a page with no evidence of this run. Capture ' +
+        'again, into this directory or a fresh one.',
+    );
+  return { current, earlier };
+};
+
+/**
+ * What the build line adds about an earlier run: how many rows were set aside,
+ * and from which engines. Without it, a page built from part of a directory
+ * reads exactly like one built from all of it.
+ */
+export const earlierLine = (earlier) =>
+  earlier.length
+    ? ` EARLIER=${earlier.length} (captured before this run started): ` +
+      byEngine(earlier)
     : '';
 
 const slugOf = (s) =>
@@ -204,7 +296,7 @@ export const renderEvidencePage = ({
     <label class="tick">
       <input type="checkbox" id="chk-${esc(j.id)}" data-journey="${esc(j.id)}">
       <span class="tickbox" aria-hidden="true"></span>
-      <span class="sr">Mark journey reviewed</span>
+      <span class="sr">Reviewed: ${esc(j.title)}</span>
     </label>
     <div class="j-title">
       <h3>${esc(j.title)}</h3>
@@ -430,7 +522,7 @@ ${journeyHtml}
   </div>
   <label for="note" class="sub" style="display:block;margin-bottom:6px">Notes, or what else you want covered</label>
   <textarea id="note"></textarea>
-  <p class="state" id="state">Loading saved state&hellip;</p>
+  <p class="state" id="state" role="status">Loading saved state&hellip;</p>
   ${content.notCovered ? `<p class="sub" style="margin-top:18px"><strong>Not covered by this page:</strong> ${content.notCovered}</p>` : ''}
 </section>
 </div>
@@ -439,61 +531,122 @@ ${journeyHtml}
 
 <script>
 (function () {
+  'use strict';
   var JOURNEYS = ${JSON.stringify(journeys.map((j) => j.id))};
   var DOC = 'signoff/' + ${JSON.stringify(content.signoffKey ?? 'ticket')};
-  var state = { journeys: {}, verdict: null, note: '' };
-  var db = null, saveTimer = null;
-  // Local edits outstanding against the server copy. Writes are debounced, so
-  // a snapshot can arrive carrying the document as it was BEFORE the tick the
-  // operator just made; applying it would replace state wholesale and repaint
-  // that tick off. Measured: only the first tick stuck, because the first is
-  // the only one the server had -- every later one was clobbered by the echo
-  // of the earlier write. While these two differ, the local copy is newer and
-  // the snapshot is ignored.
-  var localRev = 0, syncedRev = 0;
+  var JOURNEY_KEY = 'journey:';
+  var READY = 'Ready. Your ticks and decision are saved as you make them.';
+  var SAVED = 'Saved. Your decision persists on this page.';
+  var LOCAL = 'Ticks are local to this view \u2014 storage is not available here.';
+  var NOT_SAVED = 'Not saved \u2014 this view cannot reach storage. Your ticks are visible but will not persist.';
+  var NOT_LOADED = 'Not saved yet \u2014 the saved sign-off has not loaded.';
+  // The stored sign-off as this view last received it, always as the page's
+  // OWN copy: the runtime delivers snapshots frozen, and a page that keeps one
+  // as its state drops every later edit without an error (#172).
+  var server = copyOf(undefined);
+  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict'
+  // and 'note'. The page shows the server copy with these laid over it, so no
+  // snapshot, early or late, can repaint an edit away.
+  var pending = Object.create(null);
+  var db = null, storageAbsent = false, loaded = false, saveTimer = null;
   var stateEl = document.getElementById('state');
   var progressEl = document.getElementById('progress');
   var noteEl = document.getElementById('note');
   var approve = document.getElementById('btn-approve');
   var more = document.getElementById('btn-more');
   function say(m, ok) { stateEl.textContent = m; stateEl.className = 'state' + (ok ? ' saved' : ''); }
+  function codeOf(e) { return e && typeof e.code === 'string' ? e.code : 'unknown'; }
+  function hasPending() { return Object.keys(pending).length > 0; }
+  // Keeps only the shape this page writes. The store is shared by every
+  // viewer, so what it delivers is untrusted input.
+  function copyOf(body) {
+    var source = body && typeof body === 'object' ? body : {};
+    var stored = source.journeys && typeof source.journeys === 'object' ? source.journeys : {};
+    var journeys = {};
+    Object.keys(stored).forEach(function (id) {
+      if (typeof stored[id] === 'boolean') journeys[id] = stored[id];
+    });
+    return {
+      journeys: journeys,
+      verdict: source.verdict === 'approved' || source.verdict === 'more' ? source.verdict : null,
+      note: typeof source.note === 'string' ? source.note : ''
+    };
+  }
+  function overlay(target, edits) {
+    Object.keys(edits).forEach(function (key) {
+      if (key.indexOf(JOURNEY_KEY) === 0) target.journeys[key.slice(JOURNEY_KEY.length)] = edits[key];
+      else target[key] = edits[key];
+    });
+    return target;
+  }
+  function view() { return overlay(copyOf(server), pending); }
   function paint() {
-    var done = 0;
+    var shown = view(), done = 0;
     JOURNEYS.forEach(function (id) {
       var box = document.getElementById('chk-' + id);
       if (!box) return;
-      var on = !!state.journeys[id];
+      var on = shown.journeys[id] === true;
       box.checked = on;
       var sec = document.getElementById('j-' + id);
       if (sec) sec.classList.toggle('done', on);
       if (on) done++;
     });
     progressEl.textContent = done + ' of ' + JOURNEYS.length + ' journeys reviewed';
-    approve.setAttribute('aria-pressed', String(state.verdict === 'approved'));
-    more.setAttribute('aria-pressed', String(state.verdict === 'more'));
-    if (document.activeElement !== noteEl) noteEl.value = state.note || '';
+    approve.setAttribute('aria-pressed', String(shown.verdict === 'approved'));
+    more.setAttribute('aria-pressed', String(shown.verdict === 'more'));
+    if (document.activeElement !== noteEl) noteEl.value = shown.note;
+  }
+  function schedule() {
+    say('Saving\u2026', false);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 400);
+  }
+  function change(key, value) {
+    pending[key] = value;
+    paint();
+    if (storageAbsent) { say(NOT_SAVED, false); return; }
+    // set() replaces the whole document, so nothing is written before the
+    // stored sign-off has loaded: an early write would erase it.
+    if (!loaded) { say(NOT_LOADED, false); return; }
+    schedule();
   }
   function save() {
-    localRev++;
-    if (!db) { say('Not saved \u2014 this view cannot reach storage. Your ticks are visible but will not persist.', false); return; }
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      // The revision this write carries. Captured at FIRE time, not at change
-      // time: the debounce coalesces several ticks into one write, and it is
-      // the newest of them that reaches the server.
-      var writing = localRev;
-      say('Saving\u2026', false);
-      Promise.resolve(db.doc(DOC).set({ journeys: state.journeys, verdict: state.verdict, note: state.note, updatedAt: new Date().toISOString() }))
-        .then(function () { syncedRev = writing; say('Saved. Your decision persists on this page.', true); })
-        .catch(function (e) { say('Could not save: ' + (e && e.code ? e.code : 'unknown'), false); });
-    }, 400);
+    saveTimer = null;
+    var carried = Object.assign(Object.create(null), pending);
+    var body = view();
+    body.updatedAt = new Date().toISOString();
+    db.doc(DOC).set(body).then(function () {
+      // The store now holds what this write carried. Once a subscription has
+      // ended nothing echoes it back, so the server copy takes it from here.
+      overlay(server, carried);
+      Object.keys(carried).forEach(function (key) {
+        if (pending[key] === carried[key]) delete pending[key];
+      });
+      paint();
+      if (!hasPending() && saveTimer === null) say(SAVED, true);
+    }, function (e) {
+      say('Could not save: ' + codeOf(e), false);
+    });
+  }
+  function receive(snap) {
+    server = copyOf(snap.data());
+    if (!loaded) {
+      loaded = true;
+      if (hasPending()) schedule();
+      else say(READY, true);
+    }
+    paint();
+  }
+  function markStorageAbsent() {
+    storageAbsent = true;
+    say(LOCAL, false);
   }
   document.querySelectorAll('input[data-journey]').forEach(function (box) {
-    box.addEventListener('change', function () { state.journeys[box.dataset.journey] = box.checked; paint(); save(); });
+    box.addEventListener('change', function () { change(JOURNEY_KEY + box.dataset.journey, box.checked); });
   });
-  approve.addEventListener('click', function () { state.verdict = state.verdict === 'approved' ? null : 'approved'; paint(); save(); });
-  more.addEventListener('click', function () { state.verdict = state.verdict === 'more' ? null : 'more'; paint(); save(); });
-  noteEl.addEventListener('input', function () { state.note = noteEl.value; save(); });
+  approve.addEventListener('click', function () { change('verdict', view().verdict === 'approved' ? null : 'approved'); });
+  more.addEventListener('click', function () { change('verdict', view().verdict === 'more' ? null : 'more'); });
+  noteEl.addEventListener('input', function () { change('note', noteEl.value); });
   var lb = document.getElementById('lb'), lbImg = document.getElementById('lb-img'), lbCap = document.getElementById('lb-cap');
   document.addEventListener('click', function (e) {
     var img = e.target.closest ? e.target.closest('.shot img') : null;
@@ -502,37 +655,26 @@ ${journeyHtml}
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') lb.classList.remove('on'); });
   paint();
-  if (!window.claude || !window.claude.use) { say('Ticks are local to this view \u2014 storage is not available here.', false); return; }
+  if (!window.claude || typeof window.claude.use !== 'function') { markStorageAbsent(); return; }
   window.claude.use('db').then(function (handle) {
+    if (!handle) { markStorageAbsent(); return; }
     db = handle;
-    if (!db) { say('Ticks are local to this view \u2014 storage is not available here.', false); return; }
     var ref = db.doc(DOC);
-    var apply = function (snap) {
-      // Never let the server's copy overwrite ticks that have not been
-      // confirmed saved. Another viewer's change is picked up the moment this
-      // view is in sync again, which is the correct trade: an operator's own
-      // input is the one thing that must not disappear under them.
-      if (localRev !== syncedRev) return;
-      var d = snap && typeof snap.data === 'function' ? snap.data() : (snap && snap.data) || snap;
-      if (d && typeof d === 'object') { state.journeys = d.journeys || {}; state.verdict = d.verdict || null; state.note = d.note || ''; paint(); }
-    };
-    Promise.resolve(ref.get()).then(function (snap) { apply(snap); say('Ready. Your ticks and decision are saved as you make them.', true); })
-      .catch(function () { say('Ready. Nothing saved yet.', true); });
-    if (typeof ref.onSnapshot === 'function') { try { ref.onSnapshot(apply); } catch (e) {} }
-  }).catch(function () { say('Ticks are local to this view \u2014 storage is not available here.', false); });
+    ref.get().then(receive, function (e) {
+      // A read can fail after live updates have already loaded the sign-off.
+      if (!loaded) say('Could not load the saved sign-off (' + codeOf(e) + '). Ticks are not saved until it loads.', false);
+    });
+    // Pass the error callback: without one, a subscription that ends is an
+    // uncaught error. It speaks once the sign-off has loaded; before that, the
+    // read's own failure is the one to report.
+    ref.onSnapshot(receive, function (e) {
+      if (loaded) say('Live updates stopped (' + codeOf(e) + '). Reload to see changes made elsewhere.', false);
+    });
+  }, markStorageAbsent);
 })();
 </script>`;
 };
 
-/**
- * What a capture actually is, read from its own first bytes.
- *
- * Never from the extension and never hardcoded: a data URI that claims a type
- * the bytes are not paints nothing, and a page of blank frames looks exactly
- * like a page of captures that failed. An unrecognised format is a THROW for
- * the same reason a manifest entry with no image is -- silence here is
- * indistinguishable from evidence.
- */
 /**
  * What the publish has to grant, said out loud at build time.
  *
@@ -551,6 +693,15 @@ export const PUBLISH_NOTE =
   'resolves null, the page says "ticks are local to this view", and the ' +
   'sign-off is recorded NOWHERE.';
 
+/**
+ * What a capture actually is, read from its own first bytes.
+ *
+ * Never from the extension and never hardcoded: a data URI that claims a type
+ * the bytes are not paints nothing, and a page of blank frames looks exactly
+ * like a page of captures that failed. An unrecognised format is a THROW for
+ * the same reason a manifest entry with no image is -- silence here is
+ * indistinguishable from evidence.
+ */
 export const mediaType = (bytes) => {
   if (
     bytes.length >= 8 &&
@@ -644,12 +795,17 @@ const main = () => {
     process.exit(2);
   }
 
-  const manifest = readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
   const report = JSON.parse(readFileSync(join(dir, EVIDENCE_REPORT), 'utf8'));
+  // Before any capture is read: an earlier run's rows are set aside here, so a
+  // capture of theirs that has gone since is never reached for.
+  const { current: manifest, earlier } = capturesOfThisRun(
+    readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l)),
+    report,
+  );
   const content = JSON.parse(readFileSync(contentPath, 'utf8'));
   // Before any capture is encoded: a missing recording refuses the whole page.
   const candidates = videoCandidates(report);
@@ -696,7 +852,8 @@ const main = () => {
   console.log(
     `written ${out} ${(Buffer.byteLength(html) / 1048576).toFixed(2)}MB ` +
       `shots=${shots.size} videos=${videos.size}/${candidates.length}` +
-      droppedLine(dropped, budgetMb),
+      droppedLine(dropped, budgetMb) +
+      earlierLine(earlier),
   );
   console.log(PUBLISH_NOTE);
 };

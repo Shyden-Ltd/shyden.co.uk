@@ -29,6 +29,7 @@ const id = getStrings('id');
  * eleven separate occasions where a plan snippet gave a label, selector or
  * whole sentence that did not exist in the product.
  */
+
 /** Every unordered pair of locales, derived -- `en/id`, `en/zh`, ... */
 const localePairs = (): [Locale, Locale][] =>
   LOCALES.flatMap((a, i) =>

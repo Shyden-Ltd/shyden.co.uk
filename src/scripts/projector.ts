@@ -192,18 +192,6 @@ export function renderProjector(
   let leave: () => Promise<void>;
 
   /**
-   * The reveal: each group arriving in turn, so a class watches rather than
-   * reads a wall of names that was simply there.
-   *
-   * `revealing` goes on immediately and `revealed` follows one group at a
-   * time; CSS carries the transition. Both classes are cleared first, so a
-   * second showing reveals again rather than finding everything already
-   * revealed.
-   *
-   * With animation off, the groups go straight to `revealed` and never
-   * carry `revealing` at all -- not a faster animation, none.
-   */
-  /**
    * Cancel a reveal in progress AND undo its half-finished state.
    *
    * Clearing the timers is not enough on its own: a card left carrying
@@ -222,6 +210,18 @@ export function renderProjector(
     }
   };
 
+  /**
+   * The reveal: each group arriving in turn, so a class watches rather than
+   * reads a wall of names that was simply there.
+   *
+   * `revealing` goes on immediately and `revealed` follows one group at a
+   * time; CSS carries the transition. Both classes are cleared first, so a
+   * second showing reveals again rather than finding everything already
+   * revealed.
+   *
+   * With animation off, the groups go straight to `revealed` and never
+   * carry `revealing` at all -- not a faster animation, none.
+   */
   const reveal = () => {
     stopReveal();
     const groups = Array.from(stage.querySelectorAll<HTMLElement>('.group'));

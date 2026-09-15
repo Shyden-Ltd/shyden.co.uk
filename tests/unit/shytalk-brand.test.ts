@@ -12,6 +12,7 @@ import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
  * out in more than one place, which is what makes changing them expensive and
  * what makes a passing test a coincidence.
  */
+
 /**
  * The only two places these values may be spelled out.
  *
