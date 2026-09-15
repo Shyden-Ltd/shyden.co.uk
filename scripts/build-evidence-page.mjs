@@ -447,6 +447,7 @@ ${journeyHtml}
   var SAVED = 'Saved. Your decision persists on this page.';
   var LOCAL = 'Ticks are local to this view — storage is not available here.';
   var NOT_SAVED = 'Not saved — this view cannot reach storage. Your ticks are visible but will not persist.';
+  var NOT_LOADED = 'Not saved yet — the saved sign-off has not loaded.';
   // The stored sign-off as this view last received it, always as the page's
   // OWN copy: the runtime delivers snapshots frozen, and a page that keeps one
   // as its state drops every later edit without an error (#172).
@@ -503,19 +504,22 @@ ${journeyHtml}
     more.setAttribute('aria-pressed', String(shown.verdict === 'more'));
     if (document.activeElement !== noteEl) noteEl.value = shown.note;
   }
-  function change(key, value) {
-    pending[key] = value;
-    paint();
-    if (storageAbsent) { say(NOT_SAVED, false); return; }
+  function schedule() {
     say('Saving…', false);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 400);
   }
-  function save() {
-    saveTimer = null;
+  function change(key, value) {
+    pending[key] = value;
+    paint();
+    if (storageAbsent) { say(NOT_SAVED, false); return; }
     // set() replaces the whole document, so nothing is written before the
     // stored sign-off has loaded: an early write would erase it.
-    if (!db || !loaded) return;
+    if (!loaded) { say(NOT_LOADED, false); return; }
+    schedule();
+  }
+  function save() {
+    saveTimer = null;
     var carried = Object.assign(Object.create(null), pending);
     var body = view();
     body.updatedAt = new Date().toISOString();
@@ -536,7 +540,8 @@ ${journeyHtml}
     server = copyOf(snap.data());
     if (!loaded) {
       loaded = true;
-      if (hasPending()) { clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); }
+      if (hasPending()) schedule();
+      else say(READY, true);
     }
     paint();
   }
@@ -563,14 +568,15 @@ ${journeyHtml}
     if (!handle) { markStorageAbsent(); return; }
     db = handle;
     var ref = db.doc(DOC);
-    ref.get().then(function (snap) {
-      receive(snap);
-      if (!hasPending()) say(READY, true);
+    ref.get().then(receive, function (e) {
+      // A read can fail after live updates have already loaded the sign-off.
+      if (!loaded) say('Could not load the saved sign-off (' + codeOf(e) + '). Ticks are not saved until it loads.', false);
     });
     // Pass the error callback: without one, a subscription that ends is an
-    // uncaught error and this page would never say so.
+    // uncaught error. It speaks once the sign-off has loaded; before that, the
+    // read's own failure is the one to report.
     ref.onSnapshot(receive, function (e) {
-      say('Live updates stopped (' + codeOf(e) + '). Reload to see changes made elsewhere.', false);
+      if (loaded) say('Live updates stopped (' + codeOf(e) + '). Reload to see changes made elsewhere.', false);
     });
   }, markStorageAbsent);
 })();
