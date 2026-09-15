@@ -1,0 +1,136 @@
+import ts from 'typescript';
+import { derivationOf, where, type Bound, type Closure } from './ast';
+
+/**
+ * The detector behind `anchored-presence.test.ts`, taken out of the guard so it
+ * can be run over fixtures (#183). The guard asked "is the matcher a regex?"
+ * and nobody could see that was the wrong question, because the only thing it
+ * ever ran over was the real suite, where the answer happened to be zero.
+ */
+
+/** JSON carries no comments, so parsed data cannot be satisfied by one. */
+const PARSED = new Set(['parse', 'JSON']);
+
+export interface PresenceClosures {
+  /** Reaches a read of file CONTENT; only those assertions are scanned. */
+  readonly readers: Closure;
+  /** Reaches a comment remover, so no comment can satisfy the matcher. */
+  readonly strippers: Closure;
+  /**
+   * Reaches a comment READER. Text built from the comments asserts the
+   * documentation on purpose, and a comment satisfying it is the point.
+   */
+  readonly commentReaders: Closure;
+}
+
+export interface PresenceScan {
+  readonly scanned: number;
+  readonly findings: readonly string[];
+}
+
+/**
+ * A regex body's alternatives, split only at a top-level `|`.
+ *
+ * A `|` inside a class, inside a group, or escaped is part of one alternative:
+ * `/^(a|b)c/` pins both spellings to the line start, and `/^a|b/` pins only
+ * `a` -- `b` matches anywhere, including inside a comment.
+ */
+function alternativesOf(body: string): string[] {
+  const alternatives: string[] = [];
+  let depth = 0;
+  let inClass = false;
+  let start = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i];
+    if (ch === '\\') {
+      i += 1;
+    } else if (inClass) {
+      if (ch === ']') inClass = false;
+    } else if (ch === '[') {
+      inClass = true;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+    } else if (ch === '|' && depth === 0) {
+      alternatives.push(body.slice(start, i));
+      start = i + 1;
+    }
+  }
+  alternatives.push(body.slice(start));
+  return alternatives;
+}
+
+/**
+ * Whether a regex literal pins what it matches to the start of a line.
+ *
+ * `^` must open EVERY top-level alternative. `$` alone does not count: `// x`
+ * ends a line exactly as `x` does, so a trailing anchor is satisfied by a
+ * comment. The `m` flag is not required, because a matcher over one line of
+ * text (a URL, a single log line) is pinned by `^` without it. `\^` and `[^`
+ * begin with something other than `^`, so neither is mistaken for an anchor.
+ */
+function isAnchored(literal: ts.RegularExpressionLiteral): boolean {
+  const body = literal.text.slice(1, literal.text.lastIndexOf('/'));
+  return alternativesOf(body).every((alternative) =>
+    alternative.startsWith('^'),
+  );
+}
+
+/**
+ * Every `toContain`/`toMatch` in a test file whose subject reads source
+ * content, and the ones among them that a comment could satisfy: neither
+ * stripped, nor comment-derived, nor matched by an anchored regex.
+ */
+export function scanPresence(
+  bound: Bound,
+  { readers, strippers, commentReaders }: PresenceClosures,
+): PresenceScan {
+  const findings: string[] = [];
+  let scanned = 0;
+  for (const [file, sf] of bound.files) {
+    if (!/\.(test|spec)\.ts$/.test(file)) continue;
+
+    const check = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression)
+      ) {
+        const matcher = node.expression.name.text;
+        if (matcher === 'toContain' || matcher === 'toMatch') {
+          const expectCall = node.expression.expression;
+          const subject = ts.isCallExpression(expectCall)
+            ? expectCall.arguments[0]
+            : undefined;
+          if (subject) {
+            const { names } = derivationOf(subject, bound);
+            const reaches = (closure: Closure) =>
+              names.some((n) => closure.reaches(file, n));
+            const parsed = names.some((n) => PARSED.has(n));
+            if (reaches(readers) && !parsed) {
+              scanned += 1;
+              const arg = node.arguments[0];
+              const anchored =
+                arg !== undefined &&
+                ts.isRegularExpressionLiteral(arg) &&
+                isAnchored(arg);
+              if (
+                !reaches(strippers) &&
+                !reaches(commentReaders) &&
+                !anchored
+              ) {
+                findings.push(
+                  `${where(sf, node)} — ` +
+                    node.getText().replace(/\s+/g, ' ').slice(0, 90),
+                );
+              }
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, check);
+    };
+    check(sf);
+  }
+  return { scanned, findings };
+}
