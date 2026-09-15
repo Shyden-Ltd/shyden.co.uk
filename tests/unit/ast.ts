@@ -8,9 +8,10 @@ import { relative } from 'node:path';
  * Two guards in this suite reason about the suite itself.
  * `anchored-presence.test.ts` (#98) asks whether a presence assertion reads
  * stripped text; `absence-liveness.test.ts` (#118) asks whether an absence
- * assertion proves its population was live. Both need the same four things:
- * parse a file, name what a node is declared as, follow an expression back to
- * the identifiers feeding it, and close a call graph transitively.
+ * assertion proves its population was live. Both need the same five things:
+ * parse a file, bind it so a name resolves by scope, name what a node is
+ * declared as, follow an expression back to what it is made of, and close a
+ * call graph transitively.
  *
  * They live here rather than in either guard because #80's lesson is that a
  * "one home" rule which only sees the function it was written for accumulates
@@ -58,74 +59,190 @@ export const declaredName = (node: ts.Node): string | null => {
 };
 
 /**
- * Every identifier feeding an expression, innermost callee first.
+ * Source files bound into one TypeScript program, so a name resolves the way
+ * the language resolves it (#184).
  *
- * `withoutTsComments(readFileSync(p, 'utf8'))` yields both names, so a caller
- * can ask what an expression is ultimately made of rather than what its
- * outermost call happens to be.
+ * Resolved by bare name, as this module once did it, the last `const` of a name
+ * won in every scope of its file. `supply-chain.test.ts` declares
+ * `const config` in four tests, and two stripped assertions read as raw
+ * because the fourth test's `parseCleanYaml(...)` overwrote the
+ * `configBody()` their own tests declare. Scoping is the binder's job, and a
+ * hand-written scope walk is one more approximation to get wrong -- block
+ * scope, `var` hoisting, parameters, catch clauses -- so the checker is asked
+ * instead, the way `commentsIn` asks the scanner rather than the text.
  */
-export const rootsOf = (
+export interface Bound {
+  /** Every file, keyed by the name it was bound under. */
+  readonly files: ReadonlyMap<string, ts.SourceFile>;
+  /**
+   * The initializer of the variable `id` refers to. A parameter, an import, a
+   * function, a class or a destructured binding binds the name with no
+   * initializer of its own, so it answers `undefined` -- and ends the search
+   * there, instead of letting an outer declaration of the same name answer in
+   * its place. A destructured binding stops rather than following its whole
+   * source, because that source builds every sibling too: `readings` would be
+   * judged by the `.filter()` that builds `allowed` beside it.
+   */
+  initializerOf(id: ts.Identifier): ts.Expression | undefined;
+}
+
+/**
+ * Bind `sources`, each file's name to its text, into one program.
+ *
+ * Binding is all that is wanted: no lib, no module resolution, no type
+ * checking. `moduleDetection: Force` makes every file a module, because a file
+ * with no import or export is otherwise a SCRIPT, and scripts share one global
+ * scope -- two fixtures each declaring `config` would both resolve to
+ * whichever was bound first.
+ */
+export function bind(sources: ReadonlyMap<string, string>): Bound {
+  const options: ts.CompilerOptions = {
+    noLib: true,
+    noResolve: true,
+    types: [],
+    target: ts.ScriptTarget.Latest,
+    moduleDetection: ts.ModuleDetectionKind.Force,
+  };
+  const parsed = new Map<string, ts.SourceFile>();
+  const host: ts.CompilerHost = {
+    // Parsed here, with the program's own options, rather than handed over
+    // pre-parsed: those options are what carry `moduleDetection` to the file.
+    getSourceFile: (name, languageVersionOrOptions) => {
+      const text = sources.get(name);
+      if (text === undefined) return undefined;
+      const sf = ts.createSourceFile(
+        name,
+        text,
+        languageVersionOrOptions,
+        true,
+      );
+      parsed.set(name, sf);
+      return sf;
+    },
+    fileExists: (name) => sources.has(name),
+    readFile: (name) => sources.get(name),
+    writeFile: () => {},
+    getDefaultLibFileName: () => 'lib.d.ts',
+    getCurrentDirectory: () => process.cwd(),
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+  };
+  const checker = ts
+    .createProgram([...sources.keys()], options, host)
+    .getTypeChecker();
+
+  const files = new Map<string, ts.SourceFile>();
+  for (const name of sources.keys()) {
+    const sf = parsed.get(name);
+    if (!sf) throw new Error(`${name} was not bound into the program`);
+    files.set(name, sf);
+  }
+
+  return {
+    files,
+    initializerOf(id) {
+      // `{ config }` names a property AND a variable, and the property -- the
+      // one `getSymbolAtLocation` answers with -- has no initializer.
+      const symbol = ts.isShorthandPropertyAssignment(id.parent)
+        ? checker.getShorthandAssignmentValueSymbol(id.parent)
+        : checker.getSymbolAtLocation(id);
+      const declaration = symbol?.valueDeclaration;
+      return declaration && ts.isVariableDeclaration(declaration)
+        ? declaration.initializer
+        : undefined;
+    },
+  };
+}
+
+/** `bind` over files on disk, each keyed by the path it was read from. */
+export const bindFiles = (paths: readonly string[]): Bound =>
+  bind(new Map(paths.map((path) => [path, readFileSync(path, 'utf8')])));
+
+/**
+ * What an expression is made of, following the bindings its own scope sees to
+ * a fixed point. Bindings, never names: a name followed through a file-wide
+ * map reaches whichever same-named declaration the file holds last (#184).
+ */
+export interface Derivation {
+  /** Every identifier name the expression is built from. */
+  readonly names: readonly string[];
+  /** Every variable initializer followed on the way, in the order reached. */
+  readonly initializers: readonly ts.Expression[];
+}
+
+/**
+ * Every identifier feeding an expression, innermost callee first, as nodes so
+ * each one can be resolved from where it stands. `withoutTsComments(
+ * readFileSync(p))` yields both callees, so a caller can ask what an expression
+ * is made of rather than what its outermost call happens to be.
+ *
+ * A type position contributes nothing, for the reason a key or a parameter
+ * name does not: a type is not a reference. The one type-shaped node that
+ * holds a value is a heritage clause -- `class extends Base` evaluates `Base`.
+ */
+function identifiersIn(
   node: ts.Node | undefined,
-  acc: string[] = [],
-): string[] => {
+  acc: ts.Identifier[] = [],
+): ts.Identifier[] {
   if (!node) return acc;
   if (ts.isCallExpression(node)) {
-    if (ts.isIdentifier(node.expression)) acc.push(node.expression.text);
+    if (ts.isIdentifier(node.expression)) acc.push(node.expression);
     else if (ts.isPropertyAccessExpression(node.expression))
-      rootsOf(node.expression.expression, acc);
-    node.arguments.forEach((arg) => rootsOf(arg, acc));
+      identifiersIn(node.expression.expression, acc);
+    node.arguments.forEach((arg) => identifiersIn(arg, acc));
     return acc;
   }
-  if (ts.isPropertyAccessExpression(node)) return rootsOf(node.expression, acc);
+  if (ts.isPropertyAccessExpression(node))
+    return identifiersIn(node.expression, acc);
   // A key is a BINDING, not a reference. `{ config: {} }` in a test factory
   // was resolving its key to a `config` helper that reads a file, which made
   // a deliberately-empty boundary case read as a filesystem scan. Parameter
   // names leak the same way, so only a default value counts there.
-  if (ts.isPropertyAssignment(node)) return rootsOf(node.initializer, acc);
-  if (ts.isParameter(node)) return rootsOf(node.initializer, acc);
+  if (ts.isPropertyAssignment(node))
+    return identifiersIn(node.initializer, acc);
+  if (ts.isParameter(node)) return identifiersIn(node.initializer, acc);
+  if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node))
+    return acc;
   if (ts.isIdentifier(node)) {
-    acc.push(node.text);
+    acc.push(node);
     return acc;
   }
-  // The braces are load-bearing. `ts.forEachChild` STOPS at the first
-  // child whose callback returns something truthy, and `rootsOf` returns
-  // `acc` -- an array, always truthy. Written point-free it visited exactly
-  // one child per node, so an arrow function yielded its parameter and never
-  // its body. Inherited from #98, where it quietly narrowed that guard too.
+  // The braces are load-bearing. `ts.forEachChild` STOPS at the first child
+  // whose callback returns something truthy, and this returns `acc` -- an
+  // array, always truthy. Written point-free it visited exactly one child per
+  // node, so an arrow function yielded its parameter and never its body.
+  // Inherited from #98, where it quietly narrowed that guard too.
   ts.forEachChild(node, (child) => {
-    rootsOf(child, acc);
+    identifiersIn(child, acc);
   });
   return acc;
-};
+}
 
 /**
- * Every identifier feeding an expression, following local `const` bindings
- * to a fixed point.
+ * What `node` is made of, each identifier resolved in its own scope.
  *
- * One hop is not enough and the shortfall hides exactly the guards that
- * matter. `locale-beta.test.ts` writes `const source = withoutTsComments(
+ * To a fixed point, because one hop hides exactly the guards that matter.
+ * `locale-beta.test.ts` writes `const source = withoutTsComments(
  * readFileSync(INDEX))` and then asserts over `source.match(...)`, so the
  * `readFileSync` is two hops from the assertion. #98's derivation stopped at
  * one and reached it only by accident, resolving the local string to an
  * unrelated `source()` function three files away -- the right answer for the
  * wrong reason, which stopped being right the moment that accident was fixed.
  */
-export function rootsThrough(
-  node: ts.Expression,
-  decls: ReadonlyMap<string, ts.Expression>,
-): string[] {
-  const seen = new Set<string>();
-  const queue = rootsOf(node);
-  const out: string[] = [];
+export function derivationOf(node: ts.Expression, bound: Bound): Derivation {
+  const names = new Set<string>();
+  const initializers: ts.Expression[] = [];
+  const queue = identifiersIn(node);
   while (queue.length > 0) {
-    const name = queue.shift() as string;
-    if (seen.has(name)) continue;
-    seen.add(name);
-    out.push(name);
-    const decl = decls.get(name);
-    if (decl) queue.push(...rootsOf(decl));
+    const id = queue.shift() as ts.Identifier;
+    names.add(id.text);
+    const init = bound.initializerOf(id);
+    if (init === undefined || initializers.includes(init)) continue;
+    initializers.push(init);
+    queue.push(...identifiersIn(init));
   }
-  return out;
+  return { names: [...names], initializers };
 }
 
 export interface Closure {
@@ -239,22 +356,6 @@ export function callGraph(files: readonly string[]): CallGraph {
       };
     },
   };
-}
-
-/** Every `const x = <expr>` in a file, for resolving an identifier one hop. */
-export function declarationsIn(sf: ts.SourceFile): Map<string, ts.Expression> {
-  const decls = new Map<string, ts.Expression>();
-  const collect = (node: ts.Node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer
-    )
-      decls.set(node.name.text, node.initializer);
-    ts.forEachChild(node, collect);
-  };
-  collect(sf);
-  return decls;
 }
 
 /**
