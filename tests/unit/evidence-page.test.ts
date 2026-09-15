@@ -19,7 +19,7 @@ import {
   EVIDENCE_MANIFEST,
   EVIDENCE_REPORT,
 } from '../../scripts/evidence-files.mjs';
-import { captureOptions } from '../e2e/evidence';
+import { captureOptions, manifestRow } from '../e2e/evidence';
 import {
   droppedLine,
   imageSize,
@@ -393,6 +393,31 @@ describe('a recording the report names is on disk, or the build refuses', () => 
     expect(built.status, built.stderr).toBe(0);
     expect(built.stdout).toContain('videos=1/1');
     expect(existsSync(page)).toBe(true);
+  });
+});
+
+/**
+ * An earlier run's captures never reach a page built from a later run (#171).
+ *
+ * The harness APPENDS to the manifest and nothing clears it, so a second run
+ * into one evidence directory kept the first run's rows and pictures. Measured:
+ * webkit, then chromium, into one directory built a page embedding 15 webkit
+ * captures under a report that ran chromium alone. Every row is now stamped as
+ * it is written, and the builder keeps only the rows the reported run wrote.
+ */
+describe('an earlier run in the same evidence directory stays off the page', () => {
+  it('stamps each manifest row with the instant it was written, keeping what it records', () => {
+    const capture = {
+      project: 'webkit',
+      title: 'suite > a journey',
+      order: 2,
+      label: 'second thing',
+      file: 'webkit/a__02.png',
+    };
+    expect(manifestRow(capture, new Date('2026-01-01T00:00:05.000Z'))).toEqual({
+      ...capture,
+      at: '2026-01-01T00:00:05.000Z',
+    });
   });
 });
 
