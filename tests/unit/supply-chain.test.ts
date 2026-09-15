@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withoutYamlComments, withoutYamlQuotes } from './source-text';
 import { nonEmpty, searched } from '../source-files';
+import { parseCleanYaml } from '../workflow-jobs';
 
 /**
  * The CI supply chain is pinned, and something keeps it current.
@@ -221,5 +222,111 @@ describe('Dependabot keeps the pins from rotting', () => {
       'an ecosystem defaults to the default branch, bypassing the develop gate',
     ).toBe(ecosystems);
     expect(config).not.toMatch(/target-branch:\s*["']?main["']?/);
+  });
+});
+
+/**
+ * The majors a peer range admits, for a range written as `^X.Y.Z` terms
+ * joined by `||`. Every term is read before any answer is given, and a term
+ * in any other form throws: a range this cannot read is a question for a
+ * person, and a guess would either hold TypeScript back for nothing or let
+ * the hold outlive its reason.
+ */
+const admittedMajors = (range: string): number[] =>
+  range.split('||').map((term) => {
+    const caret = /^\^(\d+)\.\d+\.\d+$/.exec(term.trim());
+    if (!caret)
+      throw new Error(`cannot read "${term.trim()}" in peer range "${range}"`);
+    return Number(caret[1]);
+  });
+
+/** The range an INSTALLED package declares for one of its peers. */
+const installedPeerRange = (pkg: string, peer: string): string => {
+  const manifest = JSON.parse(
+    readFileSync(join('node_modules', pkg, 'package.json'), 'utf8'),
+  ) as { peerDependencies?: Record<string, string> };
+  const range = manifest.peerDependencies?.[peer];
+  if (range === undefined)
+    throw new Error(
+      `${pkg} declares no ${peer} peer: judge the hold again (#177)`,
+    );
+  return range;
+};
+
+/** Dependabot's `ignore` rules for one npm dependency, from the PARSED config. */
+const npmIgnoresFor = (name: string): unknown[] => {
+  const config = parseCleanYaml(dependabot(), DEPENDABOT) as {
+    updates?: {
+      'package-ecosystem'?: string;
+      ignore?: { 'dependency-name'?: string }[];
+    }[];
+  };
+  return (config.updates ?? [])
+    .filter((entry) => entry['package-ecosystem'] === 'npm')
+    .flatMap((entry) => entry.ignore ?? [])
+    .filter((rule) => rule['dependency-name'] === name);
+};
+
+/**
+ * TypeScript is held at 6 (#177), and the hold is tied to what lifts it.
+ *
+ * Two reasons, measured 2026-09-15 on Dependabot's 7.0.2 PR (#169).
+ * `@astrojs/check`, which `astro check` runs on, peers `^5.0.0 || ^6.0.0`, so
+ * 7 cannot install. And 7 moved the compiler API to `typescript/unstable/*`,
+ * leaving its `typescript` import with only `version` and
+ * `versionMajorMinor`, while six files under tests/ call `createSourceFile`
+ * and 30 more names through it.
+ *
+ * The rule is PARSED, not matched: which update types it covers is
+ * structure, and a parsed tree carries no comment that could satisfy it. The
+ * second test fails the day `@astrojs/check` accepts 7, so the hold is judged
+ * again when its install blocker goes, not when somebody remembers it.
+ */
+describe('TypeScript is held at 6 until it can move', () => {
+  it('ignores TypeScript majors, and only majors', () => {
+    expect(
+      npmIgnoresFor('typescript'),
+      'without it, every 7.x release opens a PR that cannot install',
+    ).toEqual([
+      {
+        'dependency-name': 'typescript',
+        'update-types': ['version-update:semver-major'],
+      },
+    ]);
+  });
+
+  it('is judged again once @astrojs/check accepts TypeScript 7', () => {
+    const majors = admittedMajors(
+      installedPeerRange('@astrojs/check', 'typescript'),
+    );
+
+    expect(majors, 'the reader must see the major this repo runs').toContain(6);
+    expect(
+      searched(
+        majors.filter((major) => major >= 7),
+        { of: majors, what: 'TypeScript majors @astrojs/check admits' },
+      ),
+      '@astrojs/check now accepts TypeScript 7 or later: port the six files under tests/ off the TypeScript 6 compiler API (7 moved it to typescript/unstable/*), then delete the typescript ignore in dependabot.yml and this describe block',
+    ).toEqual([]);
+  });
+});
+
+describe('admittedMajors reads a caret peer range, and refuses any other', () => {
+  it('reads each caret term to its major', () => {
+    expect(admittedMajors('^5.0.0 || ^6.0.0')).toEqual([5, 6]);
+    expect(admittedMajors('^7.1.0')).toEqual([7]);
+  });
+
+  it('throws on any other form, even beside a term it can read', () => {
+    for (const range of [
+      '>=5.0.0',
+      '~6.0.0',
+      '6.x',
+      '*',
+      '',
+      '^6.0.0 || >=7.0.0',
+    ]) {
+      expect(() => admittedMajors(range), `"${range}"`).toThrow(/cannot read/);
+    }
   });
 });

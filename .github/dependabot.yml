@@ -28,6 +28,17 @@ updates:
       - 'dependencies'
       - 'npm'
     open-pull-requests-limit: 5
+    # TypeScript is held at 6 (#177). Two reasons, both measured 2026-09-15:
+    # @astrojs/check, which `astro check` runs on, peers typescript
+    # "^5.0.0 || ^6.0.0", so 7 cannot install; and TypeScript 7 moved its
+    # compiler API to `typescript/unstable/*`, while six files under tests/
+    # call it through the plain `typescript` import. Majors only, so 6.x
+    # patches and minors still arrive. supply-chain.test.ts goes red the day
+    # @astrojs/check accepts 7: port those files, then delete this rule.
+    ignore:
+      - dependency-name: 'typescript'
+        update-types:
+          - 'version-update:semver-major'
     groups:
       patch-updates:
         update-types:
