@@ -155,10 +155,13 @@ async function openEvidencePage(
     seed: {},
     holdUse: false,
     subscriptionDies: false,
+    getFails: false,
     ...options,
   });
   await page.goto(`${ORIGIN}/`);
-  if (!options.holdUse)
+  // Nothing is delivered while use() is held, or when every read fails and no
+  // subscription lives to deliver the stored state instead.
+  if (!options.holdUse && !(options.getFails && options.subscriptionDies))
     await expect
       .poll(
         async () => (await counters(page)).deliveries,
@@ -348,7 +351,24 @@ for (const { order, when } of ORDERS) {
       });
       await toggle(page, TITLES[2]);
       await expect(tickBox(page, TITLES[2])).toBeChecked();
-      await page.evaluate(() => (window as StandInWindow).__dbStandIn.answer());
+      // Answer storage and read the status the moment the stored sign-off
+      // lands, long before the 400 ms save: a status calling the page ready
+      // over a tick that is not yet stored is caught in the act.
+      const statusOnLoad = await page.evaluate(async () => {
+        const standIn = (window as StandInWindow).__dbStandIn;
+        standIn.answer();
+        await new Promise<void>((resolve) => {
+          const waiting = setInterval(() => {
+            if (standIn.deliveries() === 0) return;
+            clearInterval(waiting);
+            resolve();
+          }, 5);
+        });
+        return document.getElementById('state')?.textContent ?? '';
+      });
+      expect(statusOnLoad, 'the early tick is reported as saving').toMatch(
+        /^Saving\b/,
+      );
       await expect
         .poll(
           () => storedTicks(page),
@@ -437,8 +457,19 @@ for (const { order, when } of ORDERS) {
     }, testInfo) => {
       // Once a subscription has ended, nothing echoes the page's own writes.
       // A page that forgets a tick the moment its write is confirmed repaints
-      // that tick off, and its next save writes the store without it.
-      await openEvidencePage(page, testInfo, { order, subscriptionDies: true });
+      // that tick off, and its next save writes the store without it. The
+      // stored tick means every confirmed write folds into a delivered body.
+      const stored = TITLES[4];
+      const ticked = [TITLES[0], TITLES[1], stored];
+      await openEvidencePage(page, testInfo, {
+        order,
+        seed: signedOff([stored]),
+        subscriptionDies: true,
+      });
+      await expect(
+        tickBox(page, stored),
+        'the stored tick is shown first',
+      ).toBeChecked();
       await toggleAndWait(page, TITLES[0]);
       await expect(
         tickBox(page, TITLES[0]),
@@ -448,10 +479,10 @@ for (const { order, when } of ORDERS) {
       await expect
         .poll(
           () => storedTicks(page),
-          'the store keeps both ticks with no live updates',
+          'the store keeps every tick with no live updates',
         )
-        .toEqual(idsOf(TITLES.slice(0, 2)));
-      for (const title of TITLES.slice(0, 2))
+        .toEqual(idsOf(ticked));
+      for (const title of ticked)
         await expect(
           tickBox(page, title),
           `"${title}" is shown ticked`,
@@ -460,7 +491,7 @@ for (const { order, when } of ORDERS) {
   });
 }
 
-test.describe('evidence page sign-off markup and status', () => {
+test.describe('evidence page sign-off, whatever the write order', () => {
   test('each tick is named for the journey it marks', async ({
     page,
   }, testInfo) => {
@@ -508,6 +539,121 @@ test.describe('evidence page sign-off markup and status', () => {
     await expect(
       page.locator('#state'),
       'the tick is reported unsaved',
-    ).toHaveText(/^Not saved\b/);
+    ).toHaveText(/^Not saved\b.*\bcannot reach storage\b/);
+  });
+
+  test('a tick made while the stored sign-off cannot load is never written over it', async ({
+    page,
+  }, testInfo) => {
+    // set() replaces the whole document, so a write made before the stored
+    // sign-off has loaded would erase every tick already in it. The page's
+    // clock lets the save window pass without a real wait.
+    await page.clock.install();
+    const seed = signedOff(TITLES.slice(0, 2));
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed,
+      getFails: true,
+      subscriptionDies: true,
+    });
+    // Both failures land before the status is read.
+    await page.clock.runFor(1_000);
+    await expect(
+      page.locator('#state'),
+      'the failed load is reported',
+    ).toHaveText(/^Could not load the saved sign-off\b.*\bunavailable\b/);
+    await toggle(page, TITLES[2]);
+    await expect(
+      tickBox(page, TITLES[2]),
+      'the tick is shown although nothing has loaded',
+    ).toBeChecked();
+    await expect(
+      page.locator('#state'),
+      'the tick is reported not yet saved',
+    ).toHaveText(/^Not saved yet\b/);
+    await page.clock.runFor(2_000);
+    const after = await page.evaluate((doc) => {
+      const standIn = (window as StandInWindow).__dbStandIn;
+      return { writes: standIn.writes(), stored: standIn.read(doc) };
+    }, DOC);
+    expect(after, 'nothing was written over the stored sign-off').toEqual({
+      writes: 0,
+      stored: seed[DOC],
+    });
+  });
+
+  test('a malformed stored sign-off is shown, and written back, only in the shape the page writes', async ({
+    page,
+  }, testInfo) => {
+    // The store is shared by every viewer, so whatever it delivers is untrusted.
+    const [first, second, third, fourth] = TITLES;
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: {
+        [DOC]: {
+          journeys: {
+            [idOf(first)]: 'yes',
+            [idOf(second)]: true,
+            [idOf(third)]: 1,
+          },
+          verdict: 'hacked',
+          note: 42,
+          updatedAt: '2026-09-14T15:09:00.000Z',
+        },
+      },
+    });
+    await expect(
+      tickBox(page, second),
+      'a stored true is shown ticked',
+    ).toBeChecked();
+    for (const title of [first, third])
+      await expect(
+        tickBox(page, title),
+        `"${title}" holds no boolean and is shown unticked`,
+      ).not.toBeChecked();
+    await expect(
+      page.locator('#note'),
+      'a note that is not text is not shown',
+    ).toHaveValue('');
+    await toggleAndWait(page, fourth);
+    const stored = await page.evaluate(
+      (doc) => (window as StandInWindow).__dbStandIn.read(doc),
+      DOC,
+    );
+    expect(
+      {
+        journeys: stored?.journeys,
+        verdict: stored?.verdict,
+        note: stored?.note,
+      },
+      'only the shape the page writes is stored',
+    ).toEqual({
+      journeys: { [idOf(second)]: true, [idOf(fourth)]: true },
+      verdict: null,
+      note: '',
+    });
+  });
+
+  test('a read that fails after live updates have loaded the sign-off changes nothing', async ({
+    page,
+  }, testInfo) => {
+    // A transient `unavailable` rejects a read while the subscription carries
+    // on (db.d.ts), so the sign-off can load first and the read fail after.
+    await page.clock.install();
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: signedOff(TITLES.slice(0, 1)),
+      getFails: true,
+    });
+    // The late failure lands before anything is read.
+    await page.clock.runFor(1_000);
+    await expect(
+      tickBox(page, TITLES[0]),
+      'the stored tick arrived through live updates',
+    ).toBeChecked();
+    await expect(
+      page.locator('#state'),
+      'the late failure does not undo a load that succeeded',
+    ).toHaveText(/^Ready\b/);
   });
 });

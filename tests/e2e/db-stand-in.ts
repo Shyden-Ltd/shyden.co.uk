@@ -40,11 +40,18 @@ export interface DbStandInOptions {
   /** Leave `claude.use('db')` unanswered until the test calls `answer()`. */
   holdUse: boolean;
   /**
-   * Every subscription ends at once with a terminal `unavailable` error, which
-   * the contract allows at any time. From then on nothing is delivered, not
-   * even the echo of the page's own writes.
+   * Every subscription ends without delivering anything, with the terminal
+   * `unavailable` error of a bridge that stops answering: late, once any read
+   * has settled. From then on nothing is delivered, not even the echo of the
+   * page's own writes.
    */
   subscriptionDies: boolean;
+  /**
+   * Every `get()` rejects with `unavailable`, late: a live subscription has
+   * delivered by then, as when a transient failure hits a read while the
+   * subscription carries on (db.d.ts).
+   */
+  getFails: boolean;
 }
 
 /** What a test reads and drives. The page under test never touches it. */
@@ -96,7 +103,8 @@ export type StandInWindow = Window &
  * reference anything outside its own body.
  */
 export function installDbStandIn(options: DbStandInOptions): void {
-  const { storeKey, order, seed, holdUse, subscriptionDies } = options;
+  const { storeKey, order, seed, holdUse, subscriptionDies, getFails } =
+    options;
   const CONFIRM_AFTER_MS = 60;
 
   if (localStorage.getItem(storeKey) === null)
@@ -169,9 +177,17 @@ export function installDbStandIn(options: DbStandInOptions): void {
       id: path.split('/').pop() ?? path,
       path,
       get: () =>
-        new Promise<StandInSnapshot>((resolve) =>
-          setTimeout(() => resolve(view(path)), 0),
-        ),
+        new Promise<StandInSnapshot>((resolve, reject) => {
+          if (!getFails) {
+            setTimeout(() => resolve(view(path)), 0);
+            return;
+          }
+          const failure = Object.freeze({
+            code: 'unavailable',
+            message: 'the stand-in failed this read',
+          });
+          setTimeout(() => reject(failure), CONFIRM_AFTER_MS);
+        }),
       set: (data: StoredBody) => {
         writes += 1;
         inflight += 1;
@@ -211,7 +227,10 @@ export function installDbStandIn(options: DbStandInOptions): void {
             code: 'unavailable',
             message: 'the stand-in ended this subscription',
           });
-          setTimeout(() => (error ? error(failure) : reportError(failure)), 0);
+          setTimeout(
+            () => (error ? error(failure) : reportError(failure)),
+            CONFIRM_AFTER_MS * 2,
+          );
           return () => {};
         }
         const subscribed = listeners.get(path) ?? new Set();
