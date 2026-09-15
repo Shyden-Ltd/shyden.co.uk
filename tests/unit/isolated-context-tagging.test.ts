@@ -3,7 +3,7 @@ import { specDirs } from '../spec-dirs';
 import { blankCommentLines } from './source-text';
 import { readFileSync } from 'node:fs';
 import { withoutTsComments } from './source-text';
-import { tsFilesUnder } from '../source-files';
+import { searched, tsFilesUnder } from '../source-files';
 
 /**
  * A real device has exactly ONE adopted browser context for the whole run
@@ -278,7 +278,10 @@ describe('a real device cannot isolate a JavaScript-disabled context', () => {
     const findings = files.flatMap((file) =>
       analyze(file, withoutTsComments(readFileSync(file, 'utf8'))),
     );
-    expect(findings, findings.join('\n')).toEqual([]);
+    expect(
+      searched(findings, { of: files, what: 'spec files' }),
+      findings.join('\n'),
+    ).toEqual([]);
   });
 });
 

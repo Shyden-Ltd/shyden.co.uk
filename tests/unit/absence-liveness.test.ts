@@ -1,14 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
 import { filesUnder, searched } from '../source-files';
-import {
-  callGraph,
-  declarationsIn,
-  parseFile,
-  rootsOf,
-  rootsThrough,
-  where,
-} from './ast';
+import { bindFiles, callGraph, derivationOf, where } from './ast';
 
 /**
  * An absence assertion must prove its POPULATION was live (#118).
@@ -69,6 +62,9 @@ const DERIVING = new Set(['filter', 'flatMap']);
 const tsFiles = filesUnder('tests', (path) => path.endsWith('.ts'));
 const discoverers = callGraph(tsFiles).close(DISCOVERY);
 
+/** Bound once: each name resolves in its own scope, not by name (#184). */
+const bound = bindFiles(tsFiles);
+
 /** `.toEqual([])` or `.toHaveLength(0)` — and never their `.not` inverses. */
 function absenceSubject(node: ts.CallExpression): ts.Expression | null {
   if (!ts.isPropertyAccessExpression(node.expression)) return null;
@@ -99,11 +95,7 @@ function absenceSubject(node: ts.CallExpression): ts.Expression | null {
 }
 
 /** Why this subject needs a control, or null if it carries its own. */
-function unproved(
-  subject: ts.Expression,
-  decls: Map<string, ts.Expression>,
-  file: string,
-): string | null {
+function unproved(subject: ts.Expression, file: string): string | null {
   // Already routed through the helper: the population is in the expression.
   if (
     ts.isCallExpression(subject) &&
@@ -112,13 +104,13 @@ function unproved(
   )
     return null;
 
-  const names = rootsThrough(subject, decls);
+  const { names, initializers } = derivationOf(subject, bound);
   if (names.some((name) => discoverers.reaches(file, name)))
     return 'derives from the filesystem';
 
-  for (const name of names) {
-    const init = decls.get(name);
-    if (!init) continue;
+  // No filesystem question inside the loop: every identifier in a followed
+  // initializer is already one of `names`, which the check above has asked.
+  for (const init of initializers) {
     if (ts.isArrayLiteralExpression(init) && init.elements.length === 0)
       return 'a collector: initialised empty and accumulated into';
     if (
@@ -134,8 +126,6 @@ function unproved(
       DERIVING.has(init.expression.name.text)
     )
       return `derived by .${init.expression.name.text}() over a population`;
-    if (rootsOf(init).some((n) => discoverers.reaches(file, n)))
-      return 'derives from the filesystem';
   }
   return null;
 }
@@ -144,15 +134,13 @@ function scan() {
   const findings: string[] = [];
   let absences = 0;
   let proved = 0;
-  for (const file of tsFiles) {
-    const sf = parseFile(file);
-    const decls = declarationsIn(sf);
+  for (const [file, sf] of bound.files) {
     const check = (node: ts.Node) => {
       if (ts.isCallExpression(node)) {
         const subject = absenceSubject(node);
         if (subject) {
           absences += 1;
-          const why = unproved(subject, decls, file);
+          const why = unproved(subject, file);
           if (why === null) proved += 1;
           else
             findings.push(
@@ -177,11 +165,13 @@ describe('absence assertions prove the population they searched', () => {
   // those is good news. This is the shape `event-collectors.test.ts` settled.
   it('finds the absence assertions it is meant to be judging', () => {
     expect(tsFiles.length).toBeGreaterThan(30);
-    // 112 today. The floor is stated against a measured figure rather
+    // 154 today. The floor is stated against a measured figure rather
     // than left comfortably low, for the reason `anchored-presence`
     // records: a control with slack in it is most of the way back to
-    // no control at all.
-    expect(result.absences).toBeGreaterThan(100);
+    // no control at all. #184 found it at 100 over a real 154, and showed
+    // what that slack costs: with the `toHaveLength(0)` branch of
+    // `absenceSubject` dead, this test stayed green.
+    expect(result.absences).toBeGreaterThan(153);
     expect(result.proved).toBeGreaterThan(0);
   });
 

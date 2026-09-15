@@ -1,13 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
 import { filesUnder, searched } from '../source-files';
-import {
-  callGraph,
-  declarationsIn,
-  parseFile,
-  rootsThrough,
-  where,
-} from './ast';
+import { bindFiles, callGraph, derivationOf, where } from './ast';
 /**
  * A presence assertion over source text must be STRIPPED or ANCHORED.
  *
@@ -65,12 +59,19 @@ const graph = callGraph(tsFiles);
 const readers = graph.close(READS_CONTENT);
 const strippers = graph.close(STRIPPERS);
 
+/**
+ * Every file bound into one program, so a local name resolves to the
+ * declaration its own scope sees. Resolved by bare name, `config` at
+ * `supply-chain.test.ts:206` reached another test's `parseCleanYaml(...)`, and
+ * a stripped assertion read as raw (#184).
+ */
+const bound = bindFiles(tsFiles);
+
 function scan() {
   const findings: string[] = [];
   let scanned = 0;
-  for (const file of tsFiles.filter((f) => /\.(test|spec)\.ts$/.test(f))) {
-    const sf = parseFile(file);
-    const decls = declarationsIn(sf);
+  for (const [file, sf] of bound.files) {
+    if (!/\.(test|spec)\.ts$/.test(file)) continue;
 
     const check = (node: ts.Node) => {
       if (
@@ -84,7 +85,7 @@ function scan() {
             ? expectCall.arguments[0]
             : undefined;
           if (subject) {
-            const names = rootsThrough(subject, decls);
+            const { names } = derivationOf(subject, bound);
             const fromContent = names.some((n) => readers.reaches(file, n));
             const parsed = names.some((n) => PARSED.has(n));
             if (fromContent && !parsed) {
@@ -118,13 +119,16 @@ describe('presence assertions over source text are stripped or anchored', () => 
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    // 28 today, and the figure is worth stating: the floor sat at 20 while
+    // 45 today, and the figure is worth stating: the floor sat at 20 while
     // the truth was 27, so a control with that much slack in it is most of
     // the way back to no control at all. #118 moved the number twice --
     // UP as the derivation learned to follow local bindings to a fixed
     // point, then back DOWN as it stopped reading object-literal keys and
     // parameter names as references. Both were corrections, not drift.
-    expect(result.scanned).toBeGreaterThan(24);
+    // #184 found this comment still saying 28 over a real 42, and moved the
+    // figure to 45: resolving names by scope brought in three assertions a
+    // file-wide map had been sending to another test's declaration.
+    expect(result.scanned).toBeGreaterThan(44);
     expect(tsFiles.length).toBeGreaterThan(30);
   });
 
