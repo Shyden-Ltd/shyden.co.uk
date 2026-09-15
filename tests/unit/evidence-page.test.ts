@@ -867,22 +867,6 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
 });
 
 /**
- * The page carries whatever the run captured, and knows what it is.
- *
- * Captures were PNG, which stores a screenshot of photographs losslessly at
- * roughly ten times the size of a quality-90 JPEG -- a fidelity nobody
- * consumes, since the page is read by an eye and pixel-exact comparison
- * belongs to the visual-regression suite and its own baselines. Measured on
- * #138: 80 shots came to 18.9 MiB, a 25.34 MiB page that could not be
- * published at all, and `selectMedia` dropped ALL EIGHTY videos against a
- * budget the shots had already exhausted -- so the standing requirement of a
- * video per journey was silently unmet (#146).
- *
- * The media type is read from the bytes, never from the extension: a capture
- * whose name and content disagree must still render, and an unknown format
- * must throw rather than emit a data URI the browser will not paint.
- */
-/**
  * The page asks for a decision it can only keep if the PUBLISH granted it.
  *
  * The sign-off ticks and the verdict are written through `claude.use('db')`,
@@ -915,6 +899,22 @@ describe('the build says what the publish has to grant', () => {
   });
 });
 
+/**
+ * The page carries whatever the run captured, and knows what it is.
+ *
+ * Captures were PNG, which stores a screenshot of photographs losslessly at
+ * roughly ten times the size of a quality-90 JPEG -- a fidelity nobody
+ * consumes, since the page is read by an eye and pixel-exact comparison
+ * belongs to the visual-regression suite and its own baselines. Measured on
+ * #138: 80 shots came to 18.9 MiB, a 25.34 MiB page that could not be
+ * published at all, and `selectMedia` dropped ALL EIGHTY videos against a
+ * budget the shots had already exhausted -- so the standing requirement of a
+ * video per journey was silently unmet (#146).
+ *
+ * The media type is read from the bytes, never from the extension: a capture
+ * whose name and content disagree must still render, and an unknown format
+ * must throw rather than emit a data URI the browser will not paint.
+ */
 describe('an evidence capture is identified by its own bytes', () => {
   const PNG = Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),

@@ -109,6 +109,12 @@ export const withoutCommentLines = (text: string, marker = '#'): string =>
     .join('\n');
 
 /**
+ * An HTML comment, closed at its first `-->`. One constant, because the two
+ * readers below that skip markup comments must agree on where one ends.
+ */
+const MARKUP_COMMENT = /<!--[\s\S]*?-->/g;
+
+/**
  * Markup with its `<!-- … -->` comments removed.
  *
  * `.astro` files are HTML as well as TypeScript, and an HTML comment is
@@ -127,19 +133,8 @@ export const withoutCommentLines = (text: string, marker = '#'): string =>
  * it covered was missing from the shared module the other suites use.
  */
 export const withoutMarkupComments = (text: string): string =>
-  text.replace(/<!--[\s\S]*?-->/g, '');
+  text.replace(MARKUP_COMMENT, '');
 
-/**
- * TypeScript with `//` and block comments removed, STRING LITERALS INTACT.
- *
- * A regex cannot do this correctly and the failures are the ones that matter:
- * `https://…` is not a comment, and `expect(x).toContain('// ')` is a string
- * whose content is the point. Since these guards exist to stop text in the
- * wrong place satisfying an assertion, a stripper that mangles the right place
- * is the same bug wearing the opposite coat — so this scans rather than
- * matches. Quotes, template literals and escapes are tracked; that is the
- * whole of the grammar this needs.
- */
 /**
  * A `/` either opens a regex literal or divides, and only the token before it
  * tells them apart, and the old scanner tracked neither (#65). Two concrete
@@ -157,6 +152,17 @@ function startsRegex(tail: string): boolean {
   );
 }
 
+/**
+ * TypeScript with `//` and block comments removed, STRING LITERALS INTACT.
+ *
+ * A regex cannot do this correctly and the failures are the ones that matter:
+ * `https://…` is not a comment, and `expect(x).toContain('// ')` is a string
+ * whose content is the point. Since these guards exist to stop text in the
+ * wrong place satisfying an assertion, a stripper that mangles the right place
+ * is the same bug wearing the opposite coat — so this scans rather than
+ * matches. Quotes, template literals, escapes and regex literals (`startsRegex`,
+ * above) are tracked; that is the whole of the grammar this needs.
+ */
 export function withoutTsComments(source: string): string {
   let out = '';
   let quote: string | null = null;
@@ -335,3 +341,53 @@ export function withoutCssComments(source: string): string {
  */
 export const withoutAstroComments = (text: string): string =>
   withoutTsComments(withoutMarkupComments(withoutCommentLines(text, '//')));
+
+/** A line holding nothing but a frontmatter fence. */
+const FENCE = /^---[ \t]*$/gm;
+
+/** A `<script>` element, as its opening tag and then its body. */
+const SCRIPT = /(<script\b[^>]*>)([\s\S]*?)<\/script\s*>/g;
+
+/** `text` with every character but CR and LF turned to a space. */
+const blanked = (text: string): string => text.replace(/[^\r\n]/g, ' ');
+
+/**
+ * The code an `.astro` file holds — its frontmatter, then each `<script>`
+ * body — as one view per region, for a parser to read.
+ *
+ * Every view is the WHOLE file with everything outside its region blanked and
+ * each CR and LF kept, so a position or line a parser reports in a view is
+ * that position or line in the file itself. No caller carries an offset it
+ * could get wrong.
+ *
+ * Markup comments are blanked before any tag is looked for, because a comment
+ * can name one: `ClassroomGroupsPage.astro` explains in an `<!-- … -->` why
+ * its first script must be `is:inline`, and says "every plain `<script>`"
+ * while doing it. A tag search over the raw markup opens a script body in
+ * that prose and runs it on into the real script below (#175).
+ *
+ * Case-sensitive on purpose: to Astro, `<Script>` is a component. Residual,
+ * named rather than chased: a `>` inside a script tag's attribute value ends
+ * the tag early, and `<script>` spelled inside a markup expression reads as
+ * a tag.
+ */
+export function astroCodeViews(text: string): string[] {
+  const regions: Array<readonly [start: number, end: number]> = [];
+  const [open, close] = [...text.matchAll(FENCE)];
+  const hasFrontmatter = open?.index === 0 && close !== undefined;
+  if (hasFrontmatter) regions.push([open[0].length, close.index]);
+  const markupStart = hasFrontmatter ? close.index + close[0].length : 0;
+  const markup =
+    blanked(text.slice(0, markupStart)) +
+    text.slice(markupStart).replace(MARKUP_COMMENT, blanked);
+  for (const script of markup.matchAll(SCRIPT)) {
+    const start = script.index + script[1].length;
+    regions.push([start, start + script[2].length]);
+  }
+  return regions.map(
+    ([start, end]) =>
+      blanked(text.slice(0, start)) +
+      text.slice(start, end) +
+      blanked(text.slice(end)),
+  );
+}

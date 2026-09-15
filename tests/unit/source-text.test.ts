@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  astroCodeViews,
   blankCommentLines,
   isCommentLine,
   withoutYamlComments,
@@ -235,5 +236,75 @@ describe('blankCommentLines keeps line numbers intact', () => {
       true,
       false,
     ]);
+  });
+});
+
+describe('astroCodeViews reads only the code an .astro file holds', () => {
+  /**
+   * A view keeps the file's length and every line break, so a parser reading
+   * it reports the file's own positions and lines (#175).
+   */
+  it('reads the frontmatter, on its own lines', () => {
+    const page = ['---', "const title = 'x';", '---', '<p>hi</p>'].join('\n');
+    expect(astroCodeViews(page).map((view) => view.split('\n'))).toEqual([
+      ['   ', "const title = 'x';", '   ', ' '.repeat(9)],
+    ]);
+  });
+
+  it('reads each script body as a view of its own, and no markup', () => {
+    const page = [
+      '---',
+      'const a = 1;',
+      '---',
+      '<p>two</p>',
+      '<script>',
+      '  go();',
+      '</script>',
+      '<script is:inline>stop();</script>',
+    ].join('\n');
+    expect(astroCodeViews(page).map((view) => view.trim())).toEqual([
+      'const a = 1;',
+      'go();',
+      'stop();',
+    ]);
+  });
+
+  it('keeps every CR and LF where the file has them', () => {
+    const page =
+      '---\r\nconst a = 1;\r\n---\r\n<script>\r\n  go();\r\n</script>\r\n';
+    expect(astroCodeViews(page).map((view) => view.split('\r\n'))).toEqual([
+      [
+        '   ',
+        'const a = 1;',
+        '   ',
+        ' '.repeat(8),
+        ' '.repeat(7),
+        ' '.repeat(9),
+        '',
+      ],
+      [
+        '   ',
+        ' '.repeat(12),
+        '   ',
+        ' '.repeat(8),
+        '  go();',
+        ' '.repeat(9),
+        '',
+      ],
+    ]);
+  });
+
+  it('never opens a script inside a markup comment that names one', () => {
+    const page = [
+      '<!-- every plain <script> is bundled, so this one is inline -->',
+      '<script is:inline>',
+      '  run();',
+      '</script>',
+    ].join('\n');
+    expect(astroCodeViews(page).map((view) => view.trim())).toEqual(['run();']);
+  });
+
+  it('finds no code in a file with no frontmatter and no script', () => {
+    expect(astroCodeViews('<p>only markup</p>')).toEqual([]);
   });
 });

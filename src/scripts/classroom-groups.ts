@@ -767,25 +767,6 @@ if (form) {
   };
 
   /**
-   * A rename must reach the groups already on screen.
-   *
-   * `serialiseForCompare` (src/lib/roster.ts) deliberately excludes the
-   * name, so typing one onto a student who was already in the shuffle does
-   * NOT mark the groups out of date -- correctly: it changes nothing about
-   * who ended up with whom. But without this, the sheet then goes on saying
-   * "Student 1" with no notice inviting a reshuffle either, which is the
-   * worst of both: the teacher's edit appears to have done nothing at all.
-   *
-   * Re-labels in place from `resolveStudent`, the SAME lookup `render`'s
-   * own `label` uses, rather than re-rendering the cards: a re-render would
-   * rebuild every `<li>` and lose the `.dealt` class the deal animation
-   * sets, so a rename mid-deal would blank the board. The number lives on
-   * the element itself (`data-number`, written by `render`) because the
-   * `Student` objects the shuffle was built from are not kept anywhere
-   * after it finishes -- and re-deriving position from the roster would be
-   * wrong anyway, since the roster's order is not the groups' order.
-   */
-  /**
    * Keep every roster row's print-only text twin in step with its control.
    *
    * Hung off the same `onRosterChanged` hook as `relabelResults` below, and
@@ -828,6 +809,25 @@ if (form) {
     });
   };
 
+  /**
+   * A rename must reach the groups already on screen.
+   *
+   * `serialiseForCompare` (src/lib/roster.ts) deliberately excludes the
+   * name, so typing one onto a student who was already in the shuffle does
+   * NOT mark the groups out of date -- correctly: it changes nothing about
+   * who ended up with whom. But without this, the sheet then goes on saying
+   * "Student 1" with no notice inviting a reshuffle either, which is the
+   * worst of both: the teacher's edit appears to have done nothing at all.
+   *
+   * Re-labels in place from `resolveStudent`, the SAME lookup `render`'s
+   * own `label` uses, rather than re-rendering the cards: a re-render would
+   * rebuild every `<li>` and lose the `.dealt` class the deal animation
+   * sets, so a rename mid-deal would blank the board. The number lives on
+   * the element itself (`data-number`, written by `render`) because the
+   * `Student` objects the shuffle was built from are not kept anywhere
+   * after it finishes -- and re-deriving position from the roster would be
+   * wrong anyway, since the roster's order is not the groups' order.
+   */
   const relabelResults = () => {
     for (const el of tables.querySelectorAll<HTMLElement>('.student')) {
       const number = Number(el.dataset.number);

@@ -676,15 +676,6 @@ ${journeyHtml}
 };
 
 /**
- * What a capture actually is, read from its own first bytes.
- *
- * Never from the extension and never hardcoded: a data URI that claims a type
- * the bytes are not paints nothing, and a page of blank frames looks exactly
- * like a page of captures that failed. An unrecognised format is a THROW for
- * the same reason a manifest entry with no image is -- silence here is
- * indistinguishable from evidence.
- */
-/**
  * What the publish has to grant, said out loud at build time.
  *
  * The page writes the ticks and the verdict through `claude.use('db')`, which
@@ -702,6 +693,15 @@ export const PUBLISH_NOTE =
   'resolves null, the page says "ticks are local to this view", and the ' +
   'sign-off is recorded NOWHERE.';
 
+/**
+ * What a capture actually is, read from its own first bytes.
+ *
+ * Never from the extension and never hardcoded: a data URI that claims a type
+ * the bytes are not paints nothing, and a page of blank frames looks exactly
+ * like a page of captures that failed. An unrecognised format is a THROW for
+ * the same reason a manifest entry with no image is -- silence here is
+ * indistinguishable from evidence.
+ */
 export const mediaType = (bytes) => {
   if (
     bytes.length >= 8 &&
