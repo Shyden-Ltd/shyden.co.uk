@@ -1638,20 +1638,29 @@ test.describe('the no-scroll rule, measured', () => {
   // the submit button below the fold at both phone sizes. Nothing above the
   // form was ever the thing standing in the way.
   //
-  // The fix is in ClassroomGroupsPage.astro, under `@media screen and
-  // (max-width: 599px)`: `.actions` becomes `position: sticky; bottom: 0`,
-  // so the submit button rests ON the fold and the form scrolls behind it.
-  // The 12px of clearance at both phone sizes is the bar's own bottom
-  // padding -- measured, so this is not passing on an exact tie.
+  // The fix is in ClassroomGroupsPage.astro, under `@media screen`:
+  // `.actions` becomes `position: sticky; bottom: 0`, so the submit button
+  // rests ON the fold and the form scrolls behind it. The 12px of clearance
+  // at both phone sizes is the bar's own bottom padding -- measured, so this
+  // is not passing on an exact tie.
+  //
+  // EVERY WIDTH since #188, not just below 600px. Read the table above
+  // again: 1280x800 had THIRTY-NINE pixels to spare, which was a measurement
+  // of how much room that size happened to have, never a design decision.
+  // #188's three number fields cost 116px, and `#cg-go`'s bottom measured
+  // 912 against a budget of 800 -- 112px under the fold. The operator's call
+  // (2026-09-16) was to pin the bar at every width rather than squeeze the
+  // fields, so one mechanism carries all four sizes instead of two that
+  // would have to be kept in step.
   //
   // WHAT THIS ASSERTS, AND WHAT IT DOES NOT. `#cg-go` is REACHABLE without
-  // scrolling at all four sizes, which is what the title now says. At 768
-  // and 1280 the whole tool fits as well; at 320 and 375 the form still
-  // scrolls and only the action row is pinned. A sticky bar makes the action
-  // reachable, it does not make the page short. The previous title ("the
-  // tool fits without scrolling") would have become false at the two phone
-  // sizes the moment this started passing, so it changed WITH the fix rather
-  // than being left behind to describe a page that no longer exists.
+  // scrolling at all four sizes, which is what the title says. At none of
+  // them does the whole tool necessarily fit: the form scrolls behind a
+  // pinned action row. A sticky bar makes the action reachable, it does not
+  // make the page short. The title changed WITH the fix rather than being
+  // left behind to describe a page that no longer exists -- and the "at 768
+  // and 1280 the whole tool fits as well" sentence that used to sit here
+  // went with it, for exactly the same reason.
   const VIEWPORTS = [
     { width: 320, height: 568 }, // iPhone SE
     { width: 375, height: 667 }, // iPhone 8
@@ -1690,19 +1699,25 @@ test.describe('the no-scroll rule, measured', () => {
     );
   }
 
-  // ASSERT THE SEAM, not the sides. The four tests above would go on passing
-  // at 768 and 1280 if the sticky rule were deleted outright -- those sizes
-  // fit on their own -- and a breakpoint that drifted from 599px down to,
-  // say, 359px would fail 375x667 with a message about pixels rather than
-  // about the rule that moved. Neither tells a reader WHICH mechanism is
-  // carrying the phone sizes. This checks that mechanism directly and in
-  // both directions: sticky below the breakpoint, static above it. It
-  // replaces the old "declared fits table matches what the page actually
-  // does" companion, which cross-checked the `fits` flags against reality
-  // and had nothing left to check once those flags went -- this asserts
-  // something the four tests above genuinely cannot.
+  // ASSERT THE SEAM, not the sides. The four tests above measure PIXELS, and
+  // pixels cannot say which mechanism is keeping the button on screen: if the
+  // sticky rule were deleted, they would report a number that happens to be
+  // too large, never the rule that moved.
+  //
+  // The contract CHANGED in #188 (operator decision, 2026-09-16). It used to
+  // be "sticky below 600px, static above it", on the reasoning that 768 and
+  // 1280 fit unaided. Three number fields costing 116px ended that -- 1280x800
+  // measured 912 against a budget of 800 -- so the bar is now sticky at every
+  // width, by one mechanism rather than two kept in step. This test going red
+  // is exactly what it is for: the old expectation was a statement about how
+  // much room those sizes had, and the page outgrew it.
+  //
+  // Still asserted at all four sizes rather than one. A rule that quietly
+  // stopped applying somewhere in the middle -- a stray `min-width`, a
+  // specificity fight with a later block -- would leave the pixel tests
+  // passing wherever the page happened to fit anyway.
   test(
-    'the action row is sticky below the 600px breakpoint and static above it',
+    'the action row is sticky at every width, so the primary action is never below the fold',
     { tag: '@emulated-viewport' },
     async ({ page }) => {
       const positionAt = async (width: number, height: number) => {
@@ -1717,8 +1732,51 @@ test.describe('the no-scroll rule, measured', () => {
       };
       expect(await positionAt(320, 568)).toBe('sticky');
       expect(await positionAt(375, 667)).toBe('sticky');
-      expect(await positionAt(768, 1024)).toBe('static');
-      expect(await positionAt(1280, 800)).toBe('static');
+      expect(await positionAt(768, 1024)).toBe('sticky');
+      expect(await positionAt(1280, 800)).toBe('sticky');
+    },
+  );
+
+  // The bar's COMPANION rule, which had no test at all until #188.
+  // `scroll-padding-bottom` on `html` exists for one reason: to stop the
+  // browser scrolling a tabbed-to field, an anchor or a `scrollIntoView`
+  // target to a position the pinned action row covers. Both rules were
+  // capped at `max-width: 599px`; the bar moved to every width and nothing
+  // in this suite would have noticed the padding staying behind, because
+  // nothing asserted the padding at all.
+  //
+  // Asserted as a SEAM, not as a number. What matters is that the padding
+  // clears the row as the row ACTUALLY measures, not that it reads `5rem`:
+  // pinning the literal would go on passing if the bar grew and the padding
+  // did not, which is the one failure this rule exists to prevent, and it
+  // would restate a value that already has a home in the stylesheet.
+  test(
+    'the scroll padding clears the pinned action row at every width',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      for (const { width, height } of VIEWPORTS) {
+        await page.setViewportSize({ width, height });
+        await page.goto('/classroom-groups');
+        const { padding, bar } = await page.evaluate(() => ({
+          padding: parseFloat(
+            getComputedStyle(document.documentElement).scrollPaddingBottom,
+          ),
+          bar: document
+            .getElementById('cg-go')!
+            .closest('.actions')!
+            .getBoundingClientRect().height,
+        }));
+        // Liveness: a renamed class or a missing row would measure 0, and
+        // every padding value would then clear it.
+        expect(
+          bar,
+          `${width}x${height}: the action row must have a height to clear`,
+        ).toBeGreaterThan(0);
+        expect(
+          padding,
+          `${width}x${height}: scroll padding must clear the pinned bar`,
+        ).toBeGreaterThanOrEqual(bar);
+      }
     },
   );
 

@@ -119,7 +119,11 @@ export const en = {
   // the two pairing fields take SETS, which is a different thing to type.
   // One sentence covering both would have to describe a separator that does
   // not apply to the field it sits under.
-  absentNumbersHelp: 'The register numbers who are away, separated by commas.',
+  // "absent", never "away": the page keeps one word for this, and
+  // classroom-groups-roster.spec.ts asserts `/\baway\b/` appears nowhere in
+  // the body. This copy said "who are away" and turned that guard red.
+  absentNumbersHelp:
+    'The register numbers of anyone absent, separated by commas.',
   pairNumbersHelp:
     'A comma joins a pair; a semicolon starts another — 3,9; 14,15.',
   // AC14, mirroring `studentsLockedReason` above: the list and these fields

@@ -2034,16 +2034,23 @@ const sexWhyText = sexWhy(roster, t);
     display: none;
   }
 
-  /* #32's sticky action row (`.actions`, in the scoped block below) rests on
-     the fold at mobile widths, so anything the browser scrolls into view --
-     a tabbed-to field, an anchor, a script's `scrollIntoView` -- can land
-     underneath it. 5rem clears the bar's measured height (44px button +
-     0.75rem padding either side + a 1px border = 69px) with room over.
+  /* #32's sticky action row (`.actions`, in the block below) rests on the
+     fold, so anything the browser scrolls into view -- a tabbed-to field, an
+     anchor, a script's `scrollIntoView` -- can land underneath it. 5rem
+     clears the bar's measured height (44px button + 0.75rem padding either
+     side + a 1px border = 69px) with room over.
+
+     EVERY WIDTH, because the bar is. This was capped at `max-width: 599px`
+     while the bar was, and #188 lifted that cap. The two caps were one
+     decision: leaving this one behind would have let a laptop scroll a field
+     to a position the pinned bar covers, with nothing to show for it on a
+     phone -- a companion rule staying behind is how a fix half-applies and
+     nobody notices, because the half that moved is the half people look at.
 
      Here rather than beside the rule it serves: `scroll-padding` belongs to
      the scroll container, which is `html`, and Astro's scoped block cannot
      select an element it does not render. */
-  @media screen and (max-width: 599px) {
+  @media screen {
     html {
       scroll-padding-bottom: 5rem;
     }
@@ -2061,9 +2068,17 @@ const sexWhyText = sexWhy(roster, t);
        hiding it takes the class list with it -- found by running Task 2's
        own tests, which then measured an invisible table. What comes off the
        sheet is every way to CHANGE the class, named one at a time: the top
-       row of fields, the three sections that are all controls, the deal
-       button, and the roster's own toolbar further down. */
+       row of fields, the three number fields beneath it (#188), the three
+       sections that are all controls, the deal button, and the roster's own
+       toolbar further down.
+
+       Naming them one at a time is exactly why this list can fall behind the
+       page: `.number-fields` was added and printed on a teacher's class list
+       until the print spec's DERIVED assertion -- "nothing a teacher could
+       press or type into is left anywhere on the sheet" -- turned red. That
+       assertion is the guard; this list is only how the page obeys it. */
     .top-row,
+    .number-fields,
     #cg-go,
     #cg-noscript,
     #cg-print-panel,
@@ -2812,16 +2827,21 @@ const sexWhyText = sexWhy(roster, t);
      border-top earns the separation without touching width.
 
      `screen and`, explicitly. `@media print` already hides `#cg-go` and
-     every other button, and paper is wider than 599px so this block would
-     not match a sheet -- but not matching by accident of paper width is not
-     the same as saying it does not apply.
+     every other button -- but a sheet not matching this block by accident
+     is not the same as saying it does not apply, and a sticky bar has no
+     meaning on paper at all.
 
-     `max-width: 599px`, not a height query: 600px is the breakpoint this
-     file already splits on (`min-width: 600px` is the enhancement). Both
-     failing sizes and both mobile Playwright projects (Pixel 5 at 393px,
-     iPhone 13 at 390px) sit below it; both passing sizes (768, 1280) sit
-     above it and are untouched. */
-  @media screen and (max-width: 599px) {
+     EVERY WIDTH, as of #188 (operator decision, 2026-09-16). This block used
+     to be capped at `max-width: 599px`, on the reasoning that 768 and 1280
+     "fit on their own and are untouched". That stopped being true the moment
+     the three number fields were added: they cost 116px, and `#cg-go`'s
+     bottom measured 912 against a budget of 800 at 1280x800 -- 112px below
+     the fold. The cap was never a design preference, it was a statement
+     about how much room those sizes happened to have, and the page outgrew
+     it. Lifting it puts the primary action on screen at every width by the
+     one mechanism already proven at phone sizes, rather than by a second
+     arrangement that would have to be kept in step with this one. */
+  @media screen {
     .actions {
       position: sticky;
       bottom: 0;
