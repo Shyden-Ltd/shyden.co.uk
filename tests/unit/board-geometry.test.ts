@@ -83,8 +83,18 @@ describe('the board is measured once, and survives being sent somewhere else', (
     // leave the exemption pointing at a file that no longer exists.
     const self = relative(process.cwd(), fileURLToPath(import.meta.url));
     const files = tsFilesUnder('tests').filter((path) => path !== self);
+
+    // Match the CONSTRUCT, not the string. `#cg-board-stage` is an ordinary
+    // selector a journey may legitimately wait on -- Journey 14 does exactly
+    // that to prove the overlay MOVED the results rather than re-rendering
+    // them. What must not exist twice is the MEASUREMENT, and its fingerprint
+    // is the visibility filter applied to that stage: `getClientRects`, which
+    // is the one thing a copied measurement could not leave out and still be
+    // the measurement.
+    const measuresTheStage = (code: string) =>
+      code.includes('cg-board-stage') && code.includes('getClientRects');
     const spelling = files.filter((path) =>
-      withoutTsComments(readFileSync(path, 'utf8')).includes('cg-board-stage'),
+      measuresTheStage(withoutTsComments(readFileSync(path, 'utf8'))),
     );
 
     // Derived from the filesystem rather than a list: a sweep driven by its
