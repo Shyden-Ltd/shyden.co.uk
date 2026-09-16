@@ -21,14 +21,17 @@ import {
 } from '../../scripts/evidence-files.mjs';
 import { captureOptions, manifestRow } from '../e2e/evidence';
 import {
+  assertPublishLimits,
   capturesOfThisRun,
   droppedLine,
   earlierLine,
   imageSize,
   mediaType,
+  PUBLISH_MAX_BYTES,
+  PUBLISH_MAX_FILES,
   PUBLISH_NOTE,
-  renderEvidencePage,
   reconcileFiles,
+  renderEvidencePage,
   selectMedia,
   videoCandidates,
   videoFiles,
@@ -1111,5 +1114,63 @@ describe('a capture removes the recordings a previous one published', () => {
         published: ['index.html', 'preflight.js', 'evidence/a-chromium.webm'],
       }),
     ).toEqual({ 'evidence/a-chromium.webm': '/run/a.webm' });
+  });
+});
+
+/**
+ * The publish ceilings are asserted here, loudly, rather than discovered.
+ *
+ * Silent degradation is what #146 was filed for and what this ticket removes,
+ * so the ceilings get a guard that refuses the build -- never a build that
+ * quietly emits less. There are two, and they count different things.
+ */
+describe('a publish that would exceed the artifact ceilings is refused', () => {
+  it('refuses more than 255 entries, counting removals as entries', () => {
+    // A REMOVAL IS STILL AN ENTRY. `{path: null}` carries no bytes and still
+    // occupies one of the 255 slots, so a capture publishing recordings while
+    // clearing a previous capture's spends two slots per journey that changed.
+    // A guard counting only the entries WITH content passes, and the platform
+    // refuses the publish anyway -- reassuring and wrong.
+    const files: Record<string, string | null> = {};
+    for (let i = 0; i < 200; i += 1)
+      files[`evidence/j${i}-chromium.webm`] = `/run/${i}.webm`;
+    for (let i = 0; i < 56; i += 1)
+      files[`evidence/gone${i}-webkit.webm`] = null;
+
+    let refusal = 'the build did not refuse';
+    try {
+      assertPublishLimits({ files, sizeOf: () => 10 });
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('256');
+    expect(refusal).toContain('255');
+  });
+
+  it('refuses more bytes than one publish may carry, whatever the entry count', () => {
+    // Ten files, so the entry count is nowhere near its ceiling: a guard that
+    // returned after the entry check would pass this without looking at a byte.
+    const files: Record<string, string | null> = {};
+    for (let i = 0; i < 10; i += 1)
+      files[`evidence/j${i}-chromium.webm`] = `/run/${i}.webm`;
+
+    let refusal = 'the build did not refuse';
+    try {
+      assertPublishLimits({ files, sizeOf: () => 7 * 1024 * 1024 });
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('70.00MB');
+    expect(refusal).toContain('64');
+  });
+
+  it('pins both ceilings to the numbers a publish actually enforces', () => {
+    // A literal pin, separate from the guards that derive from it. Asserting
+    // `64 * 1024 * 1024` would restate the expression that DEFINES the
+    // constant, so it would hold at any level -- the #117 tautology. The raw
+    // literal is what makes lowering a ceiling to get a build through fail
+    // here, which is the escape hatch worth closing.
+    expect(PUBLISH_MAX_FILES).toBe(255);
+    expect(PUBLISH_MAX_BYTES).toBe(67108864);
   });
 });

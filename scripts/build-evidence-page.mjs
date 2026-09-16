@@ -321,6 +321,67 @@ export const reconcileFiles = ({ desired, published }) => {
   return files;
 };
 
+/** Entries one publish may carry. A removal occupies one of these. */
+export const PUBLISH_MAX_FILES = 255;
+
+/** Bytes one publish may carry, across every file with content in it. */
+export const PUBLISH_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Refuse a file map the publish could not carry, naming what is over.
+ *
+ * A REMOVAL IS STILL AN ENTRY. `{path: null}` carries no bytes and occupies one
+ * of the 255 slots, so a capture that clears a previous one spends two slots for
+ * every journey whose recording changed. A guard counting only the entries with
+ * content passes here and the publish is refused anyway -- reassuring and wrong,
+ * and the failure arrives after the build reported success.
+ *
+ * Loudly, because silence is the defect this ticket exists to remove: #146 was
+ * filed for a page that quietly held less than the operator was told it did, and
+ * a ceiling discovered at publish time is that same failure moved one step
+ * later.
+ *
+ * BOTH ceilings are reported in ONE refusal. Thrown in sequence, the first stops
+ * the second, so a publish over both would name only its entry count -- and
+ * whoever trimmed files to satisfy it would be refused again on bytes, by a
+ * message that never mentioned them. A guard can be red for a true reason and
+ * still send the diagnosis the wrong way (PR #156).
+ *
+ * @param {{
+ *   files: Record<string, string | null>,
+ *   sizeOf: (source: string) => number,
+ * }} args
+ */
+export const assertPublishLimits = ({ files, sizeOf }) => {
+  const entries = Object.keys(files);
+  let bytes = 0;
+  let removals = 0;
+  for (const path of entries) {
+    const source = files[path];
+    if (source === null) removals += 1;
+    else bytes += sizeOf(source);
+  }
+  const carried = entries.length - removals;
+  const mb = (n) => `${(n / 1048576).toFixed(2)}MB`;
+
+  const over = [];
+  if (entries.length > PUBLISH_MAX_FILES)
+    over.push(
+      `${entries.length} entries (${carried} with content, ${removals} ` +
+        `removals), over the ${PUBLISH_MAX_FILES} one publish allows`,
+    );
+  if (bytes > PUBLISH_MAX_BYTES)
+    over.push(
+      `${mb(bytes)} across ${carried} file(s), over the ` +
+        `${mb(PUBLISH_MAX_BYTES)} one publish allows`,
+    );
+  if (over.length)
+    throw new Error(
+      `build-evidence-page: the publish would carry ${over.join('; and ')}. ` +
+        'Refusing to build a page whose publish would be refused.',
+    );
+};
+
 /**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
  */
