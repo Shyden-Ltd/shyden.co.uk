@@ -196,6 +196,42 @@ describe('parseNumberSets -- what it refuses', () => {
     });
   });
 
+  // `readCount()` (classroom-groups.ts) is `Number(input.value)`, so an
+  // EMPTY count box arrives here as `NaN` -- and `7 > NaN` is false, so
+  // every range check below would quietly pass and a teacher would be told
+  // nothing was wrong with a field that could not be checked at all. The
+  // count is what is at fault, not the number they typed here, so it gets
+  // its own refusal rather than blaming their input. `text` is empty
+  // because the offending value is in ANOTHER control.
+  const unusable = { kind: 'noCount', text: '' };
+
+  it('refuses a filled field when the count is missing', () => {
+    expect(parseNumberSets('7', { count: Number.NaN, kind: 'absent' })).toEqual(
+      { sets: [], problem: unusable },
+    );
+  });
+
+  it('refuses a filled field when the count is zero or negative', () => {
+    expect(parseNumberSets('7', { count: 0, kind: 'absent' })).toEqual({
+      sets: [],
+      problem: unusable,
+    });
+    expect(parseNumberSets('7', { count: -5, kind: 'absent' })).toEqual({
+      sets: [],
+      problem: unusable,
+    });
+  });
+
+  // The other half, and the one that matters for a teacher who has simply
+  // not typed here yet: an empty field asks nothing of the count, so a
+  // missing count is not their problem and must not be announced as one.
+  it('stays silent about a missing count while the field is empty', () => {
+    expect(parseNumberSets('', { count: Number.NaN, kind: 'absent' })).toEqual({
+      sets: [],
+      problem: null,
+    });
+  });
+
   // Deterministic and left-to-right: a teacher fixes the first thing wrong,
   // re-reads, and is told about the next -- never handed a list to triage.
   it('reports the FIRST offending text when a field holds several', () => {

@@ -37,7 +37,8 @@ export type NumberSetsProblemKind =
   | 'aboveMaximum'
   | 'duplicate'
   | 'lonelySet'
-  | 'tooManySets';
+  | 'tooManySets'
+  | 'noCount';
 
 export interface NumberSetsProblem {
   kind: NumberSetsProblemKind;
@@ -92,6 +93,19 @@ export const parseNumberSets = (
     problem: { kind: problemKind, text: offending },
   });
 
+  const setTexts = pieces(text, ';');
+  // An empty field asks nothing of the count, so a missing count is not this
+  // field's problem and must not be announced as one -- a teacher who has
+  // not typed here yet gets no sentence about a box they have not reached.
+  if (setTexts.length === 0) return { sets: [], problem: null };
+
+  // `readCount()` (classroom-groups.ts) is `Number(input.value)`, so an
+  // EMPTY count box arrives as `NaN` -- and `7 > NaN` is false, so every
+  // range check below would pass in silence and a teacher would be told
+  // nothing was wrong with a field that could not be checked at all. The
+  // count is what is at fault, so it is named rather than their input.
+  if (!Number.isInteger(count) || count < 1) return refuse('noCount', '');
+
   const sets: number[][] = [];
   // Across the WHOLE field, not per set: `3,9; 9,14` asks for 9 to be in two
   // different units at once, which is the same mistake as typing it twice in
@@ -99,7 +113,7 @@ export const parseNumberSets = (
   // de-duplicating it (`rosterProblems`, roster.ts).
   const seen = new Set<number>();
 
-  for (const setText of pieces(text, ';')) {
+  for (const setText of setTexts) {
     const numbers: number[] = [];
     for (const member of pieces(setText, ',')) {
       if (!WHOLE_NUMBER.test(member)) return refuse('notAWholeNumber', member);
