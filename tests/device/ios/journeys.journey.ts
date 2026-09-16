@@ -910,6 +910,19 @@ describe.each(LOCALES)(
         `${seen.rows} row(s) at ${seen.font}: a ${seen.scrollHeight}px sheet ` +
         `in a ${seen.clientHeight}px stage with overflow-y: ${seen.overflowY}`;
 
+      // The measurement itself, reported -- Journey 12's precedent, for the
+      // same reason: a number only a real phone can produce is the point of
+      // running on one, and `--reporter=verbose` (package.json's own test:ios
+      // script) is what puts it in the run's own output rather than nowhere.
+      // Read it against FLOOR_PX: a board sitting AT the floor has shrunk as
+      // far as it may before scrolling becomes the honest answer.
+      // eslint-disable-next-line no-console -- see the comment immediately above
+      console.log(
+        `  [Journey 14 board, locale ${locale}] ${where}; cards=${seen.cards.length} ` +
+          `unreachable=${seen.unreachable.length} scrollable=${seen.scrollable} ` +
+          `floor=${FLOOR_PX}px`,
+      );
+
       // THE INVARIANT, first -- an assertion ordered after a brittle proxy is
       // only ever evaluated while the proxy holds (#156). The question that
       // matters is whether a teacher can see every name.
