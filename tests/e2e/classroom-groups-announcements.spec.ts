@@ -36,7 +36,22 @@ const recordOperations = (page: Page) =>
     )!;
 
     document.addEventListener('DOMContentLoaded', () => {
-      for (const id of ['cg-error', 'cg-results', 'cg-summary']) {
+      // Named three, then DERIVED. A hand-written list is the shape that let
+      // `#cg-io-toggle` slip past the no-scroll tests for months: a region
+      // added later is silently uninstrumented, and an ordering test written
+      // for it would assert nothing at all. Every live region declares
+      // itself with a role, so that is what this reads. The three stay named
+      // explicitly rather than being replaced by the query -- `#cg-results`
+      // is not a live region (it is the ancestor whose reveal the summary's
+      // write must follow), and dropping any of them would weaken tests that
+      // already pass.
+      const ids = new Set(['cg-error', 'cg-results', 'cg-summary']);
+      for (const live of document.querySelectorAll(
+        '[role="alert"], [role="status"]',
+      )) {
+        if (live.id) ids.add(live.id);
+      }
+      for (const id of ids) {
         const el = document.getElementById(id);
         if (!el) continue;
         Object.defineProperty(el, 'hidden', {
@@ -75,6 +90,33 @@ const opsFor = async (page: Page, id: string) =>
 test.describe('screen-reader announcements', () => {
   test.beforeEach(async ({ page }) => {
     await recordOperations(page);
+  });
+
+  // #188, AC16. A refused number field is a refusal, so it is announced
+  // rather than merely shown -- the region has to join the accessibility
+  // tree before the sentence is written into it. Instrumented without being
+  // named: the recorder above now derives every element carrying a live
+  // role, so this region was covered the moment the markup declared one.
+  //
+  // The LAST two operations, not the whole sequence: every keystroke that
+  // leaves the field valid also writes an empty string into the hidden
+  // region, so pinning the full array would be brittle for reasons that
+  // have nothing to do with the ordering. `slice(-2)` still fails outright
+  // if nothing was recorded at all.
+  test('a refused number field is announced, not just revealed', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.fill('#cg-count', '25');
+    await page.fill('#cg-numbers-absent', '26');
+
+    await expect(page.locator('#cg-numbers-problem')).toHaveText(
+      'There is no number 26. You have 25 students.',
+    );
+    expect((await opsFor(page, 'cg-numbers-problem')).slice(-2)).toEqual([
+      'show',
+      'write',
+    ]);
   });
 
   test('an error joins the page before it is written, so it is announced', async ({

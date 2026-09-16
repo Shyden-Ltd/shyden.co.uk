@@ -155,6 +155,46 @@ test.describe('classroom group creator', () => {
   //   and a later stage could silently re-break that
   //   (src/lib/i18n/index.ts:118).
 
+  // #188's own required journey, in a real browser: registration is taken,
+  // number 7 is away, and the lesson starts in two minutes. The teacher
+  // types the class size they know, says who is missing, and gets groups of
+  // the children actually in the room -- without opening Student details or
+  // hand-building a row per pupil.
+  //
+  // "Number of groups", not "students per group": 24 children in groups of
+  // five would be FOUR groups of six, since no group may be smaller than the
+  // size asked for. Five groups is what the teacher wants and what the
+  // ticket describes.
+  test('leaves a pupil typed absent out of the groups entirely', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '25', groups: '5' });
+    await page.fill('#cg-numbers-absent', '7');
+    await page.click('#cg-go');
+
+    const results = page.locator('#cg-results');
+    await expect(results.locator('.group')).toHaveCount(5);
+    await expect(results.locator('.student')).toHaveCount(24);
+
+    // The absence needs a positive control beside it. If the labels were
+    // malformed -- "Student NaN", or a renamed class -- then "no card says
+    // Student 7" would pass for a reason that has nothing to do with
+    // absence. Number 8 must be on the board, and 7 must not.
+    await expect(results.getByText('Student 8', { exact: true })).toHaveCount(
+      1,
+    );
+    await expect(results.getByText('Student 7', { exact: true })).toHaveCount(
+      0,
+    );
+
+    // And nobody was renumbered to close the gap: 25 is still the last
+    // number, not 24 (AC9).
+    await expect(results.getByText('Student 25', { exact: true })).toHaveCount(
+      1,
+    );
+  });
+
   test('splits a class and shows every student exactly once', async ({
     page,
   }) => {

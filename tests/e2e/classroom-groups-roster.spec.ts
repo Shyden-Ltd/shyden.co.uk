@@ -955,6 +955,34 @@ test.describe('the Students box becomes a read-out', () => {
     await expect(page.getByLabel('Number of students')).not.toBeEditable();
   });
 
+  // #188, AC14. The list and the three number fields are never both in
+  // charge either -- `studentsBoxLocked` is the one fact behind all four
+  // controls, which is why the fields lock on exactly the same condition
+  // `#cg-count` does, and recover on it too.
+  test('the three number fields lock with the box, and recover with it', async ({
+    page,
+  }) => {
+    const fields = ['absent', 'together', 'apart'].map((name) =>
+      page.locator(`#cg-numbers-${name}`),
+    );
+
+    await page.goto('/classroom-groups');
+    // Editable BEFORE a roster exists -- without this the assertions below
+    // would hold against a page that had disabled them from the start.
+    for (const field of fields) await expect(field).toBeEditable();
+
+    await openRoster(page);
+    for (const field of fields) await expect(field).not.toBeEditable();
+    await expect(
+      page.getByText(
+        'Set by your list. Mark absences and pairings in Student details to change them.',
+      ),
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: 'Clear all' }).click();
+    for (const field of fields) await expect(field).toBeEditable();
+  });
+
   test('the reason is rendered, not implied', async ({ page }) => {
     await page.goto('/classroom-groups');
     await page.locator('#cg-students-toggle').click();
