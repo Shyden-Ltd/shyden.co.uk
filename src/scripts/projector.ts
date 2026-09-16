@@ -1,5 +1,5 @@
 import type { Strings } from '../lib/i18n';
-import { fitScale } from '../lib/fit';
+import { fitScale, fontThatFits } from '../lib/fit';
 
 /**
  * The projector view: the groups on the wall, for the class to read.
@@ -35,7 +35,15 @@ const BASE_PX = 40;
 
 /** How long between one group appearing and the next. */
 const REVEAL_STEP_MS = 220;
-const FLOOR_PX = 24;
+/**
+ * The readable floor, exported because it is a CONTRACT, not an internal.
+ *
+ * "The board scrolls only once it has shrunk this far" is a fact the board's
+ * own tests have to assert, and a test that retyped `24` would be a second
+ * home for the number: move one and the other keeps passing at a level
+ * nobody chose.
+ */
+export const FLOOR_PX = 24;
 
 export interface ProjectorHandlers {
   /** Re-run the shuffle. The board shows whatever the page then shows. */
@@ -179,12 +187,65 @@ export function renderProjector(
   const refit = () => {
     if (!open) return;
     stage.style.removeProperty('transform');
-    stage.style.removeProperty('font-size');
+    // MEASURED AT THE FONT THE ANSWER IS APPLIED AT (#189).
+    //
+    // This used to remove the property and measure whatever then cascaded
+    // in. `.cg-board` declares no font-size at all, so that was the ROOT's
+    // 16px -- while the answer was applied at `BASE_PX`, 40px. The sheet was
+    // measured in one layout and scaled into another 2.5x bigger: 25
+    // students in five groups measured 657px (a fit, so `scale` came back 1
+    // and `scrolls` false) and then rendered 1110px inside the same 657px
+    // clipping box. Two whole groups sat below the fold with no scrollbar
+    // and no way to reach them.
+    //
+    // It also meant the shrink-to-fit never engaged in the ordinary case:
+    // `scrollHeight` on a clipping box is never less than `clientHeight`, so
+    // a sheet that fitted at 16px measured EXACTLY `available`, which is
+    // `wanted === 1` every time.
+    stage.style.fontSize = `${BASE_PX}px`;
     const available = board.clientHeight - bar.offsetHeight;
-    const needed = stage.scrollHeight;
-    const { scale, scrolls } = fitScale(available, needed, FLOOR_PX, BASE_PX);
-    stage.style.fontSize = `${BASE_PX * scale}px`;
-    board.classList.toggle('scrolls', scrolls);
+    const atBase = { font: BASE_PX, height: stage.scrollHeight };
+    const { scale, scrolls: onTheFloor } = fitScale(
+      available,
+      atBase.height,
+      FLOOR_PX,
+      BASE_PX,
+    );
+    const applied = BASE_PX * scale;
+    stage.style.fontSize = `${applied}px`;
+
+    // MEASURE, SCALE, RE-MEASURE -- because height is not linear in the
+    // scale. The board's grid tracks are `em` (deliberately: `rem` left a
+    // 242px column holding 40px type and broke a name mid-word), so
+    // shrinking the type narrows the columns and changes how many cards fit
+    // on a row. Measured on this page: 3 columns at 40px, 4 at 32px, 5 at
+    // 24px. One reading taken before the scale therefore describes a layout
+    // that no longer exists once the scale lands.
+    //
+    // The correction SOLVES rather than nudges. `fontThatFits` is handed the
+    // two readings already taken -- the sheet at the base font and the sheet
+    // at the applied one -- and returns the font where the line through them
+    // meets the box, clamped at the readable floor. A ratio correction only
+    // converges: measured here, eight students in pairs went 38.2px -> 37.8px
+    // and still overflowed, so the board scrolled 8px at almost full size.
+    //
+    // `onTheFloor` is the first answer saying it already sat at the floor.
+    // There is nothing left to shrink, so the second measurement is skipped
+    // rather than taken and ignored.
+    if (!onTheFloor && stage.scrollHeight > stage.clientHeight) {
+      stage.style.fontSize = `${fontThatFits(
+        stage.clientHeight,
+        atBase,
+        { font: applied, height: stage.scrollHeight },
+        FLOOR_PX,
+      )}px`;
+    }
+
+    // READ, never predicted. A verdict computed before the layout it
+    // describes is what left five group cards unreachable; this one is taken
+    // from the box that is actually on the screen, so "it does not fit" and
+    // "it can be scrolled to" cannot disagree.
+    board.classList.toggle('scrolls', stage.scrollHeight > stage.clientHeight);
   };
 
   // Declared before `enter` because the fullscreen grant handler inside it

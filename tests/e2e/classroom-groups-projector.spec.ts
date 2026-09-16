@@ -7,6 +7,8 @@ import {
   buildRoster,
   giveEveryoneASex,
 } from './helpers';
+import { searched } from '../source-files';
+import { FLOOR_PX } from '../../src/scripts/projector';
 
 /**
  * Stage 5, Task 5. The projector view. Z-01…Z-06, Z-10…Z-20, Z-24.
@@ -589,5 +591,243 @@ test.describe('the projector board holds a real name', () => {
       board.wrap,
       'a board name may only break a word as a last resort',
     ).toBe('break-word');
+  });
+});
+// ─────────────────────────── #189: nothing on the board may be clipped ───────────────────────────
+
+/**
+ * The shapes, DERIVED into cases rather than checked one at a time.
+ *
+ * A hand-written list of things to check will miss the one that breaks --
+ * this repo has the scar: the no-horizontal-scroll tests opened every
+ * disclosure except `#cg-io-toggle`, the only one holding a native file
+ * input, and that was the one that broke.
+ *
+ * Split in two because driving the viewport is something a real phone cannot
+ * do, and `@emulated-viewport` is how the device projects skip what they
+ * cannot honour. Tagging the whole table would skip the four shapes that
+ * never touch the viewport on exactly the device this ticket has to be
+ * proved on.
+ */
+const BOARD_SHAPES = [
+  { what: 'five groups wrapping onto a second row', count: '25', size: '5' },
+  { what: 'twelve groups wrapping onto a third row', count: '60', size: '5' },
+  {
+    what: 'a last group far smaller than its siblings',
+    count: '26',
+    size: '5',
+  },
+  // DERIVED, not picked. A sweep of ten shapes found this is the ONLY one
+  // that reaches the correction at all: every other shape either fits at full
+  // size or lands straight on the readable floor, where there is nothing left
+  // to shrink. Without it the correction is a branch no test ever enters, and
+  // a branch that has never matched anything is itself vacuous (#118).
+  {
+    what: 'a small class in pairs, the only shape that is corrected',
+    count: '8',
+    size: '2',
+  },
+] as const;
+
+/** The same question, on a board too short to be generous. */
+const SHORT_BOARDS = [
+  {
+    what: 'a landscape phone',
+    count: '25',
+    size: '5',
+    viewport: { width: 740, height: 360 },
+  },
+  {
+    what: 'a 720p projector',
+    count: '25',
+    size: '5',
+    viewport: { width: 1280, height: 720 },
+  },
+] as const;
+
+/**
+ * Open the board on the anonymous count/size path.
+ *
+ * Deliberately NOT the roster: 25 named students is 25 form interactions per
+ * case per engine, and what is asserted below is geometry, which does not
+ * care whose name is in the card. The long name has its own test above.
+ *
+ * Animation off, so nothing is read mid-transition. A revealing card carries
+ * `opacity: 0` and a `translateY`, and while neither affects layout, a test
+ * about geometry should not have to depend on that being true.
+ */
+const boardOf = async (
+  page: import('@playwright/test').Page,
+  count: string,
+  size: string,
+) => {
+  await page.goto('/classroom-groups');
+  await page.fill('#cg-count', count);
+  await page.fill('#cg-size', size);
+  const soundBody = page.locator('#cg-sound-body');
+  if (await soundBody.isHidden())
+    await page.locator('#cg-sound-toggle').click();
+  await page.selectOption('#cg-speed', 'skip');
+  await page.click('#cg-go');
+  await expect(page.locator('#cg-results .group').first()).toBeVisible();
+  await page
+    .getByRole('button', { name: /Full screen|Layar penuh/ })
+    .first()
+    .click();
+  await expect(page.locator('#cg-board')).not.toHaveAttribute('hidden', /.*/);
+};
+
+/**
+ * What the board is actually showing, measured.
+ *
+ * Visibility is judged by `getClientRects().length`, never by an element's
+ * own computed `display`: `display: none` on an ANCESTOR leaves a
+ * descendant's computed display untouched, so a per-element check reports
+ * hidden content as rendered -- a bug in the guard that reads exactly like a
+ * bug in the page.
+ *
+ * "Clipped" is not the same question as "outside the box". Content below the
+ * fold of a stage that SCROLLS is reachable, and the board is allowed to
+ * scroll once it has shrunk to the readable floor. What may never happen is
+ * content that is outside the box AND cannot be scrolled to.
+ */
+const boardGeometry = async (page: import('@playwright/test').Page) =>
+  page.evaluate(() => {
+    const stage = document.getElementById('cg-board-stage')!;
+    const cs = getComputedStyle(stage);
+    const box = stage.getBoundingClientRect();
+    const scrollable = /auto|scroll|overlay/.test(cs.overflowY);
+    const groups = Array.from(stage.querySelectorAll<HTMLElement>('.group'));
+
+    const targets: { label: string; el: Element }[] = [];
+    groups.forEach((group, i) => {
+      targets.push({ label: `group ${i + 1}`, el: group });
+      Array.from(group.querySelectorAll('.who')).forEach((who) => {
+        targets.push({
+          label: `"${(who.textContent || '').trim()}" in group ${i + 1}`,
+          el: who,
+        });
+      });
+    });
+
+    // Half a pixel of tolerance: a fractional layout box is not a clipped
+    // name, and an exact comparison would red on sub-pixel rounding alone.
+    const escapes = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return r.bottom > box.bottom + 0.5 || r.top < box.top - 0.5;
+    };
+
+    return {
+      unreachable: scrollable
+        ? []
+        : targets
+            .filter((t) => t.el.getClientRects().length > 0 && escapes(t.el))
+            .map((t) => t.label),
+      // The population, by CONTENT: a card's own text, so an emptied board is
+      // not mistaken for a board that was searched. Counting entries is not
+      // counting content (#112).
+      cards: groups.map((g) => (g.textContent || '').trim()),
+      rows: new Set(
+        groups.map((g) => Math.round(g.getBoundingClientRect().top)),
+      ).size,
+      scrollable,
+      scrollHeight: stage.scrollHeight,
+      clientHeight: stage.clientHeight,
+      font: cs.fontSize,
+      overflowY: cs.overflowY,
+    };
+  });
+
+/**
+ * THE INVARIANT. Asserted FIRST, and derived rather than proxied.
+ *
+ * An assertion ordered after a brittle proxy is only ever evaluated while the
+ * proxy holds (#156), so the question that matters -- can a teacher see every
+ * name -- runs before anything about counts or rows.
+ */
+const expectNothingOutOfReach = async (
+  page: import('@playwright/test').Page,
+  what: string,
+) => {
+  const seen = await boardGeometry(page);
+  const where =
+    `${seen.rows} row(s) at ${seen.font}: a ${seen.scrollHeight}px sheet ` +
+    `in a ${seen.clientHeight}px stage with overflow-y: ${seen.overflowY}`;
+  expect(searched(seen.unreachable, { of: seen.cards, what }), where).toEqual(
+    [],
+  );
+  // ...and the property behind it: either the sheet fits, or the stage
+  // genuinely scrolls. Never how many things there are.
+  expect(
+    seen.scrollHeight <= seen.clientHeight || seen.scrollable,
+    `${where} -- content nobody can reach`,
+  ).toBe(true);
+
+  // ...and the CONVERSE, which is what makes the verdict honest rather than
+  // merely safe. `.scrolls` used to be PREDICTED before the layout it
+  // describes; a prediction that errs towards scrolling hides nothing, so
+  // every assertion above stays green while the board offers a scrollbar it
+  // does not need. Measured on ten shapes, the predicted and measured
+  // verdicts disagree on five of them.
+  if (seen.scrollHeight <= seen.clientHeight) {
+    expect(
+      seen.scrollable,
+      `${where} -- the sheet fits, so the stage must not be scrollable`,
+    ).toBe(false);
+  }
+
+  // ...and the property that says the shrinking actually happened: a board
+  // may scroll ONLY once it has come down to the readable floor. Anything
+  // above the floor that still does not fit had somewhere left to go.
+  //
+  // This is the assertion the mutation sweep was missing. Deleting the
+  // correction step left every test above GREEN, because a board that
+  // scrolls is a board whose content is still reachable -- true, and not the
+  // whole contract. One pixel of tolerance because the correction solves to
+  // a fractional font, not because the floor is negotiable.
+  if (seen.scrollHeight > seen.clientHeight) {
+    expect(
+      parseFloat(seen.font),
+      `${where} -- scrolling at ${seen.font}, above the ${FLOOR_PX}px floor: ` +
+        'it had further to shrink before scrolling was the honest answer',
+    ).toBeLessThanOrEqual(FLOOR_PX + 1);
+  }
+};
+
+test.describe('the projector board never hides a name', () => {
+  for (const shape of BOARD_SHAPES) {
+    test(`nothing is out of reach -- ${shape.what}`, async ({ page }) => {
+      await boardOf(page, shape.count, shape.size);
+      await expectNothingOutOfReach(page, 'group cards on the board');
+    });
+  }
+
+  for (const shape of SHORT_BOARDS) {
+    test(
+      `nothing is out of reach on ${shape.what}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize(shape.viewport);
+        await boardOf(page, shape.count, shape.size);
+        await expectNothingOutOfReach(page, 'group cards on a short board');
+      },
+    );
+  }
+
+  test('nothing is out of reach when the fullscreen grant is refused', async ({
+    page,
+  }) => {
+    // iOS Safari never grants fullscreen on an arbitrary element, and the
+    // board is the same layer either way -- so a fix proved on only one path
+    // is proved on neither.
+    await page.addInitScript(() => {
+      Element.prototype.requestFullscreen = () =>
+        Promise.reject(new Error('refused'));
+    });
+    await boardOf(page, '25', '5');
+    await expectNothingOutOfReach(
+      page,
+      'group cards on the refused-grant board',
+    );
   });
 });
