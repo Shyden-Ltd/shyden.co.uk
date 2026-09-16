@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseNumberSets, studentsForInput } from '../../src/lib/numberSets';
-import { MAX_STUDENTS } from '../../src/lib/grouping';
-import { student } from './factories';
+import { ERROR_CODES, MAX_STUDENTS, buildGroups } from '../../src/lib/grouping';
+import type { GroupingInput, Student } from '../../src/lib/grouping';
+import { seeded, student } from './factories';
 
 // #188. A teacher types register numbers straight into three fields beside
 // "Number of students" -- absent, keep-together, keep-apart -- and never
@@ -320,5 +321,120 @@ describe('studentsForInput -- typed numbers become a roster', () => {
     const first = built.find((s) => s.number === 1)!;
     expect(first.together).toBe('A');
     expect(first.apart).toBe('A');
+  });
+});
+
+// THE SEAM. #188's premise is that the engine already models all three
+// facts, so the ticket writes no grouping rule -- these assert that premise
+// against the real `buildGroups` rather than trusting it. A failure here
+// does not mean a test needs adjusting; it means the ticket's design is
+// wrong and the translator is not enough.
+describe('the seam -- typed numbers reach the engine unchanged', () => {
+  const input = (students: number | Student[]): GroupingInput => ({
+    students,
+    mode: { kind: 'perGroup', size: 5 },
+    leftovers: 'spread',
+    sexMode: 'off',
+    pinned: [],
+    // A fresh generator per call, seeded identically, so two runs of the
+    // same arrangement are comparable rather than merely similar.
+    random: seeded(1),
+  });
+
+  const ok = (students: number | Student[]) => {
+    const out = buildGroups(input(students));
+    if (!out.ok) throw new Error(`expected success, got ${out.error.code}`);
+    return out.result;
+  };
+
+  const numbersIn = (groups: Student[][]): number[] =>
+    groups.flat().map((s) => s.number);
+
+  // AC8. The invariant comes FIRST and the total second: an exact count is a
+  // proxy, and vitest stops a test at its first failed expectation, so a
+  // brittle count ordered ahead of the real invariant would stop it ever
+  // running (measured in this repo, PR #156).
+  it('leaves number 7 out of every group when it is typed absent', () => {
+    const typed = studentsForInput(25, {
+      absent: [[7]],
+      together: [],
+      apart: [],
+    });
+    const grouped = numbersIn(ok(typed).groups);
+    expect(grouped).not.toContain(7);
+    expect(grouped).toHaveLength(24);
+  });
+
+  // AC9. Absence marks a pupil out of THIS shuffle, not out of the register,
+  // so the gap stays open and nobody is renumbered into a dead child's
+  // number (`nextNumber`'s own reasoning, roster.ts).
+  it('does not renumber anyone to close the gap an absentee leaves', () => {
+    const typed = studentsForInput(25, {
+      absent: [[7]],
+      together: [],
+      apart: [],
+    });
+    const present = [
+      ...Array.from({ length: 6 }, (_, i) => i + 1),
+      ...Array.from({ length: 18 }, (_, i) => i + 8),
+    ];
+    expect(numbersIn(ok(typed).groups).sort((a, b) => a - b)).toEqual(present);
+  });
+
+  // AC10. A deliberate match to behaviour that already exists: an absent
+  // student's letters lapse with them (roster.ts, "Their letters lapse with
+  // them"), so naming an absent number in a pairing is not an error -- the
+  // pairing simply has nobody left to bind.
+  it('lets an absent pupil pairing lapse, with no error', () => {
+    const typed = studentsForInput(10, {
+      absent: [[3]],
+      together: [[3, 9]],
+      apart: [],
+    });
+    const grouped = numbersIn(ok(typed).groups);
+    expect(grouped).not.toContain(3);
+    expect(grouped).toHaveLength(9);
+  });
+
+  // AC11. No new error code is invented for a case the engine already
+  // names: kept together and kept apart from each other at once.
+  it("surfaces the engine's own togetherApartClash, not a new code", () => {
+    const typed = studentsForInput(6, {
+      absent: [],
+      together: [[1, 2]],
+      apart: [[1, 2]],
+    });
+    const out = buildGroups(input(typed));
+    if (out.ok) throw new Error('expected a refusal, got groups');
+    expect(out.error.code).toBe(ERROR_CODES.togetherApartClash);
+  });
+
+  // The seam itself, asserted rather than its two sides: what a teacher
+  // types and the roster they would have built by hand are the SAME input,
+  // so they must produce the same outcome from the same seed. The hand-built
+  // side is written out in full on purpose -- a fixture derived from the
+  // thing it checks cannot disagree with it.
+  it('matches the equivalent hand-built roster, and so does its outcome', () => {
+    const typed = studentsForInput(12, {
+      absent: [[4]],
+      together: [[1, 2]],
+      apart: [[7, 8]],
+    });
+    const byHand: Student[] = [
+      student({ number: 1, together: 'A' }),
+      student({ number: 2, together: 'A' }),
+      student({ number: 3 }),
+      student({ number: 4, absent: true }),
+      student({ number: 5 }),
+      student({ number: 6 }),
+      student({ number: 7, apart: 'A' }),
+      student({ number: 8, apart: 'A' }),
+      student({ number: 9 }),
+      student({ number: 10 }),
+      student({ number: 11 }),
+      student({ number: 12 }),
+    ];
+    expect(typed).toEqual(byHand);
+    expect(buildGroups(input(typed))).toEqual(buildGroups(input(byHand)));
   });
 });
