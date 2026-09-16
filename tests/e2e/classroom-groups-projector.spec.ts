@@ -8,6 +8,7 @@ import {
   giveEveryoneASex,
 } from './helpers';
 import { searched } from '../source-files';
+import { FLOOR_PX } from '../../src/scripts/projector';
 
 /**
  * Stage 5, Task 5. The projector view. Z-01…Z-06, Z-10…Z-20, Z-24.
@@ -773,6 +774,23 @@ const expectNothingOutOfReach = async (
       seen.scrollable,
       `${where} -- the sheet fits, so the stage must not be scrollable`,
     ).toBe(false);
+  }
+
+  // ...and the property that says the shrinking actually happened: a board
+  // may scroll ONLY once it has come down to the readable floor. Anything
+  // above the floor that still does not fit had somewhere left to go.
+  //
+  // This is the assertion the mutation sweep was missing. Deleting the
+  // correction step left every test above GREEN, because a board that
+  // scrolls is a board whose content is still reachable -- true, and not the
+  // whole contract. One pixel of tolerance because the correction solves to
+  // a fractional font, not because the floor is negotiable.
+  if (seen.scrollHeight > seen.clientHeight) {
+    expect(
+      parseFloat(seen.font),
+      `${where} -- scrolling at ${seen.font}, above the ${FLOOR_PX}px floor: ` +
+        'it had further to shrink before scrolling was the honest answer',
+    ).toBeLessThanOrEqual(FLOOR_PX + 1);
   }
 };
 

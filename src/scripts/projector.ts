@@ -35,7 +35,15 @@ const BASE_PX = 40;
 
 /** How long between one group appearing and the next. */
 const REVEAL_STEP_MS = 220;
-const FLOOR_PX = 24;
+/**
+ * The readable floor, exported because it is a CONTRACT, not an internal.
+ *
+ * "The board scrolls only once it has shrunk this far" is a fact the board's
+ * own tests have to assert, and a test that retyped `24` would be a second
+ * home for the number: move one and the other keeps passing at a level
+ * nobody chose.
+ */
+export const FLOOR_PX = 24;
 
 export interface ProjectorHandlers {
   /** Re-run the shuffle. The board shows whatever the page then shows. */
