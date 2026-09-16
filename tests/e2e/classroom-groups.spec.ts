@@ -195,6 +195,41 @@ test.describe('classroom group creator', () => {
     );
   });
 
+  // #188, AC12: a bad number "re-validates immediately and refuses, rather
+  // than failing at Generate". The refusal SENTENCE was asserted in the
+  // announcements spec; the refusal ITSELF -- the shuffle being blocked --
+  // was not, which a mutation made obvious: `updateGoButton` could have
+  // ignored the number fields entirely and every test still passed.
+  //
+  // The gate has two sources and they live apart. Its roster half is in
+  // classroom-groups-roster.spec.ts ('a duplicate number is refused as it is
+  // typed', 'a together-and-apart clash is refused as it is typed'); this is
+  // the number-field half. They cannot be tested together -- a roster
+  // disables these fields outright (AC14) -- so a comment naming the other
+  // half is more honest than a describe pretending the fact has one home.
+  test('a refused number blocks the shuffle until it is corrected', async ({
+    page,
+  }) => {
+    const go = page.getByRole('button', { name: 'Make groups' });
+    await page.goto('/classroom-groups');
+
+    // Enabled FIRST. Disabled is not the default here, but asserting it
+    // anyway is what stops "it is disabled" passing against a page where the
+    // button never worked at all.
+    await expect(go).toBeEnabled();
+
+    await page.fill('#cg-count', '25');
+    await page.fill('#cg-numbers-absent', '26');
+    await expect(page.locator('#cg-numbers-problem')).toBeVisible();
+    await expect(go).toBeDisabled();
+
+    // And the recovery direction, which is the one that proves the gate is
+    // not simply stuck shut once it has closed.
+    await page.fill('#cg-numbers-absent', '7');
+    await expect(page.locator('#cg-numbers-problem')).toBeHidden();
+    await expect(go).toBeEnabled();
+  });
+
   test('splits a class and shows every student exactly once', async ({
     page,
   }) => {
