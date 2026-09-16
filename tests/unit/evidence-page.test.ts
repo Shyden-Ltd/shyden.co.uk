@@ -21,15 +21,21 @@ import {
 } from '../../scripts/evidence-files.mjs';
 import { captureOptions, manifestRow } from '../e2e/evidence';
 import {
+  assertPageFits,
+  assertPublishLimits,
   capturesOfThisRun,
-  droppedLine,
   earlierLine,
   imageSize,
   mediaType,
+  PAGE_MAX_BYTES,
+  PUBLISH_MAX_BYTES,
+  PUBLISH_MAX_FILES,
   PUBLISH_NOTE,
+  publishedVideoPath,
+  reconcileFiles,
   renderEvidencePage,
-  selectMedia,
   videoCandidates,
+  videoFiles,
 } from '../../scripts/build-evidence-page.mjs';
 
 /**
@@ -239,46 +245,12 @@ describe('the evidence page is derived from the run', () => {
   });
 });
 
-describe('media selection respects a budget and says what it dropped', () => {
-  it('drops videos rather than exceeding the budget, and reports the drop', () => {
-    const videos = [
-      { key: 'a|chromium', bytes: 900 },
-      { key: 'a|webkit', bytes: 900 },
-    ];
-    const { kept, dropped } = selectMedia(videos, 1000, 0);
-    expect(kept).toHaveLength(1);
-    expect(dropped).toHaveLength(1);
-  });
-
-  it('keeps everything when the budget allows', () => {
-    const videos = [{ key: 'a|chromium', bytes: 10 }];
-    const { kept, dropped } = selectMedia(videos, 1000, 0);
-    expect(kept).toHaveLength(1);
-    expect(dropped).toEqual([]);
-  });
-
-  it('names every recording the budget left out, not only how many', () => {
-    // `selectMedia` hands back WHAT it dropped so the build can say which; a
-    // bare count sends the operator hunting through the page for the gaps.
-    const line = droppedLine(
-      [
-        { key: 'a-journey|webkit', bytes: 900 },
-        { key: 'b-journey|firefox', bytes: 900 },
-      ],
-      12,
-    );
-    expect(line).toContain('DROPPED=2 (budget 12MB)');
-    expect(line).toContain('a-journey|webkit');
-    expect(line).toContain('b-journey|firefox');
-  });
-
-  it('adds nothing to the build line when nothing was dropped', () => {
-    expect(droppedLine([], 12)).toBe('');
-  });
-
-  it('still shows, per journey, which engine the budget left out', () => {
-    // Left out for size is a decision the page reports. Only a recording the
-    // disk does not have is refused, below.
+describe('a journey whose engine recorded nothing says so on the page', () => {
+  it('shows, per journey, which engine has no recording', () => {
+    // An ordinary run records nothing, so a result with no recording is not a
+    // loss, and the page reports which engines it holds. Nothing is left out
+    // for SIZE any more: recordings travel beside the page, and one the disk
+    // does not have is refused outright, below.
     const html = build({
       videos: new Map([['a-journey|chromium', 'data:video/webm;base64,AAAA']]),
     });
@@ -346,7 +318,12 @@ describe('a recording the report names is on disk, or the build refuses', () => 
     ).not.toContain('on chromium');
   });
 
-  it('keeps every recording on disk, charged for the base64 it becomes', () => {
+  it('keeps every recording on disk, resolved to the file a publish carries', () => {
+    // No base64 charge any more. A recording is PUBLISHED, not inlined, so the
+    // 4/3 inflation a data URI paid is not a cost it can incur, and nothing
+    // reads a charge from here: `assertPublishLimits` sizes each file on the
+    // disk it will be read from. A second number describing the same file is
+    // one that can drift from it.
     const chromium = recording('a-chromium.webm', 1000);
     const webkit = recording('a-webkit.webm', 2000);
     expect(
@@ -357,8 +334,8 @@ describe('a recording the report names is on disk, or the build refuses', () => 
         ]),
       ),
     ).toEqual([
-      { key: 'a-journey|chromium', abs: chromium, bytes: 1370 },
-      { key: 'a-journey|webkit', abs: webkit, bytes: 2740 },
+      { key: 'a-journey|chromium', abs: chromium },
+      { key: 'a-journey|webkit', abs: webkit },
     ]);
   });
 
@@ -897,6 +874,15 @@ describe('the build says what the publish has to grant', () => {
     // by the very sentence it is supposed to be corroborating.
     expect(build(), 'the page no longer reaches for db').toContain("use('db')");
   });
+
+  it('names the files map the recordings travel in', () => {
+    // The sidecar is inert unless the publish carries it: the page would
+    // reference recordings nothing ever uploaded, and a broken `src` reads as
+    // a journey that was never recorded. A publish argument cannot be enforced
+    // from in here, so the note is its only carrier -- the same reason the
+    // capability is named above.
+    expect(PUBLISH_NOTE).toContain('files');
+  });
 });
 
 /**
@@ -907,9 +893,11 @@ describe('the build says what the publish has to grant', () => {
  * consumes, since the page is read by an eye and pixel-exact comparison
  * belongs to the visual-regression suite and its own baselines. Measured on
  * #138: 80 shots came to 18.9 MiB, a 25.34 MiB page that could not be
- * published at all, and `selectMedia` dropped ALL EIGHTY videos against a
- * budget the shots had already exhausted -- so the standing requirement of a
- * video per journey was silently unmet (#146).
+ * published at all, and the budget then dropped ALL EIGHTY videos against
+ * bytes the shots had already spent -- so the standing requirement of a video
+ * per journey was silently unmet (#146). That budget is gone: recordings are
+ * published beside the page (#158), so shots can no longer spend what the
+ * recordings need.
  *
  * The media type is read from the bytes, never from the extension: a capture
  * whose name and content disagree must still render, and an unknown format
@@ -1002,5 +990,305 @@ describe('an evidence capture is identified by its own bytes', () => {
       type: 'jpeg',
       quality: 90,
     });
+  });
+});
+
+/**
+ * Recordings published BESIDE the page, so capture scope and video completeness
+ * stop competing for the 16 MB one page is allowed (#158).
+ *
+ * Twice the shots have spent a budget the recordings needed. #146 filed it; #189
+ * hit it again at a different scope, where 105 shots at quality 90 came to
+ * 10.0MB and pushed all 35 recordings out of a page that still looked complete.
+ * A page carries media as base64 `data:` URIs at 4/3 of the bytes; a supporting
+ * file is fetched separately and charged against different ceilings entirely --
+ * 15 MB per binary, 64 MB and 255 entries per publish.
+ *
+ * Which media moves is FORCED by that entry ceiling, not chosen: full scope is
+ * 175 shots + 120 recordings + the page = 296 entries, over the 255 a publish
+ * allows. So the recordings move and the shots stay inline -- the recordings are
+ * the larger bytes, and the ones that were being dropped.
+ *
+ * The published path is RELATIVE, with no leading slash. An artifact does not
+ * serve a root-relative path, so `/evidence/x.webm` yields a broken `src` and a
+ * journey that reads as never recorded -- silence indistinguishable from
+ * evidence, which is what `mediaType` already refuses to emit. Exact equality on
+ * the whole map is therefore the assertion; a `startsWith` probe would pass on a
+ * path the publish cannot serve.
+ */
+describe('recordings are published beside the page, not inside it', () => {
+  it('maps every recording to a relative published path, keyed by journey and engine', () => {
+    expect(
+      videoFiles([
+        { key: 'a-journey|chromium', abs: '/run/one.webm' },
+        { key: 'a-journey|Mobile Safari', abs: '/run/two.webm' },
+      ]),
+    ).toEqual({
+      'evidence/a-journey-chromium.webm': '/run/one.webm',
+      'evidence/a-journey-mobile-safari.webm': '/run/two.webm',
+    });
+  });
+
+  it('refuses two recordings whose published paths collide, naming both files', () => {
+    // Slugging joins on the same separator the key does, so a journey ending
+    // where an engine begins can land on one path: `a-b|c` and `a|b-c` both
+    // publish as `a-b-c.webm`. `Object.fromEntries` keeps the LAST silently,
+    // which puts one journey's recording under another journey's claim -- the
+    // stale-video hazard #158 exists to remove, arriving from the other end.
+    let refusal = 'the build did not refuse';
+    try {
+      videoFiles([
+        { key: 'a-b|c', abs: '/run/one.webm' },
+        { key: 'a|b-c', abs: '/run/two.webm' },
+      ]);
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('evidence/a-b-c.webm');
+    expect(refusal).toContain('/run/one.webm');
+    expect(refusal).toContain('/run/two.webm');
+  });
+});
+
+/**
+ * A second capture must not leave the first capture's recordings behind.
+ *
+ * Files left out of a redeploy's `files` map are KEPT, not removed, which is the
+ * opposite of what the word "publish" suggests and the hazard #158 was filed
+ * against. Two ways it bites. Orphans accumulate against the 64 MB and
+ * 255-entry ceilings until a publish is refused outright. Far worse, a journey
+ * id that survives a re-capture while its recording does not leaves YESTERDAY'S
+ * video sitting beside TODAY'S assertion -- and nothing about that page looks
+ * wrong, which makes it worse than one that drops the recording honestly.
+ *
+ * So the removals are emitted explicitly, as `null` against every published
+ * path this capture did not produce.
+ */
+describe('a capture removes the recordings a previous one published', () => {
+  it('removes a recording this run did not produce, rather than orphaning it', () => {
+    expect(
+      reconcileFiles({
+        desired: { 'evidence/a-chromium.webm': '/run/a.webm' },
+        published: ['evidence/a-chromium.webm', 'evidence/b-webkit.webm'],
+      }),
+    ).toEqual({
+      'evidence/a-chromium.webm': '/run/a.webm',
+      'evidence/b-webkit.webm': null,
+    });
+  });
+
+  it('never removes a published file outside the recordings, so the page survives', () => {
+    // The published listing is everything the artifact currently serves, which
+    // includes the page itself. "Remove whatever this capture did not produce"
+    // reads as correct and deletes `index.html` with it -- and `preflight.js`
+    // at the artifact root is reserved, so a publish that nulls it is refused
+    // outright. Only the recordings namespace is this builder's to clear.
+    expect(
+      reconcileFiles({
+        desired: { 'evidence/a-chromium.webm': '/run/a.webm' },
+        published: ['index.html', 'preflight.js', 'evidence/a-chromium.webm'],
+      }),
+    ).toEqual({ 'evidence/a-chromium.webm': '/run/a.webm' });
+  });
+});
+
+/**
+ * The publish ceilings are asserted here, loudly, rather than discovered.
+ *
+ * Silent degradation is what #146 was filed for and what this ticket removes,
+ * so the ceilings get a guard that refuses the build -- never a build that
+ * quietly emits less. There are two, and they count different things.
+ */
+describe('a publish that would exceed the artifact ceilings is refused', () => {
+  it('refuses more than 255 entries, counting removals as entries', () => {
+    // A REMOVAL IS STILL AN ENTRY. `{path: null}` carries no bytes and still
+    // occupies one of the 255 slots, so a capture publishing recordings while
+    // clearing a previous capture's spends two slots per journey that changed.
+    // A guard counting only the entries WITH content passes, and the platform
+    // refuses the publish anyway -- reassuring and wrong.
+    const files: Record<string, string | null> = {};
+    for (let i = 0; i < 200; i += 1)
+      files[`evidence/j${i}-chromium.webm`] = `/run/${i}.webm`;
+    for (let i = 0; i < 56; i += 1)
+      files[`evidence/gone${i}-webkit.webm`] = null;
+
+    let refusal = 'the build did not refuse';
+    try {
+      assertPublishLimits({ files, sizeOf: () => 10 });
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('256');
+    expect(refusal).toContain('255');
+  });
+
+  it('refuses more bytes than one publish may carry, whatever the entry count', () => {
+    // Ten files, so the entry count is nowhere near its ceiling: a guard that
+    // returned after the entry check would pass this without looking at a byte.
+    const files: Record<string, string | null> = {};
+    for (let i = 0; i < 10; i += 1)
+      files[`evidence/j${i}-chromium.webm`] = `/run/${i}.webm`;
+
+    let refusal = 'the build did not refuse';
+    try {
+      assertPublishLimits({ files, sizeOf: () => 7 * 1024 * 1024 });
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('70.00MB');
+    expect(refusal).toContain('64');
+  });
+
+  it('pins both ceilings to the numbers a publish actually enforces', () => {
+    // A literal pin, separate from the guards that derive from it. Asserting
+    // `64 * 1024 * 1024` would restate the expression that DEFINES the
+    // constant, so it would hold at any level -- the #117 tautology. The raw
+    // literal is what makes lowering a ceiling to get a build through fail
+    // here, which is the escape hatch worth closing.
+    expect(PUBLISH_MAX_FILES).toBe(255);
+    expect(PUBLISH_MAX_BYTES).toBe(67108864);
+  });
+});
+
+/**
+ * A page too large to publish is a REFUSAL, never a smaller page.
+ *
+ * This is the whole of AC5 and the reason the drop path is gone. The old build
+ * met a tight budget by emitting less and saying so on a line nobody reads, so
+ * the operator was handed a page that looked complete and held less than he was
+ * told (#146, and again at a different scope in #189). With the recordings
+ * published beside it, the page holds shots alone -- and there is no honest
+ * reason to drop an assertion shot, so not fitting is a build failure.
+ *
+ * `DROPPED=` can no longer appear on a successful build because the concept is
+ * gone, rather than guarded against.
+ */
+describe('a page too large to publish is refused, not trimmed', () => {
+  it('refuses a document over the ceiling, naming both sizes', () => {
+    let refusal = 'the build did not refuse';
+    try {
+      assertPageFits(PAGE_MAX_BYTES + 1);
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('16.00MB');
+  });
+
+  it('accepts a document exactly at the ceiling', () => {
+    // The boundary belongs to the page: a ceiling is what a publish ALLOWS,
+    // so refusing at exactly the limit would reject a page that publishes.
+    expect(() => assertPageFits(PAGE_MAX_BYTES)).not.toThrow();
+  });
+
+  it('pins the document ceiling to the one a publish enforces', () => {
+    // The raw literal, for the same reason as the publish ceilings above:
+    // asserting 16 * 1024 * 1024 would restate the defining expression.
+    expect(PAGE_MAX_BYTES).toBe(16777216);
+  });
+});
+
+/**
+ * Every media reference the page emits is one a publish can actually serve.
+ *
+ * An artifact serves a supporting file by RELATIVE path. A root-relative `src`
+ * is not served at all, and the failure is a broken `<video>` on a journey that
+ * then reads as never recorded -- the silence this ticket exists to remove, in
+ * the one place no type can see it: the path is built in `publishedVideoPath`
+ * and interpolated into markup somewhere else, with no compiler between them.
+ *
+ * Asserted over the page's own rendered bytes for that reason. It passes the day
+ * it is written, so its evidence comes from mutation: point the path at
+ * `/evidence/...` and this is what goes red.
+ */
+describe('the page references its recordings by a path a publish serves', () => {
+  it('emits no root-relative media reference', () => {
+    const key = 'a-journey|chromium';
+    const html = build({ videos: new Map([[key, publishedVideoPath(key)]]) });
+    const srcs = [...html.matchAll(/src="([^"]*)"/g)].map((m) => m[1]);
+
+    const rooted = srcs.filter((src) => src.startsWith('/'));
+    expect(searched(rooted, { of: srcs, what: 'media references' })).toEqual(
+      [],
+    );
+    // A positive control on the POPULATION, not merely on its size: the shots
+    // are data URIs and would satisfy `searched` on their own, leaving the
+    // recording -- the only relative path here -- entirely unexamined.
+    expect(srcs).toContain(publishedVideoPath(key));
+  });
+});
+
+/**
+ * A journey the report names is on the page, captured or not.
+ *
+ * The journey list was derived from the MANIFEST alone, so a test that asserted
+ * without calling `shoot()` got no section -- while `videoFiles` publishes a
+ * file for EVERY recording, because `video` is `on` for the whole run whenever
+ * `EVIDENCE_DIR` is set. Two populations with no compiler between them: entries
+ * come from the recordings, `src` attributes come from the journey list.
+ *
+ * Measured on #158's own full-scope proof run: 120 recordings published, 100
+ * referenced, 20 files served to a page naming their journeys nowhere. The
+ * waste is the smaller half. Four real journeys ran on five engines and
+ * appeared on NO evidence page -- including `no console errors on load` -- so
+ * the page under-reported the coverage an operator signs off against, and did
+ * so silently, which is the failure this whole ticket exists to remove.
+ */
+describe('a journey that captured nothing is still on the page', () => {
+  const JOURNEY = 'a recorded journey';
+  const SLUG = 'a-recorded-journey';
+  const reportNamingAnUncapturedJourney = {
+    ...REPORT,
+    suites: [
+      ...REPORT.suites,
+      {
+        specs: [
+          {
+            title: JOURNEY,
+            tests: [
+              {
+                projectName: 'chromium',
+                results: [{ status: 'passed', duration: 7, attachments: [] }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it('gives it a section although no manifest row names it', () => {
+    // The precondition IS part of the assertion: add a manifest row for this
+    // title and the old manifest-derived list renders it anyway, leaving a
+    // guard that passes without testing what it claims to.
+    expect(MANIFEST.filter((m) => m.title.endsWith(JOURNEY))).toEqual([]);
+
+    const html = build({ report: reportNamingAnUncapturedJourney });
+
+    expect(html).toContain(`id="j-${SLUG}"`);
+    expect(html).toContain(JOURNEY);
+    // Control on the population: a page that rendered no journey at all cannot
+    // satisfy this, so the assertion above is about derivation, not emptiness.
+    expect(html).toContain('id="j-a-journey"');
+  });
+
+  it('references every recording it was given', () => {
+    const videos = new Map(
+      [`${SLUG}|chromium`, 'a-journey|chromium'].map((key) => [
+        key,
+        publishedVideoPath(key),
+      ]),
+    );
+    const html = build({ report: reportNamingAnUncapturedJourney, videos });
+    const keys = [...videos.keys()];
+
+    const unreferenced = keys.filter(
+      (key) => !html.includes(`src="${publishedVideoPath(key)}"`),
+    );
+    expect(
+      searched(unreferenced, {
+        of: keys,
+        what: 'recordings handed to the page',
+      }),
+    ).toEqual([]);
   });
 });

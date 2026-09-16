@@ -58,39 +58,6 @@ const flattenReport = (report) => {
   return out;
 };
 
-/**
- * Keep items in the order given while they fit, and NAME what was dropped.
- *
- * A generator that silently emits a smaller page when the budget is tight
- * leaves the operator believing they saw everything. The caller prints the
- * drop list.
- */
-export const selectMedia = (items, budgetBytes, usedBytes = 0) => {
-  const kept = [];
-  const dropped = [];
-  let used = usedBytes;
-  for (const item of items) {
-    if (used + item.bytes <= budgetBytes) {
-      kept.push(item);
-      used += item.bytes;
-    } else dropped.push(item);
-  }
-  return { kept, dropped, used };
-};
-
-/**
- * What the build line adds about a drop: how many, against which budget, and
- * WHICH recordings, as `journey|engine`.
- *
- * It printed the count alone, so an operator learned THAT recordings were left
- * out and had to scroll the page to find which.
- */
-export const droppedLine = (dropped, budgetMb) =>
-  dropped.length
-    ? ` DROPPED=${dropped.length} (budget ${budgetMb}MB): ` +
-      dropped.map((v) => v.key).join(', ')
-    : '';
-
 /** An instant exactly as `Date.prototype.toISOString` writes one. */
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -189,8 +156,8 @@ const slugOf = (s) =>
     .toLowerCase();
 
 /**
- * Every recording the report names, resolved and charged for the base64 it
- * becomes -- or a refusal naming each one the disk does not have.
+ * Every recording the report names, resolved -- or a refusal naming each one
+ * the disk does not have.
  *
  * A dangling path is lost evidence, not a smaller page. Playwright wrote the
  * videos into `test-results/`, the next ordinary run cleared that directory as
@@ -209,11 +176,13 @@ export const videoCandidates = (report) => {
       missing.push(`"${s.title}" on ${s.project}: ${abs}`);
       continue;
     }
-    // Base64 grows a file by 4/3; the budget is charged a little over that.
+    // No size is carried: a recording is published, not inlined, so there is no
+    // base64 inflation to charge, and `assertPublishLimits` reads each file's
+    // size off the disk it publishes from. A second number here is one that can
+    // drift from the file it describes.
     candidates.push({
       key: `${slugOf(s.title)}|${s.project}`,
       abs,
-      bytes: Math.ceil(statSync(abs).size * 1.37),
     });
   }
   if (missing.length)
@@ -226,6 +195,202 @@ export const videoCandidates = (report) => {
         'survive the next run.',
     );
   return candidates;
+};
+
+/**
+ * The one spelling of the directory recordings are published into.
+ *
+ * `reconcileFiles` clears this namespace and nothing else, so the prefix that
+ * BUILDS a published path is the same prefix that AUTHORISES its removal. Two
+ * spellings would be two namespaces the day one of them moved -- and the failure
+ * is a removal rule that stops matching, which looks exactly like a capture with
+ * nothing to remove.
+ */
+export const PUBLISHED_PREFIX = 'evidence/';
+
+/**
+ * Where one recording is published, from the `journey|engine` key it is held
+ * under.
+ *
+ * One home, because two callers need the same answer: the files map a publish
+ * carries, and the `src` the page points at. Spelled twice, the day one moved
+ * the page would reference a path nothing published -- a broken `src` on a
+ * journey that then reads as never recorded.
+ *
+ * @param {string} key
+ * @returns {string}
+ */
+export const publishedVideoPath = (key) => {
+  const [journey, project] = key.split('|');
+  return `${PUBLISHED_PREFIX}${journey}-${slugOf(project)}.webm`;
+};
+
+/**
+ * Every recording as a supporting file: published path -> the file on disk.
+ *
+ * The page carries media as base64 `data:` URIs at 4/3 of the bytes, all of it
+ * inside the 16 MB one page is allowed, so scope and video completeness compete
+ * for the same budget -- and the loser is silent (#146, again at a different
+ * scope in #189). A supporting file is fetched separately and charged against
+ * other ceilings: 15 MB per binary, 64 MB and 255 entries per publish.
+ *
+ * Which media moves is forced by the entry ceiling rather than chosen: full
+ * scope is 175 shots + 120 recordings + the page = 296 entries, over the 255 a
+ * publish allows. The recordings move because they are the larger bytes and the
+ * ones being dropped; the shots stay inline.
+ *
+ * The path is RELATIVE with no leading slash -- an artifact does not serve a
+ * root-relative path, and the failure is a broken `src` on a journey that then
+ * reads as never recorded.
+ *
+ * Two recordings landing on one path is a THROW. Slugging joins on the same
+ * separator the key does, so a journey ending where an engine begins collides:
+ * `a-b|c` and `a|b-c` both publish as `a-b-c.webm`. Keeping the last silently
+ * would file one journey's recording under another journey's claim, which is the
+ * stale-video hazard this ticket exists to remove, arriving from the other end.
+ *
+ * Accumulated in a Map, not an object literal: `'constructor' in {}` is true, so
+ * a journey slugged to a prototype member would report a collision that is not
+ * there.
+ *
+ * @param {{ key: string, abs: string }[]} candidates
+ * @returns {Record<string, string>}
+ */
+export const videoFiles = (candidates) => {
+  const files = new Map();
+  const collisions = [];
+  for (const { key, abs } of candidates) {
+    const path = publishedVideoPath(key);
+    const taken = files.get(path);
+    if (taken === undefined) files.set(path, abs);
+    else collisions.push(`${path}: ${taken} and ${abs}`);
+  }
+  if (collisions.length)
+    throw new Error(
+      `build-evidence-page: ${collisions.length} published path(s) claimed by ` +
+        `more than one recording:\n  ${collisions.join('\n  ')}\n` +
+        "Refusing to publish a recording under another journey's claim: the " +
+        'page would pair a current assertion with the wrong recording, and ' +
+        'nothing about it would look wrong.',
+    );
+  return Object.fromEntries(files);
+};
+
+/**
+ * The files a publish carries, with the previous capture's leftovers removed.
+ *
+ * A path left OUT of a redeploy's `files` map is kept, not removed -- the
+ * opposite of what "publish" suggests. So a second capture leaves the first
+ * capture's recordings in place, and two things follow: orphans accumulate
+ * against the 64 MB and 255-entry ceilings until a publish is refused, and a
+ * journey whose id survives a re-capture while its recording does not ends up
+ * showing YESTERDAY'S video beside TODAY'S assertion. Nothing about that page
+ * looks wrong, which makes it worse than one that drops a recording honestly.
+ *
+ * The removals are therefore explicit: `null` against every published path this
+ * capture did not produce -- but ONLY inside `PUBLISHED_PREFIX`. The published
+ * listing is everything the artifact serves, the page itself included, so
+ * "remove whatever this capture did not produce" reads as correct and deletes
+ * `index.html` with it. `preflight.js` at the artifact root is reserved, and a
+ * publish that nulls it is refused outright. The recordings are the only thing
+ * this builder owns.
+ *
+ * @param {{ desired: Record<string, string>, published: string[] }} args
+ * @returns {Record<string, string | null>}
+ */
+export const reconcileFiles = ({ desired, published }) => {
+  const files = { ...desired };
+  for (const path of published)
+    if (path.startsWith(PUBLISHED_PREFIX) && !Object.hasOwn(desired, path))
+      files[path] = null;
+  return files;
+};
+
+/** Entries one publish may carry. A removal occupies one of these. */
+export const PUBLISH_MAX_FILES = 255;
+
+/** Bytes one publish may carry, across every file with content in it. */
+export const PUBLISH_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Refuse a file map the publish could not carry, naming what is over.
+ *
+ * A REMOVAL IS STILL AN ENTRY. `{path: null}` carries no bytes and occupies one
+ * of the 255 slots, so a capture that clears a previous one spends two slots for
+ * every journey whose recording changed. A guard counting only the entries with
+ * content passes here and the publish is refused anyway -- reassuring and wrong,
+ * and the failure arrives after the build reported success.
+ *
+ * Loudly, because silence is the defect this ticket exists to remove: #146 was
+ * filed for a page that quietly held less than the operator was told it did, and
+ * a ceiling discovered at publish time is that same failure moved one step
+ * later.
+ *
+ * BOTH ceilings are reported in ONE refusal. Thrown in sequence, the first stops
+ * the second, so a publish over both would name only its entry count -- and
+ * whoever trimmed files to satisfy it would be refused again on bytes, by a
+ * message that never mentioned them. A guard can be red for a true reason and
+ * still send the diagnosis the wrong way (PR #156).
+ *
+ * @param {{
+ *   files: Record<string, string | null>,
+ *   sizeOf: (source: string) => number,
+ * }} args
+ */
+export const assertPublishLimits = ({ files, sizeOf }) => {
+  const entries = Object.keys(files);
+  let bytes = 0;
+  let removals = 0;
+  for (const path of entries) {
+    const source = files[path];
+    if (source === null) removals += 1;
+    else bytes += sizeOf(source);
+  }
+  const carried = entries.length - removals;
+  const mb = (n) => `${(n / 1048576).toFixed(2)}MB`;
+
+  const over = [];
+  if (entries.length > PUBLISH_MAX_FILES)
+    over.push(
+      `${entries.length} entries (${carried} with content, ${removals} ` +
+        `removals), over the ${PUBLISH_MAX_FILES} one publish allows`,
+    );
+  if (bytes > PUBLISH_MAX_BYTES)
+    over.push(
+      `${mb(bytes)} across ${carried} file(s), over the ` +
+        `${mb(PUBLISH_MAX_BYTES)} one publish allows`,
+    );
+  if (over.length)
+    throw new Error(
+      `build-evidence-page: the publish would carry ${over.join('; and ')}. ` +
+        'Refusing to build a page whose publish would be refused.',
+    );
+};
+
+/** Bytes one published document may carry, its inline media included. */
+export const PAGE_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Refuse a page too large to publish, naming both sizes.
+ *
+ * NEVER a smaller page. The old build met a tight budget by emitting less and
+ * reporting it on a line nobody reads, so the operator was handed a page that
+ * looked complete and held less than he was told (#146, and again at a
+ * different capture scope in #189). With the recordings published beside it the
+ * page holds shots alone, and there is no honest reason to drop an assertion
+ * shot -- so not fitting is a build failure. `DROPPED=` cannot appear on a
+ * successful build any more because the concept is gone, not guarded.
+ *
+ * @param {number} bytes
+ */
+export const assertPageFits = (bytes) => {
+  if (bytes > PAGE_MAX_BYTES)
+    throw new Error(
+      `build-evidence-page: the page is ${(bytes / 1048576).toFixed(2)}MB, ` +
+        `over the ${(PAGE_MAX_BYTES / 1048576).toFixed(2)}MB one published ` +
+        'document may carry. Refusing to write a page that cannot be ' +
+        'published: narrow the capture scope, or lower EVIDENCE_JPEG_QUALITY.',
+    );
 };
 
 /**
@@ -249,11 +414,24 @@ export const renderEvidencePage = ({
   for (const m of manifest)
     if (!engines.includes(m.project)) engines.push(m.project);
 
+  // Captures first, so a page keeps the order its assertions were taken in,
+  // then every journey the report names that captured nothing.
+  //
+  // Derived from the manifest ALONE, this list omitted any test that asserted
+  // without calling `shoot()` -- while `video` is `on` for the whole run
+  // whenever `EVIDENCE_DIR` is set, so that test IS recorded and `videoFiles`
+  // publishes its recording regardless. Full scope measured 120 recordings
+  // published and 100 referenced: 20 files served to a page that named their
+  // journeys nowhere, and four journeys that ran on five engines -- `no console
+  // errors on load` among them -- absent from the coverage an operator signs
+  // off. The dead entries are the smaller half; a page quietly narrower than
+  // its run is the failure.
   const order = [];
   for (const m of manifest) {
     const short = m.title.split(' > ').slice(1).join(' > ') || m.title;
     if (!order.includes(short)) order.push(short);
   }
+  for (const s of specs) if (!order.includes(s.title)) order.push(s.title);
 
   const missing = manifest.filter((m) => !shots.has(m.file));
   if (missing.length)
@@ -689,9 +867,11 @@ ${journeyHtml}
  * enforce it. Printing it is what stops the next person having to remember.
  */
 export const PUBLISH_NOTE =
-  'publish with capabilities {"db": {}} — without it claude.use(\'db\') ' +
-  'resolves null, the page says "ticks are local to this view", and the ' +
-  'sign-off is recorded NOWHERE.';
+  'publish with capabilities {"db": {}}, AND the files map written beside ' +
+  "this page — without the capability claude.use('db') resolves null, the " +
+  'page says "ticks are local to this view", and the sign-off is recorded ' +
+  'NOWHERE; without the files the page references recordings nothing ' +
+  'uploaded, and a journey with a broken src reads as one never recorded.';
 
 /**
  * What a capture actually is, read from its own first bytes.
@@ -787,10 +967,12 @@ const main = () => {
   const dir = arg('evidence');
   const contentPath = arg('content');
   const out = arg('out');
-  const budgetMb = Number(arg('budget-mb', '12'));
+  // The paths the artifact already serves, saved from a file listing. Absent on
+  // a first publish; without it nothing can be removed, only added.
+  const publishedPath = arg('published');
   if (!dir || !contentPath || !out) {
     console.error(
-      'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--budget-mb 12]',
+      'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--published <listing.json>]',
     );
     process.exit(2);
   }
@@ -810,8 +992,6 @@ const main = () => {
   // Before any capture is encoded: a missing recording refuses the whole page.
   const candidates = videoCandidates(report);
 
-  const b64 = (p) => readFileSync(p).toString('base64');
-
   // Read ONCE: the same buffer answers what the file is, how big it renders
   // and what goes in the src.
   const bytes = new Map(
@@ -828,16 +1008,19 @@ const main = () => {
       `data:${mediaType(b)};base64,${b.toString('base64')}`,
     ]),
   );
-  let used = 0;
-  for (const v of shots.values()) used += v.length;
-
-  const { kept, dropped } = selectMedia(
-    candidates,
-    budgetMb * 1024 * 1024,
-    used,
-  );
+  // Recordings travel BESIDE the page, so the page holds a relative path and
+  // the bytes are charged against the publish rather than the 16 MB document.
+  // Nothing is selected and nothing is dropped: every recording the report
+  // names is published, or the build has already refused above.
+  const files = reconcileFiles({
+    desired: videoFiles(candidates),
+    published: publishedPath
+      ? JSON.parse(readFileSync(publishedPath, 'utf8'))
+      : [],
+  });
+  assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
   const videos = new Map(
-    kept.map((v) => [v.key, 'data:video/webm;base64,' + b64(v.abs)]),
+    candidates.map((c) => [c.key, publishedVideoPath(c.key)]),
   );
 
   const html = renderEvidencePage({
@@ -848,11 +1031,19 @@ const main = () => {
     dims,
     videos,
   });
+  // BEFORE anything is written. A refusal that leaves the page on disk invites
+  // publishing it anyway, or trimming it by hand; the refusal for a missing
+  // recording already leaves no file behind, and this one matches it.
+  assertPageFits(Buffer.byteLength(html));
   writeFileSync(out, html, 'utf8');
+  // The files map, beside the page, because the publish is a separate step and
+  // a map nobody can find is a page whose recordings never travel.
+  const filesOut = `${out}.files.json`;
+  writeFileSync(filesOut, `${JSON.stringify(files, null, 2)}\n`, 'utf8');
   console.log(
     `written ${out} ${(Buffer.byteLength(html) / 1048576).toFixed(2)}MB ` +
-      `shots=${shots.size} videos=${videos.size}/${candidates.length}` +
-      droppedLine(dropped, budgetMb) +
+      `shots=${shots.size} videos=${videos.size}/${candidates.length} ` +
+      `files=${Object.keys(files).length} (${filesOut})` +
       earlierLine(earlier),
   );
   console.log(PUBLISH_NOTE);
