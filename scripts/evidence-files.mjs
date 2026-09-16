@@ -37,9 +37,26 @@ export const EVIDENCE_MANIFEST = 'manifest.jsonl';
  * budget the shots had already spent (#146).
  *
  * 90, not 80: the operator judges whether a Thai capture is really Thai, so
- * the glyphs are the thing the encoder must not soften.
+ * the glyphs are the thing the encoder must not soften. That is why 90 is the
+ * DEFAULT and the override below is an env var -- an ordinary run is unchanged
+ * and keeps the glyphs.
+ *
+ * Overridable because the same collision recurred on #189, where the captures
+ * are LAYOUT rather than script: 105 shots at 90 came to 10.0MB, which alone
+ * produced a 13.2MB page and pushed all 35 videos out of it -- and a page with
+ * screenshots and no video does not meet the standing rule. Scoping the run to
+ * that ticket's own journeys did not help; the shots alone were over budget. At
+ * 55 they came to 5.9MB and the page kept 35/35 videos. A clipped group card is
+ * exactly as visible at 55, and the videos are what the smaller number buys.
+ *
+ * Twice now the shots have spent a budget the videos needed, so the real fix is
+ * #158: publish captures as supporting files, and stop making scope and video
+ * compete for one page.
  */
-export const EVIDENCE_JPEG_QUALITY = 90;
+export const EVIDENCE_JPEG_QUALITY = (() => {
+  const asked = Number(process.env.EVIDENCE_JPEG_QUALITY);
+  return Number.isFinite(asked) && asked >= 1 && asked <= 100 ? asked : 90;
+})();
 
 /**
  * This file's own basename.
