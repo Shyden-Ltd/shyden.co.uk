@@ -402,6 +402,14 @@ export function rosterOpenProblem(
  * the letter of X-08 asks for -- a box that cannot be typed into AT ALL
  * can never disagree with a list that exists, at any size, so there is
  * nothing left to check "past MAX_ROSTER" specifically.
+ *
+ * FOUR controls now, not one (#188). `#cg-count` and the three number fields
+ * beside it -- absent numbers, keep together, keep apart -- all lock on this
+ * same single fact, because all four are ways of saying who is in the class
+ * and the list is authoritative over every one of them. Documented here
+ * rather than beside each control: a rule written for one control and
+ * applied to four is how three of them end up agreeing while the fourth
+ * quietly drifts.
  */
 export const studentsBoxLocked = (roster: readonly Student[]): boolean =>
   roster.length > 0;

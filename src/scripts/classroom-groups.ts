@@ -719,9 +719,9 @@ if (form) {
 
   // #188. The three number fields, cached the same way `countInput` above
   // is, and for the same reason: each is read AND written on every pass.
-  const absentInput = $<HTMLInputElement>('cg-absent')!;
-  const togetherInput = $<HTMLInputElement>('cg-together')!;
-  const apartInput = $<HTMLInputElement>('cg-apart')!;
+  const absentInput = $<HTMLInputElement>('cg-numbers-absent')!;
+  const togetherInput = $<HTMLInputElement>('cg-numbers-together')!;
+  const apartInput = $<HTMLInputElement>('cg-numbers-apart')!;
   const numbersLockedEl = $<HTMLParagraphElement>('cg-numbers-locked')!;
   const numbersProblemEl = $<HTMLParagraphElement>('cg-numbers-problem')!;
   // Which help paragraph describes which field is read from the MARKUP's own
