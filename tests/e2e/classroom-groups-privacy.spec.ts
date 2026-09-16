@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
+import { shoot } from './evidence';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -62,12 +63,22 @@ test.describe('privacy — the number fields are forgotten on reload', () => {
     await expect(page.locator('#cg-numbers-absent')).toHaveValue('7, 12');
     await expect(page.locator('#cg-numbers-together')).toHaveValue('3,9');
     await expect(page.locator('#cg-numbers-apart')).toHaveValue('2,5');
+    await shoot(
+      page,
+      'all three fields hold what was typed',
+      page.locator('.number-fields'),
+    );
 
     await page.reload();
 
     await expect(page.locator('#cg-numbers-absent')).toHaveValue('');
     await expect(page.locator('#cg-numbers-together')).toHaveValue('');
     await expect(page.locator('#cg-numbers-apart')).toHaveValue('');
+    await shoot(
+      page,
+      'all three fields empty after a reload',
+      page.locator('.number-fields'),
+    );
   });
 
   test('and nothing about them is written to storage', async ({ page }) => {
@@ -103,9 +114,10 @@ test.describe('privacy — the number fields are forgotten on reload', () => {
     // cannot see this site at all -- a value derived from `page.evaluate` is
     // the blind spot #185 is open about -- so the idiom is here by choice,
     // not because a guard insisted.
-    const leaked = stored.filter(
-      (entry) => entry.includes('7, 12') || entry.includes('12'),
-    );
+    // `12` on its own rather than the text as typed: a page that parsed the
+    // field and stored `[7,12]` leaks exactly what one storing `7, 12` does,
+    // and every serialisation of that absence contains it.
+    const leaked = stored.filter((entry) => entry.includes('12'));
     expect(
       searched(leaked, { of: stored, what: 'browser storage entries' }),
     ).toEqual([]);

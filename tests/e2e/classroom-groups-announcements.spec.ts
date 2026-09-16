@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
+import { shoot } from './evidence';
 
 /**
  * A live region only reports mutations to something already in the
@@ -117,6 +118,11 @@ test.describe('screen-reader announcements', () => {
       'show',
       'write',
     ]);
+    await shoot(
+      page,
+      'the refusal, revealed before it was written',
+      page.locator('#cg-numbers-problem'),
+    );
   });
 
   test('an error joins the page before it is written, so it is announced', async ({

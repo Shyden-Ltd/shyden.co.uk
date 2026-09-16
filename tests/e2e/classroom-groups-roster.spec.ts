@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { recordErrors } from './recorders';
+import { shoot } from './evidence';
 import {
   openRoster,
   addSeveral,
@@ -970,6 +971,11 @@ test.describe('the Students box becomes a read-out', () => {
     // Editable BEFORE a roster exists -- without this the assertions below
     // would hold against a page that had disabled them from the start.
     for (const field of fields) await expect(field).toBeEditable();
+    await shoot(
+      page,
+      'all three fields editable with no list',
+      page.locator('.number-fields'),
+    );
 
     await openRoster(page);
     for (const field of fields) await expect(field).not.toBeEditable();
@@ -978,9 +984,19 @@ test.describe('the Students box becomes a read-out', () => {
         'Set by your list. Mark absences and pairings in Student details to change them.',
       ),
     ).toBeVisible();
+    await shoot(
+      page,
+      'locked by the list, with the reason shown',
+      page.locator('.number-fields'),
+    );
 
     await page.getByRole('button', { name: 'Clear all' }).click();
     for (const field of fields) await expect(field).toBeEditable();
+    await shoot(
+      page,
+      'editable again once the list is cleared',
+      page.locator('.number-fields'),
+    );
   });
 
   test('the reason is rendered, not implied', async ({ page }) => {

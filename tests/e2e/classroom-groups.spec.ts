@@ -171,6 +171,12 @@ test.describe('classroom group creator', () => {
     await page.goto('/classroom-groups');
     await fill(page, { count: '25', groups: '5' });
     await page.fill('#cg-numbers-absent', '7');
+    await expect(page.locator('#cg-numbers-absent')).toHaveValue('7');
+    await shoot(
+      page,
+      'number 7 typed into Absent numbers',
+      page.locator('.number-fields'),
+    );
     await page.click('#cg-go');
 
     const results = page.locator('#cg-results');
@@ -193,6 +199,20 @@ test.describe('classroom group creator', () => {
     await expect(results.getByText('Student 25', { exact: true })).toHaveCount(
       1,
     );
+    await shoot(
+      page,
+      'five groups of the 24 present, without number 7',
+      results,
+    );
+
+    // AC13: the teacher is told, never left to notice a missing child. The
+    // note is worded from what was really placed, so it cannot disagree with
+    // the board above it. Visible AND worded: `toHaveText` reads
+    // `textContent`, which a hidden note still carries.
+    const note = page.locator('#cg-grouped-note');
+    await expect(note).toBeVisible();
+    await expect(note).toHaveText('24 of 25 grouped — number 7 is absent.');
+    await shoot(page, 'the note names who is absent', note);
   });
 
   // #188, AC12: a bad number "re-validates immediately and refuses, rather
@@ -217,17 +237,30 @@ test.describe('classroom group creator', () => {
     // anyway is what stops "it is disabled" passing against a page where the
     // button never worked at all.
     await expect(go).toBeEnabled();
+    await shoot(page, 'Make groups enabled before anything is typed', go);
 
     await page.fill('#cg-count', '25');
     await page.fill('#cg-numbers-absent', '26');
     await expect(page.locator('#cg-numbers-problem')).toBeVisible();
+    await shoot(
+      page,
+      'number 26 refused in a class of 25',
+      page.locator('.number-fields'),
+    );
     await expect(go).toBeDisabled();
+    await shoot(page, 'Make groups disabled while the refusal stands', go);
 
     // And the recovery direction, which is the one that proves the gate is
     // not simply stuck shut once it has closed.
     await page.fill('#cg-numbers-absent', '7');
     await expect(page.locator('#cg-numbers-problem')).toBeHidden();
+    await shoot(
+      page,
+      'corrected to 7, the refusal is gone',
+      page.locator('.number-fields'),
+    );
     await expect(go).toBeEnabled();
+    await shoot(page, 'Make groups enabled again', go);
   });
 
   test('splits a class and shows every student exactly once', async ({
@@ -241,6 +274,18 @@ test.describe('classroom group creator', () => {
     await expect(page.locator('#cg-results .group')).toHaveCount(5);
     await expect(page.locator('#cg-results .student')).toHaveCount(22);
     await expect(page.locator('#cg-summary')).toContainText('22');
+    await shoot(
+      page,
+      'five groups holding all 22 students',
+      page.locator('#cg-results'),
+    );
+
+    // #188, AC13's other half: the note is shown ONLY when fewer were
+    // grouped than typed. Counted first, because `toBeHidden` also passes
+    // for an element that does not exist at all.
+    const note = page.locator('#cg-grouped-note');
+    await expect(note).toHaveCount(1);
+    await expect(note).toBeHidden();
   });
 
   test('never makes a group smaller than the size asked for', async ({
@@ -254,6 +299,11 @@ test.describe('classroom group creator', () => {
 
     await expect(page.locator('#cg-results .group')).toHaveCount(1);
     await expect(page.locator('#cg-results .student')).toHaveCount(7);
+    await shoot(
+      page,
+      'one group of 7, never a 4 and a 3',
+      page.locator('#cg-results'),
+    );
   });
 
   test('numbers students since there is no roster to name them from yet', async ({
@@ -1766,9 +1816,13 @@ test.describe('the no-scroll rule, measured', () => {
         );
       };
       expect(await positionAt(320, 568)).toBe('sticky');
+      await shoot(page, '320x568, the action row is sticky');
       expect(await positionAt(375, 667)).toBe('sticky');
+      await shoot(page, '375x667, the action row is sticky');
       expect(await positionAt(768, 1024)).toBe('sticky');
+      await shoot(page, '768x1024, the action row is sticky');
       expect(await positionAt(1280, 800)).toBe('sticky');
+      await shoot(page, '1280x800, the action row is sticky');
     },
   );
 
