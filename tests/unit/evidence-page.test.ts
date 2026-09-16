@@ -28,6 +28,7 @@ import {
   mediaType,
   PUBLISH_NOTE,
   renderEvidencePage,
+  reconcileFiles,
   selectMedia,
   videoCandidates,
   videoFiles,
@@ -1068,5 +1069,47 @@ describe('recordings are published beside the page, not inside it', () => {
     expect(refusal).toContain('evidence/a-b-c.webm');
     expect(refusal).toContain('/run/one.webm');
     expect(refusal).toContain('/run/two.webm');
+  });
+});
+
+/**
+ * A second capture must not leave the first capture's recordings behind.
+ *
+ * Files left out of a redeploy's `files` map are KEPT, not removed, which is the
+ * opposite of what the word "publish" suggests and the hazard #158 was filed
+ * against. Two ways it bites. Orphans accumulate against the 64 MB and
+ * 255-entry ceilings until a publish is refused outright. Far worse, a journey
+ * id that survives a re-capture while its recording does not leaves YESTERDAY'S
+ * video sitting beside TODAY'S assertion -- and nothing about that page looks
+ * wrong, which makes it worse than one that drops the recording honestly.
+ *
+ * So the removals are emitted explicitly, as `null` against every published
+ * path this capture did not produce.
+ */
+describe('a capture removes the recordings a previous one published', () => {
+  it('removes a recording this run did not produce, rather than orphaning it', () => {
+    expect(
+      reconcileFiles({
+        desired: { 'evidence/a-chromium.webm': '/run/a.webm' },
+        published: ['evidence/a-chromium.webm', 'evidence/b-webkit.webm'],
+      }),
+    ).toEqual({
+      'evidence/a-chromium.webm': '/run/a.webm',
+      'evidence/b-webkit.webm': null,
+    });
+  });
+
+  it('never removes a published file outside the recordings, so the page survives', () => {
+    // The published listing is everything the artifact currently serves, which
+    // includes the page itself. "Remove whatever this capture did not produce"
+    // reads as correct and deletes `index.html` with it -- and `preflight.js`
+    // at the artifact root is reserved, so a publish that nulls it is refused
+    // outright. Only the recordings namespace is this builder's to clear.
+    expect(
+      reconcileFiles({
+        desired: { 'evidence/a-chromium.webm': '/run/a.webm' },
+        published: ['index.html', 'preflight.js', 'evidence/a-chromium.webm'],
+      }),
+    ).toEqual({ 'evidence/a-chromium.webm': '/run/a.webm' });
   });
 });

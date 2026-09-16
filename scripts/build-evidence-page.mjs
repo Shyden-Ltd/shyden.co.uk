@@ -229,6 +229,17 @@ export const videoCandidates = (report) => {
 };
 
 /**
+ * The one spelling of the directory recordings are published into.
+ *
+ * `reconcileFiles` clears this namespace and nothing else, so the prefix that
+ * BUILDS a published path is the same prefix that AUTHORISES its removal. Two
+ * spellings would be two namespaces the day one of them moved -- and the failure
+ * is a removal rule that stops matching, which looks exactly like a capture with
+ * nothing to remove.
+ */
+export const PUBLISHED_PREFIX = 'evidence/';
+
+/**
  * Every recording as a supporting file: published path -> the file on disk.
  *
  * The page carries media as base64 `data:` URIs at 4/3 of the bytes, all of it
@@ -264,7 +275,7 @@ export const videoFiles = (candidates) => {
   const collisions = [];
   for (const { key, abs } of candidates) {
     const [journey, project] = key.split('|');
-    const path = `evidence/${journey}-${slugOf(project)}.webm`;
+    const path = `${PUBLISHED_PREFIX}${journey}-${slugOf(project)}.webm`;
     const taken = files.get(path);
     if (taken === undefined) files.set(path, abs);
     else collisions.push(`${path}: ${taken} and ${abs}`);
@@ -278,6 +289,36 @@ export const videoFiles = (candidates) => {
         'nothing about it would look wrong.',
     );
   return Object.fromEntries(files);
+};
+
+/**
+ * The files a publish carries, with the previous capture's leftovers removed.
+ *
+ * A path left OUT of a redeploy's `files` map is kept, not removed -- the
+ * opposite of what "publish" suggests. So a second capture leaves the first
+ * capture's recordings in place, and two things follow: orphans accumulate
+ * against the 64 MB and 255-entry ceilings until a publish is refused, and a
+ * journey whose id survives a re-capture while its recording does not ends up
+ * showing YESTERDAY'S video beside TODAY'S assertion. Nothing about that page
+ * looks wrong, which makes it worse than one that drops a recording honestly.
+ *
+ * The removals are therefore explicit: `null` against every published path this
+ * capture did not produce -- but ONLY inside `PUBLISHED_PREFIX`. The published
+ * listing is everything the artifact serves, the page itself included, so
+ * "remove whatever this capture did not produce" reads as correct and deletes
+ * `index.html` with it. `preflight.js` at the artifact root is reserved, and a
+ * publish that nulls it is refused outright. The recordings are the only thing
+ * this builder owns.
+ *
+ * @param {{ desired: Record<string, string>, published: string[] }} args
+ * @returns {Record<string, string | null>}
+ */
+export const reconcileFiles = ({ desired, published }) => {
+  const files = { ...desired };
+  for (const path of published)
+    if (path.startsWith(PUBLISHED_PREFIX) && !Object.hasOwn(desired, path))
+      files[path] = null;
+  return files;
 };
 
 /**
