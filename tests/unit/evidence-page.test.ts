@@ -18,8 +18,9 @@ import {
   EVIDENCE_JPEG_QUALITY,
   EVIDENCE_MANIFEST,
   EVIDENCE_REPORT,
+  manifestRow,
 } from '../../scripts/evidence-files.mjs';
-import { captureOptions, manifestRow } from '../e2e/evidence';
+import { captureOptions } from '../e2e/evidence';
 import {
   assertPageFits,
   assertPublishLimits,

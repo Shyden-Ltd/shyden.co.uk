@@ -59,6 +59,59 @@ export const EVIDENCE_JPEG_QUALITY = (() => {
 })();
 
 /**
+ * Filesystem-safe, still readable in a directory listing.
+ *
+ * Here rather than beside `shoot` because there are now two capture legs and
+ * only one naming scheme. `tests/e2e/evidence.ts` is Playwright-only -- it
+ * reads `test.info()` -- while the iOS journeys run under Vitest and drive a
+ * real phone over WebDriver, so they cannot import it at all. Two slug
+ * implementations would be two schemes the day one of them changed, and the
+ * page would show a picture nobody could trace back to a run.
+ */
+export const slug = (s) =>
+  s
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .toLowerCase();
+
+/**
+ * What one assertion shot records about itself.
+ *
+ * A JSDoc typedef rather than a TypeScript type because this module is `.mjs`
+ * on purpose (see the header): the builder is plain node. TypeScript reads
+ * this as a first-class annotation, so both legs are still checked against it
+ * (#157).
+ *
+ * @typedef {object} Capture
+ * @property {string} project
+ * @property {string} title
+ * @property {number} order
+ * @property {string} label
+ * @property {string} file
+ */
+
+/**
+ * One manifest line: a capture, stamped with the instant it was written.
+ *
+ * The manifest is appended to and never cleared, so a second run into the same
+ * evidence directory left the first run's rows -- and their pictures -- on a
+ * page built from the second run's report (#171). The stamp is how
+ * `scripts/build-evidence-page.mjs` tells them apart: a run's rows are the ones
+ * stamped once its report's `stats.startTime` had passed.
+ *
+ * PURE, with the clock as an argument, so `tests/unit/evidence-page.test.ts`
+ * feeds the builder rows this function wrote rather than a copy of their shape.
+ *
+ * @param {Capture} capture
+ * @param {Date} now
+ */
+export const manifestRow = (capture, now) => ({
+  ...capture,
+  at: now.toISOString(),
+});
+
+/**
  * This file's own basename.
  *
  * The guard against re-spelling has to exempt the module that does the
