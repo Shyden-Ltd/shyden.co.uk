@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -58,6 +59,63 @@ export interface DeviceCapture {
   label: string;
 }
 
+/**
+ * The longest edge a capture is kept at: the phone's CSS viewport, not its
+ * device pixels.
+ *
+ * `tests/e2e/evidence.ts` passes `scale: 'css'` for exactly this reason -- "a
+ * device pixel ratio of 3 triples the bytes to say the same thing". WebDriver
+ * offers no such option: `GET /screenshot` returns the full device-pixel
+ * buffer, 1260x2736 on this phone at ~400KB a shot. Thirty of those is 12MB,
+ * and the page builder REFUSED to write the evidence page at 23.48MB against
+ * the 16MB one published document may carry.
+ *
+ * Trimming captures would have bought the same bytes by deleting evidence.
+ * Resampling to CSS scale costs nine tenths of the pixels and no evidence at
+ * all: measured, 387KB -> 92KB, 1260x2736 -> 420x912.
+ */
+const CSS_MAX_PX = 912;
+
+/**
+ * Resample a capture down to CSS scale, in place. Returns whether it ran.
+ *
+ * `sips` is a macOS built-in rather than a dependency, and this file is
+ * already macOS-only by construction -- it needs `safaridriver` and a physical
+ * iPhone on USB, neither of which exists anywhere else. Node has no image
+ * resize of its own, and adding one would be an operator decision.
+ *
+ * DEGRADES, never fails: a capture at the wrong scale is still evidence, while
+ * a journey that threw here would lose the assertion it was documenting. The
+ * caller keeps the original bytes when this returns false.
+ *
+ * Only shrinks. `sips -Z` resamples to fit a MAXIMUM dimension, which would
+ * happily UPSCALE a small image -- the 1x1 fixture in the unit tests would
+ * become 912x912 -- so the size is read first and the resample is skipped
+ * when there is nothing to shrink.
+ */
+export const shrinkToCssScale = (path: string): boolean => {
+  try {
+    const read = execFileSync(
+      'sips',
+      ['-g', 'pixelWidth', '-g', 'pixelHeight', path],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const longest = Math.max(
+      ...[...read.matchAll(/pixel(?:Width|Height):\s*(\d+)/g)].map((m) =>
+        Number(m[1]),
+      ),
+    );
+    if (!Number.isFinite(longest) || longest <= CSS_MAX_PX) return false;
+
+    execFileSync('sips', ['-Z', String(CSS_MAX_PX), path], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const counters = new Map<string, number>();
 
 /**
@@ -103,6 +161,7 @@ export const shootDevice = async (
     join(dir, file),
     Buffer.from(await driver.screenshot(), 'base64'),
   );
+  shrinkToCssScale(join(dir, file));
   appendFileSync(
     join(dir, EVIDENCE_MANIFEST),
     JSON.stringify(manifestRow({ project, title, order, label, file }, now())) +

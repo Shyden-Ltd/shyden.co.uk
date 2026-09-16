@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,7 @@ import {
 import {
   resetDeviceCaptureCounters,
   shootDevice,
+  shrinkToCssScale,
 } from '../device/ios/evidence';
 
 /**
@@ -142,6 +143,35 @@ describe('the device leg writes the same evidence every other leg does', () => {
     // Either side alone proves nothing: the builder is happy with PNG in the
     // abstract, and this leg is happy to write whatever WebDriver hands back.
     expect(mediaType(readFileSync(join(dir, file!)))).toBe('image/png');
+  });
+
+  it('leaves a capture alone rather than losing it when it cannot be resampled', () => {
+    const dir = evidenceDir();
+    const notAnImage = join(dir, 'not-an-image.png');
+    writeFileSync(notAnImage, 'this is not a PNG', 'utf8');
+
+    // DEGRADES, never throws: a capture at the wrong scale is still evidence,
+    // while a journey that threw here would lose the assertion it documents.
+    expect(shrinkToCssScale(notAnImage)).toBe(false);
+    expect(readFileSync(notAnImage, 'utf8')).toBe('this is not a PNG');
+  });
+
+  it('does not UPSCALE a capture that is already within CSS scale', async () => {
+    const dir = evidenceDir();
+    vi.stubEnv('EVIDENCE_DIR', dir);
+
+    // `sips -Z` resamples to fit a MAXIMUM dimension, so an unguarded call
+    // would blow this 1x1 fixture up to 912x912 -- bigger bytes to say less.
+    const file = await shootDevice(fakeDriver(), {
+      project: 'ios-safari-real-device',
+      title: 'Journey 14 -- the projector board on a refused grant',
+      label: 'nothing out of reach',
+    });
+
+    const written = readFileSync(join(dir, file!));
+    expect(written.length, 'a 1x1 capture was not resampled upwards').toBe(
+      Buffer.from(PNG_BASE64, 'base64').length,
+    );
   });
 
   it('numbers repeat captures within one journey, and starts each journey again at one', async () => {
