@@ -30,6 +30,7 @@ import {
   renderEvidencePage,
   selectMedia,
   videoCandidates,
+  videoFiles,
 } from '../../scripts/build-evidence-page.mjs';
 
 /**
@@ -1002,5 +1003,70 @@ describe('an evidence capture is identified by its own bytes', () => {
       type: 'jpeg',
       quality: 90,
     });
+  });
+});
+
+/**
+ * Recordings published BESIDE the page, so capture scope and video completeness
+ * stop competing for the 16 MB one page is allowed (#158).
+ *
+ * Twice the shots have spent a budget the recordings needed. #146 filed it; #189
+ * hit it again at a different scope, where 105 shots at quality 90 came to
+ * 10.0MB and pushed all 35 recordings out of a page that still looked complete.
+ * A page carries media as base64 `data:` URIs at 4/3 of the bytes; a supporting
+ * file is fetched separately and charged against different ceilings entirely --
+ * 15 MB per binary, 64 MB and 255 entries per publish.
+ *
+ * Which media moves is FORCED by that entry ceiling, not chosen: full scope is
+ * 175 shots + 120 recordings + the page = 296 entries, over the 255 a publish
+ * allows. So the recordings move and the shots stay inline -- the recordings are
+ * the larger bytes, and the ones that were being dropped.
+ *
+ * The published path is RELATIVE, with no leading slash. An artifact does not
+ * serve a root-relative path, so `/evidence/x.webm` yields a broken `src` and a
+ * journey that reads as never recorded -- silence indistinguishable from
+ * evidence, which is what `mediaType` already refuses to emit. Exact equality on
+ * the whole map is therefore the assertion; a `startsWith` probe would pass on a
+ * path the publish cannot serve.
+ */
+describe('recordings are published beside the page, not inside it', () => {
+  it('maps every recording to a relative published path, keyed by journey and engine', () => {
+    expect(
+      videoFiles([
+        {
+          key: 'a-journey|chromium',
+          abs: '/run/one.webm',
+          bytes: 1370,
+        },
+        {
+          key: 'a-journey|Mobile Safari',
+          abs: '/run/two.webm',
+          bytes: 2740,
+        },
+      ]),
+    ).toEqual({
+      'evidence/a-journey-chromium.webm': '/run/one.webm',
+      'evidence/a-journey-mobile-safari.webm': '/run/two.webm',
+    });
+  });
+
+  it('refuses two recordings whose published paths collide, naming both files', () => {
+    // Slugging joins on the same separator the key does, so a journey ending
+    // where an engine begins can land on one path: `a-b|c` and `a|b-c` both
+    // publish as `a-b-c.webm`. `Object.fromEntries` keeps the LAST silently,
+    // which puts one journey's recording under another journey's claim -- the
+    // stale-video hazard #158 exists to remove, arriving from the other end.
+    let refusal = 'the build did not refuse';
+    try {
+      videoFiles([
+        { key: 'a-b|c', abs: '/run/one.webm', bytes: 10 },
+        { key: 'a|b-c', abs: '/run/two.webm', bytes: 20 },
+      ]);
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('evidence/a-b-c.webm');
+    expect(refusal).toContain('/run/one.webm');
+    expect(refusal).toContain('/run/two.webm');
   });
 });

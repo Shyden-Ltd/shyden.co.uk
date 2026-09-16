@@ -229,6 +229,58 @@ export const videoCandidates = (report) => {
 };
 
 /**
+ * Every recording as a supporting file: published path -> the file on disk.
+ *
+ * The page carries media as base64 `data:` URIs at 4/3 of the bytes, all of it
+ * inside the 16 MB one page is allowed, so scope and video completeness compete
+ * for the same budget -- and the loser is silent (#146, again at a different
+ * scope in #189). A supporting file is fetched separately and charged against
+ * other ceilings: 15 MB per binary, 64 MB and 255 entries per publish.
+ *
+ * Which media moves is forced by the entry ceiling rather than chosen: full
+ * scope is 175 shots + 120 recordings + the page = 296 entries, over the 255 a
+ * publish allows. The recordings move because they are the larger bytes and the
+ * ones being dropped; the shots stay inline.
+ *
+ * The path is RELATIVE with no leading slash -- an artifact does not serve a
+ * root-relative path, and the failure is a broken `src` on a journey that then
+ * reads as never recorded.
+ *
+ * Two recordings landing on one path is a THROW. Slugging joins on the same
+ * separator the key does, so a journey ending where an engine begins collides:
+ * `a-b|c` and `a|b-c` both publish as `a-b-c.webm`. Keeping the last silently
+ * would file one journey's recording under another journey's claim, which is the
+ * stale-video hazard this ticket exists to remove, arriving from the other end.
+ *
+ * Accumulated in a Map, not an object literal: `'constructor' in {}` is true, so
+ * a journey slugged to a prototype member would report a collision that is not
+ * there.
+ *
+ * @param {{ key: string, abs: string, bytes: number }[]} candidates
+ * @returns {Record<string, string>}
+ */
+export const videoFiles = (candidates) => {
+  const files = new Map();
+  const collisions = [];
+  for (const { key, abs } of candidates) {
+    const [journey, project] = key.split('|');
+    const path = `evidence/${journey}-${slugOf(project)}.webm`;
+    const taken = files.get(path);
+    if (taken === undefined) files.set(path, abs);
+    else collisions.push(`${path}: ${taken} and ${abs}`);
+  }
+  if (collisions.length)
+    throw new Error(
+      `build-evidence-page: ${collisions.length} published path(s) claimed by ` +
+        `more than one recording:\n  ${collisions.join('\n  ')}\n` +
+        "Refusing to publish a recording under another journey's claim: the " +
+        'page would pair a current assertion with the wrong recording, and ' +
+        'nothing about it would look wrong.',
+    );
+  return Object.fromEntries(files);
+};
+
+/**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
  */
 export const renderEvidencePage = ({
