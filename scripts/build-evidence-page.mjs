@@ -414,11 +414,24 @@ export const renderEvidencePage = ({
   for (const m of manifest)
     if (!engines.includes(m.project)) engines.push(m.project);
 
+  // Captures first, so a page keeps the order its assertions were taken in,
+  // then every journey the report names that captured nothing.
+  //
+  // Derived from the manifest ALONE, this list omitted any test that asserted
+  // without calling `shoot()` -- while `video` is `on` for the whole run
+  // whenever `EVIDENCE_DIR` is set, so that test IS recorded and `videoFiles`
+  // publishes its recording regardless. Full scope measured 120 recordings
+  // published and 100 referenced: 20 files served to a page that named their
+  // journeys nowhere, and four journeys that ran on five engines -- `no console
+  // errors on load` among them -- absent from the coverage an operator signs
+  // off. The dead entries are the smaller half; a page quietly narrower than
+  // its run is the failure.
   const order = [];
   for (const m of manifest) {
     const short = m.title.split(' > ').slice(1).join(' > ') || m.title;
     if (!order.includes(short)) order.push(short);
   }
+  for (const s of specs) if (!order.includes(s.title)) order.push(s.title);
 
   const missing = manifest.filter((m) => !shots.has(m.file));
   if (missing.length)

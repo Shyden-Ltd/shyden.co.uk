@@ -1216,3 +1216,79 @@ describe('the page references its recordings by a path a publish serves', () => 
     expect(srcs).toContain(publishedVideoPath(key));
   });
 });
+
+/**
+ * A journey the report names is on the page, captured or not.
+ *
+ * The journey list was derived from the MANIFEST alone, so a test that asserted
+ * without calling `shoot()` got no section -- while `videoFiles` publishes a
+ * file for EVERY recording, because `video` is `on` for the whole run whenever
+ * `EVIDENCE_DIR` is set. Two populations with no compiler between them: entries
+ * come from the recordings, `src` attributes come from the journey list.
+ *
+ * Measured on #158's own full-scope proof run: 120 recordings published, 100
+ * referenced, 20 files served to a page naming their journeys nowhere. The
+ * waste is the smaller half. Four real journeys ran on five engines and
+ * appeared on NO evidence page -- including `no console errors on load` -- so
+ * the page under-reported the coverage an operator signs off against, and did
+ * so silently, which is the failure this whole ticket exists to remove.
+ */
+describe('a journey that captured nothing is still on the page', () => {
+  const JOURNEY = 'a recorded journey';
+  const SLUG = 'a-recorded-journey';
+  const reportNamingAnUncapturedJourney = {
+    ...REPORT,
+    suites: [
+      ...REPORT.suites,
+      {
+        specs: [
+          {
+            title: JOURNEY,
+            tests: [
+              {
+                projectName: 'chromium',
+                results: [{ status: 'passed', duration: 7, attachments: [] }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it('gives it a section although no manifest row names it', () => {
+    // The precondition IS part of the assertion: add a manifest row for this
+    // title and the old manifest-derived list renders it anyway, leaving a
+    // guard that passes without testing what it claims to.
+    expect(MANIFEST.filter((m) => m.title.endsWith(JOURNEY))).toEqual([]);
+
+    const html = build({ report: reportNamingAnUncapturedJourney });
+
+    expect(html).toContain(`id="j-${SLUG}"`);
+    expect(html).toContain(JOURNEY);
+    // Control on the population: a page that rendered no journey at all cannot
+    // satisfy this, so the assertion above is about derivation, not emptiness.
+    expect(html).toContain('id="j-a-journey"');
+  });
+
+  it('references every recording it was given', () => {
+    const videos = new Map(
+      [`${SLUG}|chromium`, 'a-journey|chromium'].map((key) => [
+        key,
+        publishedVideoPath(key),
+      ]),
+    );
+    const html = build({ report: reportNamingAnUncapturedJourney, videos });
+    const keys = [...videos.keys()];
+
+    const unreferenced = keys.filter(
+      (key) => !html.includes(`src="${publishedVideoPath(key)}"`),
+    );
+    expect(
+      searched(unreferenced, {
+        of: keys,
+        what: 'recordings handed to the page',
+      }),
+    ).toEqual([]);
+  });
+});
