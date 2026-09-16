@@ -761,6 +761,19 @@ const expectNothingOutOfReach = async (
     seen.scrollHeight <= seen.clientHeight || seen.scrollable,
     `${where} -- content nobody can reach`,
   ).toBe(true);
+
+  // ...and the CONVERSE, which is what makes the verdict honest rather than
+  // merely safe. `.scrolls` used to be PREDICTED before the layout it
+  // describes; a prediction that errs towards scrolling hides nothing, so
+  // every assertion above stays green while the board offers a scrollbar it
+  // does not need. Measured on ten shapes, the predicted and measured
+  // verdicts disagree on five of them.
+  if (seen.scrollHeight <= seen.clientHeight) {
+    expect(
+      seen.scrollable,
+      `${where} -- the sheet fits, so the stage must not be scrollable`,
+    ).toBe(false);
+  }
 };
 
 test.describe('the projector board never hides a name', () => {
