@@ -31,14 +31,25 @@ export interface NumberSetsOptions {
  * en.ts already keeps three separate sentences for the size limits for
  * exactly this reason.
  */
-export type NumberSetsProblemKind =
-  | 'notAWholeNumber'
-  | 'aboveCount'
-  | 'aboveMaximum'
-  | 'duplicate'
-  | 'lonelySet'
-  | 'tooManySets'
-  | 'noCount';
+export const NUMBER_SETS_PROBLEM_KINDS = [
+  'notAWholeNumber',
+  'aboveCount',
+  'aboveMaximum',
+  'duplicate',
+  'lonelySet',
+  'tooManySets',
+  'noCount',
+] as const;
+
+/**
+ * Derived from the array above, not written twice.
+ *
+ * A bare union is erased at build time, so nothing could DERIVE the set of
+ * kinds at runtime and a test would have to hand-list them -- which is how a
+ * guard comes to pass because somebody forgot to extend a list. `ERROR_CODES`
+ * in grouping.ts is a runtime object for the same reason.
+ */
+export type NumberSetsProblemKind = (typeof NUMBER_SETS_PROBLEM_KINDS)[number];
 
 export interface NumberSetsProblem {
   kind: NumberSetsProblemKind;

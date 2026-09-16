@@ -358,6 +358,84 @@ const sexWhyText = sexWhy(roster, t);
         </div>
       </div>
 
+      <!-- #188. Registration is taken, one pupil is away, and the lesson
+           starts in two minutes. These three fields let a teacher say "not
+           number 7 today", "keep 3 with 9" and "keep 2 away from 5" by
+           REGISTER NUMBER, without opening Student details and hand-building
+           a row per pupil -- which is the only route that exists otherwise,
+           and which surrenders the Students box the moment it creates one.
+
+           Their own row, not three more columns in `.top-row`: that row is
+           Class / Students / Split by, and six columns at 768px would give
+           every one of them ~114px. The operator's design (#188, 2026-09-16)
+           puts these directly under the Students box, which is what this is.
+
+           `type="text"` with `inputmode="numeric"`, NOT `type="number"`: the
+           content is a LIST ("7, 12"), and a number input would refuse the
+           comma and hand back an empty `.value` for everything typed after
+           it. No `name`, by the same rule as every other typed control on
+           this page (see #cg-form's own comment above).
+
+           The reason and the refusal sit OUTSIDE the grid, as siblings of
+           the row rather than children of it, so they span the full width
+           instead of becoming a fourth and fifth grid item. One shared
+           reason for one shared row -- three identical sentences stacked
+           under three locked boxes would say the same thing three times --
+           and one shared refusal, showing the first problem, the same way
+           `updateRosterValidation` renders `problems[0]` into
+           #cg-roster-problem. `role="alert"` for the identical reason that
+           element carries one: a refusal is announced, not merely shown. -->
+      <div class="number-fields">
+        <div class="number-fields-row">
+          <div class="field">
+            <label for="cg-absent">{t.absentNumbersLabel}</label>
+            <input
+              id="cg-absent"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="cg-absent-help"
+            />
+            <p class="help" id="cg-absent-help">
+              {t.absentNumbersHelp}
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="cg-together">{t.keepTogetherLabel}</label>
+            <input
+              id="cg-together"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="cg-together-help"
+            />
+            <p class="help" id="cg-together-help">
+              {t.pairNumbersHelp}
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="cg-apart">{t.keepApartLabel}</label>
+            <input
+              id="cg-apart"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="cg-apart-help"
+            />
+            <p class="help" id="cg-apart-help">
+              {t.pairNumbersHelp}
+            </p>
+          </div>
+        </div>
+
+        <p class="why" id="cg-numbers-locked" hidden>
+          {t.numbersLockedReason}
+        </p>
+        <p class="error" id="cg-numbers-problem" role="alert" hidden></p>
+      </div>
+
       <!-- The naming radio ("Group 1, 2, 3…" / "Use a theme") and the theme
            `<select>` it revealed used to sit here -- the last always-visible
            bordered box below the top row (design spec section 2's own
@@ -772,6 +850,21 @@ const sexWhyText = sexWhy(roster, t);
            state), so the static default here is never shown on its own. -->
       <h2 class="print-only-heading">{t.printGroupsHeading}</h2>
       <h2 id="cg-results-h">{t.resultsHeading}</h2>
+
+      <!-- #188, AC13. Shown ONLY when fewer pupils were grouped than the
+           teacher typed -- "a teacher must never be left to notice a missing
+           pupil by counting". The heading above is deliberately untouched
+           (operator decision, 2026-09-16): folding the ratio into it would
+           need a second variant of BOTH its named and unnamed forms, which
+           is the drift `resultsHeadingText` exists to prevent.
+
+           Empty at build time and written by classroom-groups.ts before
+           #cg-results is unhidden -- the same hide/show-the-ancestor, THEN
+           write-the-descendant ordering #cg-error and #cg-stale already use,
+           so a screen reader hears the sentence rather than silence.
+           `role="status"`, not `alert`: nothing is wrong, and this must not
+           interrupt the way a refusal does. -->
+      <p id="cg-grouped-note" role="status" hidden></p>
 
       <!-- Stage 2, Task 6 (design spec section 8, "When the class changes
            after a shuffle"). classroom-groups.ts's `updateStaleness` toggles
@@ -2576,6 +2669,45 @@ const sexWhyText = sexWhy(roster, t);
          pair plus a number field) the moment they sit in a row instead of
          stacked -- `start` keeps each column exactly as tall as its own
          content. */
+      align-items: start;
+    }
+  }
+  /* #188. The three number fields sit in their own row, mirroring
+     `.top-row` above: stacked on a phone, three across once 768px gives
+     them room. A separate row rather than three more columns in `.top-row`
+     -- six columns there would leave every one of them about 114px. */
+  .number-fields {
+    margin-top: 0.75rem;
+  }
+  .number-fields-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  /* The same reasoning `.top-row > .field` gives: the grid's own `gap`
+     already provides the vertical rhythm, so `.field`'s own margin would
+     double it. DIRECT children only, so it cannot reach into anything
+     nested inside a field later. */
+  .number-fields-row > .field {
+    margin-bottom: 0;
+  }
+  /* A grid item's automatic minimum is its MIN-CONTENT size, and a text
+     input's is roughly its default twenty-character size. That is exactly
+     what pinned this page's grid to 378px and put 74px of horizontal
+     scroll at 320px when `#cg-io-toggle`'s file input did it -- see that
+     rule's own comment, which spells out that `max-width` does not change
+     the contribution and an explicit `width` replaces it outright. This
+     page has no generic `input` width rule; every scope sets its own, so
+     this row sets its own too. */
+  .number-fields-row input {
+    width: 100%;
+  }
+  @media (min-width: 768px) {
+    .number-fields-row {
+      grid-template-columns: repeat(3, 1fr);
+      /* `start`, for the reason `.top-row` gives above: a field whose help
+         text wraps onto a second line must not stretch its neighbours to
+         match it. */
       align-items: start;
     }
   }
