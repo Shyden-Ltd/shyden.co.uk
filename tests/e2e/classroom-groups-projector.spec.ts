@@ -9,6 +9,7 @@ import {
 } from './helpers';
 import { searched } from '../source-files';
 import { FLOOR_PX } from '../../src/scripts/projector';
+import { shoot } from './evidence';
 
 /**
  * Stage 5, Task 5. The projector view. Z-01…Z-06, Z-10…Z-20, Z-24.
@@ -756,12 +757,22 @@ const expectNothingOutOfReach = async (
   expect(searched(seen.unreachable, { of: seen.cards, what }), where).toEqual(
     [],
   );
+  await shoot(
+    page,
+    `nothing below the fold -- ${seen.rows} row(s) at ${seen.font}`,
+    page.locator('#cg-board'),
+  );
   // ...and the property behind it: either the sheet fits, or the stage
   // genuinely scrolls. Never how many things there are.
   expect(
     seen.scrollHeight <= seen.clientHeight || seen.scrollable,
     `${where} -- content nobody can reach`,
   ).toBe(true);
+  await shoot(
+    page,
+    `reachable -- a ${seen.scrollHeight}px sheet in a ${seen.clientHeight}px stage, overflow-y: ${seen.overflowY}`,
+    page.locator('#cg-board'),
+  );
 
   // ...and the CONVERSE, which is what makes the verdict honest rather than
   // merely safe. `.scrolls` used to be PREDICTED before the layout it
@@ -774,6 +785,11 @@ const expectNothingOutOfReach = async (
       seen.scrollable,
       `${where} -- the sheet fits, so the stage must not be scrollable`,
     ).toBe(false);
+    await shoot(
+      page,
+      `the sheet fits at ${seen.font} and the stage does not scroll`,
+      page.locator('#cg-board'),
+    );
   }
 
   // ...and the property that says the shrinking actually happened: a board
@@ -791,6 +807,11 @@ const expectNothingOutOfReach = async (
       `${where} -- scrolling at ${seen.font}, above the ${FLOOR_PX}px floor: ` +
         'it had further to shrink before scrolling was the honest answer',
     ).toBeLessThanOrEqual(FLOOR_PX + 1);
+    await shoot(
+      page,
+      `scrolling only at the readable floor -- ${seen.font}`,
+      page.locator('#cg-board'),
+    );
   }
 };
 
