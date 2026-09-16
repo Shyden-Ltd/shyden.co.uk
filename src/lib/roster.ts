@@ -94,6 +94,21 @@ export const serialiseForCompare = (roster: Student[]): string =>
     .join('|');
 
 /**
+ * A to Z -- every letter a together-block or an apart-set may be called, and
+ * the ONE home for that alphabet.
+ *
+ * `availableLetters` below hands a teacher a growing PREFIX of it. #188's
+ * number fields letter their sets from the same list, which is what lets a
+ * 27th set be refused rather than silently reusing `A` and merging two units
+ * a teacher meant to keep separate. Generated rather than typed out, so the
+ * two facts a caller needs -- what the letters are, and that there are 26 --
+ * cannot drift apart.
+ */
+export const LETTERS: readonly string[] = Array.from({ length: 26 }, (_, i) =>
+  String.fromCharCode(65 + i),
+);
+
+/**
  * Which letters a together/apart `<select>` should offer — design spec
  * section 4: "chosen from a dropdown that grows as needed (A, then B once A
  * is used, and so on)." Always starts at `['A']`, even on an empty roster,
@@ -120,8 +135,7 @@ export const availableLetters = (
     const code = letter.toUpperCase().charCodeAt(0) - 64;
     if (code > highest) highest = code;
   }
-  const count = Math.min(26, highest + 1);
-  return Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i));
+  return LETTERS.slice(0, Math.min(LETTERS.length, highest + 1));
 };
 
 /**

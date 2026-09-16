@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumberSets } from '../../src/lib/numberSets';
+import { parseNumberSets, studentsForInput } from '../../src/lib/numberSets';
 import { MAX_STUDENTS } from '../../src/lib/grouping';
+import { student } from './factories';
 
 // #188. A teacher types register numbers straight into three fields beside
 // "Number of students" -- absent, keep-together, keep-apart -- and never
@@ -201,5 +202,123 @@ describe('parseNumberSets -- what it refuses', () => {
       sets: [],
       problem: { kind: 'notAWholeNumber', text: 'abc' },
     });
+  });
+
+  // A unit is carried by a LETTER, and the roster caps those at Z
+  // (`availableLetters`, roster.ts: "never past `Z`"). A 27th set has no
+  // letter left, and reusing `A` would silently MERGE two units a teacher
+  // meant to keep separate -- the engine would obey, the page would look
+  // right, and the groups would be wrong. Refused instead, naming the set
+  // that has nowhere to go.
+  const pairsUpTo = (howMany: number): string =>
+    Array.from({ length: howMany }, (_, i) => `${i * 2 + 1},${i * 2 + 2}`).join(
+      '; ',
+    );
+
+  it('accepts 26 pairing sets -- one for every letter', () => {
+    const parsed = parseNumberSets(pairsUpTo(26), {
+      count: 60,
+      kind: 'pairing',
+    });
+    expect(parsed.problem).toBeNull();
+    expect(parsed.sets).toHaveLength(26);
+  });
+
+  it('refuses a 27th pairing set, naming the one with no letter left', () => {
+    expect(
+      parseNumberSets(pairsUpTo(27), { count: 60, kind: 'pairing' }),
+    ).toEqual({
+      sets: [],
+      problem: { kind: 'tooManySets', text: '53,54' },
+    });
+  });
+});
+
+// The other half of the translator: parsed sets become the `Student[]` that
+// `buildGroups` already understands. No grouping rule is written here -- the
+// engine's `absent` filter, together-blocks and apart-sets do all the work,
+// which is the whole reason #188 is a small ticket.
+describe('studentsForInput -- typed numbers become a roster', () => {
+  const noFields = { absent: [], together: [], apart: [] };
+
+  // AC7. The default path must not change shape because a new feature
+  // exists: with nothing typed, the engine still receives the bare count it
+  // has always received, not a 25-long array of anonymous students.
+  it('returns the bare count when all three fields are empty', () => {
+    expect(studentsForInput(25, noFields)).toBe(25);
+  });
+
+  // AC8, AC9. Absence marks a pupil out of THIS shuffle, not out of the
+  // register -- so number 7 still exists, still holds 7, and nobody is
+  // renumbered to close the gap (`nextNumber`'s own reasoning, roster.ts).
+  it('builds the whole class, marking only the absent ones', () => {
+    const built = studentsForInput(25, { ...noFields, absent: [[7]] });
+    expect(Array.isArray(built)).toBe(true);
+    const students = built as ReturnType<typeof student>[];
+    expect(students).toHaveLength(25);
+    expect(students.map((s) => s.number)).toEqual(
+      Array.from({ length: 25 }, (_, i) => i + 1),
+    );
+    expect(students.filter((s) => s.absent).map((s) => s.number)).toEqual([7]);
+  });
+
+  it('leaves every built student anonymous -- no name, no sex', () => {
+    const built = studentsForInput(3, {
+      ...noFields,
+      absent: [[3]],
+    }) as ReturnType<typeof student>[];
+    expect(built).toEqual([
+      student({ number: 1 }),
+      student({ number: 2 }),
+      student({ number: 3, absent: true }),
+    ]);
+  });
+
+  it('gives each together set its own letter, in the order typed', () => {
+    const built = studentsForInput(16, {
+      ...noFields,
+      together: [
+        [3, 9],
+        [14, 15],
+      ],
+    }) as ReturnType<typeof student>[];
+    const letters = Object.fromEntries(
+      built.map((s) => [s.number, s.together]),
+    );
+    expect(letters[3]).toBe('A');
+    expect(letters[9]).toBe('A');
+    expect(letters[14]).toBe('B');
+    expect(letters[15]).toBe('B');
+    expect(letters[1]).toBeNull();
+  });
+
+  // roster.ts:106 -- "a 'together A' and an 'apart A' are unrelated domains".
+  // Both fields therefore start again at A, and a shared counter would be a
+  // bug no assertion about one field alone could see.
+  it('letters the two pairing fields independently, both starting at A', () => {
+    const built = studentsForInput(6, {
+      absent: [],
+      together: [[1, 2]],
+      apart: [[4, 5]],
+    }) as ReturnType<typeof student>[];
+    const byNumber = Object.fromEntries(built.map((s) => [s.number, s]));
+    expect(byNumber[1].together).toBe('A');
+    expect(byNumber[1].apart).toBeNull();
+    expect(byNumber[4].apart).toBe('A');
+    expect(byNumber[4].together).toBeNull();
+  });
+
+  // AC11's raw material: the same number in both fields carries both
+  // letters, which is exactly the state the engine's `togetherApartClash`
+  // already names. No new error code is invented for it.
+  it('lets one number carry both a together and an apart letter', () => {
+    const built = studentsForInput(6, {
+      absent: [],
+      together: [[1, 2]],
+      apart: [[1, 3]],
+    }) as ReturnType<typeof student>[];
+    const first = built.find((s) => s.number === 1)!;
+    expect(first.together).toBe('A');
+    expect(first.apart).toBe('A');
   });
 });

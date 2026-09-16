@@ -1,4 +1,6 @@
 import { MAX_STUDENTS } from './grouping';
+import type { Student } from './grouping';
+import { LETTERS } from './roster';
 
 /**
  * One of the three number fields beside "Number of students" (#188), turned
@@ -30,7 +32,12 @@ export interface NumberSetsOptions {
  * exactly this reason.
  */
 export type NumberSetsProblemKind =
-  'notAWholeNumber' | 'aboveCount' | 'aboveMaximum' | 'duplicate' | 'lonelySet';
+  | 'notAWholeNumber'
+  | 'aboveCount'
+  | 'aboveMaximum'
+  | 'duplicate'
+  | 'lonelySet'
+  | 'tooManySets';
 
 export interface NumberSetsProblem {
   kind: NumberSetsProblemKind;
@@ -109,8 +116,75 @@ export const parseNumberSets = (
     if (kind === 'pairing' && numbers.length < 2) {
       return refuse('lonelySet', setText);
     }
+    // A unit is carried by a LETTER, and there are 26 of them. Reusing `A`
+    // for a 27th set would MERGE two units a teacher meant to keep separate:
+    // the engine would obey, the page would look right, and the groups would
+    // be quietly wrong. Refused instead, naming the set with nowhere to go.
+    if (kind === 'pairing' && sets.length === LETTERS.length) {
+      return refuse('tooManySets', setText);
+    }
     sets.push(numbers);
   }
 
   return { sets, problem: null };
+};
+
+/** The three fields, already parsed, as `studentsForInput` reads them. */
+export interface NumberFields {
+  absent: number[][];
+  together: number[][];
+  apart: number[][];
+}
+
+/**
+ * Exactly what `GroupingInput.students` should be for what a teacher typed.
+ *
+ * With all three fields empty this is the bare `count` the page has always
+ * passed (AC7) -- the default path does not change shape because a new
+ * feature exists. Otherwise it is the whole class as anonymous students,
+ * numbered 1..count with NOBODY renumbered to close the gap an absentee
+ * leaves: absence marks a pupil out of THIS shuffle, not out of the register
+ * (`nextNumber`'s own reasoning, roster.ts).
+ *
+ * No grouping rule is written here. `buildGroups` already drops absentees,
+ * places a together-block as one unit and separates an apart-set, so every
+ * error and warning the engine owns -- `togetherApartClash` included --
+ * applies to typed numbers for free.
+ */
+export const studentsForInput = (
+  count: number,
+  fields: NumberFields,
+): number | Student[] => {
+  const typedNothing =
+    fields.absent.length === 0 &&
+    fields.together.length === 0 &&
+    fields.apart.length === 0;
+  if (typedNothing) return count;
+
+  const absent = new Set(fields.absent.flat());
+  // One letter per set, in the order typed. `together` and `apart` are
+  // unrelated domains (roster.ts: "a 'together A' and an 'apart A' are
+  // unrelated"), so each field letters from A independently -- a shared
+  // counter would be a bug no assertion about one field alone could see.
+  const lettered = (sets: number[][]): Map<number, string> => {
+    const letters = new Map<number, string>();
+    sets.forEach((set, index) => {
+      for (const number of set) letters.set(number, LETTERS[index]);
+    });
+    return letters;
+  };
+  const together = lettered(fields.together);
+  const apart = lettered(fields.apart);
+
+  return Array.from({ length: count }, (_, index) => {
+    const number = index + 1;
+    return {
+      number,
+      name: null,
+      sex: null,
+      absent: absent.has(number),
+      together: together.get(number) ?? null,
+      apart: apart.get(number) ?? null,
+    };
+  });
 };
