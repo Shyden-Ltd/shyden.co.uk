@@ -167,6 +167,58 @@ const visualJoins = (page: Page) =>
     return out;
   });
 
+/**
+ * Cases for the join detector itself.
+ *
+ * Each case is laid out on its own: the left text ends at the middle of the
+ * page, the right text starts there, both on the same top edge, and the two
+ * are neighbours with nothing between them. So they touch, and the only thing
+ * that can keep a join from being reported is the detector ruling a side out.
+ * What comes back is the names of the cases whose join was reported, read off
+ * the right-hand text, which every case leaves in view.
+ *
+ * Built as elements, not parsed from HTML: a stray newline in a markup string
+ * becomes a text node, and that node, not the right text, would then be the
+ * neighbour the detector compares.
+ */
+type Fixture = string | [tag: string, style: string, ...children: Fixture[]];
+
+const LEFT = 'position: absolute; top: 0; right: 50%; white-space: nowrap';
+const RIGHT = 'position: absolute; top: 0; left: 50%; white-space: nowrap';
+const ONE_PIXEL = 'width: 1px; height: 1px; overflow: hidden';
+
+async function joinsReportedFor(
+  page: Page,
+  cases: Record<string, { left: Fixture; right?: Fixture }>,
+): Promise<string[]> {
+  const rows: Fixture[] = Object.entries(cases).map(
+    ([name, { left, right }]) => [
+      'div',
+      'position: relative; height: 5em',
+      left,
+      right ?? ['span', RIGHT, `${name}-right`],
+    ],
+  );
+
+  await page.goto('/');
+  await page.evaluate((fixtures) => {
+    const build = (fixture: Fixture): Node => {
+      if (typeof fixture === 'string') return document.createTextNode(fixture);
+      const [tag, style, ...children] = fixture;
+      const el = document.createElement(tag);
+      el.setAttribute('style', style);
+      el.append(...children.map(build));
+      return el;
+    };
+    document.body.replaceChildren(...fixtures.map(build));
+  }, rows);
+
+  const names = (await visualJoins(page)).map((join) =>
+    join.right.replace(/-right$/, ''),
+  );
+  return [...new Set(names)].sort();
+}
+
 test.describe('rendered text — no sentence may lose a space to the formatter', () => {
   test('every published page, in every language', async ({ page }) => {
     const paths = await publishedPaths(page);
@@ -191,6 +243,10 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
   });
 
   test('no two words are rendered touching, on any page', async ({ page }) => {
+    // Where a box lands depends on the width it was laid out at, so the width
+    // is part of what was searched: at 1280px this test passed for weeks while
+    // every page failed it at phone width (#198).
+    const width = page.viewportSize()?.width;
     const paths = await publishedPaths(page);
     const findings: string[] = [];
 
@@ -209,8 +265,11 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
     }
 
     expect(
-      searched(findings, { of: paths, what: 'built pages visited' }),
-      findings.join('\n'),
+      searched(findings, {
+        of: width ? paths : [],
+        what: `built pages visited at ${width}px wide`,
+      }),
+      `at ${width}px wide:\n${findings.join('\n')}`,
     ).toEqual([]);
   });
 
@@ -251,5 +310,73 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
       'a label glued to its value',
       'a word glued to a number',
     ]);
+  });
+
+  test('the touching-words check only counts text a visitor can see', async ({
+    page,
+  }) => {
+    // Every case lays its left text out flush against its right text, on one
+    // line. Only `visible` can be seen, so only `visible` is a join. The rest
+    // are the ways this site keeps text in the layout while hiding it: the
+    // closed language menu and its `.sr` label are what failed every page at
+    // phone width (#198).
+    const reported = await joinsReportedFor(page, {
+      visible: { left: ['span', LEFT, 'visible-left'] },
+      invisible: {
+        left: ['span', `${LEFT}; visibility: hidden`, 'invisible-left'],
+      },
+      transparent: {
+        left: ['span', `${LEFT}; opacity: 0`, 'transparent-left'],
+      },
+      closed: {
+        left: [
+          'details',
+          '',
+          ['summary', 'position: absolute; top: 0; left: 0', 'menu'],
+          ['span', LEFT, 'closed-left'],
+        ],
+      },
+      'clip-path': {
+        left: [
+          'span',
+          `${LEFT}; ${ONE_PIXEL}; clip-path: inset(50%)`,
+          'clip-path-left',
+        ],
+      },
+      'clip-rect': {
+        left: [
+          'span',
+          `${LEFT}; ${ONE_PIXEL}; clip: rect(0 0 0 0)`,
+          'clip-rect-left',
+        ],
+      },
+    });
+
+    expect(reported).toEqual(['visible']);
+  });
+
+  test('the touching-words check compares lines of text, never an element box', async ({
+    page,
+  }) => {
+    // `box` puts its right text 3em below the line its left text sits on, and
+    // gives the paragraph holding it a border box that starts ON that line.
+    // A detector that reads the paragraph's box reports a join nobody can see,
+    // which is how the hero section's 550px box came to "touch" the header.
+    const reported = await joinsReportedFor(page, {
+      line: {
+        left: ['span', LEFT, 'line-left'],
+        right: ['div', RIGHT, ['p', 'margin: 0', 'line-right']],
+      },
+      box: {
+        left: ['span', LEFT, 'box-left'],
+        right: [
+          'div',
+          RIGHT,
+          ['p', 'margin: 0; padding-top: 3em', 'box-right'],
+        ],
+      },
+    });
+
+    expect(reported).toEqual(['line']);
   });
 });

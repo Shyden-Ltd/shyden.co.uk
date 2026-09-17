@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 /**
  * Specs that assert HTTP responses and DOM text, and never render.
  *
- * A sitemap's URLs, a canonical tag, whether two words come out touching:
+ * A sitemap's URLs, a canonical tag, a locale's copy reaching its page:
  * `textContent` is spec-defined, so these bytes do not vary by engine. Running
  * them on all five projects cost four extra runs each and returned nothing the
  * first run had not already proven.
@@ -18,12 +18,18 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
  * `site-meta.spec.ts` is deliberately NOT here. It mixes three content
  * assertions with a parameterised 404 layout test that does resize, and the
  * layout half has to keep running everywhere.
+ *
+ * `rendered-text.spec.ts` is not here either (#198). Whether two words come out
+ * touching is a question about where the browser put them, and the answer
+ * depends on width: below 720px the nav is hidden and the header's last text
+ * box is a different one. Listed here, it ran at 1280px only, and a real phone
+ * was the first place it ever failed. A spec can read layout without resizing,
+ * which is why the boundary above cannot see it.
  */
 export const CONTENT_ONLY_SPECS = [
   'head-and-sitemap.spec.ts',
   'seo.spec.ts',
   'baseurl-guard.spec.ts',
-  'rendered-text.spec.ts',
   'locale-parity.spec.ts',
   'copy-reaches-a-page.spec.ts',
 ];
