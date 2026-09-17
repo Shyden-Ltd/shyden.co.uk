@@ -90,8 +90,8 @@ const renderedText = (page: Page) =>
   });
 
 /**
- * Joins that are meant to be there. Four on the whole site, and both shapes
- * are ordinary typography rather than accidents.
+ * Joins that are meant to be there. Ten on the whole site, two shapes in five
+ * languages, and both shapes are ordinary typography rather than accidents.
  */
 const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
   {
@@ -111,10 +111,10 @@ const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
  * gap between them.
  *
  * This is the seam defect stated as what a visitor sees, rather than guessed
- * at from punctuation. The purely textual scan above cannot see the homepage
- * case at all — "…what you're building." followed by an email address glues
- * letter to letter, with no punctuation at the join to match on. Verified:
- * deleting that page's `{' '}` leaves the pattern scan green and fails this.
+ * at from punctuation. The purely textual scan above only knows Latin
+ * letters: delete the 404 page's `{' '}` and it finds the Indonesian and
+ * Vietnamese sentences glued to their links, while this finds those two and
+ * the Chinese and Thai ones as well (measured, #198).
  *
  * Measured rather than reasoned about, because the obvious implementations
  * are both wrong. Comparing text alone reports 172 joins on this site, nearly
@@ -175,7 +175,7 @@ const visualJoins = (page: Page) =>
         });
       }
 
-      const rect = /^rect\(([^)]*)\)/.exec(style.clip);
+      const rect = /^rect\(([^)]*)\)/.exec(style.getPropertyValue('clip'));
       if (rect && ['absolute', 'fixed'].includes(style.position)) {
         const [t, r, b, l] = rect[1].split(/,\s*|\s+/);
         const offset = (value: string, auto: number) =>
@@ -305,7 +305,14 @@ const visualJoins = (page: Page) =>
  * becomes a text node, and that node, not the right text, would then be the
  * neighbour the detector compares.
  */
-type Fixture = string | [tag: string, style: string, ...children: Fixture[]];
+type Fixture = string | { tag: string; style: string; children: Fixture[] };
+
+/** One element of a case: `el('p', 'margin: 0', 'text')`. */
+const el = (tag: string, style: string, ...children: Fixture[]): Fixture => ({
+  tag,
+  style,
+  children,
+});
 
 const LEFT = 'position: absolute; top: 0; right: 50%; white-space: nowrap';
 const RIGHT = 'position: absolute; top: 0; left: 50%; white-space: nowrap';
@@ -315,24 +322,23 @@ async function joinsReportedFor(
   page: Page,
   cases: Record<string, { left: Fixture; right?: Fixture }>,
 ): Promise<string[]> {
-  const rows: Fixture[] = Object.entries(cases).map(
-    ([name, { left, right }]) => [
+  const rows = Object.entries(cases).map(([name, { left, right }]) =>
+    el(
       'div',
       'position: relative; height: 5em',
       left,
-      right ?? ['span', RIGHT, `${name}-right`],
-    ],
+      right ?? el('span', RIGHT, `${name}-right`),
+    ),
   );
 
   await page.goto('/');
   await page.evaluate((fixtures) => {
     const build = (fixture: Fixture): Node => {
       if (typeof fixture === 'string') return document.createTextNode(fixture);
-      const [tag, style, ...children] = fixture;
-      const el = document.createElement(tag);
-      el.setAttribute('style', style);
-      el.append(...children.map(build));
-      return el;
+      const node = document.createElement(fixture.tag);
+      node.setAttribute('style', fixture.style);
+      node.append(...fixture.children.map(build));
+      return node;
     };
     document.body.replaceChildren(...fixtures.map(build));
   }, rows);
@@ -445,34 +451,34 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
     // closed language menu and its `.sr` label are what failed every page at
     // phone width (#198).
     const reported = await joinsReportedFor(page, {
-      visible: { left: ['span', LEFT, 'visible-left'] },
+      visible: { left: el('span', LEFT, 'visible-left') },
       invisible: {
-        left: ['span', `${LEFT}; visibility: hidden`, 'invisible-left'],
+        left: el('span', `${LEFT}; visibility: hidden`, 'invisible-left'),
       },
       transparent: {
-        left: ['span', `${LEFT}; opacity: 0`, 'transparent-left'],
+        left: el('span', `${LEFT}; opacity: 0`, 'transparent-left'),
       },
       closed: {
-        left: [
+        left: el(
           'details',
           '',
-          ['summary', 'position: absolute; top: 0; left: 0', 'menu'],
-          ['span', LEFT, 'closed-left'],
-        ],
+          el('summary', 'position: absolute; top: 0; left: 0', 'menu'),
+          el('span', LEFT, 'closed-left'),
+        ),
       },
       'clip-path': {
-        left: [
+        left: el(
           'span',
           `${LEFT}; ${ONE_PIXEL}; clip-path: inset(50%)`,
           'clip-path-left',
-        ],
+        ),
       },
       'clip-rect': {
-        left: [
+        left: el(
           'span',
           `${LEFT}; ${ONE_PIXEL}; clip: rect(0 0 0 0)`,
           'clip-rect-left',
-        ],
+        ),
       },
     });
 
@@ -488,16 +494,16 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
     // which is how the hero section's 550px box came to "touch" the header.
     const reported = await joinsReportedFor(page, {
       line: {
-        left: ['span', LEFT, 'line-left'],
-        right: ['div', RIGHT, ['p', 'margin: 0', 'line-right']],
+        left: el('span', LEFT, 'line-left'),
+        right: el('div', RIGHT, el('p', 'margin: 0', 'line-right')),
       },
       box: {
-        left: ['span', LEFT, 'box-left'],
-        right: [
+        left: el('span', LEFT, 'box-left'),
+        right: el(
           'div',
           RIGHT,
-          ['p', 'margin: 0; padding-top: 3em', 'box-right'],
-        ],
+          el('p', 'margin: 0; padding-top: 3em', 'box-right'),
+        ),
       },
     });
 
