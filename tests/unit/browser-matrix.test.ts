@@ -81,6 +81,7 @@ const claims = (project: ResolvedProject, path: string): boolean => {
 };
 
 const E2E = 'tests/e2e';
+const VISUAL_SPEC = join(E2E, 'visual.spec.ts');
 const read = (spec: string) => readFileSync(join(E2E, spec), 'utf8');
 describe('the content-only project', () => {
   it('names specs that actually exist', () => {
@@ -123,27 +124,16 @@ describe('the content-only project', () => {
   });
 
   it('runs those specs on exactly one project', () => {
-    // Compare spec NAMES, not regex source: the pattern is escaped, so strip
-    // the backslashes rather than re-deriving the escaping here and testing
-    // this file's own idea of it.
-    //
-    // And ask what a project actually MATCHES, not what its `testIgnore`
-    // spells. Reading `testIgnore` alone made a project scoped the OTHER way
-    // -- by `testMatch`, which is how `visual` is scoped -- look like it ran
-    // everything (#33). A guard that infers coverage from one of the two
-    // mechanisms is blind to the other.
-    const matches = (
-      p: { testIgnore?: unknown; testMatch?: unknown },
-      spec: string,
-    ) => {
-      const ignored = String(p.testIgnore ?? '').replace(/\\/g, '');
-      if (ignored.includes(spec)) return false;
-      if (p.testMatch instanceof RegExp) return p.testMatch.test(spec);
-      if (typeof p.testMatch === 'string') return spec.includes(p.testMatch);
-      return true;
-    };
-    const runners = (config.projects ?? []).filter((p) =>
-      CONTENT_ONLY_SPECS.some((s) => matches(p, s)),
+    // Ask what a project actually MATCHES, not what its `testIgnore` spells.
+    // Reading `testIgnore` alone made a project scoped the OTHER way -- by
+    // `testMatch`, which is how `visual` is scoped -- look like it ran
+    // everything (#33). The hand-written matcher that replaced it still
+    // searched each pattern's text for the spec's NAME, so an engine ignoring
+    // a pattern that spelled every content-only name and matched none read as
+    // an exclusion, with the whole unit suite green (#194). Playwright's own
+    // resolution answers instead.
+    const runners = resolvedProjects(config, 'playwright.config.ts').filter(
+      (p) => CONTENT_ONLY_SPECS.some((spec) => claims(p, join(E2E, spec))),
     );
 
     expect(runners.map((p) => p.name)).toEqual(['content']);
@@ -194,18 +184,27 @@ describe('the visual-regression project', () => {
     // `playwright test --list` grows by 40 tests -- the same 8 claimed by all
     // five engines, demanding five sets of baselines for a question about our
     // CSS rather than about WebKit's.
-    const others = (config.projects ?? []).filter((p) => p.name !== 'visual');
-    expect(others.length).toBeGreaterThan(3);
-    for (const project of others) {
-      const ignored = String(project.testIgnore ?? '');
-      const matched = project.testMatch;
-      const claims =
-        !ignored.includes('visual') &&
-        (matched instanceof RegExp
-          ? matched.test('visual.spec.ts')
-          : matched === undefined);
-      expect(claims, `${project.name} would claim visual.spec.ts`).toBe(false);
-    }
+    //
+    // Resolved by Playwright, not re-derived. The hand-written check this
+    // replaced looked for `visual` inside the stringified `testIgnore`, which
+    // an `audiovisual` pattern also satisfies, and read a `testMatch` ARRAY as
+    // claiming nothing. Both let the five engines claim the suite with the
+    // whole unit suite green (#194).
+    const others = resolvedProjects(config, 'playwright.config.ts').filter(
+      (p) => p.name !== 'visual',
+    );
+    expect(existsSync(VISUAL_SPEC), `${VISUAL_SPEC} has moved`).toBe(true);
+    const claimants = others
+      .filter((p) => claims(p, VISUAL_SPEC))
+      .map((p) => p.name);
+
+    expect(
+      searched(claimants, {
+        of: others.map((p) => p.name),
+        what: 'projects other than visual',
+      }),
+      'each would demand its own set of baselines',
+    ).toEqual([]);
   });
 
   it('states its flake policy rather than discovering it', () => {
@@ -303,7 +302,6 @@ describe('the visual-regression project', () => {
  * list would have turned the device leg green by deleting that measurement.
  */
 describe('the real-device config (#194)', () => {
-  const VISUAL_SPEC = join(E2E, 'visual.spec.ts');
   let device: PlaywrightTestConfig;
   let projects: ResolvedProject[];
 
