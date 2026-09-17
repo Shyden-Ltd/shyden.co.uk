@@ -2853,6 +2853,11 @@ const sexWhyText = sexWhy(roster, t);
       /* Opaque, or the fields the row floats over show through it. */
       background: var(--bg, #f7f6f2);
       border-top: 1px solid var(--border, #e7e4dc);
+      /* Cast UP over whatever scrolls beneath the row (operator decision,
+         2026-09-17). Pinned at every width, the row covers the edge of the
+         section above it before any scrolling; the shadow makes that read
+         as passing under a docked bar rather than as clipped. */
+      box-shadow: 0 -0.75rem 1.5rem -0.5rem var(--dock-shadow);
     }
   }
   .actions button,

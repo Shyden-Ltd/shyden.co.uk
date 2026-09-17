@@ -1869,6 +1869,53 @@ test.describe('the no-scroll rule, measured', () => {
     },
   );
 
+  // #188, operator decision 2026-09-17. Pinned at every width, the row
+  // covers the edge of whatever sits above it before any scrolling -- at
+  // 1280x900, the bottom of "Sound and animation". A soft shadow cast UP over
+  // that edge makes it read as passing under a docked bar rather than as
+  // clipped. Asserted as the property that does that work -- visible, soft,
+  // offset upward -- because a pinned literal would go on passing with the
+  // offset flipped below the row, off the fold where nobody sees it.
+  test(
+    'the pinned action row casts a soft shadow upward at every width',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      for (const { width, height } of VIEWPORTS) {
+        await page.setViewportSize({ width, height });
+        await page.goto('/classroom-groups');
+        const shadow = await page.evaluate(
+          () =>
+            getComputedStyle(
+              document.getElementById('cg-go')!.closest('.actions')!,
+            ).boxShadow,
+        );
+        // A computed shadow serialises colour first, then lengths:
+        // `rgba(0, 0, 0, 0.55) 0px -12px 24px -8px`.
+        const parts =
+          /^(rgba?\([^)]*\)) (-?[\d.]+)px (-?[\d.]+)px ([\d.]+)px/.exec(shadow);
+        expect(
+          parts,
+          `${width}x${height}: the pinned row has a shadow (computed: ${shadow})`,
+        ).not.toBeNull();
+        const [, colour, , offsetY, blur] = parts!;
+        expect(Number(offsetY), `${width}x${height}: cast upward`).toBeLessThan(
+          0,
+        );
+        expect(
+          Number(blur),
+          `${width}x${height}: soft, not a hard line`,
+        ).toBeGreaterThan(0);
+        expect(colour, `${width}x${height}: not transparent`).not.toMatch(
+          /, 0\)$/,
+        );
+        await shoot(
+          page,
+          `${width}x${height}, the row casts its shadow upward`,
+        );
+      }
+    },
+  );
+
   // L-08. The brief's own literal query measured only what page LOAD
   // already shows -- nothing inside any of the four sections is on screen
   // until its own toggle is clicked, so a control that shipped at 30px
