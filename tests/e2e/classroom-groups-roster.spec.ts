@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { shoot } from './evidence';
 import { recordErrors } from './recorders';
 import {
   openRoster,
@@ -68,6 +69,11 @@ test.describe('the roster table', () => {
     for (const [index, name] of columns.entries()) {
       await expect(headers.nth(index)).toHaveAccessibleName(name);
     }
+    await shoot(
+      page,
+      'every heading keeps its name; the table draws six, the cards draw none',
+      page.locator('#cg-roster'),
+    );
   });
 
   // The general invariant "the table has seven columns" above pins today.
