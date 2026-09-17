@@ -149,6 +149,10 @@ export const earlierLine = (earlier) =>
       byEngine(earlier)
     : '';
 
+export const REVIEW_DATA_ID = 'evidence-review';
+export const sha256Of = () => '';
+export const itemKey = () => '';
+
 const slugOf = (s) =>
   String(s)
     .replace(/[^a-z0-9]+/gi, '-')
