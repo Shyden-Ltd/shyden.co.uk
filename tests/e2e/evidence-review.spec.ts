@@ -521,14 +521,22 @@ test.describe('evidence review: the viewer is a modal dialog', () => {
       if (item.src)
         files[item.src] = { contentType: 'video/webm', body: RECORDING };
     await serveEvidencePage(page, HTML, files);
-    await page.route(`${ORIGIN}/framed`, (route) =>
-      route.fulfill({
-        contentType: 'text/html; charset=utf-8',
-        body:
-          '<!doctype html><meta charset="utf-8">' +
-          '<style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style>' +
-          `<iframe sandbox="${RUNTIME_SANDBOX}" src="/"></iframe>`,
-      }),
+    // A PREDICATE, not a literal. `${ORIGIN}/framed` is absolute at runtime,
+    // but `baseurl-guard` reads raw source text and cannot resolve a template
+    // that opens with an interpolation, so it read this absolute URL as a
+    // relative one. A matcher function has no baseURL resolution at all --
+    // the same category the guard already exempts for a regex literal -- and
+    // it stays exact, where a `**/framed` glob would match any origin.
+    await page.route(
+      (url) => url.href === `${ORIGIN}/framed`,
+      (route) =>
+        route.fulfill({
+          contentType: 'text/html; charset=utf-8',
+          body:
+            '<!doctype html><meta charset="utf-8">' +
+            '<style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style>' +
+            `<iframe sandbox="${RUNTIME_SANDBOX}" src="/"></iframe>`,
+        }),
     );
     const standIns: CapabilityStandInOptions = {
       downloads: 'accept',
