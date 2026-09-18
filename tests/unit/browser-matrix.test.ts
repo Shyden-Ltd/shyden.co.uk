@@ -131,9 +131,12 @@ describe('the content-only project', () => {
   it('is judged by a detector that sees layout reads in the real suite', () => {
     // The positive control for the absence above: the spec #198 moved out
     // reads layout, and a detector gone blind would find nothing anywhere.
-    expect(engineDependence(read('rendered-text.spec.ts'))).toContain(
+    // Exact, so a detector that starts reporting prose shows up here too.
+    expect(engineDependence(read('rendered-text.spec.ts'))).toEqual([
+      'getBoundingClientRect',
       'getClientRects',
-    );
+      'innerText',
+    ]);
   });
 
   it('runs those specs on exactly one project', () => {
