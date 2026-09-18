@@ -104,17 +104,6 @@ describe('forwarding arguments into the visual container (#202)', () => {
     expect(comparing([])).toEqual(OWN_FLAGS);
   });
 
-  it('still runs when invoked as a script, refusing without Docker', () => {
-    // Exporting `dockerArgs` put the run behind an entry-point check. If that
-    // check stopped matching, `npm run test:visual` would exit 0 having
-    // compared nothing: the silent pass this script exists to prevent. With
-    // no `docker` on PATH, the file must still act, and refuse.
-    const run = spawnSync(process.execPath, ['scripts/visual.mjs'], {
-      encoding: 'utf8',
-      env: { ...process.env, PATH: '/nonexistent' },
-    });
-
-    expect(run.stderr).toContain('docker is not available');
-    expect(run.status).toBe(1);
-  });
+  // That the file still acts when run as a script, from any checkout, is held
+  // with every other script that decides so in `script-entry.test.ts` (#221).
 });
