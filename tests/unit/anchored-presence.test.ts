@@ -275,7 +275,7 @@ describe('presence assertions over source text are stripped or anchored', () => 
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    // 45 today, and the figure is worth stating: the floor sat at 20 while
+    // 48 today, and the figure is worth stating: the floor sat at 20 while
     // the truth was 27, so a control with that much slack in it is most of
     // the way back to no control at all. #118 moved the number twice --
     // UP as the derivation learned to follow local bindings to a fixed
@@ -283,8 +283,11 @@ describe('presence assertions over source text are stripped or anchored', () => 
     // parameter names as references. Both were corrections, not drift.
     // #184 found this comment still saying 28 over a real 42, and moved the
     // figure to 45: resolving names by scope brought in three assertions a
-    // file-wide map had been sending to another test's declaration.
-    expect(result.scanned).toBeGreaterThan(44);
+    // file-wide map had been sending to another test's declaration. #225
+    // measured 46 (the suite had grown by one under a floor of 44) and moved
+    // it to 48: two `evidence-page` assertions a helper's `JSON.stringify`
+    // had been exempting as parsed.
+    expect(result.scanned).toBeGreaterThan(47);
     expect(tsFiles.length).toBeGreaterThan(30);
   });
 
