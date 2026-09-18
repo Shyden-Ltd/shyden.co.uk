@@ -143,7 +143,7 @@ function loopOver(
   )
     return undefined;
   const loop = awaited.parent;
-  return ts.isForOfStatement(loop) && loop.expression === awaited
+  return ts.isForOfStatement(loop)
     ? { loop, locator: callee.expression }
     : undefined;
 }
@@ -196,16 +196,12 @@ function ownerOf(node: ts.Node, declarations: readonly Declaration[]): ts.Node {
 }
 
 /**
- * `node`'s tokens in order. Layout is not among them: trivia never is, a
- * comma closing a list is how prettier wraps one, and a string's quotes are
- * how it is spelled.
+ * `node`'s tokens in order. Layout is not among them: trivia never is, and a
+ * comma closing a list is how prettier wraps one.
  */
 function tokensOf(node: ts.Node): string[] {
   const children = node.getChildren();
-  if (children.length === 0)
-    return [
-      ts.isStringLiteralLike(node) ? JSON.stringify(node.text) : node.getText(),
-    ];
+  if (children.length === 0) return [node.getText()];
   return children.flatMap((child, at) =>
     child.kind === ts.SyntaxKind.CommaToken && at === children.length - 1
       ? []
@@ -373,6 +369,21 @@ describe('a locator list cannot be looped unproved', () => {
     ).toEqual([{ subject: 'links', proved: false }]);
   });
 
+  it('is not satisfied by a proof in a different helper', () => {
+    expect(
+      locatorLoops(
+        spec(
+          'async function ready(links) {',
+          '  await expect(links).toHaveCount(3);',
+          '}',
+          'async function each(links) {',
+          '  for (const a of await links.all()) f(a);',
+          '}',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
   it('accepts a helper that proves its own locator first', () => {
     expect(
       locatorLoops(
@@ -420,7 +431,9 @@ describe('a locator list cannot be looped unproved', () => {
         spec(
           "test('x', async ({ page }) => {",
           '  await expect(',
-          "    page.locator('#cg-roster tbody tr'),",
+          '    page.locator(',
+          "      '#cg-roster tbody tr',",
+          '    ),',
           '  ).toHaveCount(3);',
           "  for (const row of await page.locator('#cg-roster tbody tr').all()) f(row);",
           '});',
