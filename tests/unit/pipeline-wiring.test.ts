@@ -13,6 +13,18 @@ import {
   workflowJobs,
   type WorkflowJob,
 } from '../workflow-jobs';
+import { parseFile } from './ast';
+import { declarationsIn } from '../playwright-declarations';
+
+/**
+ * The plain `test(...)` declarations `spec` makes, read by the parser. A test
+ * commented out, or spelled inside a string, is not one: counting `test(` in
+ * the raw text counted both (#218).
+ */
+const plainTestsIn = (spec: string) =>
+  declarationsIn(parseFile(spec)).filter(
+    ({ kind, modifier }) => kind === 'test' && modifier === '',
+  );
 
 /**
  * The deploy pipeline is wired to the things it claims to run.
@@ -125,11 +137,11 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the dev sanity suite exists and is more than a stub', () => {
-    const spec = readFileSync('tests/dev/dev-sanity.spec.ts', 'utf8');
-    const tests = spec.match(/\btest\(/g) ?? [];
     // A guard that only checked the workflow REFERENCES the config would pass
     // against an emptied suite.
-    expect(tests.length).toBeGreaterThan(3);
+    expect(plainTestsIn('tests/dev/dev-sanity.spec.ts').length).toBeGreaterThan(
+      3,
+    );
   });
 
   it('the dev deploy is gated on a gate that SUCCEEDED, never on one that skipped', () => {
@@ -482,8 +494,9 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the prod sanity suite exists and is more than a stub', () => {
-    const spec = readFileSync('tests/prod/prod-sanity.spec.ts', 'utf8');
-    expect(spec.match(/\bit\(|\btest\(/g)?.length ?? 0).toBeGreaterThan(3);
+    expect(
+      plainTestsIn('tests/prod/prod-sanity.spec.ts').length,
+    ).toBeGreaterThan(3);
   });
 });
 

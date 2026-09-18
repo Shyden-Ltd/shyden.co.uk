@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import {
+  callsIn,
+  declarationsIn,
+  enclosingDeclaration,
+  type Declaration,
+} from '../playwright-declarations';
 import { specDirs } from '../spec-dirs';
 import { searched, tsFilesUnder } from '../source-files';
+import { parseSource } from './ast';
 import { withoutTsComments } from './source-text';
 
 /**
@@ -107,9 +115,9 @@ describe('browser-event collectors have exactly one home', () => {
  * the call site is not a control (#87, after #79 and #84).
  *
  * Returns EVERY loop, proved or not, so the liveness of this detector reads
- * off the same data as its verdict: a regex that quietly stopped matching
- * would report zero unproved loops and zero loops, and only one of those is
- * a healthy suite.
+ * off the same data as its verdict: a reader that quietly stopped finding
+ * loops would report zero unproved loops and zero loops, and only one of
+ * those is a healthy suite.
  */
 export interface LocatorLoop {
   /** The locator, as written: a variable name, or the selector it inlines. */
@@ -117,36 +125,142 @@ export interface LocatorLoop {
   readonly proved: boolean;
 }
 
-const A_LOCATOR_LOOP =
-  /for\s*\(\s*const\s+\w+\s+of\s+await\s+(.+?)\.all\(\)\s*\)/;
-const PROVES_NOT_EMPTY = /toHaveCount\s*\(|toBeVisible\s*\(/;
+/** Matchers that fail on an empty list: a count, or a visible element. */
+const PROVES_NOT_EMPTY = new Set(['toHaveCount', 'toBeVisible']);
+/** Calls that pick one element, so a visible one proves the list has one. */
+const PICKS_ONE = new Set(['first', 'last', 'nth']);
+
+/** A `for (… of await <locator>.all())` loop, when `call` is its `.all()`. */
+function loopOver(
+  call: ts.CallExpression,
+): { loop: ts.ForOfStatement; locator: ts.Expression } | undefined {
+  const { expression: callee, parent: awaited } = call;
+  if (
+    !ts.isPropertyAccessExpression(callee) ||
+    callee.name.text !== 'all' ||
+    call.arguments.length > 0 ||
+    !ts.isAwaitExpression(awaited)
+  )
+    return undefined;
+  const loop = awaited.parent;
+  return ts.isForOfStatement(loop)
+    ? { loop, locator: callee.expression }
+    : undefined;
+}
+
+/**
+ * The locator `call` proves is not empty -- `expect(x).toHaveCount(n)`, or
+ * `expect(x.first()).toBeVisible()` -- or undefined when it proves no such
+ * thing. A negated check hangs its matcher off `.not`, not off `expect()`,
+ * so it is not read as one: it passes on an empty list.
+ */
+function provenLocator(call: ts.CallExpression): ts.Expression | undefined {
+  const matcher = call.expression;
+  if (
+    !ts.isPropertyAccessExpression(matcher) ||
+    !PROVES_NOT_EMPTY.has(matcher.name.text)
+  )
+    return undefined;
+  const asserted = matcher.expression;
+  if (
+    !ts.isCallExpression(asserted) ||
+    !ts.isIdentifier(asserted.expression) ||
+    asserted.expression.text !== 'expect'
+  )
+    return undefined;
+  const [subject] = asserted.arguments;
+  if (
+    subject !== undefined &&
+    ts.isCallExpression(subject) &&
+    ts.isPropertyAccessExpression(subject.expression) &&
+    PICKS_ONE.has(subject.expression.name.text)
+  )
+    return subject.expression.expression;
+  return subject;
+}
+
+/**
+ * Where `node` runs: the test or group whose callback holds it, else the
+ * outermost function holding it (a helper), else the file. A proof vouches
+ * only for a loop with the same owner. A count asserted in a DIFFERENT test
+ * proves nothing about this one, and the whole file would otherwise vouch
+ * for every loop in it.
+ */
+function ownerOf(node: ts.Node, declarations: readonly Declaration[]): ts.Node {
+  const declaration = enclosingDeclaration(node, declarations);
+  if (declaration !== undefined) return declaration.body;
+  let owner: ts.Node = node.getSourceFile();
+  for (let at = node.parent; at !== undefined; at = at.parent)
+    if (ts.isFunctionLike(at)) owner = at;
+  return owner;
+}
+
+/**
+ * `node`'s tokens in order. Layout is not among them: trivia never is, and a
+ * comma closing a list is how prettier wraps one.
+ */
+function tokensOf(node: ts.Node): string[] {
+  const children = node.getChildren();
+  if (children.length === 0) return [node.getText()];
+  return children.flatMap((child, at) =>
+    child.kind === ts.SyntaxKind.CommaToken && at === children.length - 1
+      ? []
+      : tokensOf(child),
+  );
+}
+
+/** Whether two expressions are the same code, however each is laid out. */
+function sameCode(a: ts.Node, b: ts.Node): boolean {
+  const [left, right] = [tokensOf(a), tokensOf(b)];
+  return (
+    left.length === right.length &&
+    left.every((token, at) => token === right[at])
+  );
+}
+
+/**
+ * The first string or template literal in `node`, in source order. Here the
+ * early stop is the point: `ts.forEachChild` returns the first truthy result.
+ */
+const firstStringIn = (node: ts.Node): ts.Node | undefined =>
+  ts.isStringLiteralLike(node) || ts.isTemplateExpression(node)
+    ? node
+    : ts.forEachChild(node, firstStringIn);
 
 /** A bare `links`, or the selector string inside `page.locator('.x')`. */
-const subjectOf = (expression: string): string =>
-  expression.match(/'[^']*'|"[^"]*"|`[^`]*`/)?.[0] ?? expression.trim();
+const subjectOf = (locator: ts.Expression): string =>
+  (firstStringIn(locator) ?? locator).getText();
 
 export function locatorLoops(source: string): LocatorLoop[] {
-  const code = withoutTsComments(source);
-  const loops = new RegExp(A_LOCATOR_LOOP, 'g');
-  const found: LocatorLoop[] = [];
-  for (let hit = loops.exec(code); hit; hit = loops.exec(code)) {
-    const subject = subjectOf(hit[1]);
-    // Only the enclosing test counts. A count asserted in a DIFFERENT test
-    // proves nothing about this one, and the whole file would otherwise vouch
-    // for every loop in it.
-    const opens = [
-      ...code.slice(0, hit.index).matchAll(/^[ \t]*(?:test|it)\s*\(/gm),
+  const sf = parseSource(source);
+  const declarations = declarationsIn(sf);
+  const calls = callsIn(sf);
+  const proofs = calls.flatMap((call) => {
+    const locator = provenLocator(call);
+    return locator === undefined
+      ? []
+      : [{ at: call.getStart(), owner: ownerOf(call, declarations), locator }];
+  });
+  return calls.flatMap((call) => {
+    const over = loopOver(call);
+    if (over === undefined) return [];
+    const owner = ownerOf(over.loop, declarations);
+    return [
+      {
+        subject: subjectOf(over.locator),
+        proved: proofs.some(
+          (proof) =>
+            proof.at < over.loop.getStart() &&
+            proof.owner === owner &&
+            sameCode(proof.locator, over.locator),
+        ),
+      },
     ];
-    const before = code.slice(opens.at(-1)?.index ?? 0, hit.index);
-    found.push({
-      subject,
-      proved: before
-        .split('\n')
-        .some((line) => line.includes(subject) && PROVES_NOT_EMPTY.test(line)),
-    });
-  }
-  return found;
+  });
 }
+
+/** A synthetic spec, one argument per line. */
+const spec = (...lines: string[]): string => lines.join('\n');
 
 describe('a locator list cannot be looped unproved', () => {
   it('sees the loops it is scanning for', () => {
@@ -205,6 +319,169 @@ describe('a locator list cannot be looped unproved', () => {
         "// for (const a of await links.all()) would be unproved here\ntest('x', () => {});",
       ),
     ).toEqual([]);
+  });
+
+  it('is not satisfied by the test above a parked one (test.fixme)', () => {
+    // A parked test is still a test: its loop runs the day it is unparked.
+    expect(
+      locatorLoops(
+        spec(
+          "test('a', async () => {",
+          '  await expect(links).toHaveCount(3);',
+          '});',
+          "test.fixme('b', async () => {",
+          '  for (const a of await links.all()) f(a);',
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
+  it('reads a loop in a group hook as the group, not the test above it', () => {
+    expect(
+      locatorLoops(
+        spec(
+          "test('a', async () => {",
+          '  await expect(links).toHaveCount(3);',
+          '});',
+          "test.describe('g', () => {",
+          '  test.beforeEach(async () => {',
+          '    for (const a of await links.all()) f(a);',
+          '  });',
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
+  it('is not satisfied by the test above a helper that holds the loop', () => {
+    expect(
+      locatorLoops(
+        spec(
+          "test('a', async () => {",
+          '  await expect(links).toHaveCount(3);',
+          '});',
+          'async function each(links) {',
+          '  for (const a of await links.all()) f(a);',
+          '}',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
+  it('is not satisfied by a proof in a different helper', () => {
+    expect(
+      locatorLoops(
+        spec(
+          'async function ready(links) {',
+          '  await expect(links).toHaveCount(3);',
+          '}',
+          'async function each(links) {',
+          '  for (const a of await links.all()) f(a);',
+          '}',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
+  it('accepts a helper that proves its own locator first', () => {
+    expect(
+      locatorLoops(
+        spec(
+          'async function each(links) {',
+          '  await expect(links.first()).toBeVisible();',
+          '  for (const a of await links.all()) f(a);',
+          '}',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: true }]);
+  });
+
+  it('reads a loop inside test.step as its test', () => {
+    expect(
+      locatorLoops(
+        spec(
+          "test('x', async () => {",
+          '  await expect(links).toHaveCount(3);',
+          "  await test.step('each', async () => {",
+          '    for (const a of await links.all()) f(a);',
+          '  });',
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: true }]);
+  });
+
+  it('is not satisfied by a proof after the loop', () => {
+    expect(
+      locatorLoops(
+        spec(
+          "test('x', async () => {",
+          '  for (const a of await links.all()) f(a);',
+          '  await expect(links).toHaveCount(3);',
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
+  it('accepts a proof prettier wrapped across lines', () => {
+    expect(
+      locatorLoops(
+        spec(
+          "test('x', async ({ page }) => {",
+          '  await expect(',
+          '    page.locator(',
+          "      '#cg-roster tbody tr',",
+          '    ),',
+          '  ).toHaveCount(3);',
+          "  for (const row of await page.locator('#cg-roster tbody tr').all()) f(row);",
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: "'#cg-roster tbody tr'", proved: true }]);
+  });
+
+  it('sees a loop prettier wrapped across lines', () => {
+    expect(
+      locatorLoops(
+        spec(
+          "test('x', async ({ page }) => {",
+          "  await expect(page.locator('.z').first()).toBeVisible();",
+          '  for (const c of await page',
+          "    .locator('.z')",
+          '    .all()) f(c);',
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: "'.z'", proved: true }]);
+  });
+
+  it('is not satisfied by a different locator whose name contains this one', () => {
+    expect(
+      locatorLoops(
+        spec(
+          "test('x', async () => {",
+          '  await expect(linksInFooter).toHaveCount(3);',
+          '  for (const a of await links.all()) f(a);',
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
+  it('is not satisfied by a negated check', () => {
+    // `.not.toBeVisible()` passes on an empty list: it proves the opposite.
+    expect(
+      locatorLoops(
+        spec(
+          "test('x', async () => {",
+          '  await expect(links.first()).not.toBeVisible();',
+          '  for (const a of await links.all()) f(a);',
+          '});',
+        ),
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
   });
 
   it('every .all() loop proves its locator is not empty first', () => {

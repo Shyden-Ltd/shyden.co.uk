@@ -80,30 +80,37 @@ async function expectSamePixels(page: Page, snapshot: string): Promise<void> {
 }
 
 for (const { label, viewport } of WIDTHS) {
-  test.describe(`${label} @${viewport.width}px`, () => {
-    test.use({ viewport });
+  // `test.use({ viewport })` resizes every test in this group, and a real
+  // phone has one screen: the tag is what keeps android-chrome from running
+  // them (tests/unit/viewport-tagging.test.ts, #218).
+  test.describe(
+    `${label} @${viewport.width}px`,
+    { tag: '@emulated-viewport' },
+    () => {
+      test.use({ viewport });
 
-    for (const { name, path } of PAGES) {
-      test(`${name} renders the same pixels`, async ({ page }) => {
-        await page.goto(path);
-        await expectSamePixels(page, `${name}-${label}.png`);
+      for (const { name, path } of PAGES) {
+        test(`${name} renders the same pixels`, async ({ page }) => {
+          await page.goto(path);
+          await expectSamePixels(page, `${name}-${label}.png`);
+        });
+      }
+
+      // The roster's column headings exist only once a student is added, and
+      // CSS alone decides whether a sighted teacher sees them: the card layout
+      // hides the whole row, the table layout shows it again, and Remove's own
+      // heading stays hidden in both. No DOM assertion can tell a hidden heading
+      // from a shown one (#200), so the roster is captured with a student in it.
+      test('classroom-groups with a student added renders the same pixels', async ({
+        page,
+      }) => {
+        await openRoster(page);
+        // The state is proved before it can become a baseline: a roster that
+        // failed to open would be captured empty, and every later run would
+        // compare against that empty picture and pass.
+        await expect(page.locator('#cg-roster tbody tr')).toHaveCount(1);
+        await expectSamePixels(page, `classroom-groups-roster-${label}.png`);
       });
-    }
-
-    // The roster's column headings exist only once a student is added, and
-    // CSS alone decides whether a sighted teacher sees them: the card layout
-    // hides the whole row, the table layout shows it again, and Remove's own
-    // heading stays hidden in both. No DOM assertion can tell a hidden heading
-    // from a shown one (#200), so the roster is captured with a student in it.
-    test('classroom-groups with a student added renders the same pixels', async ({
-      page,
-    }) => {
-      await openRoster(page);
-      // The state is proved before it can become a baseline: a roster that
-      // failed to open would be captured empty, and every later run would
-      // compare against that empty picture and pass.
-      await expect(page.locator('#cg-roster tbody tr')).toHaveCount(1);
-      await expectSamePixels(page, `classroom-groups-roster-${label}.png`);
-    });
-  });
+    },
+  );
 }
