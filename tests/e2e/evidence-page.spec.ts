@@ -5,10 +5,16 @@ import {
   type DbStandInOptions,
   type StandInWindow,
   type StoredBody,
-  type WriteOrder,
 } from './db-stand-in';
-import { test as base, expect } from './fixtures';
-import { recordErrors } from './recorders';
+import {
+  counters,
+  evidenceTest as test,
+  ORIGIN,
+  PIXEL,
+  serveEvidencePage,
+  WRITE_ORDERS as ORDERS,
+} from './evidence-harness';
+import { expect } from './fixtures';
 
 /**
  * The evidence page's sign-off ticks, driven through the page's OWN rendered
@@ -38,10 +44,6 @@ const TITLES = [
 const SIGNOFF_KEY = 'ticket-172-fixture';
 /** Where a published page keeps its sign-off, as `signoff/ticket-136` does. */
 const DOC = `signoff/${SIGNOFF_KEY}`;
-const ORIGIN = 'https://evidence.test';
-/** A real 1x1 PNG, so no capture on the fixture page is a broken image. */
-const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
 
 const manifest = TITLES.map((title, index) => ({
   project: 'chromium',
@@ -114,42 +116,12 @@ const signedOff = (titles: readonly string[]): Record<string, StoredBody> => ({
   },
 });
 
-/**
- * Every test also fails if the page script throws. In strict mode a write
- * into a frozen snapshot is a TypeError, so this names that mistake outright.
- */
-const test = base.extend<{ pageErrors: void }>({
-  pageErrors: [
-    async ({ page }, use) => {
-      const errors = recordErrors(page);
-      await use();
-      await errors.expectNoUncaught(
-        'the evidence page script threw while it was driven',
-      );
-    },
-    { auto: true },
-  ],
-});
-
-/** Serves the page as the builder rendered it, and nothing from any other host. */
-async function serveEvidencePage(page: Page): Promise<void> {
-  await page.route(/^https:\/\/evidence\.test\//, (route) =>
-    route.request().url() === `${ORIGIN}/`
-      ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: HTML })
-      : route.fulfill({ status: 204 }),
-  );
-  // The builder links Google Fonts. Nothing in this suite reaches a third party.
-  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) =>
-    route.fulfill({ contentType: 'text/css', body: '' }),
-  );
-}
-
 async function openEvidencePage(
   page: Page,
   testInfo: TestInfo,
   options: Pick<DbStandInOptions, 'order'> & Partial<DbStandInOptions>,
 ): Promise<void> {
-  await serveEvidencePage(page);
+  await serveEvidencePage(page, HTML);
   await page.addInitScript(installDbStandIn, {
     storeKey: `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
     seed: {},
@@ -169,16 +141,6 @@ async function openEvidencePage(
       )
       .toBeGreaterThan(0);
 }
-
-const counters = (page: Page) =>
-  page.evaluate(() => {
-    const standIn = (window as StandInWindow).__dbStandIn;
-    return {
-      writes: standIn.writes(),
-      inflight: standIn.inflight(),
-      deliveries: standIn.deliveries(),
-    };
-  });
 
 /** The journeys the store holds as ticked, as sorted ids. */
 const storedTicks = (page: Page) =>
@@ -231,17 +193,6 @@ const toggleTogether = (page: Page, titles: readonly string[]) =>
       label.click();
     }
   }, titles);
-
-const ORDERS: ReadonlyArray<{ order: WriteOrder; when: string }> = [
-  {
-    order: 'resolve-then-confirm',
-    when: 'a write resolves before its confirmed snapshot arrives',
-  },
-  {
-    order: 'confirm-then-resolve',
-    when: 'a confirmed snapshot arrives before its write resolves',
-  },
-];
 
 for (const { order, when } of ORDERS) {
   test.describe(`evidence page sign-off ticks, when ${when}`, () => {
@@ -506,7 +457,14 @@ test.describe('evidence page sign-off, whatever the write order', () => {
     page,
   }, testInfo) => {
     await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
-    await expect(page.getByRole('status')).toHaveText(/^Ready\b/);
+    // The ROLE of the save status, asked of the save status itself. Asked as
+    // "the page's one status region" it was a proxy for this, and #205 gave
+    // the page a second, legitimate one -- the send state -- which broke the
+    // proxy while the property it stood for still held. A proxy fails for a
+    // reason that points away from the thing it was protecting.
+    const saveStatus = page.locator('#state');
+    await expect(saveStatus).toHaveRole('status');
+    await expect(saveStatus).toHaveText(/^Ready\b/);
   });
 
   test('the status says so when live updates stop', async ({
@@ -526,7 +484,7 @@ test.describe('evidence page sign-off, whatever the write order', () => {
     page,
   }) => {
     // Opened outside claude.ai, the page finds no `window.claude` at all.
-    await serveEvidencePage(page);
+    await serveEvidencePage(page, HTML);
     await page.goto(`${ORIGIN}/`);
     await expect(page.locator('#state')).toHaveText(
       /^Ticks are local to this view\b/,

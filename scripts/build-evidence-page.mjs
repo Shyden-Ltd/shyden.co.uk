@@ -29,6 +29,7 @@
 
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 
 const esc = (s) =>
@@ -148,6 +149,62 @@ export const earlierLine = (earlier) =>
     ? ` EARLIER=${earlier.length} (captured before this run started): ` +
       byEngine(earlier)
     : '';
+
+/** The id of the JSON block the page hands its own review viewer. */
+export const REVIEW_DATA_ID = 'evidence-review';
+
+/** At most 200 bytes per storage path segment (db.d.ts). */
+const MAX_SEGMENT_BYTES = 200;
+
+const SHA_256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * The SHA-256 of one capture's own bytes, in lower-case hex.
+ *
+ * @param {Buffer} bytes
+ * @returns {string}
+ */
+export const sha256Of = (bytes) =>
+  createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * Where one review decision is stored: journey, assertion, engine, and a
+ * digest of the bytes the operator actually looked at.
+ *
+ * The digest is the point. A page is republished after a recapture, and a
+ * decision taken against the OLD picture must never be shown against the new
+ * one -- the operator would be reading an approval of something they have not
+ * seen, which is the failure this whole page exists to prevent. Same bytes,
+ * same key, on every build; different bytes, a different key and no decision
+ * yet. A key built from journey and engine alone cannot tell those apart.
+ *
+ * @param {{journey: string, assertion: number|string, engine: string, sha256: string}} item
+ * @returns {string}
+ */
+export const itemKey = ({ journey, assertion, engine, sha256 }) => {
+  if (!SHA_256_HEX.test(String(sha256)))
+    throw new Error(
+      `build-evidence-page: ${JSON.stringify(sha256)} is not the SHA-256 of a ` +
+        'capture. An item is keyed by the bytes it shows; without the digest a ' +
+        'recaptured screenshot inherits the decision taken about the picture ' +
+        'it replaced, and nothing on the page says so.',
+    );
+  const key = [
+    slugOf(journey),
+    assertion,
+    slugOf(engine),
+    String(sha256).slice(0, 12),
+  ].join('-');
+  const bytes = Buffer.byteLength(key);
+  if (bytes > MAX_SEGMENT_BYTES)
+    throw new Error(
+      `build-evidence-page: item key is ${bytes} bytes, over the ` +
+        `${MAX_SEGMENT_BYTES} bytes a storage path segment allows: ${key}. The ` +
+        'page would throw building the path at run time, and every decision on ' +
+        'it would fail with the first.',
+    );
+  return key;
+};
 
 const slugOf = (s) =>
   String(s)
@@ -396,6 +453,138 @@ export const assertPageFits = (bytes) => {
 /**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
  */
+const CAPTURE_DATA_URI = /^data:([^;,]+);base64,([\s\S]*)$/;
+
+/**
+ * One capture's declared type and its own bytes, read out of the `data:` URI
+ * the page carries.
+ *
+ * A refusal rather than a skip: an item keyed by a digest of bytes fetched from
+ * somewhere else is keyed by something this page does not show.
+ */
+const captureOf = (file, src) => {
+  const match = CAPTURE_DATA_URI.exec(String(src));
+  if (!match)
+    throw new Error(
+      `build-evidence-page: ${file} is not a base64 data URI. A review item is ` +
+        'keyed by a digest of the bytes the page shows, and a src pointing ' +
+        'anywhere else is not those bytes.',
+    );
+  return { type: match[1], bytes: Buffer.from(match[2], 'base64') };
+};
+
+/**
+ * What a download of this capture should be CALLED, from the type its data URI
+ * declares -- a different question from `mediaType`, which reads the real first
+ * bytes to decide whether a browser can paint them at all.
+ */
+const extensionOf = (type) =>
+  type === 'image/jpeg' ? 'jpg' : String(type).split('/').pop();
+
+/**
+ * A sign-off key is one storage path segment, so a slash in it would silently
+ * nest every decision under a document nothing reads back.
+ */
+const assertSignoffKey = (key) => {
+  if (!key || key.includes('/') || Buffer.byteLength(key) > MAX_SEGMENT_BYTES)
+    throw new Error(
+      `build-evidence-page: sign-off key ${JSON.stringify(key)} is not one ` +
+        'storage path segment. Decisions would be written under a path nothing ' +
+        'reads back, and the page would report them saved.',
+    );
+};
+
+/**
+ * Every capture on the page as one review item, in the order the page shows
+ * them: each journey's screenshots by assertion then engine, then that
+ * journey's recordings.
+ *
+ * Placeholders make no item. "Not captured" is a gap the page already states;
+ * an item for it would ask the operator to approve a picture that does not
+ * exist.
+ */
+const reviewItemsOf = ({ journeys, engines, shots, videos, signoffKey }) => {
+  const items = [];
+  for (const j of journeys) {
+    for (const a of j.assertions)
+      for (const shot of a.shots) {
+        if (!shot) continue;
+        const { type, bytes } = captureOf(shot.file, shots.get(shot.file));
+        items.push({
+          key: itemKey({
+            journey: j.id,
+            assertion: a.order,
+            engine: shot.project,
+            sha256: sha256Of(bytes),
+          }),
+          kind: 'screenshot',
+          journey: j.id,
+          journeyTitle: j.title,
+          assertion: a.order,
+          label: a.label,
+          engine: shot.project,
+          filename: `${signoffKey}-${j.id}-${a.order}-${slugOf(shot.project)}.${extensionOf(type)}`,
+        });
+      }
+    for (const engine of engines) {
+      const video = videos.get(`${j.id}|${engine}`);
+      if (!video) continue;
+      items.push({
+        key: itemKey({
+          journey: j.id,
+          assertion: 'rec',
+          engine,
+          sha256: video.sha256,
+        }),
+        kind: 'recording',
+        journey: j.id,
+        journeyTitle: j.title,
+        assertion: null,
+        label: 'Recording',
+        engine,
+        filename: `${signoffKey}-${j.id}-rec-${slugOf(engine)}.${String(video.src).split('.').pop()}`,
+        src: video.src,
+      });
+    }
+  }
+  const seen = new Map();
+  for (const item of items) {
+    const taken = seen.get(item.key);
+    if (taken)
+      throw new Error(
+        `build-evidence-page: two captures share a key, ${item.key}: ` +
+          `"${taken.journeyTitle}" ${taken.assertion ?? 'rec'} ` +
+          `${taken.engine} and "${item.journeyTitle}" ` +
+          `${item.assertion ?? 'rec'} ${item.engine}. One stored decision ` +
+          'would answer for both, and nothing on the page would say so.',
+      );
+    seen.set(item.key, item);
+  }
+  return items;
+};
+
+/**
+ * The page's own script, read from the file it lives in.
+ *
+ * `scripts/evidence-page-script.js` is plain JavaScript, so an editor, the
+ * formatter and the linter all treat it as code rather than as the inside of a
+ * template literal, where every brace is interpolation and a typo is a runtime
+ * error on a page nobody runs locally. It is INLINED rather than published
+ * beside the page because the page is handed about as one file.
+ */
+const PAGE_SCRIPT = new URL('./evidence-page-script.js', import.meta.url);
+
+const pageScript = () => {
+  const source = readFileSync(PAGE_SCRIPT, 'utf8');
+  if (/<[/]script/i.test(source))
+    throw new Error(
+      'build-evidence-page: the page script contains a closing script tag, ' +
+        'which ends the block early and spills the rest of it onto the page as ' +
+        'text. Refusing to emit a page whose script stops halfway.',
+    );
+  return source;
+};
+
 export const renderEvidencePage = ({
   manifest,
   report,
@@ -462,6 +651,42 @@ export const renderEvidencePage = ({
     };
   });
 
+  const signoffKey = content.signoffKey ?? 'ticket';
+  assertSignoffKey(signoffKey);
+
+  // The review the page steps through, derived from the same journeys it
+  // renders. One derivation, so a figure and the item keyed to it cannot
+  // disagree about which capture they are.
+  const items = reviewItemsOf({
+    journeys,
+    engines,
+    shots,
+    videos,
+    signoffKey,
+  });
+  const itemAt = new Map(
+    items.map((i) => [`${i.journey}|${i.assertion ?? 'rec'}|${i.engine}`, i]),
+  );
+  const keyOfFigure = (journey, assertion, engine) =>
+    itemAt.get(`${journey}|${assertion}|${engine}`)?.key ?? '';
+  // `<` escaped so the HTML parser cannot find a closing tag inside the data:
+  // JSON.parse turns it back, and the page never sees the difference.
+  const reviewJson = JSON.stringify({
+    signoffKey,
+    journeys: journeys.map((j) => j.id),
+    items,
+  }).replace(/</g, '\\u003c');
+
+  // Every reviewable figure carries the same badge, and the page's own script
+  // paints it from the stored decision -- including the icon's `d`, so one
+  // element serves all three states and the badge's own words stay the only
+  // text in it. Rendered even when there is nothing to say, because a guard
+  // asserting absence passes just as happily on an element the builder never
+  // emitted; the spec pairs `toHaveCount(1)` with `toBeHidden()` to tell those
+  // two apart, and only a badge that is always there can answer both.
+  const badge =
+    '<span class="badge" hidden><svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d=""></path></svg><span class="badge-text"></span></span>';
+
   const stats = report.stats || {};
   const dot = (r) =>
     `<span class="dot ${r?.status === 'passed' ? 'ok' : 'bad'}" title="${esc(r?.status ?? 'not run')}"></span>`;
@@ -493,7 +718,7 @@ export const renderEvidencePage = ({
       ${a.shots
         .map((s, k) =>
           s
-            ? `<figure class="shot"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
+            ? `<figure class="shot" data-item="${esc(keyOfFigure(j.id, a.order, s.project))}"><button type="button" class="open" aria-label="Review assertion ${a.order}, ${esc(s.project)}: ${esc(a.label)}"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"></button><figcaption class="mono">${esc(s.project)}${badge}</figcaption></figure>`
             : `<figure class="shot absent"><div class="novid mono">not captured</div><figcaption class="mono">${esc(engines[k])}</figcaption></figure>`,
         )
         .join('')}
@@ -507,7 +732,7 @@ export const renderEvidencePage = ({
       ${engines
         .map((e) =>
           videos.has(`${j.id}|${e}`)
-            ? `<figure><video controls preload="none" src="${videos.get(`${j.id}|${e}`)}"></video><figcaption class="mono">${esc(e)}</figcaption></figure>`
+            ? `<figure data-item="${esc(keyOfFigure(j.id, 'rec', e))}"><video controls preload="none" src="${esc(videos.get(`${j.id}|${e}`).src)}"></video><figcaption class="mono">${esc(e)}<button type="button" class="open rev" aria-label="Review the recording, ${esc(e)}">Review</button>${badge}</figcaption></figure>`
             : `<figure class="absent"><div class="novid mono">not embedded</div><figcaption class="mono">${esc(e)}</figcaption></figure>`,
         )
         .join('')}
@@ -634,7 +859,11 @@ td.j{font-size:.84rem}
 .signoff h2{margin-top:0}
 .count{font-family:var(--mono);font-size:.82rem;color:var(--ink-soft);margin:0 0 14px}
 .choices{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
-button{font:inherit;font-family:var(--head);font-weight:500;padding:11px 18px;border-radius:6px;border:1.5px solid var(--ink);background:var(--surface);color:var(--ink);cursor:pointer;min-height:44px}
+/* 46, not 44: a control whose height comes only from this floor lands on it
+   exactly, and at a fractional device pixel ratio the measured height rounds
+   to 43.99997 -- under the WCAG floor by a hundred-thousandth of a pixel. The
+   floor is the minimum, so it is not the number to design to. */
+button{font:inherit;font-family:var(--head);font-weight:500;padding:11px 18px;border-radius:6px;border:1.5px solid var(--ink);background:var(--surface);color:var(--ink);cursor:pointer;min-height:46px}
 button:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
 button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent)}
 button[aria-pressed="true"]{color:var(--on-accent)}
@@ -642,11 +871,54 @@ textarea{width:100%;max-width:100%;font:inherit;font-size:.92rem;padding:11px;bo
 .state{font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);margin-top:12px}
 .state.saved{color:var(--accent-ink)}
 
-/* lightbox */
-#lb{position:fixed;inset:0;background:rgba(10,12,14,.92);display:none;place-items:center;z-index:50;padding:18px}
-#lb.on{display:grid}
-#lb img{max-width:100%;max-height:86vh;border-radius:4px}
-#lb p{color:#e8e6e0;font-family:var(--mono);font-size:.76rem;margin:12px 0 0;text-align:center;max-width:70ch}
+/* review: the badge each figure carries, and the page's way into the viewer */
+[hidden]{display:none!important}
+.badge{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:1px 7px;border:1px solid var(--rule);border-radius:999px;font-family:var(--body);font-size:.66rem;font-weight:600;color:var(--ink-soft);vertical-align:middle}
+.badge-icon{width:10px;height:10px;flex:none;fill:currentColor}
+.badge.approved{color:var(--accent-ink);border-color:var(--accent)}
+.badge.rejected{color:var(--alert);border-color:var(--alert)}
+/* The picture IS the button, so it keeps the picture's size -- but never
+   less than a touch target: a capture whose bytes will not decode has no
+   height at all, and it is exactly the one an operator has to open to
+   reject. A zero-height way in would make a broken capture unreviewable. */
+.shot .open{display:block;width:100%;padding:0;border:0;background:none;border-radius:4px;cursor:zoom-in}
+.shot .open:focus-visible{outline:2px solid var(--accent-ink);outline-offset:3px}
+/* The thumbnail's own button is the picture, so it keeps the picture's size;
+   every other way in stays a 44px target, the recording's Review included. */
+.vgrid .open{margin-left:8px;padding:4px 12px;font-size:.7rem;font-family:var(--body)}
+.vgrid figcaption{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.review-start{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border:1px solid var(--rule);background:var(--surface);padding:14px 18px;margin-top:14px}
+.review-start .count{margin:0}
+.outstanding{border:1px solid var(--alert);background:var(--raise);padding:14px 16px;margin-top:16px}
+.outstanding p{margin:0;font-size:.9rem}
+.outstanding .choices{margin:12px 0 0}
+
+/* the viewer: one item at a time, full screen on a phone */
+#viewer{position:fixed;inset:0;width:100%;max-width:100%;height:100%;max-height:100%;margin:0;padding:16px;border:0;background:var(--ground);color:var(--ink);overflow:auto}
+#viewer::backdrop{background:rgba(10,12,14,.72)}
+#viewer:focus-visible{outline:2px solid var(--accent-ink);outline-offset:-4px}
+#viewer h2{font-size:1.06rem;font-weight:500;margin:0 0 12px}
+.v-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.v-status{flex:1 1 140px;min-width:0;margin:0;font-size:.74rem;color:var(--ink-soft)}
+.v-where{display:flex;flex-wrap:wrap;gap:4px 10px;margin:14px 0 4px;font-size:.72rem;color:var(--ink-soft)}
+#viewer-stage{display:grid;place-items:center;max-width:100%;padding:8px;border:1px solid var(--rule);border-radius:6px;background:var(--surface);touch-action:pan-y pinch-zoom}
+#viewer-image,#viewer-stage video{display:block;max-width:100%;height:auto;border-radius:4px}
+#viewer-stage video{width:100%;background:#000}
+.v-wait{margin:10px 0 0;font-size:.74rem;color:var(--ink-soft)}
+.v-decision{margin:12px 0 0;font-family:var(--head);font-size:.96rem}
+.v-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0}
+#viewer-approve:not([disabled]){background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#viewer-reject:not([disabled]){color:var(--alert);border-color:var(--alert)}
+#viewer-note-label{display:block;margin:18px 0 6px;font-size:.84rem;color:var(--ink-soft)}
+#viewer-note:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+.v-count{margin:6px 0 0;font-size:.72rem;color:var(--ink-soft)}
+#viewer-summary ul{display:grid;gap:8px;list-style:none;margin:12px 0 0;padding:0}
+#viewer-summary li{border:1px solid var(--rule);border-radius:6px;background:var(--surface);padding:10px 12px}
+#viewer-summary li p{margin:8px 0 0;font-size:.82rem;color:var(--ink-soft)}
+#viewer-summary li button{display:block;width:100%;padding:0;border:0;background:none;text-align:left;white-space:normal;font-family:var(--body);font-size:.84rem;color:var(--ink)}
+/* A disabled control is dimmed by COLOUR, never by opacity: the contrast
+   guard composites opacity, so a half-faded button fails AA by construction. */
+button[disabled]{color:var(--ink-soft);border-color:var(--rule);background:var(--surface);cursor:not-allowed}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (max-width:520px){.j-head{flex-wrap:wrap}.shot{width:150px}}
 </style>
@@ -687,16 +959,32 @@ ${
 </table></div>
 
 <h2>Every assertion, as it ran</h2>
-<p class="sub">Each image was captured immediately after the assertion above it passed, during the run &mdash; not reconstructed afterwards. Playwright stops a test at its first failed expectation, so a present image <em>is</em> the result. Tap any image to enlarge, and tick a journey once you are satisfied it proves what it claims.</p>
+<p class="sub">Each image was captured immediately after the assertion above it passed, during the run &mdash; not reconstructed afterwards. Playwright stops a test at its first failed expectation, so a present image <em>is</em> the result. Open any capture to review it on its own, or step through them one at a time; a journey ticks itself once every capture in it is approved.</p>
+
+<div class="review-start" id="review-start">
+  <p class="count mono" id="review-progress">0 approved, 0 rejected, ${items.length} undecided of ${items.length} items</p>
+  <button type="button" id="btn-review-start">Review one by one</button>
+</div>
 ${journeyHtml}
 
-<section class="signoff" id="signoff">
+<section class="signoff" id="signoff" tabindex="-1">
   <h2 style="margin-top:0">Sign-off</h2>
   <p class="count" id="progress">0 of ${journeys.length} journeys reviewed</p>
+  <p class="count" id="items-progress">0 approved, 0 rejected, ${items.length} undecided of ${items.length} items</p>
   <p class="sub">Nothing merges on green CI alone. This ticket progresses only on your explicit decision below.</p>
   <div class="choices">
     <button type="button" id="btn-approve" aria-pressed="false">Signed off &mdash; may merge to develop</button>
     <button type="button" id="btn-more" aria-pressed="false">More tests needed</button>
+    <button type="button" id="btn-review-signoff">Review one by one</button>
+    <button type="button" id="btn-send">Send review to Claude</button>
+  </div>
+  <p class="state" id="send-state" role="status"></p>
+  <div class="outstanding" id="outstanding" hidden>
+    <p id="outstanding-text"></p>
+    <div class="choices">
+      <button type="button" id="btn-review-outstanding">Review them</button>
+      <button type="button" id="btn-signoff-anyway">Sign off anyway</button>
+    </div>
   </div>
   <label for="note" class="sub" style="display:block;margin-bottom:6px">Notes, or what else you want covered</label>
   <textarea id="note"></textarea>
@@ -705,151 +993,48 @@ ${journeyHtml}
 </section>
 </div>
 
-<div id="lb" role="dialog" aria-modal="true" aria-label="Enlarged screenshot"><div><img id="lb-img" alt=""><p id="lb-cap"></p></div></div>
+<dialog id="viewer" aria-label="Review evidence" tabindex="-1">
+  <div class="v-bar">
+    <p class="v-status mono" id="viewer-status" role="status"></p>
+    <button type="button" id="viewer-close">Close</button>
+  </div>
+  <div id="viewer-item">
+    <p class="v-where mono"><span id="viewer-position"></span><span id="viewer-journey"></span><span id="viewer-engine"></span></p>
+    <h2 id="viewer-title"></h2>
+    <div id="viewer-stage">
+      <img id="viewer-image" alt="">
+      <video controls preload="metadata" playsinline hidden></video>
+    </div>
+    <p class="v-wait mono" id="viewer-wait" hidden></p>
+    <p class="v-decision" id="viewer-decision">Not decided</p>
+    <label for="viewer-note" id="viewer-note-label">Note for Claude, sent with this review</label>
+    <textarea id="viewer-note" maxlength="2000"></textarea>
+    <p class="v-count mono" id="viewer-note-count">0 of 2,000 characters</p>
+    <div class="v-controls">
+      <button type="button" id="viewer-approve">Approve</button>
+      <button type="button" id="viewer-reject">Reject</button>
+      <button type="button" id="viewer-skip">Skip</button>
+      <button type="button" id="viewer-previous">Previous</button>
+      <button type="button" id="viewer-download">Download</button>
+    </div>
+  </div>
+  <section id="viewer-summary" aria-label="Review summary" hidden>
+    <h2>Review summary</h2>
+    <p class="v-count mono" id="viewer-summary-counts"></p>
+    <ul id="viewer-summary-list"></ul>
+    <div class="v-controls">
+      <button type="button" id="viewer-undecided">Review the undecided</button>
+      <button type="button" id="viewer-send">Send review to Claude</button>
+      <button type="button" id="viewer-go-signoff">Go to sign-off</button>
+    </div>
+  </section>
+  <p class="sr" id="viewer-announce" aria-live="polite"></p>
+</dialog>
+
+<script type="application/json" id="${REVIEW_DATA_ID}">${reviewJson}</script>
 
 <script>
-(function () {
-  'use strict';
-  var JOURNEYS = ${JSON.stringify(journeys.map((j) => j.id))};
-  var DOC = 'signoff/' + ${JSON.stringify(content.signoffKey ?? 'ticket')};
-  var JOURNEY_KEY = 'journey:';
-  var READY = 'Ready. Your ticks and decision are saved as you make them.';
-  var SAVED = 'Saved. Your decision persists on this page.';
-  var LOCAL = 'Ticks are local to this view \u2014 storage is not available here.';
-  var NOT_SAVED = 'Not saved \u2014 this view cannot reach storage. Your ticks are visible but will not persist.';
-  var NOT_LOADED = 'Not saved yet \u2014 the saved sign-off has not loaded.';
-  // The stored sign-off as this view last received it, always as the page's
-  // OWN copy: the runtime delivers snapshots frozen, and a page that keeps one
-  // as its state drops every later edit without an error (#172).
-  var server = copyOf(undefined);
-  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict'
-  // and 'note'. The page shows the server copy with these laid over it, so no
-  // snapshot, early or late, can repaint an edit away.
-  var pending = Object.create(null);
-  var db = null, storageAbsent = false, loaded = false, saveTimer = null;
-  var stateEl = document.getElementById('state');
-  var progressEl = document.getElementById('progress');
-  var noteEl = document.getElementById('note');
-  var approve = document.getElementById('btn-approve');
-  var more = document.getElementById('btn-more');
-  function say(m, ok) { stateEl.textContent = m; stateEl.className = 'state' + (ok ? ' saved' : ''); }
-  function codeOf(e) { return e && typeof e.code === 'string' ? e.code : 'unknown'; }
-  function hasPending() { return Object.keys(pending).length > 0; }
-  // Keeps only the shape this page writes. The store is shared by every
-  // viewer, so what it delivers is untrusted input.
-  function copyOf(body) {
-    var source = body && typeof body === 'object' ? body : {};
-    var stored = source.journeys && typeof source.journeys === 'object' ? source.journeys : {};
-    var journeys = {};
-    Object.keys(stored).forEach(function (id) {
-      if (typeof stored[id] === 'boolean') journeys[id] = stored[id];
-    });
-    return {
-      journeys: journeys,
-      verdict: source.verdict === 'approved' || source.verdict === 'more' ? source.verdict : null,
-      note: typeof source.note === 'string' ? source.note : ''
-    };
-  }
-  function overlay(target, edits) {
-    Object.keys(edits).forEach(function (key) {
-      if (key.indexOf(JOURNEY_KEY) === 0) target.journeys[key.slice(JOURNEY_KEY.length)] = edits[key];
-      else target[key] = edits[key];
-    });
-    return target;
-  }
-  function view() { return overlay(copyOf(server), pending); }
-  function paint() {
-    var shown = view(), done = 0;
-    JOURNEYS.forEach(function (id) {
-      var box = document.getElementById('chk-' + id);
-      if (!box) return;
-      var on = shown.journeys[id] === true;
-      box.checked = on;
-      var sec = document.getElementById('j-' + id);
-      if (sec) sec.classList.toggle('done', on);
-      if (on) done++;
-    });
-    progressEl.textContent = done + ' of ' + JOURNEYS.length + ' journeys reviewed';
-    approve.setAttribute('aria-pressed', String(shown.verdict === 'approved'));
-    more.setAttribute('aria-pressed', String(shown.verdict === 'more'));
-    if (document.activeElement !== noteEl) noteEl.value = shown.note;
-  }
-  function schedule() {
-    say('Saving\u2026', false);
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 400);
-  }
-  function change(key, value) {
-    pending[key] = value;
-    paint();
-    if (storageAbsent) { say(NOT_SAVED, false); return; }
-    // set() replaces the whole document, so nothing is written before the
-    // stored sign-off has loaded: an early write would erase it.
-    if (!loaded) { say(NOT_LOADED, false); return; }
-    schedule();
-  }
-  function save() {
-    saveTimer = null;
-    var carried = Object.assign(Object.create(null), pending);
-    var body = view();
-    body.updatedAt = new Date().toISOString();
-    db.doc(DOC).set(body).then(function () {
-      // The store now holds what this write carried. Once a subscription has
-      // ended nothing echoes it back, so the server copy takes it from here.
-      overlay(server, carried);
-      Object.keys(carried).forEach(function (key) {
-        if (pending[key] === carried[key]) delete pending[key];
-      });
-      paint();
-      if (!hasPending() && saveTimer === null) say(SAVED, true);
-    }, function (e) {
-      say('Could not save: ' + codeOf(e), false);
-    });
-  }
-  function receive(snap) {
-    server = copyOf(snap.data());
-    if (!loaded) {
-      loaded = true;
-      if (hasPending()) schedule();
-      else say(READY, true);
-    }
-    paint();
-  }
-  function markStorageAbsent() {
-    storageAbsent = true;
-    say(LOCAL, false);
-  }
-  document.querySelectorAll('input[data-journey]').forEach(function (box) {
-    box.addEventListener('change', function () { change(JOURNEY_KEY + box.dataset.journey, box.checked); });
-  });
-  approve.addEventListener('click', function () { change('verdict', view().verdict === 'approved' ? null : 'approved'); });
-  more.addEventListener('click', function () { change('verdict', view().verdict === 'more' ? null : 'more'); });
-  noteEl.addEventListener('input', function () { change('note', noteEl.value); });
-  var lb = document.getElementById('lb'), lbImg = document.getElementById('lb-img'), lbCap = document.getElementById('lb-cap');
-  document.addEventListener('click', function (e) {
-    var img = e.target.closest ? e.target.closest('.shot img') : null;
-    if (img) { lbImg.src = img.src; lbImg.alt = img.alt; lbCap.textContent = img.alt; lb.classList.add('on'); return; }
-    if (lb.classList.contains('on')) lb.classList.remove('on');
-  });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') lb.classList.remove('on'); });
-  paint();
-  if (!window.claude || typeof window.claude.use !== 'function') { markStorageAbsent(); return; }
-  window.claude.use('db').then(function (handle) {
-    if (!handle) { markStorageAbsent(); return; }
-    db = handle;
-    var ref = db.doc(DOC);
-    ref.get().then(receive, function (e) {
-      // A read can fail after live updates have already loaded the sign-off.
-      if (!loaded) say('Could not load the saved sign-off (' + codeOf(e) + '). Ticks are not saved until it loads.', false);
-    });
-    // Pass the error callback: without one, a subscription that ends is an
-    // uncaught error. It speaks once the sign-off has loaded; before that, the
-    // read's own failure is the one to report.
-    ref.onSnapshot(receive, function (e) {
-      if (loaded) say('Live updates stopped (' + codeOf(e) + '). Reload to see changes made elsewhere.', false);
-    });
-  }, markStorageAbsent);
-})();
+${pageScript()}
 </script>`;
 };
 
@@ -867,11 +1052,15 @@ ${journeyHtml}
  * enforce it. Printing it is what stops the next person having to remember.
  */
 export const PUBLISH_NOTE =
-  'publish with capabilities {"db": {}}, AND the files map written beside ' +
-  "this page — without the capability claude.use('db') resolves null, the " +
-  'page says "ticks are local to this view", and the sign-off is recorded ' +
-  'NOWHERE; without the files the page references recordings nothing ' +
-  'uploaded, and a journey with a broken src reads as one never recorded.';
+  'publish with capabilities {"db": {}, "downloads": true, "comments": {}}, ' +
+  'AND the files map written beside this page — without the capability ' +
+  "claude.use('db') resolves null, the page says 'ticks are local to this " +
+  "view', and the sign-off is recorded NOWHERE; without 'downloads' the " +
+  'review viewer cannot hand the operator the capture it is showing, and ' +
+  "without 'comments' it cannot send a rejection back to a session. Without " +
+  'the files the page references recordings nothing uploaded, and a journey ' +
+  'with a broken src reads as one never recorded. A session reads the ' +
+  'decisions back with ArtifactData list signoff/<key>/items.';
 
 /**
  * What a capture actually is, read from its own first bytes.
@@ -1020,7 +1209,10 @@ const main = () => {
   });
   assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
   const videos = new Map(
-    candidates.map((c) => [c.key, publishedVideoPath(c.key)]),
+    candidates.map((c) => [
+      c.key,
+      { src: publishedVideoPath(c.key), sha256: sha256Of(readFileSync(c.abs)) },
+    ]),
   );
 
   const html = renderEvidencePage({

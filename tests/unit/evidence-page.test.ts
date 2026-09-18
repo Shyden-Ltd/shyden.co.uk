@@ -134,6 +134,13 @@ const SHOTS = new Map(
   MANIFEST.map((m) => [m.file, `data:image/png;base64,AAAA${m.file}`]),
 );
 
+/**
+ * A whole SHA-256, for fixtures that assert about the PAGE rather than about
+ * review keys: the builder refuses a recording it has no digest for, and these
+ * journeys are here to prove engines, stats and src paths.
+ */
+const A_DIGEST = 'a'.repeat(64);
+
 const build = (over = {}) =>
   renderEvidencePage({
     manifest: MANIFEST,
@@ -252,7 +259,12 @@ describe('a journey whose engine recorded nothing says so on the page', () => {
     // for SIZE any more: recordings travel beside the page, and one the disk
     // does not have is refused outright, below.
     const html = build({
-      videos: new Map([['a-journey|chromium', 'data:video/webm;base64,AAAA']]),
+      videos: new Map([
+        [
+          'a-journey|chromium',
+          { src: 'data:video/webm;base64,AAAA', sha256: A_DIGEST },
+        ],
+      ]),
     });
     expect(html).toContain('Journey recordings (1 of 2 engines embedded)');
     expect(html).toContain(
@@ -872,7 +884,21 @@ describe('the build says what the publish has to grant', () => {
     // Asserted against the rendered output, NOT the generator's source: the
     // note itself spells use('db'), so a source-text check would be satisfied
     // by the very sentence it is supposed to be corroborating.
-    expect(build(), 'the page no longer reaches for db').toContain("use('db')");
+    // Spelled as one literal this covered `db` ALONE, and stayed green when the
+    // note grew to three capabilities (#205): a guard whose comment promises a
+    // seam while its assertion pins one side of it. The set now comes OUT of
+    // the note, so a capability declared there and never reached for goes red
+    // with no list for anyone to remember to extend.
+    const declared = [...PUBLISH_NOTE.matchAll(/"([a-z]+)":/g)].map(
+      (m) => m[1],
+    );
+    const html = build();
+    const unreached = declared.filter(
+      (name) => !html.includes(`use('${name}')`),
+    );
+    expect(
+      searched(unreached, { of: declared, what: 'declared capabilities' }),
+    ).toEqual([]);
   });
 
   it('names the files map the recordings travel in', () => {
@@ -1203,7 +1229,11 @@ describe('a page too large to publish is refused, not trimmed', () => {
 describe('the page references its recordings by a path a publish serves', () => {
   it('emits no root-relative media reference', () => {
     const key = 'a-journey|chromium';
-    const html = build({ videos: new Map([[key, publishedVideoPath(key)]]) });
+    const html = build({
+      videos: new Map([
+        [key, { src: publishedVideoPath(key), sha256: A_DIGEST }],
+      ]),
+    });
     const srcs = [...html.matchAll(/src="([^"]*)"/g)].map((m) => m[1]);
 
     const rooted = srcs.filter((src) => src.startsWith('/'));
@@ -1275,7 +1305,7 @@ describe('a journey that captured nothing is still on the page', () => {
     const videos = new Map(
       [`${SLUG}|chromium`, 'a-journey|chromium'].map((key) => [
         key,
-        publishedVideoPath(key),
+        { src: publishedVideoPath(key), sha256: A_DIGEST },
       ]),
     );
     const html = build({ report: reportNamingAnUncapturedJourney, videos });
