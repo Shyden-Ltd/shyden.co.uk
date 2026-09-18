@@ -5,6 +5,7 @@ import {
   addSeveral,
   markAbsent,
   giveEveryoneASex,
+  expectStudentsBoxReports,
 } from './helpers';
 
 /**
@@ -966,35 +967,58 @@ test.describe('the Students box becomes a read-out', () => {
     ).toBeVisible();
   });
 
-  // The brief's own literal count (23, giving 24 total) is NOT used here --
-  // #cg-count's own build-time markup ships `value="24"` (ClassroomGroupsPage.astro),
-  // so a roster that lands on exactly 24 would pass this test's `toHaveValue`
-  // checks even with NO implementation at all: the box's own untouched
-  // static default already reads "24" before a single line of this task's
-  // own code exists. Run against the page before implementing, to confirm
-  // that is not hypothetical: it is not. 30 (29 + the one `openRoster`
-  // already adds) shares nothing with that default, so passing here
-  // actually requires the box's value to have been SET from the roster,
-  // not merely left alone.
+  // The count these two build is 29, and it is DERIVED from the rows rather
+  // than written down.
+  //
+  // The comment that stood here reasoned that 30 "shares nothing with" the
+  // box's build-time default, which it recorded as `value="24"`. That was
+  // true when it was written. The default has since moved to 30 -- the very
+  // number both tests expected -- so all three `toHaveValue` checks passed
+  // with `updateStudentsBox`'s write removed, and the prose explaining why
+  // they were safe is what dated them (#193). A second literal would rot the
+  // same way, so `expectStudentsBoxReports` reads the shipped default off the
+  // element itself (`.value =` never rewrites the content attribute) and
+  // refuses any expectation that cannot tell the two apart.
   test('emptying the list makes it typeable again, keeping the number', async ({
     page,
   }) => {
     await openRoster(page);
-    await addSeveral(page, 29);
-    await expect(page.getByLabel('Number of students')).toHaveValue('30');
+    await addSeveral(page, 28);
+    const rows = page.locator('.cg-student');
+    await expect(rows).toHaveCount(29);
+    const built = await rows.count();
+
+    const box = page.getByLabel('Number of students');
+    await expectStudentsBoxReports(box, built);
+    // The locked state is observed HERE, not borrowed from the test above,
+    // because it is what makes the re-enable below a transition rather than a
+    // state a script-less page satisfies on its own: `disabled` is only ever
+    // set by script, so with no implementation the box is trivially editable
+    // and `toBeEditable()` alone asserts nothing.
+    await expect(box).not.toBeEditable();
+
     await page.getByRole('button', { name: 'Clear all' }).click();
-    await expect(page.getByLabel('Number of students')).toBeEditable();
-    await expect(page.getByLabel('Number of students')).toHaveValue('30');
+    await expect(box).toBeEditable();
+    await expectStudentsBoxReports(box, built);
   });
 
-  // Same correction, same reason -- see the comment on the test just above.
   test('marking a student absent does not move it', async ({ page }) => {
     await openRoster(page);
-    await addSeveral(page, 29);
-    await page.locator('.cg-student').first().getByLabel('Absent').check();
-    await expect(page.getByLabel('Number of students')).toHaveValue('30');
+    await addSeveral(page, 28);
+    const rows = page.locator('.cg-student');
+    await expect(rows).toHaveCount(29);
+    const built = await rows.count();
+
+    const box = page.getByLabel('Number of students');
+    // Read before AND after: "does not move it" is a claim about a change,
+    // and one reading after the fact cannot tell an unmoved value from one
+    // that was never right.
+    await expectStudentsBoxReports(box, built);
+    await rows.first().getByLabel('Absent').check();
+    await expectStudentsBoxReports(box, built);
+
     await expect(page.locator('#cg-roster-count')).toHaveText(
-      '30 students · 29 here · 1 absent',
+      `${built} students · ${built - 1} here · 1 absent`,
     );
   });
 

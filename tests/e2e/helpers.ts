@@ -57,6 +57,37 @@ export const addSeveral = async (page: Page, howMany: number) => {
 };
 
 /**
+ * Assert the Students box reports `expected`, in a way the markup alone
+ * cannot satisfy.
+ *
+ * `#cg-count` ships a build-time `value=`, so the box already holds a number
+ * before a line of script runs. Three assertions expected the very number it
+ * ships and passed with `updateStudentsBox`'s write removed (#193) -- guarded
+ * the whole time by a comment that named this exact hazard and then went
+ * stale when the shipped default moved onto the number they expected.
+ *
+ * So the control is not a second literal, which would rot the same way.
+ * Assigning `.value` sets the IDL property and never rewrites the content
+ * attribute, so the live page still carries its own shipped default and
+ * `getAttribute('value')` reads it back from the element under test. The
+ * control runs FIRST: an expectation that cannot distinguish a written value
+ * from an untouched one should say so, rather than be masked by whichever
+ * assertion happens to fail after it (#156).
+ */
+export const expectStudentsBoxReports = async (
+  box: Locator,
+  expected: number,
+) => {
+  const shipped = await box.getAttribute('value');
+  expect(
+    String(expected),
+    `the box ships value="${shipped}", so expecting ${expected} cannot tell a ` +
+      'value written from the roster from the untouched markup',
+  ).not.toBe(shipped);
+  await expect(box).toHaveValue(String(expected));
+};
+
+/**
  * Marks the FIRST roster row absent -- `openRoster` already adds one
  * student (its own "Add student" click), so this only needs to tick that
  * row's own Absent box. Stage 3, Task 4's own state-setup helper, placed
