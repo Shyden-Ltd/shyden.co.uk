@@ -134,11 +134,11 @@ describe('the content-only project', () => {
     // Exact, so a detector that starts reporting prose shows up here too.
     expect(engineDependence(read('rendered-text.spec.ts'))).toEqual([
       'checkVisibility',
+      'clientWidth',
       'getBoundingClientRect',
       'getClientRects',
       'getComputedStyle',
       'innerText',
-      'viewportSize',
     ]);
   });
 
