@@ -1,6 +1,8 @@
 import { test, expect } from './fixtures';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { LOCALES, localisePath } from '../../src/lib/i18n/index';
+import { searched } from '../source-files';
+import { publishedPaths } from './published-paths';
 
 /**
  * The hreflang set every page in the sitemap must declare.
@@ -110,5 +112,42 @@ test.describe('the 404 head', () => {
     await expect(page.locator('link[rel="alternate"]')).toHaveCount(
       LOCALES.length + 1,
     );
+  });
+});
+
+/**
+ * The viewport every page has to declare, as `BaseLayout.astro` does.
+ *
+ * Without it a mobile browser lays the page out at a legacy desktop width
+ * (980px on the Android phone, measured on `about:blank`, which has no tag),
+ * and the visitor sees every page zoomed out. No test asserted it before #233.
+ */
+const DEVICE_WIDTH = 'width=device-width, initial-scale=1';
+
+test.describe('every published page', () => {
+  test('declares exactly one viewport, at the device width', async ({
+    page,
+  }) => {
+    const paths = await publishedPaths(page);
+    const findings: string[] = [];
+
+    for (const path of paths) {
+      await page.goto(path);
+      // `i`: HTML compares meta names without regard to case, so a second tag
+      // spelled `Viewport` is still a second viewport.
+      const contents = await page
+        .locator('meta[name="viewport" i]')
+        .evaluateAll((metas) =>
+          metas.map((meta) => meta.getAttribute('content')),
+        );
+      if (contents.length !== 1 || contents[0] !== DEVICE_WIDTH)
+        findings.push(`${path}: ${JSON.stringify(contents)}`);
+    }
+
+    // Reported all at once, every page that is wrong and how.
+    expect(
+      searched(findings, { of: paths, what: 'built pages visited' }),
+      findings.join('\n'),
+    ).toEqual([]);
   });
 });
