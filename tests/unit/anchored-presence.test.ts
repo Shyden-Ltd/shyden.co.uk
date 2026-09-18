@@ -193,6 +193,77 @@ describe('the detector counts only a real anchor (#183)', () => {
   });
 });
 
+describe('the detector exempts a read only where JSON.parse stands between it and the subject (#225)', () => {
+  // JSON carries no comments, so a comment cannot satisfy a matcher over
+  // parsed data: the PARSE is the exemption, and a name is not a parse. The
+  // detector once skipped any subject whose derivation mentioned `JSON` or
+  // `parse` anywhere, so a helper's `JSON.stringify` exempted a raw read.
+  it('scans a raw read whose derivation reaches a helper calling JSON.stringify', () => {
+    expect(
+      flaggedLines(
+        [
+          'const stamp = () => JSON.stringify({ at: 1 });',
+          "const text = readFileSync('package.json', 'utf8') + stamp();",
+          "expect(text).toContain('name');",
+        ].join('\n'),
+      ),
+    ).toEqual([3]);
+  });
+
+  it('reads a bare JSON or parse name as no parse at all', () => {
+    expect(
+      flaggedLines(
+        [
+          'const parse = (text: string) => text.trim();',
+          "const raw = parse(readFileSync('x.ts', 'utf8'));",
+          "expect(raw).toContain('foo');",
+          "expect(JSON.stringify(readFileSync('x.ts', 'utf8'))).toContain('foo');",
+        ].join('\n'),
+      ),
+    ).toEqual([3, 4]);
+  });
+
+  it('leaves a read passed through JSON.parse unscanned, directly or through a local', () => {
+    const source = [
+      "expect(JSON.parse(readFileSync('package.json', 'utf8')).scripts).toContain('test');",
+      "const text = readFileSync('package.json', 'utf8');",
+      "expect(JSON.parse(text).name).toContain('shyden');",
+      "const pkg = JSON.parse(readFileSync('package.json', 'utf8'));",
+      "expect(pkg.scripts).toContain('test');",
+      "const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));",
+      "expect(readJson('package.json').scripts).toContain('test');",
+      "expect(readFileSync('x.ts', 'utf8')).toContain('control');",
+    ].join('\n');
+    // The call graph counts `readJson` among the readers, because it calls
+    // `readFileSync`. Only its body shows the read never leaves the parse,
+    // so the fixture seeds it as the graph would.
+    const closures = {
+      ...FIXTURE_CLOSURES,
+      readers: seeded('readFileSync', 'readJson'),
+    };
+    expect(
+      scanPresence(bind(new Map([['fixture.test.ts', source]])), closures),
+    ).toEqual({
+      scanned: 1,
+      findings: [expect.stringMatching(/^fixture\.test\.ts:8 /)],
+    });
+  });
+
+  it('scans a read that also reaches the subject around its parse', () => {
+    expect(
+      flaggedLines(
+        [
+          "const text = readFileSync('package.json', 'utf8');",
+          'const pkg = JSON.parse(text);',
+          "expect(text + pkg.name).toContain('shyden');",
+          "const clean = JSON.parse(withoutTsComments(readFileSync('a.json', 'utf8')));",
+          "expect(text + clean.name).toContain('shyden');",
+        ].join('\n'),
+      ),
+    ).toEqual([3, 5]);
+  });
+});
+
 describe('presence assertions over source text are stripped or anchored', () => {
   // The liveness control, and the reason it is a SEPARATE assertion: the
   // verdict below asserts absence, so a detector whose AST walk quietly
