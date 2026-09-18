@@ -48,6 +48,14 @@ const DOC = `signoff/${SIGNOFF_KEY}`;
 const ITEMS_PATH = `${DOC}/items`;
 const ENGINES = ['chromium', 'webkit'] as const;
 
+/**
+ * The sandbox the artifact runtime puts a published page in, read off the
+ * real iframe on 2026-09-18. `allow-modals` is NOT in it, which is what makes
+ * `showModal()` a silent no-op there.
+ */
+const RUNTIME_SANDBOX =
+  'allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups';
+
 /** A real VP8 recording, one second long, so a recording's metadata can load. */
 const RECORDING = readFileSync('tests/e2e/evidence-recording.webm');
 /** Bytes no engine can decode, so a screenshot that never loads can be shown. */
@@ -495,6 +503,92 @@ test.describe('evidence review: the viewer is a modal dialog', () => {
     await control(page, 'Close').click();
     await expect(viewer(page)).toBeHidden();
     await expect(opener).toBeFocused();
+  });
+
+  test('the viewer opens where the runtime serves this page: a sandboxed iframe', async ({
+    page,
+  }, testInfo) => {
+    // Every other test in this file serves the page as a TOP-LEVEL document,
+    // and the published page is never one. The artifact runtime serves it in
+    // an iframe sandboxed exactly as below, measured on the real runtime on
+    // 2026-09-18 -- and `allow-modals` is not in that list. With the
+    // sandboxed modals flag set, `showModal()` RETURNS WITHOUT OPENING: no
+    // throw, no error, no dialog. The viewer was unreachable on the published
+    // page while all 54 tests here passed, because none of them was in a
+    // frame. This one is.
+    const files: Record<string, ServedFile> = {};
+    for (const item of ITEMS)
+      if (item.src)
+        files[item.src] = { contentType: 'video/webm', body: RECORDING };
+    await serveEvidencePage(page, HTML, files);
+    await page.route(`${ORIGIN}/framed`, (route) =>
+      route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        body:
+          '<!doctype html><meta charset="utf-8">' +
+          '<style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style>' +
+          `<iframe sandbox="${RUNTIME_SANDBOX}" src="/"></iframe>`,
+      }),
+    );
+    const standIns: CapabilityStandInOptions = {
+      downloads: 'accept',
+      comments: { canSend: 'available', send: 'post' },
+    };
+    await page.addInitScript(installCapabilityStandIns, standIns);
+    const options: DbStandInOptions = {
+      storeKey: `evidence-review-framed:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
+      order: 'resolve-then-confirm',
+      seed: {},
+      holdUse: false,
+      subscriptionDies: false,
+      getFails: false,
+    };
+    await page.addInitScript(installDbStandIn, options);
+    await page.goto(`${ORIGIN}/framed`);
+
+    const framed = page.frameLocator('iframe');
+    // Control: the page itself rendered inside the frame, so a failure below
+    // is the viewer refusing to open rather than nothing having loaded.
+    await expect(framed.locator('#items-progress')).toHaveText(
+      `0 approved, 0 rejected, ${ITEMS.length} undecided of ${ITEMS.length} items`,
+    );
+    await framed
+      .locator('#review-start')
+      .getByRole('button', { name: 'Review one by one' })
+      .click();
+    const framedViewer = framed.getByRole('dialog', {
+      name: 'Review evidence',
+    });
+    await expect(framedViewer).toBeVisible();
+    await expect(framedViewer.locator('#viewer-position')).toHaveText(
+      `1 of ${ITEMS.length}`,
+    );
+
+    // The top layer was giving the page two things a non-modal dialog does
+    // not: the rest of the document unreachable, and Escape closing it. Both
+    // are properties of the viewer, so both are asserted here rather than
+    // left to whichever mechanism happens to provide them.
+    const inner = page.frames().find((frame) => frame.url() === `${ORIGIN}/`);
+    if (!inner) throw new Error('the sandboxed frame did not load the page');
+    expect(
+      await inner.evaluate(() => {
+        const behind = document.getElementById('btn-approve');
+        behind?.focus();
+        return document.activeElement === behind;
+      }),
+      'focused a control behind the viewer',
+    ).toBe(false);
+
+    await page.keyboard.press('Escape');
+    await expect(framedViewer).toBeHidden();
+    expect(
+      await inner.evaluate(() => {
+        const behind = document.getElementById('btn-approve');
+        behind?.focus();
+        return document.activeElement === behind;
+      }),
+      'the page behind stayed unreachable after the viewer closed',
+    ).toBe(true);
   });
 });
 
