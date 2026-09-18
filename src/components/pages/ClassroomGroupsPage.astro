@@ -1110,12 +1110,16 @@ const sexWhyText = sexWhy(roster, t);
        regardless: `toHaveText` reads `textContent`, which this technique
        never touches (unlike `display: none`, which would still pass that
        same assertion but for the wrong reason -- verified by reading
-       Playwright's own `elementText`, not assumed). */
+       Playwright's own `elementText`, not assumed). So the roster spec also
+       asserts each heading's accessible name, which `display: none` would
+       empty (#200). The box is clipped away with `clip-path: inset(50%)`:
+       `clip` is deprecated, and `tests/unit/deprecated-css.test.ts` keeps it
+       out. */
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
     padding: 0;
@@ -1147,7 +1151,7 @@ const sexWhyText = sexWhy(roster, t);
     width: 1px;
     height: 1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
     padding: 0;
@@ -1419,7 +1423,7 @@ const sexWhyText = sexWhy(roster, t);
       width: auto;
       height: auto;
       overflow: visible;
-      clip: auto;
+      clip-path: none;
       white-space: normal;
       margin: 0;
     }
