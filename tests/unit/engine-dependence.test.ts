@@ -181,4 +181,24 @@ describe('the default name set', () => {
       expect(ENGINE_DEPENDENT_NAMES.has(name), name).toBe(true);
     }
   });
+
+  it('is exactly the set chosen for #198: every layout read, not only those listed', () => {
+    // Operator decision, 2026-09-18. Playwright can read layout with no DOM
+    // call at all (`toBeInViewport`), and a spec that asks `browserName` has
+    // said its verdict depends on the engine. Removing a name here re-opens
+    // the boundary for every spec that uses it.
+    expect(new Set(ENGINE_DEPENDENT_NAMES)).toEqual(
+      new Set([
+        ...['setViewportSize', 'viewport', 'isMobile', 'hasTouch'],
+        ...['deviceScaleFactor', 'getClientRects', 'getBoundingClientRect'],
+        ...['offsetWidth', 'offsetHeight', 'elementFromPoint', 'innerText'],
+        ...['elementsFromPoint', 'offsetTop', 'offsetLeft', 'clientWidth'],
+        ...['clientHeight', 'scrollWidth', 'scrollHeight', 'checkVisibility'],
+        ...['getComputedStyle', 'matchMedia', 'innerWidth', 'innerHeight'],
+        ...['boundingBox', 'toBeInViewport', 'isVisible', 'toBeVisible'],
+        ...['isHidden', 'toBeHidden', 'scrollIntoViewIfNeeded', 'viewportSize'],
+        ...['useInnerText', 'toHaveScreenshot', 'browserName'],
+      ]),
+    );
+  });
 });

@@ -35,14 +35,42 @@ export const EMULATED_VIEWPORT_TAG = '@emulated-viewport';
 export const ENGINE_DEPENDENT_NAMES: ReadonlySet<string> = new Set([
   // Drives the viewport.
   'setViewportSize',
-  // Reads layout: the names #198 lists.
+  'viewport',
+  'isMobile',
+  'hasTouch',
+  'deviceScaleFactor',
+  // Reads layout through the DOM, #198's list first.
   'getClientRects',
   'getBoundingClientRect',
   'offsetWidth',
   'offsetHeight',
   'elementFromPoint',
   'innerText',
-  // TODO(Shyden): the rest of the boundary -- see the note in the PR.
+  'elementsFromPoint',
+  'offsetTop',
+  'offsetLeft',
+  'clientWidth',
+  'clientHeight',
+  'scrollWidth',
+  'scrollHeight',
+  'checkVisibility',
+  'getComputedStyle',
+  'matchMedia',
+  'innerWidth',
+  'innerHeight',
+  // Reads layout through Playwright, which needs no DOM call at all.
+  'boundingBox',
+  'toBeInViewport',
+  'isVisible',
+  'toBeVisible',
+  'isHidden',
+  'toBeHidden',
+  'scrollIntoViewIfNeeded',
+  'viewportSize',
+  'useInnerText',
+  'toHaveScreenshot',
+  // Asks which engine it is on.
+  'browserName',
 ]);
 
 /**
