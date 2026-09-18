@@ -411,6 +411,18 @@ describe('a page-shipped default cannot stand in for an implementation', () => {
     expect(rosterBuilders().has('addSeveral')).toBe(false);
   });
 
+  // The LEVEL lives in the pin above and nowhere else. These two fixtures are
+  // about SCOPING, so they take whatever the page ships rather than repeating
+  // it: with '30' written in, moving the markup default reddened four tests
+  // that have nothing to say about the level, and a failure that points at
+  // four places points at none of them.
+  const shipped = () => {
+    const field = fields.find((candidate) => candidate.id === 'cg-count');
+    if (!field)
+      throw new Error('no cg-count field was derived from the markup');
+    return field.shipped;
+  };
+
   /** Judge `source` as if it were a spec on disk. */
   const judge = (source: string) => {
     const file = 'tests/e2e/synthetic.spec.ts';
@@ -431,7 +443,7 @@ describe('a page-shipped default cannot stand in for an implementation', () => {
           });
 
           test('asserts on an untouched page', async ({ page }) => {
-            await expect(page.locator('#cg-count')).toHaveValue('30');
+            await expect(page.locator('#cg-count')).toHaveValue('${shipped()}');
           });
         });
       `),
@@ -449,7 +461,7 @@ describe('a page-shipped default cannot stand in for an implementation', () => {
           });
 
           test('asserts after the hook', async ({ page }) => {
-            await expect(page.locator('#cg-count')).toHaveValue('30');
+            await expect(page.locator('#cg-count')).toHaveValue('${shipped()}');
           });
         });
       `),
