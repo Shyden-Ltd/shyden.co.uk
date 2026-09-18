@@ -33,7 +33,7 @@ const REQUEST_METHODS = [
  * `browser`/`context` override, so it does not automatically share the adopted context's gap;
  * see its own row for the mechanism and the on-device measurement that confirmed it.
  *
- * `resolved: true` means a relative literal is safe on-device, whether because the fixtures
+ * `resolved: true` means a relative URL is safe on-device, whether because the fixtures
  * below patch it or because it was measured to already work through its own mechanism.
  * `resolved: false` means `tests/e2e/baseurl-guard.spec.ts` fails on a relative URL -- or on one
  * it cannot resolve, and says which -- naming this row's callee, rather than the gap surfacing
@@ -298,8 +298,8 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     // BASE_URL_AWARE_APIS documents every other baseURL-aware API this suite could reach for
     // (the bare `request` fixture, `page.route`, `waitForURL`/`waitForRequest`/
     // `waitForResponse`, `toHaveURL`). Some are proven safe by their own mechanism, some are
-    // not patched here and not currently called with a relative literal either (verified: see
-    // BASE_URL_AWARE_APIS's `reason` fields) -- so a relative literal reaching any row marked
+    // not patched here and not currently called with a relative URL either (verified: see
+    // BASE_URL_AWARE_APIS's `reason` fields) -- so a relative URL reaching any row marked
     // `resolved: false` would misbehave on-device exactly as goto did before this fixture
     // existed. tests/e2e/baseurl-guard.spec.ts fails the build the moment one is added, rather
     // than leaving it to be found as a confusing device-only failure.

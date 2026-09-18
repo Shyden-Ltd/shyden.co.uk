@@ -316,12 +316,14 @@ describe('what cannot be resolved says why', () => {
         page.route(DECLARED, handler);
         page.route(Origin, handler);
         page.route(GLOBAL_URL, handler);
+        for (const each of ['**/*.m4a']) page.route(each, handler);
       `),
     ).toEqual([
       'page.route unresolved origin (a destructured binding)',
       'page.route unresolved DECLARED (declared without a value)',
       'page.route unresolved Origin (declared as something other than a const)',
       'page.route unresolved GLOBAL_URL (declared nowhere the scan can see)',
+      'page.route unresolved each (a loop variable)',
     ]);
   });
 

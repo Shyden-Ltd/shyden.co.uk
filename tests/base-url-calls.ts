@@ -162,6 +162,9 @@ function valueOfName(
   if (ts.isVariableDeclaration(declaration)) {
     if (!(ts.getCombinedNodeFlags(declaration) & ts.NodeFlags.Const))
       return unreadable(id, 'not a const, so it can be reassigned');
+    const loop = declaration.parent.parent;
+    if (ts.isForOfStatement(loop) || ts.isForInStatement(loop))
+      return unreadable(id, 'a loop variable');
     if (!declaration.initializer)
       return unreadable(id, 'declared without a value');
     return valueOf(
