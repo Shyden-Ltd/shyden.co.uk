@@ -155,6 +155,114 @@ test.describe('classroom group creator', () => {
   //   and a later stage could silently re-break that
   //   (src/lib/i18n/index.ts:118).
 
+  // #188's own required journey, in a real browser: registration is taken,
+  // number 7 is away, and the lesson starts in two minutes. The teacher
+  // types the class size they know, says who is missing, and gets groups of
+  // the children actually in the room -- without opening Student details or
+  // hand-building a row per pupil.
+  //
+  // "Number of groups", not "students per group": 24 children in groups of
+  // five would be FOUR groups of six, since no group may be smaller than the
+  // size asked for. Five groups is what the teacher wants and what the
+  // ticket describes.
+  test('leaves a pupil typed absent out of the groups entirely', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await fill(page, { count: '25', groups: '5' });
+    await page.fill('#cg-numbers-absent', '7');
+    await expect(page.locator('#cg-numbers-absent')).toHaveValue('7');
+    await shoot(
+      page,
+      'number 7 typed into Absent numbers',
+      page.locator('.number-fields'),
+    );
+    await page.click('#cg-go');
+
+    const results = page.locator('#cg-results');
+    await expect(results.locator('.group')).toHaveCount(5);
+    await expect(results.locator('.student')).toHaveCount(24);
+
+    // The absence needs a positive control beside it. If the labels were
+    // malformed -- "Student NaN", or a renamed class -- then "no card says
+    // Student 7" would pass for a reason that has nothing to do with
+    // absence. Number 8 must be on the board, and 7 must not.
+    await expect(results.getByText('Student 8', { exact: true })).toHaveCount(
+      1,
+    );
+    await expect(results.getByText('Student 7', { exact: true })).toHaveCount(
+      0,
+    );
+
+    // And nobody was renumbered to close the gap: 25 is still the last
+    // number, not 24 (AC9).
+    await expect(results.getByText('Student 25', { exact: true })).toHaveCount(
+      1,
+    );
+    await shoot(
+      page,
+      'five groups of the 24 present, without number 7',
+      results,
+    );
+
+    // AC13: the teacher is told, never left to notice a missing child. The
+    // note is worded from what was really placed, so it cannot disagree with
+    // the board above it. Visible AND worded: `toHaveText` reads
+    // `textContent`, which a hidden note still carries.
+    const note = page.locator('#cg-grouped-note');
+    await expect(note).toBeVisible();
+    await expect(note).toHaveText('24 of 25 grouped — number 7 is absent.');
+    await shoot(page, 'the note names who is absent', note);
+  });
+
+  // #188, AC12: a bad number "re-validates immediately and refuses, rather
+  // than failing at Generate". The refusal SENTENCE was asserted in the
+  // announcements spec; the refusal ITSELF -- the shuffle being blocked --
+  // was not, which a mutation made obvious: `updateGoButton` could have
+  // ignored the number fields entirely and every test still passed.
+  //
+  // The gate has two sources and they live apart. Its roster half is in
+  // classroom-groups-roster.spec.ts ('a duplicate number is refused as it is
+  // typed', 'a together-and-apart clash is refused as it is typed'); this is
+  // the number-field half. They cannot be tested together -- a roster
+  // disables these fields outright (AC14) -- so a comment naming the other
+  // half is more honest than a describe pretending the fact has one home.
+  test('a refused number blocks the shuffle until it is corrected', async ({
+    page,
+  }) => {
+    const go = page.getByRole('button', { name: 'Make groups' });
+    await page.goto('/classroom-groups');
+
+    // Enabled FIRST. Disabled is not the default here, but asserting it
+    // anyway is what stops "it is disabled" passing against a page where the
+    // button never worked at all.
+    await expect(go).toBeEnabled();
+    await shoot(page, 'Make groups enabled before anything is typed', go);
+
+    await page.fill('#cg-count', '25');
+    await page.fill('#cg-numbers-absent', '26');
+    await expect(page.locator('#cg-numbers-problem')).toBeVisible();
+    await shoot(
+      page,
+      'number 26 refused in a class of 25',
+      page.locator('.number-fields'),
+    );
+    await expect(go).toBeDisabled();
+    await shoot(page, 'Make groups disabled while the refusal stands', go);
+
+    // And the recovery direction, which is the one that proves the gate is
+    // not simply stuck shut once it has closed.
+    await page.fill('#cg-numbers-absent', '7');
+    await expect(page.locator('#cg-numbers-problem')).toBeHidden();
+    await shoot(
+      page,
+      'corrected to 7, the refusal is gone',
+      page.locator('.number-fields'),
+    );
+    await expect(go).toBeEnabled();
+    await shoot(page, 'Make groups enabled again', go);
+  });
+
   test('splits a class and shows every student exactly once', async ({
     page,
   }) => {
@@ -166,6 +274,18 @@ test.describe('classroom group creator', () => {
     await expect(page.locator('#cg-results .group')).toHaveCount(5);
     await expect(page.locator('#cg-results .student')).toHaveCount(22);
     await expect(page.locator('#cg-summary')).toContainText('22');
+    await shoot(
+      page,
+      'five groups holding all 22 students',
+      page.locator('#cg-results'),
+    );
+
+    // #188, AC13's other half: the note is shown ONLY when fewer were
+    // grouped than typed. Counted first, because `toBeHidden` also passes
+    // for an element that does not exist at all.
+    const note = page.locator('#cg-grouped-note');
+    await expect(note).toHaveCount(1);
+    await expect(note).toBeHidden();
   });
 
   test('never makes a group smaller than the size asked for', async ({
@@ -179,6 +299,11 @@ test.describe('classroom group creator', () => {
 
     await expect(page.locator('#cg-results .group')).toHaveCount(1);
     await expect(page.locator('#cg-results .student')).toHaveCount(7);
+    await shoot(
+      page,
+      'one group of 7, never a 4 and a 3',
+      page.locator('#cg-results'),
+    );
   });
 
   test('numbers students since there is no roster to name them from yet', async ({
@@ -1598,20 +1723,29 @@ test.describe('the no-scroll rule, measured', () => {
   // the submit button below the fold at both phone sizes. Nothing above the
   // form was ever the thing standing in the way.
   //
-  // The fix is in ClassroomGroupsPage.astro, under `@media screen and
-  // (max-width: 599px)`: `.actions` becomes `position: sticky; bottom: 0`,
-  // so the submit button rests ON the fold and the form scrolls behind it.
-  // The 12px of clearance at both phone sizes is the bar's own bottom
-  // padding -- measured, so this is not passing on an exact tie.
+  // The fix is in ClassroomGroupsPage.astro, under `@media screen`:
+  // `.actions` becomes `position: sticky; bottom: 0`, so the submit button
+  // rests ON the fold and the form scrolls behind it. The 12px of clearance
+  // at both phone sizes is the bar's own bottom padding -- measured, so this
+  // is not passing on an exact tie.
+  //
+  // EVERY WIDTH since #188, not just below 600px. Read the table above
+  // again: 1280x800 had THIRTY-NINE pixels to spare, which was a measurement
+  // of how much room that size happened to have, never a design decision.
+  // #188's three number fields cost 116px, and `#cg-go`'s bottom measured
+  // 912 against a budget of 800 -- 112px under the fold. The operator's call
+  // (2026-09-16) was to pin the bar at every width rather than squeeze the
+  // fields, so one mechanism carries all four sizes instead of two that
+  // would have to be kept in step.
   //
   // WHAT THIS ASSERTS, AND WHAT IT DOES NOT. `#cg-go` is REACHABLE without
-  // scrolling at all four sizes, which is what the title now says. At 768
-  // and 1280 the whole tool fits as well; at 320 and 375 the form still
-  // scrolls and only the action row is pinned. A sticky bar makes the action
-  // reachable, it does not make the page short. The previous title ("the
-  // tool fits without scrolling") would have become false at the two phone
-  // sizes the moment this started passing, so it changed WITH the fix rather
-  // than being left behind to describe a page that no longer exists.
+  // scrolling at all four sizes, which is what the title says. At none of
+  // them does the whole tool necessarily fit: the form scrolls behind a
+  // pinned action row. A sticky bar makes the action reachable, it does not
+  // make the page short. The title changed WITH the fix rather than being
+  // left behind to describe a page that no longer exists -- and the "at 768
+  // and 1280 the whole tool fits as well" sentence that used to sit here
+  // went with it, for exactly the same reason.
   const VIEWPORTS = [
     { width: 320, height: 568 }, // iPhone SE
     { width: 375, height: 667 }, // iPhone 8
@@ -1650,19 +1784,25 @@ test.describe('the no-scroll rule, measured', () => {
     );
   }
 
-  // ASSERT THE SEAM, not the sides. The four tests above would go on passing
-  // at 768 and 1280 if the sticky rule were deleted outright -- those sizes
-  // fit on their own -- and a breakpoint that drifted from 599px down to,
-  // say, 359px would fail 375x667 with a message about pixels rather than
-  // about the rule that moved. Neither tells a reader WHICH mechanism is
-  // carrying the phone sizes. This checks that mechanism directly and in
-  // both directions: sticky below the breakpoint, static above it. It
-  // replaces the old "declared fits table matches what the page actually
-  // does" companion, which cross-checked the `fits` flags against reality
-  // and had nothing left to check once those flags went -- this asserts
-  // something the four tests above genuinely cannot.
+  // ASSERT THE SEAM, not the sides. The four tests above measure PIXELS, and
+  // pixels cannot say which mechanism is keeping the button on screen: if the
+  // sticky rule were deleted, they would report a number that happens to be
+  // too large, never the rule that moved.
+  //
+  // The contract CHANGED in #188 (operator decision, 2026-09-16). It used to
+  // be "sticky below 600px, static above it", on the reasoning that 768 and
+  // 1280 fit unaided. Three number fields costing 116px ended that -- 1280x800
+  // measured 912 against a budget of 800 -- so the bar is now sticky at every
+  // width, by one mechanism rather than two kept in step. This test going red
+  // is exactly what it is for: the old expectation was a statement about how
+  // much room those sizes had, and the page outgrew it.
+  //
+  // Still asserted at all four sizes rather than one. A rule that quietly
+  // stopped applying somewhere in the middle -- a stray `min-width`, a
+  // specificity fight with a later block -- would leave the pixel tests
+  // passing wherever the page happened to fit anyway.
   test(
-    'the action row is sticky below the 600px breakpoint and static above it',
+    'the action row is sticky at every width, so the primary action is never below the fold',
     { tag: '@emulated-viewport' },
     async ({ page }) => {
       const positionAt = async (width: number, height: number) => {
@@ -1676,9 +1816,103 @@ test.describe('the no-scroll rule, measured', () => {
         );
       };
       expect(await positionAt(320, 568)).toBe('sticky');
+      await shoot(page, '320x568, the action row is sticky');
       expect(await positionAt(375, 667)).toBe('sticky');
-      expect(await positionAt(768, 1024)).toBe('static');
-      expect(await positionAt(1280, 800)).toBe('static');
+      await shoot(page, '375x667, the action row is sticky');
+      expect(await positionAt(768, 1024)).toBe('sticky');
+      await shoot(page, '768x1024, the action row is sticky');
+      expect(await positionAt(1280, 800)).toBe('sticky');
+      await shoot(page, '1280x800, the action row is sticky');
+    },
+  );
+
+  // The bar's COMPANION rule, which had no test at all until #188.
+  // `scroll-padding-bottom` on `html` exists for one reason: to stop the
+  // browser scrolling a tabbed-to field, an anchor or a `scrollIntoView`
+  // target to a position the pinned action row covers. Both rules were
+  // capped at `max-width: 599px`; the bar moved to every width and nothing
+  // in this suite would have noticed the padding staying behind, because
+  // nothing asserted the padding at all.
+  //
+  // Asserted as a SEAM, not as a number. What matters is that the padding
+  // clears the row as the row ACTUALLY measures, not that it reads `5rem`:
+  // pinning the literal would go on passing if the bar grew and the padding
+  // did not, which is the one failure this rule exists to prevent, and it
+  // would restate a value that already has a home in the stylesheet.
+  test(
+    'the scroll padding clears the pinned action row at every width',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      for (const { width, height } of VIEWPORTS) {
+        await page.setViewportSize({ width, height });
+        await page.goto('/classroom-groups');
+        const { padding, bar } = await page.evaluate(() => ({
+          padding: parseFloat(
+            getComputedStyle(document.documentElement).scrollPaddingBottom,
+          ),
+          bar: document
+            .getElementById('cg-go')!
+            .closest('.actions')!
+            .getBoundingClientRect().height,
+        }));
+        // Liveness: a renamed class or a missing row would measure 0, and
+        // every padding value would then clear it.
+        expect(
+          bar,
+          `${width}x${height}: the action row must have a height to clear`,
+        ).toBeGreaterThan(0);
+        expect(
+          padding,
+          `${width}x${height}: scroll padding must clear the pinned bar`,
+        ).toBeGreaterThanOrEqual(bar);
+      }
+    },
+  );
+
+  // #188, operator decision 2026-09-17. Pinned at every width, the row
+  // covers the edge of whatever sits above it before any scrolling -- at
+  // 1280x900, the bottom of "Sound and animation". A soft shadow cast UP over
+  // that edge makes it read as passing under a docked bar rather than as
+  // clipped. Asserted as the property that does that work -- visible, soft,
+  // offset upward -- because a pinned literal would go on passing with the
+  // offset flipped below the row, off the fold where nobody sees it.
+  test(
+    'the pinned action row casts a soft shadow upward at every width',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      for (const { width, height } of VIEWPORTS) {
+        await page.setViewportSize({ width, height });
+        await page.goto('/classroom-groups');
+        const shadow = await page.evaluate(
+          () =>
+            getComputedStyle(
+              document.getElementById('cg-go')!.closest('.actions')!,
+            ).boxShadow,
+        );
+        // A computed shadow serialises colour first, then lengths:
+        // `rgba(0, 0, 0, 0.55) 0px -12px 24px -8px`.
+        const parts =
+          /^(rgba?\([^)]*\)) (-?[\d.]+)px (-?[\d.]+)px ([\d.]+)px/.exec(shadow);
+        expect(
+          parts,
+          `${width}x${height}: the pinned row has a shadow (computed: ${shadow})`,
+        ).not.toBeNull();
+        const [, colour, , offsetY, blur] = parts!;
+        expect(Number(offsetY), `${width}x${height}: cast upward`).toBeLessThan(
+          0,
+        );
+        expect(
+          Number(blur),
+          `${width}x${height}: soft, not a hard line`,
+        ).toBeGreaterThan(0);
+        expect(colour, `${width}x${height}: not transparent`).not.toMatch(
+          /, 0\)$/,
+        );
+        await shoot(
+          page,
+          `${width}x${height}, the row casts its shadow upward`,
+        );
+      }
     },
   );
 

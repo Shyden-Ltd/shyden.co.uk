@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
+import { shoot } from './evidence';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -37,6 +38,91 @@ import {
  * left for a radio group of that name to choose between.
  */
 const NON_PERSONAL_NAMES = ['mode', 'leftovers'];
+
+// #188, AC19. Absence is a per-day fact: number 7 being away today says
+// nothing about tomorrow, so remembering it would quietly group a present
+// child out of the lesson. The decision was session-only (operator,
+// 2026-09-16), and this is that decision written down.
+test.describe('privacy — the number fields are forgotten on reload', () => {
+  test('nothing a teacher types into the three fields survives a reload', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.fill('#cg-count', '25');
+    await page.fill('#cg-numbers-absent', '7, 12');
+    await page.fill('#cg-numbers-together', '3,9');
+    await page.fill('#cg-numbers-apart', '2,5');
+
+    // THE POSITIVE CONTROL, and the whole reason this test means anything.
+    // Empty is the DEFAULT state of these fields, so "reload, then find them
+    // empty" passes just as well against a page that never stored anything
+    // AND against one where the fill silently failed -- the same vacuity the
+    // controls spec calls out for "collapse it, reload, still collapsed".
+    // Proving they held the values immediately before the reload is what
+    // makes the emptiness afterwards a fact about persistence.
+    await expect(page.locator('#cg-numbers-absent')).toHaveValue('7, 12');
+    await expect(page.locator('#cg-numbers-together')).toHaveValue('3,9');
+    await expect(page.locator('#cg-numbers-apart')).toHaveValue('2,5');
+    await shoot(
+      page,
+      'all three fields hold what was typed',
+      page.locator('.number-fields'),
+    );
+
+    await page.reload();
+
+    await expect(page.locator('#cg-numbers-absent')).toHaveValue('');
+    await expect(page.locator('#cg-numbers-together')).toHaveValue('');
+    await expect(page.locator('#cg-numbers-apart')).toHaveValue('');
+    await shoot(
+      page,
+      'all three fields empty after a reload',
+      page.locator('.number-fields'),
+    );
+  });
+
+  test('and nothing about them is written to storage', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.fill('#cg-count', '25');
+    await page.fill('#cg-numbers-absent', '7, 12');
+    await expect(page.locator('#cg-numbers-absent')).toHaveValue('7, 12');
+
+    // The positive control has to CREATE something first. This page writes
+    // exactly ONE key, and only when the sound toggle changes, so on a fresh
+    // load both stores are empty -- and "nothing mentions what was typed"
+    // would then pass for the emptiest possible reason, against a page whose
+    // script never ran at all. The first version of this test named
+    // `cg-sound` as its control in a comment and never asserted it: a
+    // comment is not a control.
+    await page.locator('#cg-sound-toggle').click();
+    await page.uncheck('#cg-sound-check');
+
+    // The WHOLE of both stores, not a probe for a key name this test
+    // invented: a guessed key would pass against any implementation that
+    // chose a different one.
+    const stored = await page.evaluate(() => {
+      const dump = (store: Storage) =>
+        Object.keys(store).map((key) => `${key}=${store.getItem(key) ?? ''}`);
+      return [...dump(localStorage), ...dump(sessionStorage)];
+    });
+    expect(
+      stored.filter((entry) => entry.startsWith('cg-sound=')),
+    ).toHaveLength(1);
+
+    // The population sits INSIDE the assertion (#118), so an empty `stored`
+    // cannot make this pass by leaving nothing to search. `absence-liveness`
+    // cannot see this site at all -- a value derived from `page.evaluate` is
+    // the blind spot #185 is open about -- so the idiom is here by choice,
+    // not because a guard insisted.
+    // `12` on its own rather than the text as typed: a page that parsed the
+    // field and stored `[7,12]` leaks exactly what one storing `7, 12` does,
+    // and every serialisation of that absence contains it.
+    const leaked = stored.filter((entry) => entry.includes('12'));
+    expect(
+      searched(leaked, { of: stored, what: 'browser storage entries' }),
+    ).toEqual([]);
+  });
+});
 
 test.describe('privacy — the class list cannot leave the page', () => {
   // Derived from LOCALES, not written out. This was `en` and `id` — correct

@@ -108,6 +108,87 @@ export const en = {
   studentsLockedReason:
     'Set by your list. Add or remove students in Student details to change it.',
 
+  // #188. Three fields beside the Students box, so a teacher can say "not
+  // number 7 today", "keep 3 with 9" and "keep 2 away from 5" without
+  // opening Student details and hand-building a row per pupil. The labels
+  // are the operator's own, from the ticket's design block (2026-09-16).
+  absentNumbersLabel: 'Absent numbers',
+  keepTogetherLabel: 'Keep together',
+  keepApartLabel: 'Keep apart',
+  // Two help lines, not one shared: the absent field takes a flat list and
+  // the two pairing fields take SETS, which is a different thing to type.
+  // One sentence covering both would have to describe a separator that does
+  // not apply to the field it sits under.
+  // "absent", never "away": the page keeps one word for this, and
+  // classroom-groups-roster.spec.ts asserts `/\baway\b/` appears nowhere in
+  // the body. This copy said "who are away" and turned that guard red.
+  absentNumbersHelp:
+    'The register numbers of anyone absent, separated by commas.',
+  pairNumbersHelp:
+    'A comma joins a pair; a semicolon starts another — 3,9; 14,15.',
+  // AC14, mirroring `studentsLockedReason` above: the list and these fields
+  // are never both in charge either, and a disabled control that does not
+  // say why is a defect (design spec section 4).
+  numbersLockedReason:
+    'Set by your list. Mark absences and pairings in Student details to change them.',
+
+  // Seven refusals, seven sentences. They name the SAME kind of mistake but
+  // need different remedies, which is the reasoning the three size-limit
+  // messages further down already follow: a teacher is told what to do, not
+  // merely what is wrong. `text` is the offending text exactly as they typed
+  // it (`NumberSetsProblem`, src/lib/numberSets.ts).
+  numbersNotWholeMessage:
+    '"{text}" is not a whole number. Type register numbers from 1 to {count}.' as Message<{
+      text: string;
+      count: number;
+    }>,
+  numbersAboveCountMessage:
+    'There is no number {text}. You have {count} students.' as Message<{
+      text: string;
+      count: number;
+    }>,
+  // Separate from the one above because the remedy is different: this one
+  // cannot be solved by changing the Students box, since the page itself
+  // goes no higher.
+  numbersAboveMaximumMessage:
+    'There is no number {text}. This page goes up to {max} students.' as Message<{
+      text: string;
+      max: number;
+    }>,
+  numbersDuplicateMessage:
+    'Number {text} is listed twice. Each number belongs in one place.' as Message<{
+      text: string;
+    }>,
+  numbersLonelySetMessage:
+    'A pair needs at least two numbers, and {text} is on its own.' as Message<{
+      text: string;
+    }>,
+  numbersTooManySetsMessage:
+    'That is more pairs than this page can hold. {text} is one too many.' as Message<{
+      text: string;
+    }>,
+  // The count box is what is at fault here, not anything typed in these
+  // fields, so the sentence points at the box rather than blaming the
+  // numbers a teacher just wrote.
+  numbersNoCountMessage: 'Fill in the number of students first.',
+
+  // AC13. Shown under the results heading ONLY when fewer were grouped than
+  // typed -- a teacher must never be left to notice a missing pupil by
+  // counting. The heading itself is untouched (operator decision,
+  // 2026-09-16): folding the ratio into it would have needed a second
+  // variant of both the named and unnamed forms, which is the drift
+  // `resultsHeadingText` exists to prevent.
+  //
+  // Built like `rosterGapWarning` below -- a `number[]` slot the platform
+  // punctuates in the page's own language, with the plural branch on the
+  // count of absentees, since a class can genuinely be missing exactly one.
+  groupedNote:
+    '{grouped} of {typed} grouped — {absent, plural, one {number {absent} is} other {numbers {absent} are}} absent.' as Message<{
+      grouped: number;
+      typed: number;
+      absent: number[];
+    }>,
+
   modeLabel: 'Split by',
   modePerGroup: 'Students per group',
   modeGroupCount: 'Number of groups',

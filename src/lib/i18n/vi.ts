@@ -35,6 +35,35 @@ export const vi: Catalogue = {
     'Các học sinh được giấu tên và đánh số — Học sinh 1, Học sinh 2, v.v.',
   studentsLockedReason:
     'Được thiết lập theo danh sách của bạn. Để thay đổi danh sách này, hãy thêm hoặc xóa học sinh trong phần “Chi tiết học sinh”.',
+  // #188. DeepL draft, awaiting a speaker (#53, #161). The three labels are
+  // three words or fewer -- the exact class that produced `Tình dục` as a
+  // column header on a pupil roster -- so a speaker must read them apart
+  // from the surrounding prose, which machine translation gets right.
+  absentNumbersLabel: 'Số vắng mặt',
+  keepTogetherLabel: 'Xếp cùng nhóm',
+  keepApartLabel: 'Xếp khác nhóm',
+  absentNumbersHelp:
+    'Số thứ tự của những học sinh vắng mặt, phân tách bằng dấu phẩy.',
+  pairNumbersHelp:
+    'Dấu phẩy nối một cặp; dấu chấm phẩy bắt đầu cặp mới — 3,9; 14,15.',
+  numbersLockedReason:
+    'Được thiết lập theo danh sách của bạn. Hãy đánh dấu vắng mặt và ghép cặp trong phần “Chi tiết học sinh” để thay đổi.',
+  numbersNotWholeMessage:
+    '“{text}” không phải là số nguyên. Hãy nhập số thứ tự từ 1 đến {count}.',
+  numbersAboveCountMessage: 'Không có số {text}. Bạn có {count} học sinh.',
+  numbersAboveMaximumMessage:
+    'Không có số {text}. Trang này chỉ hỗ trợ tối đa {max} học sinh.',
+  numbersDuplicateMessage:
+    'Số {text} được liệt kê hai lần. Mỗi số chỉ thuộc về một chỗ.',
+  numbersLonelySetMessage:
+    'Một cặp cần ít nhất hai số, nhưng {text} chỉ có một mình.',
+  numbersTooManySetsMessage:
+    'Số cặp vượt quá khả năng của trang này. {text} là cặp dư ra.',
+  numbersNoCountMessage: 'Hãy điền số lượng học sinh trước.',
+  // No plural wrapper: Vietnamese has only the `other` category, the same
+  // shape `rosterGapWarning` below already uses for its {missing} slot.
+  groupedNote:
+    '{grouped} trong số {typed} học sinh đã được chia nhóm — số {absent} vắng mặt.',
   modeLabel: 'Phân chia theo',
   modePerGroup: 'Số học sinh trong mỗi nhóm',
   modeGroupCount: 'Số lượng nhóm',

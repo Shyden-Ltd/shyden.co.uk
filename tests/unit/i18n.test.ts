@@ -9,6 +9,7 @@ import {
   getStrings,
   renderError,
   renderWarning,
+  renderNumbersProblem,
   localisePath,
   localeFromPath,
   toolPath,
@@ -20,9 +21,14 @@ import {
 import {
   ERROR_CODES,
   WARNING_CODES,
+  MAX_STUDENTS,
   type GroupingError,
   type GroupingWarning,
 } from '../../src/lib/grouping';
+import {
+  NUMBER_SETS_PROBLEM_KINDS,
+  type NumberSetsProblem,
+} from '../../src/lib/numberSets';
 import { siteEn, siteId } from '../../src/lib/i18n/site';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { isMessageTemplate } from '../../src/lib/i18n/message';
@@ -1450,6 +1456,95 @@ describe('every engine warning can be rendered in every language', () => {
       },
     );
   });
+});
+
+// #188. The three number fields refuse in the page's own language, and the
+// refusal names the text a teacher actually typed. This is the ONE place a
+// problem kind becomes a sentence -- the same reason `renderError` and
+// `resultsHeadingText` live in this module rather than at their call sites.
+describe('a refused number field says what is wrong in every language', () => {
+  const en = getStrings('en');
+  const problem = (
+    kind: NumberSetsProblem['kind'],
+    text = '',
+  ): NumberSetsProblem => ({ kind, text });
+
+  // A literal pin against the design, deliberately NOT derived from the
+  // array it checks: an assertion that compares a list to itself passes at
+  // any size, so it would never notice a kind being dropped.
+  it('has exactly seven kinds to render', () => {
+    expect(NUMBER_SETS_PROBLEM_KINDS).toHaveLength(7);
+  });
+
+  it('names the offending text and the class size for something that is not a number', () => {
+    const sentence = renderNumbersProblem(
+      problem('notAWholeNumber', 'abc'),
+      25,
+      en,
+    );
+    expect(sentence).toContain('abc');
+    expect(sentence).toContain('25');
+  });
+
+  it('names the class size when a number is above it', () => {
+    const sentence = renderNumbersProblem(problem('aboveCount', '26'), 25, en);
+    expect(sentence).toContain('26');
+    expect(sentence).toContain('25');
+  });
+
+  // A different remedy from the one above, which is why it is a different
+  // sentence: this one cannot be solved by changing the Students box.
+  it("names the page's own ceiling rather than the class size", () => {
+    const sentence = renderNumbersProblem(
+      problem('aboveMaximum', String(MAX_STUDENTS + 1)),
+      MAX_STUDENTS + 50,
+      en,
+    );
+    expect(sentence).toContain(String(MAX_STUDENTS + 1));
+    expect(sentence).toContain(String(MAX_STUDENTS));
+  });
+
+  it('names the repeated number', () => {
+    expect(renderNumbersProblem(problem('duplicate', '7'), 25, en)).toContain(
+      '7',
+    );
+  });
+
+  it('names the set that holds only one number', () => {
+    expect(renderNumbersProblem(problem('lonelySet', '3'), 25, en)).toContain(
+      '3',
+    );
+  });
+
+  it('names the set that has no letter left', () => {
+    expect(
+      renderNumbersProblem(problem('tooManySets', '53,54'), 60, en),
+    ).toContain('53,54');
+  });
+
+  // The count box is at fault here, not anything in these fields, so the
+  // sentence must point at the box -- and must never leak the `NaN` an
+  // empty number input actually produces.
+  it('points at the count box when the count cannot be read', () => {
+    const sentence = renderNumbersProblem(problem('noCount'), Number.NaN, en);
+    expect(sentence).toContain('number of students');
+    expect(sentence).not.toContain('NaN');
+  });
+
+  // Derived from the kinds themselves, so a kind added later and left
+  // unhandled turns this red -- rather than passing because nobody
+  // remembered to extend a hand-written list. Mirrors `renderError`'s own
+  // promise never to show a teacher a raw code.
+  for (const locale of LOCALES) {
+    it(`renders every kind as a sentence in ${locale}`, () => {
+      const strings = getStrings(locale);
+      for (const kind of NUMBER_SETS_PROBLEM_KINDS) {
+        const sentence = renderNumbersProblem(problem(kind, '7'), 25, strings);
+        expect(sentence.trim()).not.toBe('');
+        expect(sentence).not.toContain(kind);
+      }
+    });
+  }
 });
 
 describe('site-wide copy is fully translated', () => {
