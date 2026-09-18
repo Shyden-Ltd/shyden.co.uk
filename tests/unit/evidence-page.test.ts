@@ -572,8 +572,12 @@ describe('an earlier run in the same evidence directory stays off the page', () 
       'EARLIER=2 (captured before this run started): webkit 2',
     );
     const html = readFileSync(page, 'utf8');
+    // A capture is SHOWN only outside a comment: one left inside `<!-- -->`
+    // would pass on the raw page while the gallery showed nothing (#225).
+    // Absence reads the raw page, so it fails even then.
+    const shown = withoutMarkupComments(html);
     for (const row of chromium)
-      expect(html, `${row.file} is missing from the page`).toContain(
+      expect(shown, `${row.file} is missing from the page`).toContain(
         base64Of(dir, row.file),
       );
     for (const row of webkit)
@@ -610,7 +614,7 @@ describe('an earlier run in the same evidence directory stays off the page', () 
     expect(built.status, built.stderr).toBe(0);
     expect(built.stdout).toContain('shots=1 videos=0/0');
     const html = readFileSync(page, 'utf8');
-    expect(html).toContain(base64Of(dir, second.file));
+    expect(withoutMarkupComments(html)).toContain(base64Of(dir, second.file));
     expect(
       html,
       "the unreached assertion carries the earlier run's picture",
