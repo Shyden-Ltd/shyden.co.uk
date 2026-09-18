@@ -9,6 +9,7 @@ import config, {
 } from '../../playwright.config';
 import { ignoredByGit, searched, specFilesUnder } from '../source-files';
 import { withoutTsComments } from './source-text';
+import { engineDependence } from './engine-dependence';
 
 /**
  * Five browser projects × every spec is not five times the signal.
@@ -24,8 +25,9 @@ import { withoutTsComments } from './source-text';
  * runs cost time and return nothing the first run did not already prove.
  *
  * The line between the two is not a matter of taste, which is why it can be
- * tested: a spec is content-only exactly when it never drives the viewport.
- * The moment one does, it is engine-dependent and belongs on all five.
+ * tested: a spec is content-only exactly when it neither drives the viewport
+ * nor reads layout (`engine-dependence.ts`, #198). The moment one does, it is
+ * engine-dependent and belongs on all five.
  */
 
 /**
@@ -106,12 +108,14 @@ describe('the content-only project', () => {
     ).toBeLessThan(10);
   });
 
-  it('holds only specs that never drive the viewport', () => {
-    const engineDependent = CONTENT_ONLY_SPECS.filter((spec) => {
-      const src = read(spec);
-      return (
-        src.includes('setViewportSize') || src.includes('@emulated-viewport')
-      );
+  it('holds only specs whose verdict cannot depend on the engine or viewport', () => {
+    // #198: this once asked only whether a spec DRIVES the viewport, by
+    // substring. `rendered-text.spec.ts` READ layout instead, through
+    // `getClientRects`, so it ran at 1280px on one engine and failed on every
+    // page of a real phone.
+    const engineDependent = CONTENT_ONLY_SPECS.flatMap((spec) => {
+      const signals = engineDependence(read(spec));
+      return signals.length > 0 ? [`${spec}: ${signals.join(', ')}`] : [];
     });
 
     expect(
@@ -119,8 +123,17 @@ describe('the content-only project', () => {
         of: CONTENT_ONLY_SPECS,
         what: 'content-only specs',
       }),
-      'a spec that resizes is engine-dependent and must run on all five',
+      'a spec that drives the viewport or reads layout is engine-dependent ' +
+        'and must run on all five',
     ).toEqual([]);
+  });
+
+  it('is judged by a detector that sees layout reads in the real suite', () => {
+    // The positive control for the absence above: the spec #198 moved out
+    // reads layout, and a detector gone blind would find nothing anywhere.
+    expect(engineDependence(read('rendered-text.spec.ts'))).toContain(
+      'getClientRects',
+    );
   });
 
   it('runs those specs on exactly one project', () => {
