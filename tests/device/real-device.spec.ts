@@ -42,7 +42,7 @@ test('the bare request fixture resolves a relative URL against baseURL, on the r
   // `context` overrides in tests/e2e/fixtures.ts -- so, unlike `page.goto`/`page.request.*`,
   // there was no a priori reason to expect it shared the adopted context's empty-baseURL gap.
   // This is the on-device measurement that settles it rather than assuming it from the source
-  // trace alone: see BASE_URL_AWARE_APIS's `request.<method> (bare fixture)` rows for the
+  // trace alone: see BASE_URL_AWARE_APIS's `bare: true` `request.<method>` rows for the
   // recorded result.
   const res = await request.get('/sitemap-0.xml');
   expect(
