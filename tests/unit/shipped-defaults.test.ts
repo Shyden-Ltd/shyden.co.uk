@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { searched, specFilesUnder } from '../source-files';
-import { parseFile } from './ast';
+import { parseFile, parseSource } from './ast';
 import { withoutAstroComments, withoutTsComments } from './source-text';
 
 /**
@@ -234,12 +234,20 @@ interface Collision {
  * assertion?" is comment-proof without stripping anything, and a commented-out
  * `addSeveral` cannot make a live assertion read as covered.
  */
-function collisions(fields: readonly ShippedField[]): Collision[] {
+function collisions(
+  fields: readonly ShippedField[],
+  // Injected so the scoping rules below can be proved against a source written
+  // to exercise them, rather than against whichever shape the suite happens to
+  // contain today. A guard whose own edge cases are only ever exercised by
+  // accident is one refactor away from silently not applying.
+  files: readonly string[] = specFilesUnder('tests'),
+  parse: (file: string) => ts.SourceFile = parseFile,
+): Collision[] {
   const builders = rosterBuilders();
   const found: Collision[] = [];
 
-  for (const file of specFilesUnder('tests')) {
-    const source = parseFile(file);
+  for (const file of files) {
+    const source = parse(file);
     const line = (node: ts.Node) =>
       `${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`;
 
@@ -401,6 +409,51 @@ describe('a page-shipped default cannot stand in for an implementation', () => {
     // and every test that uses it calls `openRoster` first, which is what
     // actually answers "was a roster built before this assertion?".
     expect(rosterBuilders().has('addSeveral')).toBe(false);
+  });
+
+  /** Judge `source` as if it were a spec on disk. */
+  const judge = (source: string) => {
+    const file = 'tests/e2e/synthetic.spec.ts';
+    return collisions(fields, [file], () => parseSource(source, file)).map(
+      (collision) => `${collision.id} afterRoster=${collision.afterRoster}`,
+    );
+  };
+
+  it('does not let a roster built by a sibling test answer for this one', () => {
+    // The first form of this guard read `test.describe` as a test, so "before
+    // this assertion" ranged over the whole group. It still produced the three
+    // sites predicted -- by reporting a roster the PREVIOUS test had built.
+    expect(
+      judge(`
+        test.describe('the box', () => {
+          test('builds a roster', async ({ page }) => {
+            await openRoster(page);
+          });
+
+          test('asserts on an untouched page', async ({ page }) => {
+            await expect(page.locator('#cg-count')).toHaveValue('30');
+          });
+        });
+      `),
+      // Finding it at all is the liveness half: an empty result would satisfy
+      // "not attributed to the sibling" without the walker doing anything.
+    ).toEqual(['cg-count afterRoster=false']);
+  });
+
+  it('does let a roster built in beforeEach answer for the tests it precedes', () => {
+    expect(
+      judge(`
+        test.describe('the box', () => {
+          test.beforeEach(async ({ page }) => {
+            await openRoster(page);
+          });
+
+          test('asserts after the hook', async ({ page }) => {
+            await expect(page.locator('#cg-count')).toHaveValue('30');
+          });
+        });
+      `),
+    ).toEqual(['cg-count afterRoster=true']);
   });
 
   it('refuses an expectation a roster-building test could not have written', () => {
