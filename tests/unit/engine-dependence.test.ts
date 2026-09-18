@@ -74,7 +74,10 @@ describe('engineDependence reads code, never prose', () => {
       "await expect(page).toHaveTitle('Shyden');",
     ].join('\n');
     expect(
-      engineDependence(src, names('getClientRects', 'offsetWidth', 'innerText')),
+      engineDependence(
+        src,
+        names('getClientRects', 'offsetWidth', 'innerText'),
+      ),
     ).toEqual([]);
   });
 
@@ -85,9 +88,9 @@ describe('engineDependence reads code, never prose', () => {
       '  await page.goto(`/${label}`);',
       '});',
     ].join('\n');
-    expect(
-      engineDependence(src, names('innerText', 'getClientRects')),
-    ).toEqual([]);
+    expect(engineDependence(src, names('innerText', 'getClientRects'))).toEqual(
+      [],
+    );
   });
 });
 
@@ -147,9 +150,10 @@ describe('engineDependence reports what it found', () => {
       'const b = await el.evaluate((n) => n.offsetWidth);',
       'const box = await el.boundingBox();',
     ].join('\n');
-    expect(
-      engineDependence(src, names('offsetWidth', 'boundingBox')),
-    ).toEqual(['boundingBox', 'offsetWidth']);
+    expect(engineDependence(src, names('offsetWidth', 'boundingBox'))).toEqual([
+      'boundingBox',
+      'offsetWidth',
+    ]);
   });
 
   it('nothing, for a spec that only asserts content', () => {
