@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { specDirs } from '../spec-dirs';
-import { blankCommentLines, isCommentLine } from './source-text';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
+import { parseSource } from './ast';
+import { specDirs } from '../spec-dirs';
 import { searched, tsFilesUnder } from '../source-files';
+import { declarationsIn, type Declaration } from '../playwright-declarations';
 
 /**
  * "Tracked, not hidden" has to be TRUE, not merely written.
@@ -25,34 +27,26 @@ import { searched, tsFilesUnder } from '../source-files';
  *
  * The first is a runtime guard INSIDE a running test: the assertion would be
  * invalid on that engine, the reason is stated at the call site, and it needs
- * no ticket because nothing is broken. The corpus has three of those and all
- * three name where the coverage is recovered instead. The second parks a test
- * that SHOULD pass. Only the second is this guard's business, and the two are
- * told apart exactly the way tests/unit/viewport-tagging.test.ts tells them
- * apart: a declaration's first argument is a string literal, so a quote
- * follows the parenthesis (modulo whitespace), while the runtime overload
- * always opens with an expression. The runtime form is invisible here by
- * construction, not by an exclusion list somebody has to maintain.
+ * no ticket because nothing is broken. The second parks a test that SHOULD
+ * pass. Only the second is this guard's business. The parser tells them apart
+ * by shape (`tests/playwright-declarations.ts`): a declaration passes a title
+ * first and a callback last, and the runtime overload passes neither.
  *
- * COMMENTS ARE BLANKED TO FIND DECLARATIONS, AND KEPT TO FIND REFERENCES.
- * Both directions matter, and the corpus already contains the case that
- * proves it: classroom-groups-controls.spec.ts records a deleted test as
- * ``Stage 2's `test.fixme('a separate-mode spillover warning renders...')`
- * stood here. DELETED``. Scanning raw text would flag that history note as a
- * parked test. Scanning blanked text for the REFERENCE would throw away the
- * comment the reference is supposed to live in. So declarations are located
- * in comment-blanked source, and the issue reference is read back out of the
- * original.
+ * WHERE THE REFERENCE MAY SIT. In the unbroken run of comments directly above
+ * the declaration -- a blank line ends it, because a comment separated from
+ * the test it documents is not that test's comment -- or in the declaration's
+ * own header: its title, its details, and any comment written among them.
+ * Until #218 this walked the text with regexes, and a reference was any `#`
+ * and digits in the five lines after the declaration: a colour such as
+ * `#0a7d66` in the body satisfied it, and a declaration spelled inside a
+ * string was read as parked. The parser reads neither a comment nor a string
+ * as code, so a history note quoting a deleted `test.fixme('...')` is not a
+ * parked test, while its own words stay readable as the reference they are.
  *
- * THE APPROXIMATION, STATED PLAINLY. Like viewport-tagging.test.ts, this
- * walks text with regexes rather than parsing (no parser dependency is
- * available), and "the same block" is defined as: the unbroken run of comment
- * lines immediately above the declaration, plus the declaration's own opening
- * lines. A blank line ends the block -- a comment separated from the test it
- * documents is not that test's comment. What this CANNOT do is verify the
- * issue exists, is open, or is about this test; it forces a reference to be
- * written, which is the step that was skipped. That is a smaller claim than
- * "tracked", and it is one this file can actually keep.
+ * What this CANNOT do is verify the issue exists, is open, or is about this
+ * test; it forces a reference to be written, which is the step that was
+ * skipped. That is a smaller claim than "tracked", and it is one this file
+ * can actually keep.
  */
 
 const SCAN_DIRS = specDirs();
@@ -63,56 +57,51 @@ const SCAN_DIRS = specDirs();
 const ISSUE_REFERENCE = /#\d+/;
 
 /**
- * `test.fixme(`, `test.skip(`, `test.describe.fixme(`, `test.describe.skip(`
- * -- each followed, after whitespace only, by a quote. The lookahead is what
- * keeps the runtime overload out; see the file comment above.
+ * The unbroken run of comments directly above the statement that makes
+ * `decl`. A blank line ends it.
  */
-const DECLARATION =
-  /\b(?:test|it)(?:\.describe)?\.(fixme|skip)\s*\(\s*(?=['"`])/g;
-
-/** How far past the declaration line to look for a reference in the title. A
- * wrapped declaration puts its title on the next line, and the house Prettier
- * config wraps the options object after that. */
-const CONTEXT_LINES_AFTER = 5;
-
-function lineNumberAt(text: string, index: number): number {
-  return text.slice(0, index).split('\n').length;
-}
-
-/** The unbroken run of comment lines immediately above `line` (1-indexed). */
-function precedingCommentBlock(lines: string[], line: number): string[] {
+function commentBlockAbove(sf: ts.SourceFile, decl: Declaration): string[] {
+  const statement = ts.isExpressionStatement(decl.call.parent)
+    ? decl.call.parent
+    : decl.call;
+  const above =
+    ts.getLeadingCommentRanges(sf.text, statement.getFullStart()) ?? [];
   const block: string[] = [];
-  for (let i = line - 2; i >= 0 && isCommentLine(lines[i]); i--) {
-    block.unshift(lines[i]);
+  let below = statement.getStart(sf);
+  for (const { pos, end } of [...above].reverse()) {
+    if (/\n[ \t]*\n/.test(sf.text.slice(end, below))) break;
+    block.unshift(sf.text.slice(pos, end));
+    below = pos;
   }
   return block;
 }
+
+/** The declaration's own text up to its callback: callee, title, details,
+ * and any comment written among them. */
+const headerOf = (sf: ts.SourceFile, decl: Declaration): string =>
+  sf.text.slice(decl.call.getStart(sf), decl.body.getStart(sf));
 
 export function findUnreferencedParkedTests(
   file: string,
   source: string,
 ): string[] {
-  const blanked = blankCommentLines(source);
-  const lines = source.split('\n');
-  const findings: string[] = [];
-
-  for (const match of blanked.matchAll(DECLARATION)) {
-    const line = lineNumberAt(blanked, match.index ?? 0);
-    const context = [
-      ...precedingCommentBlock(lines, line),
-      ...lines.slice(line - 1, line - 1 + CONTEXT_LINES_AFTER),
-    ].join('\n');
-    if (ISSUE_REFERENCE.test(context)) continue;
-    findings.push(
-      `${file}:${line} -- \`test.${match[1]}(\` parks a test without naming ` +
+  const sf = parseSource(source, file);
+  return declarationsIn(sf)
+    .filter(({ modifier }) => modifier === 'fixme' || modifier === 'skip')
+    .filter(
+      (decl) =>
+        !ISSUE_REFERENCE.test(
+          [...commentBlockAbove(sf, decl), headerOf(sf, decl)].join('\n'),
+        ),
+    )
+    .map(
+      (decl) =>
+        `${file}:${decl.line} -- \`${decl.call.expression.getText(sf)}(\` parks a test without naming ` +
         'an issue. Put a `#<number>` in the comment block directly above it, ' +
         "or in the test's own title, or delete the test. #32 was filed " +
         'because a comment claimed "tracked, not hidden" and no such ticket ' +
         'existed, while the product really did overflow the fold.',
     );
-  }
-
-  return findings;
 }
 
 describe('parked tests must name an issue', () => {
@@ -176,7 +165,9 @@ describe('parked tests must name an issue', () => {
       "  test('it prints', async () => {});",
       '});',
     ].join('\n');
-    expect(scan(source)).toHaveLength(1);
+    const findings = scan(source);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('`test.describe.fixme(`');
   });
 
   it('flags a test.skip declaration, which hides exactly as well', () => {
@@ -193,6 +184,17 @@ describe('parked tests must name an issue', () => {
       "test.fixme('the tool fits without scrolling at 320x568', async () => {});",
     ].join('\n');
     expect(scan(source)).toHaveLength(1);
+  });
+
+  it('accepts a reference in a comment block above, however many comments it runs to', () => {
+    const source = [
+      '/**',
+      ' * The tool overflows the fold at 320x568, measured.',
+      ' */',
+      '// Parked by #32.',
+      "test.fixme('the tool fits without scrolling at 320x568', async () => {});",
+    ].join('\n');
+    expect(scan(source)).toEqual([]);
   });
 
   it('does not treat a test.fixme quoted inside a comment as a declaration', () => {
@@ -213,9 +215,39 @@ describe('parked tests must name an issue', () => {
     expect(scan(source)[0]).toContain('synthetic.spec.ts:2');
   });
 
+  it('is not satisfied by a colour in the first lines of the body', () => {
+    // `#\d+` anywhere in the five lines after the declaration counted as an
+    // issue: `#0a7d66` begins with `#0`.
+    const source = [
+      "test.fixme('the accent stays readable', async ({ page }) => {",
+      "  await expect(page.locator('a')).toHaveCSS('color', '#0a7d66');",
+      '});',
+    ].join('\n');
+    expect(scan(source)).toHaveLength(1);
+  });
+
+  it('is not fooled by a parked declaration spelled inside a string', () => {
+    const source = [
+      "test('reads a fixture', async () => {",
+      '  const example = "test.fixme(\'parked\', async () => {})";',
+      '});',
+    ].join('\n');
+    expect(scan(source)).toEqual([]);
+  });
+
+  it('does not accept a reference only in a comment inside the body', () => {
+    // The finding asks for the comment block directly above, or the title.
+    const source = [
+      "test.fixme('the tool fits at 320x568', async () => {",
+      '  // #32',
+      '  await measureFit(page);',
+      '});',
+    ].join('\n');
+    expect(scan(source)).toHaveLength(1);
+  });
+
   it('the e2e corpus parks nothing without naming an issue', () => {
     const files = SCAN_DIRS.flatMap(tsFilesUnder);
-
     const findings = files.flatMap((file) =>
       findUnreferencedParkedTests(file, readFileSync(file, 'utf8')),
     );
