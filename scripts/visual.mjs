@@ -23,7 +23,6 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
@@ -147,8 +146,10 @@ function main() {
 }
 
 // Only when run, never when imported, so `tests/unit/visual-runner.test.ts`
-// can read `dockerArgs` without starting a container. That test also runs
-// this file as a script and watches it refuse without Docker, because a check
-// that stopped matching would make `npm run test:visual` exit 0 having
-// compared nothing.
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+// can read `dockerArgs` without starting a container. A check that stopped
+// matching would make `npm run test:visual` exit 0 having compared nothing,
+// and comparing `process.argv[1]` with this file's path did exactly that from
+// a checkout reached through a symlink (#221). `tests/unit/script-entry.test.ts`
+// runs this file as a script from such checkouts and watches it refuse
+// without Docker.
+if (import.meta.main) main();
