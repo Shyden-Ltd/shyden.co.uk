@@ -104,7 +104,8 @@ const isLiteral = (
   node !== undefined &&
   (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node));
 
-const lineOf = (sf: ts.SourceFile, node: ts.Node): number =>
+/** The 1-based line `node` starts on in `sf`. */
+export const lineOf = (sf: ts.SourceFile, node: ts.Node): number =>
   sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
 
 /**
