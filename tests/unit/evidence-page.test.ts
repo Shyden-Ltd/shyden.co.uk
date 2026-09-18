@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { withoutTsComments } from './source-text';
+import { withoutMarkupComments, withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
 import { reportLocation } from '../../scripts/test-e2e.mjs';
 import {
@@ -1336,7 +1336,8 @@ describe('the builder builds its page from any checkout path (#221)', () => {
     expect(checkout.spaced).toContain(' ');
     expect(built.stdout, built.stderr).toContain('shots=1 videos=0/0');
     expect(built.status, built.stderr).toBe(0);
-    expect(readFileSync(page, 'utf8')).toContain(
+    // On the page, not in a comment on it.
+    expect(withoutMarkupComments(readFileSync(page, 'utf8'))).toContain(
       readFileSync(join(dir, row.file)).toString('base64'),
     );
   });

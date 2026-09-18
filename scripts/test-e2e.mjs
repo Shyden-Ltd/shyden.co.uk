@@ -37,7 +37,6 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { EVIDENCE_REPORT } from './evidence-files.mjs';
 
 /** `playwright test --list` closes with e.g. `Total: 2094 tests in 18 files`. */
@@ -640,4 +639,8 @@ export function navTimingVerdict({ navigations, testsWithResults }) {
   };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+// Only when run, never when imported: the unit tests import the functions
+// above. Comparing `process.argv[1]` with this file's path skipped the whole
+// run, exit 0, from a checkout reached through a symlink (#221,
+// `tests/unit/script-entry.test.ts`).
+if (import.meta.main) main();
