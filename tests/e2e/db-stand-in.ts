@@ -177,24 +177,26 @@ export function installDbStandIn(options: DbStandInOptions): void {
   // 200 bytes a segment, 16 segments and 1000 bytes a path. The builders throw
   // synchronously, so a page that builds a bad path finds out where it did.
   const SEGMENT = /^[A-Za-z0-9_.~:@+-]+$/;
-  const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
+  const bytesOf = (text: string): number =>
+    new TextEncoder().encode(text).length;
   const assertPath = (path: string, kind: 'document' | 'collection'): void => {
     const segments = path.split('/');
     const broken =
       segments.length > 16 || bytesOf(path) > 1000
         ? 'the path is too long'
         : segments.find(
-            (segment) =>
-              !SEGMENT.test(segment) ||
-              segment === '.' ||
-              segment === '..' ||
-              bytesOf(segment) > 200,
-          ) !== undefined
+              (segment) =>
+                !SEGMENT.test(segment) ||
+                segment === '.' ||
+                segment === '..' ||
+                bytesOf(segment) > 200,
+            ) !== undefined
           ? 'a segment breaks the grammar or is over 200 bytes'
           : (segments.length % 2 === 0) !== (kind === 'document')
             ? `a ${kind} path needs an ${kind === 'document' ? 'even' : 'odd'} number of segments, and this one has ${segments.length}`
             : null;
-    if (broken) throw new TypeError(`invalid ${kind} path "${path}": ${broken}`);
+    if (broken)
+      throw new TypeError(`invalid ${kind} path "${path}": ${broken}`);
   };
   const parentOf = (path: string): string =>
     path.slice(0, path.lastIndexOf('/'));
@@ -269,7 +271,8 @@ export function installDbStandIn(options: DbStandInOptions): void {
     const changes: StandInDocumentChange[] = [];
     docs.forEach((doc, newIndex) => {
       const oldIndex = previous.findIndex((old) => old.id === doc.id);
-      if (oldIndex < 0) changes.push({ type: 'added', doc, oldIndex, newIndex });
+      if (oldIndex < 0)
+        changes.push({ type: 'added', doc, oldIndex, newIndex });
       else if (previous[oldIndex].data() !== doc.data())
         changes.push({ type: 'modified', doc, oldIndex, newIndex });
     });
@@ -315,7 +318,9 @@ export function installDbStandIn(options: DbStandInOptions): void {
     );
   // Without an error callback the runtime reports a terminal error through
   // reportError, so the page's own error event sees it.
-  const endSubscription = (error?: (failure: Failure) => void): (() => void) => {
+  const endSubscription = (
+    error?: (failure: Failure) => void,
+  ): (() => void) => {
     const failure = Object.freeze({
       code: 'unavailable',
       message: 'the stand-in ended this subscription',

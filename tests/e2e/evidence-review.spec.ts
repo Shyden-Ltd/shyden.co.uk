@@ -138,13 +138,30 @@ interface ReviewItem {
   src?: string;
 }
 
-/** The items as the rendered page hands them to its own script. */
-const ITEMS: ReviewItem[] = (() => {
+/** The items as a rendered page hands them to its own script. */
+const itemsOf = (html: string): ReviewItem[] => {
   const open = `<script type="application/json" id="${REVIEW_DATA_ID}">`;
-  const start = HTML.indexOf(open);
-  const end = HTML.indexOf('</script>', start);
-  return start < 0 ? [] : JSON.parse(HTML.slice(start + open.length, end)).items;
-})();
+  const start = html.indexOf(open);
+  const end = html.indexOf('</script>', start);
+  return start < 0
+    ? []
+    : JSON.parse(html.slice(start + open.length, end)).items;
+};
+
+const ITEMS: ReviewItem[] = itemsOf(HTML);
+
+/**
+ * The page whose second-journey capture cannot be decoded, and ITS items.
+ *
+ * Kept as a pair, and every helper below takes the items it is addressing,
+ * because an item is keyed by a digest of the bytes it shows: swapping a
+ * capture for bytes no engine can paint is exactly the case the digest
+ * exists for, so this page's keys are NOT the default page's keys. Read
+ * through `ITEMS` it addressed a figure that is not on the page under test,
+ * and `storedItem` would have asked a path nothing could ever write.
+ */
+const BROKEN_HTML = render({ brokenShot: true });
+const BROKEN_ITEMS: ReviewItem[] = itemsOf(BROKEN_HTML);
 
 /** Item positions in page order, named once so each test reads as a review. */
 const AT = {
@@ -158,15 +175,16 @@ const AT = {
   secondRecordingChromium: 7,
 } as const;
 
-const itemAt = (index: number): ReviewItem => {
-  const item = ITEMS[index];
+const itemAt = (index: number, items: ReviewItem[] = ITEMS): ReviewItem => {
+  const item = items[index];
   if (!item)
     throw new Error(
-      `the rendered page has no review item at ${index}; it has ${ITEMS.length}`,
+      `the rendered page has no review item at ${index}; it has ${items.length}`,
     );
   return item;
 };
-const pathOf = (index: number) => `${ITEMS_PATH}/${itemAt(index).key}`;
+const pathOf = (index: number, items: ReviewItem[] = ITEMS) =>
+  `${ITEMS_PATH}/${itemAt(index, items).key}`;
 
 /** A stored item, as an earlier visit or another viewer left it. */
 const storedAs = (
@@ -238,8 +256,8 @@ const control = (page: Page, name: string) =>
 const position = (page: Page) => viewer(page).locator('#viewer-position');
 const noteField = (page: Page) =>
   viewer(page).getByRole('textbox', { name: /^Note for Claude/ });
-const figureOf = (page: Page, index: number) =>
-  page.locator(`[data-item="${itemAt(index).key}"]`);
+const figureOf = (page: Page, index: number, items: ReviewItem[] = ITEMS) =>
+  page.locator(`[data-item="${itemAt(index, items).key}"]`);
 const journeySection = (page: Page, title: string) =>
   page.locator('section.journey').filter({
     has: page.getByRole('heading', { level: 3, name: title, exact: true }),
@@ -247,21 +265,25 @@ const journeySection = (page: Page, title: string) =>
 const signoff = (page: Page) => page.locator('#signoff');
 
 /** What a person taps to open an item: its screenshot, or its recording's Review button. */
-async function openItem(page: Page, index: number): Promise<Locator> {
-  const item = itemAt(index);
+async function openItem(
+  page: Page,
+  index: number,
+  items: ReviewItem[] = ITEMS,
+): Promise<Locator> {
+  const item = itemAt(index, items);
   const section = journeySection(page, item.journeyTitle);
   if (item.kind === 'recording') {
     const recordings = section.locator('details.videos');
     if (!(await recordings.evaluate((d) => (d as HTMLDetailsElement).open)))
       await recordings.locator('summary').click();
-    const review = figureOf(page, index).getByRole('button', {
+    const review = figureOf(page, index, items).getByRole('button', {
       name: `Review the recording, ${item.engine}`,
     });
     await review.click();
     await expect(viewer(page)).toBeVisible();
     return review;
   }
-  const thumbnail = figureOf(page, index).getByRole('button', {
+  const thumbnail = figureOf(page, index, items).getByRole('button', {
     name: `Review assertion ${item.assertion}, ${item.engine}: ${item.label}`,
   });
   await thumbnail.click();
@@ -278,10 +300,10 @@ const approveWhenLoaded = async (page: Page) => {
   await control(page, 'Approve').click();
 };
 
-const storedItem = (page: Page, index: number) =>
+const storedItem = (page: Page, index: number, items: ReviewItem[] = ITEMS) =>
   page.evaluate(
     (path) => (window as StandInWindow).__dbStandIn.read(path),
-    pathOf(index),
+    pathOf(index, items),
   );
 const storedDecision = async (page: Page, index: number) =>
   (await storedItem(page, index))?.decision ?? null;
@@ -331,7 +353,9 @@ const swipe = (target: Locator, dx: number) =>
   }, dx);
 
 test.describe('evidence review: opening the viewer', () => {
-  test('a screenshot opens the viewer on that item', async ({ page }, testInfo) => {
+  test('a screenshot opens the viewer on that item', async ({
+    page,
+  }, testInfo) => {
     await openReviewPage(page, testInfo);
     await openItem(page, AT.firstResultWebkit);
 
@@ -351,9 +375,7 @@ test.describe('evidence review: opening the viewer', () => {
     await openItem(page, AT.firstRecordingWebkit);
 
     await expectShowing(page, AT.firstRecordingWebkit);
-    await expect(viewer(page).locator('#viewer-title')).toHaveText(
-      'Recording',
-    );
+    await expect(viewer(page).locator('#viewer-title')).toHaveText('Recording');
     await expect(viewer(page).locator('#viewer-engine')).toHaveText('webkit');
     const video = viewer(page).locator('video');
     await expect(video).toBeVisible();
@@ -434,7 +456,9 @@ test.describe('evidence review: the viewer is a modal dialog', () => {
       page.evaluate(() => {
         const dialog = document.querySelector('dialog#viewer');
         const active = document.activeElement;
-        return !!dialog && !!active && (active === dialog || dialog.contains(active));
+        return (
+          !!dialog && !!active && (active === dialog || dialog.contains(active))
+        );
       });
     expect(await focusIsInside()).toBe(true);
 
@@ -479,7 +503,11 @@ test.describe('evidence review: what the viewer shows', () => {
     page,
   }, testInfo) => {
     await openReviewPage(page, testInfo, {
-      seed: storedAs(AT.firstResultChromium, 'rejected', 'the total is cut off'),
+      seed: storedAs(
+        AT.firstResultChromium,
+        'rejected',
+        'the total is cut off',
+      ),
     });
     await openItem(page, AT.firstResultChromium);
     await expect(viewer(page).locator('#viewer-decision')).toHaveText(
@@ -652,7 +680,11 @@ for (const { order, when } of WRITE_ORDERS) {
         .poll(() => storedItem(page, AT.firstFormWebkit))
         .toMatchObject({ decision: 'approved', note: 'fine on a phone' });
       const stored = await storedItem(page, AT.firstFormWebkit);
-      expect(Object.keys(stored ?? {}).sort()).toEqual(['at', 'decision', 'note']);
+      expect(Object.keys(stored ?? {}).sort()).toEqual([
+        'at',
+        'decision',
+        'note',
+      ]);
       expect(Date.parse(String(stored?.at))).not.toBeNaN();
       expect(await storedSignoff(page)).toBeNull();
       expect(await writesTo(page, DOC)).toBe(0);
@@ -685,8 +717,9 @@ for (const { order, when } of WRITE_ORDERS) {
         journeySection(page, title).getByRole('checkbox');
       const storedTick = async (title: string) =>
         ((await storedSignoff(page))?.journeys as Record<string, boolean>)?.[
-          itemAt(title === FIRST ? AT.firstFormChromium : AT.secondLoadsChromium)
-            .journey
+          itemAt(
+            title === FIRST ? AT.firstFormChromium : AT.secondLoadsChromium,
+          ).journey
         ];
 
       await openItem(page, AT.secondLoadsChromium);
@@ -742,8 +775,8 @@ test.describe('evidence review: Approve waits for the item to load', () => {
   test('a screenshot that has not loaded cannot be approved, and says why', async ({
     page,
   }, testInfo) => {
-    await openReviewPage(page, testInfo, { html: render({ brokenShot: true }) });
-    await openItem(page, AT.secondLoadsChromium);
+    await openReviewPage(page, testInfo, { html: BROKEN_HTML });
+    await openItem(page, AT.secondLoadsChromium, BROKEN_ITEMS);
     await expect(control(page, 'Approve')).toBeDisabled();
     await expect(viewer(page).locator('#viewer-wait')).toBeVisible();
     await expect(viewer(page).locator('#viewer-wait')).toHaveText(/screenshot/);
@@ -752,11 +785,13 @@ test.describe('evidence review: Approve waits for the item to load', () => {
 
     await page.keyboard.press('a');
     await expectShowing(page, AT.secondLoadsChromium);
-    expect(await storedItem(page, AT.secondLoadsChromium)).toBeNull();
+    expect(
+      await storedItem(page, AT.secondLoadsChromium, BROKEN_ITEMS),
+    ).toBeNull();
 
     // Control: a screenshot that loads can be approved, and says nothing.
     await control(page, 'Close').click();
-    await openItem(page, AT.firstResultWebkit);
+    await openItem(page, AT.firstResultWebkit, BROKEN_ITEMS);
     await expect(control(page, 'Approve')).toBeEnabled();
     await expect(viewer(page).locator('#viewer-wait')).toHaveCount(1);
     await expect(viewer(page).locator('#viewer-wait')).toBeHidden();
@@ -878,7 +913,9 @@ test.describe('evidence review: the summary after the last item', () => {
     await approveWhenLoaded(page);
     await control(page, 'Skip').click();
 
-    const summary = viewer(page).getByRole('region', { name: 'Review summary' });
+    const summary = viewer(page).getByRole('region', {
+      name: 'Review summary',
+    });
     await expect(summary).toBeVisible();
     await expect(summary.locator('#viewer-summary-counts')).toHaveText(
       '2 approved, 1 rejected, 5 undecided of 8 items',
@@ -899,7 +936,9 @@ test.describe('evidence review: the summary after the last item', () => {
       await page.keyboard.press('ArrowRight');
     await expect(summary).toBeVisible();
 
-    await summary.getByRole('button', { name: 'Review the 5 undecided' }).click();
+    await summary
+      .getByRole('button', { name: 'Review the 5 undecided' })
+      .click();
     await expectShowing(page, AT.firstFormChromium);
     await control(page, 'Skip').click();
     await expectShowing(page, AT.firstResultWebkit);
@@ -933,14 +972,31 @@ test.describe('evidence review: assistive technology and layout', () => {
     );
   });
 
-  test('every control is at least 44 by 44 pixels and shows where focus is', async ({
-    page,
-  }, testInfo) => {
+  /**
+   * What every engine measures, and what only some can walk.
+   *
+   * The size of a control, and whether it can take focus at all, are
+   * properties of this page and are asserted on all five engines. Whether
+   * Tab VISITS a button is a platform policy: Safari's Tab sequence holds
+   * text fields and links unless the visitor opts in, so a walk there
+   * reaches the textarea and nothing else -- it would assert a browser
+   * preference, not our markup. The walk therefore runs where the platform
+   * performs it, and WebKit's half of the contract is the focusability
+   * assertion below, which runs everywhere. This is the shape
+   * `chrome.spec.ts` settled for the same reason.
+   */
+  const openForMeasuring = async (page: Page, testInfo: TestInfo) => {
     await openReviewPage(page, testInfo, {
       seed: storedAs(AT.firstFormChromium, 'rejected', 'noted'),
     });
     await openItem(page, AT.secondRecordingChromium);
     await expect(control(page, 'Approve')).toBeEnabled();
+  };
+
+  test('every control is at least 44 by 44 pixels and can take focus', async ({
+    page,
+  }, testInfo) => {
+    await openForMeasuring(page, testInfo);
 
     const measure = () =>
       page.evaluate(() => {
@@ -951,26 +1007,95 @@ test.describe('evidence review: assistive technology and layout', () => {
         return controls.map((element) => {
           const box = element.getBoundingClientRect();
           return {
-            name: element.id || element.textContent?.trim() || element.localName,
+            name:
+              element.id || element.textContent?.trim() || element.localName,
             width: box.width,
             height: box.height,
           };
         });
       });
+    // The filter alone, wrapped in `searched` at each call site rather than
+    // in here: `absence-liveness` reads the SUBJECT of the assertion, and a
+    // helper that hides the control inside itself is invisible to it. The
+    // recognised idiom is the one to write, not a detector widened to
+    // recognise this spelling -- that is how a mandatory control acquires a
+    // trivial escape hatch (#118).
     const tooSmall = (sizes: Awaited<ReturnType<typeof measure>>) =>
-      searched(
-        sizes.filter((size) => size.width < 44 || size.height < 44),
-        { of: sizes.map((size) => size.name), what: 'controls in the viewer' },
-      );
+      sizes.filter((size) => size.width < 44 || size.height < 44);
+    const named = (sizes: Awaited<ReturnType<typeof measure>>) =>
+      sizes.map((size) => size.name);
 
     const onItem = await measure();
     expect(onItem.map((size) => size.name)).toEqual(
       expect.arrayContaining(['viewer-approve', 'viewer-note', 'viewer-close']),
     );
-    expect(tooSmall(onItem)).toEqual([]);
+    expect(
+      searched(tooSmall(onItem), {
+        of: named(onItem),
+        what: 'controls in the viewer',
+      }),
+    ).toEqual([]);
 
+    // WebKit's half of the walk below: every control this page shows can
+    // take focus, so none of them has been removed from the tab order by
+    // our own markup, whatever the platform's Tab policy is.
+    const unfocusable = await page.evaluate(() => {
+      const dialog = document.querySelector('dialog#viewer');
+      const controls = Array.from(
+        dialog?.querySelectorAll('button, textarea') ?? [],
+      ).filter(
+        (element) =>
+          element.getClientRects().length > 0 &&
+          !(element as HTMLButtonElement).disabled,
+      );
+      return controls
+        .filter((element) => {
+          (element as HTMLElement).focus();
+          return document.activeElement !== element;
+        })
+        .map((element) => element.id || element.localName);
+    });
+    expect(
+      searched(unfocusable, {
+        of: named(onItem),
+        what: 'controls in the viewer',
+      }),
+    ).toEqual([]);
+
+    await control(page, 'Skip').click();
+    const onSummary = await measure();
+    expect(onSummary.map((size) => size.name)).toEqual(
+      expect.arrayContaining(['viewer-go-signoff']),
+    );
+    expect(
+      searched(tooSmall(onSummary), {
+        of: named(onSummary),
+        what: 'controls in the summary',
+      }),
+    ).toEqual([]);
+  });
+
+  test('focus is visible on every control the Tab sequence reaches', async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.skip(
+      browserName === 'webkit',
+      "Safari's Tab sequence holds text fields and links unless the visitor " +
+        'opts in, so this walk reaches the textarea and nothing else -- it ' +
+        'would assert a browser preference rather than our markup. Size and ' +
+        'focusability are asserted for WebKit in the test above.',
+    );
+    await openForMeasuring(page, testInfo);
+
+    const stops = await page.evaluate(
+      () =>
+        document.querySelectorAll(
+          'dialog#viewer button, dialog#viewer textarea',
+        ).length,
+    );
     const focused = [];
-    for (let step = 0; step < onItem.length + 2; step += 1) {
+    for (let step = 0; step < stops + 2; step += 1) {
       await page.keyboard.press('Tab');
       focused.push(
         await page.evaluate(() => {
@@ -998,13 +1123,6 @@ test.describe('evidence review: assistive technology and layout', () => {
         { of: indicated.map((entry) => entry.name), what: 'focused controls' },
       ),
     ).toEqual([]);
-
-    await control(page, 'Skip').click();
-    const onSummary = await measure();
-    expect(onSummary.map((size) => size.name)).toEqual(
-      expect.arrayContaining(['viewer-go-signoff']),
-    );
-    expect(tooSmall(onSummary)).toEqual([]);
   });
 
   for (const colorScheme of ['light', 'dark'] as const)
@@ -1042,39 +1160,43 @@ test.describe('evidence review: assistive technology and layout', () => {
       }
     });
 
-  test('nothing scrolls sideways at 320 pixels with the viewer open', async ({
-    page,
-  }, testInfo) => {
-    await page.setViewportSize({ width: 320, height: 640 });
-    await openReviewPage(page, testInfo);
-    await openItem(page, AT.firstResultWebkit);
-    await expect(control(page, 'Approve')).toBeEnabled();
+  test(
+    'nothing scrolls sideways at 320 pixels with the viewer open',
+    { tag: '@emulated-viewport' },
+    async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: 320, height: 640 });
+      await openReviewPage(page, testInfo);
+      await openItem(page, AT.firstResultWebkit);
+      await expect(control(page, 'Approve')).toBeEnabled();
 
-    const overflow = await page.evaluate(() => {
-      const dialog = document.querySelector('dialog#viewer') as HTMLElement;
-      const edge = dialog.getBoundingClientRect().right;
-      const escaping = Array.from(dialog.querySelectorAll('*'))
-        .filter((element) => element.getClientRects().length > 0)
-        .filter((element) => element.getBoundingClientRect().right > edge + 0.5)
-        .map((element) => element.id || element.localName);
-      return {
-        page: document.documentElement.scrollWidth - window.innerWidth,
-        dialog: dialog.scrollWidth - dialog.clientWidth,
-        dialogRight: edge - window.innerWidth,
-        escaping,
-        measured: dialog.querySelectorAll('*').length,
-      };
-    });
-    expect(overflow.page).toBe(0);
-    expect(overflow.dialog).toBe(0);
-    expect(overflow.dialogRight).toBeLessThanOrEqual(0);
-    expect(
-      searched(overflow.escaping, {
-        of: overflow.measured,
-        what: 'elements in the open viewer',
-      }),
-    ).toEqual([]);
-  });
+      const overflow = await page.evaluate(() => {
+        const dialog = document.querySelector('dialog#viewer') as HTMLElement;
+        const edge = dialog.getBoundingClientRect().right;
+        const escaping = Array.from(dialog.querySelectorAll('*'))
+          .filter((element) => element.getClientRects().length > 0)
+          .filter(
+            (element) => element.getBoundingClientRect().right > edge + 0.5,
+          )
+          .map((element) => element.id || element.localName);
+        return {
+          page: document.documentElement.scrollWidth - window.innerWidth,
+          dialog: dialog.scrollWidth - dialog.clientWidth,
+          dialogRight: edge - window.innerWidth,
+          escaping,
+          measured: dialog.querySelectorAll('*').length,
+        };
+      });
+      expect(overflow.page).toBe(0);
+      expect(overflow.dialog).toBe(0);
+      expect(overflow.dialogRight).toBeLessThanOrEqual(0);
+      expect(
+        searched(overflow.escaping, {
+          of: overflow.measured,
+          what: 'elements in the open viewer',
+        }),
+      ).toEqual([]);
+    },
+  );
 });
 
 test.describe('evidence review: the page around the viewer', () => {
@@ -1163,9 +1285,9 @@ test.describe('evidence review: the page around the viewer', () => {
     await approveWhenLoaded(page);
     await expectShowing(page, AT.firstFormWebkit);
     await control(page, 'Close').click();
-    await expect(figureOf(page, AT.firstFormChromium).locator('.badge')).toHaveText(
-      'Approved',
-    );
+    await expect(
+      figureOf(page, AT.firstFormChromium).locator('.badge'),
+    ).toHaveText('Approved');
   });
 });
 
@@ -1260,13 +1382,17 @@ test.describe('evidence review: sending the review to Claude', () => {
     expect(Buffer.byteLength(sent.text)).toBeLessThanOrEqual(4096);
     expect(sent.text).toContain(DOC);
     expect(sent.text).toContain('Sign-off: not decided');
-    expect(sent.text).toContain('2 approved, 1 rejected, 5 undecided of 8 items');
+    expect(sent.text).toContain(
+      '2 approved, 1 rejected, 5 undecided of 8 items',
+    );
     for (const index of [AT.firstFormWebkit, AT.firstRecordingChromium])
       expect(sent.text).toContain(itemAt(index).key);
     expect(sent.text).toContain('the label overlaps');
     expect(sent.text).toContain('smooth');
     expect(sent.text).not.toContain(itemAt(AT.firstResultChromium).key);
-    await expect(signoff(page).locator('#send-state')).toHaveText(/^Sent to Claude\b/);
+    await expect(signoff(page).locator('#send-state')).toHaveText(
+      /^Sent to Claude\b/,
+    );
     expect((await counters(page)).writes).toBe(before);
   });
 
@@ -1275,7 +1401,9 @@ test.describe('evidence review: sending the review to Claude', () => {
   }, testInfo) => {
     const seed = Object.assign(
       {},
-      ...ITEMS.map((_, index) => storedAs(index, 'rejected', `${index} `.repeat(1000))),
+      ...ITEMS.map((_, index) =>
+        storedAs(index, 'rejected', `${index} `.repeat(1000)),
+      ),
     );
     await openReviewPage(page, testInfo, { seed });
     await openItem(page, AT.secondRecordingChromium);
@@ -1327,7 +1455,9 @@ test.describe('evidence review: sending the review to Claude', () => {
       await signoff(page)
         .getByRole('button', { name: 'Send review to Claude' })
         .click();
-      await expect(signoff(page).locator('#send-state')).toHaveText(/^Not sent\b/);
+      await expect(signoff(page).locator('#send-state')).toHaveText(
+        /^Not sent\b/,
+      );
       expect(await capabilityControl(page).sends()).toHaveLength(1);
       expect((await counters(page)).writes).toBe(before);
     });

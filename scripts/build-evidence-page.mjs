@@ -677,6 +677,16 @@ export const renderEvidencePage = ({
     items,
   }).replace(/</g, '\\u003c');
 
+  // Every reviewable figure carries the same badge, and the page's own script
+  // paints it from the stored decision -- including the icon's `d`, so one
+  // element serves all three states and the badge's own words stay the only
+  // text in it. Rendered even when there is nothing to say, because a guard
+  // asserting absence passes just as happily on an element the builder never
+  // emitted; the spec pairs `toHaveCount(1)` with `toBeHidden()` to tell those
+  // two apart, and only a badge that is always there can answer both.
+  const badge =
+    '<span class="badge" hidden><svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d=""></path></svg><span class="badge-text"></span></span>';
+
   const stats = report.stats || {};
   const dot = (r) =>
     `<span class="dot ${r?.status === 'passed' ? 'ok' : 'bad'}" title="${esc(r?.status ?? 'not run')}"></span>`;
@@ -708,7 +718,7 @@ export const renderEvidencePage = ({
       ${a.shots
         .map((s, k) =>
           s
-            ? `<figure class="shot" data-item="${esc(keyOfFigure(j.id, a.order, s.project))}"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
+            ? `<figure class="shot" data-item="${esc(keyOfFigure(j.id, a.order, s.project))}"><button type="button" class="open" aria-label="Review assertion ${a.order}, ${esc(s.project)}: ${esc(a.label)}"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"></button><figcaption class="mono">${esc(s.project)}${badge}</figcaption></figure>`
             : `<figure class="shot absent"><div class="novid mono">not captured</div><figcaption class="mono">${esc(engines[k])}</figcaption></figure>`,
         )
         .join('')}
@@ -722,7 +732,7 @@ export const renderEvidencePage = ({
       ${engines
         .map((e) =>
           videos.has(`${j.id}|${e}`)
-            ? `<figure data-item="${esc(keyOfFigure(j.id, 'rec', e))}"><video controls preload="none" src="${esc(videos.get(`${j.id}|${e}`).src)}"></video><figcaption class="mono">${esc(e)}</figcaption></figure>`
+            ? `<figure data-item="${esc(keyOfFigure(j.id, 'rec', e))}"><video controls preload="none" src="${esc(videos.get(`${j.id}|${e}`).src)}"></video><figcaption class="mono">${esc(e)}<button type="button" class="open rev" aria-label="Review the recording, ${esc(e)}">Review</button>${badge}</figcaption></figure>`
             : `<figure class="absent"><div class="novid mono">not embedded</div><figcaption class="mono">${esc(e)}</figcaption></figure>`,
         )
         .join('')}
@@ -849,7 +859,11 @@ td.j{font-size:.84rem}
 .signoff h2{margin-top:0}
 .count{font-family:var(--mono);font-size:.82rem;color:var(--ink-soft);margin:0 0 14px}
 .choices{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
-button{font:inherit;font-family:var(--head);font-weight:500;padding:11px 18px;border-radius:6px;border:1.5px solid var(--ink);background:var(--surface);color:var(--ink);cursor:pointer;min-height:44px}
+/* 46, not 44: a control whose height comes only from this floor lands on it
+   exactly, and at a fractional device pixel ratio the measured height rounds
+   to 43.99997 -- under the WCAG floor by a hundred-thousandth of a pixel. The
+   floor is the minimum, so it is not the number to design to. */
+button{font:inherit;font-family:var(--head);font-weight:500;padding:11px 18px;border-radius:6px;border:1.5px solid var(--ink);background:var(--surface);color:var(--ink);cursor:pointer;min-height:46px}
 button:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
 button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent)}
 button[aria-pressed="true"]{color:var(--on-accent)}
@@ -857,11 +871,54 @@ textarea{width:100%;max-width:100%;font:inherit;font-size:.92rem;padding:11px;bo
 .state{font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);margin-top:12px}
 .state.saved{color:var(--accent-ink)}
 
-/* lightbox */
-#lb{position:fixed;inset:0;background:rgba(10,12,14,.92);display:none;place-items:center;z-index:50;padding:18px}
-#lb.on{display:grid}
-#lb img{max-width:100%;max-height:86vh;border-radius:4px}
-#lb p{color:#e8e6e0;font-family:var(--mono);font-size:.76rem;margin:12px 0 0;text-align:center;max-width:70ch}
+/* review: the badge each figure carries, and the page's way into the viewer */
+[hidden]{display:none!important}
+.badge{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:1px 7px;border:1px solid var(--rule);border-radius:999px;font-family:var(--body);font-size:.66rem;font-weight:600;color:var(--ink-soft);vertical-align:middle}
+.badge-icon{width:10px;height:10px;flex:none;fill:currentColor}
+.badge.approved{color:var(--accent-ink);border-color:var(--accent)}
+.badge.rejected{color:var(--alert);border-color:var(--alert)}
+/* The picture IS the button, so it keeps the picture's size -- but never
+   less than a touch target: a capture whose bytes will not decode has no
+   height at all, and it is exactly the one an operator has to open to
+   reject. A zero-height way in would make a broken capture unreviewable. */
+.shot .open{display:block;width:100%;padding:0;border:0;background:none;border-radius:4px;cursor:zoom-in}
+.shot .open:focus-visible{outline:2px solid var(--accent-ink);outline-offset:3px}
+/* The thumbnail's own button is the picture, so it keeps the picture's size;
+   every other way in stays a 44px target, the recording's Review included. */
+.vgrid .open{margin-left:8px;padding:4px 12px;font-size:.7rem;font-family:var(--body)}
+.vgrid figcaption{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.review-start{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border:1px solid var(--rule);background:var(--surface);padding:14px 18px;margin-top:14px}
+.review-start .count{margin:0}
+.outstanding{border:1px solid var(--alert);background:var(--raise);padding:14px 16px;margin-top:16px}
+.outstanding p{margin:0;font-size:.9rem}
+.outstanding .choices{margin:12px 0 0}
+
+/* the viewer: one item at a time, full screen on a phone */
+#viewer{position:fixed;inset:0;width:100%;max-width:100%;height:100%;max-height:100%;margin:0;padding:16px;border:0;background:var(--ground);color:var(--ink);overflow:auto}
+#viewer::backdrop{background:rgba(10,12,14,.72)}
+#viewer:focus-visible{outline:2px solid var(--accent-ink);outline-offset:-4px}
+#viewer h2{font-size:1.06rem;font-weight:500;margin:0 0 12px}
+.v-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.v-status{flex:1 1 140px;min-width:0;margin:0;font-size:.74rem;color:var(--ink-soft)}
+.v-where{display:flex;flex-wrap:wrap;gap:4px 10px;margin:14px 0 4px;font-size:.72rem;color:var(--ink-soft)}
+#viewer-stage{display:grid;place-items:center;max-width:100%;padding:8px;border:1px solid var(--rule);border-radius:6px;background:var(--surface);touch-action:pan-y pinch-zoom}
+#viewer-image,#viewer-stage video{display:block;max-width:100%;height:auto;border-radius:4px}
+#viewer-stage video{width:100%;background:#000}
+.v-wait{margin:10px 0 0;font-size:.74rem;color:var(--ink-soft)}
+.v-decision{margin:12px 0 0;font-family:var(--head);font-size:.96rem}
+.v-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0}
+#viewer-approve:not([disabled]){background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#viewer-reject:not([disabled]){color:var(--alert);border-color:var(--alert)}
+#viewer-note-label{display:block;margin:18px 0 6px;font-size:.84rem;color:var(--ink-soft)}
+#viewer-note:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+.v-count{margin:6px 0 0;font-size:.72rem;color:var(--ink-soft)}
+#viewer-summary ul{display:grid;gap:8px;list-style:none;margin:12px 0 0;padding:0}
+#viewer-summary li{border:1px solid var(--rule);border-radius:6px;background:var(--surface);padding:10px 12px}
+#viewer-summary li p{margin:8px 0 0;font-size:.82rem;color:var(--ink-soft)}
+#viewer-summary li button{display:block;width:100%;padding:0;border:0;background:none;text-align:left;white-space:normal;font-family:var(--body);font-size:.84rem;color:var(--ink)}
+/* A disabled control is dimmed by COLOUR, never by opacity: the contrast
+   guard composites opacity, so a half-faded button fails AA by construction. */
+button[disabled]{color:var(--ink-soft);border-color:var(--rule);background:var(--surface);cursor:not-allowed}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (max-width:520px){.j-head{flex-wrap:wrap}.shot{width:150px}}
 </style>
@@ -902,16 +959,32 @@ ${
 </table></div>
 
 <h2>Every assertion, as it ran</h2>
-<p class="sub">Each image was captured immediately after the assertion above it passed, during the run &mdash; not reconstructed afterwards. Playwright stops a test at its first failed expectation, so a present image <em>is</em> the result. Tap any image to enlarge, and tick a journey once you are satisfied it proves what it claims.</p>
+<p class="sub">Each image was captured immediately after the assertion above it passed, during the run &mdash; not reconstructed afterwards. Playwright stops a test at its first failed expectation, so a present image <em>is</em> the result. Open any capture to review it on its own, or step through them one at a time; a journey ticks itself once every capture in it is approved.</p>
+
+<div class="review-start" id="review-start">
+  <p class="count mono" id="review-progress">0 approved, 0 rejected, ${items.length} undecided of ${items.length} items</p>
+  <button type="button" id="btn-review-start">Review one by one</button>
+</div>
 ${journeyHtml}
 
-<section class="signoff" id="signoff">
+<section class="signoff" id="signoff" tabindex="-1">
   <h2 style="margin-top:0">Sign-off</h2>
   <p class="count" id="progress">0 of ${journeys.length} journeys reviewed</p>
+  <p class="count" id="items-progress">0 approved, 0 rejected, ${items.length} undecided of ${items.length} items</p>
   <p class="sub">Nothing merges on green CI alone. This ticket progresses only on your explicit decision below.</p>
   <div class="choices">
     <button type="button" id="btn-approve" aria-pressed="false">Signed off &mdash; may merge to develop</button>
     <button type="button" id="btn-more" aria-pressed="false">More tests needed</button>
+    <button type="button" id="btn-review-signoff">Review one by one</button>
+    <button type="button" id="btn-send">Send review to Claude</button>
+  </div>
+  <p class="state" id="send-state" role="status"></p>
+  <div class="outstanding" id="outstanding" hidden>
+    <p id="outstanding-text"></p>
+    <div class="choices">
+      <button type="button" id="btn-review-outstanding">Review them</button>
+      <button type="button" id="btn-signoff-anyway">Sign off anyway</button>
+    </div>
   </div>
   <label for="note" class="sub" style="display:block;margin-bottom:6px">Notes, or what else you want covered</label>
   <textarea id="note"></textarea>
@@ -920,7 +993,43 @@ ${journeyHtml}
 </section>
 </div>
 
-<div id="lb" role="dialog" aria-modal="true" aria-label="Enlarged screenshot"><div><img id="lb-img" alt=""><p id="lb-cap"></p></div></div>
+<dialog id="viewer" aria-label="Review evidence" tabindex="-1">
+  <div class="v-bar">
+    <p class="v-status mono" id="viewer-status" role="status"></p>
+    <button type="button" id="viewer-close">Close</button>
+  </div>
+  <div id="viewer-item">
+    <p class="v-where mono"><span id="viewer-position"></span><span id="viewer-journey"></span><span id="viewer-engine"></span></p>
+    <h2 id="viewer-title"></h2>
+    <div id="viewer-stage">
+      <img id="viewer-image" alt="">
+      <video controls preload="metadata" playsinline hidden></video>
+    </div>
+    <p class="v-wait mono" id="viewer-wait" hidden></p>
+    <p class="v-decision" id="viewer-decision">Not decided</p>
+    <label for="viewer-note" id="viewer-note-label">Note for Claude, sent with this review</label>
+    <textarea id="viewer-note" maxlength="2000"></textarea>
+    <p class="v-count mono" id="viewer-note-count">0 of 2,000 characters</p>
+    <div class="v-controls">
+      <button type="button" id="viewer-approve">Approve</button>
+      <button type="button" id="viewer-reject">Reject</button>
+      <button type="button" id="viewer-skip">Skip</button>
+      <button type="button" id="viewer-previous">Previous</button>
+      <button type="button" id="viewer-download">Download</button>
+    </div>
+  </div>
+  <section id="viewer-summary" aria-label="Review summary" hidden>
+    <h2>Review summary</h2>
+    <p class="v-count mono" id="viewer-summary-counts"></p>
+    <ul id="viewer-summary-list"></ul>
+    <div class="v-controls">
+      <button type="button" id="viewer-undecided">Review the undecided</button>
+      <button type="button" id="viewer-send">Send review to Claude</button>
+      <button type="button" id="viewer-go-signoff">Go to sign-off</button>
+    </div>
+  </section>
+  <p class="sr" id="viewer-announce" aria-live="polite"></p>
+</dialog>
 
 <script type="application/json" id="${REVIEW_DATA_ID}">${reviewJson}</script>
 

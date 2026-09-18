@@ -21,13 +21,11 @@
 
 export type SaveAnswer = 'accept' | 'decline';
 
-export type CanSendToClaude = 'available' | 'writers_only' | 'no_session' | 'off';
+export type CanSendToClaude =
+  'available' | 'writers_only' | 'no_session' | 'off';
 
 export type SendAnswer =
-  | 'post'
-  | 'consent_required'
-  | 'forbidden'
-  | 'claude_unavailable';
+  'post' | 'consent_required' | 'forbidden' | 'claude_unavailable';
 
 export interface CapabilityStandInOptions {
   /** How the viewer answers every save; null resolves `use('downloads')` to null. */
@@ -88,8 +86,11 @@ export function installCapabilityStandIns(
       return new TextEncoder().encode(data).buffer as ArrayBuffer;
     if (data instanceof ArrayBuffer) return data;
     if (ArrayBuffer.isView(data))
-      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-        .slice().buffer as ArrayBuffer;
+      return new Uint8Array(
+        data.buffer,
+        data.byteOffset,
+        data.byteLength,
+      ).slice().buffer as ArrayBuffer;
     return null;
   };
 

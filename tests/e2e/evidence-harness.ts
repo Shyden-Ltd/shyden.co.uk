@@ -12,9 +12,20 @@ import { recordErrors } from './recorders';
 
 export const ORIGIN = 'https://evidence.test';
 
-/** A real 1x1 PNG, so no capture on a fixture page is a broken image. */
+/**
+ * A real 1x1 PNG, so no capture on a fixture page is a broken image.
+ *
+ * Every chunk's CRC is correct, and that is the whole point of this comment.
+ * The bytes here until #205 were the 1x1 PNG that circulates everywhere, and
+ * its IDAT CRC is WRONG: Chromium and WebKit decode it anyway, Firefox
+ * refuses it, so every capture on every fixture page was a broken image in
+ * one engine of five. Nothing caught it for as long as no test asked whether
+ * a capture had actually DECODED -- the sign-off specs only ever asked what
+ * the page said. It surfaced the moment Approve had to wait for the picture.
+ * Regenerate with a CRC check, never by pasting a pixel found elsewhere.
+ */
 export const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGD4DwABBAEAgLvRWwAAAABJRU5ErkJggg==';
 
 export const WRITE_ORDERS: ReadonlyArray<{ order: WriteOrder; when: string }> =
   [

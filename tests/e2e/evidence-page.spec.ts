@@ -457,7 +457,14 @@ test.describe('evidence page sign-off, whatever the write order', () => {
     page,
   }, testInfo) => {
     await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
-    await expect(page.getByRole('status')).toHaveText(/^Ready\b/);
+    // The ROLE of the save status, asked of the save status itself. Asked as
+    // "the page's one status region" it was a proxy for this, and #205 gave
+    // the page a second, legitimate one -- the send state -- which broke the
+    // proxy while the property it stood for still held. A proxy fails for a
+    // reason that points away from the thing it was protecting.
+    const saveStatus = page.locator('#state');
+    await expect(saveStatus).toHaveRole('status');
+    await expect(saveStatus).toHaveText(/^Ready\b/);
   });
 
   test('the status says so when live updates stop', async ({

@@ -188,9 +188,7 @@ describe('the review items are every capture on the page, in page order', () => 
     const html = build();
     const keys = itemsOf(html).map((item) => item.key);
     const unmarked = keys.filter((key) => !html.includes(`data-item="${key}"`));
-    expect(
-      searched(unmarked, { of: keys, what: 'review items' }),
-    ).toEqual([]);
+    expect(searched(unmarked, { of: keys, what: 'review items' })).toEqual([]);
   });
 
   it('names the sign-off the items belong to', () => {
@@ -233,8 +231,7 @@ describe('an item key names its journey, assertion, engine and bytes', () => {
   it('refuses to build a key without a whole digest', () => {
     for (const sha256 of ['', DIGEST_OF_X.slice(0, 12), 'x'.repeat(64)])
       expect(
-        () =>
-          itemKey({ journey: 'a', assertion: 1, engine: 'webkit', sha256 }),
+        () => itemKey({ journey: 'a', assertion: 1, engine: 'webkit', sha256 }),
         `accepted ${JSON.stringify(sha256)} as a digest`,
       ).toThrow(/SHA-256/);
   });
@@ -292,7 +289,10 @@ describe('an item key names its journey, assertion, engine and bytes', () => {
     const [first] = MANIFEST;
     expect(() =>
       build({
-        shots: new Map([...SHOTS, [first.file, 'https://elsewhere.test/a.png']]),
+        shots: new Map([
+          ...SHOTS,
+          [first.file, 'https://elsewhere.test/a.png'],
+        ]),
       }),
     ).toThrow(/base64 data URI/);
   });
@@ -300,7 +300,10 @@ describe('an item key names its journey, assertion, engine and bytes', () => {
   it('refuses two items that would share a key', () => {
     // Two titles that slug alike, captured with the same bytes: one stored
     // decision would answer for both, and nothing on the page would say so.
-    const twin = { ...MANIFEST[3], title: 'evidence review > the first, journey' };
+    const twin = {
+      ...MANIFEST[3],
+      title: 'evidence review > the first, journey',
+    };
     const shots = new Map([...SHOTS, [twin.file, SHOTS.get(twin.file) ?? '']]);
     expect(() =>
       build({
