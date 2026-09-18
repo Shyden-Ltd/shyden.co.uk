@@ -40,7 +40,9 @@ import { scanPresence, type PresenceClosures } from './presence-detector';
  *    comment cannot hide in a filename. Including these produced twelve
  *    false positives and no real findings.
  *  - PARSED data (`JSON.parse`). JSON carries no comments, so
- *    `pkg.scripts['test:e2e']` cannot be satisfied by one.
+ *    `pkg.scripts['test:e2e']` cannot be satisfied by one. The exemption is
+ *    the CALL standing between the read and the subject, never a name, and
+ *    a read that also reaches the subject around its parse is scanned (#225).
  */
 
 const READS_CONTENT = new Set(['readFileSync']);
@@ -211,6 +213,8 @@ describe('the detector exempts a read only where JSON.parse stands between it an
   });
 
   it('reads a bare JSON or parse name as no parse at all', () => {
+    // A method called `parse` is not JSON's: Markdown parsed to HTML keeps
+    // every `<!-- comment -->`, so a comment can still satisfy the matcher.
     expect(
       flaggedLines(
         [
@@ -218,9 +222,10 @@ describe('the detector exempts a read only where JSON.parse stands between it an
           "const raw = parse(readFileSync('x.ts', 'utf8'));",
           "expect(raw).toContain('foo');",
           "expect(JSON.stringify(readFileSync('x.ts', 'utf8'))).toContain('foo');",
+          "expect(marked.parse(readFileSync('x.md', 'utf8'))).toContain('foo');",
         ].join('\n'),
       ),
-    ).toEqual([3, 4]);
+    ).toEqual([3, 4, 5]);
   });
 
   it('leaves a read passed through JSON.parse unscanned, directly or through a local', () => {
