@@ -20,6 +20,7 @@ import {
   EVIDENCE_REPORT,
 } from '../../scripts/evidence-files.mjs';
 import { captureOptions, manifestRow } from '../e2e/evidence';
+import { scriptCheckout, type ScriptCheckout } from './script-checkout';
 import {
   assertPageFits,
   assertPublishLimits,
@@ -195,20 +196,16 @@ const png = (width: number) => {
 };
 
 /** The builder as an operator runs it: its own process, reading only the disk. */
-const runBuilder = (dir: string, page: string) => {
+const runBuilder = (
+  dir: string,
+  page: string,
+  script = 'scripts/build-evidence-page.mjs',
+) => {
   const content = join(dir, 'content.json');
   writeFileSync(content, JSON.stringify(CONTENT));
   return spawnSync(
     process.execPath,
-    [
-      'scripts/build-evidence-page.mjs',
-      '--evidence',
-      dir,
-      '--content',
-      content,
-      '--out',
-      page,
-    ],
+    [script, '--evidence', dir, '--content', content, '--out', page],
     { encoding: 'utf8' },
   );
 };
@@ -1290,5 +1287,57 @@ describe('a journey that captured nothing is still on the page', () => {
         what: 'recordings handed to the page',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('the builder builds its page from any checkout path (#221)', () => {
+  // Its entry check once compared `import.meta.url` with a `file://` template
+  // around `process.argv[1]`. The URL is percent-encoded and the path is not,
+  // so from a checkout whose path held a space `main()` never ran, and the
+  // build exited 0 having written nothing.
+  let checkout: ScriptCheckout;
+  let dir = '';
+  beforeAll(() => {
+    checkout = scriptCheckout();
+    dir = mkdtempSync(join(tmpdir(), 'evidence-entry-'));
+  });
+  afterAll(() => {
+    checkout.remove();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('builds it when run from a checkout whose path holds a space', () => {
+    const row = manifestRow(
+      {
+        project: 'chromium',
+        title: 'suite > a journey',
+        order: 1,
+        label: 'thing 1',
+        file: 'chromium/a__01.png',
+      },
+      new Date(Date.parse(REPORT.stats.startTime) + 5_000),
+    );
+    mkdirSync(join(dir, 'chromium'));
+    writeFileSync(join(dir, row.file), png(10));
+    writeFileSync(join(dir, EVIDENCE_MANIFEST), `${JSON.stringify(row)}\n`);
+    writeFileSync(
+      join(dir, EVIDENCE_REPORT),
+      JSON.stringify(reportOf([{ journey: 'a journey', project: 'chromium' }])),
+    );
+    const page = join(dir, 'page.html');
+
+    const built = runBuilder(
+      dir,
+      page,
+      join(checkout.spaced, 'build-evidence-page.mjs'),
+    );
+
+    // The precondition, so the test cannot drift into proving nothing.
+    expect(checkout.spaced).toContain(' ');
+    expect(built.stdout, built.stderr).toContain('shots=1 videos=0/0');
+    expect(built.status, built.stderr).toBe(0);
+    expect(readFileSync(page, 'utf8')).toContain(
+      readFileSync(join(dir, row.file)).toString('base64'),
+    );
   });
 });
