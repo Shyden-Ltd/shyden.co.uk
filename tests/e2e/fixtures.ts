@@ -7,6 +7,7 @@ import {
   type APIRequestContext,
 } from '@playwright/test';
 import { ensureChromeForegroundOrRecover } from '../device/chrome-foreground';
+import type { BaseUrlAwareApi } from '../base-url-calls';
 
 const CDP_URL = process.env.ANDROID_CDP_URL ?? 'http://127.0.0.1:9222';
 
@@ -21,45 +22,6 @@ const REQUEST_METHODS = [
   'fetch',
 ] as const;
 
-// Matches a literal's opening content that `new URL(literal, base)` -- the mechanism every API
-// below actually resolves through (`resolveBaseURL` in playwright-core's coreBundle.js) --
-// treats as *already absolute*: a URL scheme (`https:`, `about:`, ...) or a protocol-relative
-// `//`. Anything else, including a bare word with no leading slash at all, is relative and
-// resolves against baseURL identically to a leading-slash path -- `'login'` and `'/login'` are
-// the same case to `new URL()`. An earlier version of this pattern checked for a leading `/` or
-// `.` instead, which is the wrong test: it would have missed exactly the bare-word shape it
-// exists to catch.
-const ABSOLUTE_URL_LOOKAHEAD = '(?:[a-zA-Z][a-zA-Z\\d+.-]*:|//)';
-
-function relativeLiteralCallPattern(
-  apiPath: string,
-  extraAbsolutePrefix?: string,
-): RegExp {
-  // Matches `<apiPath>(`, then a string/template-literal delimiter, with no whitespace
-  // tolerated between the call and the delimiter (that would read as a different call shape),
-  // asserting via lookahead that what follows is NOT absolute. A regex-literal argument (e.g.
-  // `toHaveURL(/foo/)`) never opens with a quote character, so the mandatory delimiter capture
-  // cannot mistake it for a URL string.
-  const escaped = apiPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const absolute = extraAbsolutePrefix
-    ? `(?:${ABSOLUTE_URL_LOOKAHEAD}|${extraAbsolutePrefix})`
-    : ABSOLUTE_URL_LOOKAHEAD;
-  return new RegExp(`\\b${escaped}\\(\\s*(['"\`])(?!${absolute})`, 'g');
-}
-
-function bareIdentifierCallPattern(identifier: string, method: string): RegExp {
-  // For the bare `request` fixture: unlike relativeLiteralCallPattern, this must NOT match a
-  // property-access chain ending in the same identifier -- `page.request.get(` and
-  // `context.request.get(` are already their own rows below and must not double-count here.
-  // The negative lookbehind requires `identifier` not be immediately preceded by a dot, i.e.
-  // it must appear as the bare fixture parameter, not a property of something else.
-  const escapedMethod = method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(
-    `(?<!\\.)\\b${identifier}\\.${escapedMethod}\\(\\s*(['"\`])(?!${ABSOLUTE_URL_LOOKAHEAD})`,
-    'g',
-  );
-}
-
 /**
  * Every Playwright API this suite reaches for whose behaviour depends on `baseURL` -- confirmed
  * by reading Playwright's own source, not assumed: `page.goto`, `page.request.*`,
@@ -73,36 +35,30 @@ function bareIdentifierCallPattern(identifier: string, method: string): RegExp {
  *
  * `resolved: true` means a relative literal is safe on-device, whether because the fixtures
  * below patch it or because it was measured to already work through its own mechanism.
- * `resolved: false` means `tests/e2e/baseurl-guard.spec.ts` fails on a relative literal, naming
- * this row's `api`, rather than the gap surfacing later as a confusing device-only failure with
- * no signpost. This is the single source of truth for the patches and the guard together: add a
+ * `resolved: false` means `tests/e2e/baseurl-guard.spec.ts` fails on a relative URL -- or on one
+ * it cannot resolve, and says which -- naming this row's callee, rather than the gap surfacing
+ * later as a confusing device-only failure with no signpost. A row is matched by the SHAPE of a
+ * call and its URL judged by what it resolves to (`tests/base-url-calls.ts`), so a constant, a
+ * comment or a line break cannot fool it (#215). This is the single source of truth for the patches and the guard together: add a
  * row here whenever this suite starts calling a new baseURL-aware API, and the two cannot drift
  * apart -- an unlisted API is invisible to both.
  */
-export const BASE_URL_AWARE_APIS: ReadonlyArray<{
-  readonly api: string;
-  readonly pattern: RegExp;
-  readonly resolved: boolean;
-  readonly reason: string;
-}> = [
+export const BASE_URL_AWARE_APIS: readonly BaseUrlAwareApi[] = [
   {
-    api: 'page.goto',
-    pattern: relativeLiteralCallPattern('page.goto'),
+    callee: 'page.goto',
     resolved: true,
     reason:
       'the page fixture resolves the URL against baseURL before calling the real goto',
   },
   ...REQUEST_METHODS.map((method) => ({
-    api: `page.request.${method}`,
-    pattern: relativeLiteralCallPattern(`page.request.${method}`),
+    callee: `page.request.${method}`,
     resolved: true,
     reason:
       'the page fixture resolves string URL arguments against baseURL before calling the ' +
       'real method',
   })),
   ...REQUEST_METHODS.map((method) => ({
-    api: `context.request.${method}`,
-    pattern: relativeLiteralCallPattern(`context.request.${method}`),
+    callee: `context.request.${method}`,
     resolved: true,
     reason:
       "page.request and context.request are the same APIRequestContext instance (Playwright's " +
@@ -110,8 +66,8 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
       'patching page.request resolves this call shape too',
   })),
   ...REQUEST_METHODS.map((method) => ({
-    api: `request.${method} (bare fixture)`,
-    pattern: bareIdentifierCallPattern('request', method),
+    callee: `request.${method}`,
+    bare: true,
     resolved: true,
     reason:
       "measured directly on the physical device (tests/device/real-device.spec.ts's " +
@@ -121,43 +77,39 @@ export const BASE_URL_AWARE_APIS: ReadonlyArray<{
       'relative literal correctly with no patch from this file',
   })),
   {
-    api: 'page.route',
-    pattern: relativeLiteralCallPattern('page.route', '\\*'),
+    callee: 'page.route',
+    glob: true,
     resolved: false,
     reason:
-      'not patched -- a glob starting with `*` (the one existing call site starts `**`) skips ' +
-      'baseURL resolution entirely (`resolveGlobBase`\'s own `!match.startsWith("*")` check in ' +
-      'coreBundle.js), which is why this pattern exempts that shape too; a glob NOT starting ' +
-      'with `*` goes through the same resolveBaseURL joining as goto and would not resolve',
+      'not patched -- a glob starting with `*` skips baseURL resolution entirely ' +
+      '(`resolveGlobBase`\'s own `!match.startsWith("*")` check in coreBundle.js), which is ' +
+      'why `glob` exempts that shape; a glob NOT starting with `*` goes through the same ' +
+      'resolveBaseURL joining as goto and would not resolve',
   },
   {
-    api: 'context.route',
-    pattern: relativeLiteralCallPattern('context.route', '\\*'),
+    callee: 'context.route',
+    glob: true,
     resolved: false,
     reason: 'not patched, same gap and same `*`-prefix exemption as page.route',
   },
   {
-    api: 'page.waitForURL',
-    pattern: relativeLiteralCallPattern('page.waitForURL'),
+    callee: 'page.waitForURL',
     resolved: false,
     reason:
       'not patched -- no current call site, but reads context baseURL the same way goto does',
   },
   {
-    api: 'page.waitForRequest',
-    pattern: relativeLiteralCallPattern('page.waitForRequest'),
+    callee: 'page.waitForRequest',
     resolved: false,
     reason: 'not patched -- no current call site',
   },
   {
-    api: 'page.waitForResponse',
-    pattern: relativeLiteralCallPattern('page.waitForResponse'),
+    callee: 'page.waitForResponse',
     resolved: false,
     reason: 'not patched -- no current call site',
   },
   {
-    api: 'toHaveURL',
-    pattern: relativeLiteralCallPattern('toHaveURL'),
+    callee: 'toHaveURL',
     resolved: false,
     reason:
       'not patched -- existing call sites all pass a regex, which never consults baseURL, so ' +
