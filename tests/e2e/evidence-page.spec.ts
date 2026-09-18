@@ -154,7 +154,7 @@ const THIS_RUN = randomUUID();
  * only per test hands each test the store its previous run left (#229).
  */
 const storeKeyOf = (testInfo: TestInfo, run: string = THIS_RUN) => ({
-  storeKey: `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
+  storeKey: `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}:${run}`,
 });
 
 async function openEvidencePage(
