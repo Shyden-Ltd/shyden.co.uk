@@ -14,15 +14,16 @@ import { searched, tsFilesUnder } from '../source-files';
  * `grepInvert` can exclude it, and this file is what keeps that true: an exclusion
  * list nobody checks rots the moment someone adds a test.
  *
- * This scans SOURCE TEXT rather than importing and introspecting the specs (the
- * house pattern -- see tests/e2e/baseurl-guard.spec.ts): Playwright specs can only
- * run under the Playwright test runner, so a Vitest file that wants to check them
- * has no way to load them as modules and ask "what tag does this test carry" --
- * text is the only surface available.
+ * This scans SOURCE rather than importing and introspecting the specs:
+ * Playwright specs can only run under the Playwright test runner, so a Vitest
+ * file that wants to check them has no way to load them as modules and ask
+ * "what tag does this test carry".
  *
- * THE APPROXIMATION, STATED PLAINLY (the brief's own demand): a full JS parse
- * would need a real parser dependency (none is available -- "no new npm
- * dependencies"), so this walks the text with regexes instead, on two rules that
+ * THE APPROXIMATION, STATED PLAINLY (the brief's own demand): this walks the
+ * text with regexes, because no parser was available when it was written. One
+ * has been since #115 (`tests/unit/ast.ts`), and baseurl-guard, once cited
+ * here as the house pattern for scanning text, moved onto it in #215; porting
+ * this guard is #218. Until then it rests on two rules that
  * were chosen to match what this repo's Prettier config (.prettierrc.json) and
  * house style actually produce, verified by reading every real call site this
  * guard scans, not assumed:

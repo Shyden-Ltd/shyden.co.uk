@@ -1760,12 +1760,19 @@ test.describe('classroom groups — what a teacher actually sees', () => {
     await page.goto('/classroom-groups');
     const count = page.locator('#cg-count');
     await count.focus();
-    await expect(count).toHaveValue('30');
+    // The starting value is READ, not named. This test is about a wheel
+    // leaving it alone; what the page starts at has its own home in "the
+    // class size starts at 30", and a second copy of that number here is one
+    // more place for it to drift out of step with the markup (#193). The
+    // emptiness check keeps the invariance from holding trivially over a
+    // value that was never read.
+    const before = await count.inputValue();
+    expect(before).not.toBe('');
     await count.hover();
     await page.mouse.wheel(0, 240);
-    await expect(count).toHaveValue('30');
+    await expect(count).toHaveValue(before);
     await page.mouse.wheel(0, -240);
-    await expect(count).toHaveValue('30');
+    await expect(count).toHaveValue(before);
   });
 });
 

@@ -5,7 +5,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { commentsIn, parseSource } from './ast';
 import { astroCodeViews } from './source-text';
-import { filesUnder, searched } from '../source-files';
+import { filesUnder, ignoredByGit, searched } from '../source-files';
 
 /**
  * A docblock documents the declaration directly below it, so a docblock
@@ -23,28 +23,6 @@ import { filesUnder, searched } from '../source-files';
 
 /** The files that hold code here; an `.astro` file is read by its regions. */
 const SOURCE = /\.(ts|tsx|mjs|js|astro)$/;
-
-/**
- * Of `paths`, the ones git ignores, by git's own rules.
- *
- * The walk reads the filesystem, which also holds `dist/` and the test
- * reports: files nobody here wrote, on one machine and not the next. Asking
- * git keeps `.gitignore` the one statement of what is tracked, where a list
- * of directories copied here would drift from it. `git check-ignore` exits 1
- * when it ignores nothing, which is an ordinary answer, so the status is read
- * rather than thrown on.
- */
-function ignoredByGit(paths: readonly string[]): Set<string> {
-  const run = spawnSync('git', ['check-ignore', '--stdin'], {
-    input: paths.join('\n'),
-    encoding: 'utf8',
-  });
-  if (run.status !== 0 && run.status !== 1)
-    throw new Error(
-      `git check-ignore failed (${run.status}): ${run.error ?? run.stderr}`,
-    );
-  return new Set(run.stdout.split('\n').filter((line) => line !== ''));
-}
 
 /** Every source file on disk that git does not ignore, from the one walk. */
 function scannedSource(): string[] {
