@@ -23,10 +23,12 @@ import { searched, tsFilesUnder } from '../source-files';
  * someone adds a test.
  *
  * THE APPROXIMATION, STATED PLAINLY (same house standard as
- * viewport-tagging.test.ts): this scans SOURCE TEXT, not a real parse (no
- * new npm dependency is available to add one), on rules chosen to match
- * what this repo's Prettier config actually produces, verified against
- * every real call site this guard scans, not assumed:
+ * viewport-tagging.test.ts): this scans SOURCE TEXT, not a real parse,
+ * because no parser was available when it was written. One has been since
+ * #115 (`tests/unit/ast.ts`), and porting this guard is #218. Until then it
+ * rests on rules chosen to match what this repo's Prettier config actually
+ * produces, verified against every real call site this guard scans, not
+ * assumed:
  *
  * 1. A `test.use(...)` call's own options are read as the raw text between
  *    its opening paren and the next literal `);` -- not a parsed object --
