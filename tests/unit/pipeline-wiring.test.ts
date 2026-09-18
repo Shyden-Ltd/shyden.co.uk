@@ -8,6 +8,7 @@ import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
   jobsDownstreamOfAConditionalJob,
+  parseCleanYaml,
   skippedUpstreamFindings,
   unboundedJobFindings,
   workflowJobs,
@@ -397,6 +398,39 @@ describe('the deploy pipeline runs what it claims to', () => {
     // STOPS anything. Renaming this job silently de-gates develop and main,
     // because protection matches a context by NAME (#33).
     expect(workflowSteps('ci.yml')).toContain('build-and-test:');
+  });
+
+  // #237: a push to an open pull request started a fresh run and left the
+  // superseded one spending about 30 runner-minutes on a head that could no
+  // longer merge (35336492915 and 35335647213 were cancelled by hand). Read
+  // PARSED: a commented-out block is no block, whatever its text says.
+  it("a push cancels its own pull request's superseded CI run, never another's (#237)", () => {
+    const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      on?: Record<string, unknown>;
+      concurrency?: { group?: unknown; 'cancel-in-progress'?: unknown };
+    };
+
+    // The group's pull request number is empty on any other event, and an
+    // empty key is one group for every run: a second trigger would let a run
+    // on one branch cancel a run on another.
+    expect(
+      Object.keys(ci.on ?? {}),
+      'ci.yml must run on pull requests only while its group is keyed by one',
+    ).toEqual(['pull_request']);
+
+    // Exactly these two, in any order. Every workflow in the repo shares one
+    // namespace of groups, so the key names this workflow; it names the pull
+    // request, so a push never cancels another PR's run; and it names nothing
+    // finer, because a key per commit puts each push in a group of its own and
+    // cancels nothing at all.
+    const keyedBy = [
+      ...String(ci.concurrency?.group ?? '').matchAll(/\$\{\{\s*(.+?)\s*\}\}/g),
+    ].map((match) => match[1]);
+    expect(
+      [...keyedBy].sort(),
+      `ci.yml's concurrency group is keyed by [${keyedBy.join(', ')}]`,
+    ).toEqual(['github.event.pull_request.number', 'github.workflow']);
+    expect(ci.concurrency?.['cancel-in-progress']).toBe(true);
   });
 
   // RAW text on purpose — the opposite of every other check in this file.
