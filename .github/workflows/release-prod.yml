@@ -18,8 +18,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# One lock around everything that changes what prod serves, shared with
+# rollback.yml (#238). A release never cancels a run in it: pushed during a
+# rollback, it waits for the rollback, then stops at the approval as usual. A
+# rollback, in turn, cancels a release that holds the lock (see rollback.yml).
 concurrency:
-  group: release-prod-shyden
+  group: shyden-prod-publish
   cancel-in-progress: false
 
 permissions:

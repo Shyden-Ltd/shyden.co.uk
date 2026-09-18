@@ -355,7 +355,8 @@ describe('the deploy pipeline runs what it claims to', () => {
       .join('\n');
     return (
       /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts) ||
-      (/\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) && /\/rollback\b/.test(scripts))
+      (/\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
+        /\/rollback\b/.test(scripts))
     );
   };
 
@@ -364,7 +365,10 @@ describe('the deploy pipeline runs what it claims to', () => {
       group: PROD_LOCK,
       'cancel-in-progress': true,
     });
-    expect(parsedWorkflow('release-prod.yml').concurrency, 'release-prod.yml').toEqual({
+    expect(
+      parsedWorkflow('release-prod.yml').concurrency,
+      'release-prod.yml',
+    ).toEqual({
       group: PROD_LOCK,
       'cancel-in-progress': false,
     });
@@ -380,7 +384,9 @@ describe('the deploy pipeline runs what it claims to', () => {
       names.filter((name) => changesProd(parsedWorkflow(name))),
       'workflows whose steps deploy or roll back the prod Pages project',
     );
-    const holders = names.filter((name) => lockOf(parsedWorkflow(name)) === PROD_LOCK);
+    const holders = names.filter(
+      (name) => lockOf(parsedWorkflow(name)) === PROD_LOCK,
+    );
     expect(holders, `the workflows holding ${PROD_LOCK}`).toEqual(actors);
   });
 
