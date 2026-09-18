@@ -200,11 +200,17 @@ async function openReviewPage(
         until: recordingsUntil,
       };
   await serveEvidencePage(page, html, files);
-  await page.addInitScript(installCapabilityStandIns, {
+  // Annotated, not inlined: `addInitScript`'s parameter is a union, so it
+  // cannot contextually type the literal, and 'accept' widens to `string`
+  // (ts2345). The annotation pins it to SaveAnswer and keeps every caller's
+  // override checked -- a cast here would have silenced the checker at the one
+  // place it was right.
+  const standIns: CapabilityStandInOptions = {
     downloads: 'accept',
     comments: { canSend: 'available', send: 'post' },
     ...capabilities,
-  });
+  };
+  await page.addInitScript(installCapabilityStandIns, standIns);
   const options: DbStandInOptions = {
     storeKey: `evidence-review-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
     order: 'resolve-then-confirm',

@@ -29,6 +29,7 @@
 
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 
 const esc = (s) =>
@@ -149,9 +150,61 @@ export const earlierLine = (earlier) =>
       byEngine(earlier)
     : '';
 
+/** The id of the JSON block the page hands its own review viewer. */
 export const REVIEW_DATA_ID = 'evidence-review';
-export const sha256Of = () => '';
-export const itemKey = () => '';
+
+/** At most 200 bytes per storage path segment (db.d.ts). */
+const MAX_SEGMENT_BYTES = 200;
+
+const SHA_256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * The SHA-256 of one capture's own bytes, in lower-case hex.
+ *
+ * @param {Buffer} bytes
+ * @returns {string}
+ */
+export const sha256Of = (bytes) =>
+  createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * Where one review decision is stored: journey, assertion, engine, and a
+ * digest of the bytes the operator actually looked at.
+ *
+ * The digest is the point. A page is republished after a recapture, and a
+ * decision taken against the OLD picture must never be shown against the new
+ * one -- the operator would be reading an approval of something they have not
+ * seen, which is the failure this whole page exists to prevent. Same bytes,
+ * same key, on every build; different bytes, a different key and no decision
+ * yet. A key built from journey and engine alone cannot tell those apart.
+ *
+ * @param {{journey: string, assertion: number|string, engine: string, sha256: string}} item
+ * @returns {string}
+ */
+export const itemKey = ({ journey, assertion, engine, sha256 }) => {
+  if (!SHA_256_HEX.test(String(sha256)))
+    throw new Error(
+      `build-evidence-page: ${JSON.stringify(sha256)} is not the SHA-256 of a ` +
+        'capture. An item is keyed by the bytes it shows; without the digest a ' +
+        'recaptured screenshot inherits the decision taken about the picture ' +
+        'it replaced, and nothing on the page says so.',
+    );
+  const key = [
+    slugOf(journey),
+    assertion,
+    slugOf(engine),
+    String(sha256).slice(0, 12),
+  ].join('-');
+  const bytes = Buffer.byteLength(key);
+  if (bytes > MAX_SEGMENT_BYTES)
+    throw new Error(
+      `build-evidence-page: item key is ${bytes} bytes, over the ` +
+        `${MAX_SEGMENT_BYTES} bytes a storage path segment allows: ${key}. The ` +
+        'page would throw building the path at run time, and every decision on ' +
+        'it would fail with the first.',
+    );
+  return key;
+};
 
 const slugOf = (s) =>
   String(s)
@@ -400,6 +453,116 @@ export const assertPageFits = (bytes) => {
 /**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
  */
+const CAPTURE_DATA_URI = /^data:([^;,]+);base64,([\s\S]*)$/;
+
+/**
+ * One capture's declared type and its own bytes, read out of the `data:` URI
+ * the page carries.
+ *
+ * A refusal rather than a skip: an item keyed by a digest of bytes fetched from
+ * somewhere else is keyed by something this page does not show.
+ */
+const captureOf = (file, src) => {
+  const match = CAPTURE_DATA_URI.exec(String(src));
+  if (!match)
+    throw new Error(
+      `build-evidence-page: ${file} is not a base64 data URI. A review item is ` +
+        'keyed by a digest of the bytes the page shows, and a src pointing ' +
+        'anywhere else is not those bytes.',
+    );
+  return { type: match[1], bytes: Buffer.from(match[2], 'base64') };
+};
+
+/**
+ * What a download of this capture should be CALLED, from the type its data URI
+ * declares -- a different question from `mediaType`, which reads the real first
+ * bytes to decide whether a browser can paint them at all.
+ */
+const extensionOf = (type) =>
+  type === 'image/jpeg' ? 'jpg' : String(type).split('/').pop();
+
+/**
+ * A sign-off key is one storage path segment, so a slash in it would silently
+ * nest every decision under a document nothing reads back.
+ */
+const assertSignoffKey = (key) => {
+  if (!key || key.includes('/') || Buffer.byteLength(key) > MAX_SEGMENT_BYTES)
+    throw new Error(
+      `build-evidence-page: sign-off key ${JSON.stringify(key)} is not one ` +
+        'storage path segment. Decisions would be written under a path nothing ' +
+        'reads back, and the page would report them saved.',
+    );
+};
+
+/**
+ * Every capture on the page as one review item, in the order the page shows
+ * them: each journey's screenshots by assertion then engine, then that
+ * journey's recordings.
+ *
+ * Placeholders make no item. "Not captured" is a gap the page already states;
+ * an item for it would ask the operator to approve a picture that does not
+ * exist.
+ */
+const reviewItemsOf = ({ journeys, engines, shots, videos, signoffKey }) => {
+  const items = [];
+  for (const j of journeys) {
+    for (const a of j.assertions)
+      for (const shot of a.shots) {
+        if (!shot) continue;
+        const { type, bytes } = captureOf(shot.file, shots.get(shot.file));
+        items.push({
+          key: itemKey({
+            journey: j.id,
+            assertion: a.order,
+            engine: shot.project,
+            sha256: sha256Of(bytes),
+          }),
+          kind: 'screenshot',
+          journey: j.id,
+          journeyTitle: j.title,
+          assertion: a.order,
+          label: a.label,
+          engine: shot.project,
+          filename: `${signoffKey}-${j.id}-${a.order}-${slugOf(shot.project)}.${extensionOf(type)}`,
+        });
+      }
+    for (const engine of engines) {
+      const video = videos.get(`${j.id}|${engine}`);
+      if (!video) continue;
+      items.push({
+        key: itemKey({
+          journey: j.id,
+          assertion: 'rec',
+          engine,
+          sha256: video.sha256,
+        }),
+        kind: 'recording',
+        journey: j.id,
+        journeyTitle: j.title,
+        assertion: null,
+        label: 'Recording',
+        engine,
+        filename: `${signoffKey}-${j.id}-rec-${slugOf(engine)}.${String(video.src).split('.').pop()}`,
+        src: video.src,
+      });
+    }
+  }
+  const seen = new Map();
+  for (const item of items) {
+    const taken = seen.get(item.key);
+    if (taken)
+      throw new Error(
+        `build-evidence-page: two captures share a key, ${item.key}: ` +
+          `"${taken.journeyTitle}" ${taken.assertion ?? 'rec'} ` +
+          `${taken.engine} and "${item.journeyTitle}" ` +
+          `${item.assertion ?? 'rec'} ${item.engine}. One stored decision ` +
+          'would answer for both, and nothing on the page would say so.',
+      );
+    seen.set(item.key, item);
+  }
+  return items;
+};
+
 export const renderEvidencePage = ({
   manifest,
   report,
@@ -466,6 +629,32 @@ export const renderEvidencePage = ({
     };
   });
 
+  const signoffKey = content.signoffKey ?? 'ticket';
+  assertSignoffKey(signoffKey);
+
+  // The review the page steps through, derived from the same journeys it
+  // renders. One derivation, so a figure and the item keyed to it cannot
+  // disagree about which capture they are.
+  const items = reviewItemsOf({
+    journeys,
+    engines,
+    shots,
+    videos,
+    signoffKey,
+  });
+  const itemAt = new Map(
+    items.map((i) => [`${i.journey}|${i.assertion ?? 'rec'}|${i.engine}`, i]),
+  );
+  const keyOfFigure = (journey, assertion, engine) =>
+    itemAt.get(`${journey}|${assertion}|${engine}`)?.key ?? '';
+  // `<` escaped so the HTML parser cannot find a closing tag inside the data:
+  // JSON.parse turns it back, and the page never sees the difference.
+  const reviewJson = JSON.stringify({
+    signoffKey,
+    journeys: journeys.map((j) => j.id),
+    items,
+  }).replace(/</g, '\\u003c');
+
   const stats = report.stats || {};
   const dot = (r) =>
     `<span class="dot ${r?.status === 'passed' ? 'ok' : 'bad'}" title="${esc(r?.status ?? 'not run')}"></span>`;
@@ -497,7 +686,7 @@ export const renderEvidencePage = ({
       ${a.shots
         .map((s, k) =>
           s
-            ? `<figure class="shot"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
+            ? `<figure class="shot" data-item="${esc(keyOfFigure(j.id, a.order, s.project))}"><img loading="lazy"${dims.get(s.file) ? ` width="${dims.get(s.file).w}" height="${dims.get(s.file).h}"` : ''} src="${shots.get(s.file)}" alt="${esc(s.label)} &mdash; ${esc(s.project)}"><figcaption class="mono">${esc(s.project)}</figcaption></figure>`
             : `<figure class="shot absent"><div class="novid mono">not captured</div><figcaption class="mono">${esc(engines[k])}</figcaption></figure>`,
         )
         .join('')}
@@ -511,7 +700,7 @@ export const renderEvidencePage = ({
       ${engines
         .map((e) =>
           videos.has(`${j.id}|${e}`)
-            ? `<figure><video controls preload="none" src="${videos.get(`${j.id}|${e}`)}"></video><figcaption class="mono">${esc(e)}</figcaption></figure>`
+            ? `<figure data-item="${esc(keyOfFigure(j.id, 'rec', e))}"><video controls preload="none" src="${esc(videos.get(`${j.id}|${e}`).src)}"></video><figcaption class="mono">${esc(e)}</figcaption></figure>`
             : `<figure class="absent"><div class="novid mono">not embedded</div><figcaption class="mono">${esc(e)}</figcaption></figure>`,
         )
         .join('')}
@@ -711,6 +900,8 @@ ${journeyHtml}
 
 <div id="lb" role="dialog" aria-modal="true" aria-label="Enlarged screenshot"><div><img id="lb-img" alt=""><p id="lb-cap"></p></div></div>
 
+<script type="application/json" id="${REVIEW_DATA_ID}">${reviewJson}</script>
+
 <script>
 (function () {
   'use strict';
@@ -871,11 +1062,15 @@ ${journeyHtml}
  * enforce it. Printing it is what stops the next person having to remember.
  */
 export const PUBLISH_NOTE =
-  'publish with capabilities {"db": {}}, AND the files map written beside ' +
-  "this page — without the capability claude.use('db') resolves null, the " +
-  'page says "ticks are local to this view", and the sign-off is recorded ' +
-  'NOWHERE; without the files the page references recordings nothing ' +
-  'uploaded, and a journey with a broken src reads as one never recorded.';
+  'publish with capabilities {"db": {}, "downloads": true, "comments": {}}, ' +
+  'AND the files map written beside this page — without the capability ' +
+  "claude.use('db') resolves null, the page says 'ticks are local to this " +
+  "view', and the sign-off is recorded NOWHERE; without 'downloads' the " +
+  'review viewer cannot hand the operator the capture it is showing, and ' +
+  "without 'comments' it cannot send a rejection back to a session. Without " +
+  'the files the page references recordings nothing uploaded, and a journey ' +
+  'with a broken src reads as one never recorded. A session reads the ' +
+  'decisions back with ArtifactData list signoff/<key>/items.';
 
 /**
  * What a capture actually is, read from its own first bytes.
@@ -1024,7 +1219,10 @@ const main = () => {
   });
   assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
   const videos = new Map(
-    candidates.map((c) => [c.key, publishedVideoPath(c.key)]),
+    candidates.map((c) => [
+      c.key,
+      { src: publishedVideoPath(c.key), sha256: sha256Of(readFileSync(c.abs)) },
+    ]),
   );
 
   const html = renderEvidencePage({
