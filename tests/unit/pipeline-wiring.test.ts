@@ -8,6 +8,7 @@ import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
   jobsDownstreamOfAConditionalJob,
+  parseCleanYaml,
   skippedUpstreamFindings,
   unboundedJobFindings,
   workflowJobs,
@@ -324,6 +325,63 @@ describe('the deploy pipeline runs what it claims to', () => {
         w.text.includes('shyden-site --branch'),
     );
     expect(pushers.map((w) => w.name)).toEqual(['release-prod.yml']);
+  });
+
+  // ---- one lock around everything that changes what prod serves (#238) ----
+  //
+  // rollback.yml and release-prod.yml sat in different groups, so a release
+  // still deploying could land after a rollback and undo it, with both runs
+  // reporting success. Measured on the runner (#238 AC1): a run waiting at an
+  // approval HOLDS its group, at workflow and at job level, and a newer arrival
+  // cancels a run already waiting for it. So a rollback that merely queued
+  // could wait on an approval nobody clicks, or be cancelled by the next push
+  // to main. Shyden's decision (AC2): one group, and the rollback cancels
+  // whatever holds it. Read PARSED: a commented-out block is no block.
+  const PROD_LOCK = 'shyden-prod-publish';
+  type ParsedWorkflow = {
+    concurrency?: string | { group?: unknown; 'cancel-in-progress'?: unknown };
+    jobs?: Record<string, { steps?: { run?: unknown }[] }>;
+  };
+  const parsedWorkflow = (name: string) =>
+    parseCleanYaml(workflow(name), name) as ParsedWorkflow;
+  const lockOf = ({ concurrency }: ParsedWorkflow) =>
+    typeof concurrency === 'string' ? concurrency : concurrency?.group;
+  // The two constructs that change what prod serves: a wrangler deploy to the
+  // prod Pages project, and a rollback through the Pages API on it. The name
+  // must END at `shyden-site`, so `shyden-site-dev` is not prod.
+  const changesProd = ({ jobs }: ParsedWorkflow) => {
+    const scripts = Object.values(jobs ?? {})
+      .flatMap((job) => (job.steps ?? []).map((step) => String(step.run ?? '')))
+      .join('\n');
+    return (
+      /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts) ||
+      (/\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) && /\/rollback\b/.test(scripts))
+    );
+  };
+
+  it('a rollback cancels any prod release in flight, and a release waits for a rollback (#238)', () => {
+    expect(parsedWorkflow('rollback.yml').concurrency, 'rollback.yml').toEqual({
+      group: PROD_LOCK,
+      'cancel-in-progress': true,
+    });
+    expect(parsedWorkflow('release-prod.yml').concurrency, 'release-prod.yml').toEqual({
+      group: PROD_LOCK,
+      'cancel-in-progress': false,
+    });
+  });
+
+  // A list of the lock's members would miss the next workflow that deploys
+  // prod, so the members are DERIVED from what each workflow's steps run. And
+  // nothing else may take the lock: a dev deploy inside it would be cancelled
+  // by every prod rollback.
+  it('every workflow that changes what prod serves takes the prod lock, and nothing else does (#238)', () => {
+    const names = workflowYamlNames();
+    const actors = nonEmpty(
+      names.filter((name) => changesProd(parsedWorkflow(name))),
+      'workflows whose steps deploy or roll back the prod Pages project',
+    );
+    const holders = names.filter((name) => lockOf(parsedWorkflow(name)) === PROD_LOCK);
+    expect(holders, `the workflows holding ${PROD_LOCK}`).toEqual(actors);
   });
 
   // ---- the develop branching model ---------------------------------------
