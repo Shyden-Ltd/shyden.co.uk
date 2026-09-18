@@ -149,13 +149,16 @@ async function serveEvidencePage(page: Page): Promise<void> {
 const THIS_RUN = randomUUID();
 
 /**
- * Where a test keeps its stand-in store during the run named by `run`. A real
- * phone keeps one Chrome profile from run to run, so a key that is unique
- * only per test hands each test the store its previous run left (#229).
+ * Where a test keeps its stand-in store during the run named by `run`, and
+ * the prefix its earlier runs used. A real phone keeps one Chrome profile
+ * from run to run, so a key that is unique only per test hands each test the
+ * store its previous run left (#229). The prefix stops at the repeat: a retry
+ * replaces its failed attempt's store, and another repeat's is left alone.
  */
-const storeKeyOf = (testInfo: TestInfo, run: string = THIS_RUN) => ({
-  storeKey: `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}:${run}`,
-});
+const storeKeyOf = (testInfo: TestInfo, run: string = THIS_RUN) => {
+  const supersedes = `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:`;
+  return { storeKey: `${supersedes}${testInfo.retry}:${run}`, supersedes };
+};
 
 async function openEvidencePage(
   page: Page,
@@ -719,5 +722,56 @@ test.describe('the stand-in store, on a phone that keeps one profile from run to
     );
     await earlierErrors.expectNoUncaught('the earlier run threw');
     await laterErrors.expectNoUncaught('the later run threw');
+  });
+
+  test('opening a store removes what earlier runs of the same test left, and nothing else', async ({
+    context,
+  }, testInfo) => {
+    // A key per run alone would leave one more store per test on the phone
+    // after every run, never read again, until localStorage refuses writes.
+    const page = await context.newPage();
+    const errors = await openAsRun(page, testInfo, THIS_RUN);
+    const { testId, repeatEachIndex, retry } = testInfo;
+    const planted = {
+      earlierRun: storeKeyOf(testInfo, 'an-earlier-run').storeKey,
+      beforeRunsWereNamed: `evidence-db:${testId}:${repeatEachIndex}:${retry}`,
+      anotherRepeat: `evidence-db:${testId}:${repeatEachIndex + 1}:0:another-run`,
+      anotherTest: 'evidence-db:another-test:0:0:another-run',
+    };
+    const plant = (keys: string[]) =>
+      page.evaluate((all) => {
+        for (const key of all) localStorage.setItem(key, '{}');
+      }, keys);
+    const unplant = (keys: string[]) =>
+      page.evaluate((all) => {
+        for (const key of all) localStorage.removeItem(key);
+      }, keys);
+
+    await plant(Object.values(planted));
+    try {
+      await page.reload();
+      const kept = await page.evaluate(
+        (prefix) =>
+          Object.keys(localStorage)
+            .filter((key) => key.startsWith(prefix))
+            .sort(),
+        `evidence-db:${testId}:`,
+      );
+      expect(
+        kept,
+        'this test keeps its own store and another repeat’s',
+      ).toEqual([storeKeyOf(testInfo).storeKey, planted.anotherRepeat].sort());
+      expect(
+        await page.evaluate(
+          (key) => localStorage.getItem(key),
+          planted.anotherTest,
+        ),
+        'another test’s store is untouched',
+      ).toBe('{}');
+    } finally {
+      // The phone keeps whatever a run leaves: take back what was planted.
+      await unplant(Object.values(planted));
+    }
+    await errors.expectNoUncaught('the page threw');
   });
 });
