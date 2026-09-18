@@ -375,13 +375,24 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
   test('no two words are rendered touching, on any page', async ({ page }) => {
     // Where a box lands depends on the width it was laid out at, so the width
     // is part of what was searched: at 1280px this test passed for weeks while
-    // every page failed it at phone width (#198).
-    const width = page.viewportSize()?.width;
+    // every page failed it at phone width (#198). Each page reports its own
+    // width once it has loaded. `page.viewportSize()` is null on a real phone,
+    // which emulates nothing, and before `goto` the page is about:blank, which
+    // a phone lays out at 980px.
     const paths = await publishedPaths(page);
     const findings: string[] = [];
+    const widths = new Set<number>();
+    const measured: string[] = [];
 
     for (const path of paths) {
       await page.goto(path);
+      const width = await page.evaluate(
+        () => document.documentElement.clientWidth,
+      );
+      if (width > 0) {
+        widths.add(width);
+        measured.push(path);
+      }
       for (const join of await visualJoins(page)) {
         const allowed = INTENTIONAL_JOINS.some(
           ({ left, right }) => left.test(join.left) && right.test(join.right),
@@ -394,12 +405,13 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
       }
     }
 
+    const at = [...widths].map((width) => `${width}px`).join(' and ');
     expect(
       searched(findings, {
-        of: width ? paths : [],
-        what: `built pages visited at ${width}px wide`,
+        of: measured,
+        what: `built pages visited at a width read from the page (${at})`,
       }),
-      `at ${width}px wide:\n${findings.join('\n')}`,
+      `at ${at} wide:\n${findings.join('\n')}`,
     ).toEqual([]);
   });
 
