@@ -320,3 +320,46 @@ describe('an expression derives from what its own scope binds', () => {
     ).toEqual([new Set(['a', 'b'])]);
   });
 });
+
+describe('a derivation stops where it is told, and names what it cannot see into (#225)', () => {
+  const isDecode = (call: ts.CallExpression): boolean =>
+    ts.isIdentifier(call.expression) && call.expression.text === 'decode';
+
+  it('does not enter a call it is told to stop at, callee included', () => {
+    const { bound, sf } = fixture(`
+      const text = read();
+      const data = decode(text);
+      use(data);
+      use(text + decode(read()).size);
+    `);
+    expect(
+      useArguments(sf).map(
+        (arg) => new Set(derivationOf(arg, bound, { stopAt: isDecode }).names),
+      ),
+    ).toEqual([new Set(['data']), new Set(['text', 'read'])]);
+    // Told nothing, the same walk enters every call, as it always has.
+    expect(derivedNames('const data = decode(read()); use(data);')).toEqual([
+      new Set(['data', 'decode', 'read']),
+    ]);
+  });
+
+  it('names the bindings it could not follow, and none that it did', () => {
+    const { bound, sf } = fixture(`
+      import { load } from './elsewhere';
+      function helper() { return 1; }
+      const local = (p: string) => load(helper(), p);
+      use(local('x') + missing);
+    `);
+    const [arg] = useArguments(sf);
+    if (!arg) throw new Error('the fixture no longer calls use()');
+    const { names, opaque } = derivationOf(arg, bound);
+    expect(new Set(names)).toEqual(
+      new Set(['local', 'load', 'helper', 'p', 'missing']),
+    );
+    // An import, a function declaration, a parameter and an unbound name
+    // hold no initializer; `local` held one, and the walk went inside it.
+    expect(new Set(opaque)).toEqual(
+      new Set(['load', 'helper', 'p', 'missing']),
+    );
+  });
+});

@@ -40,7 +40,9 @@ import { scanPresence, type PresenceClosures } from './presence-detector';
  *    comment cannot hide in a filename. Including these produced twelve
  *    false positives and no real findings.
  *  - PARSED data (`JSON.parse`). JSON carries no comments, so
- *    `pkg.scripts['test:e2e']` cannot be satisfied by one.
+ *    `pkg.scripts['test:e2e']` cannot be satisfied by one. The exemption is
+ *    the CALL standing between the read and the subject, never a name, and
+ *    a read that also reaches the subject around its parse is scanned (#225).
  */
 
 const READS_CONTENT = new Set(['readFileSync']);
@@ -193,13 +195,87 @@ describe('the detector counts only a real anchor (#183)', () => {
   });
 });
 
+describe('the detector exempts a read only where JSON.parse stands between it and the subject (#225)', () => {
+  // JSON carries no comments, so a comment cannot satisfy a matcher over
+  // parsed data: the PARSE is the exemption, and a name is not a parse. The
+  // detector once skipped any subject whose derivation mentioned `JSON` or
+  // `parse` anywhere, so a helper's `JSON.stringify` exempted a raw read.
+  it('scans a raw read whose derivation reaches a helper calling JSON.stringify', () => {
+    expect(
+      flaggedLines(
+        [
+          'const stamp = () => JSON.stringify({ at: 1 });',
+          "const text = readFileSync('package.json', 'utf8') + stamp();",
+          "expect(text).toContain('name');",
+        ].join('\n'),
+      ),
+    ).toEqual([3]);
+  });
+
+  it('reads a bare JSON or parse name as no parse at all', () => {
+    // A method called `parse` is not JSON's: Markdown parsed to HTML keeps
+    // every `<!-- comment -->`, so a comment can still satisfy the matcher.
+    expect(
+      flaggedLines(
+        [
+          'const parse = (text: string) => text.trim();',
+          "const raw = parse(readFileSync('x.ts', 'utf8'));",
+          "expect(raw).toContain('foo');",
+          "expect(JSON.stringify(readFileSync('x.ts', 'utf8'))).toContain('foo');",
+          "expect(marked.parse(readFileSync('x.md', 'utf8'))).toContain('foo');",
+        ].join('\n'),
+      ),
+    ).toEqual([3, 4, 5]);
+  });
+
+  it('leaves a read passed through JSON.parse unscanned, directly or through a local', () => {
+    const source = [
+      "expect(JSON.parse(readFileSync('package.json', 'utf8')).scripts).toContain('test');",
+      "const text = readFileSync('package.json', 'utf8');",
+      "expect(JSON.parse(text).name).toContain('shyden');",
+      "const pkg = JSON.parse(readFileSync('package.json', 'utf8'));",
+      "expect(pkg.scripts).toContain('test');",
+      "const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));",
+      "expect(readJson('package.json').scripts).toContain('test');",
+      "expect(readFileSync('x.ts', 'utf8')).toContain('control');",
+    ].join('\n');
+    // The call graph counts `readJson` among the readers, because it calls
+    // `readFileSync`. Only its body shows the read never leaves the parse,
+    // so the fixture seeds it as the graph would.
+    const closures = {
+      ...FIXTURE_CLOSURES,
+      readers: seeded('readFileSync', 'readJson'),
+    };
+    expect(
+      scanPresence(bind(new Map([['fixture.test.ts', source]])), closures),
+    ).toEqual({
+      scanned: 1,
+      findings: [expect.stringMatching(/^fixture\.test\.ts:8 /)],
+    });
+  });
+
+  it('scans a read that also reaches the subject around its parse', () => {
+    expect(
+      flaggedLines(
+        [
+          "const text = readFileSync('package.json', 'utf8');",
+          'const pkg = JSON.parse(text);',
+          "expect(text + pkg.name).toContain('shyden');",
+          "const clean = JSON.parse(withoutTsComments(readFileSync('a.json', 'utf8')));",
+          "expect(text + clean.name).toContain('shyden');",
+        ].join('\n'),
+      ),
+    ).toEqual([3, 5]);
+  });
+});
+
 describe('presence assertions over source text are stripped or anchored', () => {
   // The liveness control, and the reason it is a SEPARATE assertion: the
   // verdict below asserts absence, so a detector whose AST walk quietly
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    // 45 today, and the figure is worth stating: the floor sat at 20 while
+    // 48 today, and the figure is worth stating: the floor sat at 20 while
     // the truth was 27, so a control with that much slack in it is most of
     // the way back to no control at all. #118 moved the number twice --
     // UP as the derivation learned to follow local bindings to a fixed
@@ -207,8 +283,11 @@ describe('presence assertions over source text are stripped or anchored', () => 
     // parameter names as references. Both were corrections, not drift.
     // #184 found this comment still saying 28 over a real 42, and moved the
     // figure to 45: resolving names by scope brought in three assertions a
-    // file-wide map had been sending to another test's declaration.
-    expect(result.scanned).toBeGreaterThan(44);
+    // file-wide map had been sending to another test's declaration. #225
+    // measured 46 (the suite had grown by one under a floor of 44) and moved
+    // it to 48: two `evidence-page` assertions a helper's `JSON.stringify`
+    // had been exempting as parsed.
+    expect(result.scanned).toBeGreaterThan(47);
     expect(tsFiles.length).toBeGreaterThan(30);
   });
 

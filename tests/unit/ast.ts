@@ -195,9 +195,30 @@ export const bindFiles = (paths: readonly string[]): Bound =>
 export interface Derivation {
   /** Every identifier name the expression is built from. */
   readonly names: readonly string[];
+  /**
+   * The names among them the walk could not see into, because each binds no
+   * initializer to follow: an import, a parameter, a function declaration, a
+   * destructured binding, or a name nothing here declares. What those are
+   * made of lies outside the walk, so a caller that needs it asks the call
+   * graph about these, and judges every other name by what the walk found
+   * inside it (#225).
+   */
+  readonly opaque: readonly string[];
   /** Every variable initializer followed on the way, in the order reached. */
   readonly initializers: readonly ts.Expression[];
 }
+
+export interface DerivationOptions {
+  /**
+   * A call whose result carries nothing its arguments were made of, such as
+   * a parse. The walk enters neither its callee nor its arguments, so what
+   * reaches the expression only through one is no part of the derivation
+   * (#225). Left out, the walk enters every call.
+   */
+  readonly stopAt?: (call: ts.CallExpression) => boolean;
+}
+
+const enterEveryCall = (): boolean => false;
 
 /**
  * Every identifier feeding an expression, innermost callee first, as nodes so
@@ -211,25 +232,27 @@ export interface Derivation {
  */
 function identifiersIn(
   node: ts.Node | undefined,
+  stopAt: (call: ts.CallExpression) => boolean,
   acc: ts.Identifier[] = [],
 ): ts.Identifier[] {
   if (!node) return acc;
   if (ts.isCallExpression(node)) {
+    if (stopAt(node)) return acc;
     if (ts.isIdentifier(node.expression)) acc.push(node.expression);
     else if (ts.isPropertyAccessExpression(node.expression))
-      identifiersIn(node.expression.expression, acc);
-    node.arguments.forEach((arg) => identifiersIn(arg, acc));
+      identifiersIn(node.expression.expression, stopAt, acc);
+    node.arguments.forEach((arg) => identifiersIn(arg, stopAt, acc));
     return acc;
   }
   if (ts.isPropertyAccessExpression(node))
-    return identifiersIn(node.expression, acc);
+    return identifiersIn(node.expression, stopAt, acc);
   // A key is a BINDING, not a reference. `{ config: {} }` in a test factory
   // was resolving its key to a `config` helper that reads a file, which made
   // a deliberately-empty boundary case read as a filesystem scan. Parameter
   // names leak the same way, so only a default value counts there.
   if (ts.isPropertyAssignment(node))
-    return identifiersIn(node.initializer, acc);
-  if (ts.isParameter(node)) return identifiersIn(node.initializer, acc);
+    return identifiersIn(node.initializer, stopAt, acc);
+  if (ts.isParameter(node)) return identifiersIn(node.initializer, stopAt, acc);
   if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node))
     return acc;
   if (ts.isIdentifier(node)) {
@@ -242,7 +265,7 @@ function identifiersIn(
   // node, so an arrow function yielded its parameter and never its body.
   // Inherited from #98, where it quietly narrowed that guard too.
   ts.forEachChild(node, (child) => {
-    identifiersIn(child, acc);
+    identifiersIn(child, stopAt, acc);
   });
   return acc;
 }
@@ -258,19 +281,28 @@ function identifiersIn(
  * unrelated `source()` function three files away -- the right answer for the
  * wrong reason, which stopped being right the moment that accident was fixed.
  */
-export function derivationOf(node: ts.Expression, bound: Bound): Derivation {
+export function derivationOf(
+  node: ts.Expression,
+  bound: Bound,
+  { stopAt = enterEveryCall }: DerivationOptions = {},
+): Derivation {
   const names = new Set<string>();
+  const opaque = new Set<string>();
   const initializers: ts.Expression[] = [];
-  const queue = identifiersIn(node);
+  const queue = identifiersIn(node, stopAt);
   while (queue.length > 0) {
     const id = queue.shift() as ts.Identifier;
     names.add(id.text);
     const init = bound.initializerOf(id);
-    if (init === undefined || initializers.includes(init)) continue;
+    if (init === undefined) {
+      opaque.add(id.text);
+      continue;
+    }
+    if (initializers.includes(init)) continue;
     initializers.push(init);
-    queue.push(...identifiersIn(init));
+    queue.push(...identifiersIn(init, stopAt));
   }
-  return { names: [...names], initializers };
+  return { names: [...names], opaque: [...opaque], initializers };
 }
 
 export interface Closure {
