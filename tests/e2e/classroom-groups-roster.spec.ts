@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { shoot } from './evidence';
 import { recordErrors } from './recorders';
 import {
   openRoster,
@@ -35,7 +36,7 @@ test.describe('the roster table', () => {
   // accessible name at all -- do not "fix" this back down to six; six was
   // the bug's own shape, not the contract. The seventh header's own text
   // ('Remove'/'Hapus') is present in the DOM -- `toHaveText` reads it here
-  // exactly as it reads the other six -- but visually hidden via CSS clip
+  // exactly as it reads the other six -- but visually hidden via `clip-path`
   // (ClassroomGroupsPage.astro's own `.cg-roster-remove-heading`): a
   // screen reader building this table's column headers finds a real name
   // for every one of the seven, while a sighted teacher never sees a
@@ -49,7 +50,7 @@ test.describe('the roster table', () => {
     // on this order moves with it — see ClassroomGroupsPage.astro's
     // `.cg-student > td:nth-child(...)` card layout, its `col:nth-child(...)`
     // widths, and the print letters rule.
-    await expect(page.locator('#cg-roster thead th')).toHaveText([
+    const columns = [
       'Absent',
       '#',
       'Name',
@@ -57,7 +58,23 @@ test.describe('the roster table', () => {
       'Together',
       'Apart',
       'Remove',
-    ]);
+    ];
+    await expect(page.locator('#cg-roster thead th')).toHaveText(columns);
+    // `toHaveText` reads `textContent`, which a heading hidden with
+    // `display: none` still carries, so it cannot say whether a screen reader
+    // gets a name for each column. The accessibility tree can. Every heading
+    // stays in it whatever hides it from sight: the whole row in the card
+    // layout, and Remove's own text in the table layout (#200).
+    const headers = page.locator('#cg-roster').getByRole('columnheader');
+    await expect(headers).toHaveCount(columns.length);
+    for (const [index, name] of columns.entries()) {
+      await expect(headers.nth(index)).toHaveAccessibleName(name);
+    }
+    await shoot(
+      page,
+      'every heading keeps its name; the table draws six, the cards draw none',
+      page.locator('#cg-roster'),
+    );
   });
 
   // The general invariant "the table has seven columns" above pins today.
