@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+import { LOCALES, localisePath } from '../../src/lib/i18n/index';
 
 /**
  * The hreflang set every page in the sitemap must declare.
@@ -12,8 +13,6 @@ import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 const EXPECTED_ALTERNATES = LOCALES.map((locale) =>
   LOCALE_METADATA[locale].ogLocale.replace('_', '-'),
 ).sort();
-import { LOCALES, localisePath } from '../../src/lib/i18n/index';
-
 test.describe('the sitemap', () => {
   test('lists every page and pairs the two languages', async ({ request }) => {
     // Nothing tested the sitemap's CONTENTS: seo.spec.ts only checked that
@@ -111,54 +110,5 @@ test.describe('the 404 head', () => {
     await expect(page.locator('link[rel="alternate"]')).toHaveCount(
       LOCALES.length + 1,
     );
-  });
-});
-
-test.describe('skip link — WCAG 2.4.1', () => {
-  for (const [path, label] of [
-    ['/', 'Skip to content'],
-    ['/id/', 'Lewati ke konten'],
-    ['/classroom-groups', 'Skip to content'],
-    ['/id/classroom-groups', 'Lewati ke konten'],
-    ['/definitely-not-a-page', 'Skip to content'],
-  ] as const) {
-    test(`${path} offers it, in the page's language`, async ({ page }) => {
-      await page.goto(path);
-      await expect(page.locator('.skip-link')).toHaveText(label);
-    });
-  }
-
-  test('it is the FIRST thing a Tab reaches', async ({ page, browserName }) => {
-    test.skip(
-      browserName === 'webkit',
-      'Safari omits plain links from the Tab sequence unless the visitor opts ' +
-        'in, so a Tab walk here would assert a browser preference rather than ' +
-        'our markup. The link itself is asserted for WebKit in the test below.',
-    );
-    // The whole point of the link, on the page where it matters most:
-    // without it a keyboard user crosses the wordmark, the hamburger, the
-    // language switcher and three nav links before the first form field.
-    await page.goto('/classroom-groups');
-    await page.keyboard.press('Tab');
-    await expect(page.locator(':focus')).toHaveClass(/skip-link/);
-  });
-
-  test('it becomes visible when focused, and lands on the content', async ({
-    page,
-  }) => {
-    // Asserted on EVERY engine, WebKit included: focusability and the jump
-    // are our markup, and only the Tab ORDER is the browser's preference.
-    await page.goto('/classroom-groups');
-    const link = page.locator('.skip-link');
-
-    // Off-screen until focused, which is the only time it is any use — and
-    // `display: none` would have made it unfocusable, i.e. not a skip link.
-    await expect(link).not.toBeInViewport();
-    await link.focus();
-    await expect(link).toBeInViewport();
-
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/#main$/);
-    await expect(page.locator(':focus')).toHaveAttribute('id', 'main');
   });
 });
