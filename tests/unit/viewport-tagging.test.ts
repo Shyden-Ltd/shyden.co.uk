@@ -50,6 +50,15 @@ import {
  *   reported rather than passed over.
  * A tag on a declaration that owns no viewport call is stale, and silently
  * costs real-device coverage.
+ *
+ * A READ is the same fact seen from the other side. `page.viewportSize()` asks
+ * Playwright what it emulates, and on a real device it emulates nothing, so the
+ * call returns `null` there: the touching-words test sized its population by it
+ * and searched nothing on the phone (#198), after the projector spec had been
+ * caught the same way. A read belongs to its innermost declaration just as a
+ * resize does, and is reported unless that declaration is tagged -- but a read
+ * never justifies a tag, because tagging a test that only reads buys the read
+ * back by dropping the test from the phone. Read the width from the page.
  */
 
 const EMULATED_VIEWPORT_TAG = '@emulated-viewport';
@@ -84,6 +93,19 @@ function viewportHits(sf: ts.SourceFile): ViewportHit[] {
       api: 'test.use({ viewport })' as const,
     }));
   return [...resizes, ...uses].sort((a, b) => a.call.pos - b.call.pos);
+}
+
+/** Every `page.viewportSize()` read in `sf`, whatever the receiver is called. */
+function viewportReads(
+  sf: ts.SourceFile,
+): { call: ts.CallExpression; line: number }[] {
+  return callsIn(sf)
+    .filter(
+      ({ expression }) =>
+        ts.isPropertyAccessExpression(expression) &&
+        expression.name.text === 'viewportSize',
+    )
+    .map((call) => ({ call, line: lineOf(sf, call) }));
 }
 
 /** How a finding names a declaration: a template title keeps its backticks. */
@@ -124,6 +146,23 @@ function untaggedMessage(
     `${file}:${decl.line} -- ${describeWhat(decl)} manipulates the viewport (line${plural} ` +
     `${lines.join(', ')}) but is not tagged \`${EMULATED_VIEWPORT_TAG}\` -- tag it ` +
     `\`${EMULATED_VIEWPORT_TAG}\`: a real device cannot resize its screen.`
+  );
+}
+
+function readMessage(
+  file: string,
+  line: number,
+  owner: Declaration | undefined,
+): string {
+  const where =
+    owner === undefined
+      ? 'but no test(...) or test.describe(...) contains it, so no tag can keep it off the phone'
+      : `in ${describeWhat(owner)} (line ${owner.line}), which is not tagged \`${EMULATED_VIEWPORT_TAG}\``;
+  return (
+    `${file}:${line} reads page.viewportSize() ${where} -- on a real device that is null, ` +
+    "because the device project adopts the phone's own context, which emulates no viewport. " +
+    'Read the width the page was laid out at from the page ' +
+    '(document.documentElement.clientWidth, after goto), which is right on every target.'
   );
 }
 
@@ -168,6 +207,14 @@ function analyze(file: string, text: string): string[] {
     owned.set(owner, [...(owned.get(owner) ?? []), hit.line]);
   }
 
+  // A read never joins `touched`: a tag that only a read justified would buy
+  // the read back by dropping the test from the phone, so that tag stays stale.
+  for (const read of viewportReads(sf)) {
+    const owner = enclosingDeclaration(read.call, declarations);
+    if (owner === undefined || !owner.tags.includes(EMULATED_VIEWPORT_TAG))
+      findings.push(readMessage(file, read.line, owner));
+  }
+
   for (const [decl, lines] of owned) {
     if (!decl.tags.includes(EMULATED_VIEWPORT_TAG))
       findings.push(untaggedMessage(file, decl, lines));
@@ -181,7 +228,7 @@ function analyze(file: string, text: string): string[] {
 }
 
 describe('a real phone cannot resize its own screen', () => {
-  it('every test that manipulates the viewport is tagged @emulated-viewport, and no tag is stale', () => {
+  it('every test that resizes the viewport is tagged @emulated-viewport, none the phone runs reads it, and no tag is stale', () => {
     const files = SCAN_DIRS.flatMap(tsFilesUnder);
 
     const findings = files.flatMap((file) =>
@@ -249,6 +296,77 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain('stale');
     expect(findings[0]).toContain('does nothing viewport-related');
+  });
+
+  // A READ of the viewport is the same fact from the other side: on a real
+  // device there is no emulated viewport, so `page.viewportSize()` is null
+  // there, and a test that sized its population by it searched nothing (#198).
+  it('flags an untagged test that reads page.viewportSize(), naming file, line and title', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('measures the page', async ({ page }) => {",
+      "  await page.goto('/');",
+      '  const width = page.viewportSize()?.width;',
+      '  expect(width).toBeGreaterThan(0);',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:5'); // the read's line
+    expect(findings[0]).toContain('measures the page');
+    expect(findings[0]).toContain('page.viewportSize()');
+    expect(findings[0]).toContain('document.documentElement.clientWidth');
+  });
+
+  it('flags a page.viewportSize() read in a helper that no declaration contains', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      'const widthOf = (page) => page.viewportSize()?.width;',
+      '',
+      "test('uses the helper', async ({ page }) => {",
+      '  expect(widthOf(page)).toBeGreaterThan(0);',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain('page.viewportSize()');
+    expect(findings[0]).toContain(
+      'no test(...) or test.describe(...) contains it',
+    );
+  });
+
+  it('accepts a page.viewportSize() read in a tagged test that resizes', () => {
+    expect(
+      scanned([
+        "import { test, expect } from './fixtures';",
+        '',
+        "test('reads back its own size', { tag: '@emulated-viewport' }, async ({ page }) => {",
+        '  await page.setViewportSize({ width: 320, height: 800 });',
+        '  expect(page.viewportSize()?.width).toBe(320);',
+        '});',
+        '',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('still calls a tag stale when a page.viewportSize() read is all that justifies it', () => {
+    // Tagging a test that only reads would buy the read back by dropping the
+    // test from the phone -- the coverage the tag exists to spend sparingly.
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('only reads', { tag: '@emulated-viewport' }, async ({ page }) => {",
+      "  await page.goto('/');",
+      '  expect(page.viewportSize()?.width).toBeGreaterThan(0);',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('stale');
+    expect(findings[0]).toContain('only reads');
   });
 
   it('does not mistake a runtime test.skip(condition, reason) call for a new declaration', () => {
