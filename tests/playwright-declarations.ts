@@ -3,9 +3,11 @@ import ts from 'typescript';
 /**
  * Playwright's declarations, read from the parse tree (#218).
  *
- * Four guards ask which test a call sits in, and what that test is tagged or
- * parked as: viewport-tagging, isolated-context-tagging, download-tagging and
- * parked-tests. Each used to find `test(` in spec text with a regex, on the
+ * Five guards ask which test a call sits in: viewport-tagging,
+ * isolated-context-tagging, download-tagging and parked-tests, to read what
+ * that test is tagged or parked as, and event-collectors, to read whether a
+ * locator list was proved non-empty in the test that loops over it. Each
+ * used to find `test(` in spec text with a regex, on the
  * premise that no parser was available -- false since #115 made `typescript`
  * a devDependency. The regexes approximated each construct from its
  * spelling: a declaration was `test(` followed by a quote, a test's extent

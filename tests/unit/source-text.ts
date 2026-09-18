@@ -162,6 +162,11 @@ function startsRegex(tail: string): boolean {
  * is the same bug wearing the opposite coat — so this scans rather than
  * matches. Quotes, template literals, escapes and regex literals (`startsRegex`,
  * above) are tracked; that is the whole of the grammar this needs.
+ *
+ * A block comment goes WITH the line breaks inside it, so after one, a line
+ * counted in this output is not the file's line (#218: `dev-sanity.spec.ts`
+ * line 79 was reported as line 48). A guard that reports lines reads the
+ * parse tree, or `blankCommentLines` below, which keeps every line in place.
  */
 export function withoutTsComments(source: string): string {
   let out = '';
