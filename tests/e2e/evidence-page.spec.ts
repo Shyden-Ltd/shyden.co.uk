@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Page, TestInfo } from '@playwright/test';
 import { renderEvidencePage } from '../../scripts/build-evidence-page.mjs';
 import {
@@ -144,6 +145,18 @@ async function serveEvidencePage(page: Page): Promise<void> {
   );
 }
 
+/** This run, as the stand-in's store keys name it: new in every run. */
+const THIS_RUN = randomUUID();
+
+/**
+ * Where a test keeps its stand-in store during the run named by `run`. A real
+ * phone keeps one Chrome profile from run to run, so a key that is unique
+ * only per test hands each test the store its previous run left (#229).
+ */
+const storeKeyOf = (testInfo: TestInfo, run: string = THIS_RUN) => ({
+  storeKey: `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
+});
+
 async function openEvidencePage(
   page: Page,
   testInfo: TestInfo,
@@ -151,7 +164,7 @@ async function openEvidencePage(
 ): Promise<void> {
   await serveEvidencePage(page);
   await page.addInitScript(installDbStandIn, {
-    storeKey: `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
+    ...storeKeyOf(testInfo),
     seed: {},
     holdUse: false,
     subscriptionDies: false,
@@ -655,5 +668,56 @@ test.describe('evidence page sign-off, whatever the write order', () => {
       page.locator('#state'),
       'the late failure does not undo a load that succeeded',
     ).toHaveText(/^Ready\b/);
+  });
+});
+
+// A real phone keeps one Chrome profile from run to run, so its localStorage
+// outlives every run (#229). One browser context stands in for that profile,
+// and each page opened in it for one run of the same test.
+test.describe('the stand-in store, on a phone that keeps one profile from run to run', () => {
+  const openAsRun = async (page: Page, testInfo: TestInfo, run: string) => {
+    const errors = recordErrors(page);
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      ...storeKeyOf(testInfo, run),
+    });
+    return errors;
+  };
+
+  test('a later run of a test starts from its seed, not from the store an earlier run left', async ({
+    context,
+  }, testInfo) => {
+    const earlier = await context.newPage();
+    const earlierErrors = await openAsRun(earlier, testInfo, 'an-earlier-run');
+    await earlier.evaluate(async () => {
+      const db = await (window as StandInWindow).claude.use('db');
+      if (!db) throw new Error('use resolved null');
+      const ref = db.doc('stand-in/self-test');
+      await ref.set({ journeys: { a: true } });
+      // Stored once the confirmed snapshot arrives, not when the write resolves.
+      await new Promise<void>((resolve) =>
+        ref.onSnapshot((snap) => {
+          if (snap.exists && !snap.metadata.hasPendingWrites) resolve();
+        }),
+      );
+    });
+
+    const later = await context.newPage();
+    const laterErrors = await openAsRun(later, testInfo, THIS_RUN);
+    const found = await later.evaluate(async () => {
+      const db = await (window as StandInWindow).claude.use('db');
+      if (!db) throw new Error('use resolved null');
+      return new Promise<string>((resolve) =>
+        db
+          .doc('stand-in/self-test')
+          .onSnapshot((snap) => resolve(snap.exists ? 'exists' : 'absent')),
+      );
+    });
+
+    expect(found, 'the later run started from the earlier run’s store').toBe(
+      'absent',
+    );
+    await earlierErrors.expectNoUncaught('the earlier run threw');
+    await laterErrors.expectNoUncaught('the later run threw');
   });
 });
