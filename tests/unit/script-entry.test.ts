@@ -164,7 +164,7 @@ describe('the entry-check rules read the parse tree (#221)', () => {
     ['if (import.meta.main) await main();'],
     ['import.meta.main && main();'],
     ['import.meta.main ? main() : null;'],
-    ['// if (process.argv[1] === x) main();\nif (import.meta.main) main();'],
+    ['/* if (process.argv[1] === x) main(); */ if (import.meta.main) main();'],
   ])('accepts a decision made by import.meta.main alone: %s', (body) => {
     expect(judge(body)).toEqual({ decided: 1, wrong: [] });
   });
@@ -172,7 +172,7 @@ describe('the entry-check rules read the parse tree (#221)', () => {
   it.each([
     ['await main();'],
     ['main().catch(() => process.exit(1));'],
-    ["process.on('SIGINT', () => {\n  if (x) main();\n});"],
+    ["process.on('SIGINT', () => { if (x) main(); });"],
   ])('sees no decision where nothing is decided at load: %s', (body) => {
     expect(judge(body)).toEqual({ decided: 0, wrong: [] });
   });
@@ -190,13 +190,10 @@ describe('the entry-check rules read the parse tree (#221)', () => {
       "if (process.argv[1]?.endsWith('x.mjs')) await main();",
       [["process.argv[1]?.endsWith('x.mjs')"]],
     ],
-    ['// import.meta.main\nif (x) main();', [['x']]],
+    ['/* import.meta.main */ if (x) main();', [['x']]],
     ['if (import.meta.main && x) main();', [['import.meta.main && x']]],
-    [
-      'if (import.meta.main) {\n  if (x) main();\n}',
-      [['x', 'import.meta.main']],
-    ],
-    ['if (import.meta.main) {\n} else main();', [['not (import.meta.main)']]],
+    ['if (import.meta.main) { if (x) main(); }', [['x', 'import.meta.main']]],
+    ['if (import.meta.main) {} else main();', [['not (import.meta.main)']]],
     ['import.meta.main || main();', [['not (import.meta.main)']]],
     ['x ? null : main();', [['not (x)']]],
   ])('reports any other decision: %s', (body, wrong) => {
