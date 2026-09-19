@@ -20,7 +20,10 @@ import { defineConfig, devices } from '@playwright/test';
 // auth. Verifying the alias therefore meant `prod-verified` attested that a
 // password-locked staging URL rendered, and said nothing about whether
 // shyden.co.uk resolved, presented a valid certificate, or routed here at all.
-const password = process.env.PROD_BASIC_AUTH_PASSWORD;
+//
+// It sends no credential: the apex is not behind Basic auth. The release used to
+// hand this config the DEV password for a prod run, which prod must never hold
+// (#241).
 
 export default defineConfig({
   testDir: './tests/prod',
@@ -30,8 +33,6 @@ export default defineConfig({
   timeout: 30_000,
   use: {
     baseURL: process.env.WEB_BASE_URL ?? 'https://shyden.co.uk',
-    // Username half is ignored by the gate; only the password matters.
-    httpCredentials: password ? { username: 'prod', password } : undefined,
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

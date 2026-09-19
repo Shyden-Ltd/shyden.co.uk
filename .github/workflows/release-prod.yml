@@ -98,15 +98,16 @@ jobs:
       contents: read
       statuses: write
     steps:
+      # The public apex is not behind Basic auth, so the smoke sends no
+      # credential. It used to pass the dev password with `curl -u`, which sends
+      # it on the first request whether or not the host asks for one (#241).
       - name: Smoke the live prod deployment
-        env:
-          SMOKE_PW: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
         run: |
           set -euo pipefail
           BASE="https://shyden.co.uk"
 
           # Homepage: 200 + is the Shyden site.
-          code=$(curl -s -o home.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE/")
+          code=$(curl -s -o home.html -w '%{http_code}' "$BASE/")
           [ "$code" = "200" ] || { echo "::error::homepage HTTP $code"; exit 1; }
           grep -qi 'shyden' home.html || { echo "::error::homepage missing 'shyden'"; exit 1; }
 
@@ -131,7 +132,7 @@ jobs:
           # LOCALES and fails until this line is updated. Adding a locale means
           # editing this line by hand; that test is what makes you.
           for path in /glory-points /classroom-groups /id/ /id/glory-points /id/classroom-groups /zh/ /zh/glory-points /zh/classroom-groups /vi/ /vi/glory-points /vi/classroom-groups /th/ /th/glory-points /th/classroom-groups; do
-            code=$(curl -sL -o page.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE$path")
+            code=$(curl -sL -o page.html -w '%{http_code}' "$BASE$path")
             [ "$code" = "200" ] || { echo "::error::$path HTTP $code"; exit 1; }
             # Non-trivial: a Cloudflare error page or an empty build is a 200.
             bytes=$(wc -c < page.html)
@@ -139,13 +140,13 @@ jobs:
           done
 
           # The calculator still explains itself.
-          curl -sL -o gp.html -u "x:$SMOKE_PW" "$BASE/glory-points"
+          curl -sL -o gp.html "$BASE/glory-points"
           grep -qi 'How to use it' gp.html || { echo "::error::calculator instructions missing"; exit 1; }
 
           # The Classroom Group Creator still SHIPS ITS SCRIPT. This page is a
           # tool, and a partial deploy that dropped the bundle would leave a
           # form that looks fine and does nothing.
-          curl -sL -o cg.html -u "x:$SMOKE_PW" "$BASE/classroom-groups"
+          curl -sL -o cg.html "$BASE/classroom-groups"
           grep -q 'id="cg-form"' cg.html || { echo "::error::classroom-groups form missing"; exit 1; }
           grep -qE '<script[^>]+src="[^"]*\.js"' cg.html || { echo "::error::classroom-groups ships no script"; exit 1; }
 
@@ -178,11 +179,6 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify the live prod site in a real browser
         env:
-          # The public apex is not gated, so this credential goes unused there:
-          # Basic auth is only sent when a host actually challenges for it. Kept
-          # wired under its own name so prod can be gated again, or given its
-          # own secret, without touching the config.
-          PROD_BASIC_AUTH_PASSWORD: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
           WEB_BASE_URL: https://shyden.co.uk
         run: npx playwright test --config=playwright.prod.config.ts
 
