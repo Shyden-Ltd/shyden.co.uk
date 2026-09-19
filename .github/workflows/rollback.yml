@@ -16,9 +16,16 @@ on:
         required: false
         default: ''
 
+# One lock around everything that changes what prod serves, shared with
+# release-prod.yml (#238). A rollback CANCELS whatever holds it: a release
+# building, uploading, or waiting at the prod approval. A run waiting at an
+# approval holds its group (measured on the runner, #238), so without the
+# cancel this rollback would queue behind an approval nobody has clicked, and
+# the next push to main would cancel it while it waited. A release cancelled
+# here is re-run once the incident is over.
 concurrency:
-  group: deploy-shyden-prod
-  cancel-in-progress: false
+  group: shyden-prod-publish
+  cancel-in-progress: true
 
 permissions:
   contents: read
