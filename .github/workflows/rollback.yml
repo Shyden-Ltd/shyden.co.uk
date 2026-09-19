@@ -35,6 +35,11 @@ jobs:
     name: Roll back shyden-site
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Its Cloudflare secrets live in `prod-rollback`, which accepts `main` alone
+    # and has no reviewers, so a recovery never waits for an approval (#241).
+    environment:
+      name: prod-rollback
+      url: https://shyden.co.uk
     steps:
       - name: Promote a previous production deployment
         env:

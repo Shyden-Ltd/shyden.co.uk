@@ -178,6 +178,13 @@ jobs:
       !cancelled() && needs.deploy-dev.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # It reads DEV_BASIC_AUTH_PASSWORD, so it names the environment holding it.
+    # A job naming none reads repository secrets, and those reach a workflow on
+    # any branch (#241). The url repeats deploy-dev's, because the environment
+    # links to its latest deployment, and that is this job's.
+    environment:
+      name: dev
+      url: https://dev.shyden.co.uk
     permissions:
       contents: read
       statuses: write

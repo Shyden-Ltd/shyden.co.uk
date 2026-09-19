@@ -333,3 +333,126 @@ describe('no job runs on the runner default budget (#157)', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The secrets a job reads, and the environment it reads them in (#241).
+ *
+ * A job that names an environment reads that environment's secrets. Every
+ * other job reads only repository secrets, and a repository secret reaches any
+ * branch's workflow. So which secrets a job reads, and where from, is
+ * structural, and the pipeline pins in `pipeline-wiring.test.ts` judge it from
+ * these two fields. Each case below is one way a secret can be read, or seem
+ * to be read and not be.
+ */
+describe('the secrets a job reads, and the environment it reads them in (#241)', () => {
+  it('reads the environment a job names, in both forms GitHub accepts', () => {
+    expect(onlyJob('    environment: dev\n').environment).toBe('dev');
+    expect(
+      onlyJob(
+        '    environment:\n      name: prod\n      url: https://shyden.co.uk\n',
+      ).environment,
+    ).toBe('prod');
+    expect(onlyJob('').environment).toBeUndefined();
+  });
+
+  it('refuses an environment it cannot read as a name, rather than judging a guess', () => {
+    expect(() =>
+      onlyJob('    environment:\n      url: https://shyden.co.uk\n'),
+    ).toThrow(/fixture\.yml job 'only': environment names no environment/);
+    expect(() => onlyJob('    environment: [dev]\n')).toThrow(
+      /fixture\.yml job 'only': environment names no environment/,
+    );
+    // The environment decides which secrets the job gets, and only the runner
+    // can resolve this one.
+    expect(() => onlyJob('    environment: ${{ inputs.target }}\n')).toThrow(
+      /fixture\.yml job 'only': environment is an expression/,
+    );
+  });
+
+  it("lists every secret a job reads, from its env, a step's env, with: and run:", () => {
+    expect(
+      onlyJob(
+        '    env:\n' +
+          '      A: ${{ secrets.JOB_ENV }}\n' +
+          '    steps:\n' +
+          '      - uses: some/action@v1\n' +
+          '        with:\n' +
+          '          token: ${{ secrets.STEP_WITH }}\n' +
+          '      - env:\n' +
+          '          B: ${{ secrets.STEP_ENV }}\n' +
+          '        run: echo "${{ secrets.RUN_SCRIPT }}"\n',
+      ).secrets,
+    ).toEqual(['JOB_ENV', 'RUN_SCRIPT', 'STEP_ENV', 'STEP_WITH']);
+  });
+
+  it('lists each secret once, reading the bracket form and a name in any case', () => {
+    // Secret names are case-insensitive, so `lower_case` names LOWER_CASE.
+    expect(
+      onlyJob(
+        '    env:\n' +
+          "      A: ${{ secrets['BRACKETED'] }}\n" +
+          '      B: ${{ secrets.lower_case }}\n' +
+          '      C: ${{ secrets.BRACKETED }}\n',
+      ).secrets,
+    ).toEqual(['BRACKETED', 'LOWER_CASE']);
+  });
+
+  it("reads a secret in a run script's shell comment, which the runner expands first, never one in a YAML comment", () => {
+    expect(
+      onlyJob(
+        '    steps:\n' +
+          '      # - run: echo ${{ secrets.YAML_COMMENT }}\n' +
+          '      - run: |\n' +
+          '          # ${{ secrets.SHELL_COMMENT }}\n' +
+          '          true\n',
+      ).secrets,
+    ).toEqual(['SHELL_COMMENT']);
+  });
+
+  it('never reads the word secrets outside an expression, or in a string literal inside one', () => {
+    expect(
+      onlyJob(
+        '    steps:\n' +
+          '      - run: echo "set secrets.OUTSIDE in the repository settings"\n' +
+          '      - run: echo "${{ \'secrets.IN_A_LITERAL\' }}"\n' +
+          '      - run: echo "${{ secrets.READ }}"\n',
+      ).secrets,
+    ).toEqual(['READ']);
+  });
+
+  it("attributes a secret in the workflow's own env to every job, since each job reads it", () => {
+    const jobs = workflowJobs(
+      'env:\n' +
+        '  SHARED: ${{ secrets.WORKFLOW_ENV }}\n' +
+        'jobs:\n' +
+        '  one:\n' +
+        '    runs-on: ubuntu-latest\n' +
+        '  two:\n' +
+        '    runs-on: ubuntu-latest\n' +
+        '    env:\n' +
+        '      OWN: ${{ secrets.JOB_ENV }}\n',
+      'fixture.yml',
+    );
+    expect(jobs.map(({ id, secrets }) => [id, secrets])).toEqual([
+      ['one', ['WORKFLOW_ENV']],
+      ['two', ['JOB_ENV', 'WORKFLOW_ENV']],
+    ]);
+  });
+
+  it('refuses a job handed the whole secrets context, rather than guessing which it uses', () => {
+    expect(() => onlyJob('    secrets: inherit\n')).toThrow(
+      /fixture\.yml job 'only' reads every secret/,
+    );
+    expect(() =>
+      onlyJob('    env:\n      ALL: ${{ toJSON(secrets) }}\n'),
+    ).toThrow(/fixture\.yml job 'only' reads every secret/);
+  });
+
+  it('lists GITHUB_TOKEN like any other secret, and none for a job reading none', () => {
+    expect(
+      onlyJob('    env:\n      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n')
+        .secrets,
+    ).toEqual(['GITHUB_TOKEN']);
+    expect(onlyJob('    steps:\n      - run: npm ci\n').secrets).toEqual([]);
+  });
+});

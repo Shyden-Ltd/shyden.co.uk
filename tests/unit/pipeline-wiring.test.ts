@@ -349,15 +349,16 @@ describe('the deploy pipeline runs what it claims to', () => {
   // The two constructs that change what prod serves: a wrangler deploy to the
   // prod Pages project, and a rollback through the Pages API on it. The name
   // must END at `shyden-site`, so `shyden-site-dev` is not prod.
+  const deploysProd = (scripts: string) =>
+    /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts);
+  const rollsProdBack = (scripts: string) =>
+    /\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
+    /\/rollback\b/.test(scripts);
   const changesProd = ({ jobs }: ParsedWorkflow) => {
     const scripts = Object.values(jobs ?? {})
       .flatMap((job) => (job.steps ?? []).map((step) => String(step.run ?? '')))
       .join('\n');
-    return (
-      /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts) ||
-      (/\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
-        /\/rollback\b/.test(scripts))
-    );
+    return deploysProd(scripts) || rollsProdBack(scripts);
   };
 
   it('a rollback cancels any prod release in flight, and a release waits for a rollback (#238)', () => {
@@ -388,6 +389,119 @@ describe('the deploy pipeline runs what it claims to', () => {
       (name) => lockOf(parsedWorkflow(name)) === PROD_LOCK,
     );
     expect(holders, `the workflows holding ${PROD_LOCK}`).toEqual(actors);
+  });
+
+  // ---- each secret lives in the environment of the job reading it (#241) ----
+  //
+  // A repository secret reaches a workflow on any branch that can be pushed.
+  // An environment secret reaches only a job that names its environment, and
+  // `prod` and `prod-rollback` accept `main` alone. So the secrets are only as
+  // well placed as the jobs that read them: once the repository copies are
+  // deleted, a job naming no environment reads nothing, and a job naming the
+  // wrong one reads another project's token. Read PARSED, per job
+  // (tests/workflow-jobs.ts): a secret in a YAML comment is read by nothing,
+  // and one in a shell comment inside `run:` is still expanded by the runner.
+  const everyJob = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs.map((job) => ({ where: `${name} ${job.id}`, file: name, job })),
+    );
+
+  // GITHUB_TOKEN is not a repository secret: the runner mints it for each run,
+  // scoped by the job's `permissions:`, so no environment can hold it.
+  const storedSecrets = ({ secrets }: WorkflowJob) =>
+    secrets.filter((secret) => secret !== 'GITHUB_TOKEN');
+
+  it('every job that reads a secret other than GITHUB_TOKEN names an environment (#241)', () => {
+    const readers = everyJob().filter(
+      ({ job }) => storedSecrets(job).length > 0,
+    );
+    const unplaced = readers
+      .filter(({ job }) => job.environment === undefined)
+      .map(
+        ({ where, job }) =>
+          `${where} reads ${storedSecrets(job).join(', ')} in no environment`,
+      );
+    expect(
+      searched(unplaced, {
+        of: readers.map(({ where }) => where),
+        what: 'jobs reading a secret other than GITHUB_TOKEN',
+      }),
+    ).toEqual([]);
+  });
+
+  // What a job does with the Cloudflare pair decides the environment it reads
+  // them from, derived from its steps and never from the file's name. The dev
+  // and prod tokens share one name, one per environment, so the environment
+  // is the only thing choosing which project a job can reach.
+  const PAGES_ENVIRONMENTS = [
+    {
+      does: 'deploys shyden-site-dev',
+      environment: 'dev',
+      in: (scripts: string) =>
+        /--project-name[= ]+shyden-site-dev(?![\w.-])/.test(scripts),
+    },
+    { does: 'deploys shyden-site', environment: 'prod', in: deploysProd },
+    {
+      does: 'rolls shyden-site back',
+      environment: 'prod-rollback',
+      in: rollsProdBack,
+    },
+  ];
+
+  it('a Cloudflare secret is read only in the environment of the project its job changes (#241)', () => {
+    const readers = everyJob().filter(({ job }) =>
+      job.secrets.some((secret) => secret.startsWith('CLOUDFLARE_')),
+    );
+    const misplaced = readers.flatMap(({ where, job }) => {
+      const acts = PAGES_ENVIRONMENTS.filter((act) =>
+        act.in(job.runs.join('\n')),
+      );
+      if (acts.length !== 1)
+        return [
+          `${where} reads Cloudflare secrets and ` +
+            (acts.length === 0
+              ? 'changes no Pages project'
+              : acts.map(({ does }) => does).join(' and ')),
+        ];
+      const [{ does, environment }] = acts;
+      return job.environment === environment
+        ? []
+        : [
+            `${where} ${does}, so it reads Cloudflare secrets in ` +
+              `${environment}, not ${job.environment ?? 'no environment'}`,
+          ];
+    });
+    expect(
+      searched(misplaced, {
+        of: readers.map(({ where }) => where),
+        what: 'jobs reading a Cloudflare secret',
+      }),
+    ).toEqual([]);
+  });
+
+  // A prod job is any job in a workflow that changes what prod serves, and any
+  // job in a prod environment. A secret meant for dev is named `DEV_*`, and
+  // `dev` accepts every branch, because release-dev.yml puts feature branches
+  // on dev on purpose. Anything it holds is only as private as the least
+  // reviewed branch, so it never travels to prod.
+  it('no job that deploys or verifies prod reads a secret meant for dev (#241)', () => {
+    const prodJobs = everyJob().filter(
+      ({ file, job }) =>
+        changesProd(parsedWorkflow(file)) ||
+        job.environment === 'prod' ||
+        job.environment === 'prod-rollback',
+    );
+    const leaks = prodJobs.flatMap(({ where, job }) =>
+      job.secrets
+        .filter((secret) => secret.startsWith('DEV_'))
+        .map((secret) => `${where} reads ${secret}`),
+    );
+    expect(
+      searched(leaks, {
+        of: prodJobs.map(({ where }) => where),
+        what: 'jobs that deploy or verify prod',
+      }),
+    ).toEqual([]);
   });
 
   // ---- the develop branching model ---------------------------------------
