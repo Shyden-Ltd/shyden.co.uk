@@ -109,6 +109,15 @@ const workflowGraphs = () =>
   }));
 
 /** The job block owning `needle`, from a workflow's comment-stripped text. */
+// The two constructs that change what prod serves: a wrangler deploy to the
+// prod Pages project, and a rollback through the Pages API on it. The name
+// must END at `shyden-site`, so `shyden-site-dev` is not prod.
+const deploysProd = (scripts: string) =>
+  /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts);
+const rollsProdBack = (scripts: string) =>
+  /\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
+  /\/rollback\b/.test(scripts);
+
 const jobBlockRunning = (yaml: string, needle: string): string => {
   const stripped = withoutCommentLines(yaml);
   const lines = stripped.split('\n');
@@ -249,9 +258,20 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(prod).toMatch(/on:[\s\S]*?push:[\s\S]*?branches:\s*\[main\]/);
   });
 
+  // Every job that deploys the prod project, with the environment it names,
+  // read PARSED. A name is the whole name: the regex this replaced read
+  // `name: prod` as a prefix, so a deploy moved into `prod-rollback`, which
+  // has no reviewer, still passed it (#241, mutation W5).
   it('prod is behind the approval-gated environment', () => {
-    const prod = workflowSteps('release-prod.yml');
-    expect(prod).toMatch(/environment:\s*\n\s*name:\s*prod/);
+    const deploys = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter((job) => deploysProd(job.runs.join('\n')))
+        .map(
+          (job) =>
+            `${name} ${job.id} in ${job.environment ?? 'no environment'}`,
+        ),
+    );
+    expect(deploys).toEqual(['release-prod.yml deploy-prod in prod']);
   });
 
   // The placeholder guard cost two false-failed releases before it matched the
@@ -346,14 +366,6 @@ describe('the deploy pipeline runs what it claims to', () => {
     parseCleanYaml(workflow(name), name) as ParsedWorkflow;
   const lockOf = ({ concurrency }: ParsedWorkflow) =>
     typeof concurrency === 'string' ? concurrency : concurrency?.group;
-  // The two constructs that change what prod serves: a wrangler deploy to the
-  // prod Pages project, and a rollback through the Pages API on it. The name
-  // must END at `shyden-site`, so `shyden-site-dev` is not prod.
-  const deploysProd = (scripts: string) =>
-    /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts);
-  const rollsProdBack = (scripts: string) =>
-    /\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
-    /\/rollback\b/.test(scripts);
   const changesProd = ({ jobs }: ParsedWorkflow) => {
     const scripts = Object.values(jobs ?? {})
       .flatMap((job) => (job.steps ?? []).map((step) => String(step.run ?? '')))
