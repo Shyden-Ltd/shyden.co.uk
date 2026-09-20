@@ -1,12 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
+import type { PlaywrightTestConfig } from '@playwright/test';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve, sep } from 'node:path';
 import config, {
   CONTENT_ONLY_SPECS,
   VISUAL_PROJECT,
 } from '../../playwright.config';
-import { searched } from '../source-files';
+import { ignoredByGit, searched, specFilesUnder } from '../source-files';
 import { withoutTsComments } from './source-text';
+import { engineDependence } from './engine-dependence';
 
 /**
  * Five browser projects × every spec is not five times the signal.
@@ -22,11 +25,65 @@ import { withoutTsComments } from './source-text';
  * runs cost time and return nothing the first run did not already prove.
  *
  * The line between the two is not a matter of taste, which is why it can be
- * tested: a spec is content-only exactly when it never drives the viewport.
- * The moment one does, it is engine-dependent and belongs on all five.
+ * tested: a spec is content-only exactly when it neither drives the viewport
+ * nor reads layout (`engine-dependence.ts`, #198). The moment one does, it is
+ * engine-dependent and belongs on all five.
  */
 
+/**
+ * A project as Playwright itself resolves it.
+ *
+ * Asked of Playwright rather than re-derived here: `FullConfigInternal` fills
+ * in what a project inherits (its `testDir`, and the default `testMatch` when
+ * it names none), and `createFileMatcher` is the function a run applies to
+ * every file. Both are internal, so an upgrade that moves them fails this file
+ * loudly, where a copy of their rules would drift in silence.
+ */
+type ResolvedProject = {
+  name: string;
+  testDir: string;
+  testMatch: unknown;
+  testIgnore: unknown;
+};
+
+const requireCjs = createRequire(import.meta.url);
+const { FullConfigInternal } = requireCjs('playwright/lib/common') as {
+  FullConfigInternal: new (
+    location: { resolvedConfigFile: string; configDir: string },
+    userConfig: PlaywrightTestConfig,
+    cliOverrides: Record<string, never>,
+    metadata: undefined,
+  ) => { projects: Array<{ project: ResolvedProject }> };
+};
+const { createFileMatcher } = requireCjs('playwright/lib/util') as {
+  createFileMatcher: (patterns: unknown) => (file: string) => boolean;
+};
+
+const resolvedProjects = (
+  userConfig: PlaywrightTestConfig,
+  configFile: string,
+): ResolvedProject[] => {
+  const resolvedConfigFile = resolve(configFile);
+  return new FullConfigInternal(
+    { resolvedConfigFile, configDir: dirname(resolvedConfigFile) },
+    userConfig,
+    {},
+    undefined,
+  ).projects.map(({ project }) => project);
+};
+
+/** Whether a run of `project` collects the repo-relative file at `path`. */
+const claims = (project: ResolvedProject, path: string): boolean => {
+  const file = resolve(path);
+  return (
+    file.startsWith(project.testDir + sep) &&
+    createFileMatcher(project.testMatch)(file) &&
+    !createFileMatcher(project.testIgnore)(file)
+  );
+};
+
 const E2E = 'tests/e2e';
+const VISUAL_SPEC = join(E2E, 'visual.spec.ts');
 const read = (spec: string) => readFileSync(join(E2E, spec), 'utf8');
 describe('the content-only project', () => {
   it('names specs that actually exist', () => {
@@ -51,12 +108,14 @@ describe('the content-only project', () => {
     ).toBeLessThan(10);
   });
 
-  it('holds only specs that never drive the viewport', () => {
-    const engineDependent = CONTENT_ONLY_SPECS.filter((spec) => {
-      const src = read(spec);
-      return (
-        src.includes('setViewportSize') || src.includes('@emulated-viewport')
-      );
+  it('holds only specs whose verdict cannot depend on the engine or viewport', () => {
+    // #198: this once asked only whether a spec DRIVES the viewport, by
+    // substring. `rendered-text.spec.ts` READ layout instead, through
+    // `getClientRects`, so it ran at 1280px on one engine and failed on every
+    // page of a real phone.
+    const engineDependent = CONTENT_ONLY_SPECS.flatMap((spec) => {
+      const signals = engineDependence(read(spec));
+      return signals.length > 0 ? [`${spec}: ${signals.join(', ')}`] : [];
     });
 
     expect(
@@ -64,32 +123,36 @@ describe('the content-only project', () => {
         of: CONTENT_ONLY_SPECS,
         what: 'content-only specs',
       }),
-      'a spec that resizes is engine-dependent and must run on all five',
+      'a spec that drives the viewport or reads layout is engine-dependent ' +
+        'and must run on all five',
     ).toEqual([]);
   });
 
+  it('is judged by a detector that sees layout reads in the real suite', () => {
+    // The positive control for the absence above: the spec #198 moved out
+    // reads layout, and a detector gone blind would find nothing anywhere.
+    // Exact, so a detector that starts reporting prose shows up here too.
+    expect(engineDependence(read('rendered-text.spec.ts'))).toEqual([
+      'checkVisibility',
+      'clientWidth',
+      'getBoundingClientRect',
+      'getClientRects',
+      'getComputedStyle',
+      'innerText',
+    ]);
+  });
+
   it('runs those specs on exactly one project', () => {
-    // Compare spec NAMES, not regex source: the pattern is escaped, so strip
-    // the backslashes rather than re-deriving the escaping here and testing
-    // this file's own idea of it.
-    //
-    // And ask what a project actually MATCHES, not what its `testIgnore`
-    // spells. Reading `testIgnore` alone made a project scoped the OTHER way
-    // -- by `testMatch`, which is how `visual` is scoped -- look like it ran
-    // everything (#33). A guard that infers coverage from one of the two
-    // mechanisms is blind to the other.
-    const matches = (
-      p: { testIgnore?: unknown; testMatch?: unknown },
-      spec: string,
-    ) => {
-      const ignored = String(p.testIgnore ?? '').replace(/\\/g, '');
-      if (ignored.includes(spec)) return false;
-      if (p.testMatch instanceof RegExp) return p.testMatch.test(spec);
-      if (typeof p.testMatch === 'string') return spec.includes(p.testMatch);
-      return true;
-    };
-    const runners = (config.projects ?? []).filter((p) =>
-      CONTENT_ONLY_SPECS.some((s) => matches(p, s)),
+    // Ask what a project actually MATCHES, not what its `testIgnore` spells.
+    // Reading `testIgnore` alone made a project scoped the OTHER way -- by
+    // `testMatch`, which is how `visual` is scoped -- look like it ran
+    // everything (#33). The hand-written matcher that replaced it still
+    // searched each pattern's text for the spec's NAME, so an engine ignoring
+    // a pattern that spelled every content-only name and matched none read as
+    // an exclusion, with the whole unit suite green (#194). Playwright's own
+    // resolution answers instead.
+    const runners = resolvedProjects(config, 'playwright.config.ts').filter(
+      (p) => CONTENT_ONLY_SPECS.some((spec) => claims(p, join(E2E, spec))),
     );
 
     expect(runners.map((p) => p.name)).toEqual(['content']);
@@ -140,18 +203,27 @@ describe('the visual-regression project', () => {
     // `playwright test --list` grows by 40 tests -- the same 8 claimed by all
     // five engines, demanding five sets of baselines for a question about our
     // CSS rather than about WebKit's.
-    const others = (config.projects ?? []).filter((p) => p.name !== 'visual');
-    expect(others.length).toBeGreaterThan(3);
-    for (const project of others) {
-      const ignored = String(project.testIgnore ?? '');
-      const matched = project.testMatch;
-      const claims =
-        !ignored.includes('visual') &&
-        (matched instanceof RegExp
-          ? matched.test('visual.spec.ts')
-          : matched === undefined);
-      expect(claims, `${project.name} would claim visual.spec.ts`).toBe(false);
-    }
+    //
+    // Resolved by Playwright, not re-derived. The hand-written check this
+    // replaced looked for `visual` inside the stringified `testIgnore`, which
+    // an `audiovisual` pattern also satisfies, and read a `testMatch` ARRAY as
+    // claiming nothing. Both let the five engines claim the suite with the
+    // whole unit suite green (#194).
+    const others = resolvedProjects(config, 'playwright.config.ts').filter(
+      (p) => p.name !== 'visual',
+    );
+    expect(existsSync(VISUAL_SPEC), `${VISUAL_SPEC} has moved`).toBe(true);
+    const claimants = others
+      .filter((p) => claims(p, VISUAL_SPEC))
+      .map((p) => p.name);
+
+    expect(
+      searched(claimants, {
+        of: others.map((p) => p.name),
+        what: 'projects other than visual',
+      }),
+      'each would demand its own set of baselines',
+    ).toEqual([]);
   });
 
   it('states its flake policy rather than discovering it', () => {
@@ -230,5 +302,128 @@ describe('the visual-regression project', () => {
     // for which `applySuggestedRebaselines` returns early rather than being
     // willing to rewrite expectations during an ordinary run.
     expect(config.updateSnapshots).toBe('none');
+  });
+});
+
+/**
+ * The real-device config (#194).
+ *
+ * `playwright.device.config.ts` is one more place a spec can be claimed, and
+ * it claimed the visual suite. Eight of the nine failures in #189's Android
+ * run were `visual.spec.ts` asking for an `-android-chrome-darwin` baseline
+ * that cannot exist: a baseline belongs to one project on one platform, and
+ * CI never reads a phone's. Under Playwright's default `updateSnapshots:
+ * 'missing'` the run then WROTE eight of them into the working tree.
+ *
+ * The ninth failure is why only the visual suite comes out. `rendered-text`'s
+ * touching-words test reads layout, and the phone is the only run that has
+ * ever measured it at phone width (#198). Taking the engines' whole ignore
+ * list would have turned the device leg green by deleting that measurement.
+ */
+describe('the real-device config (#194)', () => {
+  let device: PlaywrightTestConfig;
+  let projects: ResolvedProject[];
+
+  beforeAll(async () => {
+    // The config sets PW_REAL_DEVICE as it loads: its job in a run, and a
+    // leak into everything after it in a unit suite.
+    const before = process.env.PW_REAL_DEVICE;
+    try {
+      device = (await import('../../playwright.device.config')).default;
+    } finally {
+      if (before === undefined) delete process.env.PW_REAL_DEVICE;
+      else process.env.PW_REAL_DEVICE = before;
+    }
+    projects = resolvedProjects(device, 'playwright.device.config.ts');
+  });
+
+  const phone = (): ResolvedProject => {
+    const found = projects.filter((p) => p.name === 'android-chrome');
+    expect(found.map((p) => p.name)).toEqual(['android-chrome']);
+    return found[0];
+  };
+
+  it('lets no device project claim the visual suite', () => {
+    expect(existsSync(VISUAL_SPEC), `${VISUAL_SPEC} has moved`).toBe(true);
+    const claimants = projects
+      .filter((p) => claims(p, VISUAL_SPEC))
+      .map((p) => p.name);
+
+    expect(
+      searched(claimants, {
+        of: projects.map((p) => p.name),
+        what: 'device projects',
+      }),
+      'a phone has no baseline CI would read, so it must never be asked for one',
+    ).toEqual([]);
+  });
+
+  it('still runs every other e2e spec on the phone, content-only ones included', () => {
+    const android = phone();
+    // The invariant first, so it is judged even when the exact set below is
+    // not: an expectation ordered after a failing one never runs.
+    const dropped = CONTENT_ONLY_SPECS.filter(
+      (spec) => !claims(android, join(E2E, spec)),
+    );
+    expect(
+      searched(dropped, { of: CONTENT_ONLY_SPECS, what: 'content-only specs' }),
+      'the phone is the only run that measures touching words at phone width (#198)',
+    ).toEqual([]);
+
+    const specs = specFilesUnder(E2E);
+    expect(specs.filter((spec) => claims(android, spec))).toEqual(
+      specs.filter((spec) => spec !== VISUAL_SPEC),
+    );
+  });
+
+  it('excludes the visual project’s own pattern rather than a copy of it', () => {
+    // Identity, not equality: a second regex with the same source passes an
+    // equality check and drifts the day one of the two is edited.
+    const declared = device.projects?.find((p) => p.name === 'android-chrome');
+    expect([declared?.testIgnore].flat()).toContain(VISUAL_PROJECT.testMatch);
+  });
+
+  it('writes no baseline a phone run was never asked for', () => {
+    // The second door the main config closed (`refuses to write a baseline
+    // nobody asked for`, above), still open here: Playwright's default
+    // 'missing' is what wrote the eight.
+    expect(device.updateSnapshots).toBe('none');
+  });
+
+  it('claims no spec that compares against a stored snapshot', () => {
+    // The rule the visual exclusion is one case of, so a snapshot assertion
+    // added to any other spec the phone runs is caught the day it lands.
+    const claimed = specFilesUnder('tests').filter((spec) =>
+      projects.some((p) => claims(p, spec)),
+    );
+    const comparing = claimed.filter((spec) =>
+      /\.(?:toHaveScreenshot|toMatchSnapshot|toMatchAriaSnapshot)\(/.test(
+        withoutTsComments(readFileSync(spec, 'utf8')),
+      ),
+    );
+
+    expect(
+      searched(comparing, {
+        of: claimed,
+        what: 'specs a device project claims',
+      }),
+    ).toEqual([]);
+  });
+
+  it('leaves git ignoring a snapshot a stray run writes beside a spec', () => {
+    // Neither path is tracked, so git answers from its rules alone (see
+    // `ignoredByGit`). The second is where a REAL new baseline would land.
+    const stray =
+      'tests/e2e/visual.spec.ts-snapshots/home-id-mobile-android-chrome-darwin.png';
+    const baseline = 'tests/e2e/__screenshots__/a-new-page-desktop-linux.png';
+    const ignored = ignoredByGit([stray, baseline]);
+
+    expect(
+      ignored.has(stray),
+      'an untracked stray baseline is one `git add -A` from becoming a real one',
+    ).toBe(true);
+    expect(ignored.has(baseline), 'real baselines must stay committable').toBe(
+      false,
+    );
   });
 });

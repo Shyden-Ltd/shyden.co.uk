@@ -7,6 +7,11 @@ name: Rollback prod (Cloudflare Pages)
 # Default target = the deployment immediately before the current live one. Pass a
 # specific deployment ID to roll back further (see the Deployments list in the
 # Cloudflare dashboard for project shyden-site).
+#
+# Dry run (#241): tick `dry_run` to prove the rollback can read its secrets and
+# find the deployment it would promote, without rolling anything back. Only the
+# "Promote it" step is skipped. A dry run still takes the prod lock below, so it
+# cancels a release in flight: run one only while no release is running.
 
 on:
   workflow_dispatch:
@@ -15,10 +20,22 @@ on:
         description: 'CF Pages deployment ID to roll back to. Blank = the previous live production deployment.'
         required: false
         default: ''
+      dry_run:
+        description: 'Dry run: check the secrets and find the deployment, but roll nothing back.'
+        type: boolean
+        required: false
+        default: false
 
+# One lock around everything that changes what prod serves, shared with
+# release-prod.yml (#238). A rollback CANCELS whatever holds it: a release
+# building, uploading, or waiting at the prod approval. A run waiting at an
+# approval holds its group (measured on the runner, #238), so without the
+# cancel this rollback would queue behind an approval nobody has clicked, and
+# the next push to main would cancel it while it waited. A release cancelled
+# here is re-run once the incident is over.
 concurrency:
-  group: deploy-shyden-prod
-  cancel-in-progress: false
+  group: shyden-prod-publish
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -28,33 +45,79 @@ jobs:
     name: Roll back shyden-site
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Its Cloudflare secrets live in `prod-rollback`, which accepts `main` alone
+    # and has no reviewers, so a recovery never waits for an approval (#241).
+    environment:
+      name: prod-rollback
+      url: https://shyden.co.uk
     steps:
-      - name: Promote a previous production deployment
+      # Present or absent, never the value. It stops the run before anything
+      # calls Cloudflare, so a missing secret reads as one line here rather
+      # than as an API error halfway through a recovery.
+      - name: Check the secrets are set
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -n "${!name:-}" ]; then
+              echo "${name}: present"
+            else
+              echo "::error::${name}: absent. It belongs in the prod-rollback environment."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Find the deployment to roll back to
+        id: find
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TARGET_ID: ${{ inputs.deployment_id }}
         run: |
           set -euo pipefail
-          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/shyden-site"
-          hdr="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-
           target="${TARGET_ID}"
           if [ -z "$target" ]; then
-            echo "No deployment ID given — finding the previous production deployment…"
-            # Production deployments are returned newest-first: [0] is the current
-            # live one, [1] the previous. Roll back to [1].
-            target="$(curl -fsS -H "$hdr" "${API}/deployments?per_page=25" \
+            echo "No deployment ID given, so finding the previous production deployment."
+            # Production deployments are returned newest-first: [0] is the
+            # current live one, [1] the previous. Roll back to [1]. On a dry
+            # run, this read-only call is the proof that the token reaches
+            # shyden-site.
+            target="$(curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/shyden-site/deployments?per_page=25" \
               | jq -r '[.result[] | select(.environment == "production")] | .[1].id // ""')"
           fi
-
           if [ -z "$target" ]; then
             echo "::error::No previous production deployment found to roll back to."
             exit 1
           fi
-          echo "Rolling shyden-site back to deployment: ${target}"
+          # A deployment ID is letters, digits and dashes. Anything else could
+          # change the API path the token is sent to, or add a line to this
+          # step's outputs, so it is refused without being echoed.
+          if ! [[ "$target" =~ ^[A-Za-z0-9-]+$ ]]; then
+            echo "::error::deployment_id is not a Cloudflare Pages deployment ID."
+            exit 1
+          fi
+          echo "target=${target}" >> "$GITHUB_OUTPUT"
+          echo "Deployment to roll shyden-site back to: ${target}"
 
-          resp="$(curl -fsS -X POST -H "$hdr" "${API}/deployments/${target}/rollback")"
+      - name: Promote it
+        if: ${{ !inputs.dry_run }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TARGET: ${{ steps.find.outputs.target }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TARGET}" ]; then
+            echo "::error::No deployment to roll back to: the find step handed on none."
+            exit 1
+          fi
+          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/shyden-site"
+          echo "Rolling shyden-site back to deployment: ${TARGET}"
+          resp="$(curl -fsS -X POST -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "${API}/deployments/${TARGET}/rollback")"
           if [ "$(jq -r '.success' <<<"$resp")" != "true" ]; then
             echo "::error::Rollback failed: $(jq -c '.errors' <<<"$resp")"
             exit 1

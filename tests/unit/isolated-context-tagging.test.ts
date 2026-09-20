@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { specDirs } from '../spec-dirs';
-import { blankCommentLines } from './source-text';
 import { readFileSync } from 'node:fs';
-import { withoutTsComments } from './source-text';
+import ts from 'typescript';
+import { parseSource } from './ast';
+import { specDirs } from '../spec-dirs';
 import { searched, tsFilesUnder } from '../source-files';
+import {
+  declarationsIn,
+  enclosingDeclaration,
+  useCallsIn,
+  type Declaration,
+  type UseCall,
+} from '../playwright-declarations';
 
 /**
  * A real device has exactly ONE adopted browser context for the whole run
@@ -13,8 +20,7 @@ import { searched, tsFilesUnder } from '../source-files';
  * javaScriptEnabled: false })` -- and any future per-test context option
  * like it -- only takes effect on a context Playwright creates fresh, so
  * on the real device it is silently inert: JavaScript keeps running. Every
- * test inside a `test.describe(...)` block that calls
- * `test.use({ javaScriptEnabled: false })` must carry the
+ * test that such a `test.use()` covers must carry the
  * `@requires-isolated-context` tag so `android-chrome`'s own `grepInvert`
  * (playwright.device.config.ts) excludes it, the same "physically
  * impossible on one real device" treatment `@emulated-viewport` already
@@ -22,250 +28,119 @@ import { searched, tsFilesUnder } from '../source-files';
  * what keeps that true: an exclusion list nobody checks rots the moment
  * someone adds a test.
  *
- * THE APPROXIMATION, STATED PLAINLY (same house standard as
- * viewport-tagging.test.ts): this scans SOURCE TEXT, not a real parse (no
- * new npm dependency is available to add one), on rules chosen to match
- * what this repo's Prettier config actually produces, verified against
- * every real call site this guard scans, not assumed:
+ * It reads the specs with the parser (`tests/playwright-declarations.ts`).
+ * Until #218 it walked the text with regexes, on the premise that no parser
+ * was available -- false since #115. A group's extent was the lines down to
+ * the `});` at its opener's indentation, and an opener was a line ending in
+ * `=> {` -- so a group whose opening prettier wrapped across lines could not
+ * be found at all. The regexes also read a declaration spelled in a string
+ * as a real test, and reported lines counted in comment-stripped text.
  *
- * 1. A `test.use(...)` call's own options are read as the raw text between
- *    its opening paren and the next literal `);` -- not a parsed object --
- *    exactly the technique tests/unit/viewport-tagging.test.ts's own
- *    `extractViewportUseHits` already uses and documents, for the identical
- *    reason: an options value can itself contain braces (a nested object),
- *    so brace-matching is the wrong tool and a `);` terminator is safe for
- *    every option shape either file's corpus actually writes.
- *
- * 2. A `test.describe(...)` block's own BODY SPAN (the lines that belong to
- *    it, not a nested block or a later sibling) is found by indentation,
- *    not brace-counting: Prettier always places a block's closing `});` at
- *    the SAME indentation as the line that opened the block -- verified by
- *    reading every `test.describe(` in tests/e2e and tests/device, not
- *    assumed. Brace-counting was considered and rejected: this exact corpus
- *    writes `` `${path}: says so, in its own language` `` -- a template
- *    literal whose `${` / `}` are not code-structural braces at all, which
- *    would misdirect a naive counter. Indentation never has this problem,
- *    because it never looks inside a literal's own contents.
- *
- * Full-line `//` comments are blanked before either rule runs, same
- * near-misses and same technique as viewport-tagging.test.ts (a literal
- * `test.describe(` or `test.use(`-shaped substring inside a prose comment
- * must not be read as real code).
+ * THE RULE. A `test.use()` that sets `javaScriptEnabled: false` covers the
+ * tests Playwright applies it to: every test in its group, nested groups
+ * included, or every test in the file when it is called at file level. Each
+ * covered test carries the tag; a tagged test nothing covers is stale. A
+ * `test.use()` inside a test body is a Playwright error, and a
+ * `javaScriptEnabled` not written as `true` or `false` cannot be judged --
+ * both are reported, never read as "JavaScript stays on".
  */
 
 const REQUIRES_ISOLATED_CONTEXT_TAG = '@requires-isolated-context';
 const SCAN_DIRS = specDirs();
 
-function lineNumberAt(text: string, index: number): number {
-  return text.slice(0, index).split('\n').length;
-}
-
-/** Blanks every line whose trimmed content starts with `//`, keeping line count (and every
- * other line's number) identical -- identical technique to viewport-tagging.test.ts. */
-function blankComments(text: string): string {
-  return blankCommentLines(text);
-}
-
-/** Indentation (count of leading spaces) of the line containing character `index`. */
-function indentOfLineAt(text: string, index: number): number {
-  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
-  const line = text.slice(lineStart, index);
-  return line.length - line.trimStart().length;
-}
-
-const JS_DISABLED_RE = /\btest\.use\(/g;
-
-interface JsDisabledHit {
-  line: number;
-  index: number;
-}
-
-/** Every `test.use(...)` call in `text` whose own options mention `javaScriptEnabled: false`
- * -- see the file header's rule 1 for why `);` (not brace-matching) is the call's terminator. */
-function findJsDisabledHits(text: string): JsDisabledHit[] {
-  const hits: JsDisabledHit[] = [];
-  JS_DISABLED_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = JS_DISABLED_RE.exec(text))) {
-    const closeIndex = text.indexOf(');', match.index);
-    const span =
-      closeIndex === -1
-        ? text.slice(match.index)
-        : text.slice(match.index, closeIndex);
-    if (/\bjavaScriptEnabled\s*:\s*false\b/.test(span)) {
-      hits.push({ line: lineNumberAt(text, match.index), index: match.index });
-    }
-  }
-  return hits;
-}
-
-/** A line whose trimmed content is exactly `test.describe(` followed eventually by a `{` that
- * opens the callback -- deliberately broad (no title/args validation): this only needs to find
- * WHERE a describe opens and at what indentation, not validate its shape. A `test.describe.`-
- * suffixed variant (`.serial`, `.only`, ...) counts too; `test.describe.configure(...)` (no
- * callback, a plain function call ending `);`) does not, because it never opens with `=> {`. */
-const DESCRIBE_OPEN_RE = /\btest\.describe(?:\.\w+)*\([^\n]*=>\s*\{\s*$/gm;
-
-interface DescribeBody {
-  openLine: number;
-  indent: number;
-  bodyStart: number;
-  bodyEnd: number;
-  closeFound: boolean;
-}
-
-/** The nearest `test.describe(...) => {` opening AT OR BEFORE `beforeIndex`, and its own body
- * span (see the file header's rule 2). Returns `undefined` if no describe opens before
- * `beforeIndex` at all -- the caller turns that into an actionable "orphan" finding, not
- * silence, matching viewport-tagging.test.ts's own `orphanMessage` precedent. */
-function findEnclosingDescribeBody(
-  text: string,
-  beforeIndex: number,
-): DescribeBody | undefined {
-  DESCRIBE_OPEN_RE.lastIndex = 0;
-  let best: { index: number; end: number } | undefined;
-  let match: RegExpExecArray | null;
-  while ((match = DESCRIBE_OPEN_RE.exec(text))) {
-    if (match.index > beforeIndex) break; // matches are in file order
-    best = { index: match.index, end: match.index + match[0].length };
-  }
-  if (!best) return undefined;
-
-  const indent = indentOfLineAt(text, best.index);
-  const bodyStart = best.end;
-  const closeRe = /^( *)\}\);[ \t]*$/gm;
-  closeRe.lastIndex = bodyStart;
-  let close: RegExpExecArray | null;
-  let bodyEnd = text.length;
-  let closeFound = false;
-  while ((close = closeRe.exec(text))) {
-    if (close[1].length === indent) {
-      bodyEnd = close.index;
-      closeFound = true;
-      break;
-    }
-  }
-  return {
-    openLine: lineNumberAt(text, best.index),
-    indent,
-    bodyStart,
-    bodyEnd,
-    closeFound,
-  };
-}
-
-// Group 1: the `.word` suffix chain (`.only`/`.skip`/`.fixme`, or none). Group 2: which quote
-// opened the title. Group 3: the title text. Group 4: a flat `{ ... }` options object
-// immediately following, if present -- same shape as viewport-tagging.test.ts's own
-// DECLARATION_RE, reused here rather than imported (see this repo's own established trade-off:
-// small, clearly-commented duplication over coupling two independent Vitest files together).
-const TEST_DECLARATION_RE =
-  /\btest((?:\.\w+)*)\(\s*(['"`])((?:(?!\2)[^\r\n])*)\2(?:\s*,\s*\{([^{}]*)\})?/g;
-const TEST_KIND_SUFFIXES = new Set(['', '.only', '.skip', '.fixme']);
-
-interface TestDeclaration {
-  line: number;
-  title: string;
-  tagged: boolean;
-}
-
-function findTestDeclarations(text: string): TestDeclaration[] {
-  const out: TestDeclaration[] = [];
-  TEST_DECLARATION_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = TEST_DECLARATION_RE.exec(text))) {
-    if (!TEST_KIND_SUFFIXES.has(match[1])) continue; // test.describe(/test.step(/... -- not a test()
-    const optionsObject = match[4];
-    out.push({
-      line: lineNumberAt(text, match.index),
-      title: match[3],
-      tagged:
-        optionsObject !== undefined &&
-        optionsObject.includes(REQUIRES_ISOLATED_CONTEXT_TAG),
-    });
-  }
-  return out;
-}
-
-function orphanMessage(file: string, hit: JsDisabledHit): string {
+function useInTestMessage(
+  file: string,
+  use: UseCall,
+  owner: Declaration,
+): string {
   return (
-    `${file}:${hit.line} calls test.use({ javaScriptEnabled: false }), but no enclosing ` +
-    'test.describe(...) => { ... } opening was found above it in this file -- nothing to ' +
-    'attribute this call to (Playwright does not support calling test.use() outside a describe ' +
-    'or at the top of a test body).'
+    `${file}:${use.line} calls test.use({ javaScriptEnabled: false }) inside ` +
+    `test('${owner.title}') (line ${owner.line}) -- test.use() configures every test in ` +
+    'its enclosing describe, and Playwright does not support calling it inside a ' +
+    'running test body. Fix: move it to the top of the enclosing describe.'
   );
 }
 
-function unclosedMessage(file: string, body: DescribeBody): string {
+function unreadableMessage(file: string, use: UseCall): string {
   return (
-    `${file}:${body.openLine} -- the enclosing test.describe(...) block never reached a \`});\` ` +
-    `at its own indentation (${body.indent} spaces) before end of file -- cannot determine which ` +
-    'tests are inside it, so cannot check they are tagged. This scanner expects Prettier-' +
-    'formatted output; run `npm run format` and re-check.'
+    `${file}:${use.line} calls test.use() with a javaScriptEnabled that is not written ` +
+    'as true or false, so this guard cannot tell which tests run without JavaScript -- ' +
+    'write the value as a literal where the option is set.'
   );
 }
 
-function untaggedMessage(file: string, decl: TestDeclaration): string {
+function untaggedMessage(file: string, decl: Declaration): string {
   return (
-    `${file}:${decl.line} -- test('${decl.title}') is inside a describe block whose ` +
-    'test.use({ javaScriptEnabled: false }) is inert on the real-device harness (JavaScript ' +
+    `${file}:${decl.line} -- test('${decl.title}') is covered by a ` +
+    'test.use({ javaScriptEnabled: false }), which is inert on the real-device harness (JavaScript ' +
     `keeps running -- see tests/e2e/fixtures.ts) but is not tagged \`${REQUIRES_ISOLATED_CONTEXT_TAG}\` ` +
     `-- tag it \`${REQUIRES_ISOLATED_CONTEXT_TAG}\` so android-chrome excludes it by design ` +
     'instead of failing (or passing for the wrong reason).'
   );
 }
 
-function staleTagMessage(file: string, decl: TestDeclaration): string {
+function staleTagMessage(file: string, decl: Declaration): string {
   return (
     `${file}:${decl.line} -- test('${decl.title}') is tagged \`${REQUIRES_ISOLATED_CONTEXT_TAG}\` ` +
-    'but is not inside any describe block whose test.use({ javaScriptEnabled: false }) this ' +
-    'scanner could find -- stale tag, silently costing real-device coverage for a test that no ' +
-    'longer needs excluding. Remove the tag, or restore the javaScriptEnabled: false use it is ' +
-    'supposed to describe.'
+    'but no test.use({ javaScriptEnabled: false }) covers it -- stale tag, silently costing ' +
+    'real-device coverage for a test that no longer needs excluding. Remove the tag, or ' +
+    'restore the javaScriptEnabled: false use it is supposed to describe.'
   );
+}
+
+/** Every group `decl` sits in, innermost first. */
+function groupsAround(
+  decl: Declaration,
+  declarations: readonly Declaration[],
+): Declaration[] {
+  const groups: Declaration[] = [];
+  for (
+    let around = enclosingDeclaration(decl.call, declarations);
+    around !== undefined;
+    around = enclosingDeclaration(around.call, declarations)
+  )
+    groups.push(around);
+  return groups;
 }
 
 /** The whole guard, as one pure function of (path, source text) -> finding messages -- kept
  * separate from the filesystem walk so the self-test block below can prove every branch red
- * and green on tiny synthetic input, not just trust the real corpus to exercise all of them. */
-function analyze(file: string, rawText: string): string[] {
-  const text = blankComments(rawText);
-  const hits = findJsDisabledHits(text);
+ * and green on tiny synthetic input, not just trust the real corpus to exercise all of them.
+ * The text is the file as it is on disk: a line counted in stripped text is not the line a
+ * reader opens. */
+function analyze(file: string, text: string): string[] {
+  const sf = parseSource(text, file);
+  const declarations = declarationsIn(sf);
   const findings: string[] = [];
 
-  // One affected span per hit (usually exactly one hit in the whole corpus today, but a
-  // describe could in principle gain a second, redundant test.use({ javaScriptEnabled: false })
-  // -- harmless to process twice, never under-covers).
-  const affectedSpans: Array<{ start: number; end: number }> = [];
-  for (const hit of hits) {
-    const body = findEnclosingDescribeBody(text, hit.index);
-    if (!body) {
-      findings.push(orphanMessage(file, hit));
+  // What each JavaScript-disabling test.use() covers: a group, or the file.
+  const coveringGroups = new Set<Declaration>();
+  let coversFile = false;
+  for (const use of useCallsIn(sf)) {
+    const value = use.options.get('javaScriptEnabled');
+    if (value === undefined || value.kind === ts.SyntaxKind.TrueKeyword)
+      continue;
+    if (value.kind !== ts.SyntaxKind.FalseKeyword) {
+      findings.push(unreadableMessage(file, use));
       continue;
     }
-    if (!body.closeFound) {
-      findings.push(unclosedMessage(file, body));
-      continue;
-    }
-    affectedSpans.push({ start: body.bodyStart, end: body.bodyEnd });
+    const owner = enclosingDeclaration(use.call, declarations);
+    if (owner === undefined) coversFile = true;
+    else if (owner.kind === 'test')
+      findings.push(useInTestMessage(file, use, owner));
+    else coveringGroups.add(owner);
   }
 
-  const declarations = findTestDeclarations(text);
   for (const decl of declarations) {
-    // Re-locate this declaration's own char index precisely enough to test span membership --
-    // line number is unambiguous here since every span boundary is also a line boundary.
-    const declIndex = text
-      .split('\n')
-      .slice(0, decl.line - 1)
-      .join('\n').length;
-    const inAffectedSpan = affectedSpans.some(
-      (span) => declIndex >= span.start && declIndex < span.end,
-    );
-    if (inAffectedSpan && !decl.tagged) {
-      findings.push(untaggedMessage(file, decl));
-    } else if (!inAffectedSpan && decl.tagged) {
-      findings.push(staleTagMessage(file, decl));
-    }
+    if (decl.kind !== 'test') continue;
+    const covered =
+      coversFile ||
+      groupsAround(decl, declarations).some((group) =>
+        coveringGroups.has(group),
+      );
+    const tagged = decl.tags.includes(REQUIRES_ISOLATED_CONTEXT_TAG);
+    if (covered && !tagged) findings.push(untaggedMessage(file, decl));
+    else if (!covered && tagged) findings.push(staleTagMessage(file, decl));
   }
 
   return findings;
@@ -276,7 +151,7 @@ describe('a real device cannot isolate a JavaScript-disabled context', () => {
     const files = SCAN_DIRS.flatMap(tsFilesUnder);
 
     const findings = files.flatMap((file) =>
-      analyze(file, withoutTsComments(readFileSync(file, 'utf8'))),
+      analyze(file, readFileSync(file, 'utf8')),
     );
     expect(
       searched(findings, { of: files, what: 'spec files' }),
@@ -289,6 +164,10 @@ describe('a real device cannot isolate a JavaScript-disabled context', () => {
 // happens to contain today -- "a guard nobody has watched fail is decoration" applies to the
 // guard's own building blocks too, not only to the tags it is checking for.
 describe('analyze() -- the scanner proven on synthetic input, not just trusted', () => {
+  // What the corpus loop reports for a file, read the way it reads one.
+  const scanned = (src: string[]) =>
+    analyze('synthetic.spec.ts', src.join('\n'));
+
   it('flags an untagged test inside a javaScriptEnabled:false describe, naming file, line and title', () => {
     const src = [
       "import { test, expect } from './fixtures';",
@@ -371,6 +250,20 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     expect(analyze('synthetic.spec.ts', src)).toEqual([]);
   });
 
+  it('holds a nested group to the tag too, since test.use() reaches it', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      "test.describe('no script', () => {",
+      '  test.use({ javaScriptEnabled: false });',
+      "  test.describe('on the roster', () => {",
+      "    test('shows the notice', async () => {});",
+      '  });',
+      '});',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:5');
+  });
+
   it('does not mistake a runtime test.use(...) call for one disabling JavaScript', () => {
     const src = [
       "import { test, expect } from './fixtures';",
@@ -388,25 +281,23 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     expect(analyze('synthetic.spec.ts', src)).toEqual([]);
   });
 
-  it('reports an orphan test.use({ javaScriptEnabled: false }) with no enclosing describe', () => {
-    const src = [
-      "import { test, expect } from './fixtures';",
-      '',
-      '// Malformed on purpose: no test.describe(...) => { above this line.',
-      'test.use({ javaScriptEnabled: false });',
-      '',
-    ].join('\n');
-
-    const findings = analyze('synthetic.spec.ts', src);
+  it('reports test.use({ javaScriptEnabled: false }) inside a test body, which Playwright rejects', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      "test('turns scripts off itself', async () => {",
+      '  test.use({ javaScriptEnabled: false });',
+      '});',
+    ]);
     expect(findings).toHaveLength(1);
-    expect(findings[0]).toContain('no enclosing');
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain('inside a running test body');
   });
 
   it('is not confused by a template-literal title containing brace-like interpolation', () => {
     // The exact shape classroom-groups-privacy.spec.ts's own corpus uses --
-    // `${path}` inside a title is not a code-structural brace, and a
-    // brace-counting boundary detector would misread it. This file uses
-    // indentation instead specifically to survive this.
+    // `${path}` inside a title is not a code-structural brace. The indentation
+    // rule the regex version relied on was chosen to survive this; the parser
+    // never reads a literal's contents as structure at all.
     const src = [
       "import { test, expect } from './fixtures';",
       '',
@@ -443,5 +334,76 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     ].join('\n');
 
     expect(analyze('synthetic.spec.ts', src)).toEqual([]);
+  });
+
+  it('finds the group when prettier wraps its opening across lines', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      'test.describe(',
+      "  'a title long enough that prettier puts every argument on its own line',",
+      '  () => {',
+      '    test.use({ javaScriptEnabled: false });',
+      "    test('shows the notice', async ({ page }) => {});",
+      '  },',
+      ');',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:6');
+    expect(findings[0]).toContain('shows the notice');
+  });
+
+  it('is not fooled by a declaration spelled inside a string', () => {
+    expect(
+      scanned([
+        "import { test } from './fixtures';",
+        "test.describe('no script', () => {",
+        '  test.use({ javaScriptEnabled: false });',
+        "  test('real', { tag: '@requires-isolated-context' }, async () => {",
+        '    const example = "test(\'not a test\', async () => {})";',
+        '  });',
+        '});',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('reports a javaScriptEnabled it cannot read, instead of reading it as enabled', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      'const javaScriptEnabled = false;',
+      "test.describe('no script', () => {",
+      '  test.use({ javaScriptEnabled });',
+      "  test('shows the notice', async () => {});",
+      '});',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:4');
+    expect(findings[0]).toContain('javaScriptEnabled');
+  });
+
+  it('reports the line a finding is on in the file, below a block comment', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      '/**',
+      ' * A docblock above the group.',
+      ' */',
+      "test.describe('no script', () => {",
+      '  test.use({ javaScriptEnabled: false });',
+      "  test('shows the notice', async () => {});",
+      '});',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:7');
+  });
+
+  it('holds every test in the file to the tag when test.use() disables JavaScript at file level', () => {
+    // Playwright applies a file-level test.use() to every test in the file.
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      'test.use({ javaScriptEnabled: false });',
+      "test('shows the notice', async () => {});",
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain('shows the notice');
   });
 });

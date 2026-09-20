@@ -1,4 +1,6 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
+import { openRoster } from './helpers';
 
 /**
  * What a 100% green suite cannot see (#33).
@@ -45,43 +47,70 @@ const WIDTHS = [
   { label: 'mobile', viewport: { width: 390, height: 844 } },
 ] as const;
 
-for (const { label, viewport } of WIDTHS) {
-  test.describe(`${label} @${viewport.width}px`, () => {
-    test.use({ viewport });
-
-    for (const { name, path } of PAGES) {
-      test(`${name} renders the same pixels`, async ({ page }) => {
-        await page.goto(path);
-        // The heading is the last thing to settle on the two tool pages,
-        // whose scripts rewrite the DOM after load. On the homepage, which
-        // ships no JavaScript at all, it is already there and this returns
-        // immediately.
-        await expect(page.locator('h1').first()).toBeVisible();
-        // Awaited INSIDE the callback, not returned from it.
-        // `document.fonts.ready` resolves with the FontFaceSet itself, which
-        // is not serialisable across the protocol -- returning it makes
-        // Playwright try to marshal a live object back to Node.
-        await page.evaluate(async () => {
-          await document.fonts.ready;
-        });
-
-        // A mask that matches NOTHING masks nothing, silently, and the
-        // baseline quietly regains the copyright year -- which then fails
-        // every 1 January with the mask sitting right there looking like it
-        // handles the case. Same liveness rule as any other collector (#84):
-        // prove the population before trusting the result.
-        const dated = page.locator('p.disclosure');
-        await expect(
-          dated,
-          'nothing to mask — the footer copyright moved, so the year is ' +
-            'about to be baked into a baseline',
-        ).toHaveCount(1);
-
-        await expect(page).toHaveScreenshot(`${name}-${label}.png`, {
-          fullPage: true,
-          mask: [dated],
-        });
-      });
-    }
+/** Settle `page`, then compare the whole of it with the `snapshot` baseline. */
+async function expectSamePixels(page: Page, snapshot: string): Promise<void> {
+  // The heading is the last thing to settle on the two tool pages, whose
+  // scripts rewrite the DOM after load. On the homepage, which ships no
+  // JavaScript at all, it is already there and this returns immediately.
+  await expect(page.locator('h1').first()).toBeVisible();
+  // Awaited INSIDE the callback, not returned from it.
+  // `document.fonts.ready` resolves with the FontFaceSet itself, which is not
+  // serialisable across the protocol -- returning it makes Playwright try to
+  // marshal a live object back to Node.
+  await page.evaluate(async () => {
+    await document.fonts.ready;
   });
+
+  // A mask that matches NOTHING masks nothing, silently, and the baseline
+  // quietly regains the copyright year -- which then fails every 1 January
+  // with the mask sitting right there looking like it handles the case. Same
+  // liveness rule as any other collector (#84): prove the population before
+  // trusting the result.
+  const dated = page.locator('p.disclosure');
+  await expect(
+    dated,
+    'nothing to mask — the footer copyright moved, so the year is ' +
+      'about to be baked into a baseline',
+  ).toHaveCount(1);
+
+  await expect(page).toHaveScreenshot(snapshot, {
+    fullPage: true,
+    mask: [dated],
+  });
+}
+
+for (const { label, viewport } of WIDTHS) {
+  // `test.use({ viewport })` resizes every test in this group, and a real
+  // phone has one screen: the tag is what keeps android-chrome from running
+  // them (tests/unit/viewport-tagging.test.ts, #218).
+  test.describe(
+    `${label} @${viewport.width}px`,
+    { tag: '@emulated-viewport' },
+    () => {
+      test.use({ viewport });
+
+      for (const { name, path } of PAGES) {
+        test(`${name} renders the same pixels`, async ({ page }) => {
+          await page.goto(path);
+          await expectSamePixels(page, `${name}-${label}.png`);
+        });
+      }
+
+      // The roster's column headings exist only once a student is added, and
+      // CSS alone decides whether a sighted teacher sees them: the card layout
+      // hides the whole row, the table layout shows it again, and Remove's own
+      // heading stays hidden in both. No DOM assertion can tell a hidden heading
+      // from a shown one (#200), so the roster is captured with a student in it.
+      test('classroom-groups with a student added renders the same pixels', async ({
+        page,
+      }) => {
+        await openRoster(page);
+        // The state is proved before it can become a baseline: a roster that
+        // failed to open would be captured empty, and every later run would
+        // compare against that empty picture and pass.
+        await expect(page.locator('#cg-roster tbody tr')).toHaveCount(1);
+        await expectSamePixels(page, `classroom-groups-roster-${label}.png`);
+      });
+    },
+  );
 }

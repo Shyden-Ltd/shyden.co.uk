@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { searched } from '../source-files';
+import { publishedPaths } from './published-paths';
 
 /**
  * The scan that found the shipped defects, encoded so it runs every time.
@@ -58,21 +59,6 @@ const scan = (text: string) =>
   );
 
 /**
- * Every page the site publishes, read from the sitemap rather than listed
- * here — a new page is covered the day it is added, without anyone
- * remembering to come back and add it. The 404 is appended because it is
- * deliberately absent from the sitemap.
- */
-async function publishedPaths(page: Page): Promise<string[]> {
-  const xml = await (await page.request.get('/sitemap-0.xml')).text();
-  const paths = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(
-    (m) => new URL(m[1]).pathname,
-  );
-  expect(paths.length).toBeGreaterThan(0); // an empty sitemap must not pass
-  return [...paths, '/definitely-not-a-page'];
-}
-
-/**
  * The text a visitor actually reads, with the conditional fields revealed.
  *
  * innerText and not textContent: textContent concatenates block elements with
@@ -90,8 +76,8 @@ const renderedText = (page: Page) =>
   });
 
 /**
- * Joins that are meant to be there. Four on the whole site, and both shapes
- * are ordinary typography rather than accidents.
+ * Joins that are meant to be there. Ten on the whole site, two shapes in five
+ * languages, and both shapes are ordinary typography rather than accidents.
  */
 const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
   {
@@ -111,53 +97,177 @@ const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
  * gap between them.
  *
  * This is the seam defect stated as what a visitor sees, rather than guessed
- * at from punctuation. The purely textual scan above cannot see the homepage
- * case at all — "…what you're building." followed by an email address glues
- * letter to letter, with no punctuation at the join to match on. Verified:
- * deleting that page's `{' '}` leaves the pattern scan green and fails this.
+ * at from punctuation. The purely textual scan above only knows Latin
+ * letters: delete the 404 page's `{' '}` and it finds the Indonesian and
+ * Vietnamese sentences glued to their links, while this finds those two and
+ * the Chinese and Thai ones as well (measured, #198).
  *
  * Measured rather than reasoned about, because the obvious implementations
  * are both wrong. Comparing text alone reports 172 joins on this site, nearly
  * all of them block elements that legitimately touch. Filtering by CSS
  * `display` still mis-reads inline-blocks that CSS margins hold apart. Asking
- * the browser where the boxes actually landed reports four, and all four are
- * deliberate.
+ * the browser where the boxes actually landed reports ten (two shapes, in five
+ * languages), and all ten are deliberate.
+ *
+ * Both sides of a join are read as the lines of text a visitor can see, and
+ * nothing else (#198). At phone width every page failed on a join nobody could
+ * see: the header's last text box was an `.sr` label inside the closed
+ * language menu, and the "line" it touched was the hero section's 550px
+ * border box, which `Range.getClientRects()` returns alongside the text
+ * inside it. Hidden text is left out of the neighbours too, so the visible
+ * text either side of it is compared directly.
  */
 const visualJoins = (page: Page) =>
   page.evaluate(() => {
     const out: Array<{ left: string; right: string; tag: string }> = [];
     const skip = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
 
-    const rects = (node: Node) => {
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      return [...range.getClientRects()].filter((r) => r.width > 0);
+    type Edges = { left: number; top: number; right: number; bottom: number };
+    type Seen = { text: string; lines: DOMRect[] };
+
+    // A computed length in px: `4px`, or `50%` of `size`. NaN for anything
+    // else (a calc(), say), so a clip this cannot read is never applied.
+    const px = (value: string, size: number) =>
+      /^-?[\d.]+px$/.test(value)
+        ? parseFloat(value)
+        : /^-?[\d.]+%$/.test(value)
+          ? (parseFloat(value) / 100) * size
+          : NaN;
+
+    // What an element's `clip-path: inset()` and `clip: rect()` leave showing.
+    // Both cut the element and everything inside it, which is how an `.sr`
+    // label keeps its layout and shows nothing. Other clip-path shapes are not
+    // read, so they cut nothing here: a clip this misreads can only add a
+    // join, never hide one.
+    const clipCache = new Map<Element, Edges[]>();
+    const clipsOf = (el: Element): Edges[] => {
+      const cached = clipCache.get(el);
+      if (cached) return cached;
+      const style = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      const clips: Edges[] = [];
+
+      const inset = /^inset\(([^)]*)\)/.exec(style.clipPath);
+      if (inset) {
+        const [t, r = t, b = t, l = r] = inset[1]
+          .split(' round ')[0]
+          .trim()
+          .split(/\s+/);
+        clips.push({
+          left: box.left + px(l, box.width),
+          top: box.top + px(t, box.height),
+          right: box.right - px(r, box.width),
+          bottom: box.bottom - px(b, box.height),
+        });
+      }
+
+      const rect = /^rect\(([^)]*)\)/.exec(style.getPropertyValue('clip'));
+      if (rect && ['absolute', 'fixed'].includes(style.position)) {
+        const [t, r, b, l] = rect[1].split(/,\s*|\s+/);
+        const offset = (value: string, auto: number) =>
+          value === 'auto' ? auto : px(value, 0);
+        clips.push({
+          left: box.left + offset(l, 0),
+          top: box.top + offset(t, 0),
+          right: box.left + offset(r, box.width),
+          bottom: box.top + offset(b, box.height),
+        });
+      }
+
+      const readable = clips.filter((clip) =>
+        Object.values(clip).every(Number.isFinite),
+      );
+      clipCache.set(el, readable);
+      return readable;
+    };
+
+    // A line of text cut down to what every clip above it leaves showing, or
+    // null when that is nothing.
+    const showing = (line: DOMRect, parent: Element): DOMRect | null => {
+      let { left, top, right, bottom } = line;
+      for (let el: Element | null = parent; el; el = el.parentElement) {
+        for (const clip of clipsOf(el)) {
+          left = Math.max(left, clip.left);
+          top = Math.max(top, clip.top);
+          right = Math.min(right, clip.right);
+          bottom = Math.min(bottom, clip.bottom);
+        }
+      }
+      return right > left && bottom > top
+        ? new DOMRect(left, top, right - left, bottom - top)
+        : null;
+    };
+
+    // The rest of the ways to keep text in the layout and paint none of it:
+    // inside a closed <details>, `visibility: hidden`, `opacity: 0`. Each
+    // option is passed under both of its names, because Safari shipped the
+    // older ones first.
+    const painted = (el: Element) => {
+      if (typeof el.checkVisibility !== 'function') {
+        throw new Error(
+          'Element.checkVisibility() is missing, so this browser cannot say ' +
+            'which text a visitor sees. Every join it reported would be a guess.',
+        );
+      }
+      return el.checkVisibility({
+        opacityProperty: true,
+        visibilityProperty: true,
+        checkOpacity: true,
+        checkVisibilityCSS: true,
+      });
+    };
+
+    // What a visitor sees of a node: its text, and the lines that text sits
+    // on, in document order. Only text nodes have lines, so an element's own
+    // border box never stands in for one.
+    const seenCache = new Map<Node, Seen>();
+    const seen = (node: Node): Seen => {
+      const cached = seenCache.get(node);
+      if (cached) return cached;
+      let result: Seen = { text: '', lines: [] };
+
+      if (node instanceof Text) {
+        const parent = node.parentElement;
+        if (parent && painted(parent)) {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const lines = [...range.getClientRects()]
+            .filter((r) => r.width > 0)
+            .map((r) => showing(r, parent))
+            .filter((r): r is DOMRect => r !== null);
+          if (lines.length) result = { text: node.data, lines };
+        }
+      } else if (node instanceof Element && !skip.has(node.tagName)) {
+        const parts = [...node.childNodes].map(seen);
+        result = {
+          text: parts.map((part) => part.text).join(''),
+          lines: parts.flatMap((part) => part.lines),
+        };
+      }
+
+      seenCache.set(node, result);
+      return result;
     };
 
     const walk = (el: Element) => {
       if (skip.has(el.tagName)) return;
-      const kids = [...el.childNodes].filter(
-        (n) =>
-          n.nodeType === Node.TEXT_NODE ||
-          (n.nodeType === Node.ELEMENT_NODE &&
-            !skip.has((n as Element).tagName)),
-      );
+      const kids = [...el.childNodes].map(seen).filter((kid) => kid.text);
 
       for (let i = 0; i < kids.length - 1; i++) {
-        const left = kids[i].textContent ?? '';
-        const right = kids[i + 1].textContent ?? '';
-        if (!left.trim() || !right.trim()) continue;
+        const left = kids[i];
+        const right = kids[i + 1];
+        if (!left.text.trim() || !right.text.trim()) continue;
         // A space on either side of the join means the join is fine.
-        if (/\s$/.test(left) || /^\s/.test(right)) continue;
+        if (/\s$/.test(left.text) || /^\s/.test(right.text)) continue;
 
-        const a = rects(kids[i]).at(-1);
-        const b = rects(kids[i + 1])[0];
+        const a = left.lines.at(-1);
+        const b = right.lines[0];
         if (!a || !b) continue;
 
         const sameLine =
           Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2;
         if (sameLine && b.left - a.right < 1) {
-          out.push({ tag: el.tagName, left, right });
+          out.push({ tag: el.tagName, left: left.text, right: right.text });
         }
       }
       for (const child of el.children) walk(child);
@@ -166,6 +276,64 @@ const visualJoins = (page: Page) =>
     walk(document.body);
     return out;
   });
+
+/**
+ * Cases for the join detector itself.
+ *
+ * Each case is laid out on its own: the left text ends at the middle of the
+ * page, the right text starts there, both on the same top edge, and the two
+ * are neighbours with nothing between them. So they touch, and the only thing
+ * that can keep a join from being reported is the detector ruling a side out.
+ * What comes back is the names of the cases whose join was reported, read off
+ * the right-hand text, which every case leaves in view.
+ *
+ * Built as elements, not parsed from HTML: a stray newline in a markup string
+ * becomes a text node, and that node, not the right text, would then be the
+ * neighbour the detector compares.
+ */
+type Fixture = string | { tag: string; style: string; children: Fixture[] };
+
+/** One element of a case: `el('p', 'margin: 0', 'text')`. */
+const el = (tag: string, style: string, ...children: Fixture[]): Fixture => ({
+  tag,
+  style,
+  children,
+});
+
+const LEFT = 'position: absolute; top: 0; right: 50%; white-space: nowrap';
+const RIGHT = 'position: absolute; top: 0; left: 50%; white-space: nowrap';
+const ONE_PIXEL = 'width: 1px; height: 1px; overflow: hidden';
+
+async function joinsReportedFor(
+  page: Page,
+  cases: Record<string, { left: Fixture; right?: Fixture }>,
+): Promise<string[]> {
+  const rows = Object.entries(cases).map(([name, { left, right }]) =>
+    el(
+      'div',
+      'position: relative; height: 5em',
+      left,
+      right ?? el('span', RIGHT, `${name}-right`),
+    ),
+  );
+
+  await page.goto('/');
+  await page.evaluate((fixtures) => {
+    const build = (fixture: Fixture): Node => {
+      if (typeof fixture === 'string') return document.createTextNode(fixture);
+      const node = document.createElement(fixture.tag);
+      node.setAttribute('style', fixture.style);
+      node.append(...fixture.children.map(build));
+      return node;
+    };
+    document.body.replaceChildren(...fixtures.map(build));
+  }, rows);
+
+  const names = (await visualJoins(page)).map((join) =>
+    join.right.replace(/-right$/, ''),
+  );
+  return [...new Set(names)].sort();
+}
 
 test.describe('rendered text — no sentence may lose a space to the formatter', () => {
   test('every published page, in every language', async ({ page }) => {
@@ -191,11 +359,26 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
   });
 
   test('no two words are rendered touching, on any page', async ({ page }) => {
+    // Where a box lands depends on the width it was laid out at, so the width
+    // is part of what was searched: at 1280px this test passed for weeks while
+    // every page failed it at phone width (#198). Each page reports its own
+    // width once it has loaded. `page.viewportSize()` is null on a real phone,
+    // which emulates nothing, and before `goto` the page is about:blank, which
+    // a phone lays out at 980px.
     const paths = await publishedPaths(page);
     const findings: string[] = [];
+    const widths = new Set<number>();
+    const measured: string[] = [];
 
     for (const path of paths) {
       await page.goto(path);
+      const width = await page.evaluate(
+        () => document.documentElement.clientWidth,
+      );
+      if (width > 0) {
+        widths.add(width);
+        measured.push(path);
+      }
       for (const join of await visualJoins(page)) {
         const allowed = INTENTIONAL_JOINS.some(
           ({ left, right }) => left.test(join.left) && right.test(join.right),
@@ -208,9 +391,13 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
       }
     }
 
+    const at = [...widths].map((width) => `${width}px`).join(' and ');
     expect(
-      searched(findings, { of: paths, what: 'built pages visited' }),
-      findings.join('\n'),
+      searched(findings, {
+        of: measured,
+        what: `built pages visited at a width read from the page (${at})`,
+      }),
+      `at ${at} wide:\n${findings.join('\n')}`,
     ).toEqual([]);
   });
 
@@ -251,5 +438,73 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
       'a label glued to its value',
       'a word glued to a number',
     ]);
+  });
+
+  test('the touching-words check only counts text a visitor can see', async ({
+    page,
+  }) => {
+    // Every case lays its left text out flush against its right text, on one
+    // line. Only `visible` can be seen, so only `visible` is a join. The rest
+    // are the ways this site keeps text in the layout while hiding it: the
+    // closed language menu and its `.sr` label are what failed every page at
+    // phone width (#198).
+    const reported = await joinsReportedFor(page, {
+      visible: { left: el('span', LEFT, 'visible-left') },
+      invisible: {
+        left: el('span', `${LEFT}; visibility: hidden`, 'invisible-left'),
+      },
+      transparent: {
+        left: el('span', `${LEFT}; opacity: 0`, 'transparent-left'),
+      },
+      closed: {
+        left: el(
+          'details',
+          '',
+          el('summary', 'position: absolute; top: 0; left: 0', 'menu'),
+          el('span', LEFT, 'closed-left'),
+        ),
+      },
+      'clip-path': {
+        left: el(
+          'span',
+          `${LEFT}; ${ONE_PIXEL}; clip-path: inset(50%)`,
+          'clip-path-left',
+        ),
+      },
+      'clip-rect': {
+        left: el(
+          'span',
+          `${LEFT}; ${ONE_PIXEL}; clip: rect(0 0 0 0)`,
+          'clip-rect-left',
+        ),
+      },
+    });
+
+    expect(reported).toEqual(['visible']);
+  });
+
+  test('the touching-words check compares lines of text, never an element box', async ({
+    page,
+  }) => {
+    // `box` puts its right text 3em below the line its left text sits on, and
+    // gives the paragraph holding it a border box that starts ON that line.
+    // A detector that reads the paragraph's box reports a join nobody can see,
+    // which is how the hero section's 550px box came to "touch" the header.
+    const reported = await joinsReportedFor(page, {
+      line: {
+        left: el('span', LEFT, 'line-left'),
+        right: el('div', RIGHT, el('p', 'margin: 0', 'line-right')),
+      },
+      box: {
+        left: el('span', LEFT, 'box-left'),
+        right: el(
+          'div',
+          RIGHT,
+          el('p', 'margin: 0; padding-top: 3em', 'box-right'),
+        ),
+      },
+    });
+
+    expect(reported).toEqual(['line']);
   });
 });

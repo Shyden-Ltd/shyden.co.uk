@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   astroCodeViews,
+  astroStyleViews,
   blankCommentLines,
   isCommentLine,
   withoutYamlComments,
@@ -306,5 +307,61 @@ describe('astroCodeViews reads only the code an .astro file holds', () => {
 
   it('finds no code in a file with no frontmatter and no script', () => {
     expect(astroCodeViews('<p>only markup</p>')).toEqual([]);
+  });
+});
+
+describe('astroStyleViews reads only the CSS an .astro file holds', () => {
+  /**
+   * The same view shape as `astroCodeViews`, so a caller reading CSS reports
+   * the file's own positions exactly as a caller reading code does (#200).
+   */
+  it('reads each style body as a view of its own, whatever its attributes', () => {
+    const page = [
+      '---',
+      "const title = 'x';",
+      '---',
+      '<p>two</p>',
+      '<style>',
+      '  .a { color: red; }',
+      '</style>',
+      '<style is:global>.b { margin: 0; }</style>',
+    ].join('\n');
+    const views = astroStyleViews(page);
+    expect(views.map((view) => view.length)).toEqual([
+      page.length,
+      page.length,
+    ]);
+    expect(views.map((view) => view.trim())).toEqual([
+      '.a { color: red; }',
+      '.b { margin: 0; }',
+    ]);
+  });
+
+  it('never opens a style inside a markup comment that names one', () => {
+    const page = [
+      '<!-- every <style> here is scoped to this component -->',
+      '<style>',
+      '  .a { color: red; }',
+      '</style>',
+    ].join('\n');
+    expect(astroStyleViews(page).map((view) => view.trim())).toEqual([
+      '.a { color: red; }',
+    ]);
+  });
+
+  it('never opens a style inside frontmatter that names one', () => {
+    const page = [
+      '---',
+      '// the <style> below hides the headings',
+      '---',
+      '<style>.a { color: red; }</style>',
+    ].join('\n');
+    expect(astroStyleViews(page).map((view) => view.trim())).toEqual([
+      '.a { color: red; }',
+    ]);
+  });
+
+  it('finds no CSS in a file with no style', () => {
+    expect(astroStyleViews('---\nconst a = 1;\n---\n<p>b</p>')).toEqual([]);
   });
 });

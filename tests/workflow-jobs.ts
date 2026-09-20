@@ -1,4 +1,5 @@
 import { parseDocument } from 'yaml';
+import { stringLeaves } from './catalogue-leaves';
 
 /**
  * The job graph of a GitHub Actions workflow, PARSED.
@@ -24,10 +25,25 @@ export interface WorkflowJob {
   readonly timeoutMinutes: number | undefined;
   /** Each step's `run:` script, in file order; a `uses:` step runs none. */
   readonly runs: readonly string[];
+  /**
+   * The environment the job names; `undefined` when it names none. A job in
+   * an environment reads that environment's secrets. A job in none reads
+   * repository secrets, which reach a workflow on any branch (#241).
+   */
+  readonly environment: string | undefined;
+  /**
+   * Every secret the job reads through an expression, the workflow's own
+   * `env:` included, since each job reads that too. Names are upper-cased,
+   * because secret names are case-insensitive, then de-duplicated and sorted.
+   */
+  readonly secrets: readonly string[];
 }
 
 const isMapping = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const withoutStringLiterals = (condition: string): string =>
+  condition.replace(/'(?:[^']|'')*'/g, "''");
 
 function needsOf(job: Record<string, unknown>, where: string): string[] {
   const { needs } = job;
@@ -78,6 +94,63 @@ function runsOf(job: Record<string, unknown>, where: string): string[] {
   });
 }
 
+function environmentOf(
+  job: Record<string, unknown>,
+  where: string,
+): string | undefined {
+  const { environment } = job;
+  if (environment === undefined) return undefined;
+  const name = isMapping(environment) ? environment.name : environment;
+  if (typeof name !== 'string' || name.trim() === '')
+    throw new Error(`${where}: environment names no environment`);
+  if (name.includes('${{'))
+    throw new Error(
+      `${where}: environment is an expression, which only the runner can resolve`,
+    );
+  return name;
+}
+
+const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
+const BRACKETED_SECRET = /(?<![\w.])secrets\s*\[\s*'((?:[^']|'')*)'\s*\]/gi;
+const DOTTED_SECRET = /(?<![\w.])secrets\s*\.\s*([A-Za-z_]\w*)/gi;
+const SECRETS_CONTEXT = /(?<![\w.])secrets(?!\w)/i;
+
+/**
+ * The secrets `value` reads through its `${{ }}` expressions.
+ *
+ * The runner expands an expression wherever it sits in a string, including a
+ * shell comment in a `run:` script, so every one counts. Text outside an
+ * expression reads nothing, and neither does a string literal inside one. A
+ * reference to the whole context is refused, because it hands over every
+ * secret and leaves no name to judge.
+ */
+function secretsReadIn(value: unknown, where: string): string[] {
+  return stringLeaves(value).flatMap(([, text]) =>
+    [...text.matchAll(EXPRESSION)].flatMap(([, expression]) => {
+      const bracketed = [...expression.matchAll(BRACKETED_SECRET)].map(
+        ([, name]) => name,
+      );
+      const rest = withoutStringLiterals(
+        expression.replace(BRACKETED_SECRET, "''"),
+      );
+      const dotted = [...rest.matchAll(DOTTED_SECRET)].map(([, name]) => name);
+      if (SECRETS_CONTEXT.test(rest.replace(DOTTED_SECRET, '')))
+        throw new Error(`${where} reads every secret: name each one it needs`);
+      return [...bracketed, ...dotted].map((name) => name.toUpperCase());
+    }),
+  );
+}
+
+function secretsOf(
+  job: Record<string, unknown>,
+  shared: readonly string[],
+  where: string,
+): string[] {
+  if (job.secrets === 'inherit')
+    throw new Error(`${where} reads every secret: name each one it needs`);
+  return [...new Set([...shared, ...secretsReadIn(job, where)])].sort();
+}
+
 /**
  * A YAML file's value, refusing YAML the parser only WARNS about.
  *
@@ -102,6 +175,10 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
   const root = parseCleanYaml(text, file);
   const jobs = isMapping(root) ? root.jobs : undefined;
   if (!isMapping(jobs)) throw new Error(`${file} has no jobs mapping`);
+  const shared = secretsReadIn(
+    isMapping(root) ? root.env : undefined,
+    `${file}'s env`,
+  );
   return Object.entries(jobs).map(([id, body]) => {
     const where = `${file} job '${id}'`;
     if (!isMapping(body)) throw new Error(`${where} is not a mapping`);
@@ -111,6 +188,8 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
       condition: conditionOf(body, where),
       timeoutMinutes: timeoutMinutesOf(body, where),
       runs: runsOf(body, where),
+      environment: environmentOf(body, where),
+      secrets: secretsOf(body, shared, where),
     };
   });
 }
@@ -154,9 +233,6 @@ const REPLACES_IMPLICIT_SUCCESS =
 const CALLS_SUCCESS = /(?<![\w.])success\(\s*\)/;
 
 /** A condition with its string literals emptied, so `'always()'` is no call. */
-const withoutStringLiterals = (condition: string): string =>
-  condition.replace(/'(?:[^']|'')*'/g, "''");
-
 const escapeRegExp = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

@@ -1,9 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { specDirs } from '../spec-dirs';
-import { blankCommentLines } from './source-text';
 import { readFileSync } from 'node:fs';
-import { withoutTsComments } from './source-text';
+import ts from 'typescript';
+import { parseSource } from './ast';
+import { specDirs } from '../spec-dirs';
 import { searched, tsFilesUnder } from '../source-files';
+import {
+  callsIn,
+  declarationsIn,
+  enclosingDeclaration,
+  lineOf,
+  useCallsIn,
+  type Declaration,
+} from '../playwright-declarations';
 
 /**
  * A real phone has one screen. `page.setViewportSize(...)` and
@@ -14,235 +22,117 @@ import { searched, tsFilesUnder } from '../source-files';
  * `grepInvert` can exclude it, and this file is what keeps that true: an exclusion
  * list nobody checks rots the moment someone adds a test.
  *
- * This scans SOURCE TEXT rather than importing and introspecting the specs (the
- * house pattern -- see tests/e2e/baseurl-guard.spec.ts): Playwright specs can only
- * run under the Playwright test runner, so a Vitest file that wants to check them
- * has no way to load them as modules and ask "what tag does this test carry" --
- * text is the only surface available.
+ * This scans SOURCE rather than importing and introspecting the specs:
+ * Playwright specs can only run under the Playwright test runner, so a Vitest
+ * file that wants to check them has no way to load them as modules and ask
+ * "what tag does this test carry".
  *
- * THE APPROXIMATION, STATED PLAINLY (the brief's own demand): a full JS parse
- * would need a real parser dependency (none is available -- "no new npm
- * dependencies"), so this walks the text with regexes instead, on two rules that
- * were chosen to match what this repo's Prettier config (.prettierrc.json) and
- * house style actually produce, verified by reading every real call site this
- * guard scans, not assumed:
+ * It reads that source with the parser (`tests/playwright-declarations.ts`).
+ * Until #218 it walked the text with regexes, on the premise that no parser
+ * was available -- false since #115 -- and the approximation missed what it
+ * had not been written for. `tests/e2e/visual.spec.ts` sets its viewport with
+ * the shorthand `test.use({ viewport })`, the regex looked for `viewport:`,
+ * and android-chrome collected all eight of those tests for a real phone
+ * (#194). The regexes also read a declaration spelled inside a string as a
+ * real one, credited a hook's resize to whichever test sat above the hook,
+ * and reported lines counted in comment-stripped text.
  *
- * 1. A DECLARATION is `test(`, `test.only(`, `test.skip(`, `test.fixme(`,
- *    `test.describe(`, or `test.describe.` + one of those, followed (after only
- *    whitespace -- a wrapped title still counts) by a quote character. Requiring a
- *    quote immediately after the parenthesis is what tells a declaration apart
- *    from the *runtime* conditional overloads that share the same spelling:
- *    `test.skip(browserName === 'webkit', 'reason')` and (introduced by this very
- *    task) `test.fixme(!fits, 'reason')` both open with an expression, never a
- *    quote, so this rule is blind to them by construction. What would defeat it: a
- *    declaration whose title is passed by variable reference (`test(title, ...)`)
- *    rather than written as a literal at the call site. Every declaration in this
- *    repo writes its title inline, verified by inspection -- the one place that
- *    would otherwise have needed a computed title (the four `${width}x${height}`
- *    tests classroom-groups.spec.ts generates in a loop) writes the template
- *    literal out twice, once per branch, rather than hoisting it to a variable,
- *    specifically so this rule can see it. A declaration reached only through an
- *    aliased callee (`const run = test; run('title', ...)`) is equally invisible --
- *    proven below as its own, actionable finding rather than silence, because
- *    that shape existed in this file's own first draft (see the file's own
- *    "structural mismatch" test below and classroom-groups.spec.ts's git history).
+ * THE RULE. A viewport call belongs to the innermost declaration whose
+ * callback contains it, and that declaration carries the tag:
+ * - a `setViewportSize` in a test's body belongs to that test;
+ * - a `test.use({ viewport })`, or a `setViewportSize` in a hook or a helper
+ *   written inside a group, belongs to the group, whose tag Playwright gives
+ *   every test in it -- which is right, because it resizes for each of them;
+ * - a `test.use()` inside a test's body is a Playwright error, and is
+ *   reported as that;
+ * - a call that no declaration contains (a helper outside every test, a
+ *   file-level `test.use()`) has no declaration to carry the tag, and is
+ *   reported rather than passed over.
+ * A tag on a declaration that owns no viewport call is stale, and silently
+ * costs real-device coverage.
  *
- * 2. The declaration's own OPTIONS OBJECT, if present, is read from
- *    `, { ...flat content... }` immediately after the title -- no nested braces.
- *    Every `TestDetails` this suite writes is `{ tag: '@emulated-viewport' }`; a
- *    details object using `annotation` (which nests an object of its own) would
- *    defeat this, but nothing here writes one.
- *
- * A test/describe boundary is attributed to a viewport call by nearest-preceding
- * line, exactly as the brief itself suggests ("line ranges between successive
- * test(/test.describe( declarations... prefer over trying to parse JS properly"):
- * declarations are collected in file order, and a viewport call belongs to the
- * last declaration whose own line is at or before the call's line. This is exact
- * for every real shape in this codebase (verified: a test body cannot contain
- * another test()/describe() declaration, so "nearest preceding declaration, of
- * either kind" always finds the right one -- nesting depth is never needed to
- * decide it), and it needs no brace-matching at all.
- *
- * Full-line `//` comments are blanked before either rule runs (`blankComments`),
- * because prose in this very repo says things a naive scanner would misread as
- * code: classroom-groups.spec.ts:1068 reads "...so `/id/*`, so an Indonesian
- * visitor..." (a literal `/*` substring with no comment ever closing it) and
- * classroom-groups-controls.spec.ts:1069 reads "...`test.fixme(title, body)`
- * does..." (a declaration-shaped substring with no quoted title after it -- rule 1
- * already survives this one unaided, since `title` is a bare word, not a quote,
- * but it is exactly the kind of near-miss this file blanks comments to stop
- * trusting to luck). Block comments (`/** ... *`+`/`) are NOT stripped: the
- * scanned corpus carries a handful, verified by inspection to contain neither a
- * viewport call nor a quoted example declaration, so nothing here currently
- * depends on stripping them -- a doc comment that started quoting a fake
- * `test('...', ...)` call verbatim would be misread as real.
+ * A READ is the same fact seen from the other side. `page.viewportSize()` asks
+ * Playwright what it emulates, and on a real device it emulates nothing, so the
+ * call returns `null` there: the touching-words test sized its population by it
+ * and searched nothing on the phone (#198), after the projector spec had been
+ * caught the same way. A read belongs to its innermost declaration just as a
+ * resize does, and is reported unless that declaration is tagged -- but a read
+ * never justifies a tag, because tagging a test that only reads buys the read
+ * back by dropping the test from the phone. Read the width from the page.
  */
 
 const EMULATED_VIEWPORT_TAG = '@emulated-viewport';
 const SCAN_DIRS = specDirs();
 
-function lineNumberAt(text: string, index: number): number {
-  return text.slice(0, index).split('\n').length;
-}
-
-/** Blanks every line whose trimmed content starts with `//`, keeping line count
- * (and therefore every other line's number) identical -- see the file-level
- * comment above for the two real near-misses this exists to stop. */
-function blankComments(text: string): string {
-  return blankCommentLines(text);
-}
-
-type Kind = 'test' | 'describe';
-
-interface Declaration {
-  kind: Kind;
-  title: string;
-  line: number;
-  tagged: boolean;
-}
+type Api = 'page.setViewportSize(...)' | 'test.use({ viewport })';
 
 interface ViewportHit {
-  line: number;
-  api: 'page.setViewportSize(...)' | 'test.use({ viewport })';
+  readonly call: ts.CallExpression;
+  readonly line: number;
+  readonly api: Api;
 }
 
-// Suffix (the chain of `.word`s after the bare `test`) -> what kind of
-// declaration it is. Deliberately narrow: `.step`, `.use`, `.beforeEach`,
-// `.slow`, `.fail`, `.describe.configure`, etc. are real Playwright API but none
-// of them registers a new test or describe, so a match against one of those
-// must never reset "which declaration is this line inside".
-const DECLARATION_KIND_BY_SUFFIX: Partial<Record<string, Kind>> = {
-  '': 'test',
-  '.only': 'test',
-  '.skip': 'test',
-  '.fixme': 'test',
-  '.describe': 'describe',
-  '.describe.only': 'describe',
-  '.describe.skip': 'describe',
-  '.describe.fixme': 'describe',
-};
-
-// See the file-level comment's rule 1/2. Group 1: the `.word` suffix chain.
-// Group 2: which quote character opened the title (reused to find its own
-// close, so a double-quoted title may contain an apostrophe and vice versa --
-// both delimiters are real in this corpus). Group 3: the title text. Group 4:
-// the *content* of a flat `{ ... }` options object immediately following, if
-// one is there.
-const DECLARATION_RE =
-  /\btest((?:\.\w+)*)\(\s*(['"`])((?:(?!\2)[^\r\n])*)\2(?:\s*,\s*\{([^{}]*)\})?/g;
-
-function extractDeclarations(text: string): Declaration[] {
-  const declarations: Declaration[] = [];
-  DECLARATION_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = DECLARATION_RE.exec(text))) {
-    const kind = DECLARATION_KIND_BY_SUFFIX[match[1]];
-    if (!kind) continue; // test.step(/test.use(/test.beforeEach(/... -- not a declaration
-    const optionsObject = match[4];
-    declarations.push({
-      kind,
-      title: match[3],
-      line: lineNumberAt(text, match.index),
-      tagged:
-        optionsObject !== undefined &&
-        optionsObject.includes(EMULATED_VIEWPORT_TAG),
-    });
-  }
-  return declarations;
+/** Every call in `sf` that sets the viewport, in source order. */
+function viewportHits(sf: ts.SourceFile): ViewportHit[] {
+  const resizes = callsIn(sf)
+    .filter(
+      ({ expression }) =>
+        ts.isPropertyAccessExpression(expression) &&
+        expression.name.text === 'setViewportSize',
+    )
+    .map((call) => ({
+      call,
+      line: lineOf(sf, call),
+      api: 'page.setViewportSize(...)' as const,
+    }));
+  const uses = useCallsIn(sf)
+    .filter(({ options }) => options.has('viewport'))
+    .map(({ call, line }) => ({
+      call,
+      line,
+      api: 'test.use({ viewport })' as const,
+    }));
+  return [...resizes, ...uses].sort((a, b) => a.call.pos - b.call.pos);
 }
 
-const SET_VIEWPORT_SIZE_RE = /\.setViewportSize\s*\(/g;
-
-function extractSetViewportSizeHits(text: string): ViewportHit[] {
-  const hits: ViewportHit[] = [];
-  SET_VIEWPORT_SIZE_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SET_VIEWPORT_SIZE_RE.exec(text))) {
-    hits.push({
-      line: lineNumberAt(text, match.index),
-      api: 'page.setViewportSize(...)',
-    });
-  }
-  return hits;
+/** Every `page.viewportSize()` read in `sf`, whatever the receiver is called. */
+function viewportReads(
+  sf: ts.SourceFile,
+): { call: ts.CallExpression; line: number }[] {
+  return callsIn(sf)
+    .filter(
+      ({ expression }) =>
+        ts.isPropertyAccessExpression(expression) &&
+        expression.name.text === 'viewportSize',
+    )
+    .map((call) => ({ call, line: lineOf(sf, call) }));
 }
 
-const TEST_USE_RE = /\btest\.use\(/g;
-
-function extractViewportUseHits(text: string): ViewportHit[] {
-  const hits: ViewportHit[] = [];
-  TEST_USE_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = TEST_USE_RE.exec(text))) {
-    // `test.use({...})` takes one flat, literal options object in every call this
-    // suite writes (`{ javaScriptEnabled: false }` is the one existing site) --
-    // Playwright's `use()` fixture overrides are primitive/simple values, never a
-    // function, so the next literal `);` is a safe stand-in for "where this call
-    // ends". A value containing its own `);` substring (a function-valued option)
-    // would defeat it; nothing here writes one.
-    const closeIndex = text.indexOf(');', match.index);
-    const span =
-      closeIndex === -1
-        ? text.slice(match.index)
-        : text.slice(match.index, closeIndex);
-    if (/\bviewport\s*:/.test(span)) {
-      hits.push({
-        line: lineNumberAt(text, match.index),
-        api: 'test.use({ viewport })',
-      });
-    }
-  }
-  return hits;
-}
-
-/** The last declaration at or before `line` -- see the file-level comment on why
- * nesting depth is never needed to make this exact for this codebase. */
-function findEnclosing(
-  declarations: Declaration[],
-  line: number,
-): Declaration | undefined {
-  let candidate: Declaration | undefined;
-  for (const decl of declarations) {
-    if (decl.line > line) break; // declarations are already in file order
-    candidate = decl;
-  }
-  return candidate;
-}
-
-function describeWhat(decl: Declaration): string {
-  return decl.kind === 'test'
-    ? `test('${decl.title}')`
-    : `test.describe('${decl.title}')`;
+/** How a finding names a declaration: a template title keeps its backticks. */
+function describeWhat({ kind, title }: Declaration): string {
+  const written = title.startsWith('`') ? title : `'${title}'`;
+  return kind === 'test' ? `test(${written})` : `test.describe(${written})`;
 }
 
 function orphanMessage(file: string, hit: ViewportHit): string {
   return (
-    `${file}:${hit.line} calls ${hit.api}, but no enclosing test(...) or ` +
-    `test.describe(...) declaration was found above it in this file -- nothing to ` +
-    'attribute this call to.'
+    `${file}:${hit.line} calls ${hit.api}, but no test(...) or test.describe(...) ` +
+    'contains it -- a helper outside every declaration, or a file-level test.use(), ' +
+    'leaves no declaration to carry the tag. Move it into the test, or the ' +
+    'test.describe(...), whose viewport it sets.'
   );
 }
 
-function structuralMismatchMessage(
+function useInTestMessage(
   file: string,
   hit: ViewportHit,
-  enclosing: Declaration,
+  owner: Declaration,
 ): string {
-  if (hit.api === 'page.setViewportSize(...)') {
-    return (
-      `${file}:${hit.line} calls page.setViewportSize(...), but the nearest enclosing ` +
-      `declaration is test.describe('${enclosing.title}') at line ${enclosing.line}, not a ` +
-      "test() -- this call is not written inside any individual test's own body (for " +
-      'example, reached through a variable bound to test/test.fixme rather than the literal ' +
-      'token), so it cannot be attributed to one test for tagging. Fix: register it via a ' +
-      'literal test(...)/test.fixme(...)/test.only(...) call, not through an intermediate ' +
-      'variable, so each declaration can be tagged on its own.'
-    );
-  }
   return (
-    `${file}:${hit.line} calls test.use({ viewport }), but the nearest enclosing declaration ` +
-    `is test('${enclosing.title}') at line ${enclosing.line}, not a describe -- test.use() ` +
-    'configures every test in its enclosing describe, and Playwright does not support ' +
-    'calling it inside a running test body. Fix: move it to the top of the enclosing describe.'
+    `${file}:${hit.line} calls test.use({ viewport }) inside ${describeWhat(owner)} ` +
+    `(line ${owner.line}) -- test.use() configures every test in its enclosing ` +
+    'describe, and Playwright does not support calling it inside a running test body. ' +
+    'Fix: move it to the top of the enclosing describe.'
   );
 }
 
@@ -259,6 +149,23 @@ function untaggedMessage(
   );
 }
 
+function readMessage(
+  file: string,
+  line: number,
+  owner: Declaration | undefined,
+): string {
+  const where =
+    owner === undefined
+      ? 'but no test(...) or test.describe(...) contains it, so no tag can keep it off the phone'
+      : `in ${describeWhat(owner)} (line ${owner.line}), which is not tagged \`${EMULATED_VIEWPORT_TAG}\``;
+  return (
+    `${file}:${line} reads page.viewportSize() ${where} -- on a real device that is null, ` +
+    "because the device project adopts the phone's own context, which emulates no viewport. " +
+    'Read the width the page was laid out at from the page ' +
+    '(document.documentElement.clientWidth, after goto), which is right on every target.'
+  );
+}
+
 function staleTagMessage(file: string, decl: Declaration): string {
   return (
     `${file}:${decl.line} -- ${describeWhat(decl)} is tagged \`${EMULATED_VIEWPORT_TAG}\` but ` +
@@ -271,57 +178,49 @@ function staleTagMessage(file: string, decl: Declaration): string {
 /** The whole guard, as one pure function of (path, source text) -> finding
  * messages -- kept separate from the filesystem walk below so the "self-test"
  * describe block can prove every branch of it red and green on tiny synthetic
- * input, not just trust the real corpus to happen to exercise all of them. */
-function analyze(file: string, rawText: string): string[] {
-  const text = blankComments(rawText);
-  const declarations = extractDeclarations(text);
-  const hits = [
-    ...extractSetViewportSizeHits(text),
-    ...extractViewportUseHits(text),
-  ];
+ * input, not just trust the real corpus to happen to exercise all of them. The
+ * text is the file as it is on disk: the parser skips comments itself, and a
+ * line counted in stripped text is not the line a reader opens. */
+function analyze(file: string, text: string): string[] {
+  const sf = parseSource(text, file);
+  const declarations = declarationsIn(sf);
 
   const findings: string[] = [];
-  // Two separate sets on purpose. `cleanTouches` drives the "needs a tag" check
-  // below and must hold ONLY hits that were attributed to the right kind of
-  // declaration -- a malformed (mismatched) hit already gets its own, more
-  // useful finding and must not ALSO claim its enclosing declaration as
-  // "correctly touches the viewport, just untagged". `anyTouch` drives stale-tag
-  // suppression and deliberately includes mismatched hits too: the root cause
-  // there is the structural problem, not a stale tag, so that declaration must
-  // not ALSO be reported as stale underneath the structural finding -- one root
-  // cause, one message. Without this split, a single malformed call site
-  // produced two overlapping findings for the same describe (caught by this
-  // file's own "aliased callee" synthetic test going from 1 expected finding to
-  // 2 actual before this split existed).
-  const cleanTouches = new Map<Declaration, number[]>();
-  const anyTouch = new Set<Declaration>();
+  // Two collections on purpose. `owned` drives the "needs a tag" check and
+  // holds only calls a declaration can carry the tag for; `touched` drives
+  // stale-tag suppression and also holds a test.use() misplaced inside a test,
+  // whose root cause is the misplacement -- one root cause, one message.
+  const owned = new Map<Declaration, number[]>();
+  const touched = new Set<Declaration>();
 
-  for (const hit of hits) {
-    const enclosing = findEnclosing(declarations, hit.line);
-    if (!enclosing) {
+  for (const hit of viewportHits(sf)) {
+    const owner = enclosingDeclaration(hit.call, declarations);
+    if (owner === undefined) {
       findings.push(orphanMessage(file, hit));
       continue;
     }
-    const mismatched =
-      (enclosing.kind === 'describe' &&
-        hit.api === 'page.setViewportSize(...)') ||
-      (enclosing.kind === 'test' && hit.api === 'test.use({ viewport })');
-    anyTouch.add(enclosing);
-    if (mismatched) {
-      findings.push(structuralMismatchMessage(file, hit, enclosing));
+    touched.add(owner);
+    if (owner.kind === 'test' && hit.api === 'test.use({ viewport })') {
+      findings.push(useInTestMessage(file, hit, owner));
       continue;
     }
-    cleanTouches.set(enclosing, [
-      ...(cleanTouches.get(enclosing) ?? []),
-      hit.line,
-    ]);
+    owned.set(owner, [...(owned.get(owner) ?? []), hit.line]);
   }
 
-  for (const [decl, lines] of cleanTouches) {
-    if (!decl.tagged) findings.push(untaggedMessage(file, decl, lines));
+  // A read never joins `touched`: a tag that only a read justified would buy
+  // the read back by dropping the test from the phone, so that tag stays stale.
+  for (const read of viewportReads(sf)) {
+    const owner = enclosingDeclaration(read.call, declarations);
+    if (owner === undefined || !owner.tags.includes(EMULATED_VIEWPORT_TAG))
+      findings.push(readMessage(file, read.line, owner));
+  }
+
+  for (const [decl, lines] of owned) {
+    if (!decl.tags.includes(EMULATED_VIEWPORT_TAG))
+      findings.push(untaggedMessage(file, decl, lines));
   }
   for (const decl of declarations) {
-    if (decl.tagged && !anyTouch.has(decl))
+    if (decl.tags.includes(EMULATED_VIEWPORT_TAG) && !touched.has(decl))
       findings.push(staleTagMessage(file, decl));
   }
 
@@ -329,11 +228,11 @@ function analyze(file: string, rawText: string): string[] {
 }
 
 describe('a real phone cannot resize its own screen', () => {
-  it('every test that manipulates the viewport is tagged @emulated-viewport, and no tag is stale', () => {
+  it('every test that resizes the viewport is tagged @emulated-viewport, none the phone runs reads it, and no tag is stale', () => {
     const files = SCAN_DIRS.flatMap(tsFilesUnder);
 
     const findings = files.flatMap((file) =>
-      analyze(file, withoutTsComments(readFileSync(file, 'utf8'))),
+      analyze(file, readFileSync(file, 'utf8')),
     );
     expect(
       searched(findings, { of: files, what: 'spec files' }),
@@ -347,6 +246,10 @@ describe('a real phone cannot resize its own screen', () => {
 // decoration" applies to the guard's own building blocks too, not only to the
 // tags it is checking for.
 describe('analyze() -- the scanner proven on synthetic input, not just trusted', () => {
+  // What the corpus loop reports for a file, read the way it reads one.
+  const scanned = (src: string[]) =>
+    analyze('synthetic.spec.ts', src.join('\n'));
+
   it('flags an untagged test that resizes the viewport, naming file, line and title', () => {
     const src = [
       "import { test, expect } from './fixtures';",
@@ -395,6 +298,77 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     expect(findings[0]).toContain('does nothing viewport-related');
   });
 
+  // A READ of the viewport is the same fact from the other side: on a real
+  // device there is no emulated viewport, so `page.viewportSize()` is null
+  // there, and a test that sized its population by it searched nothing (#198).
+  it('flags an untagged test that reads page.viewportSize(), naming file, line and title', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('measures the page', async ({ page }) => {",
+      "  await page.goto('/');",
+      '  const width = page.viewportSize()?.width;',
+      '  expect(width).toBeGreaterThan(0);',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:5'); // the read's line
+    expect(findings[0]).toContain('measures the page');
+    expect(findings[0]).toContain('page.viewportSize()');
+    expect(findings[0]).toContain('document.documentElement.clientWidth');
+  });
+
+  it('flags a page.viewportSize() read in a helper that no declaration contains', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      'const widthOf = (page) => page.viewportSize()?.width;',
+      '',
+      "test('uses the helper', async ({ page }) => {",
+      '  expect(widthOf(page)).toBeGreaterThan(0);',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain('page.viewportSize()');
+    expect(findings[0]).toContain(
+      'no test(...) or test.describe(...) contains it',
+    );
+  });
+
+  it('accepts a page.viewportSize() read in a tagged test that resizes', () => {
+    expect(
+      scanned([
+        "import { test, expect } from './fixtures';",
+        '',
+        "test('reads back its own size', { tag: '@emulated-viewport' }, async ({ page }) => {",
+        '  await page.setViewportSize({ width: 320, height: 800 });',
+        '  expect(page.viewportSize()?.width).toBe(320);',
+        '});',
+        '',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('still calls a tag stale when a page.viewportSize() read is all that justifies it', () => {
+    // Tagging a test that only reads would buy the read back by dropping the
+    // test from the phone -- the coverage the tag exists to spend sparingly.
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('only reads', { tag: '@emulated-viewport' }, async ({ page }) => {",
+      "  await page.goto('/');",
+      '  expect(page.viewportSize()?.width).toBeGreaterThan(0);',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('stale');
+    expect(findings[0]).toContain('only reads');
+  });
+
   it('does not mistake a runtime test.skip(condition, reason) call for a new declaration', () => {
     // The exact shape of chrome.spec.ts:122 and head-and-sitemap.spec.ts:85: a
     // *runtime* conditional skip, called INSIDE an already-open test body. If this
@@ -440,12 +414,12 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     expect(analyze('synthetic.spec.ts', tagged)).toEqual([]);
   });
 
-  it('reports a setViewportSize reached through an aliased callee as a structural problem, not silence', () => {
-    // The exact shape classroom-groups.spec.ts's own first draft used before this
-    // task's own restructuring: `const run = fits ? test : test.fixme; run(...)`.
-    // The literal token `run(` is not `test(`, so rule 1 cannot see it as a
-    // declaration -- this proves that gap surfaces as a loud, actionable finding
-    // rather than the call silently going unattributed.
+  it('asks the group to carry the tag for a resize reached through an aliased callee, rather than passing over it', () => {
+    // The shape classroom-groups.spec.ts's own first draft used:
+    // `const run = fits ? test : test.fixme; run(...)`. `run(` is not a callee
+    // this reader follows, so the resize sits in no test -- but it does sit in
+    // the group, and the group's tag reaches every test in it, the aliased one
+    // included. Silence is the one outcome this must never produce.
     const src = [
       "import { test, expect } from './fixtures';",
       '',
@@ -460,14 +434,27 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
 
     const findings = analyze('synthetic.spec.ts', src);
     expect(findings).toHaveLength(1);
-    expect(findings[0]).toContain('generated');
-    expect(findings[0]).toContain('not a test()');
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain("test.describe('generated')");
+    expect(findings[0]).toContain(EMULATED_VIEWPORT_TAG);
+  });
+
+  it('reports test.use({ viewport }) inside a test body, which Playwright rejects', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      "test('configures itself', { tag: '@emulated-viewport' }, async () => {",
+      '  test.use({ viewport: { width: 320, height: 568 } });',
+      '});',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain('inside a running test body');
   });
 
   it('ignores setViewportSize and a declaration-shaped call when they appear only in a comment', () => {
-    // The two real near-misses this file's own header comment names:
-    // classroom-groups.spec.ts:1068 ("/id/*" inside a `//` line) and
-    // classroom-groups-controls.spec.ts:1069 (`test.fixme(title, body)` inside a
+    // The two real near-misses the regex version's header named:
+    // classroom-groups.spec.ts ("/id/*" inside a `//` line) and
+    // classroom-groups-controls.spec.ts (`test.fixme(title, body)` inside a
     // `//` line, describing the API rather than calling it).
     const src = [
       "import { test, expect } from './fixtures';",
@@ -475,6 +462,7 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
       '// Example: await page.setViewportSize({ width: 320, height: 800 });',
       '// See also `test.fixme(title, body)` for the declaration form.',
       '// Cloudflare serves /id/* too, so this is not stranded in English.',
+      '/* await page.setViewportSize({ width: 375, height: 667 }); */',
       "test('does not actually touch the viewport', async ({ page }) => {",
       "  await page.goto('/');",
       '});',
@@ -487,8 +475,7 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
   it('tolerates a wrapped title (test( on one line, the quoted title on the next)', () => {
     // Prettier wraps a call onto one argument per line once it stops fitting the
     // configured print width -- several real titles in this corpus are long
-    // enough on their own to force this once the tag argument is added (see
-    // classroom-groups.spec.ts:874's own title, 104 characters before the tag).
+    // enough on their own to force this once the tag argument is added.
     const src = [
       "import { test, expect } from './fixtures';",
       '',
@@ -504,5 +491,79 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     ].join('\n');
 
     expect(analyze('synthetic.spec.ts', src)).toEqual([]);
+  });
+
+  it('sees test.use({ viewport }) written in shorthand', () => {
+    // tests/e2e/visual.spec.ts writes exactly this, and android-chrome
+    // collected all eight of its tests: `viewport:` was the only spelling seen.
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      'for (const { label, viewport } of WIDTHS) {',
+      '  test.describe(`${label} wide`, () => {',
+      '    test.use({ viewport });',
+      "    test('renders', async ({ page }) => {});",
+      '  });',
+      '}',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain(EMULATED_VIEWPORT_TAG);
+  });
+
+  it('is not fooled by a declaration spelled inside a string', () => {
+    expect(
+      scanned([
+        "import { test } from './fixtures';",
+        "test('resizes', { tag: '@emulated-viewport' }, async ({ page }) => {",
+        '  const example = "test(\'not a test\', async () => {})";',
+        '  await page.setViewportSize({ width: 320, height: 800 });',
+        '});',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('gives a resize in a hook to the group the hook runs for, not to the test above it', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      "test.describe('phones', () => {",
+      "  test('first', { tag: '@emulated-viewport' }, async ({ page }) => {",
+      '    await page.setViewportSize({ width: 320, height: 800 });',
+      '  });',
+      '  test.beforeEach(async ({ page }) => {',
+      '    await page.setViewportSize({ width: 375, height: 667 });',
+      '  });',
+      '});',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:2');
+    expect(findings[0]).toContain('phones');
+  });
+
+  it('reports the line a finding is on in the file, below a block comment', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      '/**',
+      ' * A docblock above the test.',
+      ' */',
+      "test('shrinks', async ({ page }) => {",
+      '  await page.setViewportSize({ width: 320, height: 800 });',
+      '});',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:5');
+  });
+
+  it('reports a resize no declaration contains, instead of crediting the test above it', () => {
+    const findings = scanned([
+      "import { test } from './fixtures';",
+      "test('first', { tag: '@emulated-viewport' }, async ({ page }) => {",
+      '  await page.setViewportSize({ width: 320, height: 800 });',
+      '});',
+      'async function toPhone(page) {',
+      '  await page.setViewportSize({ width: 375, height: 667 });',
+      '}',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:6');
   });
 });

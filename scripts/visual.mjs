@@ -5,6 +5,7 @@
  *   npm run test:visual                  # compare against the baselines
  *   npm run test:visual:update           # rewrite them
  *   npm run test:visual -- -g home       # anything after `--` is forwarded
+ *   npm run test:visual -- -g "two words"  # ...each argument whole (#202)
  *
  * BOTH go through Docker, and that is the point. Playwright writes the
  * platform into every snapshot filename, so a run on a macOS laptop does not
@@ -34,51 +35,49 @@ const require = createRequire(import.meta.url);
 const { version } = require('@playwright/test/package.json');
 const image = `mcr.microsoft.com/playwright:v${version}-noble`;
 
-const argv = process.argv.slice(2);
-const update = argv.includes('--update');
-const forwarded = argv.filter((arg) => arg !== '--update');
+/**
+ * The argument vector for `docker`, built without running anything so a test
+ * can read it (`tests/unit/visual-runner.test.ts`, #202).
+ *
+ * @param {object} options
+ * @param {string} options.image the pinned Playwright image
+ * @param {string} options.cwd the repo root, mounted at /work
+ * @param {boolean} options.update rewrite the baselines instead of comparing
+ * @param {readonly string[]} options.forwarded Playwright's own arguments
+ * @returns {string[]}
+ */
+export function dockerArgs({ image, cwd, update, forwarded }) {
+  const playwright = [
+    'npx playwright test --project=visual',
+    // `=all`, never the bare flag: Playwright 1.63 documents `preset: "changed"`
+    // for a bare `--update-snapshots`, which rewrites only baselines whose
+    // comparison FAILED and leaves a stale-but-passing one in place -- the drift
+    // #134 exists to stop. The zero-allowance evidence in
+    // `tests/unit/browser-matrix.test.ts` was gathered with `all` by hand,
+    // through a flag this script did not pass (#152).
+    update ? '--update-snapshots=all' : '',
+    // Chromium is memory-hungry and the host has under 4 GiB; the default
+    // worker count is derived from CPUs and has killed a container run here
+    // before. Two is what CI's e2e job was measured at.
+    '--workers=2',
+    // The forwarded arguments, which never appear in this text: they arrive
+    // as `sh`'s own operands below, and `"$@"` hands each one to Playwright
+    // as a single word, spaces, quotes and `$` included. Joined in here, the
+    // container's shell split them again, and `--grep "student added"`
+    // reached Playwright as `--grep student` plus a file filter `added`
+    // (#202).
+    '"$@"',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
-if (spawnSync('docker', ['--version'], { stdio: 'ignore' }).status !== 0) {
-  console.error(
-    `docker is not available, and this suite does not fall back to running\n` +
-      `here: a local run would compare nothing and pass. Start Docker, or\n` +
-      `read the diff from the visual job in CI, which uses ${image}.`,
-  );
-  process.exit(1);
-}
-
-console.log(
-  `${update ? 'Capturing baselines (--update-snapshots=all)' : 'Comparing'} in ${image}`,
-);
-if (forwarded.length) console.log(`  forwarding: ${forwarded.join(' ')}`);
-
-const playwright = [
-  'npx playwright test --project=visual',
-  // `=all`, never the bare flag: Playwright 1.63 documents `preset: "changed"`
-  // for a bare `--update-snapshots`, which rewrites only baselines whose
-  // comparison FAILED and leaves a stale-but-passing one in place -- the drift
-  // #134 exists to stop. The zero-allowance evidence in
-  // `tests/unit/browser-matrix.test.ts` was gathered with `all` by hand,
-  // through a flag this script did not pass (#152).
-  update ? '--update-snapshots=all' : '',
-  // Chromium is memory-hungry and the host has under 4 GiB; the default
-  // worker count is derived from CPUs and has killed a container run here
-  // before. Two is what CI's e2e job was measured at.
-  '--workers=2',
-  ...forwarded,
-]
-  .filter(Boolean)
-  .join(' ');
-
-const run = spawnSync(
-  'docker',
-  [
+  return [
     'run',
     '--rm',
     // Chromium exhausts the default 64MB /dev/shm and crashes mid-run.
     '--ipc=host',
     '-v',
-    `${process.cwd()}:/work`,
+    `${cwd}:/work`,
     // An ANONYMOUS volume over node_modules, so `npm ci` inside the container
     // installs Linux binaries into the container's own layer instead of
     // overwriting the macOS ones on the host. Without this the next local
@@ -103,13 +102,54 @@ const run = spawnSync(
       'npm ci --no-audit --no-fund',
       playwright,
     ].join(' && '),
-  ],
-  { stdio: 'inherit' },
-);
+    // `sh -c SCRIPT NAME ARG...`: NAME becomes `$0`, and the ARGs become
+    // `"$@"` exactly as Docker received them from this array.
+    'sh',
+    ...forwarded,
+  ];
+}
 
-if (run.status !== 0 && update)
-  console.error(
-    '\nCapture failed, so the committed baselines are unchanged. Read the\n' +
-      'output above before retrying.',
+function main() {
+  const argv = process.argv.slice(2);
+  const update = argv.includes('--update');
+  const forwarded = argv.filter((arg) => arg !== '--update');
+
+  if (spawnSync('docker', ['--version'], { stdio: 'ignore' }).status !== 0) {
+    console.error(
+      `docker is not available, and this suite does not fall back to running\n` +
+        `here: a local run would compare nothing and pass. Start Docker, or\n` +
+        `read the diff from the visual job in CI, which uses ${image}.`,
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `${update ? 'Capturing baselines (--update-snapshots=all)' : 'Comparing'} in ${image}`,
   );
-process.exit(run.status ?? 1);
+  // JSON, so an argument holding a space reads as one: the joined form
+  // printed `--grep student added` for the very split it caused (#202).
+  if (forwarded.length)
+    console.log(`  forwarding: ${JSON.stringify(forwarded)}`);
+
+  const run = spawnSync(
+    'docker',
+    dockerArgs({ image, cwd: process.cwd(), update, forwarded }),
+    { stdio: 'inherit' },
+  );
+
+  if (run.status !== 0 && update)
+    console.error(
+      '\nCapture failed, so the committed baselines are unchanged. Read the\n' +
+        'output above before retrying.',
+    );
+  process.exit(run.status ?? 1);
+}
+
+// Only when run, never when imported, so `tests/unit/visual-runner.test.ts`
+// can read `dockerArgs` without starting a container. A check that stopped
+// matching would make `npm run test:visual` exit 0 having compared nothing,
+// and comparing `process.argv[1]` with this file's path did exactly that from
+// a checkout reached through a symlink (#221). `tests/unit/script-entry.test.ts`
+// runs this file as a script from such checkouts and watches it refuse
+// without Docker.
+if (import.meta.main) main();

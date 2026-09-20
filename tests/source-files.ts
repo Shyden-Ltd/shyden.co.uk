@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -104,6 +105,32 @@ export const tsFilesUnder = (dir: string): string[] =>
  */
 export const specFilesUnder = (dir: string): string[] =>
   filesUnder(dir, (path) => path.endsWith('.spec.ts'));
+
+/**
+ * Of `paths`, the ones git ignores, by git's own rules.
+ *
+ * The walk reads the filesystem, which also holds `dist/` and the test
+ * reports: files nobody here wrote, on one machine and not the next. Asking
+ * git keeps `.gitignore` the one statement of what is tracked, where a list
+ * of directories copied into a guard would drift from it. `git check-ignore`
+ * exits 1 when it ignores nothing, which is an ordinary answer, so the status
+ * is read rather than thrown on.
+ *
+ * Git does not report a TRACKED path as ignored, whatever the rules say. A
+ * guard asking whether a rule would swallow a file must ask about a path git
+ * does not track, or the answer is "no" for a reason unrelated to the rule.
+ */
+export function ignoredByGit(paths: readonly string[]): Set<string> {
+  const run = spawnSync('git', ['check-ignore', '--stdin'], {
+    input: paths.join('\n'),
+    encoding: 'utf8',
+  });
+  if (run.status !== 0 && run.status !== 1)
+    throw new Error(
+      `git check-ignore failed (${run.status}): ${run.error ?? run.stderr}`,
+    );
+  return new Set(run.stdout.split('\n').filter((line) => line !== ''));
+}
 
 /**
  * True for a population member that carries something to find.

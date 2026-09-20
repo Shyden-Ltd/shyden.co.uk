@@ -162,6 +162,11 @@ function startsRegex(tail: string): boolean {
  * is the same bug wearing the opposite coat — so this scans rather than
  * matches. Quotes, template literals, escapes and regex literals (`startsRegex`,
  * above) are tracked; that is the whole of the grammar this needs.
+ *
+ * A block comment goes WITH the line breaks inside it, so after one, a line
+ * counted in this output is not the file's line (#218: `dev-sanity.spec.ts`
+ * line 79 was reported as line 48). A guard that reports lines reads the
+ * parse tree, or `blankCommentLines` below, which keeps every line in place.
  */
 export function withoutTsComments(source: string): string {
   let out = '';
@@ -348,8 +353,50 @@ const FENCE = /^---[ \t]*$/gm;
 /** A `<script>` element, as its opening tag and then its body. */
 const SCRIPT = /(<script\b[^>]*>)([\s\S]*?)<\/script\s*>/g;
 
+/** A `<style>` element, as its opening tag and then its body. */
+const STYLE = /(<style\b[^>]*>)([\s\S]*?)<\/style\s*>/g;
+
+/** A span of a file, from its start offset up to but not including its end. */
+type Region = readonly [start: number, end: number];
+
 /** `text` with every character but CR and LF turned to a space. */
 const blanked = (text: string): string => text.replace(/[^\r\n]/g, ' ');
+
+/**
+ * An `.astro` file made ready for a tag search: its frontmatter's region, when
+ * it has one, and its markup, which is the whole file with that frontmatter
+ * and every markup comment blanked.
+ *
+ * Both are blanked before any tag is looked for, because either can name one:
+ * `ClassroomGroupsPage.astro` explains in an `<!-- … -->` why its first script
+ * must be `is:inline`, and says "every plain `<script>`" while doing it. A tag
+ * search over the raw markup opens an element body in that prose and runs it
+ * on into the real element below (#175).
+ */
+function astroParts(text: string): { frontmatter?: Region; markup: string } {
+  const [open, close] = [...text.matchAll(FENCE)];
+  const hasFrontmatter = open?.index === 0 && close !== undefined;
+  const markupStart = hasFrontmatter ? close.index + close[0].length : 0;
+  const markup =
+    blanked(text.slice(0, markupStart)) +
+    text.slice(markupStart).replace(MARKUP_COMMENT, blanked);
+  return hasFrontmatter
+    ? { frontmatter: [open[0].length, close.index], markup }
+    : { markup };
+}
+
+/** The body of each `element` in `markup`, as a region of the file. */
+const bodies = (markup: string, element: RegExp): Region[] =>
+  [...markup.matchAll(element)].map((match) => {
+    const start = match.index + match[1].length;
+    return [start, start + match[2].length] as const;
+  });
+
+/** The whole of `text` with everything outside `region` blanked. */
+const viewOf = (text: string, [start, end]: Region): string =>
+  blanked(text.slice(0, start)) +
+  text.slice(start, end) +
+  blanked(text.slice(end));
 
 /**
  * The code an `.astro` file holds — its frontmatter, then each `<script>`
@@ -360,34 +407,30 @@ const blanked = (text: string): string => text.replace(/[^\r\n]/g, ' ');
  * that position or line in the file itself. No caller carries an offset it
  * could get wrong.
  *
- * Markup comments are blanked before any tag is looked for, because a comment
- * can name one: `ClassroomGroupsPage.astro` explains in an `<!-- … -->` why
- * its first script must be `is:inline`, and says "every plain `<script>`"
- * while doing it. A tag search over the raw markup opens a script body in
- * that prose and runs it on into the real script below (#175).
- *
  * Case-sensitive on purpose: to Astro, `<Script>` is a component. Residual,
  * named rather than chased: a `>` inside a script tag's attribute value ends
  * the tag early, and `<script>` spelled inside a markup expression reads as
  * a tag.
  */
 export function astroCodeViews(text: string): string[] {
-  const regions: Array<readonly [start: number, end: number]> = [];
-  const [open, close] = [...text.matchAll(FENCE)];
-  const hasFrontmatter = open?.index === 0 && close !== undefined;
-  if (hasFrontmatter) regions.push([open[0].length, close.index]);
-  const markupStart = hasFrontmatter ? close.index + close[0].length : 0;
-  const markup =
-    blanked(text.slice(0, markupStart)) +
-    text.slice(markupStart).replace(MARKUP_COMMENT, blanked);
-  for (const script of markup.matchAll(SCRIPT)) {
-    const start = script.index + script[1].length;
-    regions.push([start, start + script[2].length]);
-  }
-  return regions.map(
-    ([start, end]) =>
-      blanked(text.slice(0, start)) +
-      text.slice(start, end) +
-      blanked(text.slice(end)),
+  const { frontmatter, markup } = astroParts(text);
+  const regions = frontmatter === undefined ? [] : [frontmatter];
+  return [...regions, ...bodies(markup, SCRIPT)].map((region) =>
+    viewOf(text, region),
+  );
+}
+
+/**
+ * The CSS an `.astro` file holds — each `<style>` body — as one view per
+ * element, in the same shape as `astroCodeViews` and for the same reason
+ * (#200).
+ *
+ * Residuals, named rather than chased: `<style>` spelled inside a script body
+ * reads as a tag, and a `style` attribute is not read at all. Neither occurs
+ * under `src/` as this is written.
+ */
+export function astroStyleViews(text: string): string[] {
+  return bodies(astroParts(text).markup, STYLE).map((region) =>
+    viewOf(text, region),
   );
 }

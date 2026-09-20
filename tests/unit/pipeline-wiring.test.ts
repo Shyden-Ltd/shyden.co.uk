@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withoutCommentLines, withoutTsComments } from './source-text';
 import { nonEmpty, searched } from '../source-files';
@@ -8,11 +17,24 @@ import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
   jobsDownstreamOfAConditionalJob,
+  parseCleanYaml,
   skippedUpstreamFindings,
   unboundedJobFindings,
   workflowJobs,
   type WorkflowJob,
 } from '../workflow-jobs';
+import { parseFile } from './ast';
+import { declarationsIn } from '../playwright-declarations';
+
+/**
+ * The plain `test(...)` declarations `spec` makes, read by the parser. A test
+ * commented out, or spelled inside a string, is not one: counting `test(` in
+ * the raw text counted both (#218).
+ */
+const plainTestsIn = (spec: string) =>
+  declarationsIn(parseFile(spec)).filter(
+    ({ kind, modifier }) => kind === 'test' && modifier === '',
+  );
 
 /**
  * The deploy pipeline is wired to the things it claims to run.
@@ -95,6 +117,15 @@ const workflowGraphs = () =>
     jobs: workflowJobs(workflow(name), name),
   }));
 
+// The two constructs that change what prod serves: a wrangler deploy to the
+// prod Pages project, and a rollback through the Pages API on it. The name
+// must END at `shyden-site`, so `shyden-site-dev` is not prod.
+const deploysProd = (scripts: string) =>
+  /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts);
+const rollsProdBack = (scripts: string) =>
+  /\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
+  /\/rollback\b/.test(scripts);
+
 /** The job block owning `needle`, from a workflow's comment-stripped text. */
 const jobBlockRunning = (yaml: string, needle: string): string => {
   const stripped = withoutCommentLines(yaml);
@@ -125,11 +156,11 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the dev sanity suite exists and is more than a stub', () => {
-    const spec = readFileSync('tests/dev/dev-sanity.spec.ts', 'utf8');
-    const tests = spec.match(/\btest\(/g) ?? [];
     // A guard that only checked the workflow REFERENCES the config would pass
     // against an emptied suite.
-    expect(tests.length).toBeGreaterThan(3);
+    expect(plainTestsIn('tests/dev/dev-sanity.spec.ts').length).toBeGreaterThan(
+      3,
+    );
   });
 
   it('the dev deploy is gated on a gate that SUCCEEDED, never on one that skipped', () => {
@@ -236,9 +267,20 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(prod).toMatch(/on:[\s\S]*?push:[\s\S]*?branches:\s*\[main\]/);
   });
 
+  // Every job that deploys the prod project, with the environment it names,
+  // read PARSED. A name is the whole name: the regex this replaced read
+  // `name: prod` as a prefix, so a deploy moved into `prod-rollback`, which
+  // has no reviewer, still passed it (#241, mutation W5).
   it('prod is behind the approval-gated environment', () => {
-    const prod = workflowSteps('release-prod.yml');
-    expect(prod).toMatch(/environment:\s*\n\s*name:\s*prod/);
+    const deploys = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter((job) => deploysProd(job.runs.join('\n')))
+        .map(
+          (job) =>
+            `${name} ${job.id} in ${job.environment ?? 'no environment'}`,
+        ),
+    );
+    expect(deploys).toEqual(['release-prod.yml deploy-prod in prod']);
   });
 
   // The placeholder guard cost two false-failed releases before it matched the
@@ -314,6 +356,354 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(pushers.map((w) => w.name)).toEqual(['release-prod.yml']);
   });
 
+  // ---- one lock around everything that changes what prod serves (#238) ----
+  //
+  // rollback.yml and release-prod.yml sat in different groups, so a release
+  // still deploying could land after a rollback and undo it, with both runs
+  // reporting success. Measured on the runner (#238 AC1): a run waiting at an
+  // approval HOLDS its group, at workflow and at job level, and a newer arrival
+  // cancels a run already waiting for it. So a rollback that merely queued
+  // could wait on an approval nobody clicks, or be cancelled by the next push
+  // to main. Shyden's decision (AC2): one group, and the rollback cancels
+  // whatever holds it. Read PARSED: a commented-out block is no block.
+  const PROD_LOCK = 'shyden-prod-publish';
+  type ParsedWorkflow = {
+    concurrency?: string | { group?: unknown; 'cancel-in-progress'?: unknown };
+    jobs?: Record<string, { steps?: { run?: unknown }[] }>;
+  };
+  const parsedWorkflow = (name: string) =>
+    parseCleanYaml(workflow(name), name) as ParsedWorkflow;
+  const lockOf = ({ concurrency }: ParsedWorkflow) =>
+    typeof concurrency === 'string' ? concurrency : concurrency?.group;
+  const changesProd = ({ jobs }: ParsedWorkflow) => {
+    const scripts = Object.values(jobs ?? {})
+      .flatMap((job) => (job.steps ?? []).map((step) => String(step.run ?? '')))
+      .join('\n');
+    return deploysProd(scripts) || rollsProdBack(scripts);
+  };
+
+  it('a rollback cancels any prod release in flight, and a release waits for a rollback (#238)', () => {
+    expect(parsedWorkflow('rollback.yml').concurrency, 'rollback.yml').toEqual({
+      group: PROD_LOCK,
+      'cancel-in-progress': true,
+    });
+    expect(
+      parsedWorkflow('release-prod.yml').concurrency,
+      'release-prod.yml',
+    ).toEqual({
+      group: PROD_LOCK,
+      'cancel-in-progress': false,
+    });
+  });
+
+  // A list of the lock's members would miss the next workflow that deploys
+  // prod, so the members are DERIVED from what each workflow's steps run. And
+  // nothing else may take the lock: a dev deploy inside it would be cancelled
+  // by every prod rollback.
+  it('every workflow that changes what prod serves takes the prod lock, and nothing else does (#238)', () => {
+    const names = workflowYamlNames();
+    const actors = nonEmpty(
+      names.filter((name) => changesProd(parsedWorkflow(name))),
+      'workflows whose steps deploy or roll back the prod Pages project',
+    );
+    const holders = names.filter(
+      (name) => lockOf(parsedWorkflow(name)) === PROD_LOCK,
+    );
+    expect(holders, `the workflows holding ${PROD_LOCK}`).toEqual(actors);
+  });
+
+  // ---- each secret lives in the environment of the job reading it (#241) ----
+  //
+  // A repository secret reaches a workflow on any branch that can be pushed.
+  // An environment secret reaches only a job that names its environment, and
+  // `prod` and `prod-rollback` accept `main` alone. So the secrets are only as
+  // well placed as the jobs that read them: once the repository copies are
+  // deleted, a job naming no environment reads nothing, and a job naming the
+  // wrong one reads another project's token. Read PARSED, per job
+  // (tests/workflow-jobs.ts): a secret in a YAML comment is read by nothing,
+  // and one in a shell comment inside `run:` is still expanded by the runner.
+  const everyJob = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs.map((job) => ({ where: `${name} ${job.id}`, file: name, job })),
+    );
+
+  // GITHUB_TOKEN is not a repository secret: the runner mints it for each run,
+  // scoped by the job's `permissions:`, so no environment can hold it.
+  const storedSecrets = ({ secrets }: WorkflowJob) =>
+    secrets.filter((secret) => secret !== 'GITHUB_TOKEN');
+
+  it('every job that reads a secret other than GITHUB_TOKEN names an environment (#241)', () => {
+    const readers = everyJob().filter(
+      ({ job }) => storedSecrets(job).length > 0,
+    );
+    const unplaced = readers
+      .filter(({ job }) => job.environment === undefined)
+      .map(
+        ({ where, job }) =>
+          `${where} reads ${storedSecrets(job).join(', ')} in no environment`,
+      );
+    expect(
+      searched(unplaced, {
+        of: readers.map(({ where }) => where),
+        what: 'jobs reading a secret other than GITHUB_TOKEN',
+      }),
+    ).toEqual([]);
+  });
+
+  // What a job does with the Cloudflare pair decides the environment it reads
+  // them from, derived from its steps and never from the file's name. The dev
+  // and prod tokens share one name, one per environment, so the environment
+  // is the only thing choosing which project a job can reach.
+  const PAGES_ENVIRONMENTS = [
+    {
+      does: 'deploys shyden-site-dev',
+      environment: 'dev',
+      in: (scripts: string) =>
+        /--project-name[= ]+shyden-site-dev(?![\w.-])/.test(scripts),
+    },
+    { does: 'deploys shyden-site', environment: 'prod', in: deploysProd },
+    {
+      does: 'rolls shyden-site back',
+      environment: 'prod-rollback',
+      in: rollsProdBack,
+    },
+  ];
+
+  it('a Cloudflare secret is read only in the environment of the project its job changes (#241)', () => {
+    const readers = everyJob().filter(({ job }) =>
+      job.secrets.some((secret) => secret.startsWith('CLOUDFLARE_')),
+    );
+    const misplaced = readers.flatMap(({ where, job }) => {
+      const acts = PAGES_ENVIRONMENTS.filter((act) =>
+        act.in(job.runs.join('\n')),
+      );
+      if (acts.length !== 1)
+        return [
+          `${where} reads Cloudflare secrets and ` +
+            (acts.length === 0
+              ? 'changes no Pages project'
+              : acts.map(({ does }) => does).join(' and ')),
+        ];
+      const [{ does, environment }] = acts;
+      return job.environment === environment
+        ? []
+        : [
+            `${where} ${does}, so it reads Cloudflare secrets in ` +
+              `${environment}, not ${job.environment ?? 'no environment'}`,
+          ];
+    });
+    expect(
+      searched(misplaced, {
+        of: readers.map(({ where }) => where),
+        what: 'jobs reading a Cloudflare secret',
+      }),
+    ).toEqual([]);
+  });
+
+  // A prod job is any job in a workflow that changes what prod serves, and any
+  // job in a prod environment. A secret meant for dev is named `DEV_*`, and
+  // `dev` accepts every branch, because release-dev.yml puts feature branches
+  // on dev on purpose. Anything it holds is only as private as the least
+  // reviewed branch, so it never travels to prod.
+  it('no job that deploys or verifies prod reads a secret meant for dev (#241)', () => {
+    const prodJobs = everyJob().filter(
+      ({ file, job }) =>
+        changesProd(parsedWorkflow(file)) ||
+        job.environment === 'prod' ||
+        job.environment === 'prod-rollback',
+    );
+    const leaks = prodJobs.flatMap(({ where, job }) =>
+      job.secrets
+        .filter((secret) => secret.startsWith('DEV_'))
+        .map((secret) => `${where} reads ${secret}`),
+    );
+    expect(
+      searched(leaks, {
+        of: prodJobs.map(({ where }) => where),
+        what: 'jobs that deploy or verify prod',
+      }),
+    ).toEqual([]);
+  });
+
+  // ---- the rollback's dry run (#241, Shyden's decision 2026-09-19) --------
+  //
+  // prod-rollback accepts `main` alone, so the rollback's secrets can only be
+  // proved on main, and rolling prod back to prove them is no proof anyone
+  // wants. A dry run runs the real job. It checks that both secrets are set,
+  // then finds the deployment it would promote with a read-only call that
+  // needs the token to reach shyden-site. It skips only the one step that
+  // changes what prod serves. The steps' scripts are RUN here, in bash as the
+  // runner runs them, never matched as text.
+  type RollbackStep = {
+    id?: string;
+    name?: string;
+    if?: unknown;
+    run?: unknown;
+    env?: Record<string, unknown>;
+  };
+  type RollbackWorkflow = {
+    on?: { workflow_dispatch?: { inputs?: Record<string, unknown> } };
+    jobs?: { rollback?: { steps?: RollbackStep[] } };
+  };
+  const rollbackWorkflow = () =>
+    parseCleanYaml(
+      workflow('rollback.yml'),
+      'rollback.yml',
+    ) as RollbackWorkflow;
+  const rollbackSteps = (): RollbackStep[] =>
+    nonEmpty(
+      rollbackWorkflow().jobs?.rollback?.steps ?? [],
+      'steps in the rollback job',
+    );
+  const rollbackStep = (name: string): RollbackStep => {
+    const step = rollbackSteps().find((each) => each.name === name);
+    expect(step, `rollback.yml has no step named '${name}'`).toBeDefined();
+    return step!;
+  };
+  const stepCondition = (step: RollbackStep) =>
+    String(step.if ?? '')
+      .trim()
+      .replace(/^\$\{\{([\s\S]*)\}\}$/, '$1')
+      .trim();
+
+  // A step's script as the runner runs it: bash with -eo pipefail and no
+  // profile, given only the env named here. `https_proxy` points at a closed
+  // port, so a script that reaches for the network fails on the spot rather
+  // than calling Cloudflare.
+  const runStep = (step: RollbackStep, env: Record<string, string>) => {
+    const script = String(step.run ?? '');
+    expect(script, `${step.name} runs no script`).not.toBe('');
+    expect(script, 'an expression reaches a script through env').not.toMatch(
+      /\$\{\{/,
+    );
+    const dir = mkdtempSync(join(tmpdir(), 'rollback-step-'));
+    const outputs = join(dir, 'outputs');
+    writeFileSync(outputs, '');
+    try {
+      const run = spawnSync(
+        'bash',
+        ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script],
+        {
+          encoding: 'utf8',
+          timeout: 10_000,
+          env: {
+            PATH: process.env.PATH ?? '',
+            https_proxy: 'http://127.0.0.1:9',
+            HTTPS_PROXY: 'http://127.0.0.1:9',
+            GITHUB_OUTPUT: outputs,
+            ...env,
+          },
+        },
+      );
+      return {
+        status: run.status,
+        log: `${run.stdout}${run.stderr}`,
+        outputs: readFileSync(outputs, 'utf8'),
+      };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const CLOUDFLARE_ENV = {
+    CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
+    CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+  };
+  const TOKEN = 'token-value-never-printed';
+  const ACCOUNT = 'account-value-never-printed';
+
+  // Off unless asked for: a dispatch that omits it, from the API or a hurried
+  // click, rolls back as it always did.
+  it('the rollback has a dry run, and it is off unless asked for (#241)', () => {
+    expect(rollbackWorkflow().on?.workflow_dispatch?.inputs?.dry_run).toEqual(
+      expect.objectContaining({ type: 'boolean', default: false }),
+    );
+  });
+
+  it('the rollback checks its secrets first and skips only the promote on a dry run (#241)', () => {
+    const steps = rollbackSteps();
+    expect(
+      steps.map((step) => `${step.name}: ${stepCondition(step) || 'always'}`),
+    ).toEqual([
+      'Check the secrets are set: always',
+      'Find the deployment to roll back to: always',
+      'Promote it: !inputs.dry_run',
+    ]);
+    // The call that changes what prod serves lives in the skipped step alone.
+    expect(
+      steps
+        .filter((step) => /\/rollback\b/.test(String(step.run ?? '')))
+        .map((step) => step.name),
+    ).toEqual(['Promote it']);
+  });
+
+  it('a rollback stops before Cloudflare when either secret is missing, and never prints one (#241)', () => {
+    const check = rollbackStep('Check the secrets are set');
+    expect(check.env).toEqual(CLOUDFLARE_ENV);
+    const both = runStep(check, {
+      CLOUDFLARE_API_TOKEN: TOKEN,
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+    });
+    expect(both.status, both.log).toBe(0);
+    expect(both.log).toMatch(/^CLOUDFLARE_API_TOKEN: present$/m);
+    expect(both.log).toMatch(/^CLOUDFLARE_ACCOUNT_ID: present$/m);
+    expect(both.log).not.toContain(TOKEN);
+    expect(both.log).not.toContain(ACCOUNT);
+    // An empty secret is what the runner hands a job that cannot read it, and
+    // an unset one is checked as well.
+    const empty = runStep(check, {
+      CLOUDFLARE_API_TOKEN: '',
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+    });
+    expect(empty.status).not.toBe(0);
+    expect(empty.log).toMatch(/^::error::CLOUDFLARE_API_TOKEN: absent\. /m);
+    const unset = runStep(check, { CLOUDFLARE_API_TOKEN: TOKEN });
+    expect(unset.status).not.toBe(0);
+    expect(unset.log).toMatch(/^::error::CLOUDFLARE_ACCOUNT_ID: absent\. /m);
+  });
+
+  it('the find step passes on a deployment id and refuses anything that could reshape the call (#241)', () => {
+    const find = rollbackStep('Find the deployment to roll back to');
+    expect(find.id).toBe('find');
+    expect(find.env).toEqual({
+      ...CLOUDFLARE_ENV,
+      TARGET_ID: '${{ inputs.deployment_id }}',
+    });
+    const credentials = {
+      CLOUDFLARE_API_TOKEN: TOKEN,
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+    };
+    const id = '6f1c2a3b-0d4e-4f5a-9b6c-7d8e9f0a1b2c';
+    const given = runStep(find, { ...credentials, TARGET_ID: id });
+    expect(given.status, given.log).toBe(0);
+    expect(given.outputs).toBe(`target=${id}\n`);
+    // A path that climbs out of the project, a second output line, a space.
+    for (const bad of ['../../dns_records', `${id}\ntarget=other`, 'a b']) {
+      const run = runStep(find, { ...credentials, TARGET_ID: bad });
+      expect(run.status, JSON.stringify(bad)).not.toBe(0);
+      expect(run.outputs, JSON.stringify(bad)).toBe('');
+    }
+    // No id and no Cloudflare: the lookup fails, and no target is handed on.
+    const unreachable = runStep(find, { ...credentials, TARGET_ID: '' });
+    expect(unreachable.status).not.toBe(0);
+    expect(unreachable.outputs).toBe('');
+  });
+
+  it('the promote step takes its target from the find step, and stops if there is none (#241)', () => {
+    const promote = rollbackStep('Promote it');
+    expect(promote.env).toEqual({
+      ...CLOUDFLARE_ENV,
+      TARGET: '${{ steps.find.outputs.target }}',
+    });
+    const run = runStep(promote, {
+      CLOUDFLARE_API_TOKEN: TOKEN,
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+      TARGET: '',
+    });
+    expect(run.status).not.toBe(0);
+    // Stopped by its own guard, not by curl failing to reach the proxy.
+    expect(run.log).toMatch(/^::error::No deployment to roll back to: /m);
+  });
+
   // ---- the develop branching model ---------------------------------------
   //
   // `release-dev.yml` was DISPATCH-only, which made the dev deploy — and so the
@@ -385,6 +775,39 @@ describe('the deploy pipeline runs what it claims to', () => {
     // STOPS anything. Renaming this job silently de-gates develop and main,
     // because protection matches a context by NAME (#33).
     expect(workflowSteps('ci.yml')).toContain('build-and-test:');
+  });
+
+  // #237: a push to an open pull request started a fresh run and left the
+  // superseded one spending about 30 runner-minutes on a head that could no
+  // longer merge (35336492915 and 35335647213 were cancelled by hand). Read
+  // PARSED: a commented-out block is no block, whatever its text says.
+  it("a push cancels its own pull request's superseded CI run, never another's (#237)", () => {
+    const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      on?: Record<string, unknown>;
+      concurrency?: { group?: unknown; 'cancel-in-progress'?: unknown };
+    };
+
+    // The group's pull request number is empty on any other event, and an
+    // empty key is one group for every run: a second trigger would let a run
+    // on one branch cancel a run on another.
+    expect(
+      Object.keys(ci.on ?? {}),
+      'ci.yml must run on pull requests only while its group is keyed by one',
+    ).toEqual(['pull_request']);
+
+    // Exactly these two, in any order. Every workflow in the repo shares one
+    // namespace of groups, so the key names this workflow; it names the pull
+    // request, so a push never cancels another PR's run; and it names nothing
+    // finer, because a key per commit puts each push in a group of its own and
+    // cancels nothing at all.
+    const keyedBy = [
+      ...String(ci.concurrency?.group ?? '').matchAll(/\$\{\{\s*(.+?)\s*\}\}/g),
+    ].map((match) => match[1]);
+    expect(
+      [...keyedBy].sort(),
+      `ci.yml's concurrency group is keyed by [${keyedBy.join(', ')}]`,
+    ).toEqual(['github.event.pull_request.number', 'github.workflow']);
+    expect(ci.concurrency?.['cancel-in-progress']).toBe(true);
   });
 
   // RAW text on purpose — the opposite of every other check in this file.
@@ -482,8 +905,9 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the prod sanity suite exists and is more than a stub', () => {
-    const spec = readFileSync('tests/prod/prod-sanity.spec.ts', 'utf8');
-    expect(spec.match(/\bit\(|\btest\(/g)?.length ?? 0).toBeGreaterThan(3);
+    expect(
+      plainTestsIn('tests/prod/prod-sanity.spec.ts').length,
+    ).toBeGreaterThan(3);
   });
 });
 

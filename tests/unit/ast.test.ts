@@ -161,6 +161,101 @@ describe('a name resolves to the declaration the language binds it to', () => {
     };
     expect([inFile('a.ts'), inFile('b.ts')]).toEqual([["'a'"], ["'b'"]]);
   });
+
+  it('stops at an import even when the file it names is bound', () => {
+    // `declarationOf` below follows the import; this must not. Both
+    // meta-guards derive through `initializerOf`, and an import followed
+    // into a helper module would hand them initializers they never judged.
+    const bound = bind(
+      new Map([
+        ['tests/e2e/harness.ts', `export const ORIGIN = 'https://a.test';`],
+        [
+          'tests/e2e/review.spec.ts',
+          `import { ORIGIN } from './harness'; use(ORIGIN);`,
+        ],
+      ]),
+    );
+    const sf = bound.files.get('tests/e2e/review.spec.ts');
+    if (!sf) throw new Error('the spec was not bound');
+    expect(resolvedIn(bound, sf)).toEqual([undefined]);
+  });
+});
+
+describe('an import resolves to the declaration its own file makes', () => {
+  /**
+   * What the first `use(name)` in `file` names, across files bound together.
+   * Keyed the way `bindFiles` keys the real scan: paths relative to the repo,
+   * which is the shape that answered `unknown` for every import (#215) --
+   * TypeScript resolves a module to an ABSOLUTE path and asked for that.
+   */
+  function declarationIn(
+    files: Record<string, string>,
+    file: string,
+  ): ts.Declaration | undefined {
+    const bound = bind(new Map(Object.entries(files)));
+    const sf = bound.files.get(file);
+    if (!sf) throw new Error(`${file} was not bound`);
+    const [arg] = useArguments(sf);
+    if (!arg || !ts.isIdentifier(arg))
+      throw new Error(`${file} no longer calls use() with a bare name`);
+    return bound.declarationOf(arg);
+  }
+
+  const HARNESS = `export const ORIGIN = 'https://evidence.test';`;
+
+  it('follows an import into the file that exports it', () => {
+    const declaration = declarationIn(
+      {
+        'tests/e2e/harness.ts': HARNESS,
+        'tests/e2e/review.spec.ts': `import { ORIGIN } from './harness'; use(ORIGIN);`,
+      },
+      'tests/e2e/review.spec.ts',
+    );
+    if (!declaration || !ts.isVariableDeclaration(declaration))
+      throw new Error(`reached ${declaration?.getText()}, not the const`);
+    expect([
+      declaration.getSourceFile().fileName,
+      declaration.initializer?.getText(),
+    ]).toEqual(['tests/e2e/harness.ts', "'https://evidence.test'"]);
+  });
+
+  it('follows a renamed import through a re-export', () => {
+    const declaration = declarationIn(
+      {
+        'tests/e2e/harness.ts': HARNESS,
+        'tests/e2e/index.ts': `export { ORIGIN } from './harness';`,
+        'tests/e2e/review.spec.ts': `import { ORIGIN as BASE } from './index'; use(BASE);`,
+      },
+      'tests/e2e/review.spec.ts',
+    );
+    expect(declaration?.getSourceFile().fileName).toBe('tests/e2e/harness.ts');
+  });
+
+  it('answers the import itself when the file it names was not bound', () => {
+    const declaration = declarationIn(
+      {
+        'tests/e2e/review.spec.ts': `import { SITE } from '../../src/site'; use(SITE);`,
+      },
+      'tests/e2e/review.spec.ts',
+    );
+    expect(declaration && ts.isImportSpecifier(declaration)).toBe(true);
+  });
+
+  it('answers a parameter rather than an outer const of the same name', () => {
+    const declaration = declarationIn(
+      {
+        'fixture.ts': `const url = 'https://outer.test'; const go = (url: string) => use(url);`,
+      },
+      'fixture.ts',
+    );
+    expect(declaration && ts.isParameter(declaration)).toBe(true);
+  });
+
+  it('answers nothing for a name no bound file declares', () => {
+    expect(
+      declarationIn({ 'fixture.ts': `use(undeclared);` }, 'fixture.ts'),
+    ).toBeUndefined();
+  });
 });
 
 describe('an expression derives from what its own scope binds', () => {
@@ -223,5 +318,48 @@ describe('an expression derives from what its own scope binds', () => {
         use(a);
       `),
     ).toEqual([new Set(['a', 'b'])]);
+  });
+});
+
+describe('a derivation stops where it is told, and names what it cannot see into (#225)', () => {
+  const isDecode = (call: ts.CallExpression): boolean =>
+    ts.isIdentifier(call.expression) && call.expression.text === 'decode';
+
+  it('does not enter a call it is told to stop at, callee included', () => {
+    const { bound, sf } = fixture(`
+      const text = read();
+      const data = decode(text);
+      use(data);
+      use(text + decode(read()).size);
+    `);
+    expect(
+      useArguments(sf).map(
+        (arg) => new Set(derivationOf(arg, bound, { stopAt: isDecode }).names),
+      ),
+    ).toEqual([new Set(['data']), new Set(['text', 'read'])]);
+    // Told nothing, the same walk enters every call, as it always has.
+    expect(derivedNames('const data = decode(read()); use(data);')).toEqual([
+      new Set(['data', 'decode', 'read']),
+    ]);
+  });
+
+  it('names the bindings it could not follow, and none that it did', () => {
+    const { bound, sf } = fixture(`
+      import { load } from './elsewhere';
+      function helper() { return 1; }
+      const local = (p: string) => load(helper(), p);
+      use(local('x') + missing);
+    `);
+    const [arg] = useArguments(sf);
+    if (!arg) throw new Error('the fixture no longer calls use()');
+    const { names, opaque } = derivationOf(arg, bound);
+    expect(new Set(names)).toEqual(
+      new Set(['local', 'load', 'helper', 'p', 'missing']),
+    );
+    // An import, a function declaration, a parameter and an unbound name
+    // hold no initializer; `local` held one, and the walk went inside it.
+    expect(new Set(opaque)).toEqual(
+      new Set(['load', 'helper', 'p', 'missing']),
+    );
   });
 });

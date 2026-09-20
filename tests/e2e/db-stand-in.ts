@@ -29,11 +29,20 @@ export type StoredBody = Record<string, unknown>;
 
 export interface DbStandInOptions {
   /**
-   * The localStorage key the store lives under. It must be unique per test: a
-   * real phone shares one browser context across every test, so a fixed key
-   * would carry one test's store into the next.
+   * The localStorage key the store lives under. It must be unique per test AND
+   * per run. A real phone shares one browser context across every test, so a
+   * fixed key would carry one test's store into the next; and it keeps one
+   * Chrome profile from run to run, so a key unique only per test hands each
+   * test the store its own previous run left (#229).
    */
   storeKey: string;
+  /**
+   * The prefix every earlier run of the same test wrote its store under.
+   * Installing removes those stores, and no others: without this a key per
+   * run would leave one more store per test on a phone after every run, never
+   * read again, until localStorage refuses writes.
+   */
+  supersedes: string;
   order: WriteOrder;
   /** Documents that already exist, written only while the store is empty. */
   seed: Record<string, StoredBody>;
@@ -103,10 +112,24 @@ export type StandInWindow = Window &
  * reference anything outside its own body.
  */
 export function installDbStandIn(options: DbStandInOptions): void {
-  const { storeKey, order, seed, holdUse, subscriptionDies, getFails } =
-    options;
+  const {
+    storeKey,
+    supersedes,
+    order,
+    seed,
+    holdUse,
+    subscriptionDies,
+    getFails,
+  } = options;
   const CONFIRM_AFTER_MS = 60;
 
+  const earlierRuns = Array.from({ length: localStorage.length }, (_, i) =>
+    localStorage.key(i),
+  ).filter(
+    (key): key is string =>
+      key !== null && key.startsWith(supersedes) && key !== storeKey,
+  );
+  for (const key of earlierRuns) localStorage.removeItem(key);
   if (localStorage.getItem(storeKey) === null)
     localStorage.setItem(storeKey, JSON.stringify(seed));
   const confirmed = (): Record<string, StoredBody> =>

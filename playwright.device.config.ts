@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { VISUAL_PROJECT } from './playwright.config';
 
 // Set here rather than only in the runner so that a bare `npx playwright test
 // --config=playwright.device.config.ts` behaves identically to the scripted run. Playwright
@@ -16,6 +17,11 @@ export default defineConfig({
     reuseExistingServer: !!process.env.PW_REUSE_SERVER,
   },
   use: { baseURL: 'http://localhost:4321' },
+  // Never write a baseline during a run (#194). Playwright's default,
+  // 'missing', writes the PNG before it fails, which is how a device run left
+  // eight untracked `-android-chrome-darwin` files in the repo. Baselines
+  // change one way only, in the pinned container (see playwright.config.ts).
+  updateSnapshots: 'none',
   projects: [
     { name: 'android-preflight', testMatch: /android-preflight\.setup\.ts/ },
     {
@@ -34,6 +40,16 @@ export default defineConfig({
         /tests\/e2e\/.*\.spec\.ts$/,
         /tests\/device\/real-device\.spec\.ts$/,
       ],
+      // The visual suite stays out, and ONLY the visual suite (#194). A
+      // baseline belongs to one project on one platform, so a phone can never
+      // hold one CI would read: claimed here, the suite failed eight times by
+      // construction and buried the run's one real failure among them. The
+      // pattern is the visual project's own, imported rather than restated.
+      //
+      // The content-only specs are NOT excluded, although the five engines
+      // ignore them: `rendered-text.spec.ts` reads layout, and this project is
+      // the only run that measures it at phone width (#198).
+      testIgnore: VISUAL_PROJECT.testMatch,
       // A real phone has one screen: `page.setViewportSize`/`test.use({ viewport })`
       // would "succeed" against CDP and report numbers describing nothing physical
       // (see tests/unit/viewport-tagging.test.ts, which is what keeps every such

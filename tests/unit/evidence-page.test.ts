@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { withoutTsComments } from './source-text';
+import { withoutMarkupComments, withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
 import { reportLocation } from '../../scripts/test-e2e.mjs';
 import {
@@ -20,6 +20,7 @@ import {
   EVIDENCE_REPORT,
 } from '../../scripts/evidence-files.mjs';
 import { captureOptions, manifestRow } from '../e2e/evidence';
+import { scriptCheckout, type ScriptCheckout } from './script-checkout';
 import {
   assertPageFits,
   assertPublishLimits,
@@ -195,20 +196,16 @@ const png = (width: number) => {
 };
 
 /** The builder as an operator runs it: its own process, reading only the disk. */
-const runBuilder = (dir: string, page: string) => {
+const runBuilder = (
+  dir: string,
+  page: string,
+  script = 'scripts/build-evidence-page.mjs',
+) => {
   const content = join(dir, 'content.json');
   writeFileSync(content, JSON.stringify(CONTENT));
   return spawnSync(
     process.execPath,
-    [
-      'scripts/build-evidence-page.mjs',
-      '--evidence',
-      dir,
-      '--content',
-      content,
-      '--out',
-      page,
-    ],
+    [script, '--evidence', dir, '--content', content, '--out', page],
     { encoding: 'utf8' },
   );
 };
@@ -575,8 +572,12 @@ describe('an earlier run in the same evidence directory stays off the page', () 
       'EARLIER=2 (captured before this run started): webkit 2',
     );
     const html = readFileSync(page, 'utf8');
+    // A capture is SHOWN only outside a comment: one left inside `<!-- -->`
+    // would pass on the raw page while the gallery showed nothing (#225).
+    // Absence reads the raw page, so it fails even then.
+    const shown = withoutMarkupComments(html);
     for (const row of chromium)
-      expect(html, `${row.file} is missing from the page`).toContain(
+      expect(shown, `${row.file} is missing from the page`).toContain(
         base64Of(dir, row.file),
       );
     for (const row of webkit)
@@ -613,7 +614,7 @@ describe('an earlier run in the same evidence directory stays off the page', () 
     expect(built.status, built.stderr).toBe(0);
     expect(built.stdout).toContain('shots=1 videos=0/0');
     const html = readFileSync(page, 'utf8');
-    expect(html).toContain(base64Of(dir, second.file));
+    expect(withoutMarkupComments(html)).toContain(base64Of(dir, second.file));
     expect(
       html,
       "the unreached assertion carries the earlier run's picture",
@@ -1290,5 +1291,58 @@ describe('a journey that captured nothing is still on the page', () => {
         what: 'recordings handed to the page',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('the builder builds its page from any checkout path (#221)', () => {
+  // Its entry check once compared `import.meta.url` with a `file://` template
+  // around `process.argv[1]`. The URL is percent-encoded and the path is not,
+  // so from a checkout whose path held a space `main()` never ran, and the
+  // build exited 0 having written nothing.
+  let checkout: ScriptCheckout;
+  let dir = '';
+  beforeAll(() => {
+    checkout = scriptCheckout();
+    dir = mkdtempSync(join(tmpdir(), 'evidence-entry-'));
+  });
+  afterAll(() => {
+    checkout.remove();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('builds it when run from a checkout whose path holds a space', () => {
+    const row = manifestRow(
+      {
+        project: 'chromium',
+        title: 'suite > a journey',
+        order: 1,
+        label: 'thing 1',
+        file: 'chromium/a__01.png',
+      },
+      new Date(Date.parse(REPORT.stats.startTime) + 5_000),
+    );
+    mkdirSync(join(dir, 'chromium'));
+    writeFileSync(join(dir, row.file), png(10));
+    writeFileSync(join(dir, EVIDENCE_MANIFEST), `${JSON.stringify(row)}\n`);
+    writeFileSync(
+      join(dir, EVIDENCE_REPORT),
+      JSON.stringify(reportOf([{ journey: 'a journey', project: 'chromium' }])),
+    );
+    const page = join(dir, 'page.html');
+
+    const built = runBuilder(
+      dir,
+      page,
+      join(checkout.spaced, 'build-evidence-page.mjs'),
+    );
+
+    // The precondition, so the test cannot drift into proving nothing.
+    expect(checkout.spaced).toContain(' ');
+    expect(built.stdout, built.stderr).toContain('shots=1 videos=0/0');
+    expect(built.status, built.stderr).toBe(0);
+    // On the page, not in a comment on it.
+    expect(withoutMarkupComments(readFileSync(page, 'utf8'))).toContain(
+      readFileSync(join(dir, row.file)).toString('base64'),
+    );
   });
 });

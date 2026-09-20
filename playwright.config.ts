@@ -4,26 +4,39 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 /**
  * Specs that assert HTTP responses and DOM text, and never render.
  *
- * A sitemap's URLs, a canonical tag, whether two words come out touching:
+ * A sitemap's URLs, a canonical tag, a locale's copy reaching its page:
  * `textContent` is spec-defined, so these bytes do not vary by engine. Running
  * them on all five projects cost four extra runs each and returned nothing the
  * first run had not already proven.
  *
  * The boundary is mechanical, not editorial -- a spec is content-only exactly
- * when it never drives the viewport -- so it is enforced rather than trusted:
- * tests/unit/browser-matrix.test.ts fails if anything listed here calls
- * `setViewportSize` or carries `@emulated-viewport`, if a name here stops
+ * when it neither drives the viewport nor reads layout -- so it is enforced
+ * rather than trusted: tests/unit/browser-matrix.test.ts fails if anything
+ * listed here does either (`tests/unit/engine-dependence.ts` names what counts
+ * and reads it from the parse tree, never from comments), if a name here stops
  * matching a real file, or if any engine project stops ignoring these.
  *
  * `site-meta.spec.ts` is deliberately NOT here. It mixes three content
  * assertions with a parameterised 404 layout test that does resize, and the
  * layout half has to keep running everywhere.
+ *
+ * `rendered-text.spec.ts` is not here either (#198). Whether two words come out
+ * touching is a question about where the browser put them, and the answer
+ * depends on width: below 720px the nav is hidden and the header's last text
+ * box is a different one. Listed here, it ran at 1280px only, and a real phone
+ * was the first place it ever failed. A spec can read layout without resizing,
+ * which is why the boundary asks about reading as well as driving.
+ *
+ * The skip link's WCAG 2.4.1 tests left `head-and-sitemap.spec.ts` for
+ * `skip-link.spec.ts` for the same reason (#198). They read layout
+ * (`toBeInViewport`) and ask which engine they are on (`browserName`), and
+ * while listed here they ran on one engine, though their comment promised
+ * WebKit.
  */
 export const CONTENT_ONLY_SPECS = [
   'head-and-sitemap.spec.ts',
   'seo.spec.ts',
   'baseurl-guard.spec.ts',
-  'rendered-text.spec.ts',
   'locale-parity.spec.ts',
   'copy-reaches-a-page.spec.ts',
 ];

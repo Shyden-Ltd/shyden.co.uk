@@ -84,16 +84,26 @@ export interface Bound {
    * judged by the `.filter()` that builds `allowed` beside it.
    */
   initializerOf(id: ts.Identifier): ts.Expression | undefined;
+  /**
+   * The declaration `id` names, followed through an import -- renamed or
+   * re-exported -- to the one the exporting file makes, where `initializerOf`
+   * stops at the import on purpose. The import itself when the file it names
+   * was not bound, so a caller can say which file it would have needed, and
+   * `undefined` for a name no bound file declares.
+   */
+  declarationOf(id: ts.Identifier): ts.Declaration | undefined;
 }
 
 /**
  * Bind `sources`, each file's name to its text, into one program.
  *
- * Binding is all that is wanted: no lib, no module resolution, no type
- * checking. `moduleDetection: Force` makes every file a module, because a file
- * with no import or export is otherwise a SCRIPT, and scripts share one global
- * scope -- two fixtures each declaring `config` would both resolve to
- * whichever was bound first.
+ * Binding is all that is wanted: no lib, no file pulled in beyond `sources`,
+ * no type checking. An import still resolves when the file it names was bound
+ * beside it, which is what `declarationOf` follows; an import of anything else
+ * resolves to nothing. `moduleDetection: Force` makes every file a module,
+ * because a file with no import or export is otherwise a SCRIPT, and scripts
+ * share one global scope -- two fixtures each declaring `config` would both
+ * resolve to whichever was bound first.
  */
 export function bind(sources: ReadonlyMap<string, string>): Bound {
   const options: ts.CompilerOptions = {
@@ -103,12 +113,17 @@ export function bind(sources: ReadonlyMap<string, string>): Bound {
     target: ts.ScriptTarget.Latest,
     moduleDetection: ts.ModuleDetectionKind.Force,
   };
+  // Module resolution asks for an ABSOLUTE path (`/…/tests/e2e/harness.ts`),
+  // and every caller keys `sources` relative to the repo, so every import
+  // resolved to `unknown` until this met the two halfway (#215).
+  const sourceText = (name: string): string | undefined =>
+    sources.get(name) ?? sources.get(relative(process.cwd(), name));
   const parsed = new Map<string, ts.SourceFile>();
   const host: ts.CompilerHost = {
     // Parsed here, with the program's own options, rather than handed over
     // pre-parsed: those options are what carry `moduleDetection` to the file.
     getSourceFile: (name, languageVersionOrOptions) => {
-      const text = sources.get(name);
+      const text = sourceText(name);
       if (text === undefined) return undefined;
       const sf = ts.createSourceFile(
         name,
@@ -119,8 +134,8 @@ export function bind(sources: ReadonlyMap<string, string>): Bound {
       parsed.set(name, sf);
       return sf;
     },
-    fileExists: (name) => sources.has(name),
-    readFile: (name) => sources.get(name),
+    fileExists: (name) => sourceText(name) !== undefined,
+    readFile: sourceText,
     writeFile: () => {},
     getDefaultLibFileName: () => 'lib.d.ts',
     getCurrentDirectory: () => process.cwd(),
@@ -139,18 +154,31 @@ export function bind(sources: ReadonlyMap<string, string>): Bound {
     files.set(name, sf);
   }
 
+  // `{ config }` names a property AND a variable, and the property -- the one
+  // `getSymbolAtLocation` answers with -- has no initializer.
+  const symbolOf = (id: ts.Identifier): ts.Symbol | undefined =>
+    ts.isShorthandPropertyAssignment(id.parent)
+      ? checker.getShorthandAssignmentValueSymbol(id.parent)
+      : checker.getSymbolAtLocation(id);
+
   return {
     files,
     initializerOf(id) {
-      // `{ config }` names a property AND a variable, and the property -- the
-      // one `getSymbolAtLocation` answers with -- has no initializer.
-      const symbol = ts.isShorthandPropertyAssignment(id.parent)
-        ? checker.getShorthandAssignmentValueSymbol(id.parent)
-        : checker.getSymbolAtLocation(id);
-      const declaration = symbol?.valueDeclaration;
+      const declaration = symbolOf(id)?.valueDeclaration;
       return declaration && ts.isVariableDeclaration(declaration)
         ? declaration.initializer
         : undefined;
+    },
+    declarationOf(id) {
+      const symbol = symbolOf(id);
+      if (!symbol) return undefined;
+      const [own] = symbol.declarations ?? [];
+      if (!(symbol.flags & ts.SymbolFlags.Alias))
+        return symbol.valueDeclaration ?? own;
+      // An import of a file that was not bound resolves to the checker's
+      // `unknown` symbol, which declares nothing.
+      const target = checker.getAliasedSymbol(symbol);
+      return target.valueDeclaration ?? target.declarations?.[0] ?? own;
     },
   };
 }
@@ -167,9 +195,30 @@ export const bindFiles = (paths: readonly string[]): Bound =>
 export interface Derivation {
   /** Every identifier name the expression is built from. */
   readonly names: readonly string[];
+  /**
+   * The names among them the walk could not see into, because each binds no
+   * initializer to follow: an import, a parameter, a function declaration, a
+   * destructured binding, or a name nothing here declares. What those are
+   * made of lies outside the walk, so a caller that needs it asks the call
+   * graph about these, and judges every other name by what the walk found
+   * inside it (#225).
+   */
+  readonly opaque: readonly string[];
   /** Every variable initializer followed on the way, in the order reached. */
   readonly initializers: readonly ts.Expression[];
 }
+
+export interface DerivationOptions {
+  /**
+   * A call whose result carries nothing its arguments were made of, such as
+   * a parse. The walk enters neither its callee nor its arguments, so what
+   * reaches the expression only through one is no part of the derivation
+   * (#225). Left out, the walk enters every call.
+   */
+  readonly stopAt?: (call: ts.CallExpression) => boolean;
+}
+
+const enterEveryCall = (): boolean => false;
 
 /**
  * Every identifier feeding an expression, innermost callee first, as nodes so
@@ -183,25 +232,27 @@ export interface Derivation {
  */
 function identifiersIn(
   node: ts.Node | undefined,
+  stopAt: (call: ts.CallExpression) => boolean,
   acc: ts.Identifier[] = [],
 ): ts.Identifier[] {
   if (!node) return acc;
   if (ts.isCallExpression(node)) {
+    if (stopAt(node)) return acc;
     if (ts.isIdentifier(node.expression)) acc.push(node.expression);
     else if (ts.isPropertyAccessExpression(node.expression))
-      identifiersIn(node.expression.expression, acc);
-    node.arguments.forEach((arg) => identifiersIn(arg, acc));
+      identifiersIn(node.expression.expression, stopAt, acc);
+    node.arguments.forEach((arg) => identifiersIn(arg, stopAt, acc));
     return acc;
   }
   if (ts.isPropertyAccessExpression(node))
-    return identifiersIn(node.expression, acc);
+    return identifiersIn(node.expression, stopAt, acc);
   // A key is a BINDING, not a reference. `{ config: {} }` in a test factory
   // was resolving its key to a `config` helper that reads a file, which made
   // a deliberately-empty boundary case read as a filesystem scan. Parameter
   // names leak the same way, so only a default value counts there.
   if (ts.isPropertyAssignment(node))
-    return identifiersIn(node.initializer, acc);
-  if (ts.isParameter(node)) return identifiersIn(node.initializer, acc);
+    return identifiersIn(node.initializer, stopAt, acc);
+  if (ts.isParameter(node)) return identifiersIn(node.initializer, stopAt, acc);
   if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node))
     return acc;
   if (ts.isIdentifier(node)) {
@@ -214,7 +265,7 @@ function identifiersIn(
   // node, so an arrow function yielded its parameter and never its body.
   // Inherited from #98, where it quietly narrowed that guard too.
   ts.forEachChild(node, (child) => {
-    identifiersIn(child, acc);
+    identifiersIn(child, stopAt, acc);
   });
   return acc;
 }
@@ -230,19 +281,28 @@ function identifiersIn(
  * unrelated `source()` function three files away -- the right answer for the
  * wrong reason, which stopped being right the moment that accident was fixed.
  */
-export function derivationOf(node: ts.Expression, bound: Bound): Derivation {
+export function derivationOf(
+  node: ts.Expression,
+  bound: Bound,
+  { stopAt = enterEveryCall }: DerivationOptions = {},
+): Derivation {
   const names = new Set<string>();
+  const opaque = new Set<string>();
   const initializers: ts.Expression[] = [];
-  const queue = identifiersIn(node);
+  const queue = identifiersIn(node, stopAt);
   while (queue.length > 0) {
     const id = queue.shift() as ts.Identifier;
     names.add(id.text);
     const init = bound.initializerOf(id);
-    if (init === undefined || initializers.includes(init)) continue;
+    if (init === undefined) {
+      opaque.add(id.text);
+      continue;
+    }
+    if (initializers.includes(init)) continue;
     initializers.push(init);
-    queue.push(...identifiersIn(init));
+    queue.push(...identifiersIn(init, stopAt));
   }
-  return { names: [...names], initializers };
+  return { names: [...names], opaque: [...opaque], initializers };
 }
 
 export interface Closure {
