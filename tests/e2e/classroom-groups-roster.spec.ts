@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { shoot } from './evidence';
 import { recordErrors } from './recorders';
+import { searched } from '../source-files';
 import {
   openRoster,
   addSeveral,
@@ -374,7 +375,10 @@ test.describe('an absent student', () => {
         const row = page.locator('.cg-student').first();
         await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
         await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
-        const stripeTarget = width < 600 ? row : row.locator('td').first();
+        const cards = await page
+          .locator('#cg-roster')
+          .evaluate((el) => getComputedStyle(el).display !== 'table');
+        const stripeTarget = cards ? row : row.locator('td').first();
         const boxShadow = await stripeTarget.evaluate(
           (el) => getComputedStyle(el).boxShadow,
         );
@@ -1546,6 +1550,77 @@ test.describe('an unset roster dropdown says which column it is for', () => {
       'Apart',
     );
   });
+
+  /**
+   * The visible text is the entire point of this ticket, and `textContent` is
+   * blind to whether the box can paint it. At 390px `Together` rendered as
+   * `Toge` with every assertion above still green -- the same shape as this
+   * repo's `display: flex` defect, where the text was right for a whole
+   * release and the rendering was wrong. So measure the label against the box
+   * that has to draw it, at every width the page is used at.
+   *
+   * `#cg-roster select` sets `appearance: none` and reserves the drawn
+   * arrow's room with `padding-right: 1.6rem`, so the computed padding read
+   * here already accounts for it -- there is no native chrome left to guess.
+   */
+  test(
+    'no dropdown ever truncates its own column name',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      // 768px is where the card layout gives way to the table, so both
+      // layouts are measured, and 600px and 430px sit inside the card band
+      // that used to be the table's.
+      const widths = [320, 375, 390, 430, 600, 768, 1024, 1280];
+      const findings: string[] = [];
+      const measured: string[] = [];
+
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: 900 });
+        await openRoster(page);
+        const row = page.locator('.cg-student').first();
+        const boxes = await row.evaluate((el) =>
+          [...el.querySelectorAll('select')].map((select) => {
+            const style = getComputedStyle(select);
+            const probe = document.createElement('span');
+            probe.style.cssText =
+              'position:absolute;visibility:hidden;white-space:pre';
+            probe.style.font = style.font;
+            probe.textContent = select.selectedOptions[0]?.textContent ?? '';
+            document.body.appendChild(probe);
+            const textWidth = probe.getBoundingClientRect().width;
+            probe.remove();
+            const chrome =
+              parseFloat(style.paddingLeft) +
+              parseFloat(style.paddingRight) +
+              parseFloat(style.borderLeftWidth) +
+              parseFloat(style.borderRightWidth);
+            return {
+              label: select.getAttribute('aria-label') ?? '(unlabelled)',
+              shows: select.selectedOptions[0]?.textContent ?? '',
+              box: Math.round(select.getBoundingClientRect().width),
+              needs: Math.round(textWidth + chrome),
+            };
+          }),
+        );
+
+        for (const box of boxes) {
+          measured.push(`${width}px ${box.label}`);
+          if (box.needs > box.box) {
+            findings.push(
+              `${width}px ${box.label}: shows "${box.shows}" in ${box.box}px, needs ${box.needs}px`,
+            );
+          }
+        }
+      }
+
+      expect(
+        searched(findings, {
+          of: measured,
+          what: 'roster dropdowns measured across widths',
+        }),
+      ).toEqual([]);
+    },
+  );
 
   test("the empty option keeps each column's own behaviour", async ({
     page,
