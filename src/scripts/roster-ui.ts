@@ -132,7 +132,9 @@ const printMirror = (value: string): HTMLSpanElement => {
   return span;
 };
 
-/** M/F, or an em dash for unset — the same glyph the <select> shows. */
+/** M/F, or an em dash for unset. NOT the glyph the <select> shows: since #249
+ * the collapsed control names its own column instead, while paper keeps the
+ * dash for an empty cell. */
 const sexText = (student: Student, t: Strings): string =>
   student.sex === 'M'
     ? t.rosterSexMale
@@ -407,7 +409,7 @@ function buildRow(
   const sexTd = document.createElement('td');
   const sexSelect = document.createElement('select');
   sexSelect.setAttribute('aria-label', t.rosterColSex);
-  const unsetOption = buildOption('', t.rosterUnset);
+  const unsetOption = buildOption('', t.rosterColSex);
   // Once a sex has been chosen there is no way back to "—" (operator,
   // 2026-08-13). The placeholder exists to say "not answered yet", not to be
   // an answer, and leaving it selectable let a teacher undo a required field
@@ -485,7 +487,7 @@ function buildRow(
   const togetherTd = document.createElement('td');
   const togetherSelect = document.createElement('select');
   togetherSelect.setAttribute('aria-label', t.rosterColTogether);
-  togetherSelect.appendChild(buildOption('', t.rosterUnset));
+  togetherSelect.appendChild(buildOption('', t.rosterColTogether));
   for (const letter of togetherLetters) {
     togetherSelect.appendChild(buildOption(letter, letter));
   }
@@ -500,7 +502,7 @@ function buildRow(
   const apartTd = document.createElement('td');
   const apartSelect = document.createElement('select');
   apartSelect.setAttribute('aria-label', t.rosterColApart);
-  apartSelect.appendChild(buildOption('', t.rosterUnset));
+  apartSelect.appendChild(buildOption('', t.rosterColApart));
   for (const letter of apartLetters) {
     apartSelect.appendChild(buildOption(letter, letter));
   }
