@@ -64,6 +64,9 @@ type Affordance = {
   readonly background: string;
   /** Computed opacity of the control itself. */
   readonly opacity: string;
+  /** The control's own box, from the same rect the hit test is taken at. */
+  readonly width: number;
+  readonly height: number;
   /**
    * Checkbox, radio and file inputs: the UA draws these, their background is
    * legitimately transparent, and `accent-color` is what governs them. The
@@ -72,6 +75,12 @@ type Affordance = {
    * grow.
    */
   readonly uaPainted: boolean;
+};
+
+/** An enabled control, with the cursor its own computed style carries. */
+type EnabledControl = {
+  readonly label: string;
+  readonly cursor: string;
 };
 
 type Population = {
@@ -91,6 +100,22 @@ type Population = {
    * cannot join it in silence.
    */
   readonly excluded: readonly string[];
+  /**
+   * Every ENABLED form control, with the cursor its computed style carries.
+   *
+   * AC6 asks that the disabled state be distinguishable from the enabled
+   * one, and an assertion made over the disabled set ALONE is structurally
+   * unable to see the way that fails: widen `:disabled { cursor:
+   * not-allowed }` to `button` and every other guard in this file stays
+   * green while the affordance stops telling a teacher anything. A property
+   * held by BOTH states distinguishes neither.
+   *
+   * Computed style is the right instrument for this half. The question is
+   * whether the RULE reaches an enabled control, not where a pointer lands
+   * — which is what the hit test answers for the disabled half, and what it
+   * is needed for there.
+   */
+  readonly enabled: readonly EnabledControl[];
   /** `--disabled-fill` resolved to computed rgb, so both sides compare. */
   readonly fill: string;
 };
@@ -102,9 +127,10 @@ type Population = {
 const affordances = async (page: Page): Promise<Population> => {
   // Tag each one so the browser-side read finds the same element this
   // enumerated, without inventing an id scheme on the page itself.
-  const { labels, excluded, fill } = await page.evaluate(() => {
+  const { labels, excluded, enabled, fill } = await page.evaluate(() => {
     const labels: string[] = [];
     const excluded: string[] = [];
+    const enabled: { label: string; cursor: string }[] = [];
     document.querySelectorAll<HTMLElement>(':disabled').forEach((el, i) => {
       const tag = el.tagName.toLowerCase();
       if (tag === 'option') {
@@ -131,7 +157,22 @@ const affordances = async (page: Page): Promise<Population> => {
     const fill = getComputedStyle(probe).backgroundColor;
     probe.remove();
 
-    return { labels, excluded, fill };
+    document
+      .querySelectorAll<
+        | HTMLButtonElement
+        | HTMLInputElement
+        | HTMLSelectElement
+        | HTMLTextAreaElement
+      >('button, select, textarea, input')
+      .forEach((el) => {
+        if (el.disabled) return;
+        enabled.push({
+          label: el.id || el.tagName.toLowerCase(),
+          cursor: getComputedStyle(el).cursor,
+        });
+      });
+
+    return { labels, excluded, enabled, fill };
   });
 
   const reachable: Affordance[] = [];
@@ -182,6 +223,8 @@ const affordances = async (page: Page): Promise<Population> => {
           relation,
           background: own.backgroundColor,
           opacity: own.opacity,
+          width: r.width,
+          height: r.height,
           uaPainted:
             el.tagName.toLowerCase() === 'input' &&
             (type === 'checkbox' || type === 'radio' || type === 'file'),
@@ -190,7 +233,7 @@ const affordances = async (page: Page): Promise<Population> => {
     );
   }
 
-  return { reachable, excluded, fill };
+  return { reachable, excluded, enabled, fill };
 };
 
 /**
@@ -403,4 +446,69 @@ test.describe('a disabled control affords that it is disabled', () => {
     });
     expect(carvedOut).toEqual(['cg-sex-mix', 'cg-sex-separate']);
   });
+
+  test('the no-entry cursor marks the disabled controls apart from the enabled ones', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    await addSeveral(page, MAX_ROSTER - 1);
+    await openEveryDisclosure(page);
+
+    const { reachable, enabled } = await affordances(page);
+
+    // The NEW invariant first. A test stops at its first failed expectation
+    // (#156), so an assertion ordered after one this file already makes
+    // would only ever be evaluated while that one holds.
+    const leaked = enabled
+      .filter((control) => control.cursor === 'not-allowed')
+      .map((control) => control.label);
+    expect(
+      searched(leaked, {
+        of: enabled.map((control) => control.label),
+        what: 'enabled controls',
+      }),
+    ).toEqual([]);
+
+    // ...and the other half, read from the SAME snapshot, so the contrast is
+    // one screen a teacher is looking at rather than two page states.
+    expectNoEntryCursor(reachable, 'at-limit, against the enabled controls');
+  });
+
+  test(
+    'at 320px every disabled control keeps a 44px target, and the page does not scroll sideways',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 900 });
+      await openRoster(page);
+      await addSeveral(page, MAX_ROSTER - 1);
+      await openEveryDisclosure(page);
+
+      const { reachable } = await affordances(page);
+
+      // UA-painted inputs are carved out for the reason the fill carve-out
+      // exists: the raw checkbox is not what a finger lands on. `.switch`'s
+      // 44px min-height sits on the LABEL, measured by
+      // classroom-groups-controls.spec.ts, and a second opinion here would
+      // only split the truth in two.
+      const measured = reachable.filter((a) => !a.uaPainted);
+      const small = measured
+        .filter((a) => a.height < 44)
+        .map((a) => `${a.label} — ${a.height.toFixed(1)}px tall`);
+      expect(
+        searched(small, {
+          of: measured.map((a) => a.label),
+          what: 'disabled controls at 320px',
+        }),
+      ).toEqual([]);
+
+      // The instrument classroom-groups-controls.spec.ts already uses, so
+      // the second home cannot disagree with the first about what counts.
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    },
+  );
 });
