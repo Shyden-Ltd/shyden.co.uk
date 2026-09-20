@@ -36,7 +36,10 @@ import { LOCALES, type Locale } from '../../src/lib/i18n/locales';
  * Scope is the roster column family, because #249 propagates these six keys
  * out of one table header and into the empty option of three dropdowns on
  * every row. The rest of the catalogues' short labels need the same treatment
- * and that work stays on #53.
+ * and that sweep is #161, whose list must be derived rather than read. The CSV
+ * export writes its own copy of these headers and is held apart as #252: there
+ * the header word is a parsing token, so correcting one breaks importing a file
+ * a teacher has already exported.
  */
 const VERIFIED: Record<Locale, Record<string, string>> = {
   en: {
