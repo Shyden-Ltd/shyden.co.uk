@@ -480,9 +480,11 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
  * would be recorded under its final line, which still classifies uniquely and
  * still fails loudly if it is not classified at all.
  */
-type BorderUsage = { file: string; selector: string; declaration: string };
+type Declaration = { file: string; selector: string; declaration: string };
 
-const borderUsages = (): BorderUsage[] => {
+const declarationsMatching = (
+  matches: (declaration: string) => boolean,
+): Declaration[] => {
   const files = nonEmpty(
     filesUnder(SRC, (path) => path.endsWith('.astro') || path.endsWith('.css')),
     `.astro and .css files under ${SRC}/`,
@@ -491,14 +493,14 @@ const borderUsages = (): BorderUsage[] => {
   return files.flatMap((file) => {
     const lines = withoutCssComments(readFileSync(file, 'utf8')).split('\n');
     let selector = '(none)';
-    const found: BorderUsage[] = [];
+    const found: Declaration[] = [];
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed.endsWith('{') && !trimmed.startsWith('@')) {
         selector = trimmed.slice(0, -1).trim();
       }
-      if (trimmed.includes('var(--border)')) {
+      if (matches(trimmed)) {
         found.push({
           file: file.replace(/^src\//, ''),
           selector,
@@ -509,6 +511,9 @@ const borderUsages = (): BorderUsage[] => {
     return found;
   });
 };
+
+const borderUsages = (): Declaration[] =>
+  declarationsMatching((declaration) => declaration.includes('var(--border)'));
 
 const key = (u: { file: string; selector: string }) =>
   `${u.file} :: ${u.selector}`;
@@ -573,6 +578,52 @@ describe('a control is never identified by the decorative border alone', () => {
       searched(unclassified, {
         of: usages,
         what: 'var(--border) usages in src/',
+      }),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * AC3's second clause (#250), which was held up by a comment until now.
+ *
+ * `tokens.css` states that its site-wide rule "enforces AC3's 'never a list of
+ * per-component overrides': a component cannot quietly invent a second
+ * disabled look" — and nothing tested that claim. `!important` only wins
+ * against a component rule that is not itself `!important`, so the
+ * enforcement was a convention rather than a control, and a comment is not an
+ * implementation.
+ */
+describe('one disabled look, defined in one place', () => {
+  /** What paints a control. `color-scheme` is not one of these. */
+  const PAINT =
+    /^(background(-color|-image)?|color|cursor|opacity|-webkit-text-fill-color)\s*:/;
+
+  /**
+   * A selector's SUBJECT is its last compound, and it is what decides here.
+   *
+   * `.switch input:disabled + span` paints the switch TRACK — a sibling the
+   * site-wide rule cannot reach, because that rule matches the input while
+   * the visible switch is the span. Its subject carries no `:disabled`, so it
+   * is not a second look. A rule whose own subject IS the disabled control is.
+   */
+  const subjectIsDisabled = (selector: string): boolean =>
+    selector.split(',').some((part) => /:disabled$/.test(part.trim()));
+
+  it('no component paints a disabled control for itself', () => {
+    const painted = declarationsMatching((declaration) =>
+      PAINT.test(declaration),
+    ).filter((usage) => subjectIsDisabled(usage.selector));
+    const elsewhere = painted.filter(
+      (usage) => usage.file !== 'styles/tokens.css',
+    );
+
+    // The population includes tokens.css's own rules, so it is live by
+    // construction — and deleting the site-wide treatment empties it, which
+    // `searched` refuses rather than reporting as a clean bill of health.
+    expect(
+      searched(elsewhere, {
+        of: painted.map((usage) => `${usage.file} :: ${usage.selector}`),
+        what: 'paint declarations on a :disabled subject',
       }),
     ).toEqual([]);
   });
