@@ -320,6 +320,13 @@ const PAIRS: Pair[] = [
     level: 'ui',
     where: 'control boundaries on a card (WCAG 1.4.11)',
   },
+  {
+    fg: ['--ink-soft'],
+    bg: ['--disabled-fill'],
+    level: 'body',
+    where:
+      "the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning `--deep`'s entry records. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received",
+  },
 ];
 
 /**

@@ -17,6 +17,18 @@
   --ink: #eaf2ff;
   --ink-soft: #8fa6c6;
 
+  /* A control that cannot be used right now (#250). An opaque FILL, never
+     the `opacity: 0.6` this replaced: opacity composites the whole subtree,
+     control AND label, with whatever happens to be behind it, so the label's
+     ratio depends on the page atmosphere at that spot -- measured at roughly
+     2.67:1 for --ink-soft, well under AA, in ClassroomGroupsPage.astro's own
+     note. Opaque, the ratio is fixed and checkable: --ink-soft on this is
+     5.19:1, and --ink 11.46:1. 1.51:1 against --surface and 1.56:1 against
+     --bg, so the control still reads as a control on the card; WCAG 1.4.11
+     exempts an inactive component from the 3:1 boundary, and the reason
+     paragraph beside it is what carries the state without colour (AC6). */
+  --disabled-fill: #2a323f;
+
   /* Brand. --on-accent is the ink for anything sitting ON mint: white scores
      1.39:1 there, so a filled button labelled #fff would be unreadable. */
   --accent: #38f5c8;
@@ -183,6 +195,45 @@ a:hover {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* A disabled control looks and behaves disabled, SITE-WIDE and in one place
+   (#250 AC3). This replaced three per-component `opacity: 0.6; cursor:
+   default` rules -- `.actions button:disabled`, `.cg-add-student:disabled`
+   and `.cg-add-several:disabled` -- which is exactly the shape AC3 rules out:
+   a control added next year inherits none of a list, and nine of the eleven
+   controls that could be disabled had no treatment at all.
+
+   Measured, and the reason the premise this ticket was written on is gone:
+   a disabled control DOES receive hover on all five engines (hitRelation
+   self, mouseover true, 11/11; CI run 35523913132). So the cursor hangs off
+   the control itself and needs no wrapper.
+
+   `!important` is load-bearing, exactly as the print block below already
+   documents: Astro scopes a component's rules with a `[data-astro-cid-*]`
+   attribute, so `.actions button` there is (0,2,1) and outranks a bare
+   `button:disabled` here at (0,1,1). Without it this rule loses to the very
+   declarations it exists to replace -- measured, not assumed. It also
+   enforces AC3's "never a list of per-component overrides": a component
+   cannot quietly invent a second disabled look. */
+:disabled {
+  cursor: not-allowed !important;
+}
+/* Checkbox, radio and file inputs are left out: the UA draws those, their
+   background is legitimately transparent and `accent-color` governs them --
+   the same carve-out palette-controls.spec.ts makes, asserted by
+   disabled-controls.spec.ts so it cannot quietly grow. */
+button:disabled,
+select:disabled,
+textarea:disabled,
+input:not([type='checkbox']):not([type='radio']):not([type='file']):disabled {
+  background: var(--disabled-fill) !important;
+  color: var(--ink-soft) !important;
+  /* Safari paints a disabled input's text through `-webkit-text-fill-color`,
+     which wins over `color` -- so `color` alone is a rule that applies on two
+     engines and silently does nothing on the other three. */
+  -webkit-text-fill-color: var(--ink-soft);
+  opacity: 1 !important;
+}
 img {
   max-width: 100%;
   height: auto;
@@ -256,6 +307,13 @@ main:focus {
 
     --border: #b4b4b4;
     --border-strong: #6b6b6b;
+
+    /* Transparent on paper, never grey. A fill only reaches the sheet if the
+       reader has turned "Background graphics" ON, which browsers leave OFF,
+       so a disabled control whose legibility depended on its fill would print
+       as text on white with no boundary -- AC5. The border below is what
+       identifies it instead, and --ink-soft is #333 here, 12.63:1. */
+    --disabled-fill: transparent;
 
     /* Atmosphere and glass are screen-only. Browsers drop background images
        by default anyway, but `default` is a setting a user can change, and

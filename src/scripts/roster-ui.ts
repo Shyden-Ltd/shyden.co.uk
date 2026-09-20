@@ -326,6 +326,12 @@ function buildToolbar(
   // re-enables both controls the instant the roster drops back under the
   // limit, the same "comparison, not a one-way latch" shape this page's
   // other guards already keep (updateRosterValidation, classroom-groups.ts).
+  // Remove is never disabled here -- nothing about MAX_ROSTER stops a teacher
+  // removing a row, even at the ceiling; a class already full is exactly when
+  // removing one first matters most. (Recorded in ClassroomGroupsPage.astro's
+  // CSS until #250 replaced those per-component rules with one site-wide
+  // treatment in tokens.css, which is paint and had no business holding a
+  // decision about behaviour.)
   if (rosterAtLimit(getRoster())) {
     addButton.disabled = true;
     severalButton.disabled = true;
