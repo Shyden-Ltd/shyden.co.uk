@@ -109,6 +109,18 @@ export const anonymousStudent = (number: number): Student => ({
 });
 
 /**
+ * Which column a print mirror belongs to, stamped onto the span so whatever
+ * refreshes it can find it BY COLUMN rather than by position.
+ *
+ * The row is built Absent-first (`tr.append` below, operator 2026-08-13)
+ * while the values were written number-first, and a positional mapping
+ * shifted all six by one cell: the printed register's Absent column was a
+ * list of numbers and its Name column was a column of M and F (#253).
+ */
+export type PrintColumn =
+  'number' | 'name' | 'sex' | 'absent' | 'together' | 'apart';
+
+/**
  * The print-only text twin of a cell's control.
  *
  * An `<input>`'s VALUE is not its text content, so a printed sheet built
@@ -124,9 +136,10 @@ export const anonymousStudent = (number: number): Student => ({
  * focus and the caret), so a mirror that only updated on re-render would go
  * stale on every keystroke.
  */
-const printMirror = (value: string): HTMLSpanElement => {
+const printMirror = (value: string, column: PrintColumn): HTMLSpanElement => {
   const span = document.createElement('span');
   span.className = 'cg-print-value';
+  span.dataset.col = column;
   span.textContent = value;
   span.setAttribute('aria-hidden', 'true');
   return span;
@@ -376,7 +389,7 @@ function buildRow(
     }
   });
   numberTd.appendChild(numberInput);
-  numberTd.appendChild(printMirror(String(student.number)));
+  numberTd.appendChild(printMirror(String(student.number), 'number'));
 
   // Name — optional. `placeholder` previews the SAME fallback label the
   // results grid and every error message already use for this student
@@ -398,7 +411,7 @@ function buildRow(
     handlers.onTextChange(patched(getRoster(), index, { name: value }));
   });
   nameTd.appendChild(nameInput);
-  nameTd.appendChild(printMirror(student.name ?? ''));
+  nameTd.appendChild(printMirror(student.name ?? '', 'name'));
 
   // Sex — blank (neutral) / M / F. The <option> VALUE is always the raw
   // 'M'/'F' the engine's Student.sex type uses, in both languages; only the
@@ -427,7 +440,7 @@ function buildRow(
     handlers.onSelectChange(patched(getRoster(), index, { sex: value }));
   });
   sexTd.appendChild(sexSelect);
-  sexTd.appendChild(printMirror(sexText(student, t)));
+  sexTd.appendChild(printMirror(sexText(student, t), 'sex'));
 
   // Absent — ticking it marks the student out of the shuffle (design spec
   // section 4). Nothing else in this row is ever disabled by it — a later
@@ -474,7 +487,9 @@ function buildRow(
   // A ticked BOX, not a word: design spec section 10's own "the `Absent`
   // column says it in no ink and no colour". \u2611/\u2610 read identically in
   // greyscale and need no legend.
-  absentTd.appendChild(printMirror(student.absent ? '\u2611' : '\u2610'));
+  absentTd.appendChild(
+    printMirror(student.absent ? '\u2611' : '\u2610', 'absent'),
+  );
 
   // Together / Apart — a letter each, from a dropdown that grows as needed
   // (design spec section 4; `availableLetters`, src/lib/roster.ts).
@@ -495,7 +510,9 @@ function buildRow(
     handlers.onSelectChange(patched(getRoster(), index, { together: value }));
   });
   togetherTd.appendChild(togetherSelect);
-  togetherTd.appendChild(printMirror(student.together ?? t.rosterUnset));
+  togetherTd.appendChild(
+    printMirror(student.together ?? t.rosterUnset, 'together'),
+  );
 
   const apartTd = document.createElement('td');
   const apartSelect = document.createElement('select');
@@ -510,7 +527,7 @@ function buildRow(
     handlers.onSelectChange(patched(getRoster(), index, { apart: value }));
   });
   apartTd.appendChild(apartSelect);
-  apartTd.appendChild(printMirror(student.apart ?? t.rosterUnset));
+  apartTd.appendChild(printMirror(student.apart ?? t.rosterUnset, 'apart'));
 
   // Remove — design spec section 4: "Removing a row removes the student."
   // A SEVENTH cell, with a real (visually-hidden) header of its own — see
