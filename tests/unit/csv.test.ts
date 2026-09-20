@@ -40,6 +40,25 @@ const localePairs = (): [Locale, Locale][] =>
 const headerWords = (locale: Locale): string[] =>
   Object.values(CSV_LOCALES[locale].columns).map((w) => w.trim().toLowerCase());
 
+/** Words a locale USED to write, still accepted on import (#252). */
+const supersededWords = (locale: Locale): string[] =>
+  Object.values(CSV_LOCALES[locale].supersededColumns ?? {})
+    .flat()
+    .map((w) => w.trim().toLowerCase());
+
+/**
+ * Every word the PARSER will match for a locale. The no-shared-word rule has
+ * to hold over THIS set, not over the current headers alone: a superseded
+ * word is matched exactly like a current one, so one that collided with
+ * another language's header would make that language's files unreadable --
+ * and it would be invisible to a check that only looked at what is written
+ * today.
+ */
+const parsableWords = (locale: Locale): string[] => [
+  ...headerWords(locale),
+  ...supersededWords(locale),
+];
+
 /** The four tokens the PARSER reads, named by what each one MEANS. */
 const VALUE_MEANINGS = ['sex.M', 'sex.F', 'absentYes', 'absentNo'] as const;
 type ValueMeaning = (typeof VALUE_MEANINGS)[number];
@@ -132,8 +151,8 @@ describe('CSV_LOCALES', () => {
     let pairs = 0;
     for (const [a, b] of localePairs()) {
       pairs += 1;
-      const first = new Set(headerWords(a));
-      for (const word of headerWords(b))
+      const first = new Set(parsableWords(a));
+      for (const word of parsableWords(b))
         if (first.has(word)) collisions.push(`${a}/${b} both use "${word}"`);
     }
     expect(
@@ -154,6 +173,12 @@ describe('CSV_LOCALES', () => {
         words.filter((w) => w !== ''),
         locale,
       ).toHaveLength(6);
+      // Superseded words are compared too, so they need the same content
+      // control: a list of empty strings collides with nothing either.
+      expect(
+        supersededWords(locale).filter((w) => w !== ''),
+        `${locale} superseded`,
+      ).toHaveLength(supersededWords(locale).length);
     }
   });
 
@@ -962,4 +987,101 @@ describe('a class name survives the round trip whatever is in it', () => {
       expect(out.className).toBe(className);
     });
   }
+});
+
+/**
+ * #252. The roster catalogue's Vietnamese and Chinese sex labels were
+ * corrected on #53, and this table -- a separate set of words, written into
+ * the FILE a teacher opens in Excel -- was not. `vi` wrote `tình dục`
+ * (sexual intercourse) and `zh` wrote the bare `性` as the sex column header.
+ *
+ * It is not a copy change. `parseRoster`'s `indexOf` finds a column BY ITS
+ * LOCALISED HEADER WORD, and `at()` returns '' for a column it cannot find --
+ * silently, with no problem reported. So correcting the export alone would
+ * make every class list a teacher had already downloaded import with every
+ * pupil's sex unset and no error shown, which is the failure mode this repo
+ * treats as worse than a loud one. The superseded word stays readable.
+ */
+describe('the sex column header, corrected without breaking old files', () => {
+  const CORRECTED = { vi: 'giới tính', zh: '性别' } as const;
+  const SUPERSEDED = { vi: 'tình dục', zh: '性' } as const;
+
+  for (const locale of ['vi', 'zh'] as const) {
+    it(`${locale} exports the corrected word`, () => {
+      expect(CSV_LOCALES[locale].columns.sex).toBe(CORRECTED[locale]);
+      const file = serialiseRoster(
+        [student({ number: 1, name: 'Ana', sex: 'F' })],
+        '6A',
+        locale,
+      );
+      // The header CELLS, compared exactly -- never a substring test on the
+      // whole file. `\u6027` is a substring of `\u6027\u522b`, so
+      // `not.toContain` over the text could never pass however correct the
+      // header was: the same shape as #21's prod-smoke list, where
+      // `/glory-points` is a substring of `/id/glory-points`.
+      const headerCells = (file.split('\n')[1] ?? '').split(',');
+      expect(headerCells).toContain(CORRECTED[locale]);
+      expect(headerCells).not.toContain(SUPERSEDED[locale]);
+    });
+
+    it(`${locale} still reads a file exported before the correction`, () => {
+      const table = CSV_LOCALES[locale];
+      // Without this the test is a tautology: while the superseded word IS
+      // still the current one, the lookup below succeeds for the wrong
+      // reason and proves nothing about reading an old file.
+      expect(SUPERSEDED[locale]).not.toBe(table.columns.sex);
+      // Built from the SUPERSEDED word deliberately, the way a file already
+      // on a teacher's laptop is -- not by re-exporting with mutated code,
+      // which would only prove the serialiser agrees with itself.
+      const legacy =
+        `${table.classComment} 6A\n` +
+        [
+          table.columns.number,
+          table.columns.name,
+          SUPERSEDED[locale],
+          table.columns.absent,
+          table.columns.together,
+          table.columns.apart,
+        ].join(',') +
+        `\n1,Ana,${table.sex.F},,A,\n`;
+
+      const result = parseRoster(legacy, locale, getStrings(locale));
+      // `ok` first: a ParseResult carries `problems` only when it failed, so
+      // asserting those first would throw on the success path and the sex
+      // assertion below -- the one this test exists for -- would never run.
+      expect(result.ok, result.ok ? '' : JSON.stringify(result.problems)).toBe(
+        true,
+      );
+      if (!result.ok) return;
+      expect(result.roster).toHaveLength(1);
+      // The whole point: the sex column was FOUND, not silently blank.
+      expect(result.roster[0]?.sex).toBe('F');
+      expect(result.roster[0]?.together).toBe('A');
+    });
+  }
+
+  it('every locale survives an export/import round trip with sex intact', () => {
+    const sample = [
+      student({ number: 1, name: 'Ana', sex: 'F', together: 'A' }),
+      student({ number: 2, name: 'Budi', sex: 'M', apart: 'B' }),
+    ];
+    const lost: string[] = [];
+    for (const locale of LOCALES) {
+      const result = parseRoster(
+        serialiseRoster(sample, '6A', locale),
+        locale,
+        getStrings(locale),
+      );
+      if (!result.ok) {
+        lost.push(`${locale}: did not parse`);
+        continue;
+      }
+      const sexes = result.roster.map((s) => s.sex);
+      if (sexes.join(',') !== 'F,M')
+        lost.push(`${locale}: sex ${sexes.join(',')}`);
+    }
+    expect(
+      searched(lost, { of: [...LOCALES], what: 'locales round-tripped' }),
+    ).toEqual([]);
+  });
 });
