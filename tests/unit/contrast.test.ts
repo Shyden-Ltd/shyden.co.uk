@@ -415,6 +415,50 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
     ).toEqual([]);
   });
 
+  /**
+   * The disabled fill's LEVEL, pinned to a literal — the half every guard
+   * around it is structurally unable to assert.
+   *
+   * `every declared pair clears its required ratio` computes `--ink-soft` on
+   * `--disabled-fill`, and `a disabled control is filled, not dimmed`
+   * (disabled-controls.spec.ts) reads `--disabled-fill` off `:root` at
+   * runtime and compares the control's own background to it. Both sides of
+   * both move with the token, so both hold at ANY level (#117). Measured:
+   * set the fill to `--surface`'s `#070d16` and the label still scores
+   * 7.5:1 and the control's background still equals the token — every guard
+   * green, and a teacher sees no control at all. A level is pinned against
+   * the brief, separately from anything derived from it.
+   */
+  it('pins the disabled fill, and keeps it off every ground it is drawn on', () => {
+    const from = tokens();
+    expect(from.get('--disabled-fill')).toBe('#2a323f');
+
+    /* The class the literal cannot state, and the reason it is not simply a
+       second literal: the grounds are DERIVED. `Pair.bg` is a stack written
+       top-first ENDING IN AN OPAQUE BASE, so its last layer is a ground by
+       construction, and a ground added or renamed next year is covered the
+       day it appears. Compared as parsed colour, so `#070d16` and
+       `rgb(7 13 22)` are one finding rather than two spellings. */
+    const fill = parseColour(from.get('--disabled-fill') ?? '');
+    if (fill === null) throw new Error('--disabled-fill is not a colour');
+
+    const grounds = [
+      ...new Set(PAIRS.map((pair) => pair.bg[pair.bg.length - 1])),
+    ].filter((name) => name !== '--disabled-fill');
+    const collisions = grounds.filter((name) => {
+      const ground = parseColour(from.get(name) ?? '');
+      return (
+        ground !== null &&
+        ground.alpha === fill.alpha &&
+        ground.rgb.every((channel, i) => channel === fill.rgb[i])
+      );
+    });
+
+    expect(
+      searched(collisions, { of: grounds, what: 'opaque grounds' }),
+    ).toEqual([]);
+  });
+
   it('every colour token is classified — paired or explicitly decorative', () => {
     const paired = new Set(PAIRS.flatMap((p) => [...p.fg, ...p.bg]));
     const all = colourTokens();
