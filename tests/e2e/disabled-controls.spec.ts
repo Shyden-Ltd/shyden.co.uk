@@ -64,6 +64,17 @@ type Affordance = {
   readonly background: string;
   /** Computed opacity of the control itself. */
   readonly opacity: string;
+  /**
+   * The colour the control's label is PAINTED in, which is not always
+   * `color`.
+   *
+   * Safari paints a disabled input's text through `-webkit-text-fill-color`,
+   * and that property wins over `color` where both are set. Reading `color`
+   * alone would report the declared value on every engine and say nothing
+   * about what Safari draws — so the effective paint is read, with `color`
+   * as the fallback on an engine that does not carry the property.
+   */
+  readonly ink: string;
   /** The control's own box, from the same rect the hit test is taken at. */
   readonly width: number;
   readonly height: number;
@@ -118,6 +129,8 @@ type Population = {
   readonly enabled: readonly EnabledControl[];
   /** `--disabled-fill` resolved to computed rgb, so both sides compare. */
   readonly fill: string;
+  /** `--ink-soft` resolved the same way, for the same reason. */
+  readonly ink: string;
 };
 
 /**
@@ -127,7 +140,7 @@ type Population = {
 const affordances = async (page: Page): Promise<Population> => {
   // Tag each one so the browser-side read finds the same element this
   // enumerated, without inventing an id scheme on the page itself.
-  const { labels, excluded, enabled, fill } = await page.evaluate(() => {
+  const { labels, excluded, enabled, fill, ink } = await page.evaluate(() => {
     const labels: string[] = [];
     const excluded: string[] = [];
     const enabled: { label: string; cursor: string }[] = [];
@@ -145,6 +158,14 @@ const affordances = async (page: Page): Promise<Population> => {
       el.setAttribute('data-disabled-250', label);
       labels.push(label);
     });
+
+    const inkProbe = document.createElement('span');
+    inkProbe.style.color = getComputedStyle(document.documentElement)
+      .getPropertyValue('--ink-soft')
+      .trim();
+    document.body.append(inkProbe);
+    const ink = getComputedStyle(inkProbe).color;
+    inkProbe.remove();
 
     // Resolve the token through the renderer, so `#2a323f` and
     // `rgb(42, 50, 63)` are the same value here and no parsing of ours can
@@ -172,7 +193,7 @@ const affordances = async (page: Page): Promise<Population> => {
         });
       });
 
-    return { labels, excluded, enabled, fill };
+    return { labels, excluded, enabled, fill, ink };
   });
 
   const reachable: Affordance[] = [];
@@ -222,6 +243,7 @@ const affordances = async (page: Page): Promise<Population> => {
           cursor: hit === null ? '(none)' : getComputedStyle(hit).cursor,
           relation,
           background: own.backgroundColor,
+          ink: own.getPropertyValue('-webkit-text-fill-color') || own.color,
           opacity: own.opacity,
           width: r.width,
           height: r.height,
@@ -233,7 +255,7 @@ const affordances = async (page: Page): Promise<Population> => {
     );
   }
 
-  return { reachable, excluded, enabled, fill };
+  return { reachable, excluded, enabled, fill, ink };
 };
 
 /**
@@ -275,9 +297,10 @@ const expectNoEntryCursor = (
  * (`--ink-soft` on `--disabled-fill`, 5.19:1) the ratio the user actually
  * receives.
  */
-const expectGreyFill = (
+const expectDisabledPaint = (
   reachable: readonly Affordance[],
   fill: string,
+  ink: string,
   scenario: string,
 ) => {
   const painted = reachable.filter((a) => !a.uaPainted);
@@ -290,6 +313,14 @@ const expectGreyFill = (
   );
   expect(painted.map((a) => `${a.label}: ${a.opacity}`)).toEqual(
     painted.map((a) => `${a.label}: 1`),
+  );
+  // The ratio the contrast suite computes is `--ink-soft` on
+  // `--disabled-fill`. This is what makes that pair the one a teacher
+  // actually receives: without it the suite would be scoring two tokens
+  // against each other while Safari painted the label in the UA's own
+  // disabled grey, which is a guard measuring a pixel that does not exist.
+  expect(painted.map((a) => `${a.label}: ${a.ink}`)).toEqual(
+    painted.map((a) => `${a.label}: ${ink}`),
   );
 };
 
@@ -404,9 +435,9 @@ test.describe('a disabled control affords that it is disabled', () => {
     await addSeveral(page, MAX_ROSTER - 1);
     await openEveryDisclosure(page);
 
-    const { reachable, fill } = await affordances(page);
+    const { reachable, fill, ink } = await affordances(page);
     expectNoEntryCursor(reachable, 'at-limit');
-    expectGreyFill(reachable, fill, 'at-limit');
+    expectDisabledPaint(reachable, fill, ink, 'at-limit');
     expectAReasonWithoutHover(await reasons(page), 'at-limit');
   });
 
@@ -419,13 +450,13 @@ test.describe('a disabled control affords that it is disabled', () => {
     // that has never matched anything is itself vacuous (#118).
     await setSex(page, 0, 'M');
 
-    const { reachable, excluded, fill } = await affordances(page);
+    const { reachable, excluded, fill, ink } = await affordances(page);
     searched(excluded, { of: excluded, what: 'disabled placeholder options' });
     // Exactly one row, so exactly one placeholder — and nothing BUT an
     // `<option>` may sit in the excluded set.
     expect(excluded).toEqual(['option']);
     expectNoEntryCursor(reachable, 'a sex chosen');
-    expectGreyFill(reachable, fill, 'a sex chosen');
+    expectDisabledPaint(reachable, fill, ink, 'a sex chosen');
   });
 
   test('only checkbox, radio and file inputs are left to the UA to paint', async ({
@@ -433,7 +464,7 @@ test.describe('a disabled control affords that it is disabled', () => {
   }) => {
     // The fill carve-out, asserted rather than assumed. Without this the
     // `uaPainted` branch could grow to swallow a control that SHOULD be
-    // painted, and `expectGreyFill` would quietly stop covering it.
+    // painted, and `expectDisabledPaint` would quietly stop covering it.
     await openRoster(page);
     await addSeveral(page, MAX_ROSTER - 1);
     await openEveryDisclosure(page);

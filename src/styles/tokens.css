@@ -228,9 +228,18 @@ textarea:disabled,
 input:not([type='checkbox']):not([type='radio']):not([type='file']):disabled {
   background: var(--disabled-fill) !important;
   color: var(--ink-soft) !important;
-  /* Safari paints a disabled input's text through `-webkit-text-fill-color`,
-     which wins over `color` -- so `color` alone is a rule that applies on two
-     engines and silently does nothing on the other three. */
+  /* `-webkit-text-fill-color` wins over `color` where both are set. That
+     half is MEASURED (#250 M15: moving this line's value alone repainted the
+     label on Chromium while `color` stayed at --ink-soft).
+
+     The line is kept for real iOS Safari, which is widely reported to paint a
+     disabled input's label with its own text-fill that `color` cannot reach.
+     That half is NOT measured here and this suite cannot check it: deleting
+     this declaration changes nothing on Playwright's WebKit (#250 M14, the
+     absence confirmed in the built CSS), so that build carries no such UA
+     rule and no emulated engine can show this line doing work. The
+     real-device gauntlet -- `npm run test:devices`, real iOS Safari over
+     WebDriver -- is the only instrument in this repo that could. */
   -webkit-text-fill-color: var(--ink-soft);
   opacity: 1 !important;
 }
