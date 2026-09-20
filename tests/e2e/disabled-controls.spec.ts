@@ -250,6 +250,82 @@ const expectGreyFill = (
   );
 };
 
+type Reason = {
+  readonly label: string;
+  /** The ids `aria-describedby` names, or `(none)`. */
+  readonly names: string;
+  /** How each named element resolves: `visible` | `hidden` | `empty` | `missing`. */
+  readonly resolves: string;
+};
+
+/**
+ * Why each disabled control is disabled, reachable without a pointer.
+ *
+ * The accessible description and the visible reason cannot disagree here by
+ * construction, because they are THE SAME NODES: `aria-describedby` names an
+ * element and a screen reader reads that element's text. What CAN diverge —
+ * and what AC10 is really about — is visibility: `aria-describedby` still
+ * contributes the text of an element that is `hidden`, so a reason a screen
+ * reader hears while nobody can see it satisfies a naive check and fails a
+ * teacher looking at the page. So each named element is required to be
+ * present, non-empty AND visible.
+ */
+const reasons = async (page: Page): Promise<readonly Reason[]> =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-disabled-250]')].map(
+      (el) => {
+        const label = el.getAttribute('data-disabled-250')!;
+        const ids = (el.getAttribute('aria-describedby') ?? '')
+          .split(/\s+/)
+          .filter(Boolean);
+        if (ids.length === 0) return { label, names: '(none)', resolves: '' };
+        return {
+          label,
+          names: ids.join(' '),
+          resolves: ids
+            .map((id) => {
+              const target = document.getElementById(id);
+              if (target === null) return `${id}=missing`;
+              // `getClientRects().length` rather than the element's own
+              // computed display: `display: none` on an ANCESTOR leaves a
+              // descendant's computed display untouched, so a per-element
+              // check reports hidden content as rendered (#17).
+              if (target.getClientRects().length === 0) return `${id}=hidden`;
+              if ((target.textContent ?? '').trim() === '')
+                return `${id}=empty`;
+              return `${id}=visible`;
+            })
+            .join(' '),
+        };
+      },
+    ),
+  );
+
+/**
+ * Assert every disabled control carries a reason a teacher can read without
+ * hovering and without a pointer at all (AC8, AC10).
+ */
+const expectAReasonWithoutHover = (
+  seen: readonly Reason[],
+  scenario: string,
+) => {
+  searched(seen, {
+    of: seen.map((r) => r.label),
+    what: `disabled controls needing a reason (${scenario})`,
+  });
+  expect(
+    seen.map((r) => `${r.label}: ${r.names} → ${r.resolves || '(unwired)'}`),
+  ).toEqual(
+    seen.map(
+      (r) =>
+        `${r.label}: ${r.names} → ${r.names
+          .split(' ')
+          .map((id) => `${id}=visible`)
+          .join(' ')}`,
+    ),
+  );
+};
+
 test.describe('a disabled control affords that it is disabled', () => {
   test('default state — every disabled control shows the no-entry cursor', async ({
     page,
@@ -270,6 +346,10 @@ test.describe('a disabled control affords that it is disabled', () => {
     expect(reachable.filter((a) => !a.uaPainted).map((a) => a.label)).toEqual(
       [],
     );
+
+    // `reasons` reads the tags `affordances` just wrote, so it always runs
+    // after it — the two share one derivation of the population.
+    expectAReasonWithoutHover(await reasons(page), 'default');
   });
 
   test('roster at the limit — the add buttons and Make groups too', async ({
@@ -284,6 +364,7 @@ test.describe('a disabled control affords that it is disabled', () => {
     const { reachable, fill } = await affordances(page);
     expectNoEntryCursor(reachable, 'at-limit');
     expectGreyFill(reachable, fill, 'at-limit');
+    expectAReasonWithoutHover(await reasons(page), 'at-limit');
   });
 
   test('the disabled placeholder option is excluded deliberately, and it exists', async ({
