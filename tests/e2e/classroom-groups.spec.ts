@@ -263,6 +263,65 @@ test.describe('classroom group creator', () => {
     await shoot(page, 'Make groups enabled again', go);
   });
 
+  // #188, AC12, the direction the AC actually names. The guard above types a
+  // number the class cannot hold; the AC's subject is the COUNT moving --
+  // "lowering the count below a number already typed re-validates immediately
+  // and refuses, rather than failing at Generate". Those are different code
+  // paths. A refusal on the number field's own keystroke needs only a listener
+  // on that field; a refusal when the COUNT changes works solely because the
+  // form's `input` listener is delegated and takes no `event.target`
+  // (src/scripts/classroom-groups.ts:1098). Keyed to its target, or with
+  // `updateNumbersValidation()` dropped from it, the guard above stays green
+  // and a teacher learns only at "Make groups" that the number they typed no
+  // longer exists. Measured rather than assumed: M18.
+  test('lowering the count refuses a number that was valid when it was typed', async ({
+    page,
+  }) => {
+    const go = page.getByRole('button', { name: 'Make groups' });
+    const problem = page.locator('#cg-numbers-problem');
+    await page.goto('/classroom-groups');
+
+    // Clean FIRST, and by count as well as visibility: `toBeHidden` passes for
+    // an element that does not exist, so a renamed id would satisfy this line
+    // on its own and leave the refusal below as the only thing asserting.
+    await page.fill('#cg-count', '25');
+    await page.fill('#cg-numbers-absent', '20');
+    await expect(problem).toHaveCount(1);
+    await expect(problem).toBeHidden();
+    await expect(go).toBeEnabled();
+    await shoot(
+      page,
+      'number 20 absent from a class of 25, accepted',
+      page.locator('.number-fields'),
+    );
+
+    // The class shrinks underneath it. No click: the refusal has to arrive on
+    // the count's own keystroke, which is the whole of AC12.
+    await page.fill('#cg-count', '10');
+    await expect(problem).toBeVisible();
+    await expect(problem).toHaveText(
+      'There is no number 20. You have 10 students.',
+    );
+    await expect(go).toBeDisabled();
+    await shoot(
+      page,
+      'the class shrinks to 10 and number 20 is refused on the keystroke',
+      page.locator('.number-fields'),
+    );
+
+    // Raising it back clears the refusal, so the gate is not stuck shut once
+    // it has closed -- the recovery direction the guard above proves for the
+    // other path.
+    await page.fill('#cg-count', '25');
+    await expect(problem).toBeHidden();
+    await expect(go).toBeEnabled();
+    await shoot(
+      page,
+      'raised back to 25, the refusal is gone',
+      page.locator('.number-fields'),
+    );
+  });
+
   test('splits a class and shows every student exactly once', async ({
     page,
   }) => {
