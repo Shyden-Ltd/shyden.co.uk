@@ -31,6 +31,7 @@ import {
   renderRoster,
   anonymousStudent,
   type RosterHandlers,
+  type PrintColumn,
 } from './roster-ui';
 import {
   envelopeTotalS,
@@ -914,22 +915,30 @@ if (form) {
       const student = current[i];
       if (!student) return;
       row.dataset.absent = String(student.absent);
-      const values = row.querySelectorAll<HTMLElement>('.cg-print-value');
-      const texts = [
-        String(student.number),
-        student.name ?? '',
-        student.sex === 'M'
-          ? t.rosterSexMale
-          : student.sex === 'F'
-            ? t.rosterSexFemale
-            : t.rosterUnset,
-        student.absent ? '\u2611' : '\u2610',
-        student.together ?? t.rosterUnset,
-        student.apart ?? t.rosterUnset,
-      ];
-      values.forEach((el, j) => {
-        if (texts[j] !== undefined && el.textContent !== texts[j]) {
-          el.textContent = texts[j];
+      // Keyed by COLUMN, never by position. The row is built Absent-first
+      // and these values are written number-first, so the positional mapping
+      // this replaced put every value one cell early -- see `PrintColumn`'s
+      // own comment in roster-ui.ts for what that printed (#253). A mirror
+      // carries the column it belongs to, so reordering the table can no
+      // longer re-point them without anyone noticing.
+      const texts: Record<PrintColumn, string> = {
+        number: String(student.number),
+        name: student.name ?? '',
+        sex:
+          student.sex === 'M'
+            ? t.rosterSexMale
+            : student.sex === 'F'
+              ? t.rosterSexFemale
+              : t.rosterUnset,
+        absent: student.absent ? '\u2611' : '\u2610',
+        together: student.together ?? t.rosterUnset,
+        apart: student.apart ?? t.rosterUnset,
+      };
+      row.querySelectorAll<HTMLElement>('.cg-print-value').forEach((el) => {
+        const column = el.dataset.col as PrintColumn | undefined;
+        const text = column === undefined ? undefined : texts[column];
+        if (text !== undefined && el.textContent !== text) {
+          el.textContent = text;
         }
       });
     });
