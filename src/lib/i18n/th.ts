@@ -35,6 +35,33 @@ export const th: Catalogue = {
     'นักเรียนจะไม่เปิดเผยชื่อและถูกกำหนดด้วยหมายเลข — นักเรียน 1, นักเรียน 2, และต่อไปเรื่อยๆ',
   studentsLockedReason:
     'กำหนดตามรายชื่อของคุณ เพิ่มหรือลบนักเรียนในส่วน "รายละเอียดนักเรียน" เพื่อปรับเปลี่ยน',
+  // #188. DeepL draft, awaiting a speaker (#53, #161). The three labels are
+  // short -- the class that shipped a wrong-sense translation on a pupil
+  // roster before -- so they need reviewing apart from the sentences.
+  absentNumbersLabel: 'หมายเลขที่ขาดเรียน',
+  keepTogetherLabel: 'ให้อยู่กลุ่มเดียวกัน',
+  keepApartLabel: 'ให้อยู่คนละกลุ่ม',
+  absentNumbersHelp:
+    'หมายเลขประจำตัวของนักเรียนที่ขาดเรียน คั่นด้วยเครื่องหมายจุลภาค',
+  pairNumbersHelp: 'จุลภาคเชื่อมหนึ่งคู่ อัฒภาคเริ่มคู่ใหม่ — 3,9; 14,15',
+  numbersLockedReason:
+    'กำหนดตามรายชื่อของคุณ ทำเครื่องหมายการขาดเรียนและการจับคู่ในส่วน "รายละเอียดนักเรียน" เพื่อปรับเปลี่ยน',
+  numbersNotWholeMessage:
+    '"{text}" ไม่ใช่จำนวนเต็ม กรุณาพิมพ์หมายเลขประจำตัวตั้งแต่ 1 ถึง {count}',
+  numbersAboveCountMessage: 'ไม่มีหมายเลข {text} คุณมีนักเรียน {count} คน',
+  numbersAboveMaximumMessage:
+    'ไม่มีหมายเลข {text} หน้านี้รองรับนักเรียนได้สูงสุด {max} คน',
+  numbersDuplicateMessage:
+    'หมายเลข {text} ถูกระบุไว้สองครั้ง แต่ละหมายเลขต้องอยู่ในที่เดียวเท่านั้น',
+  numbersLonelySetMessage:
+    'หนึ่งคู่ต้องมีอย่างน้อยสองหมายเลข แต่ {text} มีเพียงหมายเลขเดียว',
+  numbersTooManySetsMessage:
+    'มีจำนวนคู่มากเกินกว่าที่หน้านี้จะรองรับได้ {text} เกินมาหนึ่งคู่',
+  numbersNoCountMessage: 'กรุณากรอกจำนวนนักเรียนก่อน',
+  // No plural wrapper: Thai has only the `other` category, the same shape
+  // `rosterGapWarning` below already uses for its {missing} slot.
+  groupedNote:
+    'จัดกลุ่มแล้ว {grouped} จาก {typed} คน — หมายเลข {absent} ขาดเรียน',
   modeLabel: 'แบ่งตาม',
   modePerGroup: 'จำนวนนักเรียนต่อกลุ่ม',
   modeGroupCount: 'จำนวนกลุ่ม',

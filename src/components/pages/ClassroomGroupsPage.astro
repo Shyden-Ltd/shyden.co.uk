@@ -358,6 +358,84 @@ const sexWhyText = sexWhy(roster, t);
         </div>
       </div>
 
+      <!-- #188. Registration is taken, one pupil is away, and the lesson
+           starts in two minutes. These three fields let a teacher say "not
+           number 7 today", "keep 3 with 9" and "keep 2 away from 5" by
+           REGISTER NUMBER, without opening Student details and hand-building
+           a row per pupil -- which is the only route that exists otherwise,
+           and which surrenders the Students box the moment it creates one.
+
+           Their own row, not three more columns in `.top-row`: that row is
+           Class / Students / Split by, and six columns at 768px would give
+           every one of them ~114px. The operator's design (#188, 2026-09-16)
+           puts these directly under the Students box, which is what this is.
+
+           `type="text"` with `inputmode="numeric"`, NOT `type="number"`: the
+           content is a LIST ("7, 12"), and a number input would refuse the
+           comma and hand back an empty `.value` for everything typed after
+           it. No `name`, by the same rule as every other typed control on
+           this page (see #cg-form's own comment above).
+
+           The reason and the refusal sit OUTSIDE the grid, as siblings of
+           the row rather than children of it, so they span the full width
+           instead of becoming a fourth and fifth grid item. One shared
+           reason for one shared row -- three identical sentences stacked
+           under three locked boxes would say the same thing three times --
+           and one shared refusal, showing the first problem, the same way
+           `updateRosterValidation` renders `problems[0]` into
+           #cg-roster-problem. `role="alert"` for the identical reason that
+           element carries one: a refusal is announced, not merely shown. -->
+      <div class="number-fields">
+        <div class="number-fields-row">
+          <div class="field">
+            <label for="cg-numbers-absent">{t.absentNumbersLabel}</label>
+            <input
+              id="cg-numbers-absent"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="cg-numbers-absent-help"
+            />
+            <p class="help" id="cg-numbers-absent-help">
+              {t.absentNumbersHelp}
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="cg-numbers-together">{t.keepTogetherLabel}</label>
+            <input
+              id="cg-numbers-together"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="cg-numbers-together-help"
+            />
+            <p class="help" id="cg-numbers-together-help">
+              {t.pairNumbersHelp}
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="cg-numbers-apart">{t.keepApartLabel}</label>
+            <input
+              id="cg-numbers-apart"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="cg-numbers-apart-help"
+            />
+            <p class="help" id="cg-numbers-apart-help">
+              {t.pairNumbersHelp}
+            </p>
+          </div>
+        </div>
+
+        <p class="why" id="cg-numbers-locked" hidden>
+          {t.numbersLockedReason}
+        </p>
+        <p class="error" id="cg-numbers-problem" role="alert" hidden></p>
+      </div>
+
       <!-- The naming radio ("Group 1, 2, 3…" / "Use a theme") and the theme
            `<select>` it revealed used to sit here -- the last always-visible
            bordered box below the top row (design spec section 2's own
@@ -772,6 +850,21 @@ const sexWhyText = sexWhy(roster, t);
            state), so the static default here is never shown on its own. -->
       <h2 class="print-only-heading">{t.printGroupsHeading}</h2>
       <h2 id="cg-results-h">{t.resultsHeading}</h2>
+
+      <!-- #188, AC13. Shown ONLY when fewer pupils were grouped than the
+           teacher typed -- "a teacher must never be left to notice a missing
+           pupil by counting". The heading above is deliberately untouched
+           (operator decision, 2026-09-16): folding the ratio into it would
+           need a second variant of BOTH its named and unnamed forms, which
+           is the drift `resultsHeadingText` exists to prevent.
+
+           Empty at build time and written by classroom-groups.ts before
+           #cg-results is unhidden -- the same hide/show-the-ancestor, THEN
+           write-the-descendant ordering #cg-error and #cg-stale already use,
+           so a screen reader hears the sentence rather than silence.
+           `role="status"`, not `alert`: nothing is wrong, and this must not
+           interrupt the way a refusal does. -->
+      <p id="cg-grouped-note" role="status" hidden></p>
 
       <!-- Stage 2, Task 6 (design spec section 8, "When the class changes
            after a shuffle"). classroom-groups.ts's `updateStaleness` toggles
@@ -1945,16 +2038,23 @@ const sexWhyText = sexWhy(roster, t);
     display: none;
   }
 
-  /* #32's sticky action row (`.actions`, in the scoped block below) rests on
-     the fold at mobile widths, so anything the browser scrolls into view --
-     a tabbed-to field, an anchor, a script's `scrollIntoView` -- can land
-     underneath it. 5rem clears the bar's measured height (44px button +
-     0.75rem padding either side + a 1px border = 69px) with room over.
+  /* #32's sticky action row (`.actions`, in the block below) rests on the
+     fold, so anything the browser scrolls into view -- a tabbed-to field, an
+     anchor, a script's `scrollIntoView` -- can land underneath it. 5rem
+     clears the bar's measured height (44px button + 0.75rem padding either
+     side + a 1px border = 69px) with room over.
+
+     EVERY WIDTH, because the bar is. This was capped at `max-width: 599px`
+     while the bar was, and #188 lifted that cap. The two caps were one
+     decision: leaving this one behind would have let a laptop scroll a field
+     to a position the pinned bar covers, with nothing to show for it on a
+     phone -- a companion rule staying behind is how a fix half-applies and
+     nobody notices, because the half that moved is the half people look at.
 
      Here rather than beside the rule it serves: `scroll-padding` belongs to
      the scroll container, which is `html`, and Astro's scoped block cannot
      select an element it does not render. */
-  @media screen and (max-width: 599px) {
+  @media screen {
     html {
       scroll-padding-bottom: 5rem;
     }
@@ -1972,9 +2072,17 @@ const sexWhyText = sexWhy(roster, t);
        hiding it takes the class list with it -- found by running Task 2's
        own tests, which then measured an invisible table. What comes off the
        sheet is every way to CHANGE the class, named one at a time: the top
-       row of fields, the three sections that are all controls, the deal
-       button, and the roster's own toolbar further down. */
+       row of fields, the three number fields beneath it (#188), the three
+       sections that are all controls, the deal button, and the roster's own
+       toolbar further down.
+
+       Naming them one at a time is exactly why this list can fall behind the
+       page: `.number-fields` was added and printed on a teacher's class list
+       until the print spec's DERIVED assertion -- "nothing a teacher could
+       press or type into is left anywhere on the sheet" -- turned red. That
+       assertion is the guard; this list is only how the page obeys it. */
     .top-row,
+    .number-fields,
     #cg-go,
     #cg-noscript,
     #cg-print-panel,
@@ -2583,6 +2691,41 @@ const sexWhyText = sexWhy(roster, t);
       align-items: start;
     }
   }
+  /* #188. The three number fields sit in their own row, mirroring
+     `.top-row` above: stacked on a phone, three across once 768px gives
+     them room. A separate row rather than three more columns in `.top-row`
+     -- six columns there would leave every one of them about 114px. */
+  .number-fields {
+    margin-top: 0.75rem;
+  }
+  .number-fields-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  /* The same reasoning `.top-row > .field` gives: the grid's own `gap`
+     already provides the vertical rhythm, so `.field`'s own margin would
+     double it. DIRECT children only, so it cannot reach into anything
+     nested inside a field later. */
+  .number-fields-row > .field {
+    margin-bottom: 0;
+  }
+  /* No width or height rule here on purpose. `input[type='text']` further
+     down already gives every text field on this page `width: 100%` (which
+     is what replaces a grid item's min-content contribution -- the thing
+     that put 74px of horizontal scroll at 320px when `#cg-io-toggle`'s file
+     input had no explicit width) and `min-height: 44px` for the touch
+     target. Restating either here would be a second home for a fact that
+     already has one, and the two would drift. */
+  @media (min-width: 768px) {
+    .number-fields-row {
+      grid-template-columns: repeat(3, 1fr);
+      /* `start`, for the reason `.top-row` gives above: a field whose help
+         text wraps onto a second line must not stretch its neighbours to
+         match it. */
+      align-items: start;
+    }
+  }
   /* Mobile-first: one column, stacked -- design spec section 3's
      "Arrangement B" is the ENHANCEMENT, not the base. `auto` rows (not a
      fixed height) so an empty body and a later, filled one can sit in the
@@ -2688,16 +2831,21 @@ const sexWhyText = sexWhy(roster, t);
      border-top earns the separation without touching width.
 
      `screen and`, explicitly. `@media print` already hides `#cg-go` and
-     every other button, and paper is wider than 599px so this block would
-     not match a sheet -- but not matching by accident of paper width is not
-     the same as saying it does not apply.
+     every other button -- but a sheet not matching this block by accident
+     is not the same as saying it does not apply, and a sticky bar has no
+     meaning on paper at all.
 
-     `max-width: 599px`, not a height query: 600px is the breakpoint this
-     file already splits on (`min-width: 600px` is the enhancement). Both
-     failing sizes and both mobile Playwright projects (Pixel 5 at 393px,
-     iPhone 13 at 390px) sit below it; both passing sizes (768, 1280) sit
-     above it and are untouched. */
-  @media screen and (max-width: 599px) {
+     EVERY WIDTH, as of #188 (operator decision, 2026-09-16). This block used
+     to be capped at `max-width: 599px`, on the reasoning that 768 and 1280
+     "fit on their own and are untouched". That stopped being true the moment
+     the three number fields were added: they cost 116px, and `#cg-go`'s
+     bottom measured 912 against a budget of 800 at 1280x800 -- 112px below
+     the fold. The cap was never a design preference, it was a statement
+     about how much room those sizes happened to have, and the page outgrew
+     it. Lifting it puts the primary action on screen at every width by the
+     one mechanism already proven at phone sizes, rather than by a second
+     arrangement that would have to be kept in step with this one. */
+  @media screen {
     .actions {
       position: sticky;
       bottom: 0;
@@ -2709,6 +2857,11 @@ const sexWhyText = sexWhy(roster, t);
       /* Opaque, or the fields the row floats over show through it. */
       background: var(--bg, #f7f6f2);
       border-top: 1px solid var(--border, #e7e4dc);
+      /* Cast UP over whatever scrolls beneath the row (operator decision,
+         2026-09-17). Pinned at every width, the row covers the edge of the
+         section above it before any scrolling; the shadow makes that read
+         as passing under a docked bar rather than as clipped. */
+      box-shadow: 0 -0.75rem 1.5rem -0.5rem var(--dock-shadow);
     }
   }
   .actions button,

@@ -33,6 +33,26 @@ export const zh: Catalogue = {
   studentsHelp: '学生均为匿名，并按编号区分——学生1、学生2，依此类推。',
   studentsLockedReason:
     '由您的列表设定。如需修改，请在“学生详情”中添加或移除学生。',
+  // #188. DeepL draft, awaiting a speaker (#53, #161). The three labels are
+  // short -- the class that shipped a wrong-sense translation on a pupil
+  // roster before -- so they need reviewing apart from the sentences.
+  absentNumbersLabel: '缺席编号',
+  keepTogetherLabel: '同组',
+  keepApartLabel: '分开',
+  absentNumbersHelp: '缺席学生的学号，用逗号分隔。',
+  pairNumbersHelp: '逗号连接一对；分号开始新的一对——3,9; 14,15。',
+  numbersLockedReason:
+    '由您的列表设定。如需修改，请在“学生详情”中标记缺席和配对。',
+  numbersNotWholeMessage: '“{text}”不是整数。请输入 1 到 {count} 之间的学号。',
+  numbersAboveCountMessage: '没有 {text} 号。您有 {count} 名学生。',
+  numbersAboveMaximumMessage: '没有 {text} 号。本页面最多支持 {max} 名学生。',
+  numbersDuplicateMessage: '{text} 号出现了两次。每个编号只能出现在一处。',
+  numbersLonelySetMessage: '一对至少需要两个编号，而 {text} 只有一个。',
+  numbersTooManySetsMessage: '配对数量超出本页面的上限。{text} 多出了一对。',
+  numbersNoCountMessage: '请先填写学生人数。',
+  // No plural wrapper: Chinese has only the `other` category, the same shape
+  // `rosterGapWarning` below already uses for its {missing} slot.
+  groupedNote: '{typed} 人中有 {grouped} 人已分组——{absent} 号缺席。',
   modeLabel: '按……划分',
   modePerGroup: '每组学生人数',
   modeGroupCount: '组数',

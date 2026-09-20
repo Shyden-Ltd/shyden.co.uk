@@ -49,6 +49,12 @@
      nothing is ever read against it and 1.4.11 does not reach it. */
   --accent-glow: rgb(56 245 200 / 0.3);
 
+  /* The shadow the pinned action row on /classroom-groups casts UP over
+     whatever scrolls beneath it (#188). Decorative: it separates a docked
+     bar from the content passing under it, and nothing is read against it
+     by design, because scroll-padding keeps a focused field clear of the row. */
+  --dock-shadow: rgb(0 0 0 / 0.55);
+
   /* The Aurora atmosphere: three radial stops and a white shaft, painted on
      body::before. Text IS read over these, so the alphas are not a taste
      decision — they were chosen by compositing all four onto --bg at once
