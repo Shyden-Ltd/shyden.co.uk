@@ -1,7 +1,6 @@
 import { test, expect } from './fixtures';
 import { shoot } from './evidence';
 import { recordErrors } from './recorders';
-import { shoot } from './evidence';
 import {
   openRoster,
   addSeveral,
