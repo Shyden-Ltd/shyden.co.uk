@@ -641,6 +641,90 @@ test.describe('the printed sheet', () => {
 });
 
 /**
+ * #253. `refreshPrintMirrors` wrote every roster row's print-only twin by
+ * DOCUMENT ORDER, against a `texts` array that still began at `number`. The
+ * row is built `tr.append(absentTd, numberTd, nameTd, ...)` -- Absent leads
+ * (operator, 2026-08-13) -- so every value landed one cell early: the pupil's
+ * number printed in the Absent column, their name in `#`, their sex in Name,
+ * and the absence box in Sex.
+ *
+ * It only showed after a TEXT edit. A select or a checkbox re-renders the row
+ * and `roster-ui.ts` rebuilds each mirror correctly from its own call site,
+ * which repaired the damage a keystroke away from where anyone would look. A
+ * text edit deliberately does not re-render -- that would steal focus and the
+ * caret mid-typing, which is the whole reason this function exists -- so the
+ * wrong write survived exactly in the case the function was written to serve.
+ *
+ * Nothing could see it. `.print-list` (the print PANEL's own table) is a
+ * different surface, and the roster's mirrors are `aria-hidden` and
+ * `display: none` on screen, so no screen assertion can reach them.
+ */
+test.describe('the printed register after an edit', () => {
+  const TICKED = '☑';
+  const UNTICKED = '☐';
+  const DASH = '—';
+
+  /** Absent, #, Name, Sex, Together, Apart, then Remove which has no twin. */
+  const untouchedSecondRow = [UNTICKED, '2', '', DASH, DASH, DASH, null];
+
+  const printedCells = (row: import('@playwright/test').Locator) =>
+    row.evaluate((el) =>
+      [...el.children].map(
+        (td) => td.querySelector('.cg-print-value')?.textContent ?? null,
+      ),
+    );
+
+  const typeAName = async (row: import('@playwright/test').Locator) => {
+    await row.getByLabel('Name').fill('Ana');
+  };
+  const useTheSelects = async (row: import('@playwright/test').Locator) => {
+    await row.getByLabel('Sex').selectOption('F');
+    await row.getByLabel('Absent').check();
+  };
+
+  const CASES = [
+    {
+      what: 'a text edit alone',
+      edits: [typeAName],
+      expected: [UNTICKED, '1', 'Ana', DASH, DASH, DASH, null],
+    },
+    {
+      what: 'a select edit alone',
+      edits: [useTheSelects],
+      expected: [TICKED, '1', '', 'F', DASH, DASH, null],
+    },
+    {
+      what: 'a select edit then a text edit',
+      edits: [useTheSelects, typeAName],
+      expected: [TICKED, '1', 'Ana', 'F', DASH, DASH, null],
+    },
+    {
+      what: 'a text edit then a select edit',
+      edits: [typeAName, useTheSelects],
+      expected: [TICKED, '1', 'Ana', 'F', DASH, DASH, null],
+    },
+  ];
+
+  for (const { what, edits, expected } of CASES) {
+    test(`every cell prints its own column after ${what}`, async ({ page }) => {
+      await openRoster(page);
+      // A second row, because `refreshPrintMirrors` walks rows by index
+      // against the live roster and an off-by-one there would look identical
+      // to a correct single row.
+      await page.getByRole('button', { name: 'Add student' }).click();
+      const row = page.locator('.cg-student').nth(0);
+      const second = page.locator('.cg-student').nth(1);
+
+      for (const edit of edits) await edit(row);
+      await page.emulateMedia({ media: 'print' });
+
+      expect(await printedCells(row)).toEqual(expected);
+      expect(await printedCells(second)).toEqual(untouchedSecondRow);
+    });
+  }
+});
+
+/**
  * #249 gave the three roster dropdowns their column name as a placeholder, and
  * this is the regression surface that change could have taken with it.
  *
