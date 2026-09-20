@@ -79,10 +79,12 @@ const isMessage = (value: unknown): boolean =>
  * `M` and `F` are the roster's own sex labels. They are single letters with
  * no prose in them, they are what `CSV_LOCALES[locale].sex` must agree with,
  * and DeepL returns them unchanged in every language — so they are expected
- * here rather than a gap. `rosterColApart` in Chinese is a genuine miss.
+ * here rather than a gap. `rosterColApart` in Chinese WAS a genuine miss,
+ * left as the English word `Apart`; it was translated on #53 and is pinned
+ * by value in `verified-labels.test.ts`, so it is no longer expected here.
  */
 const ENGLISH_STRINGS: Record<string, readonly string[]> = {
-  zh: ['rosterColApart', 'rosterSexMale', 'rosterSexFemale'],
+  zh: ['rosterSexMale', 'rosterSexFemale'],
   vi: ['rosterSexMale', 'rosterSexFemale'],
   th: ['rosterSexMale', 'rosterSexFemale'],
 };
