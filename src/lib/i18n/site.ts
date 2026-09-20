@@ -452,7 +452,7 @@ export const siteTh: SiteStrings = {
     backHome: 'กลับสู่หน้าหลัก',
   },
   footer: {
-    registered: 'จดทะเบียนในEngland & Wales',
+    registered: 'จดทะเบียนใน England & Wales',
     companyNo: 'เลขทะเบียนบริษัท',
     regOffice: 'สำนักงานจดทะเบียน:',
   },

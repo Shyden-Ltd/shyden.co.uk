@@ -6,6 +6,7 @@ import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
 import { th } from '../../src/lib/i18n/th';
 import { LOCALES, type Locale } from '../../src/lib/i18n/locales';
+import { getSiteStrings } from '../../src/lib/i18n';
 
 /**
  * The values of the roster's column labels, pinned to what the operator read
@@ -144,6 +145,68 @@ describe('the roster column labels a teacher reads', () => {
       searched(
         values.filter((value) => value.trim() === ''),
         { of: values, what: 'pinned roster column labels' },
+      ),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The footer's registered-office line, pinned to what the operator approved.
+ *
+ * Same defect class as the roster columns above, in a different file. DeepL
+ * returned the Thai line with the `<x>`-protected term butted straight against
+ * the Thai -- `จดทะเบียนในEngland & Wales` -- and every structural guard passed it:
+ * it is translated, non-blank, rendered by the footer of every page, and
+ * carries no placeholders to compare. Only a literal pin can ask whether it is
+ * the value we approved.
+ *
+ * The space is NOT derivable as a rule across locales, which is why this is a
+ * table rather than an assertion about separators. Thai sets a space around an
+ * inline Latin-script term; Chinese does not, and `注册于England & Wales。` is
+ * correct with none. A guard reading "every locale separates the protected
+ * term" would be red on correct Chinese.
+ *
+ * Nor is the terminal stop derivable. Thai marks a sentence end with a space
+ * rather than a period, so the Thai line ends without one while its four
+ * siblings end with the stop their own scripts use. #53's original acceptance
+ * criterion asked for a full stop here; that applied English punctuation logic
+ * to Thai and was reversed by operator decision, 2026-09-20.
+ *
+ * `id` localises the place name to `Inggris` while the machine-seeded locales
+ * keep the protected `England & Wales`. That is deliberate -- `id.ts` is
+ * hand-written -- and pinning the values is what keeps it deliberate rather
+ * than looking like a protection failure to the next reader.
+ */
+const VERIFIED_FOOTER: Record<Locale, string> = {
+  en: 'Registered in England & Wales.',
+  id: 'Terdaftar di Inggris & Wales.',
+  zh: '注册于England & Wales。',
+  vi: 'Được đăng ký tại England & Wales.',
+  th: 'จดทะเบียนใน England & Wales',
+};
+
+describe("the footer's registered-office line", () => {
+  it('every locale renders the value the operator approved', () => {
+    const live = Object.fromEntries(
+      LOCALES.map((locale) => [
+        locale,
+        getSiteStrings(locale).footer.registered,
+      ]),
+    );
+
+    expect(live).toEqual(VERIFIED_FOOTER);
+  });
+
+  it('the pin covers every locale, with nothing blank', () => {
+    expect(Object.keys(VERIFIED_FOOTER).sort()).toEqual([...LOCALES].sort());
+
+    // Counting the array is not counting its content: five empty strings are
+    // still five entries, and an emptied table collides with nothing.
+    const values = LOCALES.map((locale) => VERIFIED_FOOTER[locale]);
+    expect(
+      searched(
+        values.filter((value) => value.trim() === ''),
+        { of: values, what: 'pinned footer registered-office lines' },
       ),
     ).toEqual([]);
   });
