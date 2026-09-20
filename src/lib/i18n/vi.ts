@@ -94,7 +94,7 @@ export const vi: Catalogue = {
   sectionSoundHeading: 'Âm thanh và hoạt hình',
   rosterColNumber: '#',
   rosterColName: 'Tên',
-  rosterColSex: 'Tình dục',
+  rosterColSex: 'Giới tính',
   rosterColAbsent: 'Vắng mặt',
   rosterColTogether: 'Cùng nhau',
   rosterColApart: 'Tách biệt',
