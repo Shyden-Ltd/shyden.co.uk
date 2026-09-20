@@ -723,3 +723,55 @@ test.describe('the printed register after an edit', () => {
     });
   }
 });
+
+/**
+ * #249 gave the three roster dropdowns their column name as a placeholder, and
+ * this is the regression surface that change could have taken with it.
+ *
+ * `t.rosterUnset` (the em dash) had SIX consumers and only three of them were
+ * the selects. The other three are print mirrors -- `.cg-print-value` spans
+ * the roster row carries beside each control, built in `roster-ui.ts` and kept
+ * current by `refreshPrintMirrors` in `classroom-groups.ts`. A blanket edit to
+ * `rosterUnset` would have printed the word "Sex" in an empty cell on a
+ * teacher's class list, which nobody would have seen: print is a medium no
+ * guard renders by default, and this repo has already shipped a blank sheet
+ * once for exactly that reason.
+ *
+ * So: on screen the control names its column, and on paper the cell keeps its
+ * dash. The em dash is written here as a literal rather than read from the
+ * catalogue on purpose -- a value asserted against the constant it is computed
+ * from moves when that constant moves and pins nothing (#117).
+ */
+test.describe('an unset roster cell on paper', () => {
+  const PRINTED = ['Sex', 'Together', 'Apart'] as const;
+
+  test('keeps the em dash — the column name belongs on screen only', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    const row = page.locator('.cg-student').first();
+
+    // On screen, the placeholder #249 added.
+    for (const column of PRINTED) {
+      await expect(row.getByLabel(column).locator('option:checked')).toHaveText(
+        column,
+      );
+    }
+
+    await page.emulateMedia({ media: 'print' });
+
+    for (const column of PRINTED) {
+      // Absence is a count AND a hidden state: `toBeHidden` alone passes for
+      // a control that does not exist at all (#188).
+      await expect(row.getByLabel(column)).toHaveCount(1);
+      await expect(row.getByLabel(column)).toBeHidden();
+
+      const mirror = row
+        .locator('td')
+        .filter({ has: page.locator(`select[aria-label="${column}"]`) })
+        .locator('.cg-print-value');
+      await expect(mirror).toBeVisible();
+      await expect(mirror).toHaveText('—');
+    }
+  });
+});

@@ -1320,7 +1320,18 @@ const sexWhyText = sexWhy(roster, t);
     grid-column: 3 / 13;
     grid-row: 1;
   }
-  /* Row 2: Sex, Absent, Together, Apart, three columns each (12 / 4) --
+  /* Rows 2 and 3: two controls per line, six columns each (12 / 2).
+     Four-at-three-columns is what this was until #249 gave the dropdowns
+     their column name as a placeholder, and MEASURED at 320px that left
+     each control 51px to paint a word needing 98px: `Together` rendered as
+     `Toge`, with every text assertion green, because `textContent` cannot
+     see what the box can draw. Six columns is ~105px at 320px, which fits
+     the longest of the three (operator's choice, 2026-09-20; the rejected
+     alternatives were one-per-line, costing two extra lines per pupil on a
+     thirty-row register, and leaving it truncated).
+     `no dropdown ever truncates its own column name` measures it.
+
+     Row 2: Sex, Absent, three columns each (12 / 4) --
      "on the second [line]" (design spec section 3), stated the same
      explicit way as row 1 rather than left to wrap on its own. Their own
      WIDTH is not held to the 44px touch-target floor -- only their HEIGHT
@@ -1332,22 +1343,24 @@ const sexWhyText = sexWhy(roster, t);
      section 3 is explicit that no arrangement of six full-width targets
      fits a phone at all, which is the whole reason this reflow exists. */
   #cg-roster .cg-student > td:nth-child(4) {
-    grid-column: 1 / 4;
+    grid-column: 1 / 7;
     grid-row: 2;
   }
   /* Absent — row 2, in the slot it has always occupied on a phone, even
      though it is now the FIRST cell in the DOM. */
   #cg-roster .cg-student > td:nth-child(1) {
-    grid-column: 4 / 7;
+    grid-column: 7 / 13;
     grid-row: 2;
   }
+  /* Together and Apart take a line of their own -- they are the two
+     longest labels and the two that truncated first. */
   #cg-roster .cg-student > td:nth-child(5) {
-    grid-column: 7 / 10;
-    grid-row: 2;
+    grid-column: 1 / 7;
+    grid-row: 3;
   }
   #cg-roster .cg-student > td:nth-child(6) {
-    grid-column: 10 / 13;
-    grid-row: 2;
+    grid-column: 7 / 13;
+    grid-row: 3;
   }
   /* Remove (Stage 3, Task 6; design spec section 4: "Removing a row
      removes the student.") -- its OWN row, spanning every column, rather
@@ -1365,7 +1378,7 @@ const sexWhyText = sexWhy(roster, t);
      last column of a row is a conventional home for a row-level action). */
   #cg-roster .cg-student > td:nth-child(7) {
     grid-column: 1 / 13;
-    grid-row: 3;
+    grid-row: 4;
     text-align: right;
   }
 
@@ -1436,12 +1449,17 @@ const sexWhyText = sexWhy(roster, t);
     color: #fff;
   }
 
-  /* ── ...and the table, restored, at and above ~600px ──────────────────────
+  /* ── ...and the table, restored, at and above 768px ───────────────────────
      Design spec section 3: "The breakpoint is ~600px, and is one of two
      figures that must be settled on real hardware -- see section 13. It is
-     a starting point, not a decision." Still owed on real hardware
-     (tracked in that section, not repeated here); the value below is that
-     same starting point, unchanged.
+     a starting point, not a decision." Settled at 768px by measurement
+     rather than on hardware, which that wording invites: at 600px the table
+     gave Sex 52px for a label needing 60px and Together 71px for one
+     needing 98px, so 600-767px was the one band where NEITHER layout could
+     paint the column names #249 put in the dropdowns. The card, two
+     controls to a line, has room at every width below this. 768px is the
+     breakpoint this file already uses for what geometrically fits (see the
+     projector block's own note below).
 
      Every selector in this block reappears from the base rules above, at
      THE SAME SPECIFICITY, so that CSS's own tie-break (later rule in the
@@ -1452,7 +1470,7 @@ const sexWhyText = sexWhy(roster, t);
      `grid-column`/`grid-row` on the six columns), it is because that
      property has no effect once `display` is a table value at all --
      inert, not forgotten. */
-  @media (min-width: 600px) {
+  @media (min-width: 768px) {
     #cg-roster {
       display: table;
       table-layout: fixed;
