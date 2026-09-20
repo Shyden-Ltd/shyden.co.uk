@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { shoot } from './evidence';
 import { recordErrors } from './recorders';
+import { searched } from '../source-files';
 import {
   openRoster,
   addSeveral,
@@ -374,7 +375,10 @@ test.describe('an absent student', () => {
         const row = page.locator('.cg-student').first();
         await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
         await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
-        const stripeTarget = width < 600 ? row : row.locator('td').first();
+        const cards = await page
+          .locator('#cg-roster')
+          .evaluate((el) => getComputedStyle(el).display !== 'table');
+        const stripeTarget = cards ? row : row.locator('td').first();
         const boxShadow = await stripeTarget.evaluate(
           (el) => getComputedStyle(el).boxShadow,
         );
@@ -436,6 +440,11 @@ test.describe('an absent student', () => {
 // unambiguously the task that first renders the together/apart columns at
 // all. Picked up here rather than left for a task that never claims it.
 test.describe('together/apart letters', () => {
+  // The first entry of every list is the empty option, which since #249
+  // carries the column's own name rather than an em dash -- a teacher could
+  // not see what a collapsed dropdown was for. It is asserted as a member of
+  // the exact set, not skipped: it is still an option and still leads.
+
   test('the dropdown grows as needed -- B appears once A is used', async ({
     page,
   }) => {
@@ -445,7 +454,7 @@ test.describe('together/apart letters', () => {
     const row1 = page.locator('.cg-student').nth(1);
 
     await expect(row0.getByLabel('Together').locator('option')).toHaveText([
-      '—',
+      'Together',
       'A',
     ]);
 
@@ -453,12 +462,12 @@ test.describe('together/apart letters', () => {
 
     // Every row's own dropdown grows, not only the one A was just set on.
     await expect(row0.getByLabel('Together').locator('option')).toHaveText([
-      '—',
+      'Together',
       'A',
       'B',
     ]);
     await expect(row1.getByLabel('Together').locator('option')).toHaveText([
-      '—',
+      'Together',
       'A',
       'B',
     ]);
@@ -472,7 +481,7 @@ test.describe('together/apart letters', () => {
     // a shared counter across both fields would leak Together's own use
     // into Apart's own list.
     await expect(row.getByLabel('Apart').locator('option')).toHaveText([
-      '—',
+      'Apart',
       'A',
     ]);
   });
@@ -1461,3 +1470,180 @@ test(
     expect(over).toBeLessThanOrEqual(0);
   },
 );
+
+/**
+ * #249. The three roster dropdowns each carried a correct `aria-label` and
+ * showed a bare em dash until something was chosen. A screen reader was told
+ * what every one of them was for; a sighted teacher was not. Reviewing #188's
+ * evidence the operator wrote: "the dropdown boxes that have '-' as the
+ * default. we should fix this to show what the drop down box is actually for.
+ * there's no label or anything."
+ *
+ * `aria-label` renders no pixels. The guard above asks "does this control
+ * have a name?" and the operator asked "can I see what it is for?" -- two
+ * different questions, and only one of them had a test. It is the same shape
+ * as this repo's `display: flex` defect, where `textContent` was right for a
+ * whole release while the rendering was wrong.
+ *
+ * The empty option now carries the column's OWN header key, so the control
+ * and the heading above it cannot drift apart and no catalogue gains a key.
+ * Print is deliberately NOT included: a class list on paper keeps the em dash
+ * for an empty cell, which `classroom-groups-print.spec.ts` holds up.
+ */
+test.describe('an unset roster dropdown says which column it is for', () => {
+  const PLACEHOLDER_COLUMNS = ['Sex', 'Together', 'Apart'];
+
+  test('every unset dropdown shows its own column name', async ({ page }) => {
+    await openRoster(page);
+    const row = page.locator('.cg-student').first();
+
+    // Derived from the row, never listed: a fourth dropdown added next year
+    // is covered the day it appears. Written as an EQUALITY rather than a
+    // findings-and-control pair, so an emptied roster cannot pass it either
+    // -- there is no population here that can quietly become zero.
+    const shown = await row.evaluate((el) =>
+      [...el.querySelectorAll('select')].map((select) => [
+        select.getAttribute('aria-label') ?? '(no aria-label)',
+        select.selectedOptions[0]?.textContent ?? '(nothing selected)',
+      ]),
+    );
+
+    expect(shown).toEqual([
+      ['Sex', 'Sex'],
+      ['Together', 'Together'],
+      ['Apart', 'Apart'],
+    ]);
+
+    // The control is what a teacher can see; an <option> is never itself
+    // visible while the list is shut, so visibility is asserted on the select
+    // and the painted text on the option it is showing. `toHaveText` alone
+    // passes on a control the page forgot to show (#188).
+    for (const column of PLACEHOLDER_COLUMNS) {
+      const select = row.getByLabel(column);
+      await expect(select).toBeVisible();
+      await expect(select).toHaveValue('');
+      await expect(select.locator('option:checked')).toHaveText(column);
+    }
+
+    await shoot(page, 'Every unset roster dropdown names its own column', row);
+  });
+
+  test('choosing a value replaces the placeholder with the value', async ({
+    page,
+  }) => {
+    await openRoster(page);
+    const row = page.locator('.cg-student').first();
+
+    await row.getByLabel('Sex').selectOption('F');
+    await row.getByLabel('Together').selectOption('A');
+
+    await expect(row.getByLabel('Sex').locator('option:checked')).toHaveText(
+      'F',
+    );
+    await expect(
+      row.getByLabel('Together').locator('option:checked'),
+    ).toHaveText('A');
+
+    // Apart was left alone, so it still names its column -- which also shows
+    // the placeholder is per-control and not a property of the whole row.
+    await expect(row.getByLabel('Apart').locator('option:checked')).toHaveText(
+      'Apart',
+    );
+  });
+
+  /**
+   * The visible text is the entire point of this ticket, and `textContent` is
+   * blind to whether the box can paint it. At 390px `Together` rendered as
+   * `Toge` with every assertion above still green -- the same shape as this
+   * repo's `display: flex` defect, where the text was right for a whole
+   * release and the rendering was wrong. So measure the label against the box
+   * that has to draw it, at every width the page is used at.
+   *
+   * `#cg-roster select` sets `appearance: none` and reserves the drawn
+   * arrow's room with `padding-right: 1.6rem`, so the computed padding read
+   * here already accounts for it -- there is no native chrome left to guess.
+   */
+  test(
+    'no dropdown ever truncates its own column name',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      // 768px is where the card layout gives way to the table, so both
+      // layouts are measured, and 600px and 430px sit inside the card band
+      // that used to be the table's.
+      const widths = [320, 375, 390, 430, 600, 768, 1024, 1280];
+      const findings: string[] = [];
+      const measured: string[] = [];
+
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: 900 });
+        await openRoster(page);
+        const row = page.locator('.cg-student').first();
+        const boxes = await row.evaluate((el) =>
+          [...el.querySelectorAll('select')].map((select) => {
+            const style = getComputedStyle(select);
+            const probe = document.createElement('span');
+            probe.style.cssText =
+              'position:absolute;visibility:hidden;white-space:pre';
+            probe.style.font = style.font;
+            probe.textContent = select.selectedOptions[0]?.textContent ?? '';
+            document.body.appendChild(probe);
+            const textWidth = probe.getBoundingClientRect().width;
+            probe.remove();
+            const chrome =
+              parseFloat(style.paddingLeft) +
+              parseFloat(style.paddingRight) +
+              parseFloat(style.borderLeftWidth) +
+              parseFloat(style.borderRightWidth);
+            return {
+              label: select.getAttribute('aria-label') ?? '(unlabelled)',
+              shows: select.selectedOptions[0]?.textContent ?? '',
+              box: Math.round(select.getBoundingClientRect().width),
+              needs: Math.round(textWidth + chrome),
+            };
+          }),
+        );
+
+        for (const box of boxes) {
+          measured.push(`${width}px ${box.label}`);
+          if (box.needs > box.box) {
+            findings.push(
+              `${width}px ${box.label}: shows "${box.shows}" in ${box.box}px, needs ${box.needs}px`,
+            );
+          }
+        }
+      }
+
+      expect(
+        searched(findings, {
+          of: measured,
+          what: 'roster dropdowns measured across widths',
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  test("the empty option keeps each column's own behaviour", async ({
+    page,
+  }) => {
+    await openRoster(page);
+    const row = page.locator('.cg-student').first();
+    const placeholder = (column: string) =>
+      row.getByLabel(column).locator('option[value=""]');
+
+    // While nothing is chosen every placeholder can be selected.
+    for (const column of PLACEHOLDER_COLUMNS) {
+      await expect(placeholder(column)).toBeEnabled();
+    }
+
+    await row.getByLabel('Sex').selectOption('F');
+    await row.getByLabel('Together').selectOption('A');
+
+    // Sex is one-way by design (operator, 2026-08-13): the placeholder says
+    // "not answered yet" and is not itself an answer, so it stops being
+    // selectable once answered. Together and Apart are not one-way -- a
+    // teacher must be able to clear a pairing letter.
+    await expect(placeholder('Sex')).toBeDisabled();
+    await expect(placeholder('Together')).toBeEnabled();
+    await expect(placeholder('Apart')).toBeEnabled();
+  });
+});

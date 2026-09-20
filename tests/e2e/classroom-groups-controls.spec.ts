@@ -1881,3 +1881,69 @@ test.describe('the five the operator asked for', () => {
     }
   });
 });
+
+/**
+ * #249 put a word where an em dash used to be. `Together` is materially wider
+ * than `—`, and the automatic minimum of a grid item reads its MIN-CONTENT
+ * size, which `max-width` does not change -- the exact mechanism that once
+ * pinned this page's track to 378px and produced 74px of horizontal scroll at
+ * 320px from a single native file input nobody had added to a list.
+ *
+ * The containment guard above runs four rows, which is enough to catch a
+ * control that spills its card. It is not enough to catch a full register: a
+ * long roster adds a vertical scrollbar, and the width that steals is only
+ * ever felt at the narrow end. So this runs the tightest viewport against a
+ * roster of thirty, the size the tool is actually used at.
+ */
+test.describe('a full roster at the narrow end', () => {
+  for (const path of sampledPaths('/classroom-groups')) {
+    test(
+      `${path}: thirty rows produce no horizontal scroll at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await openRoster(page, path);
+        await addSeveral(page, 29);
+        await expect(page.locator('.cg-student')).toHaveCount(30);
+
+        const over = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+        );
+        expect(over, 'document scrolls sideways').toBeLessThanOrEqual(0);
+
+        // Page-level scrollWidth is not containment: content can overflow a
+        // CARD by 34.5px and produce zero document scroll, which is how the
+        // Remove button once shipped hanging outside its border at every
+        // laptop width. The offending element's own container is the subject.
+        const worst = await page.evaluate(() => {
+          const card = document.getElementById('cg-students')!;
+          const box = card.getBoundingClientRect();
+          const style = getComputedStyle(card);
+          const inner =
+            box.right -
+            parseFloat(style.paddingRight) -
+            parseFloat(style.borderRightWidth);
+          let over = 0;
+          let who = '';
+          for (const el of card.querySelectorAll('*')) {
+            // `display: none` on an ANCESTOR leaves a descendant's own
+            // computed display untouched, so a per-element check reports
+            // hidden content as rendered. Rects are the only honest filter.
+            if (el.getClientRects().length === 0) continue;
+            const spill = el.getBoundingClientRect().right - inner;
+            if (spill > over) {
+              over = spill;
+              who = el.className || el.tagName;
+            }
+          }
+          return { over: Math.round(over * 10) / 10, who };
+        });
+        expect(worst.over, `${worst.who} escapes the card`).toBeLessThanOrEqual(
+          0.5,
+        );
+      },
+    );
+  }
+});
