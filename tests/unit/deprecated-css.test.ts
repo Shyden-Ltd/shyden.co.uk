@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { filesUnder, searched } from '../source-files';
-import { astroStyleViews, withoutCssComments } from './source-text';
+import { stylesheetCss } from './source-text';
 
 /**
  * CSS Masking deprecates `clip` in favour of `clip-path`, and a deprecated
@@ -23,19 +23,29 @@ import { astroStyleViews, withoutCssComments } from './source-text';
  */
 const CLIP_DECLARATION = /(?:^|[{;])\s*(clip\s*:[^;}]*)/gi;
 
-/** Every `clip` declaration in `css`, read with its comments stripped. */
+/** Every `clip` declaration in `css`, which reaches here comment-free. */
 const clipDeclarations = (css: string): string[] =>
-  [...withoutCssComments(css).matchAll(CLIP_DECLARATION)].map(
-    ([, declaration]) => declaration.trim(),
+  [...css.matchAll(CLIP_DECLARATION)].map(([, declaration]) =>
+    declaration.trim(),
   );
 
-/** Each stylesheet under `dir`: a `.css` file whole, an `.astro` file's `<style>`s. */
+/**
+ * A name standing for the dialect a fixture is written in.
+ *
+ * `stylesheetCss` picks its reader by extension, and a fixture has no file of
+ * its own — which is the point: there is no way to ask for a stylesheet's CSS
+ * without saying what kind of file it came out of (#203).
+ */
+const CSS_FIXTURE = 'fixture.css';
+
+/** Each stylesheet under `dir`, comment-free: a `.css` file whole, an `.astro` file's `<style>`s. */
 const stylesheetsUnder = (dir: string): Array<{ file: string; css: string }> =>
-  filesUnder(dir, (path) => /\.(astro|css)$/.test(path)).flatMap((file) => {
-    const text = readFileSync(file, 'utf8');
-    const sheets = file.endsWith('.astro') ? astroStyleViews(text) : [text];
-    return sheets.map((css) => ({ file, css }));
-  });
+  filesUnder(dir, (path) => /\.(astro|css)$/.test(path)).flatMap((file) =>
+    stylesheetCss(file, readFileSync(file, 'utf8')).map((css) => ({
+      file,
+      css,
+    })),
+  );
 
 describe('no stylesheet declares the deprecated clip property (#200)', () => {
   it('reads a clip declaration however it is spelled', () => {
@@ -44,7 +54,9 @@ describe('no stylesheet declares the deprecated clip property (#200)', () => {
       '.b{CLIP:auto}',
       '@media (min-width: 600px) { .c { clip :rect(1px, 2px, 3px, 4px) } }',
     ].join('\n');
-    expect(clipDeclarations(css)).toEqual([
+    expect(
+      clipDeclarations(stylesheetCss(CSS_FIXTURE, css).join('\n')),
+    ).toEqual([
       'clip: rect(0 0 0 0)',
       'CLIP:auto',
       'clip :rect(1px, 2px, 3px, 4px)',
@@ -57,7 +69,9 @@ describe('no stylesheet declares the deprecated clip property (#200)', () => {
       '.b { --clip: 1px; overflow: clip; }',
       '.c { /* was: position: absolute; clip: rect(0 0 0 0); */ }',
     ].join('\n');
-    expect(clipDeclarations(css)).toEqual([]);
+    expect(
+      clipDeclarations(stylesheetCss(CSS_FIXTURE, css).join('\n')),
+    ).toEqual([]);
   });
 
   it('finds none in any stylesheet under src/', () => {
