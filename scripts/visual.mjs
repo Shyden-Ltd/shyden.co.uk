@@ -74,6 +74,20 @@ export function dockerArgs({ image, cwd, update, forwarded }) {
   return [
     'run',
     '--rm',
+    // THE ARCHITECTURE CI COMPARES ON, not the host's (#224). The baselines
+    // were captured on an arm64 Mac and are compared on CI's `x86_64` runner,
+    // and every one of the ten differed on 25-48% of its pixels at zero
+    // tolerance (measured, run 35657436585). `threshold: 0.1` hid all of it,
+    // so the tolerance was really buying a whole architecture's worth of text
+    // rasterisation and a smaller real regression would have shipped green.
+    //
+    // On Apple Silicon this is emulated and therefore slow; that cost was put
+    // to the operator with the measurement and accepted. It sits before the
+    // image deliberately: `docker run [OPTIONS] IMAGE [COMMAND]`, so the same
+    // flag after the image is handed to the entrypoint and does nothing at
+    // all, silently. Pinned by `tests/unit/visual-runner.test.ts`.
+    '--platform',
+    'linux/amd64',
     // Chromium exhausts the default 64MB /dev/shm and crashes mid-run.
     '--ipc=host',
     '-v',
