@@ -116,16 +116,61 @@ describe('a name resolves to the declaration the language binds it to', () => {
     ).toEqual([undefined]);
   });
 
-  it('stops at a destructured binding instead of falling through', () => {
-    // A binding pulled out of `load()` has no initializer of its own, and
-    // `load()` also builds everything destructured beside it. Following it
-    // gave `const { allowed, readings } = await page.evaluate(...)` the
-    // `.filter()` that builds `allowed`, and `absence-liveness` then called an
-    // assertion over `readings` a collector it is not (#184).
+  it('stops at a destructured source whose shape it cannot read', () => {
+    // `load()` passes no function, so there is no object literal to take a
+    // property from. Stopping is right: an OUTER `config` must not answer in
+    // its place, which is what falling through would do (#184).
     expect(
       resolved(`
         const config = 'outer';
         it('a', () => { const { config } = load(); use(config); });
+      `),
+    ).toEqual([undefined]);
+  });
+
+  it('resolves a destructured binding to its own property', () => {
+    // #185. The binding answers with the property that builds IT.
+    expect(
+      resolved(`
+        it('a', () => { const { readings } = { readings: mine(), allowed: theirs() }; use(readings); });
+      `),
+    ).toEqual(['mine()']);
+  });
+
+  it("does not let a sibling's derivation leak into a binding", () => {
+    // The other direction, and the reason #184 stopped here at all: following
+    // the whole source gave `readings` the expression that builds `allowed`,
+    // and `absence-liveness` then called an assertion over `readings` a
+    // collector it is not.
+    const both = resolved(`
+      it('a', () => {
+        const { readings, allowed } = { readings: mine(), allowed: [].filter(f) };
+        use(readings);
+        use(allowed);
+      });
+    `);
+    expect(both).toEqual(['mine()', '[].filter(f)']);
+  });
+
+  it('follows a call whose function returns one object literal', () => {
+    // The shape every real site is written in:
+    // `await page.evaluate(() => ({ allowed, readings }))`.
+    expect(
+      resolved(`
+        it('a', () => { const { readings } = run(() => ({ readings: mine(), allowed: theirs() })); use(readings); });
+      `),
+    ).toEqual(['mine()']);
+  });
+
+  it('refuses a function that returns more than one shape', () => {
+    // Two returns mean the property is built two ways, and answering with
+    // one of them would be an inference dressed as a resolution.
+    expect(
+      resolved(`
+        it('a', () => {
+          const { readings } = run(() => { if (x) return { readings: mine() }; return { readings: other() }; });
+          use(readings);
+        });
       `),
     ).toEqual([undefined]);
   });
