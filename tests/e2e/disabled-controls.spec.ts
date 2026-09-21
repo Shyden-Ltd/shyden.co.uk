@@ -3,6 +3,9 @@ import { test, expect } from './fixtures';
 import { searched } from '../source-files';
 import { MAX_ROSTER } from '../../src/lib/roster';
 import { addSeveral, openRoster, setSex } from './helpers';
+import { recorded } from './evidence';
+
+test.use(recorded);
 
 /**
  * What a disabled control looks like and what it affords (#250).

@@ -70,6 +70,16 @@ export interface UseCall {
   readonly options: ReadonlyMap<string, ts.Expression>;
   /** Why its options cannot be read, when they cannot. */
   readonly unreadable?: string;
+  /**
+   * The name of a SHARED options object passed by identifier, when one is.
+   *
+   * `test.use(recorded)` sets its options from one exported value rather than
+   * from a literal here, so this reader cannot see the keys -- and reporting
+   * that as no options at all is the vacuous-guard pattern. It is reported by
+   * NAME instead, and which names are allowed is a policy the guard states,
+   * not something this reader decides.
+   */
+  readonly shared?: string;
 }
 
 /**
@@ -226,8 +236,14 @@ export function declarationsIn(sf: ts.SourceFile): Declaration[] {
 function optionsOf(argument: ts.Expression | undefined): {
   options: Map<string, ts.Expression>;
   unreadable?: string;
+  shared?: string;
 } {
   const options = new Map<string, ts.Expression>();
+  // A bare identifier is a SHARED options object. Named rather than called
+  // unreadable: the difference between "this sets options I cannot list" and
+  // "this sets nothing" is the whole point of reporting it.
+  if (argument !== undefined && ts.isIdentifier(argument))
+    return { options, shared: argument.text };
   if (argument === undefined || !ts.isObjectLiteralExpression(argument))
     return { options, unreadable: 'options that are not an object literal' };
   for (const property of argument.properties) {
@@ -250,12 +266,13 @@ export function useCallsIn(sf: ts.SourceFile): UseCall[] {
   return callsIn(sf)
     .filter((call) => chainOf(call.expression)?.join('.') === 'test.use')
     .map((call) => {
-      const { options, unreadable } = optionsOf(call.arguments[0]);
+      const { options, unreadable, shared } = optionsOf(call.arguments[0]);
       return {
         call,
         line: lineOf(sf, call),
         options,
         ...(unreadable === undefined ? {} : { unreadable }),
+        ...(shared === undefined ? {} : { shared }),
       };
     });
 }

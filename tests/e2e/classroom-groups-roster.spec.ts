@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { searched } from '../source-files';
 import {
@@ -9,6 +9,8 @@ import {
   giveEveryoneASex,
   expectStudentsBoxReports,
 } from './helpers';
+
+test.use(recorded);
 
 /**
  * Stage 3, Task 2: the roster table. Traceability: R-01, R-02, R-09, R-10,
@@ -1646,4 +1648,69 @@ test.describe('an unset roster dropdown says which column it is for', () => {
     await expect(placeholder('Together')).toBeEnabled();
     await expect(placeholder('Apart')).toBeEnabled();
   });
+});
+
+test.describe('the roster dropdowns are still reachable by thumb (#249)', () => {
+  test(
+    'every roster control meets the 44px touch target with a placeholder showing',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      // #249 put a WORD where a dash used to be, and a `<select>` sizes
+      // itself to its widest option. The existing 44px sweep
+      // ('every control meets the 44px touch target',
+      // classroom-groups-controls.spec.ts) measures `#cg-form` only, and runs
+      // before any roster exists -- so nothing had ever measured these three.
+      //
+      // Measured with the placeholder SHOWING, which is the state this ticket
+      // created: a chosen value is one or two characters, the placeholder is
+      // a whole column name, and only the wider one can push a row.
+      await page.setViewportSize({ width: 375, height: 900 });
+      await openRoster(page);
+      await addSeveral(page, 3);
+
+      const controls = page.locator(
+        '#cg-roster tbody tr select, #cg-roster tbody tr input',
+      );
+      // Liveness first: three rows carry controls, so an empty set below
+      // would be a broken selector rather than a page that passes.
+      expect(await controls.count()).toBeGreaterThan(0);
+
+      const small = await controls.evaluateAll((els) =>
+        els
+          // `getClientRects()`, never the element's own computed display: a
+          // `display: none` ANCESTOR leaves a descendant's computed display
+          // untouched, so a per-element check reports hidden content as
+          // rendered.
+          .filter((el) => el.getClientRects().length > 0)
+          .map((el) => {
+            // A checkbox is deliberately small: the LABEL around it is the
+            // tap target, the same convention as `.switch` and every radio
+            // on this page ('the two sex switches meet the 44px touch
+            // target once open', classroom-groups-controls.spec.ts).
+            // Measuring the raw input reports a defect the page does not
+            // have -- it read 20.8px here before this was written.
+            const target =
+              el instanceof HTMLInputElement && el.type === 'checkbox'
+                ? (el.closest('label') ?? el)
+                : el;
+            return {
+              what: `${el.tagName.toLowerCase()}[${
+                el.getAttribute('aria-label') ?? el.id ?? '?'
+              }]`,
+              height:
+                Math.round(target.getBoundingClientRect().height * 10) / 10,
+            };
+          })
+          .filter((c) => c.height < 44),
+      );
+
+      expect(
+        searched(small, {
+          of: await controls.count(),
+          what: 'roster controls',
+        }),
+        small.map((c) => `${c.what} is ${c.height}px`).join('\n'),
+      ).toEqual([]);
+    },
+  );
 });

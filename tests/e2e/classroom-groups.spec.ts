@@ -10,7 +10,7 @@ import {
   getStrings,
   localisePath,
 } from '../../src/lib/i18n';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import {
   openRoster,
@@ -19,6 +19,8 @@ import {
   giveEveryoneASex,
   contrastRatio,
 } from './helpers';
+
+test.use(recorded);
 
 /**
  * Every assertion is web-first (auto-retrying). No fixed waits: the tool deals
