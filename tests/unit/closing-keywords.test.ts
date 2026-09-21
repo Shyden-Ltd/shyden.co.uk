@@ -266,6 +266,32 @@ describe('the rule covers a pull request body, not only a commit message', () =>
     ]);
   });
 
+  it('covers both media a merge acts on: the body and every commit message', () => {
+    // A closing keyword in a COMMIT MESSAGE closes the issue too, the moment
+    // the commit lands on the default branch -- that is how the first accident
+    // happened. `.githooks/commit-msg` catches those, but `git commit
+    // --no-verify` skips it, and `.githooks/pre-push` advertises exactly that
+    // escape in its own failure message. CI is the only layer nobody can
+    // bypass, so it reads both media, through the same rule.
+    const [only] = workflowsRunningTheRule();
+    const invocations = (only?.runs ?? []).filter((run) =>
+      run.includes(SCRIPT),
+    );
+    expect(invocations).toHaveLength(2);
+    expect(
+      invocations.filter((run) => run.includes('printenv PR_BODY')),
+    ).toHaveLength(1);
+    expect(invocations.filter((run) => run.includes('git log'))).toHaveLength(
+      1,
+    );
+
+    // An empty commit range is green whatever the rule does, and reads
+    // exactly like a clean pull request, so the step refuses one.
+    expect(
+      invocations.filter((run) => /test -s .*commits\.txt/.test(run)),
+    ).toHaveLength(1);
+  });
+
   it('never expands the body into a shell command', () => {
     // A pull request body is written by whoever opened the PR, including on a
     // fork. `${{ github.event.pull_request.body }}` inside a `run:` script is
@@ -273,9 +299,10 @@ describe('the rule covers a pull request body, not only a commit message', () =>
     // `$(...)` executes on the runner. It reaches the script through the
     // environment instead, where it is data.
     const [only] = workflowsRunningTheRule();
-    const expanded = (only?.runs ?? []).filter((run) =>
-      run.includes('github.event.pull_request.body'),
-    );
+    // The general form, not just the body: EVERY value this workflow reads
+    // from the event is written by whoever opened the pull request. Naming
+    // one field would leave the next one added unguarded.
+    const expanded = (only?.runs ?? []).filter((run) => run.includes('${{'));
     expect(
       searched(expanded, {
         of: only?.runs ?? [],

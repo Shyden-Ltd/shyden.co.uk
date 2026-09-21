@@ -5,7 +5,8 @@ name: PR body
 # "I will close #89 by hand once both are in" is not a negation, so the guard
 # written after the FIRST accident matched nothing at all. The rule itself
 # lives in `scripts/closing-keywords.mjs`; this workflow is the only place
-# every author's body passes through.
+# every author's body passes through -- and the only layer `--no-verify`
+# cannot skip, which is why it reads the commit messages too.
 #
 # `edited` IS THE POINT. The default trigger set is opened, synchronize and
 # reopened, so a body edited after a green run would never be re-checked --
@@ -47,6 +48,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's own commits, not just its tip: the messages are
+          # read below, and a shallow clone has none of them.
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -61,3 +66,26 @@ jobs:
         run: |
           printenv PR_BODY > "${RUNNER_TEMP}/pr-body.txt" || true
           node scripts/closing-keywords.mjs "${RUNNER_TEMP}/pr-body.txt" "this pull request body"
+      - name: No commit message in it may close an issue by accident either
+        # THE OTHER MEDIUM A MERGE ACTS ON. A closing keyword in a commit
+        # message closes the issue the moment the commit lands on the default
+        # branch -- that is how the FIRST accident happened, in 983fb7e.
+        # `.githooks/commit-msg` catches those, and `git commit --no-verify`
+        # skips it; `.githooks/pre-push` advertises that escape in its own
+        # failure message. This is the layer nobody can bypass, so it reads
+        # both media through the same rule.
+        #
+        # `origin/<base>..HEAD` is exactly the set a merge would add, so a
+        # commit already on the base cannot redden an innocent pull request.
+        # `--no-merges` drops the synthetic merge commit a pull_request
+        # checkout puts at HEAD.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git log --no-merges --format=%B "origin/${BASE_REF}..HEAD" > "${RUNNER_TEMP}/commits.txt"
+          # An empty range would pass this check for free, and would look
+          # exactly like a clean pull request. An open one always adds at
+          # least one commit, so nothing here is the range being wrong.
+          test -s "${RUNNER_TEMP}/commits.txt" ||
+            { echo 'no commit messages in the range: the range is wrong, not the pull request clean'; exit 1; }
+          node scripts/closing-keywords.mjs "${RUNNER_TEMP}/commits.txt" "a commit message in this pull request"
