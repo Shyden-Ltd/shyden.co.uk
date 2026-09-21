@@ -124,7 +124,7 @@ jobs:
             echo "| --- | --- |"
             echo "| \`uname -m\` | \`${arch}\` |"
             echo "| image | \`mcr.microsoft.com/playwright:v1.63.0-noble\` |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - run: npx playwright test --project=visual
         env:
           VISUAL: '1'
@@ -138,6 +138,12 @@ jobs:
       # `always()`, because a red gate is exactly when these numbers are worth
       # having; `continue-on-error`, because a zero-tolerance comparison is
       # EXPECTED to fail and must never decide a build.
+      # `tee`, not `>>`: a step summary is rendered in the web UI and is NOT
+      # exposed by the Actions API, so a table written only there cannot be
+      # read back with `gh run view --log`. Measured the hard way on run
+      # 35648992772 — the architecture came through because it was also echoed
+      # to stdout, and the drift table did not (#224). Evidence in a medium it
+      # cannot be read back from is evidence that is not there.
       - name: Measure baseline drift at zero tolerance
         if: always()
         continue-on-error: true
@@ -157,7 +163,7 @@ jobs:
             grep -E 'pixels .*are different|Error: |✘|passed|failed' measure.log \
               | head -40 || echo 'no comparison output'
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       # expected / actual / diff PNGs, which is the whole point: a visual
       # failure that can only be reproduced locally gets ignored.
       - name: Keep the visual diff

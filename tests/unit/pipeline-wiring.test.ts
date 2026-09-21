@@ -1440,6 +1440,25 @@ describe('the drift measurement reports, and never gates (#224)', () => {
     expect(steps[indexOf(isGate)]['continue-on-error']).toBeUndefined();
   });
 
+  it('writes its numbers where they can be read back, not only to the summary', () => {
+    // A step summary is rendered in the UI and is not exposed by the Actions
+    // API, so `gh run view --log` returns the script and nothing else. The
+    // drift table was written only there once, and could not be read (#224).
+    const summaryWriters = visualSteps().filter(
+      (s) => typeof s.run === 'string' && s.run.includes('GITHUB_STEP_SUMMARY'),
+    );
+    const unreadable = summaryWriters.filter(
+      (s) => !/tee\s+-a\s+"\$GITHUB_STEP_SUMMARY"/.test(s.run as string),
+    );
+    expect(
+      searched(unreadable, {
+        of: summaryWriters.length,
+        what: "steps writing a job summary in ci.yml's visual job",
+      }),
+      'a summary written with >> cannot be read back from the job log',
+    ).toEqual([]);
+  });
+
   it('runs even when the gate went red, which is when it is worth having', () => {
     expect(visualSteps()[indexOf(isMeasure)].if).toBe('always()');
   });
