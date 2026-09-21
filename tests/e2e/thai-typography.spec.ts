@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { shoot } from './evidence';
+import { searched } from '../source-files';
 import { sitePaths } from '../site-pages';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 
@@ -106,7 +107,10 @@ test.describe('Thai typography', () => {
           ).toBeGreaterThan(0);
 
           expect(
-            offenders,
+            searched(offenders, {
+              of: examined,
+              what: `Thai headings measured at ${route} ${width}px`,
+            }),
             `${route} at ${width}px: Thai marks would collide with the line above`,
           ).toEqual([]);
           // Thai stacks up to two marks above the base glyph and one below, so
