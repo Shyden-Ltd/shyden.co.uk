@@ -39,7 +39,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The e2e budget, one number wherever the suite runs: release-dev.yml's
     # dispatch path runs these same commands under it. Without one a hung job
     # burns the runner's 360-minute default, and since #159 this is the only
@@ -92,7 +92,7 @@ jobs:
   # failure class this repo keeps finding; `npm run test:visual:update` is the
   # only way a baseline changes, and it changes as a reviewable diff in a PR.
   visual:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Ten minutes for a job whose last ten green runs took 44 to 72 seconds
     # (measured 2026-09-13): slack for a slow image pull, while a hung browser
     # is still stopped long before the runner's 360-minute default (#157).
