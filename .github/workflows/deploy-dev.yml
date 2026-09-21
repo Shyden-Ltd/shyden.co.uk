@@ -1,4 +1,4 @@
-name: Release — dev (deploy + verify, gates the merge)
+name: Deploy to dev (deploy + verify, gates promotion to main)
 # THE PROMOTION GATE. Fires on every push to `develop`. Proves the merged tree
 # is the tree that passed on its PR (a dispatched branch runs the full suite
 # instead), deploys to dev, then VERIFIES the deployed dev site and posts a
@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-dev-shyden
+  group: deploy-dev-shyden
   cancel-in-progress: false
 
 permissions:

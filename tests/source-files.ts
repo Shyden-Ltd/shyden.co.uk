@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -183,4 +183,29 @@ export function searched<T>(
         'content: six blank headers are six entries (#118, #112).',
     );
   return findings;
+}
+
+/**
+ * Every path git tracks that the working tree still holds, filtered by `keep`.
+ *
+ * A control on the walk above, not a second source for it: `filesUnder` skips
+ * dot-directories by design, so `.github/` — every workflow in the repository
+ * — is invisible to it, and a guard reading the pipeline's own text has to
+ * see those files. `git ls-files` is the only list that cannot disagree with
+ * what is committed.
+ *
+ * `-z` because a path may hold any byte but NUL, and `existsSync` because a
+ * file deleted in the working tree is tracked until the deletion is staged.
+ */
+export function trackedFiles(keep: (path: string) => boolean): string[] {
+  const run = spawnSync('git', ['ls-files', '-z'], { encoding: 'utf8' });
+  if (run.status !== 0)
+    throw new Error(
+      `git ls-files failed (${run.status}): ${run.error ?? run.stderr}`,
+    );
+  const paths = run.stdout
+    .split('\0')
+    .filter((path) => keep(path) && existsSync(path))
+    .sort();
+  return nonEmpty(paths, 'tracked files');
 }

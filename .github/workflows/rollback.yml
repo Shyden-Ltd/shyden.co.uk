@@ -27,7 +27,7 @@ on:
         default: false
 
 # One lock around everything that changes what prod serves, shared with
-# release-prod.yml (#238). A rollback CANCELS whatever holds it: a release
+# deploy-prod.yml (#238). A rollback CANCELS whatever holds it: a release
 # building, uploading, or waiting at the prod approval. A run waiting at an
 # approval holds its group (measured on the runner, #238), so without the
 # cancel this rollback would queue behind an approval nobody has clicked, and

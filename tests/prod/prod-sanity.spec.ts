@@ -10,7 +10,7 @@ import { deployedRoutes } from '../site-pages';
  * the gate stayed green. Extending the list by hand is how it broke the first
  * time, so it is derived now and a sixth language is covered the day it joins
  * LOCALES. The PAGE axis stayed hand-written until #89 — three literals, so a
- * fourth page was smoked by curl in release-prod.yml and never rendered in a
+ * fourth page was smoked by curl in deploy-prod.yml and never rendered in a
  * browser here. Both axes are derived now.
  */
 const ROUTES = deployedRoutes();

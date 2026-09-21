@@ -2,9 +2,9 @@ name: CI
 # The REQUIRED status check on BOTH long-lived branches: `develop`, where work
 # integrates, and `main`, which describes what is live.
 #
-# PR-only on purpose: a push to develop runs no suite. release-dev.yml proves
+# PR-only on purpose: a push to develop runs no suite. deploy-dev.yml proves
 # the merged tree is the very tree this workflow passed on its PR, reading these
-# checks off the PR head (scripts/deploy-gate.mjs), and release-prod.yml gates
+# checks off the PR head (scripts/deploy-gate.mjs), and deploy-prod.yml gates
 # the push to main -- so a push: trigger here would only run the suite again on
 # a tree that has already passed it (#157).
 #
@@ -40,7 +40,7 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-26.04
-    # The e2e budget, one number wherever the suite runs: release-dev.yml's
+    # The e2e budget, one number wherever the suite runs: deploy-dev.yml's
     # dispatch path runs these same commands under it. Without one a hung job
     # burns the runner's 360-minute default, and since #159 this is the only
     # suite a merge runs (#157). A policy, not a measurement --

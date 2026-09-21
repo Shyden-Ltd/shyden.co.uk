@@ -19,7 +19,7 @@ import { searched } from '../source-files';
  * seeing one of them goes red here rather than passing a real workflow.
  */
 
-/** release-dev.yml's graph after #159: one of two gates skips on every event. */
+/** deploy-dev.yml's graph after #159: one of two gates skips on every event. */
 const releaseDevShape = (verifyCondition: string): string => `
 jobs:
   gate:
@@ -95,7 +95,7 @@ describe('a job downstream of a conditional job states its own condition (#157)'
     ).toThrow(/not clean YAML/);
   });
 
-  it('passes the condition release-dev.yml ships, judged over a live population', () => {
+  it('passes the condition deploy-dev.yml ships, judged over a live population', () => {
     const jobs = workflowJobs(
       releaseDevShape(
         "    if: >-\n      !cancelled() && needs.deploy.result == 'success'\n",

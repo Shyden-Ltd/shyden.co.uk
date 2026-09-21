@@ -1,4 +1,4 @@
-name: Release — prod (on merge to main, approval-gated)
+name: Deploy to prod (on merge to main, approval-gated)
 # PROD DEPLOYS FROM MAIN, AFTER THE MERGE. Fires on every push to `main` and
 # waits at the `prod` Environment approval gate, so nothing reaches
 # shyden.co.uk without a deliberate approval — and whatever is live is always a
@@ -7,7 +7,7 @@ name: Release — prod (on merge to main, approval-gated)
 # This replaced a deploy-BEFORE-merge pipeline. That one made production the
 # gate: a mistake first became real in front of teachers, and for the length of
 # a release `main` did not describe what was live. The merge gate is now
-# `dev-verified` (release-dev.yml).
+# `dev-verified` (deploy-dev.yml).
 #
 # `workflow_dispatch` is kept for the case main is already correct and prod
 # needs re-deploying — a rollback that is forward rather than backward, and the
@@ -19,9 +19,9 @@ on:
   workflow_dispatch:
 
 # One lock around everything that changes what prod serves, shared with
-# rollback.yml (#238). A release never cancels a run in it: pushed during a
+# rollback.yml (#238). A deploy never cancels a run in it: pushed during a
 # rollback, it waits for the rollback, then stops at the approval as usual. A
-# rollback, in turn, cancels a release that holds the lock (see rollback.yml).
+# rollback, in turn, cancels a deploy that holds the lock (see rollback.yml).
 concurrency:
   group: shyden-prod-publish
   cancel-in-progress: false

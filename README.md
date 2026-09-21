@@ -17,7 +17,7 @@ sits behind Basic auth and disallows crawling.
 Every route also exists under `/id/` in Bahasa Indonesia. Locales are declared in
 `src/lib/i18n/index.ts`; copy lives in `src/lib/i18n/{en,id,site}.ts`.
 
-**The homepage ships zero JavaScript**, and `release-prod.yml` fails the release
+**The homepage ships zero JavaScript**, and `deploy-prod.yml` fails the release
 if that ever stops being true.
 
 ## Tech
@@ -87,7 +87,7 @@ is WKWebView.
 deployed to dev and verified there first.
 
 ```
-feature/xxx ──PR──▶ develop ──push──▶ release-dev ──▶ dev.shyden.co.uk
+feature/xxx ──PR──▶ develop ──push──▶ deploy-dev ──▶ dev.shyden.co.uk
                  │                    full suite            │
             build-and-test            deploy                │
              (required)               dev-sanity            │
@@ -96,7 +96,7 @@ feature/xxx ──PR──▶ develop ──push──▶ release-dev ──▶ 
                                                │
 develop ──promotion PR──▶ main   requires: build-and-test + dev-verified
                            │
-                         push ──▶ release-prod  approval gate → deploy →
+                         push ──▶ deploy-prod  approval gate → deploy →
                            │                    smoke → browser check →
                            │                    post prod-verified
                            └──▶ release-tag     tag + GitHub release
@@ -116,15 +116,15 @@ to develop, so requiring it would deadlock.
 
 ### Workflows
 
-| File               | Trigger                               | Does                                                                       |
-| ------------------ | ------------------------------------- | -------------------------------------------------------------------------- |
-| `ci.yml`           | PRs into `develop` or `main`          | `build-and-test`: format, build, unit, e2e                                 |
-| `release-dev.yml`  | push to `develop`, or manual dispatch | full suite → deploy dev → dev-sanity → post `dev-verified`                 |
-| `release-prod.yml` | push to `main`                        | approval gate → deploy prod → smoke → browser check → post `prod-verified` |
-| `release-tag.yml`  | push to `main`                        | tags and creates the GitHub release                                        |
-| `rollback.yml`     | manual dispatch                       | rolls production back to a previous Cloudflare deployment                  |
+| File              | Trigger                               | Does                                                                       |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| `ci.yml`          | PRs into `develop` or `main`          | `build-and-test`: format, build, unit, e2e                                 |
+| `deploy-dev.yml`  | push to `develop`, or manual dispatch | full suite → deploy dev → dev-sanity → post `dev-verified`                 |
+| `deploy-prod.yml` | push to `main`                        | approval gate → deploy prod → smoke → browser check → post `prod-verified` |
+| `release-tag.yml` | push to `main`                        | tags and creates the GitHub release                                        |
+| `rollback.yml`    | manual dispatch                       | rolls production back to a previous Cloudflare deployment                  |
 
-`release-dev.yml` can be dispatched on any branch to put it on dev, but the
+`deploy-dev.yml` can be dispatched on any branch to put it on dev, but the
 `dev-verified` status is only posted for `develop` — otherwise a feature branch
 could earn the status main's protection requires and skip integration entirely.
 

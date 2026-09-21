@@ -1,5 +1,6 @@
 import { parseDocument } from 'yaml';
 import { stringLeaves } from './catalogue-leaves';
+import { withoutCommentLines } from './unit/source-text';
 
 /**
  * The job graph of a GitHub Actions workflow, PARSED.
@@ -349,4 +350,45 @@ export function skippedUpstreamFindings(
         );
     return findings;
   });
+}
+
+/** A commit status posted through the API: the `-f context=<name>` it sends. */
+const POSTED_STATUS = /-f\s+context=(\S+)/g;
+
+/**
+ * Every context `required_status_checks.contexts` could match for one
+ * workflow, derived rather than listed.
+ *
+ * TWO SPECIES, and a guard knowing only the first would call `dev-verified`
+ * unproducible while `main`'s protection requires it. A CHECK RUN is named
+ * after the job's `name:`, falling back to the job id when it declares none.
+ * A COMMIT STATUS is posted by a script and named in the call that posts it.
+ *
+ * An ordinary job carries NO `workflow / job` prefix — that spelling belongs
+ * to required workflows and reusable calls. Requiring it here adds a context
+ * nothing can ever report, so every pull request hangs waiting for a check
+ * its base cannot produce, repairable only by an administrator (#284).
+ */
+export function producibleContexts(text: string, file: string): string[] {
+  const root = parseCleanYaml(text, file);
+  const jobs = isMapping(root) ? root.jobs : undefined;
+  if (!isMapping(jobs)) throw new Error(`${file} has no jobs mapping`);
+
+  const contexts = Object.entries(jobs).map(([id, body]) => {
+    const declared = isMapping(body) ? body.name : undefined;
+    return typeof declared === 'string' ? declared : id;
+  });
+
+  // The PARSED scripts, shell comments stripped. A `#` line inside a `run:`
+  // block is script text the YAML parser keeps rather than a YAML comment it
+  // drops, so a commented-out status post would otherwise widen this set and
+  // soften every guard that reads it.
+  for (const job of workflowJobs(text, file))
+    for (const run of job.runs)
+      for (const [, context] of withoutCommentLines(run).matchAll(
+        POSTED_STATUS,
+      ))
+        contexts.push(context);
+
+  return contexts;
 }
