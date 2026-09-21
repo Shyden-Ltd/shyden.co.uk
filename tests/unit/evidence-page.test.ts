@@ -1346,3 +1346,114 @@ describe('the builder builds its page from any checkout path (#221)', () => {
     );
   });
 });
+
+/**
+ * #263. A journey is identified by its FULL title path, not by its leaf.
+ *
+ * `shoot` writes `info.titlePath.slice(1).join(' > ')` -- the describes and
+ * the test, file dropped -- while the builder read `spec.title`, the leaf
+ * alone, and threw the describe titles away. Everything downstream then keyed
+ * a journey by that leaf, so two tests sharing a test name in different
+ * describes were ONE journey: captures pooled into a single strip, per-engine
+ * results taken from whichever spec matched first. Measured on a 7-spec run:
+ * 275 distinct leaf titles, 5 used twice, every pair an English block and its
+ * Indonesian counterpart. `videoFiles` was the only thing that noticed,
+ * because it alone demands a unique path, and it refused the whole build.
+ */
+describe('a journey is identified by its full title path', () => {
+  /**
+   * A report whose specs sit inside real, NESTED describe suites -- one suite
+   * per level, the spec at the deepest. A helper that flattened the levels
+   * into a single title could not disagree with the builder about nesting,
+   * and a fixture that cannot disagree with the contract is not a fixture.
+   */
+  const nestSuites = (
+    describes: readonly string[],
+    spec: unknown,
+  ): Record<string, unknown> =>
+    describes.length === 0
+      ? { specs: [spec] }
+      : { title: describes[0], suites: [nestSuites(describes.slice(1), spec)] };
+
+  const passedOn = (projects: readonly string[]) =>
+    projects.map((p) => ({
+      projectName: p,
+      results: [{ status: 'passed', duration: 500, attachments: [] }],
+    }));
+
+  /** The page escapes `>`, so a title reaches the HTML as `a &gt; b`. */
+  const rendered = (title: string) => title.split(' > ').join(' &gt; ');
+
+  it('keeps two describes that share a test name apart', () => {
+    const blocks = ['the print panel', 'the print panel — Indonesian'];
+    const leaf = 'all three tick boxes start ticked';
+    const report = {
+      ...REPORT,
+      suites: [
+        {
+          title: 'a-file.spec.ts',
+          suites: blocks.map((title) =>
+            nestSuites([title], { title: leaf, tests: passedOn(['chromium']) }),
+          ),
+        },
+      ],
+    };
+    const manifest = blocks.map((b, n) => ({
+      project: 'chromium',
+      title: `${b} > ${leaf}`,
+      order: 1,
+      label: `label-${n}`,
+      file: `chromium/b${n}__01.png`,
+    }));
+    const html = build({
+      report,
+      manifest,
+      shots: new Map(
+        manifest.map((m) => [m.file, `data:image/png;base64,${m.file}`]),
+      ),
+    });
+
+    for (const b of blocks) expect(html).toContain(rendered(`${b} > ${leaf}`));
+    // Each carries its OWN capture: pooling would put both under one heading,
+    // which is exactly what the leaf key did.
+    for (const m of manifest) expect(html).toContain(m.label);
+  });
+
+  it('resolves per-engine results for a test two describes deep', () => {
+    // Keyed by the leaf, `specs.find((s) => s.title === short)` matched
+    // nothing for a nested test, and the journey rendered as not-run on every
+    // engine -- a page reporting no result for a test that passed.
+    const title = 'an outer block > an inner block > a nested journey';
+    const report = {
+      ...REPORT,
+      suites: [
+        {
+          title: 'a-file.spec.ts',
+          suites: [
+            nestSuites(['an outer block', 'an inner block'], {
+              title: 'a nested journey',
+              tests: passedOn(['chromium']),
+            }),
+          ],
+        },
+      ],
+    };
+    const html = build({
+      report,
+      manifest: [
+        {
+          project: 'chromium',
+          title,
+          order: 1,
+          label: 'nested',
+          file: 'chromium/n__01.png',
+        },
+      ],
+      shots: new Map([['chromium/n__01.png', 'data:image/png;base64,n']]),
+    });
+
+    expect(html).toContain(rendered(title));
+    expect(html).toContain('title="passed"');
+    expect(html).not.toContain('title="not run"');
+  });
+});
