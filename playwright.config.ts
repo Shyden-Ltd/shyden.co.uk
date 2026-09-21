@@ -138,7 +138,7 @@ const isWithin = (dir: string, path: string): boolean => {
  *
  * Resolved against the working directory, as `tests/e2e/evidence.ts` and
  * `scripts/test-e2e.mjs` resolve `EVIDENCE_DIR`, so all three name one place.
- * An ordinary run keeps the default because `ci.yml` and `release-dev.yml`
+ * An ordinary run keeps the default because `ci.yml` and `deploy-dev.yml`
  * upload `test-results/` when a job fails.
  */
 const evidenceOutputDir = (

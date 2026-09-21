@@ -967,7 +967,7 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
   });
 
   it('leaves an ordinary run inside the directory CI uploads when a job fails', async () => {
-    // ci.yml and release-dev.yml keep test-results/ on failure. An ordinary run
+    // ci.yml and deploy-dev.yml keep test-results/ on failure. An ordinary run
     // writing anywhere else would upload an empty directory and say nothing.
     //
     // Asserted as that PROPERTY rather than as Playwright's default, which is

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 /**
  * May this commit be deployed to dev without re-running the whole suite?
  *
- * `release-dev.yml` used to re-run the entire merge gate on every push to
+ * `deploy-dev.yml` used to re-run the entire merge gate on every push to
  * `develop`: the same seven steps `ci.yml` runs, ~26 minutes, against a tree
  * that had already passed them. That duplicate was also the ONLY place the
  * suite ran under a `timeout-minutes`, which is how run 34676066071 was

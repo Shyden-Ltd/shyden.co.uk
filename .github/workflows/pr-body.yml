@@ -20,11 +20,19 @@ name: PR body
 # merges serial that cost lands on every other open PR. This runs in seconds.
 #
 # NOT A GATE UNTIL IT IS REQUIRED. A job that can go red while the merge
-# proceeds is decoration (#33). This becomes blocking when
-# `pr-body / closing-keywords` is added to `required_status_checks.contexts`
-# on develop and main -- a repository-administration change, which the App
-# holds read-only, so it is the operator's. The order is forced: merge first,
-# then require, or every PR hangs waiting for a check its base cannot produce.
+# proceeds is decoration (#33). This becomes blocking when `closing-keywords`
+# is added to `required_status_checks.contexts` on develop and main -- a
+# repository-administration change, which the App holds read-only, so it is
+# the operator's. The order is forced: merge first, then require, or every PR
+# hangs waiting for a check its base cannot produce.
+#
+# THAT NAME, EXACTLY. A check run is named after the job's `name:`, falling
+# back to the job id when it declares none, as this job does. There is no
+# `workflow / job` prefix on an ordinary job -- that spelling belongs to
+# required workflows and reusable calls, and this comment asked for it until
+# #284. Requiring a name nothing reports is not a weak gate: it hangs every
+# pull request on a check its base cannot produce, and only an administrator
+# can undo it. Pinned by pipeline-wiring.test.ts, which derives both sides.
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]

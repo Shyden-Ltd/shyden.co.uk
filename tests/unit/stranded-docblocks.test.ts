@@ -1,11 +1,15 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { commentsIn, parseSource } from './ast';
 import { astroCodeViews } from './source-text';
-import { filesUnder, ignoredByGit, searched } from '../source-files';
+import {
+  filesUnder,
+  ignoredByGit,
+  searched,
+  trackedFiles,
+} from '../source-files';
 
 /**
  * A docblock documents the declaration directly below it, so a docblock
@@ -39,14 +43,7 @@ function scannedSource(): string[] {
  * one would otherwise go unread without a word.
  */
 function trackedSource(): string[] {
-  const run = spawnSync('git', ['ls-files', '-z'], { encoding: 'utf8' });
-  if (run.status !== 0)
-    throw new Error(
-      `git ls-files failed (${run.status}): ${run.error ?? run.stderr}`,
-    );
-  return run.stdout
-    .split('\0')
-    .filter((path) => SOURCE.test(path) && existsSync(path));
+  return trackedFiles((path) => SOURCE.test(path));
 }
 
 interface DocblockScan {

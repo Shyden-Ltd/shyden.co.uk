@@ -16,13 +16,14 @@ import {
   withoutCommentLines,
   withoutTsComments,
 } from './source-text';
-import { nonEmpty, searched } from '../source-files';
+import { nonEmpty, searched, trackedFiles } from '../source-files';
 import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
   jobsDownstreamOfAConditionalJob,
   parseCleanYaml,
   skippedUpstreamFindings,
+  producibleContexts,
   unboundedJobFindings,
   workflowJobs,
   type WorkflowJob,
@@ -101,6 +102,56 @@ const workflowFileNames = (): string[] =>
 const workflowYamlNames = (): string[] =>
   workflowFileNames().filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
 
+/** What a workflow calls itself: the Actions UI, and `github.workflow`. */
+const workflowName = (file: string): string => {
+  const root = parseCleanYaml(workflow(file), file) as { name?: unknown };
+  return typeof root.name === 'string' ? root.name : file;
+};
+
+/** Putting built bytes on an environment — what makes a workflow a deploy. */
+const DEPLOY_COMMAND = 'wrangler pages deploy';
+
+/** Text a human reads, which is where a wrong instruction becomes an action. */
+const READABLE = /\.(md|ya?ml|ts|tsx|mjs|js|astro|sh)$/;
+
+/** A backticked span: the form every context in this repo's prose is written in. */
+const TICKED = /`([^`\n]+)`/g;
+
+/**
+ * How far before the anchor a claim may sit. A context is named right beside
+ * `required_status_checks.contexts` — "X is added to Y", "X joins Y" — and a
+ * wider window starts reading unrelated spans as claims. Measured: the
+ * `-f context=<name>` docblock in `workflow-jobs.ts` sits about 80 characters
+ * before its own mention of the anchor, so 80 would flag correct code.
+ */
+const CLAIM_WINDOW = 40;
+
+/**
+ * Every context this repository's prose names as belonging in
+ * `required_status_checks.contexts`: the backticked span immediately before
+ * the anchor, when it is close enough to be part of the same sentence.
+ *
+ * Prose is the medium the operator acts on, so a claim is read where he reads
+ * it. The anchor's own span is not a claim about itself, and a docblock
+ * boundary or a blank line in the gap means the two spans sit in different
+ * sentences entirely.
+ */
+const contextClaimsIn = (text: string): string[] => {
+  const spans = [...text.matchAll(TICKED)];
+  const claims: string[] = [];
+  spans.forEach((span, index) => {
+    if (!span[1].includes('required_status_checks')) return;
+    const before = spans[index - 1];
+    if (before === undefined) return;
+    const from = (before.index ?? 0) + before[0].length;
+    const gap = text.slice(from, span.index ?? 0);
+    if (gap.length > CLAIM_WINDOW) return;
+    if (gap.includes('*/') || /\n\s*\n/.test(gap)) return;
+    claims.push(before[1]);
+  });
+  return claims;
+};
+
 const allWorkflows = () =>
   workflowYamlNames().map((f) => ({
     name: f,
@@ -168,7 +219,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the dev deploy is gated on a gate that SUCCEEDED, never on one that skipped', () => {
-    const deploy = jobNamed('release-dev.yml', 'deploy-dev');
+    const deploy = jobNamed('deploy-dev.yml', 'deploy-dev');
     expect(deploy.needs).toEqual(['gate', 'test']);
 
     // Exactly one of the two gates runs per event, so the other is ALWAYS
@@ -190,7 +241,7 @@ describe('the deploy pipeline runs what it claims to', () => {
     // never verified (run 34742940098). Pinned exactly: the rule below accepts
     // any condition of the right shape, and this is the one the runner was
     // measured running after a skipped gate (run 34743720266).
-    const verify = jobNamed('release-dev.yml', 'verify-dev');
+    const verify = jobNamed('deploy-dev.yml', 'verify-dev');
     expect(verify.needs).toEqual(['deploy-dev']);
     expect(verify.condition).toBe(
       "!cancelled() && needs.deploy-dev.result == 'success'",
@@ -216,7 +267,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the push path proves the tree instead of re-running the suite', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     const gate = jobBlockRunning(dev, 'scripts/deploy-gate.mjs');
     expect(gate).toContain("if: github.event_name == 'push'");
     // The gate reads parents and trees; a shallow clone would make it refuse
@@ -232,7 +283,7 @@ describe('the deploy pipeline runs what it claims to', () => {
     // parent and no PR checks, so there is nothing for the tree gate to verify.
     // Dropping this path would quietly remove a documented capability.
     const suite = jobBlockRunning(
-      workflowSteps('release-dev.yml'),
+      workflowSteps('deploy-dev.yml'),
       'npm run test:e2e',
     );
     expect(suite).toContain("if: github.event_name != 'push'");
@@ -246,19 +297,19 @@ describe('the deploy pipeline runs what it claims to', () => {
     // own copy for want of that evidence, so the two must not drift (#157).
     const trusted = jobNamed('ci.yml', 'build-and-test').runs;
     expect(trusted.filter(runsTheE2eSuite)).toEqual(['npm run test:e2e']);
-    expect(jobNamed('release-dev.yml', 'test').runs).toEqual(trusted);
+    expect(jobNamed('deploy-dev.yml', 'test').runs).toEqual(trusted);
   });
 
   // The merge gate. `dev-verified` has to be POSTED by something, or branch
   // protection requiring it blocks every PR forever.
   it('dev-verified is posted by the dev workflow', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     expect(dev).toContain('context=dev-verified');
     expect(dev).toContain('statuses: write');
   });
 
   it('prod-verified is posted by the prod workflow', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     expect(prod).toContain('context=prod-verified');
     expect(prod).toContain('statuses: write');
   });
@@ -267,7 +318,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // merge means production runs a commit that is on no permanent ref, and
   // `main` stops describing what is live.
   it('prod deploys from main, not from a dispatched branch alone', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     expect(prod).toMatch(/on:[\s\S]*?push:[\s\S]*?branches:\s*\[main\]/);
   });
 
@@ -284,7 +335,7 @@ describe('the deploy pipeline runs what it claims to', () => {
             `${name} ${job.id} in ${job.environment ?? 'no environment'}`,
         ),
     );
-    expect(deploys).toEqual(['release-prod.yml deploy-prod in prod']);
+    expect(deploys).toEqual(['deploy-prod.yml deploy-prod in prod']);
   });
 
   // The placeholder guard cost two false-failed releases before it matched the
@@ -292,7 +343,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // Both fixes live in one line, and losing either is a release blocked for
   // nothing.
   it('the prod placeholder guard still skips binaries and matches a shape', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     expect(prod).toContain("grep -rnIE '\\[\\[[^]]{1,60}\\]\\]' dist/");
   });
 
@@ -314,7 +365,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // vacuity was real and was caught by mutating this guard, not by reading it.
   // Set equality also catches a path the routes no longer serve.
   it('the prod smoke covers every page in every locale', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     const loop = /for path in ([^;]+); do/.exec(prod);
     expect(loop, 'the prod smoke no longer loops over a path list').not.toBe(
       null,
@@ -341,7 +392,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // -- the one that introduced its replacements, which could not otherwise
   // earn the `prod-verified` status branch protection then required. That
   // status is no longer required: the gate is `dev-verified`, posted before
-  // the merge by release-dev.yml.
+  // the merge by deploy-dev.yml.
   //
   // Two pipelines both able to deploy prod, disagreeing about when, is worse
   // than either.
@@ -357,12 +408,12 @@ describe('the deploy pipeline runs what it claims to', () => {
         /on:[\s\S]*?push:/.test(w.text) &&
         w.text.includes('shyden-site --branch'),
     );
-    expect(pushers.map((w) => w.name)).toEqual(['release-prod.yml']);
+    expect(pushers.map((w) => w.name)).toEqual(['deploy-prod.yml']);
   });
 
   // ---- one lock around everything that changes what prod serves (#238) ----
   //
-  // rollback.yml and release-prod.yml sat in different groups, so a release
+  // rollback.yml and deploy-prod.yml sat in different groups, so a release
   // still deploying could land after a rollback and undo it, with both runs
   // reporting success. Measured on the runner (#238 AC1): a run waiting at an
   // approval HOLDS its group, at workflow and at job level, and a newer arrival
@@ -392,8 +443,8 @@ describe('the deploy pipeline runs what it claims to', () => {
       'cancel-in-progress': true,
     });
     expect(
-      parsedWorkflow('release-prod.yml').concurrency,
-      'release-prod.yml',
+      parsedWorkflow('deploy-prod.yml').concurrency,
+      'deploy-prod.yml',
     ).toEqual({
       group: PROD_LOCK,
       'cancel-in-progress': false,
@@ -506,7 +557,7 @@ describe('the deploy pipeline runs what it claims to', () => {
 
   // A prod job is any job in a workflow that changes what prod serves, and any
   // job in a prod environment. A secret meant for dev is named `DEV_*`, and
-  // `dev` accepts every branch, because release-dev.yml puts feature branches
+  // `dev` accepts every branch, because deploy-dev.yml puts feature branches
   // on dev on purpose. Anything it holds is only as private as the least
   // reviewed branch, so it never travels to prod.
   it('no job that deploys or verifies prod reads a secret meant for dev (#241)', () => {
@@ -710,7 +761,7 @@ describe('the deploy pipeline runs what it claims to', () => {
 
   // ---- the develop branching model ---------------------------------------
   //
-  // `release-dev.yml` was DISPATCH-only, which made the dev deploy — and so the
+  // `deploy-dev.yml` was DISPATCH-only, which made the dev deploy — and so the
   // `dev-verified` status gating `main` — a step someone had to remember. The
   // header comment gave a real reason: every PR branch deploying to one shared
   // dev environment means the last push wins, and `dev-verified` then describes
@@ -721,14 +772,14 @@ describe('the deploy pipeline runs what it claims to', () => {
   // longer ambiguous — dev always shows develop's head, which is what it should
   // show.
   it('dev deploys automatically when develop moves', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     expect(dev).toMatch(/on:[\s\S]*?push:[\s\S]*?branches:\s*\[develop\]/);
   });
 
   // The dispatch escape hatch stays: deploying an arbitrary branch to dev is a
   // real capability worth keeping.
   it('the dispatch escape hatch survives', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     expect(dev).toMatch(/workflow_dispatch:/);
   });
 
@@ -739,7 +790,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // exists to prevent. Deploy and test on any ref; publish the STATUS only for
   // develop.
   it('dev-verified is only posted for develop', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     const post = dev.indexOf('/statuses/');
     expect(post, 'no dev-verified status step found').toBeGreaterThan(-1);
     const step = dev.slice(Math.max(0, post - 900), post);
@@ -779,6 +830,72 @@ describe('the deploy pipeline runs what it claims to', () => {
     // STOPS anything. Renaming this job silently de-gates develop and main,
     // because protection matches a context by NAME (#33).
     expect(workflowSteps('ci.yml')).toContain('build-and-test:');
+  });
+
+  // #284: the other half of #33's lesson. Protection matches a context by
+  // NAME, so a name nothing reports is not a weak gate — it is a branch that
+  // can never merge again, repairable only by an administrator. Both sides
+  // are derived: what the workflows can report, and what the prose claims.
+  it('documents only a context something in this repository can report', () => {
+    const producible = new Set(
+      workflowYamlNames().flatMap((file) =>
+        producibleContexts(workflow(file), file),
+      ),
+    );
+
+    const claims = trackedFiles((path) => READABLE.test(path)).flatMap((file) =>
+      contextClaimsIn(readFileSync(file, 'utf8')).map((context) => ({
+        file,
+        context,
+      })),
+    );
+
+    const findings = claims
+      .filter(({ context }) => !producible.has(context))
+      .map(
+        ({ file, context }) =>
+          `${file} tells the operator to require \`${context}\`, which no job ` +
+          `and no status in this repository reports`,
+      );
+
+    expect(
+      searched(findings, {
+        of: claims.map(({ context }) => context),
+        what: 'contexts this repository documents as required',
+      }),
+    ).toEqual([]);
+  });
+
+  // #284, operator: "if you're deploying to dev, say you're deploying to dev.
+  // it's not a release." A release is the version, tag and change notes
+  // `release-tag.yml` cuts. Putting built bytes on an environment is a
+  // deploy, and calling one a release reads as the sign-off gate having been
+  // bypassed. Derived from what a workflow DOES, so a third environment is
+  // covered the day it is added rather than when someone remembers this.
+  it('never calls a deploy a release', () => {
+    const deploys = workflowYamlNames().filter((file) =>
+      workflowJobs(workflow(file), file).some((job) =>
+        job.runs.some((run) =>
+          withoutCommentLines(run).includes(DEPLOY_COMMAND),
+        ),
+      ),
+    );
+
+    const findings = deploys
+      .filter(
+        (file) => /release/i.test(file) || /release/i.test(workflowName(file)),
+      )
+      .map(
+        (file) =>
+          `${file} deploys, so neither it nor its name: may say release`,
+      );
+
+    expect(
+      searched(findings, {
+        of: deploys,
+        what: `workflows running \`${DEPLOY_COMMAND}\``,
+      }),
+    ).toEqual([]);
   });
 
   // #237: a push to an open pull request started a fresh run and left the
@@ -858,7 +975,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // `prod-verified` should mean a browser rendered production, so the browser
   // run has to come BEFORE the status is posted, not beside it.
   it('prod-verified is gated on a real browser run, not a curl smoke', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     const browser = prod.indexOf('playwright.prod.config');
     const status = prod.indexOf('/statuses/');
 
@@ -894,7 +1011,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('prod verification targets the public domain, not the deployment alias', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
 
     expect(
       prod,
@@ -1226,7 +1343,7 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
 /**
  * Every job runs under a budget of its own, and the e2e suite's is one number.
  *
- * MEASURED 2026-09-12 (#155). `release-dev.yml`'s "Comprehensive web tests" job
+ * MEASURED 2026-09-12 (#155). `deploy-dev.yml`'s "Comprehensive web tests" job
  * carried `timeout-minutes: 25`, while `npm run test:e2e` alone took **26m13s**
  * on the identical tree (PR run 34674831504, which went green). Aurora's merge
  * pushed the suite past that budget, so run 34676066071 for `c100e59` was
@@ -1242,7 +1359,7 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
  * minutes; `visual` took 44 to 72 seconds.
  *
  * So both rules are DERIVED from every workflow, parsed, never pinned to one
- * named job. `DEV_E2E_JOB_MIN_MINUTES` pinned release-dev.yml's e2e job, and
+ * named job. `DEV_E2E_JOB_MIN_MINUTES` pinned deploy-dev.yml's e2e job, and
  * when #159 made that job dispatch-only it went on guarding the path merges no
  * longer take. Every job running the suite carries EXACTLY the budget below, so
  * no copy can drift from another.
