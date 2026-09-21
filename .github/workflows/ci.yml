@@ -106,6 +106,25 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Every baseline in this repo is captured on a laptop and compared HERE,
+      # and until this printed nothing had ever confirmed the two render on the
+      # same architecture (#224). The repo's claim that "both sides run the
+      # same pinned image" holds for the image TAG; the tag is multi-arch. A
+      # font rasterised on arm64 and compared against amd64 differs by pixels
+      # nobody is looking at, and those pixels are spent out of the same
+      # tolerance a real regression has to fit inside.
+      - name: Record the rendering architecture
+        run: |
+          arch=$(uname -m)
+          echo "visual renders on: ${arch}"
+          {
+            echo "### Visual rendering architecture"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| \`uname -m\` | \`${arch}\` |"
+            echo "| image | \`mcr.microsoft.com/playwright:v1.63.0-noble\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
       - run: npx playwright test --project=visual
         env:
           VISUAL: '1'

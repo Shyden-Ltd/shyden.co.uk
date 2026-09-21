@@ -1346,3 +1346,45 @@ describe('no job rides a moving runner label', () => {
     );
   });
 });
+
+describe('the visual job says which architecture it rendered on', () => {
+  /**
+   * The baselines are captured on a laptop and compared in CI, and the image
+   * tag they share is MULTI-ARCH -- so "both sides run the same pinned image"
+   * can be true of the tag while the two sides rasterise text differently
+   * (#224). A difference nobody is looking at is still spent out of the
+   * tolerance a real regression has to fit inside, so the architecture has to
+   * be on the record of every run rather than assumed.
+   */
+  const visualRuns = () => jobNamed('ci.yml', 'visual').runs;
+
+  it('prints the container architecture into the job summary', () => {
+    const recording = visualRuns().filter(
+      (script) =>
+        /uname\s+-m/.test(script) && script.includes('GITHUB_STEP_SUMMARY'),
+    );
+    expect(
+      searched(recording, {
+        of: visualRuns(),
+        what: "run steps in ci.yml's visual job",
+      }),
+      'the visual job must record the architecture it renders on',
+    ).toHaveLength(1);
+  });
+
+  it('records it BEFORE the comparison, so a red run still reports it', () => {
+    const runs = visualRuns();
+    const arch = runs.findIndex((script) => /uname\s+-m/.test(script));
+    const compare = runs.findIndex((script) =>
+      script.includes('--project=visual'),
+    );
+    expect(arch, 'no step runs `uname -m`').toBeGreaterThanOrEqual(0);
+    expect(compare, 'no step runs the visual project').toBeGreaterThanOrEqual(
+      0,
+    );
+    // Order is the assertion. A step placed after the comparison still
+    // "prints the architecture", and prints it only when the run is green --
+    // which is the half of the time nobody needs it.
+    expect(arch).toBeLessThan(compare);
+  });
+});
