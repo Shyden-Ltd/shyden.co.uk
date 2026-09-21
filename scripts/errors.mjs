@@ -11,6 +11,8 @@
  * checked, which is the same defect in the other direction.
  */
 
+import { exit } from 'node:process';
+
 /**
  * The message a caught value carries, or the value itself rendered.
  *
@@ -44,3 +46,28 @@ export const codeOf = (error) =>
   typeof (/** @type {{ code?: unknown }} */ (error).code) === 'string'
     ? /** @type {{ code: string }} */ (error).code
     : undefined;
+
+/**
+ * Print a refusal in the house style and stop.
+ *
+ * One home rather than a copy per script. `i18n-scaffold.mjs` and
+ * `i18n-translate.mjs` each carried one, byte-identical once comments are
+ * removed (#227), and the scripts that refuse an unexpected argument need the
+ * same two lines. A refusal is also the cheapest proof that a script's
+ * `main()` ran at all: a skipped entry point exits 0 in silence, which reads
+ * exactly like a working run that printed nothing.
+ *
+ * Annotated `never` deliberately. `exit` does not return, so a local copy is
+ * INFERRED `never` and `if (!x) die(...)` narrows `x` afterwards -- but
+ * TypeScript applies that control-flow analysis only when the function's type
+ * says so, and inference does not cross a module boundary for an exported
+ * arrow. Declaring it `void` here produced six `string | undefined` errors in
+ * `i18n-scaffold.mjs` and `i18n-translate.mjs` the moment they stopped
+ * declaring their own.
+ *
+ * @type {(message: string) => never}
+ */
+export const die = (message) => {
+  console.error(`✗ ${message}`);
+  exit(1);
+};

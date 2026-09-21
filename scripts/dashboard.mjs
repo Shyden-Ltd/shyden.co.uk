@@ -36,8 +36,8 @@
  * startup, which frees this server's port the same way the shared preview
  * server's port is freed -- by port, never by process-name pattern.
  */
-import { execFileSync } from 'node:child_process';
-import { stackOf } from './errors.mjs';
+import { die, stackOf } from './errors.mjs';
+import { killByPort } from './test-devices.mjs';
 import {
   closeSync,
   existsSync,
@@ -99,99 +99,6 @@ const REPORT_INDEX = {
   // no HTML report to link to, and the brief's step 2 asks for a link only
   // to "each Playwright HTML report".
 };
-
-// ── port ownership: kill by port, never by process-name pattern ────────
-//
-// A deliberate, self-contained DUPLICATE of `pidsListeningOnPort`/
-// `killByPort`/`waitUntil` in scripts/test-devices.mjs, not an import from
-// it -- that file has no exports (it is a top-level script that calls
-// `await main()` as a side effect of being loaded at all; importing it
-// would run the entire test harness). Same trade-off already made, and
-// already accepted, for `isAndroidPresent`/`findIosDeviceOrThrow` in that
-// same file (see its own module doc): a small, clearly cross-referenced
-// duplication beats coupling two processes that must not share a module
-// graph. If `lsof`'s output shape ever changes, both copies need updating
-// together.
-/**
- * @param {() => boolean | Promise<boolean>} predicate
- * @param {{ timeoutMs: number, describe: string, intervalMs?: number }} options
- */
-async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const result = await predicate();
-    if (result) return result;
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `Timed out after ${timeoutMs}ms waiting for: ${describe}`,
-      );
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-}
-
-/** @param {number} port */
-function pidsListeningOnPort(port) {
-  try {
-    const out = execFileSync(
-      'lsof',
-      ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
-      { encoding: 'utf8' },
-    );
-    return out
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map(Number);
-  } catch (error) {
-    // lsof's "nothing matched" shape. Read through a property check, not a
-    // cast: `catch` binds `unknown` because anything can be thrown.
-    const spawned = /** @type {{ status?: unknown, stdout?: unknown }} */ (
-      error
-    );
-    if (spawned.status === 1 && !spawned.stdout) return [];
-    throw error;
-  }
-}
-
-/**
- * Whatever is listening on `port` is, by construction, either nothing or a
- * previous run's own dashboard server -- nothing else in this project or a
- * typical dev machine has a reason to be on 4322. SIGTERM first, SIGKILL
- * only if it is still there after a grace period. Idempotent.
- *
- *  @param {number} port
- */
-async function killByPort(port) {
-  let pids = pidsListeningOnPort(port);
-  if (pids.length === 0) return;
-  for (const pid of pids) {
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch {
-      // Already gone between the lsof snapshot and this kill -- fine.
-    }
-  }
-  try {
-    await waitUntil(() => pidsListeningOnPort(port).length === 0, {
-      timeoutMs: 5_000,
-      describe: `port ${port} to become free after SIGTERM`,
-    });
-  } catch {
-    pids = pidsListeningOnPort(port);
-    for (const pid of pids) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // Already gone -- fine.
-      }
-    }
-    await waitUntil(() => pidsListeningOnPort(port).length === 0, {
-      timeoutMs: 5_000,
-      describe: `port ${port} to become free after SIGKILL`,
-    });
-  }
-}
 
 // ── live state, built from the jsonl tail + the small JSON artifacts ───
 
@@ -680,6 +587,11 @@ function handleRequest(req, res) {
 }
 
 async function main() {
+  // Takes no arguments; refusing one proves `main()` ran (#227).
+  const unexpected = process.argv.slice(2);
+  if (unexpected.length > 0)
+    die(`dashboard.mjs takes no arguments, received: ${unexpected.join(' ')}`);
+
   await killByPort(PORT); // whatever's there is, by construction, a previous run's own stale dashboard -- see module doc
 
   const server = http.createServer((req, res) => {
@@ -742,4 +654,4 @@ async function main() {
   }
 }
 
-await main();
+if (import.meta.main) await main();
