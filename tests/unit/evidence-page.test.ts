@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { withoutMarkupComments, withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
 import { reportLocation } from '../../scripts/test-e2e.mjs';
@@ -966,15 +966,24 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
     expect(outputDir).toBe(resolve('test-results-evidence', 'test-results'));
   });
 
-  it("leaves an ordinary run on Playwright's default, which CI uploads when a job fails", async () => {
+  it('leaves an ordinary run inside the directory CI uploads when a job fails', async () => {
     // ci.yml and release-dev.yml keep test-results/ on failure. An ordinary run
     // writing anywhere else would upload an empty directory and say nothing.
+    //
+    // Asserted as that PROPERTY rather than as Playwright's default, which is
+    // what this once pinned. #230 moved each concurrently launched gauntlet
+    // group into a folder of its own beneath it -- they collided over one
+    // artifacts directory otherwise -- and `undefined` was only ever a proxy
+    // for "where CI looks". The proxy would have refused a correct change; the
+    // property still refuses an outputDir pointed anywhere CI never opens.
+    const uploaded = resolve('test-results');
     for (const evidence of [undefined, '']) {
       const { outputDir, use } = await configUnder(evidence);
+      const actual = resolve(outputDir ?? 'test-results');
       expect(
-        outputDir,
-        `EVIDENCE_DIR=${JSON.stringify(evidence)}`,
-      ).toBeUndefined();
+        actual === uploaded || actual.startsWith(uploaded + sep),
+        `EVIDENCE_DIR=${JSON.stringify(evidence)}: ${actual} is outside ${uploaded}, which is what CI uploads`,
+      ).toBe(true);
       expect(use?.video).toBe('off');
     }
   });

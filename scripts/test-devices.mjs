@@ -73,6 +73,19 @@ const IOS_SESSION_MARKER_FILE = path.join(
   'ios-session-marker.json',
 );
 
+/**
+ * Each group's machine-readable report, named once.
+ *
+ * Spelled in two places while #230 was being written -- where the group
+ * writes it, and where the run clears it -- which is the duplication #227
+ * had just finished removing from this very file.
+ */
+export const REPORT_FILES = {
+  desktop: path.join(TEST_RESULTS_DIR, 'desktop-report.json'),
+  android: path.join(TEST_RESULTS_DIR, 'android-report.json'),
+  ios: path.join(TEST_RESULTS_DIR, 'ios-report.json'),
+};
+
 // ── the live dashboard (task 6) ─────────────────────────────────────────
 //
 // scripts/dashboard.mjs is a SEPARATE process, spawned detached so it
@@ -113,6 +126,25 @@ const DASHBOARD_PORT = 4322;
 const DASHBOARD_STATE_DIR = path.join(ROOT, 'dashboard-state');
 const DASHBOARD_GROUPS_FILE = path.join(DASHBOARD_STATE_DIR, 'groups.json');
 const DASHBOARD_FINAL_FILE = path.join(DASHBOARD_STATE_DIR, 'final.json');
+
+/**
+ * Everything a run clears before it starts, named once and exported so a test
+ * can assert what is in it.
+ *
+ * The three reports are here because `test-results/` stopped being anybody's
+ * `outputDir` in #230, so nothing wipes it any more. A group that died before
+ * writing its report would otherwise leave the PREVIOUS run's report to be
+ * read as this run's, and a stale green is worse than a missing file. Proved
+ * necessary by mutation: with the reports removed from this list, the whole
+ * unit suite stayed green, so the property had no guard at all until one was
+ * written against this constant.
+ */
+export const RUN_START_CLEARED = [
+  DASHBOARD_GROUPS_FILE,
+  DASHBOARD_FINAL_FILE,
+  IOS_MODE_FILE,
+  ...Object.values(REPORT_FILES),
+];
 const DASHBOARD_LOG_FILE = path.join(DASHBOARD_STATE_DIR, 'dashboard.log');
 const DASHBOARD_JSONL_FILE = {
   desktop: path.join(DASHBOARD_STATE_DIR, 'desktop.jsonl'),
@@ -743,7 +775,7 @@ function summarizePlaywrightGroup(
 
 async function runDesktopGroup() {
   const name = 'desktop';
-  const reportFile = path.join(TEST_RESULTS_DIR, 'desktop-report.json');
+  const reportFile = REPORT_FILES.desktop;
   const startedAt = Date.now();
   const { code } = await runTagged(
     name,
@@ -818,7 +850,7 @@ async function runAndroidGroup(excludedByDesign) {
     };
   }
 
-  const reportFile = path.join(TEST_RESULTS_DIR, 'android-report.json');
+  const reportFile = REPORT_FILES.android;
   const { code } = await runTagged(
     name,
     'npx',
@@ -880,7 +912,7 @@ async function runIosGroup() {
   // leftover mode from an earlier run.
   if (existsSync(IOS_MODE_FILE)) unlinkSync(IOS_MODE_FILE);
 
-  const reportFile = path.join(TEST_RESULTS_DIR, 'ios-report.json');
+  const reportFile = REPORT_FILES.ios;
   const { code } = await runTagged(
     name,
     'npx',
@@ -1174,11 +1206,15 @@ async function main() {
   // attributing a mode to a run before that run's own canary has decided
   // it. Cleared here, before the dashboard starts, so a pending iOS card
   // never carries a mode banner that isn't this run's own.
-  for (const file of [
-    DASHBOARD_GROUPS_FILE,
-    DASHBOARD_FINAL_FILE,
-    IOS_MODE_FILE,
-  ]) {
+  //
+  // The three per-group reports join that list since #230. They used to be
+  // removed by accident: `test-results/` was Playwright's own outputDir, and
+  // every invocation wiped it whole. Each group now writes to a folder of its
+  // own, so `test-results/` is no longer wiped by anything -- which is the
+  // point, and which would otherwise mean a group that DIED before writing
+  // its report left the previous run's report in place to be read as this
+  // run's. A stale green is worse than a missing file.
+  for (const file of RUN_START_CLEARED) {
     if (existsSync(file)) unlinkSync(file);
   }
   for (const key of Object.keys(dashboardGroupsState))
