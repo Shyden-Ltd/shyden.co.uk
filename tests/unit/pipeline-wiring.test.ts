@@ -10,8 +10,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { withoutCommentLines, withoutTsComments } from './source-text';
+import { join, resolve, sep } from 'node:path';
+import {
+  codeWithoutComments,
+  withoutCommentLines,
+  withoutTsComments,
+} from './source-text';
 import { nonEmpty, searched } from '../source-files';
 import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
@@ -1436,7 +1440,144 @@ describe('the drift measurement reports, and never gates (#224)', () => {
     expect(steps[indexOf(isGate)]['continue-on-error']).toBeUndefined();
   });
 
+  it('writes its numbers where they can be read back, not only to the summary', () => {
+    // A step summary is rendered in the UI and is not exposed by the Actions
+    // API, so `gh run view --log` returns the script and nothing else. The
+    // drift table was written only there once, and could not be read (#224).
+    const summaryWriters = visualSteps().filter(
+      (s) => typeof s.run === 'string' && s.run.includes('GITHUB_STEP_SUMMARY'),
+    );
+    const unreadable = summaryWriters.filter(
+      (s) => !/tee\s+-a\s+"\$GITHUB_STEP_SUMMARY"/.test(s.run as string),
+    );
+    expect(
+      searched(unreadable, {
+        of: summaryWriters.length,
+        what: "steps writing a job summary in ci.yml's visual job",
+      }),
+      'a summary written with >> cannot be read back from the job log',
+    ).toEqual([]);
+  });
+
   it('runs even when the gate went red, which is when it is worth having', () => {
     expect(visualSteps()[indexOf(isMeasure)].if).toBe('always()');
+  });
+});
+
+describe('no two concurrently launched groups share an output folder (#230)', () => {
+  /**
+   * Playwright wipes its ENTIRE `outputDir` at the start of every invocation,
+   * unconditionally and not scoped to its own artifacts, and names each
+   * worker's artifacts folder by WORKER INDEX alone. `npm run test:devices`
+   * launches more than one config against this same checkout at once, so two
+   * processes numbering their workers independently collide by construction:
+   * one stopping deletes a folder a live worker in the other is still writing
+   * into. Reproduced in isolation -- a group holding a trace failed with
+   * `ENOENT ... .playwright-artifacts-0/traces/...` while a sibling restarted
+   * its worker, and passed alone on the same tree.
+   */
+  const RUNNER = 'scripts/test-devices.mjs';
+
+  /**
+   * The PLAYWRIGHT configs the runner launches, derived from its source.
+   *
+   * Keyed on the COMMAND, not the filename. The first draft matched every
+   * `--config=` and picked up `vitest.ios.config.ts` -- the iOS group is a
+   * vitest run, so it has no `outputDir`, wipes nothing, and cannot take part
+   * in this collision. Its name is every bit as much a `*.config.ts`, so only
+   * the invocation tells them apart.
+   *
+   * Comments are stripped first: this runner's prose names
+   * `playwright.device.config.ts` several times, and a guard satisfied by a
+   * file's own documentation asserts nothing.
+   */
+  const launchedConfigs = (): string[] => {
+    const code = codeWithoutComments(RUNNER, readFileSync(RUNNER, 'utf8'));
+    // The WHOLE invocation, not a split-and-search. A draft that split on
+    // `'playwright',` and took the first `--config=` in the remainder reached
+    // ACROSS invocations: with one group's flag deleted, its segment matched
+    // the iOS group's `--config=vitest.ios.config.ts` further down the file
+    // and the guard reported two Playwright configs where there was one. Found
+    // by mutation, not by reading -- the prediction for that mutation was
+    // wrong, which is how the weakness surfaced at all.
+    const found = [
+      ...code.matchAll(
+        /'playwright',\s*'test',\s*'--config=([\w.-]+\.config\.[cm]?ts)'/g,
+      ),
+    ].map((m) => m[1]);
+    return [
+      ...new Set(nonEmpty(found, `playwright configs launched by ${RUNNER}`)),
+    ];
+  };
+
+  /**
+   * Importing `playwright.device.config.ts` sets `PW_REAL_DEVICE` at module
+   * scope, so the variable is restored rather than left behind for whatever
+   * runs next in this process.
+   */
+  const outputDirOf = async (config: string): Promise<string> => {
+    const before = process.env.PW_REAL_DEVICE;
+    try {
+      const loaded = (await import(resolve(config))) as {
+        default?: { outputDir?: string };
+      };
+      const dir = loaded.default?.outputDir;
+      expect(
+        dir,
+        `${config} declares no outputDir, so it takes Playwright's default and collides by construction`,
+      ).toBeTruthy();
+      return resolve(dir as string);
+    } finally {
+      if (before === undefined) delete process.env.PW_REAL_DEVICE;
+      else process.env.PW_REAL_DEVICE = before;
+    }
+  };
+
+  it('launches more than one config, or the rest of this asserts nothing', () => {
+    expect(launchedConfigs().length).toBeGreaterThan(1);
+  });
+
+  it('gives each launched config a folder of its own', async () => {
+    const configs = launchedConfigs();
+    const dirs = await Promise.all(configs.map(outputDirOf));
+    expect(
+      new Set(dirs).size,
+      `two groups resolve to one output folder: ${dirs.join(', ')}`,
+    ).toBe(dirs.length);
+  });
+
+  it('clears every per-group report before a run, now that nothing wipes them', async () => {
+    // `test-results/` stopped being anybody's outputDir here, so nothing wipes
+    // it any more -- which is the point of the split, and which means a group
+    // that DIED before writing its report would leave the previous run's
+    // report to be read as this run's.
+    //
+    // Guarded against the runner's own exported constants rather than its
+    // source text, which is possible only because #227 made the file
+    // importable. Mutation found this missing: with the reports taken out of
+    // the clear list the whole unit suite stayed green.
+    const runner = (await import(resolve('scripts/test-devices.mjs'))) as {
+      REPORT_FILES: Record<string, string>;
+      RUN_START_CLEARED: readonly string[];
+    };
+    const reports = Object.values(runner.REPORT_FILES);
+    const uncleared = reports.filter(
+      (file) => !runner.RUN_START_CLEARED.includes(file),
+    );
+    expect(
+      searched(uncleared, { of: reports, what: 'per-group report files' }),
+    ).toEqual([]);
+  });
+
+  it('nests none inside another, which a parent wipe would take with it', async () => {
+    const dirs = await Promise.all(launchedConfigs().map(outputDirOf));
+    const nested = dirs.flatMap((inner) =>
+      dirs
+        .filter((outer) => inner !== outer && inner.startsWith(outer + sep))
+        .map((outer) => `${inner} is inside ${outer}`),
+    );
+    expect(
+      searched(nested, { of: dirs, what: 'gauntlet output folders' }),
+    ).toEqual([]);
   });
 });

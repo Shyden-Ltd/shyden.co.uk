@@ -8,6 +8,11 @@ process.env.PW_REAL_DEVICE = '1';
 
 export default defineConfig({
   testDir: './tests',
+  // A folder of its own, and a SIBLING of the desktop group's rather than a
+  // path inside it: Playwright wipes its whole outputDir at the start of
+  // every invocation, so nesting one group's folder under another's would
+  // reproduce the very collision this separation removes (#230).
+  outputDir: 'test-results/android',
   // One phone, one shared context, one localStorage origin.
   fullyParallel: false,
   workers: 1,

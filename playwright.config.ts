@@ -159,8 +159,20 @@ const evidenceOutputDir = (
 export default defineConfig({
   testDir: './tests/e2e',
   // An evidence run keeps its recordings inside EVIDENCE_DIR; an ordinary run
-  // stays on the default `test-results/`. See `evidenceOutputDir` above.
-  outputDir: evidenceOutputDir(process.env.EVIDENCE_DIR),
+  // writes to a folder OF ITS OWN. See `evidenceOutputDir` above.
+  //
+  // `test-results/desktop`, not `test-results/`, because Playwright wipes its
+  // entire outputDir at the start of every invocation, unconditionally and
+  // not scoped to its own artifacts -- and `npm run test:devices` launches
+  // this config and `playwright.device.config.ts` CONCURRENTLY against this
+  // same checkout (#230). Sharing one folder meant a worker stopping in one
+  // group deleted the artifacts folder a live worker in the other was still
+  // writing into: reproduced in isolation, three `mobile-chrome` failures on
+  // the 2026-09-18 run, all `ENOENT ... .playwright-artifacts-N/traces/...`.
+  // The folder is named by WORKER INDEX alone, so two processes numbering
+  // their workers independently collide by construction.
+  outputDir:
+    evidenceOutputDir(process.env.EVIDENCE_DIR) ?? 'test-results/desktop',
   fullyParallel: true,
   // Measure the bytes that ship, not the ones the dev server improvises.
   // `astro dev` renders on request and skips build-time steps — compressHTML,
