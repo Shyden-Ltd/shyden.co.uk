@@ -903,9 +903,9 @@ test.describe('which columns reach paper is decided by name, not by position', (
     });
 
     const columns = await printedColumns(page, 1);
-    expect(searched(columns, { of: columns, what: 'printed columns' })).toEqual(
-      ALL_SIX,
-    );
+    expect(
+      [...searched(columns, { of: columns, what: 'printed columns' })].sort(),
+    ).toEqual([...ALL_SIX].sort());
   });
 
   test('hiding absent pupils removes the Absent column and only that column', async ({
@@ -927,9 +927,9 @@ test.describe('which columns reach paper is decided by name, not by position', (
     // rule ever names the wrong column, THIS is the assertion that says which
     // one went instead, by name, rather than reporting a count that moved.
     const columns = await printedColumns(page, 1);
-    expect(searched(columns, { of: columns, what: 'printed columns' })).toEqual(
-      ALL_SIX.filter((c) => c !== 'absent'),
-    );
+    expect(
+      [...searched(columns, { of: columns, what: 'printed columns' })].sort(),
+    ).toEqual(ALL_SIX.filter((c) => c !== 'absent').sort());
   });
 
   test('an absent pupil leaves the sheet entirely, a present one stays', async ({
