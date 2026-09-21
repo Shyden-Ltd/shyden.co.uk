@@ -51,6 +51,7 @@
  *    always runs, via `finally` and a signal handler -- see `cleanup()`.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import { messageOf } from './errors.mjs';
 import {
   closeSync,
   existsSync,
@@ -129,7 +130,13 @@ const REPORT_DIR = {
 
 // ── small generic helpers ──────────────────────────────────────────────
 
-/** Polls `predicate` until truthy, or throws naming what was awaited. Never a sleep-and-hope: the condition itself decides, the timeout is only a safety net against a hung device or process. */
+/**
+ *  Polls `predicate` until truthy, or throws naming what was awaited. Never a sleep-and-hope: the condition itself decides, the timeout is only a safety net against a hung device or process.
+ *
+ * @param {() => unknown} predicate its RESULT is read for truthiness, so a
+ *   predicate answering a `Response` or `undefined` is as valid as a boolean.
+ * @param {{ timeoutMs: number, describe: string, intervalMs?: number }} options
+ */
 async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -144,11 +151,23 @@ async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
   }
 }
 
-/** Splits a child's stdout/stderr into lines and forwards each, tagged, to this process's own streams -- live, not batched at the end, so a human watching a multi-minute group still sees progress. */
+/**
+ *  Splits a child's stdout/stderr into lines and forwards each, tagged, to this process's own streams -- live, not batched at the end, so a human watching a multi-minute group still sees progress.
+ *
+ * @param {string} tag
+ * @param {import('node:child_process').ChildProcess} child
+ */
 function tagOutput(tag, child) {
+  /**
+   * @param {import('node:stream').Readable | null} stream
+   * @param {NodeJS.WriteStream} out
+   */
   const forward = (stream, out) => {
+    // `stdout`/`stderr` are nullable on a ChildProcess: a stdio slot the
+    // spawn did not create is simply absent, and nothing here creates one.
+    if (!stream) return;
     let buffer = '';
-    stream.on('data', (data) => {
+    stream.on('data', (/** @type {Buffer | string} */ data) => {
       buffer += data.toString('utf8');
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
@@ -162,7 +181,14 @@ function tagOutput(tag, child) {
   forward(child.stderr, process.stderr);
 }
 
-/** Spawns without a shell (array-form argv, never a pipe) and returns the live child immediately -- for long-running processes (the preview server) the caller needs a handle to, not a settled result. */
+/**
+ *  Spawns without a shell (array-form argv, never a pipe) and returns the live child immediately -- for long-running processes (the preview server) the caller needs a handle to, not a settled result.
+ *
+ * @param {string} tag
+ * @param {string} command
+ * @param {readonly string[]} args
+ * @param {{ env?: NodeJS.ProcessEnv, cwd?: string }} [options]
+ */
 function spawnTagged(tag, command, args, { env, cwd = ROOT } = {}) {
   const child = spawn(command, args, {
     cwd,
@@ -173,49 +199,73 @@ function spawnTagged(tag, command, args, { env, cwd = ROOT } = {}) {
   return child;
 }
 
-/** Resolves with the exit code read DIRECTLY off this exact child's own `close` event -- never scraped from stdout, never inferred from a pipe's own status. */
+/**
+ *  Resolves with the exit code read DIRECTLY off this exact child's own `close` event -- never scraped from stdout, never inferred from a pipe's own status.
+ *
+ * @param {import('node:child_process').ChildProcess} child
+ * @param {string} command
+ * @param {readonly string[]} args
+ */
 function waitForClose(child, command, args) {
   return new Promise((resolve, reject) => {
-    child.once('error', (err) =>
+    child.once('error', (/** @type {unknown} */ err) =>
       reject(
         new Error(
-          `failed to start \`${command} ${args.join(' ')}\`: ${err.message}`,
+          `failed to start \`${command} ${args.join(' ')}\`: ${messageOf(err)}`,
           {
             cause: err,
           },
         ),
       ),
     );
-    child.once('close', (code, signal) => resolve({ code, signal }));
+    child.once(
+      'close',
+      (
+        /** @type {number | null} */ code,
+        /** @type {NodeJS.Signals | null} */ signal,
+      ) => resolve({ code, signal }),
+    );
   });
 }
 
-/** spawnTagged + waitForClose, for one-shot commands this script needs the real outcome of before moving on. */
+/**
+ *  spawnTagged + waitForClose, for one-shot commands this script needs the real outcome of before moving on.
+ *
+ * @param {string} tag
+ * @param {string} command
+ * @param {readonly string[]} args
+ * @param {{ env?: NodeJS.ProcessEnv, cwd?: string }} [opts]
+ */
 async function runTagged(tag, command, args, opts) {
   const child = spawnTagged(tag, command, args, opts);
   return waitForClose(child, command, args);
 }
 
+/**
+ * @param {string} file
+ * @param {string} description
+ */
 function readJson(file, description) {
   let raw;
   try {
     raw = readFileSync(file, 'utf8');
   } catch (error) {
     throw new Error(
-      `expected to read ${description} at ${path.relative(ROOT, file)}: ${error.message}`,
+      `expected to read ${description} at ${path.relative(ROOT, file)}: ${messageOf(error)}`,
     );
   }
   try {
     return JSON.parse(raw);
   } catch (error) {
     throw new Error(
-      `expected ${description} at ${path.relative(ROOT, file)} to be valid JSON: ${error.message}`,
+      `expected ${description} at ${path.relative(ROOT, file)} to be valid JSON: ${messageOf(error)}`,
     );
   }
 }
 
 // ── port ownership: kill by port, never by process-name pattern ────────
 
+/** @param {number} port */
 function pidsListeningOnPort(port) {
   try {
     const out = execFileSync(
@@ -233,7 +283,10 @@ function pidsListeningOnPort(port) {
     // that is "port is free", not a real error. Anything else (lsof
     // missing, a permissions problem) is a genuine failure and must not be
     // swallowed into a false "free".
-    if (error.status === 1 && !error.stdout) return [];
+    const spawned = /** @type {{ status?: unknown, stdout?: unknown }} */ (
+      error
+    );
+    if (spawned.status === 1 && !spawned.stdout) return [];
     throw error;
   }
 }
@@ -245,6 +298,8 @@ function pidsListeningOnPort(port) {
  * been burned by exactly that pattern before). SIGTERM first, escalating
  * to SIGKILL only if the port is still occupied after a grace period.
  * Idempotent: does nothing, successfully, if the port is already free.
+ *
+ *  @param {number} port
  */
 async function killByPort(port) {
   let pids = pidsListeningOnPort(port);
@@ -277,6 +332,10 @@ async function killByPort(port) {
   }
 }
 
+/**
+ * @param {string} url
+ * @param {{ timeoutMs: number, describe: string }} options
+ */
 async function waitForHttpOk(url, { timeoutMs, describe }) {
   return waitUntil(
     async () => {
@@ -300,13 +359,19 @@ async function waitForHttpOk(url, { timeoutMs, describe }) {
  * read step to race against.
  */
 const dashboardGroupsState = {};
+/**
+ * @param {string} name
+ * @param {string} reason
+ */
 function writeDashboardNotRun(name, reason) {
-  dashboardGroupsState[name] = { notRun: { reason } };
+  /** @type {Record<string, unknown>} */ (dashboardGroupsState)[name] = {
+    notRun: { reason },
+  };
   try {
     writeFileSync(DASHBOARD_GROUPS_FILE, JSON.stringify(dashboardGroupsState));
   } catch (error) {
     process.stderr.write(
-      `warning: failed to write the dashboard's not-run marker for "${name}": ${error.message} -- the ` +
+      `warning: failed to write the dashboard's not-run marker for "${name}": ${messageOf(error)} -- the ` +
         'dashboard (if running) may not show this group as NOT RUN; the test run itself is unaffected.\n',
     );
   }
@@ -319,13 +384,15 @@ function writeDashboardNotRun(name, reason) {
  * discipline as writeDashboardNotRun: this is reporting about a run that
  * has (in the success path) already fully completed, so a failure here
  * must never be allowed to look like a test failure.
+ *
+ *  @param {Record<string, unknown>} payload
  */
 function writeDashboardFinal(payload) {
   try {
     writeFileSync(DASHBOARD_FINAL_FILE, JSON.stringify(payload));
   } catch (error) {
     process.stderr.write(
-      `warning: failed to write the dashboard's final-state artifact: ${error.message} -- the dashboard ` +
+      `warning: failed to write the dashboard's final-state artifact: ${messageOf(error)} -- the dashboard ` +
         '(if running) may keep showing live-tallied counts instead of the authoritative result; the ' +
         'terminal summary below (and the exit code) are unaffected.\n',
     );
@@ -355,7 +422,7 @@ async function startDashboard() {
   } catch (error) {
     process.stderr.write(
       `==> Dashboard failed to start (could not open ${path.relative(ROOT, DASHBOARD_LOG_FILE)}): ` +
-        `${error.message} -- continuing WITHOUT the live dashboard; the run itself is unaffected.\n`,
+        `${messageOf(error)} -- continuing WITHOUT the live dashboard; the run itself is unaffected.\n`,
     );
     return;
   }
@@ -373,9 +440,10 @@ async function startDashboard() {
   }
   child.unref(); // must not keep this process's event loop alive, and must not die when this process exits
 
+  /** @type {{ message: string } | null} */
   let exitedEarly = null;
   child.once('error', (err) => {
-    exitedEarly = { message: `failed to start: ${err.message}` };
+    exitedEarly = { message: `failed to start: ${messageOf(err)}` };
   });
   child.once('exit', (code, signal) => {
     if (!exitedEarly)
@@ -387,7 +455,7 @@ async function startDashboard() {
   try {
     await waitUntil(
       async () => {
-        if (exitedEarly) throw new Error(exitedEarly.message);
+        if (exitedEarly) throw new Error(messageOf(exitedEarly));
         try {
           const response = await fetch(`http://localhost:${DASHBOARD_PORT}/`);
           return response.ok ? true : undefined;
@@ -402,7 +470,7 @@ async function startDashboard() {
     );
   } catch (error) {
     process.stderr.write(
-      `==> Dashboard failed to start: ${error.message} -- continuing WITHOUT the live dashboard; the ` +
+      `==> Dashboard failed to start: ${messageOf(error)} -- continuing WITHOUT the live dashboard; the ` +
         `run itself is unaffected. See ${path.relative(ROOT, DASHBOARD_LOG_FILE)} for details.\n`,
     );
     return;
@@ -440,7 +508,7 @@ function isAndroidPresent() {
   } catch (error) {
     return {
       present: false,
-      reason: `\`adb devices\` failed to run: ${error.message}`,
+      reason: `\`adb devices\` failed to run: ${messageOf(error)}`,
     };
   }
   const devices = raw
@@ -515,18 +583,26 @@ function findIosDeviceOrThrow() {
   }
 
   const physicalIphones = parsed.result.devices.filter(
-    (d) =>
+    (
+      /** @type {{ hardwareProperties: { udid: string, reality: string, deviceType: string } }} */ d,
+    ) =>
       d.hardwareProperties.reality === 'physical' &&
       d.hardwareProperties.deviceType === 'iPhone',
   );
 
   const override = process.env.IOS_UDID;
   const candidates = override
-    ? physicalIphones.filter((d) => d.hardwareProperties.udid === override)
+    ? physicalIphones.filter(
+        (/** @type {{ hardwareProperties: { udid: string } }} */ d) =>
+          d.hardwareProperties.udid === override,
+      )
     : physicalIphones;
 
   if (candidates.length === 0) {
-    const seen = physicalIphones.map((d) => d.hardwareProperties.udid);
+    const seen = physicalIphones.map(
+      (/** @type {{ hardwareProperties: { udid: string } }} */ d) =>
+        d.hardwareProperties.udid,
+    );
     throw new Error(
       override
         ? `expected \`xcrun devicectl list devices\` to include a physical iPhone with udid ${override} ` +
@@ -538,7 +614,7 @@ function findIosDeviceOrThrow() {
   if (candidates.length > 1) {
     throw new Error(
       `expected exactly one physical iPhone to target -- found ${candidates.length}: ` +
-        `${JSON.stringify(candidates.map((d) => d.hardwareProperties.udid))}. Set IOS_UDID to disambiguate.`,
+        `${JSON.stringify(candidates.map((/** @type {{ hardwareProperties: { udid: string } }} */ d) => d.hardwareProperties.udid))}. Set IOS_UDID to disambiguate.`,
     );
   }
 
@@ -554,7 +630,7 @@ function isIosPresent() {
       name: device.deviceProperties.name,
     };
   } catch (error) {
-    return { present: false, reason: error.message };
+    return { present: false, reason: messageOf(error) };
   }
 }
 
@@ -618,6 +694,12 @@ async function countExcludedByDesign() {
 
 // ── the three groups ────────────────────────────────────────────────────
 
+/**
+ * @param {string} name
+ * @param {number | null} code
+ * @param {string} reportFile
+ * @param {number} durationMs
+ */
 function summarizePlaywrightGroup(
   name,
   code,
@@ -708,6 +790,11 @@ async function runDesktopGroup() {
   );
 }
 
+/**
+ * @param {number} excludedByDesign a COUNT, from `countExcludedByDesign()`,
+ *   passed on as `extraSkipped` (which defaults to 0). Annotating it as a
+ *   list from the name alone was wrong; the call site settled it.
+ */
 async function runAndroidGroup(excludedByDesign) {
   const name = 'android';
   const startedAt = Date.now();
@@ -716,7 +803,7 @@ async function runAndroidGroup(excludedByDesign) {
     process.stdout.write(
       `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
     );
-    writeDashboardNotRun(name, presence.reason);
+    writeDashboardNotRun(name, presence.reason ?? 'no reason given');
     return {
       name,
       status: 'not-run',
@@ -771,7 +858,7 @@ async function runIosGroup() {
     process.stdout.write(
       `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
     );
-    writeDashboardNotRun(name, presence.reason);
+    writeDashboardNotRun(name, presence.reason ?? 'no reason given');
     return {
       name,
       status: 'not-run',
@@ -897,7 +984,7 @@ async function cleanupAdbTunnels() {
       // there is nothing to remove. Anything else is logged, not thrown:
       // cleanup must not itself abort the rest of cleanup.
       process.stderr.write(
-        `cleanup: \`adb ${args.join(' ')}\` failed (continuing): ${error.message}\n`,
+        `cleanup: \`adb ${args.join(' ')}\` failed (continuing): ${messageOf(error)}\n`,
       );
     }
   }
@@ -922,7 +1009,7 @@ async function cleanupLeakedIosSession() {
     marker = readJson(IOS_SESSION_MARKER_FILE, 'the leaked iOS session marker');
   } catch (error) {
     process.stderr.write(
-      `cleanup: could not read the iOS session marker: ${error.message}\n`,
+      `cleanup: could not read the iOS session marker: ${messageOf(error)}\n`,
     );
     return;
   }
@@ -937,12 +1024,12 @@ async function cleanupLeakedIosSession() {
   } catch (error) {
     process.stderr.write(
       `cleanup: DELETE on the leaked WebDriver session failed (continuing to free its port anyway): ` +
-        `${error.message}\n`,
+        `${messageOf(error)}\n`,
     );
   }
   await killByPort(port).catch((error) =>
     process.stderr.write(
-      `cleanup: failed to free safaridriver's port ${port}: ${error.message}\n`,
+      `cleanup: failed to free safaridriver's port ${port}: ${messageOf(error)}\n`,
     ),
   );
   try {
@@ -954,10 +1041,15 @@ async function cleanupLeakedIosSession() {
 
 // ── reporting ────────────────────────────────────────────────────────────
 
+/** @param {unknown} value */
 function cell(value) {
   return value === null || value === undefined ? '-' : String(value);
 }
 
+/**
+ * @param {any[]} groups
+ * @param {number} totalDurationMs
+ */
 function printSummaryTable(groups, totalDurationMs) {
   const headers = [
     'Group',
@@ -967,7 +1059,7 @@ function printSummaryTable(groups, totalDurationMs) {
     'Not-run',
     'Duration',
   ];
-  const rows = groups.map((g) => [
+  const rows = groups.map((/** @type {Record<string, any>} */ g) => [
     g.name,
     g.status === 'not-run' ? '-' : cell(g.passed),
     g.status === 'not-run' ? '-' : cell(g.failed),
@@ -976,8 +1068,9 @@ function printSummaryTable(groups, totalDurationMs) {
     `${(g.durationMs / 1000).toFixed(1)}s`,
   ]);
   const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => r[i].length)),
+    Math.max(h.length, ...rows.map((/** @type {string[]} */ r) => r[i].length)),
   );
+  /** @param {string[]} cells */
   const renderRow = (cells) =>
     cells.map((c, i) => c.padEnd(widths[i])).join('  ');
 
@@ -988,7 +1081,10 @@ function printSummaryTable(groups, totalDurationMs) {
     `\nTotal wall-clock: ${(totalDurationMs / 1000).toFixed(1)}s\n`,
   );
 
-  const notes = groups.filter((g) => g.reason || g.modeNote);
+  const notes = groups.filter(
+    (/** @type {{ reason?: string, modeNote?: string }} */ g) =>
+      g.reason || g.modeNote,
+  );
   if (notes.length > 0) {
     process.stdout.write('\nNotes:\n');
     for (const g of notes) {
@@ -1001,6 +1097,7 @@ function printSummaryTable(groups, totalDurationMs) {
 
 // ── main ─────────────────────────────────────────────────────────────────
 
+/** @type {import('node:child_process').ChildProcess | null} */
 let previewChild = null;
 let cleanedUp = false;
 
@@ -1011,7 +1108,7 @@ async function cleanup() {
     process.stdout.write('==> Stopping the shared preview server...\n');
     await killByPort(PORT).catch((error) =>
       process.stderr.write(
-        `cleanup: failed to free port ${PORT}: ${error.message}\n`,
+        `cleanup: failed to free port ${PORT}: ${messageOf(error)}\n`,
       ),
     );
   }
@@ -1073,7 +1170,7 @@ async function main() {
     if (existsSync(file)) unlinkSync(file);
   }
   for (const key of Object.keys(dashboardGroupsState))
-    delete dashboardGroupsState[key];
+    delete (/** @type {Record<string, unknown>} */ (dashboardGroupsState)[key]);
 
   const startedAt = Date.now();
 
@@ -1177,9 +1274,9 @@ async function main() {
     const anyBad = groups.some((g) => g.status !== 'passed');
     process.exitCode = anyBad ? 1 : 0;
   } catch (fatal) {
-    process.stderr.write(`\nABORTED: ${fatal.message}\n\n`);
+    process.stderr.write(`\nABORTED: ${messageOf(fatal)}\n\n`);
     process.exitCode = 1;
-    writeDashboardFinal({ aborted: fatal.message, groups: null });
+    writeDashboardFinal({ aborted: messageOf(fatal), groups: null });
     await cleanup();
   }
 }

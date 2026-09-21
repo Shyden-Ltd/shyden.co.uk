@@ -43,7 +43,9 @@ try {
     stdio: ['ignore', 'ignore', 'pipe'],
   });
 } catch (error) {
-  const detail = String(error?.stderr ?? '').trim() || 'git refused';
+  const detail =
+    String(/** @type {{ stderr?: unknown }} */ (error)?.stderr ?? '').trim() ||
+    'git refused';
   console.log(
     `install-hooks: git would not accept a config here (${detail}), so no ` +
       `hooks were installed. That is expected inside a container or a CI ` +

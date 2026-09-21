@@ -25,6 +25,7 @@
  * machine-seeded catalogue carried them in English.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { messageOf } from './errors.mjs';
 import { argv, exit } from 'node:process';
 
 import { isMessageTemplate } from '../src/lib/i18n/message.ts';
@@ -36,6 +37,10 @@ import { en } from '../src/lib/i18n/en.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
 
+/**
+ * @param {string} message
+ * @returns {never} so a guard above NARROWS what follows it.
+ */
 const die = (message) => {
   console.error(`✗ ${message}`);
   exit(1);
@@ -68,12 +73,22 @@ if (existsSync(out) && !force)
 const PLURAL_FORMS = new Intl.PluralRules(target).resolvedOptions()
   .pluralCategories;
 
-/** A key that needs quoting in an object literal (`'class-list'`). */
+/**
+ *  A key that needs quoting in an object literal (`'class-list'`).
+ *
+ *  @param {string} key
+ */
 const plainKey = (key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key);
 
 /**
  * The TypeScript source for one value. `path` is carried so a refusal names
  * the key it happened at.
+ *
+ * @param {unknown} value
+ * @param {string} path
+ * @param {number} indent
+ * @returns {string} declared, because this recurses: without a return type
+ *   TypeScript cannot infer one from a function that calls itself.
  */
 function render(value, path, indent) {
   const pad = '  '.repeat(indent);
@@ -83,21 +98,26 @@ function render(value, path, indent) {
     die(`${path} is a function. A catalogue holds copy and templates (#136).`);
 
   if (Array.isArray(value)) {
-    const items = value.map((v, i) => render(v, `${path}[${i}]`, indent + 1));
-    return `[\n${items.map((s) => inner + s).join(',\n')},\n${pad}]`;
+    const items = value.map(
+      (/** @type {unknown} */ v, /** @type {number} */ i) =>
+        render(v, `${path}[${i}]`, indent + 1),
+    );
+    return `[\n${items.map((/** @type {string} */ s) => inner + s).join(',\n')},\n${pad}]`;
   }
 
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value).map(([key, v]) => {
-      const name = plainKey(key) ? key : JSON.stringify(key);
-      // No leading dot at the root, or a key comes out as `..errors.X`.
-      const child = plainKey(key)
-        ? path
-          ? `${path}.${key}`
-          : key
-        : `${path}[${JSON.stringify(key)}]`;
-      return `${inner}${name}: ${render(v, child, indent + 1)}`;
-    });
+    const entries = Object.entries(value).map(
+      /** @returns {string} */ ([key, v]) => {
+        const name = plainKey(key) ? key : JSON.stringify(key);
+        // No leading dot at the root, or a key comes out as `..errors.X`.
+        const child = plainKey(key)
+          ? path
+            ? `${path}.${key}`
+            : key
+          : `${path}[${JSON.stringify(key)}]`;
+        return `${inner}${name}: ${render(v, child, indent + 1)}`;
+      },
+    );
     return `{\n${entries.join(',\n')},\n${pad}}`;
   }
 
@@ -108,7 +128,7 @@ function render(value, path, indent) {
       );
     } catch (error) {
       die(
-        `${path}: ${error.message} — "npm run i18n:translate -- ${target} ` +
+        `${path}: ${messageOf(error)} — "npm run i18n:translate -- ${target} ` +
           '--send" drafts any sentence that is missing',
       );
     }
