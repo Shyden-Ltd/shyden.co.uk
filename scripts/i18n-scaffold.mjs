@@ -25,6 +25,7 @@
  * machine-seeded catalogue carried them in English.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { messageOf } from './errors.mjs';
 import { argv, exit } from 'node:process';
 
 import { isMessageTemplate } from '../src/lib/i18n/message.ts';
@@ -127,7 +128,7 @@ function render(value, path, indent) {
       );
     } catch (error) {
       die(
-        `${path}: ${error.message} — "npm run i18n:translate -- ${target} ` +
+        `${path}: ${messageOf(error)} — "npm run i18n:translate -- ${target} ` +
           '--send" drafts any sentence that is missing',
       );
     }

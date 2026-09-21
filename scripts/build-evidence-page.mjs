@@ -31,6 +31,9 @@ import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 
+/**
+ * @param {unknown} s
+ */
 const esc = (s) =>
   String(s)
     .replace(/&/g, '&amp;')
@@ -57,9 +60,16 @@ const esc = (s) =>
  * The file-level suite's own title is NOT included: `shoot` drops it, and the
  * two formats have to agree by construction rather than by a heuristic that
  * repairs one into the other.
+ *
+ * @param {any} report
  */
 const flattenReport = (report) => {
+  /** @type {{ title: string, project: string, status: string, duration: number, video: string | undefined }[]} */
   const out = [];
+  /**
+   * @param {any} suite
+   * @param {string[]} ancestors
+   */
   const walk = (suite, ancestors) => {
     for (const child of suite.suites || [])
       walk(child, child.title ? [...ancestors, child.title] : ancestors);
@@ -71,7 +81,9 @@ const flattenReport = (report) => {
             project: t.projectName,
             status: r.status,
             duration: r.duration,
-            video: (r.attachments || []).find((a) => a.name === 'video')?.path,
+            video: (r.attachments || []).find(
+              (/** @type {{ name: string }} */ a) => a.name === 'video',
+            )?.path,
           });
   };
   // Each top-level entry is a FILE; its children are the describes.
@@ -88,13 +100,19 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
  * Never `Date.parse` alone: it reads "0" as midnight on 1 January 2000 and
  * "2026" as that year's first instant, so a mangled start time would date an
  * earlier run's rows as this run's.
+ *
+ * @param {unknown} value
  */
 const instantOf = (value) =>
   typeof value === 'string' && ISO_INSTANT.test(value)
     ? Date.parse(value)
     : Number.NaN;
 
-/** `webkit 15, firefox 2`: rows counted by engine, in first-seen order. */
+/**
+ *  `webkit 15, firefox 2`: rows counted by engine, in first-seen order.
+ *
+ * @param {any[]} rows
+ */
 const byEngine = (rows) => {
   const counts = new Map();
   for (const row of rows)
@@ -118,6 +136,9 @@ const byEngine = (rows) => {
  * so it is an earlier run's by definition. What cannot be dated is refused
  * rather than guessed at: a report with no readable start, a stamp that is not
  * an instant, and a manifest in which nothing is the run's own.
+ *
+ * @param {any[]} manifest
+ * @param {any} report
  */
 export const capturesOfThisRun = (manifest, report) => {
   const startTime = report.stats?.startTime;
@@ -129,6 +150,7 @@ export const capturesOfThisRun = (manifest, report) => {
         "an earlier run's. Refusing to guess.",
     );
 
+  /** @type {any[]} */
   const current = [];
   const earlier = [];
   for (const row of manifest) {
@@ -163,6 +185,8 @@ export const capturesOfThisRun = (manifest, report) => {
  * What the build line adds about an earlier run: how many rows were set aside,
  * and from which engines. Without it, a page built from part of a directory
  * reads exactly like one built from all of it.
+ *
+ * @param {any} earlier
  */
 export const earlierLine = (earlier) =>
   earlier.length
@@ -170,6 +194,9 @@ export const earlierLine = (earlier) =>
       byEngine(earlier)
     : '';
 
+/**
+ * @param {string} s
+ */
 const slugOf = (s) =>
   String(s)
     .replace(/[^a-z0-9]+/gi, '-')
@@ -186,6 +213,8 @@ const slugOf = (s) =>
  * journey read "0 of 5 engines embedded", indistinguishable from a budget
  * decision (#165). A result with NO recording attached is not a loss -- an
  * ordinary run records nothing.
+ *
+ * @param {any} report
  */
 export const videoCandidates = (report) => {
   const candidates = [];
@@ -323,7 +352,7 @@ export const reconcileFiles = ({ desired, published }) => {
   const files = { ...desired };
   for (const path of published)
     if (path.startsWith(PUBLISHED_PREFIX) && !Object.hasOwn(desired, path))
-      files[path] = null;
+      /** @type {Record<string, string | null>} */ (files)[path] = null;
   return files;
 };
 
@@ -368,6 +397,7 @@ export const assertPublishLimits = ({ files, sizeOf }) => {
     else bytes += sizeOf(source);
   }
   const carried = entries.length - removals;
+  /** @param {number} n */
   const mb = (n) => `${(n / 1048576).toFixed(2)}MB`;
 
   const over = [];
@@ -416,6 +446,8 @@ export const assertPageFits = (bytes) => {
 
 /**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
+ *
+ * @param {{ manifest: any[], report: any, content: any, shots: Map<string, any>, dims?: Map<string, any>, videos?: Map<string, string> }} input
  */
 export const renderEvidencePage = ({
   manifest,
@@ -429,6 +461,7 @@ export const renderEvidencePage = ({
 
   // Derived, in first-seen order, so the page reflects the run rather than a
   // list somebody kept in step by hand.
+  /** @type {string[]} */
   const engines = [];
   for (const s of specs)
     if (!engines.includes(s.project)) engines.push(s.project);
@@ -452,11 +485,14 @@ export const renderEvidencePage = ({
   // title, and the `endsWith(' > ' + short)` that matched it back, were what
   // made a duplicate leaf ambiguous -- a suffix match cannot tell two
   // describes apart (#263).
+  /** @type {string[]} */
   const order = [];
   for (const m of manifest) if (!order.includes(m.title)) order.push(m.title);
   for (const s of specs) if (!order.includes(s.title)) order.push(s.title);
 
-  const missing = manifest.filter((m) => !shots.has(m.file));
+  const missing = manifest.filter(
+    (/** @type {{ file: string }} */ m) => !shots.has(m.file),
+  );
   if (missing.length)
     throw new Error(
       `build-evidence-page: missing image data for ${missing.length} captured ` +
@@ -465,16 +501,25 @@ export const renderEvidencePage = ({
     );
 
   const journeys = order.map((title) => {
-    const rows = manifest.filter((m) => m.title === title);
-    const orders = [...new Set(rows.map((r) => r.order))].sort((a, b) => a - b);
+    const rows = manifest.filter(
+      (/** @type {{ title: string }} */ m) => m.title === title,
+    );
+    const orders = [
+      ...new Set(rows.map((/** @type {{ order: number }} */ r) => r.order)),
+    ].sort((/** @type {number} */ a, /** @type {number} */ b) => a - b);
     return {
       id: slugOf(title),
       title,
       assertions: orders.map((n) => ({
         order: n,
-        label: rows.find((r) => r.order === n)?.label ?? '',
+        label:
+          rows.find((/** @type {{ order: number }} */ r) => r.order === n)
+            ?.label ?? '',
         shots: engines.map((e) =>
-          rows.find((r) => r.project === e && r.order === n),
+          rows.find(
+            (/** @type {{ project: string, order: number }} */ r) =>
+              r.project === e && r.order === n,
+          ),
         ),
       })),
       results: engines.map((e) =>
@@ -484,6 +529,7 @@ export const renderEvidencePage = ({
   });
 
   const stats = report.stats || {};
+  /** @param {{ status?: string } | undefined} r */
   const dot = (r) =>
     `<span class="dot ${r?.status === 'passed' ? 'ok' : 'bad'}" title="${esc(r?.status ?? 'not run')}"></span>`;
 
@@ -539,14 +585,20 @@ export const renderEvidencePage = ({
     .join('');
 
   const idsHtml = (content.ids || [])
-    .map((i) => `<span><b>${esc(i.label)}</b> ${esc(i.value)}</span>`)
+    .map(
+      (/** @type {{ label: string, value: string }} */ i) =>
+        `<span><b>${esc(i.label)}</b> ${esc(i.value)}</span>`,
+    )
     .join('');
   const sectionsHtml = (content.sections || [])
-    .map((s) => `<h2>${esc(s.heading)}</h2>\n<p class="sub">${s.body}</p>`)
+    .map(
+      (/** @type {{ heading: string, body: string }} */ s) =>
+        `<h2>${esc(s.heading)}</h2>\n<p class="sub">${s.body}</p>`,
+    )
     .join('\n');
   const mutationsHtml = (content.mutations || [])
     .map(
-      (m) =>
+      (/** @type {Record<string, string>} */ m) =>
         `<tr><td>${esc(m.id)}</td><td>${m.what}</td><td class="pred">${esc(m.predicted)}</td><td class="act">${esc(m.actual)}</td></tr>`,
     )
     .join('');
@@ -902,6 +954,9 @@ export const PUBLISH_NOTE =
  * like a page of captures that failed. An unrecognised format is a THROW for
  * the same reason a manifest entry with no image is -- silence here is
  * indistinguishable from evidence.
+ *
+ * @param {Buffer} bytes a node Buffer: `readUInt16BE` and friends are
+ *   Buffer methods, not Uint8Array ones, and this reads image headers.
  */
 export const mediaType = (bytes) => {
   if (
@@ -928,7 +983,11 @@ const STANDALONE = new Set([
   0x01, 0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7,
 ]);
 
-/** SOFn, excluding DHT (C4), JPG (C8) and DAC (CC), which share the range. */
+/**
+ *  SOFn, excluding DHT (C4), JPG (C8) and DAC (CC), which share the range.
+ *
+ * @param {number} marker
+ */
 const isFrameHeader = (marker) =>
   marker >= 0xc0 &&
   marker <= 0xcf &&
@@ -951,6 +1010,8 @@ const isFrameHeader = (marker) =>
  * the width, 20-23 the height, all big-endian. JPEG does NOT -- it is a stream
  * of marker segments, so the frame header sits behind whatever EXIF, ICC or
  * restart-interval segments the encoder emitted and has to be walked to.
+ *
+ * @param {Buffer} bytes
  */
 export const imageSize = (bytes) => {
   if (bytes.length >= 24 && bytes.readUInt32BE(12) === 0x49484452)
@@ -979,6 +1040,10 @@ export const imageSize = (bytes) => {
   return null;
 };
 
+/**
+ * @param {string} name
+ * @param {string} [fallback]
+ */
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : fallback;
@@ -1020,7 +1085,16 @@ const main = () => {
   );
   const dims = new Map(
     [...bytes]
-      .map(([file, b]) => [file, imageSize(b)])
+      // The pair is spelled out: `.map` otherwise answers `any[]`, and a Map
+      // constructor wants `[key, value]` tuples, not arrays that happen to
+      // hold two things.
+      .map(
+        (/** @type {[string, Buffer]} */ [file, b]) =>
+          /** @type {[string, ReturnType<typeof imageSize>]} */ ([
+            file,
+            imageSize(b),
+          ]),
+      )
       .filter(([, size]) => size),
   );
   const shots = new Map(

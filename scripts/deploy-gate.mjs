@@ -172,10 +172,11 @@ const checkRunsFor = async (repo, sha, token) => {
   );
   if (!res.ok)
     throw new Error(`check-runs for ${short(sha)}: HTTP ${res.status}`);
-  const body = await res.json();
-  return /** @type {{ check_runs?: { name: string, status: string, conclusion: string | null, completed_at: string | null }[] }} */ (
-    (body).check_runs ?? []
-  ).map((run) => ({
+  const body =
+    /** @type {{ check_runs?: { name: string, status: string, conclusion: string | null, completed_at: string | null }[] }} */ (
+      await res.json()
+    );
+  return (body.check_runs ?? []).map((run) => ({
     name: run.name,
     conclusion: run.conclusion,
     completedAt: run.completed_at,
