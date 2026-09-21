@@ -1084,4 +1084,100 @@ describe('the sex column header, corrected without breaking old files', () => {
       searched(lost, { of: [...LOCALES], what: 'locales round-tripped' }),
     ).toEqual([]);
   });
+
+  it('the sex header agrees with the roster column the teacher sees', () => {
+    // The CSV header word and the roster catalogue label are two separate
+    // tables seeded from the SAME DeepL cache entry, which is how one wrong
+    // sense reached both: #53 corrected the catalogue, #252 the file. Fixing
+    // one and not the other is invisible -- the page would read one word
+    // while the file the teacher opens in Excel carried another, and until
+    // now nothing compared them. `locale-fallbacks.test.ts` says in a COMMENT
+    // that these must agree; a comment is not an implementation.
+    //
+    // Scoped to `sex` deliberately, and MEASURED before it was written: of
+    // the thirty column/locale pairs, ten legitimately differ. `number` is
+    // `#` in every catalogue -- a glyph that heads a column on screen but
+    // cannot head a CSV column, which needs a word -- and five more are
+    // genuine vocabulary choices. A blanket per-column guard would be red on
+    // correct data, which is how #55 reddened CI on a correct config.
+    const drift: string[] = [];
+    for (const locale of LOCALES) {
+      const inFile = CSV_LOCALES[locale].columns.sex;
+      const onPage = getStrings(locale).rosterColSex;
+      // Compared the way a reader compares them: a CSV header is lower case
+      // by format and a UI label is sentence case, so `sex`/`Sex` and
+      // `giới tính`/`Giới tính` are the same word, not a drift.
+      if (inFile.trim().toLowerCase() !== onPage.trim().toLowerCase())
+        drift.push(`${locale}: file "${inFile}" vs page "${onPage}"`);
+    }
+    expect(
+      searched(drift, { of: [...LOCALES], what: 'locales compared' }),
+    ).toEqual([]);
+  });
+
+  it('correcting the sex header moved nothing else, in any locale', () => {
+    // AC7 asks for the untouched tokens asserted rather than assumed. The
+    // pins that existed covered `en` and `id` only -- the same two-locale
+    // shape this file's own header comment records as having left nine of
+    // the ten pairs unguarded once #22 shipped five languages.
+    const UNTOUCHED = {
+      en: {
+        absentYes: 'yes',
+        absentNo: 'no',
+        groupColumn: 'group',
+        M: 'M',
+        F: 'F',
+      },
+      id: {
+        absentYes: 'ya',
+        absentNo: 'tidak',
+        groupColumn: 'kelompok',
+        M: 'L',
+        F: 'P',
+      },
+      zh: {
+        absentYes: '是',
+        absentNo: '不',
+        groupColumn: '组',
+        M: 'M',
+        F: 'F',
+      },
+      vi: {
+        absentYes: 'đúng vậy',
+        absentNo: 'không',
+        groupColumn: 'nhóm',
+        M: 'M',
+        F: 'F',
+      },
+      th: {
+        absentYes: 'ใช่',
+        absentNo: 'ไม่',
+        groupColumn: 'กลุ่ม',
+        M: 'M',
+        F: 'F',
+      },
+    } as const;
+    // Derived, so a sixth language fails here rather than shipping unpinned.
+    expect(LOCALES.filter((l) => !(l in UNTOUCHED))).toEqual([]);
+    const moved: string[] = [];
+    for (const locale of LOCALES) {
+      const table = CSV_LOCALES[locale];
+      const pin = UNTOUCHED[locale];
+      const actual = {
+        absentYes: table.absentYes,
+        absentNo: table.absentNo,
+        groupColumn: table.groupColumn,
+        M: table.sex.M,
+        F: table.sex.F,
+      };
+      for (const [field, want] of Object.entries(pin))
+        if (actual[field as keyof typeof actual] !== want)
+          moved.push(
+            `${locale}.${field}: "${actual[field as keyof typeof actual]}" (pinned "${want}")`,
+          );
+    }
+    expect(
+      searched(moved, { of: [...LOCALES], what: 'locales pinned' }),
+    ).toEqual([]);
+  });
 });
