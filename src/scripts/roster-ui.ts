@@ -121,6 +121,22 @@ export type PrintColumn =
   'number' | 'name' | 'sex' | 'absent' | 'together' | 'apart';
 
 /**
+ * A roster cell that carries the column it belongs to.
+ *
+ * The print rules that take a column off the sheet name it BY COLUMN, never
+ * by `nth-child`. The ordinal was already wrong once -- left at 4 it hid Sex
+ * and printed Absent, "a sheet that silently answered a different question
+ * than the tick box asked" -- and #253 then shipped the same defect class in
+ * the mirror mapping. A cell that declares its own identity cannot be
+ * re-pointed by reordering the row, which is what #253 AC2 asks for.
+ */
+const columnCell = (column: PrintColumn): HTMLTableCellElement => {
+  const td = document.createElement('td');
+  td.dataset.col = column;
+  return td;
+};
+
+/**
  * The print-only text twin of a cell's control.
  *
  * An `<input>`'s VALUE is not its text content, so a printed sheet built
@@ -399,7 +415,7 @@ function buildRow(
   // override them"); identity is the number everywhere else in this
   // engine, so this is the one field a later task's duplicate check
   // (rosterProblems, a later task) watches.
-  const numberTd = document.createElement('td');
+  const numberTd = columnCell('number');
   const numberInput = document.createElement('input');
   numberInput.type = 'number';
   numberInput.min = '1';
@@ -420,7 +436,7 @@ function buildRow(
   // (`t.studentNumber`, via `resolveStudent` in classroom-groups.ts) so a
   // teacher who never types a name can see, right here, what this row will
   // be called.
-  const nameTd = document.createElement('td');
+  const nameTd = columnCell('name');
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.className = 'cg-roster-name';
@@ -441,7 +457,7 @@ function buildRow(
   // 'M'/'F' the engine's Student.sex type uses, in both languages; only the
   // displayed text is localised (rosterSexMale/Female — see their own
   // comment in en.ts).
-  const sexTd = document.createElement('td');
+  const sexTd = columnCell('sex');
   const sexSelect = document.createElement('select');
   sexSelect.setAttribute('aria-label', t.rosterColSex);
   const unsetOption = buildOption('', t.rosterColSex);
@@ -474,7 +490,7 @@ function buildRow(
   // existing `.switch input` convention); the `<label>` wrapping it is the
   // real 44px tap target, the same whole-row-is-the-target pattern that
   // convention already uses.
-  const absentTd = document.createElement('td');
+  const absentTd = columnCell('absent');
   const absentLabel = document.createElement('label');
   absentLabel.className = 'cg-roster-absent-label';
   const absentInput = document.createElement('input');
@@ -521,7 +537,7 @@ function buildRow(
   // WHOLE roster, and handed to every row — not recomputed per row, so a
   // letter that became available because ANOTHER student just used it
   // shows up here identically regardless of which row is being built.
-  const togetherTd = document.createElement('td');
+  const togetherTd = columnCell('together');
   const togetherSelect = document.createElement('select');
   togetherSelect.setAttribute('aria-label', t.rosterColTogether);
   togetherSelect.appendChild(buildOption('', t.rosterColTogether));
@@ -538,7 +554,7 @@ function buildRow(
     printMirror(student.together ?? t.rosterUnset, 'together'),
   );
 
-  const apartTd = document.createElement('td');
+  const apartTd = columnCell('apart');
   const apartSelect = document.createElement('select');
   apartSelect.setAttribute('aria-label', t.rosterColApart);
   apartSelect.appendChild(buildOption('', t.rosterColApart));
@@ -655,16 +671,20 @@ export function renderRoster(
   // order — the card layout's `.cg-student > td:nth-child(1..7)`, the table's
   // `col:nth-child(1..7)` widths, and the print letters rule — moves with it,
   // in ClassroomGroupsPage.astro.
-  for (const heading of [
-    t.rosterColAbsent,
-    t.rosterColNumber,
-    t.rosterColName,
-    t.rosterColSex,
-    t.rosterColTogether,
-    t.rosterColApart,
-  ]) {
+  const headings: readonly (readonly [PrintColumn, string])[] = [
+    ['absent', t.rosterColAbsent],
+    ['number', t.rosterColNumber],
+    ['name', t.rosterColName],
+    ['sex', t.rosterColSex],
+    ['together', t.rosterColTogether],
+    ['apart', t.rosterColApart],
+  ];
+  for (const [column, heading] of headings) {
     const th = document.createElement('th');
     th.scope = 'col';
+    // Same identity the cells carry, so a print rule can hide a column
+    // header and its cells by NAME (#253 AC2).
+    th.dataset.col = column;
     th.textContent = heading;
     headRow.appendChild(th);
   }

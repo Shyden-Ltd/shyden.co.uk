@@ -8,6 +8,7 @@ import {
   openRoster,
 } from './helpers';
 import { todayISO } from '../../src/lib/csv';
+import { searched } from '../source-files';
 
 /**
  * Every control assertion is scoped to the PANEL, never to the page.
@@ -265,6 +266,19 @@ const sheet = async (
     .getByLabel('Show sex and the together/apart letters')
     .setChecked(opts.letters);
   await panel(page).getByLabel('Include avatars').setChecked(opts.avatars);
+  // The Print button's last act is `window.print()`. Chromium headless makes
+  // that a no-op, so a describe block that forgets the stub passes here and
+  // hangs for 30s on Firefox, which opens a dialog Playwright cannot dismiss
+  // -- and the failure names the CLICK, not the missing stub. Asked once, in
+  // the one place that clicks, rather than trusted to a convention each new
+  // block has to remember.
+  const unstubbed = await page.evaluate(() =>
+    window.print.toString().includes('[native code]'),
+  );
+  expect(
+    unstubbed,
+    "window.print is not stubbed: add `await page.addInitScript(() => { window.print = () => {}; })` to this block's beforeEach",
+  ).toBe(false);
   await panel(page).getByRole('button', { name: 'Print' }).click();
   await page.emulateMedia({ media: 'print' });
 };
@@ -773,5 +787,189 @@ test.describe('an unset roster cell on paper', () => {
       await expect(mirror).toBeVisible();
       await expect(mirror).toHaveText('—');
     }
+  });
+});
+
+/**
+ * #253 AC5 and AC2, the two halves the first fix left unasserted.
+ *
+ * AC5 is a REGRESSION guard over code that is already correct: `refreshPrintMirrors`
+ * writes `row.dataset.absent` on the same pass that writes the mirrors, and the
+ * column fix rewrote that pass. Nothing in `tests/` asserted the attribute --
+ * confirmed with a known-positive control, so the empty grep was a real absence
+ * and not a blind pattern (#183).
+ *
+ * It matters because `data-absent` is not bookkeeping: it is half of
+ * `[data-print-absent='off'] .cg-student[data-absent='true']`, the rule that
+ * takes absent pupils off a printed register. The other half, the toggle's own
+ * `data-print-absent`, WAS asserted. A rule is not proven by one of its operands.
+ */
+test.describe('the absent bookkeeping the printed register is built on', () => {
+  /** `data-absent` per row, in row order. */
+  const absentFlags = (page: import('@playwright/test').Page) =>
+    page
+      .locator('.cg-student')
+      .evaluateAll((rows) => rows.map((r) => r.getAttribute('data-absent')));
+
+  const typeAName = async (row: import('@playwright/test').Locator) => {
+    await row.getByLabel('Name').fill('Ana');
+  };
+  const tickAbsent = async (row: import('@playwright/test').Locator) => {
+    await row.getByLabel('Absent').check();
+  };
+
+  /**
+   * `roster-ui.ts` ALSO writes `data-absent`, on every re-render, so a select
+   * edit alone would read correct even with `refreshPrintMirrors`' own write
+   * deleted. Only ticking and THEN typing isolates it: a text edit deliberately
+   * never re-renders (it would steal the caret), which leaves
+   * `refreshPrintMirrors` the sole writer on that pass -- exactly the case
+   * that hid #253's column shift for as long as it did.
+   */
+  const CASES = [
+    {
+      what: 'a text edit alone',
+      edits: [typeAName],
+      expected: ['false', 'false'],
+    },
+    { what: 'a tick alone', edits: [tickAbsent], expected: ['true', 'false'] },
+    {
+      what: 'a tick then a text edit (no re-render follows)',
+      edits: [tickAbsent, typeAName],
+      expected: ['true', 'false'],
+    },
+    {
+      what: 'a text edit then a tick',
+      edits: [typeAName, tickAbsent],
+      expected: ['true', 'false'],
+    },
+  ];
+
+  for (const { what, edits, expected } of CASES) {
+    test(`every row still declares its own absence after ${what}`, async ({
+      page,
+    }) => {
+      await openRoster(page);
+      // A second row for the same reason the column guard above keeps one:
+      // `refreshPrintMirrors` walks rows by index against the live roster, and
+      // an off-by-one there is invisible with a single row.
+      await page.getByRole('button', { name: 'Add student' }).click();
+      const row = page.locator('.cg-student').nth(0);
+
+      for (const edit of edits) await edit(row);
+
+      const flags = await absentFlags(page);
+      expect(
+        searched(flags, { of: flags, what: `roster rows after ${what}` }),
+      ).toEqual(expected);
+    });
+  }
+});
+
+/**
+ * #253 AC2, the half the first fix did not reach.
+ *
+ * The mirrors are keyed by column now, but the rule that takes the Absent
+ * COLUMN off the sheet still names it by ordinal, and its own comment records
+ * that the ordinal was already wrong once: left at 4 it hid Sex and printed
+ * Absent, "a sheet that silently answered a different question than the tick
+ * box asked". AC2 asks that reordering the columns cannot reintroduce that.
+ *
+ * So this asks which NAMED columns reach paper, never which positions -- a
+ * guard written positionally would carry the very defect it is testing for.
+ * Visibility is `getClientRects().length`, not the element's own computed
+ * display: `display: none` on an ANCESTOR leaves a descendant's computed
+ * display untouched, so a per-element check reports hidden content as
+ * rendered (#17).
+ */
+test.describe('which columns reach paper is decided by name, not by position', () => {
+  const ALL_SIX = ['absent', 'number', 'name', 'sex', 'together', 'apart'];
+
+  // Same stub the printed-class-list block installs, for the same reason: the
+  // panel's Print button ends in `window.print()`.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.print = () => {};
+    });
+  });
+
+  /** The columns a PRESENT row actually paints, by name, in DOM order. */
+  const printedColumns = async (
+    page: import('@playwright/test').Page,
+    row: number,
+  ) =>
+    page
+      .locator('.cg-student')
+      .nth(row)
+      .locator('.cg-print-value')
+      .evaluateAll((els) =>
+        els
+          .filter((el) => el.getClientRects().length > 0)
+          .map((el) => (el as HTMLElement).dataset.col ?? '(unkeyed)'),
+      );
+
+  test('showing absent pupils prints every column, including Absent', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M', 'Ana'],
+      ['F', 'Budi'],
+    ]);
+    await page.locator('.cg-student').nth(0).getByLabel('Absent').check();
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: true,
+      avatars: true,
+    });
+
+    const columns = await printedColumns(page, 1);
+    expect(
+      [...searched(columns, { of: columns, what: 'printed columns' })].sort(),
+    ).toEqual([...ALL_SIX].sort());
+  });
+
+  test('hiding absent pupils removes the Absent column and only that column', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M', 'Ana'],
+      ['F', 'Budi'],
+    ]);
+    await page.locator('.cg-student').nth(0).getByLabel('Absent').check();
+    await sheet(page, {
+      what: 'Class list',
+      absent: false,
+      letters: true,
+      avatars: true,
+    });
+
+    // Budi is present, so Budi's row stays -- minus the Absent column. If the
+    // rule ever names the wrong column, THIS is the assertion that says which
+    // one went instead, by name, rather than reporting a count that moved.
+    const columns = await printedColumns(page, 1);
+    expect(
+      [...searched(columns, { of: columns, what: 'printed columns' })].sort(),
+    ).toEqual(ALL_SIX.filter((c) => c !== 'absent').sort());
+  });
+
+  test('an absent pupil leaves the sheet entirely, a present one stays', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M', 'Ana'],
+      ['F', 'Budi'],
+    ]);
+    await page.locator('.cg-student').nth(0).getByLabel('Absent').check();
+    await sheet(page, {
+      what: 'Class list',
+      absent: false,
+      letters: true,
+      avatars: true,
+    });
+
+    const rows = page.locator('.cg-student');
+    await expect(rows.nth(0)).toBeHidden();
+    await expect(rows.nth(1)).toBeVisible();
   });
 });
