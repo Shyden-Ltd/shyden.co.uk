@@ -481,9 +481,15 @@ export const renderEvidencePage = ({
   /** @param {string} title */
   const noRecordingNote = (title) => {
     // `order` is built from the manifest AND the report, so a title the report
-    // never mentioned carries no spec file and there is no policy to read. The
-    // Set lookup already answered that case `false`; it is spelled out here so
-    // the third state is visible rather than swallowed by an undefined key.
+    // never mentioned carries no spec file and there is no recording policy to
+    // read. Answering "not recorded by policy" there asserts a policy this page
+    // never saw: the defect #214 exists to stop, one level further in, a third
+    // fact wearing the second's words.
+    //
+    // `has`, not `get() === undefined`: a journey the report DOES carry whose
+    // entry has no file is still a spec that did not ask to be recorded, and
+    // the two cases are only distinguishable through the key.
+    if (!specFileOf.has(title)) return 'no test result';
     const file = specFileOf.get(title);
     return file !== undefined && recordingSpecs.has(file)
       ? 'recording missing'
