@@ -26,6 +26,13 @@ export interface WorkflowJob {
   /** Each step's `run:` script, in file order; a `uses:` step runs none. */
   readonly runs: readonly string[];
   /**
+   * The runner labels the job asks for. `runs-on:` may be a single label or a
+   * list of them and both mean the same thing to the runner, so both arrive
+   * here as a list -- a guard reading this cannot be satisfied by whichever
+   * spelling a workflow happens to use (#244).
+   */
+  readonly runsOn: readonly string[];
+  /**
    * The environment the job names; `undefined` when it names none. A job in
    * an environment reads that environment's secrets. A job in none reads
    * repository secrets, which reach a workflow on any branch (#241).
@@ -78,6 +85,27 @@ function timeoutMinutesOf(
   if (typeof budget !== 'number')
     throw new Error(`${where}: timeout-minutes is not a number of minutes`);
   return budget;
+}
+
+/**
+ * The runner labels a job asks for, normalised to a list.
+ *
+ * FAILS CLOSED on anything else. A job with no `runs-on` cannot run at all,
+ * and the mapping form (`group:`/`labels:`) is a runner-group request this
+ * repository does not use -- reading either as an empty list would make an
+ * absence assertion over the labels green without a label having been read,
+ * which is the one failure this guard exists to prevent (#118).
+ */
+function runsOnOf(job: Record<string, unknown>, where: string): string[] {
+  const value = job['runs-on'];
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value))
+    return value.map((label: unknown, index) => {
+      if (typeof label !== 'string')
+        throw new Error(`${where}: runs-on label ${index + 1} is not a string`);
+      return label;
+    });
+  throw new Error(`${where} declares no runs-on as a label or list of labels`);
 }
 
 function runsOf(job: Record<string, unknown>, where: string): string[] {
@@ -188,6 +216,7 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
       condition: conditionOf(body, where),
       timeoutMinutes: timeoutMinutesOf(body, where),
       runs: runsOf(body, where),
+      runsOn: runsOnOf(body, where),
       environment: environmentOf(body, where),
       secrets: secretsOf(body, shared, where),
     };

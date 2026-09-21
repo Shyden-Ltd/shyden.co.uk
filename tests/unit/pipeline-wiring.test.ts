@@ -1294,3 +1294,55 @@ describe('every job runs under a budget of its own (#157)', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The runner image every job pins, as an exact set.
+ *
+ * `ubuntu-latest` is a MOVING label: GitHub annotates every run of this repo
+ * with "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19,
+ * 2026", and on that date all ten jobs would change OS at once -- with no PR,
+ * no diff and no run to show for it (#244). The OS is part of the build, and a
+ * part of the build that moves without a diff is a part nobody reviewed.
+ *
+ * Pinned here as a set rather than a rule so the eventual move to Ubuntu 26 is
+ * a one-line change a reviewer can see, which is exactly what this ticket asks
+ * of it.
+ */
+const PINNED_RUNNER_IMAGES = ['ubuntu-24.04'];
+
+describe('no job rides a moving runner label', () => {
+  /** Every runner label of every job, beside the job that asks for it. */
+  const runnerLabels = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs.flatMap((job) =>
+        job.runsOn.map((label) => ({
+          where: `${name} job '${job.id}'`,
+          label,
+        })),
+      ),
+    );
+
+  it('pins an image rather than a label that migrates under it', () => {
+    const all = runnerLabels();
+    // The CLASS, derived: any `*-latest` label floats, not only ubuntu's.
+    const floating = all.filter(({ label }) => /-latest$/.test(label));
+    expect(
+      searched(floating, {
+        of: all.map(({ label }) => label),
+        what: `runner labels in ${WORKFLOWS}`,
+      }),
+    ).toEqual([]);
+  });
+
+  it('pins the images this repository has actually run on', () => {
+    // The LEVEL, as an exact set: a guard derived from the workflows can say
+    // nothing about WHICH image they agreed on (#117), and adding a second
+    // image must be a reviewed change rather than a silent one.
+    const labels = [
+      ...new Set(runnerLabels().map(({ label }) => label)),
+    ].sort();
+    expect(nonEmpty(labels, `runner labels in ${WORKFLOWS}`)).toEqual(
+      PINNED_RUNNER_IMAGES,
+    );
+  });
+});
