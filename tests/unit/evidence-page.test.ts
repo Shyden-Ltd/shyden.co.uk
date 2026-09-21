@@ -1413,9 +1413,15 @@ describe('a journey is identified by its full title path', () => {
       ),
     });
 
-    for (const b of blocks) expect(html).toContain(rendered(`${b} > ${leaf}`));
-    // Each carries its OWN capture: pooling would put both under one heading,
-    // which is exactly what the leaf key did.
+    // The EXACT set of journey headings, not `toContain`. Mutation proved the
+    // difference: keyed by the leaf, the manifest-derived journeys collapse
+    // into one -- and `order` then appends the report's own titles, putting
+    // both full titles back on the page. A `toContain` for each one passed
+    // over THREE journeys where there should be two, which is the pooling this
+    // test exists to catch. A count is the whole property here.
+    const headings = [...html.matchAll(/<h3>([^<]*)<\/h3>/g)].map((m) => m[1]);
+    expect(headings).toEqual(blocks.map((b) => rendered(`${b} > ${leaf}`)));
+    // And each journey carries its OWN capture.
     for (const m of manifest) expect(html).toContain(m.label);
   });
 
