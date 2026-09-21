@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
-import { withoutCssComments } from './source-text';
+import { stylesheetCss } from './source-text';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -95,7 +95,10 @@ const over = (fg: RGBA, ground: RGB): RGB =>
  * to catch — five have shipped in this repo (#23, #21, #35, #49, #129).
  */
 const tokens = (): Map<string, string> => {
-  const css = withoutCssComments(readFileSync(TOKENS_FILE, 'utf8'));
+  const css = stylesheetCss(
+    TOKENS_FILE,
+    readFileSync(TOKENS_FILE, 'utf8'),
+  ).join('\n');
   const root = css.match(/:root\s*\{([\s\S]*?)\}/);
   if (root === null) throw new Error(`no :root block in ${TOKENS_FILE}`);
 
@@ -490,30 +493,43 @@ const declarationsMatching = (
     `.astro and .css files under ${SRC}/`,
   );
 
-  return files.flatMap((file) => {
-    const lines = withoutCssComments(readFileSync(file, 'utf8')).split('\n');
-    let selector = '(none)';
-    const found: Declaration[] = [];
+  return files.flatMap((file) =>
+    // One sheet at a time, so a selector cannot be carried from one `<style>`
+    // into the next, and so no line outside a `<style>` can become one.
+    stylesheetCss(file, readFileSync(file, 'utf8')).flatMap((css) => {
+      let selector = '(none)';
+      const found: Declaration[] = [];
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.endsWith('{') && !trimmed.startsWith('@')) {
-        selector = trimmed.slice(0, -1).trim();
+      for (const line of css.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.endsWith('{') && !trimmed.startsWith('@')) {
+          selector = trimmed.slice(0, -1).trim();
+        }
+        if (matches(trimmed)) {
+          found.push({
+            file: file.replace(/^src\//, ''),
+            selector,
+            declaration: trimmed,
+          });
+        }
       }
-      if (matches(trimmed)) {
-        found.push({
-          file: file.replace(/^src\//, ''),
-          selector,
-          declaration: trimmed,
-        });
-      }
-    }
-    return found;
-  });
+      return found;
+    }),
+  );
 };
 
 const borderUsages = (): Declaration[] =>
   declarationsMatching((declaration) => declaration.includes('var(--border)'));
+
+/**
+ * Every `file :: selector` the source declares anything under.
+ *
+ * A declaration line rather than a selector line, because a selector with no
+ * declarations under it styles nothing and is not a place a control can be
+ * drawn.
+ */
+const declaredSelectors = (): string[] =>
+  declarationsMatching((declaration) => declaration.includes(':')).map(key);
 
 const key = (u: { file: string; selector: string }) =>
   `${u.file} :: ${u.selector}`;
@@ -579,6 +595,49 @@ describe('a control is never identified by the decorative border alone', () => {
         of: usages,
         what: 'var(--border) usages in src/',
       }),
+    ).toEqual([]);
+  });
+
+  /**
+   * Both lists above are hand-written, and an entry the reader cannot find
+   * classifies nothing while reading exactly like one that works — the shape
+   * `shytalk-brand.test.ts` guards with "an exemption naming a path that does
+   * not exist exempts nothing".
+   *
+   * It is not hypothetical here. Until #203 this file read an `.astro` file's
+   * CSS with a whole-file strip, and `Header.astro`'s frontmatter carries the
+   * prose "on /id/* pages" — which a CSS scanner reads as a comment OPENER,
+   * deleting everything up to the next close 92 lines later. So
+   * `Header.astro :: header` sat in DECORATIVE_SELECTORS for a usage neither
+   * assertion above could reach, and both were green over it.
+   *
+   * The two lists make DIFFERENT claims, so they need different controls. A
+   * decorative entry says a `var(--border)` usage exists and is decorative. A
+   * control entry says a selector exists that must NOT use one — so its own
+   * liveness is the selector, and asserting it against the usages would ask
+   * every control to break the rule it is listed for.
+   */
+  it('calls a border decorative only where the reader finds one', () => {
+    const usages = borderUsages();
+    const present = new Set(usages.map(key));
+    const stale = DECORATIVE_SELECTORS.filter(
+      (selector) => !present.has(selector),
+    );
+
+    expect(
+      searched(stale, { of: usages, what: 'var(--border) usages in src/' }),
+    ).toEqual([]);
+  });
+
+  it('names a control only where the reader finds that selector', () => {
+    const selectors = declaredSelectors();
+    const declared = new Set(selectors);
+    const stale = CONTROL_SELECTORS.filter(
+      (selector) => !declared.has(selector),
+    );
+
+    expect(
+      searched(stale, { of: selectors, what: 'declared selectors in src/' }),
     ).toEqual([]);
   });
 });

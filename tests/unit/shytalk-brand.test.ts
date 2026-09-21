@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
-import { withoutCssComments, withoutTsComments } from './source-text';
+import { codeWithoutComments } from './source-text';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 
 /**
@@ -96,9 +96,7 @@ describe("ShyTalk's brand mark has one home", () => {
       // Comments stripped: a comment NAMING the colour is documentation, and
       // a guard tripped by its own explanation is noise. The assertion is
       // about what the code spells out.
-      const code = file.endsWith('.css')
-        ? withoutCssComments(raw)
-        : withoutTsComments(withoutCssComments(raw));
+      const code = codeWithoutComments(file, raw);
       const lower = code.toLowerCase();
       return forms
         .filter((form) => lower.includes(form.toLowerCase()))

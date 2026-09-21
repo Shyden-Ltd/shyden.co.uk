@@ -290,7 +290,32 @@ export function blankCommentLines(text: string): string {
  * private copies are how that rule came to exist.
  */
 export function withoutCssComments(source: string): string {
-  let out = '';
+  return scanCss(source).code;
+}
+
+/**
+ * Every comment `withoutCssComments` removes from `source`, in the order it
+ * meets them.
+ *
+ * A guard asking "did a comment survive this read?" has to name the span it
+ * is hunting, and naming comment syntax outside this file is exactly what
+ * `one-home.test.ts` refuses (#203). So the scanner that removes them hands
+ * them back, and no caller has to spell the delimiters to find one.
+ */
+export function cssComments(source: string): string[] {
+  return scanCss(source).comments;
+}
+
+/**
+ * One quote-aware pass over CSS, producing the code and the comments together.
+ *
+ * Together rather than twice: two passes are two scanners, and a second one
+ * written to find what the first removed is the seventh private copy this
+ * file exists to prevent.
+ */
+function scanCss(source: string): { code: string; comments: string[] } {
+  let code = '';
+  const comments: string[] = [];
   let i = 0;
   let quote: string | null = null;
 
@@ -298,9 +323,9 @@ export function withoutCssComments(source: string): string {
     const ch = source[i];
 
     if (quote !== null) {
-      out += ch;
+      code += ch;
       if (ch === '\\') {
-        out += source[i + 1] ?? '';
+        code += source[i + 1] ?? '';
         i += 2;
         continue;
       }
@@ -311,22 +336,24 @@ export function withoutCssComments(source: string): string {
 
     if (ch === "'" || ch === '"') {
       quote = ch;
-      out += ch;
+      code += ch;
       i += 1;
       continue;
     }
 
     if (ch === '/' && source[i + 1] === '*') {
       const end = source.indexOf('*/', i + 2);
-      i = end === -1 ? source.length : end + 2;
+      const stop = end === -1 ? source.length : end + 2;
+      comments.push(source.slice(i, stop));
+      i = stop;
       continue;
     }
 
-    out += ch;
+    code += ch;
     i += 1;
   }
 
-  return out;
+  return { code, comments };
 }
 
 /**
@@ -434,3 +461,63 @@ export function astroStyleViews(text: string): string[] {
     viewOf(text, region),
   );
 }
+
+/**
+ * The CSS a file holds: a `.css` file whole, an `.astro` file's `<style>`
+ * bodies as one view each.
+ *
+ * The distinction is the whole of #203. `withoutCssComments` tracks quotes,
+ * so over a WHOLE `.astro` file the first apostrophe in frontmatter or
+ * template text ("don't") opens a string it never sees closed, and every
+ * comment below that point is copied out as if it were live CSS. Eight of
+ * the 141 comments in `src/` survived that read.
+ */
+export const stylesheetsIn = (file: string, text: string): string[] =>
+  file.endsWith('.astro') ? astroStyleViews(text) : [text];
+
+/**
+ * The CSS a file holds, comment-free: what a stylesheet guard should scan.
+ *
+ * Callers take this rather than `withoutCssComments` so that reading an
+ * `.astro` file the wrong way is not something a call site can express —
+ * `one-home.test.ts` asserts the stripper itself has no caller outside this
+ * file, which a guard passing a whole `.astro` file would break.
+ */
+export const stylesheetCss = (file: string, text: string): string[] =>
+  stylesheetsIn(file, text).map(withoutCssComments);
+
+/**
+ * The non-CSS text of an `.astro` file: the whole file with every `<style>`
+ * body blanked, offsets and lines intact.
+ *
+ * The complement of `astroStyleViews`, and the other half of reading an
+ * `.astro` file safely: a scanner that must see the WHOLE file still must
+ * not read a `<style>` body as if it were TypeScript.
+ */
+export const withoutAstroStyles = (text: string): string =>
+  bodies(astroParts(text).markup, STYLE).reduce(
+    (out, [start, end]) =>
+      out.slice(0, start) + blanked(out.slice(start, end)) + out.slice(end),
+    text,
+  );
+
+/**
+ * A source file's code with its comments stripped, chosen by extension: what
+ * a guard searching a file for a spelling should scan.
+ *
+ * `.astro` is three languages in one file, so it is read in two halves — its
+ * CSS through `astroStyleViews`, its remainder through `withoutAstroComments`
+ * — and the halves are joined for a caller that searches. Joining rather than
+ * interleaving is safe because every caller asks whether a spelling appears
+ * anywhere in the file, never where.
+ */
+export const codeWithoutComments = (file: string, text: string): string => {
+  if (file.endsWith('.css')) return withoutCssComments(text);
+  if (!file.endsWith('.astro')) {
+    return withoutTsComments(withoutCssComments(text));
+  }
+  return [
+    withoutAstroComments(withoutAstroStyles(text)),
+    ...stylesheetCss(file, text),
+  ].join('\n');
+};
