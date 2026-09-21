@@ -238,6 +238,15 @@ interface Probe {
 }
 
 const PROBES: Readonly<Record<string, Probe>> = {
+  // With no file to check there is nothing it could report, so it refuses.
+  // That refusal is also the only cheap proof its entry point ran at all: a
+  // skipped `main()` exits 0 in silence, which reads exactly like a clean
+  // message (#278).
+  'closing-keywords.mjs': {
+    args: [],
+    status: 1,
+    says: 'usage: node scripts/closing-keywords.mjs',
+  },
   // Without its three paths it prints its usage and refuses.
   'build-evidence-page.mjs': {
     args: [],
