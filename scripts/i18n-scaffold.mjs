@@ -72,15 +72,17 @@ if (existsSync(out) && !force)
 const PLURAL_FORMS = new Intl.PluralRules(target).resolvedOptions()
   .pluralCategories;
 
-/** A key that needs quoting in an object literal (`'class-list'`). */
-/** @param {string} key */
+/**
+ *  A key that needs quoting in an object literal (`'class-list'`).
+ *
+ *  @param {string} key
+ */
 const plainKey = (key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key);
 
 /**
  * The TypeScript source for one value. `path` is carried so a refusal names
  * the key it happened at.
- */
-/**
+ *
  * @param {unknown} value
  * @param {string} path
  * @param {number} indent
@@ -105,15 +107,16 @@ function render(value, path, indent) {
   if (value && typeof value === 'object') {
     const entries = Object.entries(value).map(
       /** @returns {string} */ ([key, v]) => {
-      const name = plainKey(key) ? key : JSON.stringify(key);
-      // No leading dot at the root, or a key comes out as `..errors.X`.
-      const child = plainKey(key)
-        ? path
-          ? `${path}.${key}`
-          : key
-        : `${path}[${JSON.stringify(key)}]`;
-      return `${inner}${name}: ${render(v, child, indent + 1)}`;
-    });
+        const name = plainKey(key) ? key : JSON.stringify(key);
+        // No leading dot at the root, or a key comes out as `..errors.X`.
+        const child = plainKey(key)
+          ? path
+            ? `${path}.${key}`
+            : key
+          : `${path}[${JSON.stringify(key)}]`;
+        return `${inner}${name}: ${render(v, child, indent + 1)}`;
+      },
+    );
     return `{\n${entries.join(',\n')},\n${pad}}`;
   }
 

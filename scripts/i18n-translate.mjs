@@ -176,8 +176,9 @@ const apiKey =
 if (!apiKey.trim()) die('DEEPL_API_KEY is not set (env or .env.local)');
 const endpoint = deeplEndpoint(apiKey);
 
-/** Every source drafted, in order, 50 texts to a request. */
 /**
+ *  Every source drafted, in order, 50 texts to a request.
+ *
  * @param {string[]} sources
  * @param {Record<string, unknown>} options
  */
@@ -201,9 +202,8 @@ async function draftAll(sources, options) {
     if (!response.ok) die(`DeepL responded ${response.status}`);
     const { translations } = await response.json();
     drafts.push(
-      ...translations.map(
-        (/** @type {{ text: string }} */ { text }) =>
-          unescapeXml(unprotectTerms(text)),
+      ...translations.map((/** @type {{ text: string }} */ { text }) =>
+        unescapeXml(unprotectTerms(text)),
       ),
     );
     console.log(`  ${Math.min(i + BATCH, sources.length)}/${sources.length}`);

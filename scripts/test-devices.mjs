@@ -130,8 +130,9 @@ const REPORT_DIR = {
 
 // ── small generic helpers ──────────────────────────────────────────────
 
-/** Polls `predicate` until truthy, or throws naming what was awaited. Never a sleep-and-hope: the condition itself decides, the timeout is only a safety net against a hung device or process. */
 /**
+ *  Polls `predicate` until truthy, or throws naming what was awaited. Never a sleep-and-hope: the condition itself decides, the timeout is only a safety net against a hung device or process.
+ *
  * @param {() => unknown} predicate its RESULT is read for truthiness, so a
  *   predicate answering a `Response` or `undefined` is as valid as a boolean.
  * @param {{ timeoutMs: number, describe: string, intervalMs?: number }} options
@@ -150,8 +151,9 @@ async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
   }
 }
 
-/** Splits a child's stdout/stderr into lines and forwards each, tagged, to this process's own streams -- live, not batched at the end, so a human watching a multi-minute group still sees progress. */
 /**
+ *  Splits a child's stdout/stderr into lines and forwards each, tagged, to this process's own streams -- live, not batched at the end, so a human watching a multi-minute group still sees progress.
+ *
  * @param {string} tag
  * @param {import('node:child_process').ChildProcess} child
  */
@@ -179,8 +181,9 @@ function tagOutput(tag, child) {
   forward(child.stderr, process.stderr);
 }
 
-/** Spawns without a shell (array-form argv, never a pipe) and returns the live child immediately -- for long-running processes (the preview server) the caller needs a handle to, not a settled result. */
 /**
+ *  Spawns without a shell (array-form argv, never a pipe) and returns the live child immediately -- for long-running processes (the preview server) the caller needs a handle to, not a settled result.
+ *
  * @param {string} tag
  * @param {string} command
  * @param {readonly string[]} args
@@ -196,8 +199,9 @@ function spawnTagged(tag, command, args, { env, cwd = ROOT } = {}) {
   return child;
 }
 
-/** Resolves with the exit code read DIRECTLY off this exact child's own `close` event -- never scraped from stdout, never inferred from a pipe's own status. */
 /**
+ *  Resolves with the exit code read DIRECTLY off this exact child's own `close` event -- never scraped from stdout, never inferred from a pipe's own status.
+ *
  * @param {import('node:child_process').ChildProcess} child
  * @param {string} command
  * @param {readonly string[]} args
@@ -224,8 +228,9 @@ function waitForClose(child, command, args) {
   });
 }
 
-/** spawnTagged + waitForClose, for one-shot commands this script needs the real outcome of before moving on. */
 /**
+ *  spawnTagged + waitForClose, for one-shot commands this script needs the real outcome of before moving on.
+ *
  * @param {string} tag
  * @param {string} command
  * @param {readonly string[]} args
@@ -293,8 +298,9 @@ function pidsListeningOnPort(port) {
  * been burned by exactly that pattern before). SIGTERM first, escalating
  * to SIGKILL only if the port is still occupied after a grace period.
  * Idempotent: does nothing, successfully, if the port is already free.
+ *
+ *  @param {number} port
  */
-/** @param {number} port */
 async function killByPort(port) {
   let pids = pidsListeningOnPort(port);
   if (pids.length === 0) return;
@@ -378,8 +384,9 @@ function writeDashboardNotRun(name, reason) {
  * discipline as writeDashboardNotRun: this is reporting about a run that
  * has (in the success path) already fully completed, so a failure here
  * must never be allowed to look like a test failure.
+ *
+ *  @param {Record<string, unknown>} payload
  */
-/** @param {Record<string, unknown>} payload */
 function writeDashboardFinal(payload) {
   try {
     writeFileSync(DASHBOARD_FINAL_FILE, JSON.stringify(payload));

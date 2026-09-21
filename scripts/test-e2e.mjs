@@ -48,8 +48,9 @@ const LIST_FOOTER = /^Total:\s+(\d+)\s+tests?\b/m;
  *
  * Null rather than 0: every comparison below is satisfied by "executed >= 0",
  * so a zero here would wave through the exact runs this file exists to stop.
+ *
+ *  @param {string} text
  */
-/** @param {string} text */
 export function parseListTotal(text) {
   const match = LIST_FOOTER.exec(text ?? '');
   return match ? Number(match[1]) : null;
@@ -109,8 +110,9 @@ const SUITE_FLAGS = new Set(['--config', '-c']);
  * part: forwarding `--project` would shrink the enumeration to exactly what the
  * run executes, so the two would always agree and this guard could never fire
  * again — while still being present, still passing, and asserting nothing.
+ *
+ *  @param {readonly string[]} argv
  */
-/** @param {readonly string[]} argv */
 export function enumerationArgs(argv = []) {
   const forwarded = [];
 
@@ -134,8 +136,11 @@ export function enumerationArgs(argv = []) {
   return forwarded;
 }
 
-/** Did the caller ask for a subset of the suite? */
-/** @param {readonly string[]} argv */
+/**
+ *  Did the caller ask for a subset of the suite?
+ *
+ *  @param {readonly string[]} argv
+ */
 export function isFilteredRun(argv = []) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -164,8 +169,9 @@ export const NAV_TIMING_REPORTER = './tests/reporters/nav-timing-reporter.ts';
  * report AT ALL. Measured on Playwright 1.63.0 — the json reporter strips every
  * `pw:api` step and keeps only the user's `test.step` entries, so a probe test
  * that made two navigations produced a report containing neither.
+ *
+ *  @param {readonly string[]} argv
  */
-/** @param {readonly string[]} argv */
 export function mergeReporters(argv = []) {
   const passthrough = [];
   let chosen = 'list';
@@ -195,8 +201,7 @@ export function mergeReporters(argv = []) {
  * Skipped tests were accounted for by the run. Leaving them out would make the
  * guard fire on a suite that legitimately skips, and the natural fix for that
  * false alarm would be to weaken the guard.
- */
-/**
+ *
  * @param {{ expected?: number, unexpected?: number, flaky?: number, skipped?: number }} stats
  *   Spelled out, because a default of `{}` is read as the TYPE `{}` -- the
  *   narrowest type that value inhabits -- so every property read off it was
@@ -495,8 +500,9 @@ function main() {
  */
 export const TEST_BUDGET_MS = 30000;
 
-/** Nearest-rank percentile over an ASCENDING array. */
 /**
+ *  Nearest-rank percentile over an ASCENDING array.
+ *
  * @param {number[]} ascending
  * @param {number} quantile
  */
@@ -513,8 +519,9 @@ const rank = (ascending, quantile) =>
  *
  * THE TAIL, NOT THE MEAN. A mean over ~2200 tests cannot move enough for one
  * 30-second test to show up in it. p90 and max are where a flake lives.
+ *
+ *  @param {Record<string, any>} report
  */
-/** @param {Record<string, any>} report */
 export function projectTimings(report) {
   const byProject = new Map();
 
@@ -557,8 +564,11 @@ export function projectTimings(report) {
   });
 }
 
-/** The distribution as a markdown table, for a terminal or a job summary. */
-/** @param {any[]} rows */
+/**
+ *  The distribution as a markdown table, for a terminal or a job summary.
+ *
+ *  @param {any[]} rows
+ */
 export function formatTimings(rows) {
   if (!rows.length) return '';
   return [
@@ -590,8 +600,9 @@ export function formatTimings(rows) {
  *
  * Ordered by the slowest navigation, worst project first: the tail is the
  * finding, and #44 is about one navigation, not an average of thousands.
+ *
+ *  @param {any[]} records
  */
-/** @param {any[]} records */
 export function navTimings(records) {
   const byProject = new Map();
   for (const record of records ?? []) {
@@ -632,8 +643,9 @@ export function navTimings(records) {
  * Unlike `formatTimings`, an empty result prints a SENTENCE rather than an
  * empty string. A blank space where a table should be reads as "nothing to
  * report"; on a collector, nothing to report is the failure mode.
+ *
+ *  @param {any[]} rows
  */
-/** @param {any[]} rows */
 export function formatNavTimings(rows) {
   if (!rows.length)
     return 'No navigations were recorded — see the collector verdict below.';
@@ -667,8 +679,7 @@ export function formatNavTimings(rows) {
  * `testsWithResults` MUST come from an observer other than this collector —
  * `main` passes the json reporter's own stats. Asked to count its own tests, a
  * reporter that never ran answers zero and certifies its own silence.
- */
-/**
+ *
  * @param {{ navigations: number, testsWithResults: number }} input
  *   `navigations` is a COUNT: the caller passes `navigations.length`, and the
  *   unit tests pass 0 and 1. Annotating it as the array made `navigations > 0`

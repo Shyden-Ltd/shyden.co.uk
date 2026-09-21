@@ -51,8 +51,9 @@ const short = (sha) => String(sha ?? '').slice(0, 7);
  * A run still going has no `completedAt` and is by definition not superseded,
  * so it sorts LAST and therefore decides — matching branch protection, where a
  * pending required check does not satisfy the rule.
+ *
+ *  @param {{ completedAt?: string | null } | undefined} run
  */
-/** @param {{ completedAt?: string | null } | undefined} run */
 const finishedAt = (run) =>
   run?.completedAt ? Date.parse(run.completedAt) : Number.POSITIVE_INFINITY;
 
@@ -151,8 +152,7 @@ export const decideDeploy = ({
 };
 
 /** @param {...string} args */
-const git = (...args) =>
-  execFileSync('git', args, { encoding: 'utf8' }).trim();
+const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 
 /**
  * @param {string} repo
@@ -173,10 +173,8 @@ const checkRunsFor = async (repo, sha, token) => {
   if (!res.ok)
     throw new Error(`check-runs for ${short(sha)}: HTTP ${res.status}`);
   const body = await res.json();
-  return (
-    /** @type {{ check_runs?: { name: string, status: string, conclusion: string | null, completed_at: string | null }[] }} */ (
-      body
-    ).check_runs ?? []
+  return /** @type {{ check_runs?: { name: string, status: string, conclusion: string | null, completed_at: string | null }[] }} */ (
+    (body).check_runs ?? []
   ).map((run) => ({
     name: run.name,
     conclusion: run.conclusion,

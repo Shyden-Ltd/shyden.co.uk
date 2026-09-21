@@ -159,8 +159,9 @@ function pidsListeningOnPort(port) {
  * previous run's own dashboard server -- nothing else in this project or a
  * typical dev machine has a reason to be on 4322. SIGTERM first, SIGKILL
  * only if it is still there after a grace period. Idempotent.
+ *
+ *  @param {number} port
  */
-/** @param {number} port */
 async function killByPort(port) {
   let pids = pidsListeningOnPort(port);
   if (pids.length === 0) return;
