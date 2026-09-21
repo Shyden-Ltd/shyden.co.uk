@@ -1181,3 +1181,42 @@ describe('the sex column header, corrected without breaking old files', () => {
     ).toEqual([]);
   });
 });
+
+describe('an unset dropdown exports as nothing, not as its own column name', () => {
+  it('writes an empty cell for sex, together and apart in every locale', () => {
+    // #249 put the COLUMN NAME into each unset dropdown's empty option, so an
+    // unset cell now READS "Sex" on screen. The file must still carry nothing.
+    // "Sex" sitting in a pupil's sex column is data, not a placeholder: a
+    // teacher would see it in Excel, and re-importing that file would try to
+    // read it as a sex token.
+    //
+    // Asserted per locale because the two words come from DIFFERENT tables --
+    // the placeholder from the i18n catalogue, the file from CSV_LOCALES --
+    // and only one of them belongs in a CSV. The screen label is named in the
+    // failure text so a regression says what leaked, not just that something
+    // did.
+    const leaked: string[] = [];
+    for (const locale of LOCALES) {
+      const t = getStrings(locale);
+      const file = serialiseRoster(
+        [student({ number: 1, name: 'Ana', sex: null })],
+        '6A',
+        locale,
+      );
+      const cells = (file.split('\n')[2] ?? '').split(',');
+      const columns = [
+        [2, 'sex', t.rosterColSex],
+        [4, 'together', t.rosterColTogether],
+        [5, 'apart', t.rosterColApart],
+      ] as const;
+      for (const [at, name, shown] of columns)
+        if (cells[at] !== '')
+          leaked.push(
+            `${locale}: ${name} exported "${cells[at]}" (the screen shows "${shown}")`,
+          );
+    }
+    expect(
+      searched(leaked, { of: [...LOCALES], what: 'locales exported' }),
+    ).toEqual([]);
+  });
+});

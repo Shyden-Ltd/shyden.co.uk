@@ -257,11 +257,26 @@ describe('useCallsIn() reads what a test.use() sets', () => {
   });
 
   it('names options it cannot read, instead of reading them as none', () => {
-    const sf = source('test.use(options);', 'test.use({ ...options });');
+    const sf = source('test.use({ ...options });', 'test.use(1);');
 
     expect(useCallsIn(sf).map(({ unreadable }) => unreadable)).toEqual([
-      'options that are not an object literal',
       'a spread in its options',
+      'options that are not an object literal',
+    ]);
+  });
+
+  it('names a shared options object rather than calling it unreadable', () => {
+    // `test.use(recorded)` DOES set options; this reader just cannot list
+    // them. Reporting that as unreadable and reporting it as a named shared
+    // object are different facts, and only the second lets a guard state a
+    // policy about which shared objects are allowed.
+    const sf = source('test.use(recorded);', 'test.use({ viewport });');
+
+    expect(
+      useCallsIn(sf).map(({ shared, unreadable }) => [shared, unreadable]),
+    ).toEqual([
+      ['recorded', undefined],
+      [undefined, undefined],
     ]);
   });
 });
@@ -291,6 +306,41 @@ describe('every declaration and test.use() in the spec corpus can be read', () =
         what: 'declarations',
       }),
       unreadable.join('\n'),
+    ).toEqual([]);
+  });
+
+  it('the only shared options object is the recording opt-in, from its home', () => {
+    // The exception to "options are an object literal" is exactly one, and it
+    // is stated HERE rather than hidden in the reader. A spec may hand
+    // `test.use()` a name only when that name is `recorded` and it came from
+    // `./evidence` -- the single home `video:` is allowed to live in (#214).
+    // Any other name reads as options this corpus cannot check, which is the
+    // thing the guard above exists to prevent.
+    const files = specDirs().flatMap(tsFilesUnder);
+    const wrong: string[] = [];
+    const sharedUses: string[] = [];
+    for (const file of files) {
+      const sf = parseFile(file);
+      for (const use of useCallsIn(sf)) {
+        if (use.shared === undefined) continue;
+        sharedUses.push(`${where(sf, use.call)}: ${use.shared}`);
+        const text = sf.getFullText();
+        if (use.shared !== 'recorded')
+          wrong.push(`${where(sf, use.call)}: shared options "${use.shared}"`);
+        else if (
+          !/import \{[^}]*\brecorded\b[^}]*\} from '\.\/evidence'/.test(text)
+        )
+          wrong.push(
+            `${where(sf, use.call)}: recorded not imported from './evidence'`,
+          );
+      }
+    }
+    // The repo's idiom rather than a hand-rolled `toBeGreaterThan(0)`: it
+    // counts the population by CONTENT, and its failure text carries the
+    // lesson a bare comparison does not.
+    expect(
+      searched(wrong, { of: sharedUses, what: 'shared options objects' }),
+      wrong.join('\n'),
     ).toEqual([]);
   });
 });

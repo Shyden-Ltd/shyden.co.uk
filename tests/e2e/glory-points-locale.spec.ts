@@ -1,11 +1,13 @@
 import { test, expect } from './fixtures';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import {
   LOCALES,
   localisePath,
   getSiteStrings,
 } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+
+test.use(recorded);
 
 /**
  * The calculator answers in the language of the page it is on.

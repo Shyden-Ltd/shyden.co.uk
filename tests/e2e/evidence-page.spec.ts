@@ -10,6 +10,7 @@ import {
 } from './db-stand-in';
 import { test as base, expect } from './fixtures';
 import { recordErrors } from './recorders';
+import { recorded } from './evidence';
 
 /**
  * The evidence page's sign-off ticks, driven through the page's OWN rendered
@@ -131,6 +132,8 @@ const test = base.extend<{ pageErrors: void }>({
     { auto: true },
   ],
 });
+
+test.use(recorded);
 
 /** Serves the page as the builder rendered it, and nothing from any other host. */
 async function serveEvidencePage(page: Page): Promise<void> {

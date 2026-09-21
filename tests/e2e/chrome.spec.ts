@@ -1,6 +1,8 @@
 import { test, expect } from './fixtures';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import type { Locator } from '@playwright/test';
+
+test.use(recorded);
 
 test.describe('header + footer', () => {
   test(

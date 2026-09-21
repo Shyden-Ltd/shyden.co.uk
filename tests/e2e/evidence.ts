@@ -125,3 +125,24 @@ export const captureOptions = (path: string) => ({
   type: 'jpeg' as const,
   quality: EVIDENCE_JPEG_QUALITY,
 });
+
+/**
+ * A spec's opt-in to being recorded: `test.use(recorded)`.
+ *
+ * The ONE home for `video:` outside `playwright.config.ts`, whose shared value
+ * is now the literal `'off'`. A recording earns its place only where a still
+ * cannot show what happened -- a click, a scroll, an orientation change -- so
+ * a spec that loads a page and asserts gets screenshots and nothing else.
+ * Operator, 2026-09-18: "recordings are pointless and useless on static
+ * content."
+ *
+ * Still `'off'` outside an evidence run, so an ordinary `npm run test:e2e`
+ * never pays for a recording however many specs opt in.
+ *
+ * Which specs may declare this is neither a judgement nor a list:
+ * `tests/unit/evidence-recording.test.ts` DERIVES it from each spec's own
+ * source -- a spec that acts must record, and a spec that records must act --
+ * and fails in both directions. The declaration is only ever one half of a
+ * pair, and the source is the authority.
+ */
+export const recorded = { video: DIR ? ('on' as const) : ('off' as const) };
