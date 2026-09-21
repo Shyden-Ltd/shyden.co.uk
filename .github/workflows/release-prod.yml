@@ -32,7 +32,7 @@ permissions:
 jobs:
   deploy-prod:
     name: Deploy to Prod (needs approval)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: prod
@@ -92,7 +92,7 @@ jobs:
   smoke-and-verify:
     name: Post-prod smoke + prod-verified
     needs: deploy-prod
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read

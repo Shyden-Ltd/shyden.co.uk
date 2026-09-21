@@ -43,7 +43,7 @@ permissions:
 jobs:
   rollback:
     name: Roll back shyden-site
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # Its Cloudflare secrets live in `prod-rollback`, which accepts `main` alone
     # and has no reviewers, so a recovery never waits for an approval (#241).

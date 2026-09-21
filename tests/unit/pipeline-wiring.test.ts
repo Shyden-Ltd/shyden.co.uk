@@ -1308,7 +1308,7 @@ describe('every job runs under a budget of its own (#157)', () => {
  * a one-line change a reviewer can see, which is exactly what this ticket asks
  * of it.
  */
-const PINNED_RUNNER_IMAGES = ['ubuntu-24.04'];
+const PINNED_RUNNER_IMAGES = ['ubuntu-26.04'];
 
 describe('no job rides a moving runner label', () => {
   /** Every runner label of every job, beside the job that asks for it. */
