@@ -6,6 +6,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import config, {
   CONTENT_ONLY_SPECS,
   VISUAL_PROJECT,
+  VISUAL_MEASURE_PROJECT,
 } from '../../playwright.config';
 import { ignoredByGit, searched, specFilesUnder } from '../source-files';
 import { withoutTsComments } from './source-text';
@@ -425,5 +426,35 @@ describe('the real-device config (#194)', () => {
     expect(ignored.has(baseline), 'real baselines must stay committable').toBe(
       false,
     );
+  });
+});
+
+describe('the measuring twin cannot become a gate (#224)', () => {
+  it('is absent from the config an ordinary run builds', () => {
+    // The whole safety of a zero-tolerance project is that it is opt-in. If
+    // it were declared by default, a font rasterised a shade differently
+    // would fail every PR in the repository.
+    const names = (config.projects ?? []).map((p) => p.name);
+    expect(names).not.toContain('visual-measure');
+  });
+
+  it('reads the SAME baselines as the project it measures', () => {
+    // `snapshotPathTemplate` carries no `{projectName}`, so both projects
+    // resolve the same committed files -- which is the only reason the
+    // measurement says anything about what the gate compares. A different
+    // testMatch would measure a different set of pictures.
+    expect(VISUAL_MEASURE_PROJECT.testMatch).toBe(VISUAL_PROJECT.testMatch);
+    expect(config.snapshotPathTemplate ?? '').not.toContain('{projectName}');
+  });
+
+  it('is STRICTER than the gate, never looser', () => {
+    const gate = config.expect?.toHaveScreenshot;
+    expect(VISUAL_MEASURE_PROJECT.expect.toHaveScreenshot.threshold).toBe(0);
+    // The direction is the assertion. A measuring project that relaxed the
+    // tolerance could report a clean sheet while the gate was failing, and
+    // the number it printed would be worse than no number at all.
+    expect(
+      VISUAL_MEASURE_PROJECT.expect.toHaveScreenshot.threshold,
+    ).toBeLessThan(gate?.threshold ?? 0);
   });
 });

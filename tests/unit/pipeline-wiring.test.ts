@@ -1388,3 +1388,55 @@ describe('the visual job says which architecture it rendered on', () => {
     expect(arch).toBeLessThan(compare);
   });
 });
+
+describe('the drift measurement reports, and never gates (#224)', () => {
+  /** The `visual` job's steps, parsed -- `runs` carries only `run:` text. */
+  const visualSteps = (): Array<Record<string, unknown>> => {
+    const root = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      jobs: Record<string, { steps: Array<Record<string, unknown>> }>;
+    };
+    return nonEmpty(root.jobs.visual.steps, "steps in ci.yml's visual job");
+  };
+
+  const indexOf = (predicate: (s: Record<string, unknown>) => boolean) =>
+    visualSteps().findIndex(predicate);
+
+  // `--project=visual` is a PREFIX of `--project=visual-measure`, so a
+  // substring test matches the measuring step too and the two are
+  // indistinguishable -- the same shape as `/glory-points` matching inside
+  // `/id/glory-points` (#21 Stage 4). `\\b` does not help either: `-` is a
+  // non-word character, so `\\bvisual\\b` matches inside `visual-measure`.
+  const GATE_PROJECT = /--project=visual(?![\w-])/;
+  const isGate = (s: Record<string, unknown>) =>
+    typeof s.run === 'string' && GATE_PROJECT.test(s.run);
+  const isMeasure = (s: Record<string, unknown>) =>
+    typeof s.run === 'string' && s.run.includes('--project=visual-measure');
+
+  it('measures after the gate has decided the build', () => {
+    const gate = indexOf(isGate);
+    const measure = indexOf(isMeasure);
+    expect(
+      gate,
+      'no step runs the gating visual project',
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      measure,
+      'no step runs the measuring project',
+    ).toBeGreaterThanOrEqual(0);
+    expect(measure).toBeGreaterThan(gate);
+  });
+
+  it('is tolerated, while the gate it follows is NOT', () => {
+    // The direction is the whole assertion. Tolerating the gate would let a
+    // real visual regression through; failing to tolerate the measurement
+    // would turn a zero-tolerance comparison -- which is EXPECTED to fail --
+    // into a broken build on every pull request.
+    const steps = visualSteps();
+    expect(steps[indexOf(isMeasure)]['continue-on-error']).toBe(true);
+    expect(steps[indexOf(isGate)]['continue-on-error']).toBeUndefined();
+  });
+
+  it('runs even when the gate went red, which is when it is worth having', () => {
+    expect(visualSteps()[indexOf(isMeasure)].if).toBe('always()');
+  });
+});
