@@ -82,6 +82,34 @@ export const VISUAL_PROJECT = {
   testMatch: visualOnly,
 };
 
+/**
+ * The MEASURING twin of `VISUAL_PROJECT` (#224).
+ *
+ * Same spec and the same committed baselines -- `snapshotPathTemplate` carries
+ * no `{projectName}`, so this resolves the very files the gating project
+ * compares -- but at ZERO per-pixel tolerance.
+ *
+ * `threshold: 0.1` permits a YIQ distance of about 352 per pixel before that
+ * pixel COUNTS as differing, so a difference nobody is looking at (a font
+ * rasterised on another architecture, a baseline captured before a CSS change)
+ * is scored identical and never reaches `maxDiffPixelRatio`, which is already
+ * 0. It does not eat a pixel budget; it moves the reference point a later
+ * regression is measured from. At `threshold: 0` each of those differences is
+ * reported with its own numbers instead, which is the measurement.
+ *
+ * Declared only under `VISUAL_MEASURE=1`, exactly as `visual` is declared only
+ * under `VISUAL=1`, so an ordinary run keeps precisely the projects it had. A
+ * wrong environment variable here can only make a comparison STRICTER, never
+ * weaker: it cannot turn a real difference into a pass. It never gates -- the
+ * job that runs it tolerates the failure and reports the numbers.
+ */
+export const VISUAL_MEASURE_PROJECT = {
+  name: 'visual-measure',
+  use: { ...devices['Desktop Chrome'] },
+  testMatch: visualOnly,
+  expect: { toHaveScreenshot: { threshold: 0 } },
+};
+
 const ENGINES = [
   { name: 'chromium', device: 'Desktop Chrome' },
   { name: 'firefox', device: 'Desktop Firefox' },
@@ -311,5 +339,6 @@ export default defineConfig({
       testIgnore: [contentOnly, visualOnly],
     })),
     ...(process.env.VISUAL === '1' ? [VISUAL_PROJECT] : []),
+    ...(process.env.VISUAL_MEASURE === '1' ? [VISUAL_MEASURE_PROJECT] : []),
   ],
 });
