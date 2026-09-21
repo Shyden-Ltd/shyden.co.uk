@@ -60,9 +60,9 @@ const esc = (s) =>
  */
 const flattenReport = (report) => {
   const out = [];
-  const walk = (suite, ancestors) => {
+  const walk = (suite, ancestors, file) => {
     for (const child of suite.suites || [])
-      walk(child, child.title ? [...ancestors, child.title] : ancestors);
+      walk(child, child.title ? [...ancestors, child.title] : ancestors, file);
     for (const spec of suite.specs || [])
       for (const t of spec.tests)
         for (const r of t.results)
@@ -71,11 +71,15 @@ const flattenReport = (report) => {
             project: t.projectName,
             status: r.status,
             duration: r.duration,
+            // The spec FILE a journey came from. Since #214 a recording is
+            // opt-in per spec, so "no recording" means one of two different
+            // things and the page must not spell them the same way.
+            file: spec.file ?? file,
             video: (r.attachments || []).find((a) => a.name === 'video')?.path,
           });
   };
   // Each top-level entry is a FILE; its children are the describes.
-  for (const suite of report.suites || []) walk(suite, []);
+  for (const suite of report.suites || []) walk(suite, [], suite.file);
   return out;
 };
 
@@ -427,6 +431,24 @@ export const renderEvidencePage = ({
 }) => {
   const specs = flattenReport(report);
 
+  // A journey with no recording is either a spec that never ASKED for one --
+  // the default since #214 -- or a recording that went astray (#165). Those
+  // are different facts: the first is the policy working, the second is
+  // evidence missing, and a page that spells both "not embedded" tells the
+  // operator nothing about which he is looking at.
+  //
+  // Derived from the report itself rather than from the spec sources or a
+  // list: a spec RECORDS when any result of its own carries a video. There is
+  // no second statement of the policy that could drift from the first.
+  const recordingSpecs = new Set(
+    specs.filter((s) => s.video).map((s) => s.file),
+  );
+  const specFileOf = new Map(specs.map((s) => [s.title, s.file]));
+  const noRecordingNote = (title) =>
+    recordingSpecs.has(specFileOf.get(title))
+      ? 'recording missing'
+      : 'not recorded by policy';
+
   // Derived, in first-seen order, so the page reflects the run rather than a
   // list somebody kept in step by hand.
   const engines = [];
@@ -529,7 +551,7 @@ export const renderEvidencePage = ({
         .map((e) =>
           videos.has(`${j.id}|${e}`)
             ? `<figure><video controls preload="none" src="${videos.get(`${j.id}|${e}`)}"></video><figcaption class="mono">${esc(e)}</figcaption></figure>`
-            : `<figure class="absent"><div class="novid mono">not embedded</div><figcaption class="mono">${esc(e)}</figcaption></figure>`,
+            : `<figure class="absent"><div class="novid mono">${esc(noRecordingNote(j.title))}</div><figcaption class="mono">${esc(e)}</figcaption></figure>`,
         )
         .join('')}
     </div>
