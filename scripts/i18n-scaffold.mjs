@@ -25,8 +25,8 @@
  * machine-seeded catalogue carried them in English.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { messageOf } from './errors.mjs';
-import { argv, exit } from 'node:process';
+import { die, messageOf } from './errors.mjs';
+import { argv } from 'node:process';
 
 import { isMessageTemplate } from '../src/lib/i18n/message.ts';
 import {
@@ -41,11 +41,6 @@ const CACHE = 'src/lib/i18n/.translations.json';
  * @param {string} message
  * @returns {never} so a guard above NARROWS what follows it.
  */
-const die = (message) => {
-  console.error(`✗ ${message}`);
-  exit(1);
-};
-
 const args = argv.slice(2);
 const force = args.includes('--force');
 const target = args.find((a) => !a.startsWith('--'));

@@ -51,7 +51,7 @@
  *    always runs, via `finally` and a signal handler -- see `cleanup()`.
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { messageOf } from './errors.mjs';
+import { die, messageOf } from './errors.mjs';
 import {
   closeSync,
   existsSync,
@@ -137,7 +137,10 @@ const REPORT_DIR = {
  *   predicate answering a `Response` or `undefined` is as valid as a boolean.
  * @param {{ timeoutMs: number, describe: string, intervalMs?: number }} options
  */
-async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
+export async function waitUntil(
+  predicate,
+  { timeoutMs, describe, intervalMs = 250 },
+) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const result = await predicate();
@@ -266,7 +269,7 @@ function readJson(file, description) {
 // ── port ownership: kill by port, never by process-name pattern ────────
 
 /** @param {number} port */
-function pidsListeningOnPort(port) {
+export function pidsListeningOnPort(port) {
   try {
     const out = execFileSync(
       'lsof',
@@ -301,7 +304,7 @@ function pidsListeningOnPort(port) {
  *
  *  @param {number} port
  */
-async function killByPort(port) {
+export async function killByPort(port) {
   let pids = pidsListeningOnPort(port);
   if (pids.length === 0) return;
   for (const pid of pids) {
@@ -1133,6 +1136,15 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 async function main() {
+  // This script takes no arguments, so one is a mistake -- and refusing it is
+  // the cheapest proof that `main()` ran when the file is executed directly
+  // (#227). A skipped entry point exits 0 in silence.
+  const unexpected = process.argv.slice(2);
+  if (unexpected.length > 0)
+    die(
+      `test-devices.mjs takes no arguments, received: ${unexpected.join(' ')}`,
+    );
+
   mkdirSync(TEST_RESULTS_DIR, { recursive: true });
   mkdirSync(DASHBOARD_STATE_DIR, { recursive: true });
 
@@ -1281,4 +1293,4 @@ async function main() {
   }
 }
 
-await main();
+if (import.meta.main) await main();

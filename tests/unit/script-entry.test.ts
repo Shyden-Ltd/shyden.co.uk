@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { join, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { filesUnder, searched } from '../source-files';
 import { parseFile, parseSource, where } from './ast';
@@ -258,6 +259,21 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'E2E RECONCILIATION FAILED',
   },
+  // Neither of these takes an argument, so one is a mistake they refuse
+  // before doing any work (#227). They earned probes by gaining an entry
+  // decision: until then each called `main()` unconditionally, so importing
+  // either ran it -- which is why `dashboard.mjs` kept its own copies of
+  // three helpers rather than importing them.
+  'dashboard.mjs': {
+    args: ['--no-such-flag'],
+    status: 1,
+    says: 'dashboard.mjs takes no arguments',
+  },
+  'test-devices.mjs': {
+    args: ['--no-such-flag'],
+    status: 1,
+    says: 'test-devices.mjs takes no arguments',
+  },
   // With no `docker` on PATH it refuses rather than compare nothing (#202).
   'visual.mjs': {
     args: [],
@@ -329,4 +345,53 @@ describe('every script that decides still acts when run as one (#221)', () => {
         expect(`${run.stdout}${run.stderr}`).toContain(probe.says);
         expect(run.status).toBe(probe.status);
       });
+});
+
+/**
+ * A guarded entry means the module can be IMPORTED without running the
+ * program -- which is the whole point of guarding it (#227). Before this,
+ * `dashboard.mjs` kept its own copies of `waitUntil`, `pidsListeningOnPort`
+ * and `killByPort` for exactly this reason, and the copies had already
+ * drifted: its `killByPort` gave a shutting-down process 5 s to release the
+ * port where the original gave 10 s.
+ *
+ * Observed in a child process rather than this one: a module imported into
+ * the test runner cannot be unloaded, and anything it started would outlive
+ * the assertion.
+ */
+describe('a guarded script can be imported without running (#227)', () => {
+  const importsSilently = (script: string, exported?: string) =>
+    spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        // Where the module exports something, checking it is the liveness
+        // control, and it doubles as proof that the helper has one home.
+        // `dashboard.mjs` exports nothing, so it has none -- which is sound
+        // here only because an unresolvable path THROWS: a wrong filename
+        // arrives as a non-zero exit with a stack on stderr, never as the
+        // silence this asserts.
+        `const m = await import(${JSON.stringify(pathToFileURL(join('scripts', script)).href)});
+         ${
+           exported
+             ? `if (typeof m.${exported} !== 'function')
+                  throw new Error('${script} exports no ${exported}');`
+             : ''
+         }`,
+      ],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+
+  it('test-devices.mjs imports without starting the gauntlet', () => {
+    const run = importsSilently('test-devices.mjs', 'killByPort');
+    expect(`${run.stdout}${run.stderr}`).toBe('');
+    expect(run.status).toBe(0);
+  });
+
+  it('dashboard.mjs imports without binding its port', () => {
+    const run = importsSilently('dashboard.mjs');
+    expect(`${run.stdout}${run.stderr}`).toBe('');
+    expect(run.status).toBe(0);
+  });
 });

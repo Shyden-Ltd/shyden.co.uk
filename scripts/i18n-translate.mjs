@@ -31,6 +31,7 @@
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { argv, env, exit } from 'node:process';
+import { die } from './errors.mjs';
 
 import {
   DO_NOT_TRANSLATE,
@@ -60,11 +61,6 @@ const USAGE = `usage: npm run i18n:translate -- <locale> [${OPTIONS.join(' | ')}
  * @returns {never} so a `if (!requested) die(...)` NARROWS what follows --
  *   without it every later `cache[target]` is `string | undefined`.
  */
-const die = (message) => {
-  console.error(`✗ ${message}`);
-  exit(1);
-};
-
 // ── arguments ──────────────────────────────────────────────────────────────
 const args = argv.slice(2);
 const send = args.includes('--send');
