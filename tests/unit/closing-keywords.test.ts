@@ -6,6 +6,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
 import { parseCleanYaml, workflowJobs } from '../workflow-jobs';
+import { withoutCommentLines } from './source-text';
 import { closingKeywordOffences } from '../../scripts/closing-keywords.mjs';
 
 /**
@@ -230,6 +231,25 @@ describe('the rule covers a pull request body, not only a commit message', () =>
     readonly on?: { readonly pull_request?: { readonly types?: string[] } };
   }
 
+  /**
+   * The commands a `run:` script actually EXECUTES: comment lines dropped,
+   * each trimmed, so only a command at the START of a line counts.
+   *
+   * Asserting that the script's NAME appears somewhere in the block is a
+   * different question, and mutation proved the difference: `true # node
+   * scripts/closing-keywords.mjs` satisfied that reading with the invocation
+   * commented out, and `true || test -s ...` satisfied it with the liveness
+   * control neutered. A `#` inside a `run:` block is part of the YAML STRING,
+   * so the parser strips nothing there -- the same defect as a guard satisfied
+   * by its own file's documentation (#23, #35). This mirrors how
+   * `git-hooks.test.ts` reads the pre-push hook.
+   */
+  const commandsIn = (run: string): string[] =>
+    withoutCommentLines(run, '#')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
   /** Every workflow file whose jobs invoke the rule, with its parsed trigger. */
   function workflowsRunningTheRule() {
     const files = nonEmpty(
@@ -240,8 +260,17 @@ describe('the rule covers a pull request body, not only a commit message', () =>
       const text = readFileSync(`${WORKFLOWS}/${file}`, 'utf8');
       const jobs = workflowJobs(text, file);
       const runs = jobs.flatMap((job) => job.runs);
-      return runs.some((run) => run.includes(SCRIPT))
-        ? [{ file, runs, trigger: parseCleanYaml(text, file) as Trigger }]
+      const commands = runs.flatMap(commandsIn);
+      const invokes = (command: string) => command.startsWith(`node ${SCRIPT}`);
+      return commands.some(invokes)
+        ? [
+            {
+              file,
+              runs,
+              commands,
+              trigger: parseCleanYaml(text, file) as Trigger,
+            },
+          ]
         : [];
     });
   }
@@ -274,21 +303,26 @@ describe('the rule covers a pull request body, not only a commit message', () =>
     // escape in its own failure message. CI is the only layer nobody can
     // bypass, so it reads both media, through the same rule.
     const [only] = workflowsRunningTheRule();
-    const invocations = (only?.runs ?? []).filter((run) =>
-      run.includes(SCRIPT),
+    const commands = only?.commands ?? [];
+    const invocations = commands.filter((command) =>
+      command.startsWith(`node ${SCRIPT}`),
     );
     expect(invocations).toHaveLength(2);
     expect(
-      invocations.filter((run) => run.includes('printenv PR_BODY')),
+      invocations.filter((command) => command.includes('pr-body.txt')),
     ).toHaveLength(1);
-    expect(invocations.filter((run) => run.includes('git log'))).toHaveLength(
-      1,
-    );
+    expect(
+      invocations.filter((command) => command.includes('commits.txt')),
+    ).toHaveLength(1);
+    expect(
+      commands.filter((command) => command.startsWith('git log')),
+    ).toHaveLength(1);
 
     // An empty commit range is green whatever the rule does, and reads
-    // exactly like a clean pull request, so the step refuses one.
+    // exactly like a clean pull request, so the step refuses one. Anchored at
+    // the start of its line: `true || test -s ...` is not this control.
     expect(
-      invocations.filter((run) => /test -s .*commits\.txt/.test(run)),
+      commands.filter((command) => /^test -s .*commits\.txt/.test(command)),
     ).toHaveLength(1);
   });
 
