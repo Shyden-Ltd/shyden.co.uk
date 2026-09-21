@@ -266,6 +266,19 @@ const sheet = async (
     .getByLabel('Show sex and the together/apart letters')
     .setChecked(opts.letters);
   await panel(page).getByLabel('Include avatars').setChecked(opts.avatars);
+  // The Print button's last act is `window.print()`. Chromium headless makes
+  // that a no-op, so a describe block that forgets the stub passes here and
+  // hangs for 30s on Firefox, which opens a dialog Playwright cannot dismiss
+  // -- and the failure names the CLICK, not the missing stub. Asked once, in
+  // the one place that clicks, rather than trusted to a convention each new
+  // block has to remember.
+  const unstubbed = await page.evaluate(() =>
+    window.print.toString().includes('[native code]'),
+  );
+  expect(
+    unstubbed,
+    "window.print is not stubbed: add `await page.addInitScript(() => { window.print = () => {}; })` to this block's beforeEach",
+  ).toBe(false);
   await panel(page).getByRole('button', { name: 'Print' }).click();
   await page.emulateMedia({ media: 'print' });
 };
@@ -871,6 +884,14 @@ test.describe('the absent bookkeeping the printed register is built on', () => {
  */
 test.describe('which columns reach paper is decided by name, not by position', () => {
   const ALL_SIX = ['absent', 'number', 'name', 'sex', 'together', 'apart'];
+
+  // Same stub the printed-class-list block installs, for the same reason: the
+  // panel's Print button ends in `window.print()`.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.print = () => {};
+    });
+  });
 
   /** The columns a PRESENT row actually paints, by name, in DOM order. */
   const printedColumns = async (
