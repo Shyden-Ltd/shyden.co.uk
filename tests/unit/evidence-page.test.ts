@@ -343,6 +343,57 @@ describe('a journey whose engine recorded nothing says so on the page', () => {
   });
 });
 
+describe('a captured journey the report never ran says which kind of missing it is', () => {
+  it('does not claim a recording policy it never had a spec file to read', () => {
+    // `order` is built from the manifest as well as the report, so a captured
+    // journey whose spec produced no result carries no spec file at all. The
+    // page cannot read that spec's recording policy, and a third fact wearing
+    // the second's words is the exact defect #214 exists to stop. Note the
+    // test is `has`, not `get() === undefined`: a journey the report DOES
+    // carry, whose entry has no file, is still a spec whose policy reads as
+    // "did not ask" -- pinned by the sibling test above.
+    const html = build({
+      manifest: [
+        {
+          project: 'chromium',
+          title: 'suite > a journey the report never ran',
+          order: 1,
+          label: 'first thing',
+          file: 'chromium/orphan__01.png',
+        },
+      ],
+      shots: new Map([
+        ['chromium/orphan__01.png', 'data:image/png;base64,AAAA'],
+      ]),
+      report: reportOf([
+        {
+          journey: 'a journey that opted in',
+          project: 'chromium',
+          file: 'tests/e2e/moves.spec.ts',
+          video: 'evidence/moves-chromium.webm',
+        },
+      ]),
+      videos: new Map(),
+    });
+
+    // The orphan: no spec file, so no policy to report.
+    expect(html, 'a captured journey with no test result').toContain(
+      '<div class="novid mono">no test result</div>',
+    );
+    // Its neighbour opted in and lost the file -- the wording that means
+    // something went astray, so the two are proven to be different text
+    // rather than one string the page prints everywhere.
+    expect(html, 'the opted-in spec lost its recording').toContain(
+      '<div class="novid mono">recording missing</div>',
+    );
+    // And neither is the policy wording, which nothing here has grounds for.
+    expect(
+      [...html.matchAll(/not recorded by policy/g)],
+      'nothing here read a policy',
+    ).toHaveLength(0);
+  });
+});
+
 /**
  * A recording the report names is on disk, or there is no page.
  *
