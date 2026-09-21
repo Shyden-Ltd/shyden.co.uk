@@ -53,7 +53,7 @@ jobs:
   gate:
     name: Gate — this tree already passed on its PR
     if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -80,7 +80,7 @@ jobs:
   test:
     name: Comprehensive web tests
     if: github.event_name != 'push'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 45, not 25. MEASURED 2026-09-12: `npm run test:e2e` alone took 26m13s on
     # the tree that became c100e59, so the old 25-minute budget cancelled this
     # job at 24m02s and SKIPPED both the deploy and the verify. A cancelled run
@@ -133,7 +133,7 @@ jobs:
     if: >-
       !failure() && !cancelled() &&
       (needs.gate.result == 'success' || needs.test.result == 'success')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: dev
@@ -176,7 +176,7 @@ jobs:
     # because a plain scalar starting with `!` is a YAML tag (#157).
     if: >-
       !cancelled() && needs.deploy-dev.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     # It reads DEV_BASIC_AUTH_PASSWORD, so it names the environment holding it.
     # A job naming none reads repository secrets, and those reach a workflow on
