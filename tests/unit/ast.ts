@@ -165,9 +165,15 @@ export function bind(sources: ReadonlyMap<string, string>): Bound {
     files,
     initializerOf(id) {
       const declaration = symbolOf(id)?.valueDeclaration;
-      return declaration && ts.isVariableDeclaration(declaration)
-        ? declaration.initializer
-        : undefined;
+      if (declaration && ts.isVariableDeclaration(declaration))
+        return declaration.initializer;
+      // A destructured binding answers with ITS OWN property, never with the
+      // whole source: the source builds every sibling too, so following it
+      // would judge `readings` by the `.filter()` that builds `allowed`
+      // beside it (#184, #185).
+      if (declaration && ts.isBindingElement(declaration))
+        return destructuredProperty(declaration);
+      return undefined;
     },
     declarationOf(id) {
       const symbol = symbolOf(id);
@@ -182,6 +188,106 @@ export function bind(sources: ReadonlyMap<string, string>): Bound {
     },
   };
 }
+
+/** `await x`, `(x)`, `x as T` and `x!` all answer with `x`. */
+const unwrap = (node: ts.Expression): ts.Expression => {
+  let at = node;
+  for (;;) {
+    if (ts.isAwaitExpression(at)) at = at.expression;
+    else if (ts.isParenthesizedExpression(at)) at = at.expression;
+    else if (ts.isAsExpression(at)) at = at.expression;
+    else if (ts.isNonNullExpression(at)) at = at.expression;
+    else return at;
+  }
+};
+
+/**
+ * Every `return` expression in `fn`'s own body, never a nested function's.
+ *
+ * Written as an explicit recursion rather than with `ts.forEachChild`, which
+ * STOPS at the first child whose callback returns something truthy -- an
+ * accumulator returns an array, which is always truthy, so it would visit one
+ * child per node and quietly find a single return.
+ */
+const returnsOf = (fn: ts.FunctionLikeDeclaration): ts.Expression[] => {
+  const body = fn.body;
+  if (!body) return [];
+  if (!ts.isBlock(body)) return [unwrap(body)];
+  const found: ts.Expression[] = [];
+  const walk = (node: ts.Node): void => {
+    if (ts.isFunctionLike(node) && node !== fn) return;
+    if (ts.isReturnStatement(node) && node.expression)
+      found.push(unwrap(node.expression));
+    node.forEachChild(walk);
+  };
+  body.forEachChild(walk);
+  return found;
+};
+
+/**
+ * The object literal a destructuring source answers with, or undefined.
+ *
+ * Two shapes reach it: the literal itself (`const { a } = { a: x }`) and a
+ * call whose own function returns one -- `await page.evaluate(() => ({ a }))`,
+ * which is how every one of these sites is written. A call with more than one
+ * `return` is refused rather than guessed at: two shapes mean the property is
+ * built two ways, and answering with one of them would be an inference
+ * dressed as a resolution.
+ */
+const objectSourceOf = (
+  source: ts.Expression,
+): ts.ObjectLiteralExpression | undefined => {
+  const at = unwrap(source);
+  if (ts.isObjectLiteralExpression(at)) return at;
+  if (!ts.isCallExpression(at)) return undefined;
+  const fn = at.arguments.find(
+    (argument): argument is ts.ArrowFunction | ts.FunctionExpression =>
+      ts.isArrowFunction(argument) || ts.isFunctionExpression(argument),
+  );
+  if (!fn) return undefined;
+  const returned = returnsOf(fn);
+  if (returned.length !== 1) return undefined;
+  const only = returned[0];
+  return only && ts.isObjectLiteralExpression(only) ? only : undefined;
+};
+
+/**
+ * What a destructured binding is built from, WITHOUT its siblings.
+ *
+ * `const { readings, allowed } = await page.evaluate(...)` answers `readings`
+ * with the `readings` property of the object that call returns, so an
+ * assertion over `readings` is judged by how `readings` was built and by
+ * nothing else. A shorthand property (`{ readings }`) answers with the
+ * identifier, which the caller resolves onward exactly as it resolves any
+ * other name.
+ */
+const destructuredProperty = (
+  element: ts.BindingElement,
+): ts.Expression | undefined => {
+  if (ts.isArrayBindingPattern(element.parent)) return undefined;
+  const wanted = element.propertyName ?? element.name;
+  if (!ts.isIdentifier(wanted)) return undefined;
+  let at: ts.Node = element.parent;
+  while (at && !ts.isVariableDeclaration(at)) {
+    // Only a nested pattern sits between; anything else is not a shape this
+    // resolves, and guessing is what this function exists to avoid.
+    if (!ts.isBindingElement(at) && !ts.isObjectBindingPattern(at))
+      return undefined;
+    at = at.parent;
+  }
+  const source = ts.isVariableDeclaration(at) ? at.initializer : undefined;
+  if (!source) return undefined;
+  const literal = objectSourceOf(source);
+  if (!literal) return undefined;
+  for (const property of literal.properties) {
+    const name = property.name;
+    if (!name || !ts.isIdentifier(name) || name.text !== wanted.text) continue;
+    if (ts.isPropertyAssignment(property)) return property.initializer;
+    if (ts.isShorthandPropertyAssignment(property)) return property.name;
+    return undefined;
+  }
+  return undefined;
+};
 
 /** `bind` over files on disk, each keyed by the path it was read from. */
 export const bindFiles = (paths: readonly string[]): Bound =>

@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { shoot } from './evidence';
+import { searched } from '../source-files';
 
 /**
  * Every control's colour comes from the palette, not from the browser.
@@ -96,6 +97,23 @@ for (const path of PAGES) {
     // Liveness. A page with no controls would pass the loop below having
     // measured nothing, and three of these four pages carry controls.
     if (path === '/') {
+      // #185 AC3, decided explicitly. The right answer here IS none, so
+      // `searched` cannot wrap it: there is no population to count. What has
+      // to be proved instead is that the measurement HAPPENED -- a 404, a
+      // page that never rendered, or a script that threw would all produce
+      // this same empty list, and each would read as "the homepage paints no
+      // form controls".
+      //
+      // `allowed` is built by the SAME `page.evaluate` call, from the custom
+      // properties `:root` actually serves, so a non-empty palette is proof
+      // that the page loaded and the script ran to completion. The
+      // SELECTOR's own liveness is carried by the sibling paths in this very
+      // loop, which assert `readings.length > 0` against the same constant --
+      // a typo there fails three of the four cases, not none of them.
+      expect(
+        allowed.length,
+        'the homepage served no palette, so nothing was measured at all',
+      ).toBeGreaterThan(0);
       expect(readings, 'the homepage paints no form controls').toHaveLength(0);
       return;
     }
@@ -113,7 +131,10 @@ for (const path of PAGES) {
       .map((r) => `${r.what} ${r.role}=${r.value}`);
 
     expect(
-      offPalette,
+      searched(offPalette, {
+        of: readings.length,
+        what: `controls measured on ${path}`,
+      }),
       `off-palette control colours on ${path}; the palette resolved to ${allowed.length} values`,
     ).toEqual([]);
     // The defect this documents was a UA default passing for styled: an input
