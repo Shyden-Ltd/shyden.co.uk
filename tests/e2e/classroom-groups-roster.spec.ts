@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { searched } from '../source-files';
 import {
@@ -9,6 +9,8 @@ import {
   giveEveryoneASex,
   expectStudentsBoxReports,
 } from './helpers';
+
+test.use(recorded);
 
 /**
  * Stage 3, Task 2: the roster table. Traceability: R-01, R-02, R-09, R-10,

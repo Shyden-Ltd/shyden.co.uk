@@ -152,6 +152,7 @@ const reportOf = (
     project: string;
     video?: string;
     status?: string;
+    file?: string;
   }[],
 ) => ({
   ...REPORT,
@@ -159,6 +160,7 @@ const reportOf = (
     {
       specs: [...new Set(results.map((r) => r.journey))].map((title) => ({
         title,
+        file: results.find((r) => r.journey === title)?.file,
         tests: results
           .filter((r) => r.journey === title)
           .map((r) => ({
@@ -242,6 +244,87 @@ describe('the evidence page is derived from the run', () => {
   });
 });
 
+describe('a missing recording says WHICH kind of missing it is (#214)', () => {
+  it('reads as policy for a spec that never asked, and a gap for one that did', () => {
+    // The two facts a single wording used to hide. A spec that opted in and
+    // recorded on one engine but not another has lost evidence (#165); a spec
+    // that never opted in is the default working as designed. Derived from
+    // the report -- a spec RECORDS when any result of its own carries a video
+    // -- so there is no list to fall out of step with the specs.
+    const html = build({
+      report: reportOf([
+        // Asked, and recorded on chromium only: webkit is a GAP.
+        {
+          journey: 'a-journey',
+          project: 'chromium',
+          video: '/r/a.webm',
+          file: 'tests/e2e/acts.spec.ts',
+        },
+        {
+          journey: 'a-journey',
+          project: 'webkit',
+          file: 'tests/e2e/acts.spec.ts',
+        },
+        // Never asked: both engines are POLICY.
+        {
+          journey: 'b-journey',
+          project: 'chromium',
+          file: 'tests/e2e/still.spec.ts',
+        },
+        {
+          journey: 'b-journey',
+          project: 'webkit',
+          file: 'tests/e2e/still.spec.ts',
+        },
+      ]),
+      manifest: [],
+      shots: new Map(),
+      videos: new Map([['a-journey|chromium', 'evidence/a-chromium.webm']]),
+    });
+
+    expect(html, 'the opted-in spec lost its webkit recording').toContain(
+      '<div class="novid mono">recording missing</div><figcaption class="mono">webkit</figcaption>',
+    );
+    // Counted, not just present: two engines of the spec that never asked.
+    expect(
+      [...html.matchAll(/not recorded by policy/g)],
+      'both engines of the spec that never asked',
+    ).toHaveLength(2);
+    // And the two wordings are genuinely different text, or this whole test
+    // would pass on a page that still says one thing.
+    expect(html).not.toContain('not embedded');
+  });
+});
+
+describe('a run that recorded nothing still publishes (#214 AC7)', () => {
+  it('carries an empty set through candidates, files and reconciliation', () => {
+    // With video opt-in, a perfectly ordinary evidence run can produce NO
+    // recordings at all. None of the three seams may refuse that, and
+    // `reconcileFiles` must still clear a namespace it no longer fills.
+    const report = reportOf([
+      {
+        journey: 'a-journey',
+        project: 'chromium',
+        file: 'tests/e2e/still.spec.ts',
+      },
+    ]);
+    const candidates = videoCandidates(report);
+    expect(candidates).toEqual([]);
+    expect(videoFiles(candidates)).toEqual({});
+    expect(
+      reconcileFiles({ desired: videoFiles(candidates), published: [] }),
+    ).toEqual({});
+    // A page that USED to carry recordings and now carries none must retract
+    // them, rather than leaving files nothing on the page names.
+    expect(
+      reconcileFiles({
+        desired: videoFiles(candidates),
+        published: ['evidence/a-chromium.webm'],
+      }),
+    ).toEqual({ 'evidence/a-chromium.webm': null });
+  });
+});
+
 describe('a journey whose engine recorded nothing says so on the page', () => {
   it('shows, per journey, which engine has no recording', () => {
     // An ordinary run records nothing, so a result with no recording is not a
@@ -252,8 +335,10 @@ describe('a journey whose engine recorded nothing says so on the page', () => {
       videos: new Map([['a-journey|chromium', 'data:video/webm;base64,AAAA']]),
     });
     expect(html).toContain('Journey recordings (1 of 2 engines embedded)');
+    // The default report carries no video attachment, so nothing asked to be
+    // recorded and the absence is the policy working (#214), not a loss.
     expect(html).toContain(
-      '<div class="novid mono">not embedded</div><figcaption class="mono">webkit</figcaption>',
+      '<div class="novid mono">not recorded by policy</div><figcaption class="mono">webkit</figcaption>',
     );
   });
 });
@@ -700,6 +785,17 @@ const configUnder = async (evidence: string | undefined) => {
   }
 };
 
+/** `recorded` as a spec would receive it under that `EVIDENCE_DIR`. */
+const recordedUnder = async (evidence: string | undefined) => {
+  vi.stubEnv('EVIDENCE_DIR', evidence);
+  vi.resetModules();
+  try {
+    return (await import('../e2e/evidence')).recorded;
+  } finally {
+    vi.unstubAllEnvs();
+  }
+};
+
 /**
  * The run has to LEAVE BEHIND what the builder reads.
  *
@@ -766,9 +862,20 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
     // directory itself, that clearing would take the captures with it.
     for (const evidence of ['/e', 'evidence-run']) {
       const { outputDir, use } = await configUnder(evidence);
-      expect(use?.video, `EVIDENCE_DIR=${evidence} stopped recording`).toBe(
-        'on',
-      );
+      // The SHARED config records nothing (#214). An evidence run recording
+      // every test is what spent 100 of the 255 entries a publish may carry
+      // on pages where nothing moves; a spec now ASKS, with
+      // `test.use(recorded)`. Both halves are pinned here because this seam
+      // exists to say what an evidence run leaves the builder, and "it
+      // records" moved from the config to the opt-in.
+      expect(
+        use?.video,
+        `EVIDENCE_DIR=${evidence} still records from the shared config`,
+      ).toBe('off');
+      expect(
+        (await recordedUnder(evidence)).video,
+        `EVIDENCE_DIR=${evidence} stopped recording the specs that opted in`,
+      ).toBe('on');
 
       const within = relative(
         resolve(evidence),
@@ -779,6 +886,13 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
         `EVIDENCE_DIR=${evidence} records into ${outputDir ?? 'test-results/'}`,
       ).toBe(true);
     }
+  });
+
+  it('costs an ordinary run nothing, however many specs opt in', async () => {
+    // AC2. `recorded` is `'off'` outside an evidence run, so the 18 specs
+    // that declare it pay nothing on `npm run test:e2e`.
+    expect((await recordedUnder(undefined)).video).toBe('off');
+    expect((await configUnder(undefined)).use?.video).toBe('off');
   });
 
   it('refuses an evidence directory that an ordinary run would clear', async () => {

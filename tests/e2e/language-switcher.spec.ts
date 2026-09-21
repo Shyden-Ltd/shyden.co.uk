@@ -2,6 +2,9 @@ import { test, expect } from './fixtures';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+import { recorded } from './evidence';
+
+test.use(recorded);
 
 /**
  * The language switcher, as a visitor meets it.

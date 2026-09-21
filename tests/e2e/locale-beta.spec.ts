@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import { contrastRatio } from './helpers';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import {
   LOCALES,
   DEFAULT_LOCALE,
@@ -11,6 +11,8 @@ import {
   getSiteStrings,
   BETA_BADGE,
 } from '../../src/lib/i18n/index';
+
+test.use(recorded);
 
 /**
  * What a visitor actually sees: every unverified language is labelled BETA.

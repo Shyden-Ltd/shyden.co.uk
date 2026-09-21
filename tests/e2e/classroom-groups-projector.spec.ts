@@ -9,7 +9,9 @@ import {
 } from './helpers';
 import { searched } from '../source-files';
 import { FLOOR_PX } from '../../src/scripts/projector';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
+
+test.use(recorded);
 
 /**
  * Stage 5, Task 5. The projector view. Z-01…Z-06, Z-10…Z-20, Z-24.

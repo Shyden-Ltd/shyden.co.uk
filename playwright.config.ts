@@ -270,12 +270,20 @@ export default defineConfig({
     // costs nothing on a green run.
     trace: 'retain-on-failure',
 
-    // A video per journey is a standing requirement of the evidence page
-    // (operator, 2026-08-22), and is worth nothing on a normal run: recording
-    // ~2200 tests is minutes of wall clock and gigabytes of disk. Gated on the
-    // same switch tests/e2e/evidence.ts uses, so an evidence run is exactly
-    // `EVIDENCE_DIR=<dir> npm run test:e2e -- <spec>` and needs no second flag
-    // anybody could forget. It leaves in `<dir>` everything the page is built
+    // NOT recorded here, and the literal `'off'` is the safety property: a
+    // spec ASKS to be recorded by declaring `test.use(recorded)`, and
+    // `recorded` (tests/e2e/evidence.ts) is the one home that switch lives in.
+    // A new static spec is therefore covered the day it is written, with
+    // nobody remembering to exclude it -- the opposite default would need an
+    // exclusion list, which is the shape that missed `#cg-io-toggle`.
+    //
+    // This read `process.env.EVIDENCE_DIR ? 'on' : 'off'`: one global switch,
+    // so an evidence run recorded EVERY test. Operator, 2026-09-18:
+    // "recordings are pointless and useless on static content." Measured on
+    // #205's preview -- 100 recordings beside 155 screenshots, so 100 of the
+    // 255 entries a publish may carry went on pages where nothing moves.
+    //
+    // An evidence run still leaves in `<dir>` everything the page is built
     // from: the captures and `manifest.jsonl` (tests/e2e/evidence.ts),
     // `report.json` (`reportLocation` in scripts/test-e2e.mjs) and the
     // recordings, under `<dir>/test-results/` (`evidenceOutputDir` above).
@@ -283,7 +291,7 @@ export default defineConfig({
     // directory that was deleted, then the recordings stayed in the root
     // `test-results/`, which the next run of any kind clears (#165). Both are
     // pinned by the seam guards in `tests/unit/evidence-page.test.ts`.
-    video: process.env.EVIDENCE_DIR ? 'on' : 'off',
+    video: 'off',
   },
   projects: [
     // Bytes and DOM text are identical on every engine, so running these five
