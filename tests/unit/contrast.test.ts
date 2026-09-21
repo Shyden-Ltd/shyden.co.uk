@@ -320,6 +320,13 @@ const PAIRS: Pair[] = [
     level: 'ui',
     where: 'control boundaries on a card (WCAG 1.4.11)',
   },
+  {
+    fg: ['--ink-soft'],
+    bg: ['--disabled-fill'],
+    level: 'body',
+    where:
+      "the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning `--deep`'s entry records. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received",
+  },
 ];
 
 /**
@@ -408,6 +415,50 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
     ).toEqual([]);
   });
 
+  /**
+   * The disabled fill's LEVEL, pinned to a literal — the half every guard
+   * around it is structurally unable to assert.
+   *
+   * `every declared pair clears its required ratio` computes `--ink-soft` on
+   * `--disabled-fill`, and `a disabled control is filled, not dimmed`
+   * (disabled-controls.spec.ts) reads `--disabled-fill` off `:root` at
+   * runtime and compares the control's own background to it. Both sides of
+   * both move with the token, so both hold at ANY level (#117). Measured:
+   * set the fill to `--surface`'s `#070d16` and the label still scores
+   * 7.5:1 and the control's background still equals the token — every guard
+   * green, and a teacher sees no control at all. A level is pinned against
+   * the brief, separately from anything derived from it.
+   */
+  it('pins the disabled fill, and keeps it off every ground it is drawn on', () => {
+    const from = tokens();
+    expect(from.get('--disabled-fill')).toBe('#2a323f');
+
+    /* The class the literal cannot state, and the reason it is not simply a
+       second literal: the grounds are DERIVED. `Pair.bg` is a stack written
+       top-first ENDING IN AN OPAQUE BASE, so its last layer is a ground by
+       construction, and a ground added or renamed next year is covered the
+       day it appears. Compared as parsed colour, so `#070d16` and
+       `rgb(7 13 22)` are one finding rather than two spellings. */
+    const fill = parseColour(from.get('--disabled-fill') ?? '');
+    if (fill === null) throw new Error('--disabled-fill is not a colour');
+
+    const grounds = [
+      ...new Set(PAIRS.map((pair) => pair.bg[pair.bg.length - 1])),
+    ].filter((name) => name !== '--disabled-fill');
+    const collisions = grounds.filter((name) => {
+      const ground = parseColour(from.get(name) ?? '');
+      return (
+        ground !== null &&
+        ground.alpha === fill.alpha &&
+        ground.rgb.every((channel, i) => channel === fill.rgb[i])
+      );
+    });
+
+    expect(
+      searched(collisions, { of: grounds, what: 'opaque grounds' }),
+    ).toEqual([]);
+  });
+
   it('every colour token is classified — paired or explicitly decorative', () => {
     const paired = new Set(PAIRS.flatMap((p) => [...p.fg, ...p.bg]));
     const all = colourTokens();
@@ -429,9 +480,11 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
  * would be recorded under its final line, which still classifies uniquely and
  * still fails loudly if it is not classified at all.
  */
-type BorderUsage = { file: string; selector: string; declaration: string };
+type Declaration = { file: string; selector: string; declaration: string };
 
-const borderUsages = (): BorderUsage[] => {
+const declarationsMatching = (
+  matches: (declaration: string) => boolean,
+): Declaration[] => {
   const files = nonEmpty(
     filesUnder(SRC, (path) => path.endsWith('.astro') || path.endsWith('.css')),
     `.astro and .css files under ${SRC}/`,
@@ -440,14 +493,14 @@ const borderUsages = (): BorderUsage[] => {
   return files.flatMap((file) => {
     const lines = withoutCssComments(readFileSync(file, 'utf8')).split('\n');
     let selector = '(none)';
-    const found: BorderUsage[] = [];
+    const found: Declaration[] = [];
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed.endsWith('{') && !trimmed.startsWith('@')) {
         selector = trimmed.slice(0, -1).trim();
       }
-      if (trimmed.includes('var(--border)')) {
+      if (matches(trimmed)) {
         found.push({
           file: file.replace(/^src\//, ''),
           selector,
@@ -458,6 +511,9 @@ const borderUsages = (): BorderUsage[] => {
     return found;
   });
 };
+
+const borderUsages = (): Declaration[] =>
+  declarationsMatching((declaration) => declaration.includes('var(--border)'));
 
 const key = (u: { file: string; selector: string }) =>
   `${u.file} :: ${u.selector}`;
@@ -522,6 +578,52 @@ describe('a control is never identified by the decorative border alone', () => {
       searched(unclassified, {
         of: usages,
         what: 'var(--border) usages in src/',
+      }),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * AC3's second clause (#250), which was held up by a comment until now.
+ *
+ * `tokens.css` states that its site-wide rule "enforces AC3's 'never a list of
+ * per-component overrides': a component cannot quietly invent a second
+ * disabled look" — and nothing tested that claim. `!important` only wins
+ * against a component rule that is not itself `!important`, so the
+ * enforcement was a convention rather than a control, and a comment is not an
+ * implementation.
+ */
+describe('one disabled look, defined in one place', () => {
+  /** What paints a control. `color-scheme` is not one of these. */
+  const PAINT =
+    /^(background(-color|-image)?|color|cursor|opacity|-webkit-text-fill-color)\s*:/;
+
+  /**
+   * A selector's SUBJECT is its last compound, and it is what decides here.
+   *
+   * `.switch input:disabled + span` paints the switch TRACK — a sibling the
+   * site-wide rule cannot reach, because that rule matches the input while
+   * the visible switch is the span. Its subject carries no `:disabled`, so it
+   * is not a second look. A rule whose own subject IS the disabled control is.
+   */
+  const subjectIsDisabled = (selector: string): boolean =>
+    selector.split(',').some((part) => /:disabled$/.test(part.trim()));
+
+  it('no component paints a disabled control for itself', () => {
+    const painted = declarationsMatching((declaration) =>
+      PAINT.test(declaration),
+    ).filter((usage) => subjectIsDisabled(usage.selector));
+    const elsewhere = painted.filter(
+      (usage) => usage.file !== 'styles/tokens.css',
+    );
+
+    // The population includes tokens.css's own rules, so it is live by
+    // construction — and deleting the site-wide treatment empties it, which
+    // `searched` refuses rather than reporting as a clean bill of health.
+    expect(
+      searched(elsewhere, {
+        of: painted.map((usage) => `${usage.file} :: ${usage.selector}`),
+        what: 'paint declarations on a :disabled subject',
       }),
     ).toEqual([]);
   });

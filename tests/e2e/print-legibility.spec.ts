@@ -134,6 +134,67 @@ for (const { path, prepare } of [
   });
 }
 
+test('a disabled control never depends on its fill reaching paper', async ({
+  page,
+}) => {
+  // #250 AC5. `--disabled-fill` is what makes a disabled control read as
+  // disabled on screen, and a fill only reaches the sheet if the reader has
+  // turned "Background graphics" ON — which browsers leave OFF. A control
+  // whose legibility depended on it would print as text with no boundary, the
+  // same defect the `.btn, button` rule in tokens.css's print block already
+  // exists for.
+  await page.goto('/classroom-groups');
+
+  const resolve = (name: string) =>
+    page.evaluate((property) => {
+      const probe = document.createElement('span');
+      probe.style.background = getComputedStyle(document.documentElement)
+        .getPropertyValue(property)
+        .trim();
+      document.body.append(probe);
+      const rgb = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return rgb;
+    }, name);
+
+  // Read on SCREEN first: this is the value that must not survive the switch.
+  const onScreen = await resolve('--disabled-fill');
+  expect(onScreen).not.toBe('rgba(0, 0, 0, 0)');
+
+  await page.emulateMedia({ media: 'print' });
+  expect(await resolve('--disabled-fill')).toBe('rgba(0, 0, 0, 0)');
+
+  // ...and derived, over everything the sheet actually renders, because a
+  // token redefined at `:root` proves nothing about a component that hard-
+  // coded the same grey somewhere else.
+  const painted = await page.evaluate((grey) => {
+    const found: string[] = [];
+    let rendered = 0;
+    for (const el of document.querySelectorAll<HTMLElement>('body *')) {
+      // Client rects, not the element's own computed display: `display: none`
+      // on an ANCESTOR leaves a descendant's computed display untouched.
+      if (el.getClientRects().length === 0) continue;
+      rendered += 1;
+      if (getComputedStyle(el).backgroundColor === grey) {
+        found.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}`);
+      }
+    }
+    return { found, rendered };
+  }, onScreen);
+
+  expect(
+    searched(painted.found, {
+      of: painted.rendered,
+      what: 'elements rendered under print media',
+    }),
+    `the screen disabled grey ${onScreen} reached the sheet`,
+  ).toEqual([]);
+  await shoot(
+    page,
+    `under print media --disabled-fill is transparent and none of ${painted.rendered} rendered elements paint ${onScreen}`,
+  );
+});
+
 test('the screen palette is not dragged down with the print one', async ({
   page,
 }) => {

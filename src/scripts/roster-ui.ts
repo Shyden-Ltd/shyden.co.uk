@@ -180,6 +180,14 @@ const button = (text: string, className: string): HTMLButtonElement => {
 };
 
 /**
+ * The id of the "roster is full" paragraph, so the two add buttons can name
+ * it from `aria-describedby` and `disabled-controls.spec.ts` can resolve it.
+ * One constant rather than three string literals: a typo in any one of them
+ * is a reference to nothing, and a reference to nothing is silent.
+ */
+export const ROSTER_LIMIT_MESSAGE_ID = 'cg-roster-limit';
+
+/**
  * "+ Add student" / "+ Add several…" — design spec section 4, "Changing the
  * class size is then a list operation". Rendered in TWO places by
  * `renderRoster` below: alone, when the roster is empty (so there is
@@ -326,12 +334,26 @@ function buildToolbar(
   // re-enables both controls the instant the roster drops back under the
   // limit, the same "comparison, not a one-way latch" shape this page's
   // other guards already keep (updateRosterValidation, classroom-groups.ts).
+  // Remove is never disabled here -- nothing about MAX_ROSTER stops a teacher
+  // removing a row, even at the ceiling; a class already full is exactly when
+  // removing one first matters most. (Recorded in ClassroomGroupsPage.astro's
+  // CSS until #250 replaced those per-component rules with one site-wide
+  // treatment in tokens.css, which is paint and had no business holding a
+  // decision about behaviour.)
   if (rosterAtLimit(getRoster())) {
     addButton.disabled = true;
     severalButton.disabled = true;
     const limitMessage = document.createElement('p');
     limitMessage.className = 'cg-roster-limit-message';
+    // An id, so the paragraph a sighted teacher reads is the SAME node a
+    // screen reader is handed (#250 AC10). Without it the reason was on the
+    // page and unreachable from either button: `aria-describedby` can only
+    // name an id. Both buttons and the paragraph are rebuilt together by this
+    // function, so the reference cannot outlive what it points at.
+    limitMessage.id = ROSTER_LIMIT_MESSAGE_ID;
     limitMessage.textContent = t.rosterAtLimitMessage({ max: MAX_ROSTER });
+    addButton.setAttribute('aria-describedby', ROSTER_LIMIT_MESSAGE_ID);
+    severalButton.setAttribute('aria-describedby', ROSTER_LIMIT_MESSAGE_ID);
     wrap.appendChild(limitMessage);
   }
 

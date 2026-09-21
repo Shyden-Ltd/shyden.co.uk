@@ -2316,21 +2316,6 @@ const sexWhyText = sexWhy(roster, t);
     border-radius: 6px;
     cursor: pointer;
   }
-  /* Design spec section 4, "Adding a row at 100": both add controls
-     disable at the limit -- matching `.actions button:disabled`'s own
-     visual language (the SCOPED style block, further down) rather than
-     inventing a second one, but restated GLOBAL here for the identical
-     reason every other rule in this block is: buildToolbar (roster-ui.ts)
-     builds both buttons by document.createElement, so neither carries
-     Astro's own scoping attribute. Remove is never disabled by this rule
-     -- nothing about MAX_ROSTER stops a teacher removing a row, even at
-     the ceiling; a class already full is exactly when removing one first
-     matters most. */
-  .cg-add-student:disabled,
-  .cg-add-several:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
   /* Slightly smaller and quieter than the two ADD buttons above -- an
      established, lower-emphasis action, not a peer of "+ Add student"/
      "+ Add several…", which is why it is not in the shared rule above.
@@ -2648,19 +2633,15 @@ const sexWhyText = sexWhy(roster, t);
     width: 1.15rem;
     height: 1.15rem;
   }
-  /* Disabled state for a `.switch` (the sex switches; #cg-sound-check is
-     never disabled, so this never applies to it). The label text drops to
-     `--ink-soft` -- the SAME colour `.help`/`.why` already use elsewhere on
-     this page, not a new one, and independently checked here: 6.37:1
-     against `--bg`, comfortably above the 4.5:1 AA floor for normal text.
-     Deliberately NOT the `opacity: 0.6` this page uses for a disabled
-     button (`.actions button:disabled`) -- measured, that treatment drops
-     `--ink-soft` to roughly 2.67:1, well under AA. A disabled control still
-     needs a readable contrast ratio; this is that check, not an
-     assumption. */
-  .switch input:disabled {
-    cursor: not-allowed;
-  }
+  /* The LABEL beside a disabled `.switch` (the sex switches; #cg-sound-check
+     is never disabled, so this never applies to it). The checkbox itself is
+     drawn by the UA and is carved out of the site-wide fill in tokens.css;
+     only its label is ours to colour. `--ink-soft` is the SAME colour
+     `.help`/`.why` already use on this page, not a new one, and independently
+     checked here: 6.37:1 against `--bg`, above the 4.5:1 AA floor.
+     Deliberately NOT `opacity: 0.6` -- measured, that treatment drops
+     `--ink-soft` to roughly 2.67:1, well under AA, which is the measurement
+     #250 generalised into `--disabled-fill` for every other control. */
   .switch input:disabled + span {
     color: var(--ink-soft);
   }
@@ -2893,10 +2874,6 @@ const sexWhyText = sexWhy(roster, t);
     border: 0;
     border-radius: 6px;
     cursor: pointer;
-  }
-  .actions button:disabled {
-    opacity: 0.6;
-    cursor: default;
   }
   /* Stage 3, Task 8. The three avatar `<symbol>`s (design spec section 5) --
      never painted on their own (a `<symbol>` is `display: none` by the SVG

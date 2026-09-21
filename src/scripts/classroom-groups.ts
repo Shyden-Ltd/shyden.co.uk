@@ -779,9 +779,25 @@ if (form) {
     // Copied, not passed straight through: `getRoster()` hands back a
     // `readonly Student[]` and `rosterProblems` takes a mutable one, which
     // is the same reason `updateRosterValidation` below spreads it too.
-    goButton.disabled =
-      rosterProblems([...getRoster()], t).length > 0 ||
-      readNumberFields().problem !== null;
+    const rosterStops = rosterProblems([...getRoster()], t).length > 0;
+    const numbersStop = readNumberFields().problem !== null;
+    goButton.disabled = rosterStops || numbersStop;
+    // ...and the ONE writer of the reason too, for the reason it is the one
+    // writer of `disabled`: two writers would be rivals, and a button that
+    // says nothing about why it will not move is #250's whole subject. The
+    // ids name the very paragraphs `updateRosterValidation` and
+    // `updateNumbersValidation` fill, so the text a screen reader is handed
+    // and the text on the page are the same node (AC10), and the description
+    // names only the problems that are actually standing right now.
+    const describedBy = [
+      rosterStops ? 'cg-roster-problem' : null,
+      numbersStop ? 'cg-numbers-problem' : null,
+    ].filter((id) => id !== null);
+    if (describedBy.length > 0) {
+      goButton.setAttribute('aria-describedby', describedBy.join(' '));
+    } else {
+      goButton.removeAttribute('aria-describedby');
+    }
   };
 
   /**
