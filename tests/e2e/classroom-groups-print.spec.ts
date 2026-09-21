@@ -4,11 +4,13 @@ import {
   openPrintPanel,
   rosterWithAnAbsence,
   buildRoster,
+  buildRosterAtPath,
   giveEveryoneASex,
   openRoster,
 } from './helpers';
 import { todayISO } from '../../src/lib/csv';
 import { searched } from '../source-files';
+import { shoot } from './evidence';
 
 /**
  * Every control assertion is scoped to the PANEL, never to the page.
@@ -862,6 +864,12 @@ test.describe('the absent bookkeeping the printed register is built on', () => {
       expect(
         searched(flags, { of: flags, what: `roster rows after ${what}` }),
       ).toEqual(expected);
+
+      // The register as it reaches paper, for the edit path that hid #253 for
+      // as long as it did. Whole page, not the table: what prints is the page.
+      await page.emulateMedia({ media: 'print' });
+      await shoot(page, `the printed register after ${what}`);
+      await page.emulateMedia({ media: 'screen' });
     });
   }
 });
@@ -923,6 +931,11 @@ test.describe('which columns reach paper is decided by name, not by position', (
       avatars: true,
     });
 
+    await shoot(
+      page,
+      'absent pupils shown: the register prints all six columns, Absent first',
+    );
+
     const columns = await printedColumns(page, 1);
     expect(
       [...searched(columns, { of: columns, what: 'printed columns' })].sort(),
@@ -947,6 +960,11 @@ test.describe('which columns reach paper is decided by name, not by position', (
     // Budi is present, so Budi's row stays -- minus the Absent column. If the
     // rule ever names the wrong column, THIS is the assertion that says which
     // one went instead, by name, rather than reporting a count that moved.
+    await shoot(
+      page,
+      'absent pupils hidden: the Absent column is gone and Ana’s row with it',
+    );
+
     const columns = await printedColumns(page, 1);
     expect(
       [...searched(columns, { of: columns, what: 'printed columns' })].sort(),
@@ -971,5 +989,48 @@ test.describe('which columns reach paper is decided by name, not by position', (
     const rows = page.locator('.cg-student');
     await expect(rows.nth(0)).toBeHidden();
     await expect(rows.nth(1)).toBeVisible();
+  });
+});
+
+/**
+ * #261 AC5. The printed register in a language that is not English.
+ *
+ * The register was asserted in English only, and its headings are translated.
+ * A heading of one or two words is the class that once put `Tình dục` --
+ * *sexual intercourse* -- beside pupils' names on a roster (#114), while every
+ * surrounding SENTENCE translated correctly. No automated guard can see a
+ * string that is translated and wrong: identical-to-English guards catch
+ * untranslated, empty-copy guards catch blank, and this is neither. A picture
+ * an operator reads is the only instrument there is, which is why this test
+ * exists to be LOOKED at as much as to pass.
+ *
+ * No panel flow: `print-ui.ts` applies the remembered choices to `<html>` on
+ * load, so the defaults are already in place and `emulateMedia` is enough.
+ */
+test.describe('the printed register — Indonesian', () => {
+  test('every column heading reaches paper in Indonesian', async ({ page }) => {
+    await buildRosterAtPath(page, '/id/classroom-groups', [
+      ['M', 'Ana'],
+      ['F', 'Budi'],
+    ]);
+    await page.emulateMedia({ media: 'print' });
+
+    const headings = page.locator('#cg-roster thead th:visible');
+    // Visible AND worded: `toHaveText` alone reads `textContent`, which a
+    // heading the page forgot to show still carries (#188).
+    await expect(headings.first()).toBeVisible();
+    await expect(headings).toHaveText([
+      'Tidak hadir',
+      '#',
+      'Nama',
+      'Jenis kelamin',
+      'Bersama',
+      'Terpisah',
+    ]);
+
+    await shoot(
+      page,
+      'the Indonesian register on paper, every heading translated',
+    );
   });
 });
