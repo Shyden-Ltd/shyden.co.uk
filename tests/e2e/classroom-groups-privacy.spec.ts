@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -10,6 +10,8 @@ import {
   giveEveryoneASex,
   handoverTo,
 } from './helpers';
+
+test.use(recorded);
 
 /**
  * The page makes a promise in both languages: "No class list ever leaves this

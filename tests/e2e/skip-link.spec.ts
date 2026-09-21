@@ -1,4 +1,7 @@
 import { test, expect } from './fixtures';
+import { recorded } from './evidence';
+
+test.use(recorded);
 
 /**
  * The skip link, WCAG 2.4.1, on every engine.

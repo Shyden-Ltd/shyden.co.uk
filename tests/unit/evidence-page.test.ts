@@ -700,6 +700,17 @@ const configUnder = async (evidence: string | undefined) => {
   }
 };
 
+/** `recorded` as a spec would receive it under that `EVIDENCE_DIR`. */
+const recordedUnder = async (evidence: string | undefined) => {
+  vi.stubEnv('EVIDENCE_DIR', evidence);
+  vi.resetModules();
+  try {
+    return (await import('../e2e/evidence')).recorded;
+  } finally {
+    vi.unstubAllEnvs();
+  }
+};
+
 /**
  * The run has to LEAVE BEHIND what the builder reads.
  *
@@ -766,9 +777,20 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
     // directory itself, that clearing would take the captures with it.
     for (const evidence of ['/e', 'evidence-run']) {
       const { outputDir, use } = await configUnder(evidence);
-      expect(use?.video, `EVIDENCE_DIR=${evidence} stopped recording`).toBe(
-        'on',
-      );
+      // The SHARED config records nothing (#214). An evidence run recording
+      // every test is what spent 100 of the 255 entries a publish may carry
+      // on pages where nothing moves; a spec now ASKS, with
+      // `test.use(recorded)`. Both halves are pinned here because this seam
+      // exists to say what an evidence run leaves the builder, and "it
+      // records" moved from the config to the opt-in.
+      expect(
+        use?.video,
+        `EVIDENCE_DIR=${evidence} still records from the shared config`,
+      ).toBe('off');
+      expect(
+        (await recordedUnder(evidence)).video,
+        `EVIDENCE_DIR=${evidence} stopped recording the specs that opted in`,
+      ).toBe('on');
 
       const within = relative(
         resolve(evidence),
@@ -779,6 +801,13 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
         `EVIDENCE_DIR=${evidence} records into ${outputDir ?? 'test-results/'}`,
       ).toBe(true);
     }
+  });
+
+  it('costs an ordinary run nothing, however many specs opt in', async () => {
+    // AC2. `recorded` is `'off'` outside an evidence run, so the 18 specs
+    // that declare it pay nothing on `npm run test:e2e`.
+    expect((await recordedUnder(undefined)).video).toBe('off');
+    expect((await configUnder(undefined)).use?.video).toBe('off');
   });
 
   it('refuses an evidence directory that an ordinary run would clear', async () => {

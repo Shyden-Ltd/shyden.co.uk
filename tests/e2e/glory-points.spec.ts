@@ -1,5 +1,8 @@
 import { test, expect } from './fixtures';
 import type { Locator } from '@playwright/test';
+import { recorded } from './evidence';
+
+test.use(recorded);
 test.describe('glory points calculator', () => {
   test('computes the exact breakdown for 1000', async ({ page }) => {
     await page.goto('/glory-points');
