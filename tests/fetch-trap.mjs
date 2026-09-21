@@ -17,6 +17,7 @@ const record = env.FETCH_TRAP_RECORD;
 if (!record) throw new Error('fetch-trap: FETCH_TRAP_RECORD is not set');
 writeFileSync(record, 'loaded\n');
 
+/** @param {RequestInfo | URL} input */
 globalThis.fetch = async (input) => {
   const url = input instanceof Request ? input.url : String(input);
   appendFileSync(record, `request ${url}\n`);

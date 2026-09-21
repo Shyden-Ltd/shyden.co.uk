@@ -29,12 +29,14 @@ export const PROD_HOSTNAME = 'shyden.co.uk';
  * a near-miss like `dev.shyden.co.uk` or a hostile
  * `shyden.co.uk.evil.com` cannot trip the prod (pass-through) gate.
  */
+/** @param {string} hostname */
 export function isProdHostname(hostname) {
   if (typeof hostname !== 'string' || hostname.length === 0) return false;
   return hostname.toLowerCase() === PROD_HOSTNAME;
 }
 
 /** Inverse convenience — any non-prod host (dev, Pages preview, localhost). */
+/** @param {string} hostname */
 export function shouldServeBlockingRobots(hostname) {
   return !isProdHostname(hostname);
 }
@@ -49,6 +51,7 @@ export const WWW_HOSTNAME = `www.${PROD_HOSTNAME}`;
  * normal prod/dev logic). Case-insensitive on the host (DNS is). This runs
  * BEFORE the auth gate so www is publicly redirected, never challenged.
  */
+/** @param {URL} url */
 export function wwwRedirectLocation(url) {
   if (typeof url?.hostname !== 'string') return null;
   if (url.hostname.toLowerCase() !== WWW_HOSTNAME) return null;
@@ -86,6 +89,10 @@ export function noIndexHeaderValue() {
  * FAILS CLOSED: a missing header or empty/null `expectedPassword` always
  * returns false — a misconfigured deploy (DEV_PASSWORD unset) stays
  * locked, never wide open.
+ */
+/**
+ * @param {string | null} authorizationHeader
+ * @param {string | undefined} expectedPassword
  */
 export function basicAuthOk(authorizationHeader, expectedPassword) {
   if (!expectedPassword) return false;

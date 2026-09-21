@@ -36,6 +36,10 @@ import { en } from '../src/lib/i18n/en.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
 
+/**
+ * @param {string} message
+ * @returns {never} so a guard above NARROWS what follows it.
+ */
 const die = (message) => {
   console.error(`✗ ${message}`);
   exit(1);
@@ -69,11 +73,19 @@ const PLURAL_FORMS = new Intl.PluralRules(target).resolvedOptions()
   .pluralCategories;
 
 /** A key that needs quoting in an object literal (`'class-list'`). */
+/** @param {string} key */
 const plainKey = (key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key);
 
 /**
  * The TypeScript source for one value. `path` is carried so a refusal names
  * the key it happened at.
+ */
+/**
+ * @param {unknown} value
+ * @param {string} path
+ * @param {number} indent
+ * @returns {string} declared, because this recurses: without a return type
+ *   TypeScript cannot infer one from a function that calls itself.
  */
 function render(value, path, indent) {
   const pad = '  '.repeat(indent);
@@ -83,12 +95,16 @@ function render(value, path, indent) {
     die(`${path} is a function. A catalogue holds copy and templates (#136).`);
 
   if (Array.isArray(value)) {
-    const items = value.map((v, i) => render(v, `${path}[${i}]`, indent + 1));
-    return `[\n${items.map((s) => inner + s).join(',\n')},\n${pad}]`;
+    const items = value.map(
+      (/** @type {unknown} */ v, /** @type {number} */ i) =>
+        render(v, `${path}[${i}]`, indent + 1),
+    );
+    return `[\n${items.map((/** @type {string} */ s) => inner + s).join(',\n')},\n${pad}]`;
   }
 
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value).map(([key, v]) => {
+    const entries = Object.entries(value).map(
+      /** @returns {string} */ ([key, v]) => {
       const name = plainKey(key) ? key : JSON.stringify(key);
       // No leading dot at the root, or a key comes out as `..errors.X`.
       const child = plainKey(key)

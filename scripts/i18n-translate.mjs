@@ -55,6 +55,11 @@ const BATCH = 50;
 const OPTIONS = ['--send', '--prune'];
 const USAGE = `usage: npm run i18n:translate -- <locale> [${OPTIONS.join(' | ')}]`;
 
+/**
+ * @param {string} message
+ * @returns {never} so a `if (!requested) die(...)` NARROWS what follows --
+ *   without it every later `cache[target]` is `string | undefined`.
+ */
 const die = (message) => {
   console.error(`✗ ${message}`);
   exit(1);
@@ -64,7 +69,18 @@ const die = (message) => {
 const args = argv.slice(2);
 const send = args.includes('--send');
 const prune = args.includes('--prune');
-const target = args.find((a) => !a.startsWith('--'));
+const requested = args.find((a) => !a.startsWith('--'));
+
+/**
+ * @param {string} value
+ * @returns {value is (typeof TRANSLATABLE_LOCALES)[number]} a PREDICATE, not a
+ *   boolean: `includes` answers "is it in the list" and narrows nothing, so
+ *   every later call had to take `string` and none of them do.
+ */
+const isTranslatable = (value) =>
+  // The ARRAY is widened, never the value cast: `includes` on a readonly
+  // tuple of literals demands the union it is trying to decide.
+  /** @type {readonly string[]} */ (TRANSLATABLE_LOCALES).includes(value);
 
 // Refused, not ignored: a mistyped `--prune` read as no option at all is a
 // dry run, which at a glance looks like the prune it was meant to be.
@@ -72,10 +88,21 @@ const unknown = args.filter((a) => a.startsWith('--') && !OPTIONS.includes(a));
 if (unknown.length > 0) die(`unknown option ${unknown.join(', ')} — ${USAGE}`);
 if (send && prune)
   die('--send and --prune cannot be combined: a send prunes as it writes');
-if (!target) die(USAGE);
-if (!TRANSLATABLE_LOCALES.includes(target))
-  die(`${target} is not an MVP locale (${TRANSLATABLE_LOCALES.join(', ')})`);
-if (target === 'en') die('en is the source language, not a target');
+if (!requested) die(USAGE);
+if (!isTranslatable(requested))
+  die(`${requested} is not an MVP locale (${TRANSLATABLE_LOCALES.join(', ')})`);
+if (requested === 'en') die('en is the source language, not a target');
+
+/**
+ * The validated target, as the LOCALE it has just been proved to be.
+ *
+ * `argv` gives a `string`; every function below takes the locale union, and
+ * `Array.prototype.includes` narrows nothing on its own. The predicate above
+ * is what makes this a rename rather than a cast that could outlive its own
+ * check -- move a guard and this stops compiling, where a cast would go on
+ * asserting something nothing had checked.
+ */
+const target = requested;
 
 // ── what would be sent ─────────────────────────────────────────────────────
 const cache = existsSync(CACHE) ? JSON.parse(readFileSync(CACHE, 'utf8')) : {};
@@ -150,6 +177,10 @@ if (!apiKey.trim()) die('DEEPL_API_KEY is not set (env or .env.local)');
 const endpoint = deeplEndpoint(apiKey);
 
 /** Every source drafted, in order, 50 texts to a request. */
+/**
+ * @param {string[]} sources
+ * @param {Record<string, unknown>} options
+ */
 async function draftAll(sources, options) {
   const drafts = [];
   for (let i = 0; i < sources.length; i += BATCH) {
@@ -170,7 +201,10 @@ async function draftAll(sources, options) {
     if (!response.ok) die(`DeepL responded ${response.status}`);
     const { translations } = await response.json();
     drafts.push(
-      ...translations.map(({ text }) => unescapeXml(unprotectTerms(text))),
+      ...translations.map(
+        (/** @type {{ text: string }} */ { text }) =>
+          unescapeXml(unprotectTerms(text)),
+      ),
     );
     console.log(`  ${Math.min(i + BATCH, sources.length)}/${sources.length}`);
   }

@@ -42,6 +42,7 @@ import { execFileSync } from 'node:child_process';
  */
 export const REQUIRED_CHECKS = ['build-and-test', 'visual'];
 
+/** @param {unknown} sha */
 const short = (sha) => String(sha ?? '').slice(0, 7);
 
 /**
@@ -51,6 +52,7 @@ const short = (sha) => String(sha ?? '').slice(0, 7);
  * so it sorts LAST and therefore decides — matching branch protection, where a
  * pending required check does not satisfy the rule.
  */
+/** @param {{ completedAt?: string | null } | undefined} run */
 const finishedAt = (run) =>
   run?.completedAt ? Date.parse(run.completedAt) : Number.POSITIVE_INFINITY;
 
@@ -148,8 +150,15 @@ export const decideDeploy = ({
   };
 };
 
-const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+/** @param {...string} args */
+const git = (...args) =>
+  execFileSync('git', args, { encoding: 'utf8' }).trim();
 
+/**
+ * @param {string} repo
+ * @param {string} sha
+ * @param {string} token
+ */
 const checkRunsFor = async (repo, sha, token) => {
   const res = await fetch(
     `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100`,
@@ -164,7 +173,11 @@ const checkRunsFor = async (repo, sha, token) => {
   if (!res.ok)
     throw new Error(`check-runs for ${short(sha)}: HTTP ${res.status}`);
   const body = await res.json();
-  return (body.check_runs ?? []).map((run) => ({
+  return (
+    /** @type {{ check_runs?: { name: string, status: string, conclusion: string | null, completed_at: string | null }[] }} */ (
+      body
+    ).check_runs ?? []
+  ).map((run) => ({
     name: run.name,
     conclusion: run.conclusion,
     completedAt: run.completed_at,

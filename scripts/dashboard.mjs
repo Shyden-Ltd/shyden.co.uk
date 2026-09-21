@@ -37,6 +37,7 @@
  * server's port is freed -- by port, never by process-name pattern.
  */
 import { execFileSync } from 'node:child_process';
+import { stackOf } from './errors.mjs';
 import {
   closeSync,
   existsSync,
@@ -111,6 +112,10 @@ const REPORT_INDEX = {
 // duplication beats coupling two processes that must not share a module
 // graph. If `lsof`'s output shape ever changes, both copies need updating
 // together.
+/**
+ * @param {() => boolean | Promise<boolean>} predicate
+ * @param {{ timeoutMs: number, describe: string, intervalMs?: number }} options
+ */
 async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -125,6 +130,7 @@ async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
   }
 }
 
+/** @param {number} port */
 function pidsListeningOnPort(port) {
   try {
     const out = execFileSync(
@@ -138,7 +144,12 @@ function pidsListeningOnPort(port) {
       .filter(Boolean)
       .map(Number);
   } catch (error) {
-    if (error.status === 1 && !error.stdout) return []; // lsof's "nothing matched" shape
+    // lsof's "nothing matched" shape. Read through a property check, not a
+    // cast: `catch` binds `unknown` because anything can be thrown.
+    const spawned = /** @type {{ status?: unknown, stdout?: unknown }} */ (
+      error
+    );
+    if (spawned.status === 1 && !spawned.stdout) return [];
     throw error;
   }
 }
@@ -149,6 +160,7 @@ function pidsListeningOnPort(port) {
  * typical dev machine has a reason to be on 4322. SIGTERM first, SIGKILL
  * only if it is still there after a grace period. Idempotent.
  */
+/** @param {number} port */
 async function killByPort(port) {
   let pids = pidsListeningOnPort(port);
   if (pids.length === 0) return;
@@ -182,6 +194,35 @@ async function killByPort(port) {
 
 // ── live state, built from the jsonl tail + the small JSON artifacts ───
 
+/**
+ * @typedef {{ id: string, title: string, project: string, at: string }} RunningTest
+ * @typedef {{ title: string, project: string, at: string }} Failure
+ */
+
+/**
+ * One group's live state.
+ *
+ * Declared rather than inferred: every field below starts `null` or `[]`, so
+ * TypeScript reads the INITIAL value as the type -- `report` became `null`,
+ * and the line that later assigns it a `file://` URL was an error. The same
+ * shape that made `parents = []` mean `never[]` in #157.
+ *
+ * @returns {{
+ *   expected: boolean,
+ *   notRun: { reason: string } | null,
+ *   total: number | null,
+ *   passed: number,
+ *   failed: number,
+ *   skipped: number,
+ *   running: RunningTest[],
+ *   failures: Failure[],
+ *   beganAt: string | null,
+ *   endedAt: string | null,
+ *   final: Record<string, unknown> | null,
+ *   report: string | null,
+ *   mode: Record<string, unknown> | null,
+ * }}
+ */
 function freshGroup() {
   return {
     expected: true,
@@ -218,6 +259,10 @@ const tail = Object.fromEntries(
   GROUP_NAMES.map((name) => [name, { offset: 0, partial: '' }]),
 );
 
+/**
+ * @param {ReturnType<typeof freshGroup>} group
+ * @param {{ id: string, title: string, project: string, at: string } & Record<string, any>} ev
+ */
 function applyEvent(group, ev) {
   switch (ev.event) {
     case 'begin':
@@ -256,6 +301,7 @@ function applyEvent(group, ev) {
   }
 }
 
+/** @param {string} name */
 function tailOneFile(name) {
   const file = JSONL_FILE[name];
   const t = tail[name];
@@ -304,6 +350,7 @@ function tailOneFile(name) {
   return changed;
 }
 
+/** @param {string} file */
 function readJsonIfPresent(file) {
   if (!existsSync(file)) return null;
   try {
@@ -370,9 +417,7 @@ function tick() {
     // fs error) and keep serving whatever it already knows -- this process
     // going quiet on one file must never mean the whole dashboard dies.
     // eslint-disable-next-line no-console
-    console.error(
-      `[dashboard] tick failed (continuing): ${error.stack || error.message}`,
-    );
+    console.error(`[dashboard] tick failed (continuing): ${stackOf(error)}`);
   } finally {
     setTimeout(tick, POLL_MS);
   }
@@ -603,6 +648,10 @@ const PAGE = `<!doctype html>
 
 // ── the server ───────────────────────────────────────────────────────
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
 function handleRequest(req, res) {
   const pathname = (req.url || '/').split('?')[0];
 
@@ -641,7 +690,7 @@ async function main() {
       // later tick regardless of one bad request.
       // eslint-disable-next-line no-console
       console.error(
-        `[dashboard] request handler failed (continuing): ${error.stack || error.message}`,
+        `[dashboard] request handler failed (continuing): ${stackOf(error)}`,
       );
       try {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
@@ -654,7 +703,7 @@ async function main() {
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(PORT, '0.0.0.0', () => resolve());
+    server.listen(PORT, '0.0.0.0', () => resolve(undefined));
   });
 
   // eslint-disable-next-line no-console
