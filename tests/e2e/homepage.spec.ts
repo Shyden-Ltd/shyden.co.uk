@@ -1,8 +1,10 @@
 import { test, expect } from './fixtures';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
+
+test.use(recorded);
 
 // Unset in test builds, so the page falls back to the production host. The
 // dev deploy sets PUBLIC_SHYTALK_URL and is covered by the deploy-gate specs.

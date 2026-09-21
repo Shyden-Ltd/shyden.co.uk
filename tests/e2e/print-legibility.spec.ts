@@ -1,6 +1,8 @@
 import { test, expect } from './fixtures';
 import { searched } from '../source-files';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
+
+test.use(recorded);
 
 /**
  * What comes off the printer has to be readable.

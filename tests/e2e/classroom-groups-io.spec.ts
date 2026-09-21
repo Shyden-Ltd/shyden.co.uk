@@ -13,6 +13,9 @@ import {
   giveEveryoneASex,
   handoverTo,
 } from './helpers';
+import { recorded } from './evidence';
+
+test.use(recorded);
 
 /**
  * Stage 4, Task 5. The Import/export section, driven through the page.

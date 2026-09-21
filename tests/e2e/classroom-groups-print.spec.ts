@@ -10,7 +10,9 @@ import {
 } from './helpers';
 import { todayISO } from '../../src/lib/csv';
 import { searched } from '../source-files';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
+
+test.use(recorded);
 
 /**
  * Every control assertion is scoped to the PANEL, never to the page.

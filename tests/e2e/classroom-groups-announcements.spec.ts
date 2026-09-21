@@ -1,6 +1,8 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
+
+test.use(recorded);
 
 /**
  * A live region only reports mutations to something already in the

@@ -9,6 +9,9 @@ import {
   giveEveryoneASex,
   rosterOf,
 } from './helpers';
+import { recorded } from './evidence';
+
+test.use(recorded);
 
 /**
  * The controls the review found reachable from the page and asserted by
