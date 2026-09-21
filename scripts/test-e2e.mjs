@@ -34,6 +34,7 @@
  * held to the full total.
  */
 import { spawnSync } from 'node:child_process';
+import { messageOf } from './errors.mjs';
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -48,6 +49,7 @@ const LIST_FOOTER = /^Total:\s+(\d+)\s+tests?\b/m;
  * Null rather than 0: every comparison below is satisfied by "executed >= 0",
  * so a zero here would wave through the exact runs this file exists to stop.
  */
+/** @param {string} text */
 export function parseListTotal(text) {
   const match = LIST_FOOTER.exec(text ?? '');
   return match ? Number(match[1]) : null;
@@ -108,6 +110,7 @@ const SUITE_FLAGS = new Set(['--config', '-c']);
  * run executes, so the two would always agree and this guard could never fire
  * again — while still being present, still passing, and asserting nothing.
  */
+/** @param {readonly string[]} argv */
 export function enumerationArgs(argv = []) {
   const forwarded = [];
 
@@ -132,6 +135,7 @@ export function enumerationArgs(argv = []) {
 }
 
 /** Did the caller ask for a subset of the suite? */
+/** @param {readonly string[]} argv */
 export function isFilteredRun(argv = []) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -161,6 +165,7 @@ export const NAV_TIMING_REPORTER = './tests/reporters/nav-timing-reporter.ts';
  * `pw:api` step and keeps only the user's `test.step` entries, so a probe test
  * that made two navigations produced a report containing neither.
  */
+/** @param {readonly string[]} argv */
 export function mergeReporters(argv = []) {
   const passthrough = [];
   let chosen = 'list';
@@ -190,6 +195,12 @@ export function mergeReporters(argv = []) {
  * Skipped tests were accounted for by the run. Leaving them out would make the
  * guard fire on a suite that legitimately skips, and the natural fix for that
  * false alarm would be to weaken the guard.
+ */
+/**
+ * @param {{ expected?: number, unexpected?: number, flaky?: number, skipped?: number }} stats
+ *   Spelled out, because a default of `{}` is read as the TYPE `{}` -- the
+ *   narrowest type that value inhabits -- so every property read off it was
+ *   an error (#157).
  */
 export function countExecuted(stats = {}) {
   const { expected = 0, unexpected = 0, flaky = 0, skipped = 0 } = stats;
@@ -266,7 +277,26 @@ export function reconcile({
     };
   }
 
-  // ZERO IS A BROKEN MEASUREMENT, NOT A SUITE SIZE. `null` was already fatal
+  // `executed` is `number | null` and only `enumerated`'s null was checked:
+  // the comment below said "`null` was already fatal above" and it was half
+  // true, which is how a comment differs from a guard. A null `executed` fell
+  // to the inequality, where it coerces to 0 -- so the run still failed, but
+  // it reported "measured less than" with a NEGATIVE difference, describing a
+  // count that was never read as a count that came out short. Found by
+  // turning `checkJs` on over `scripts/` (#228).
+  if (typeof executed !== 'number') {
+    return {
+      exitCode: 1,
+      partial: false,
+      message:
+        `\n${RULE}\n  E2E RECONCILIATION FAILED — this run accounted for no tests\n\n` +
+        '  The reporter produced no executed count at all, so there is nothing\n' +
+        `  to hold against the ${enumerated} tests enumerated. That is a broken\n` +
+        `  measurement, not a small run.\n${RULE}\n`,
+    };
+  }
+
+  // ZERO IS A BROKEN MEASUREMENT, NOT A SUITE SIZE. Both nulls are fatal
   // above; the number zero is both a valid `number` and equal to an executed
   // count of zero, so `{0, 0}` fell through the inequality below and returned
   // Playwright's own exit code -- a full run that enumerated nothing, ran
@@ -380,7 +410,7 @@ function main() {
     } catch (cause) {
       console.error(
         `\n${RULE}\n  E2E RECONCILIATION FAILED — the run produced no readable report\n\n` +
-          `  ${cause.message}\n\n` +
+          `  ${messageOf(cause)}\n\n` +
           '  Without it there is no count to check, so this cannot be treated as\n' +
           `  a pass.\n${RULE}\n`,
       );
@@ -466,6 +496,10 @@ function main() {
 export const TEST_BUDGET_MS = 30000;
 
 /** Nearest-rank percentile over an ASCENDING array. */
+/**
+ * @param {number[]} ascending
+ * @param {number} quantile
+ */
 const rank = (ascending, quantile) =>
   ascending[Math.ceil(quantile * ascending.length) - 1];
 
@@ -480,9 +514,11 @@ const rank = (ascending, quantile) =>
  * THE TAIL, NOT THE MEAN. A mean over ~2200 tests cannot move enough for one
  * 30-second test to show up in it. p90 and max are where a flake lives.
  */
+/** @param {Record<string, any>} report */
 export function projectTimings(report) {
   const byProject = new Map();
 
+  /** @param {any[]} suites */
   const visit = (suites) => {
     for (const suite of suites ?? []) {
       for (const spec of suite.specs ?? []) {
@@ -492,7 +528,9 @@ export function projectTimings(report) {
           // surface, and reporting the retry erases the finding.
           const ms = Math.max(
             0,
-            ...(test.results ?? []).map((r) => r.duration ?? 0),
+            ...(test.results ?? []).map(
+              (/** @type {{ duration?: number }} */ r) => r.duration ?? 0,
+            ),
           );
           const rows = byProject.get(test.projectName) ?? [];
           rows.push({ title: spec.title, ms });
@@ -505,7 +543,9 @@ export function projectTimings(report) {
   visit(report?.suites);
 
   return [...byProject].map(([project, tests]) => {
-    const ascending = tests.map((t) => t.ms).sort((a, b) => a - b);
+    const ascending = tests
+      .map((/** @type {{ ms: number }} */ t) => t.ms)
+      .sort((/** @type {number} */ a, /** @type {number} */ b) => a - b);
     return {
       project,
       count: tests.length,
@@ -518,6 +558,7 @@ export function projectTimings(report) {
 }
 
 /** The distribution as a markdown table, for a terminal or a job summary. */
+/** @param {any[]} rows */
 export function formatTimings(rows) {
   if (!rows.length) return '';
   return [
@@ -526,7 +567,7 @@ export function formatTimings(rows) {
     ...rows.map(
       (r) =>
         `| ${r.project} | ${r.count} | ${r.p50} | ${r.p90} | ${r.max} | ` +
-        `${r.slowest.map((t) => `${t.title} (${t.ms}ms)`).join('; ')} |`,
+        `${r.slowest.map((/** @type {{ title: string, ms: number }} */ t) => `${t.title} (${t.ms}ms)`).join('; ')} |`,
     ),
     '',
     `Durations in ms. Playwright's default per-test budget is ${TEST_BUDGET_MS}ms ` +
@@ -550,6 +591,7 @@ export function formatTimings(rows) {
  * Ordered by the slowest navigation, worst project first: the tail is the
  * finding, and #44 is about one navigation, not an average of thousands.
  */
+/** @param {any[]} records */
 export function navTimings(records) {
   const byProject = new Map();
   for (const record of records ?? []) {
@@ -561,8 +603,8 @@ export function navTimings(records) {
   return [...byProject]
     .map(([project, navigations]) => {
       const ascending = navigations
-        .map((n) => n.durationMs)
-        .sort((a, b) => a - b);
+        .map((/** @type {{ durationMs: number }} */ n) => n.durationMs)
+        .sort((/** @type {number} */ a, /** @type {number} */ b) => a - b);
       return {
         project,
         count: navigations.length,
@@ -573,7 +615,9 @@ export function navTimings(records) {
         medianMs: rank(ascending, 0.5),
         p95Ms: rank(ascending, 0.95),
         maxMs: ascending[ascending.length - 1],
-        erroredCount: navigations.filter((n) => n.errored).length,
+        erroredCount: navigations.filter(
+          (/** @type {{ errored?: boolean }} */ n) => n.errored,
+        ).length,
         slowest: [...navigations]
           .sort((a, b) => b.durationMs - a.durationMs)
           .slice(0, 3),
@@ -589,6 +633,7 @@ export function navTimings(records) {
  * empty string. A blank space where a table should be reads as "nothing to
  * report"; on a collector, nothing to report is the failure mode.
  */
+/** @param {any[]} rows */
 export function formatNavTimings(rows) {
   if (!rows.length)
     return 'No navigations were recorded — see the collector verdict below.';
@@ -599,7 +644,7 @@ export function formatNavTimings(rows) {
       (r) =>
         `| ${r.project} | ${r.count} | ${r.medianMs} | ${r.p95Ms} | ${r.maxMs} | ` +
         `${r.erroredCount} | ` +
-        `${r.slowest.map((n) => `${n.test} (${n.durationMs}ms)`).join('; ')} |`,
+        `${r.slowest.map((/** @type {{ test: string, durationMs: number }} */ n) => `${n.test} (${n.durationMs}ms)`).join('; ')} |`,
     ),
     '',
     `Durations in ms, per \`page.goto\`. The per-test budget is ${TEST_BUDGET_MS}ms ` +
@@ -622,6 +667,12 @@ export function formatNavTimings(rows) {
  * `testsWithResults` MUST come from an observer other than this collector —
  * `main` passes the json reporter's own stats. Asked to count its own tests, a
  * reporter that never ran answers zero and certifies its own silence.
+ */
+/**
+ * @param {{ navigations: number, testsWithResults: number }} input
+ *   `navigations` is a COUNT: the caller passes `navigations.length`, and the
+ *   unit tests pass 0 and 1. Annotating it as the array made `navigations > 0`
+ *   look like a defect; it is not, and the call site is what settled it.
  */
 export function navTimingVerdict({ navigations, testsWithResults }) {
   if (navigations > 0) return { ok: true };
