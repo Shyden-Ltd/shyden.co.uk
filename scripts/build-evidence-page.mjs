@@ -38,23 +38,44 @@ const esc = (s) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-/** Every spec result in the report, flattened. */
+/**
+ * Every spec result in the report, flattened, each carrying its FULL title
+ * path -- the describes and the test, exactly as `tests/e2e/evidence.ts`'s
+ * `shoot` writes one (`info.titlePath.slice(1).join(' > ')`, the file dropped).
+ *
+ * This used to emit `spec.title`, the leaf alone, and discard the describe
+ * titles sitting right there in the suite nesting. Everything downstream then
+ * keyed a journey by that leaf, so **two tests sharing a leaf title in
+ * different describes were one journey**: their captures pooled into a single
+ * strip and the per-engine results took whichever spec matched first. Measured
+ * on a 7-spec run -- 275 distinct leaf titles, 5 used twice, every pair an
+ * English block and its Indonesian counterpart -- a page would have shown one
+ * journey wearing two languages' evidence, and nothing about it would have
+ * looked wrong (#263). `videoFiles` was the only thing that noticed, because it
+ * alone demands a unique path, and it refused the whole build.
+ *
+ * The file-level suite's own title is NOT included: `shoot` drops it, and the
+ * two formats have to agree by construction rather than by a heuristic that
+ * repairs one into the other.
+ */
 const flattenReport = (report) => {
   const out = [];
-  const walk = (suite) => {
-    for (const child of suite.suites || []) walk(child);
+  const walk = (suite, ancestors) => {
+    for (const child of suite.suites || [])
+      walk(child, child.title ? [...ancestors, child.title] : ancestors);
     for (const spec of suite.specs || [])
       for (const t of spec.tests)
         for (const r of t.results)
           out.push({
-            title: spec.title,
+            title: [...ancestors, spec.title].filter(Boolean).join(' > '),
             project: t.projectName,
             status: r.status,
             duration: r.duration,
             video: (r.attachments || []).find((a) => a.name === 'video')?.path,
           });
   };
-  for (const suite of report.suites || []) walk(suite);
+  // Each top-level entry is a FILE; its children are the describes.
+  for (const suite of report.suites || []) walk(suite, []);
   return out;
 };
 
@@ -426,11 +447,13 @@ export const renderEvidencePage = ({
   // errors on load` among them -- absent from the coverage an operator signs
   // off. The dead entries are the smaller half; a page quietly narrower than
   // its run is the failure.
+  // Both sides now spell a journey the same way, so neither is repaired into
+  // the other. The `slice(1)` that used to strip a describe off the manifest
+  // title, and the `endsWith(' > ' + short)` that matched it back, were what
+  // made a duplicate leaf ambiguous -- a suffix match cannot tell two
+  // describes apart (#263).
   const order = [];
-  for (const m of manifest) {
-    const short = m.title.split(' > ').slice(1).join(' > ') || m.title;
-    if (!order.includes(short)) order.push(short);
-  }
+  for (const m of manifest) if (!order.includes(m.title)) order.push(m.title);
   for (const s of specs) if (!order.includes(s.title)) order.push(s.title);
 
   const missing = manifest.filter((m) => !shots.has(m.file));
@@ -441,14 +464,12 @@ export const renderEvidencePage = ({
         'claims evidence it does not carry.',
     );
 
-  const journeys = order.map((short) => {
-    const rows = manifest.filter(
-      (m) => m.title === short || m.title.endsWith(` > ${short}`),
-    );
+  const journeys = order.map((title) => {
+    const rows = manifest.filter((m) => m.title === title);
     const orders = [...new Set(rows.map((r) => r.order))].sort((a, b) => a - b);
     return {
-      id: slugOf(short),
-      title: short,
+      id: slugOf(title),
+      title,
       assertions: orders.map((n) => ({
         order: n,
         label: rows.find((r) => r.order === n)?.label ?? '',
@@ -457,7 +478,7 @@ export const renderEvidencePage = ({
         ),
       })),
       results: engines.map((e) =>
-        specs.find((s) => s.project === e && s.title === short),
+        specs.find((s) => s.project === e && s.title === title),
       ),
     };
   });
