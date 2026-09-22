@@ -190,6 +190,51 @@ const reportOf = (
   ],
 });
 
+/**
+ * A json report whose journeys sit inside NESTED describes, so the block a
+ * journey belongs to is a real ancestor rather than punctuation in its title.
+ */
+const blockedReport = (
+  file: string,
+  rows: { block: string; journey: string; video?: string }[],
+) => ({
+  ...REPORT,
+  suites: [
+    {
+      file,
+      suites: [...new Set(rows.map((r) => r.block))].map((block) => ({
+        title: block,
+        specs: rows
+          .filter((r) => r.block === block)
+          .map((r) => ({
+            title: r.journey,
+            file,
+            tests: [
+              {
+                projectName: 'chromium',
+                results: [
+                  {
+                    status: 'passed',
+                    duration: 500,
+                    attachments: r.video
+                      ? [
+                          {
+                            name: 'video',
+                            contentType: 'video/webm',
+                            path: r.video,
+                          },
+                        ]
+                      : [],
+                  },
+                ],
+              },
+            ],
+          })),
+      })),
+    },
+  ],
+});
+
 /** The PNG signature and an IHDR `width` px wide: all the builder reads of a capture. */
 const png = (width: number) => {
   const size = Buffer.alloc(8);
@@ -395,6 +440,40 @@ describe('a journey whose engine recorded nothing says so on the page', () => {
     expect(html).toContain(
       '<div class="novid mono">not recorded by policy</div><figcaption class="mono">webkit</figcaption>',
     );
+  });
+});
+describe('the recording policy is read per block, not per file (#292)', () => {
+  it('a block that never records says so, beside one in the same file that does', () => {
+    // A spec opts in as a WHOLE -- `test.use(recorded)` at the top of the
+    // file -- so asking the FILE whether it records answers for every journey
+    // in it. A block that opts out, because it renders nothing (it reads
+    // bytes out of `dist/` and never navigates), then reads as a recording
+    // that went astray: #165's wording on #214's fact. The page must not
+    // spell those the same way, so the policy is keyed by the block.
+    const file = 'tests/e2e/mixed.spec.ts';
+    // NESTED suites, not a title with ` > ` in it: the block is a structural
+    // fact the builder reads off the ancestors, so a fixture that spells it
+    // into the title would agree with a builder that never looked.
+    const html = build({
+      report: blockedReport(file, [
+        { block: 'a block that acts', journey: 'it shuffles', video: 'v.webm' },
+        { block: 'a block that renders nothing', journey: 'the assets ship' },
+      ]),
+      manifest: [],
+      shots: new Map(),
+      videos: new Map([
+        // Keyed by the journey's SLUG, as `slugOf` builds it, not its title.
+        ['a-block-that-acts-it-shuffles|chromium', 'evidence/acts.webm'],
+      ]),
+    });
+
+    expect(
+      html,
+      'the block that opted out is the policy working, not a lost recording',
+    ).toContain('<div class="novid mono">not recorded by policy</div>');
+    // The FILE records, so a file-keyed policy reaches the other wording --
+    // this is the half that fails before the block key exists.
+    expect(html, 'nothing here went astray').not.toContain('recording missing');
   });
 });
 

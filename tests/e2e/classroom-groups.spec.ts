@@ -477,34 +477,48 @@ test.describe('classroom group creator', () => {
   // rather than assumed); sound-on requests really are ours, same-origin;
   // and the tool really keeps working when every one of those requests is
   // blocked -- the one that stands in for a browser that cannot decode AAC.
-  test('all six sound assets are reachable from the built site and appear in dist/', async ({
-    page,
-  }) => {
-    const files = listM4aFiles(join('dist'));
+  // Its own block, and its own fixture. This journey renders NOTHING: it
+  // reads bytes out of `dist/` and never navigates, so asking for `page`
+  // opened a browser context that recorded ~2 KB of blank frames -- a blank
+  // video on a PASSING journey, which a reviewer cannot tell from a capture
+  // that failed to start. `request` fetches over an API context and opens no
+  // page, so there is no recording to suppress. The block is what lets the
+  // evidence page say `not recorded by policy` rather than `recording
+  // missing`, since it derives that from the block's own results (#292).
+  //
+  // NOT `test.use({ video: 'off' })` here: Playwright refuses `video` in a
+  // describe outright -- "it forces a new worker" -- and no source-text
+  // guard can see that, so a green suite hid it until the spec was run.
+  test.describe('the sound assets on disk', () => {
+    test('all six sound assets are reachable from the built site and appear in dist/', async ({
+      request,
+    }) => {
+      const files = listM4aFiles(join('dist'));
 
-    for (const role of [
-      'shuffle',
-      'land-1',
-      'land-2',
-      'land-3',
-      'land-4',
-      'done',
-    ]) {
-      const pattern = new RegExp(`^${role}\\.[\\w-]+\\.m4a$`);
-      const matches = files.filter((f) => pattern.test(basename(f)));
-      expect(
-        matches,
-        `expected exactly one built asset for "${role}" in dist/, found: [${matches.join(', ')}]`,
-      ).toHaveLength(1);
+      for (const role of [
+        'shuffle',
+        'land-1',
+        'land-2',
+        'land-3',
+        'land-4',
+        'done',
+      ]) {
+        const pattern = new RegExp(`^${role}\\.[\\w-]+\\.m4a$`);
+        const matches = files.filter((f) => pattern.test(basename(f)));
+        expect(
+          matches,
+          `expected exactly one built asset for "${role}" in dist/, found: [${matches.join(', ')}]`,
+        ).toHaveLength(1);
 
-      const urlPath = distPathToUrlPath(matches[0]);
-      const response = await page.request.get(urlPath);
-      expect(
-        response.ok(),
-        `GET ${urlPath} was not reachable from the built site (status ${response.status()})`,
-      ).toBe(true);
-      expect((await response.body()).length).toBeGreaterThan(0);
-    }
+        const urlPath = distPathToUrlPath(matches[0]);
+        const response = await request.get(urlPath);
+        expect(
+          response.ok(),
+          `GET ${urlPath} was not reachable from the built site (status ${response.status()})`,
+        ).toBe(true);
+        expect((await response.body()).length).toBeGreaterThan(0);
+      }
+    });
   });
 
   test('with sound off, a full shuffle fetches no audio at all', async ({
