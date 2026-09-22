@@ -1,10 +1,13 @@
-# Handover — 2026-09-22, #277: every pair has a verdict
+# Handover — 2026-09-22, #277: PR #293 open, waiting on CI
 
-Branch **`277-one-home-for-near-duplicate-functions`**, nine commits on top of
-`develop` (`13103ac`), head **`9ccab0f8d9d35b72edde75e842ca8d933707b102`**. Nothing is pushed, no PR is
-open.
+Branch **`277-one-home-for-near-duplicate-functions`**, on top of `develop`
+(`13103ac`), pushed. **PR #293** is open into `develop`:
+https://github.com/Shyden-Ltd/shyden.co.uk/pull/293
 
-Re-read the SHA with `git rev-parse HEAD` rather than retyping this one.
+No SHA is written here on purpose. Read the local head with
+`git rev-parse HEAD` and the PR's with
+`gh pr view 293 --json headRefOid`, and compare those two to whatever a
+CI run reports before trusting it.
 
 ## State
 
@@ -12,9 +15,8 @@ Re-read the SHA with `git rev-parse HEAD` rather than retyping this one.
 - `npm run test:unit` — **2057 passed, 0 failed**. The two deliberate failures
   the previous handover described are both resolved.
 - `npm run format` (`prettier --check .`) — clean.
-- `npm run test:e2e` — **running when this was written; read the verdict
-  before doing anything else.** Output: `/private/tmp/claude-501/-Users-shyden-Developer-Repos-shyden-co-uk/e8d36821-d766-4456-92d7-535121e7aed6/scratchpad/e2e.txt`.
-  Group A, B, C and D all edited e2e specs, so this is the gate that matters.
+- `npm run test:e2e` — **2874 passed, 6 skipped, 0 failed**, all six
+  projects, 20.9m. Read by project name, not from the exit code.
 - The duplication scan reports **0 undecided pairs**, down from 27 at the
   branch point and 21 at the previous handover.
 
@@ -56,16 +58,22 @@ shared; what remains is the test declaration. Measured on `site-meta.spec.ts`:
   guard in the repository can see them, because `specDirs()` derives from
   the directories holding spec files and `tests/` root is not one.
 
-## Then, in order
+## Then, in order — a cold session can start here
 
-1. Read the e2e verdict in `/private/tmp/claude-501/-Users-shyden-Developer-Repos-shyden-co-uk/e8d36821-d766-4456-92d7-535121e7aed6/scratchpad/e2e.txt` — every project, by name. A run that
-   concludes is not a run that passed.
-2. Any e2e failure is most likely `makeGroups` (now idempotent where three
-   copies were not) or `expectNothingStored` (now checks url and cookies
-   where the roster copy checked neither) — both are deliberate widenings.
-3. PR into `develop`. The body must not put a closing keyword beside
-   `#277`: check it with
-   `node scripts/closing-keywords.mjs <file> "this pull request body"`.
+1. **Read every CI job on PR #293 BY NAME.** A run that concludes `success`
+   is not a verdict on its jobs (#157). Before merging, compare the run's SHA
+   to `gh pr view 293 --json headRefOid` — a waiter locks onto the head at
+   the moment it starts and will happily report green for a superseded
+   commit (#121).
+2. **Merge with a MERGE COMMIT, never a squash.** `scripts/deploy-gate.mjs`
+   proves the merge's tree equals its second parent's, which a squash does
+   not have, so a squash refuses the deploy.
+3. The push to `develop` fires `deploy-dev.yml`. Confirm the deploy by
+   reading **`dev-verified`** off the COMMIT, and each job by name —
+   `verify-dev` has been skipped before while the run still concluded
+   `success`.
+4. This is a **dev deploy, not a release.** A promotion PR `develop → main`
+   is a release action and is Shyden's call, after his manual test.
 
 ## Follow-ups to file (evidence is in this branch, not yet in a ticket)
 
