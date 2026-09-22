@@ -1533,8 +1533,13 @@ describe('the drift measurement reports, and never gates (#224)', () => {
   const GATE_PROJECT = /--project=visual(?![\w-])/;
   const isGate = (s: Record<string, unknown>) =>
     typeof s.run === 'string' && GATE_PROJECT.test(s.run);
+  // The SAME prefix trap one level down, and it was left as a bare
+  // `includes` while the comment above spelled the lesson out: mutation M3
+  // renamed the project to `visual-measurement` and this still matched, so a
+  // guard meant to notice the measuring step had vanished stayed green (#286).
+  const MEASURE_PROJECT = /--project=visual-measure(?![\w-])/;
   const isMeasure = (s: Record<string, unknown>) =>
-    typeof s.run === 'string' && s.run.includes('--project=visual-measure');
+    typeof s.run === 'string' && MEASURE_PROJECT.test(s.run);
 
   it('measures after the gate has decided the build', () => {
     const gate = indexOf(isGate);
