@@ -357,6 +357,12 @@ const declaredDevVersion = (name: string): string => {
  * with the plugin at 1.0.0 is clean, and the plugin at 1.0.1 is dirty under
  * both 3.9.6 and 3.9.8. Six of this repo's twenty `.astro` files are hit.
  *
+ * Reported and fixed upstream before we met it:
+ * withastro/prettier-plugin-astro#487, opened 2026-09-18 and closed as
+ * completed on 2026-09-21. The fix is unreleased -- 1.0.1 (2026-09-17) is
+ * still npm's latest as of 2026-09-22 -- so 1.0.2 is the release expected to
+ * lift the hold, and the rule below is written to let it through.
+ *
  * This is NOT the #178 case, which accepted this plugin's 1.0.0 reformat of
  * eleven files and proved every page still said the same thing. That was
  * right because 1.0.0 has a fixed point: format once, commit, done. Committing
