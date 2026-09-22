@@ -1,82 +1,71 @@
-# Handover — 2026-09-22: #277 is merged, deployed to dev and verified
+# Handover — 2026-09-22: #292 is shipped and retired, #291 is under way
 
-Branch **`develop`**, level with `origin/develop`. Nothing is running,
-nothing is waiting. `277-one-home-for-near-duplicate-functions` is merged
-and deleted both locally and on the remote.
+**Branch `291-upload-evidence-assets-from-a-script`, off `develop` at
+`702f07d6`.** No SHA here is a fact to rely on without re-reading
+(`git rev-parse HEAD`).
 
-**This file is the only thing in the working tree, and it is uncommitted on
-purpose.** `develop` refuses a direct push — every change reaches it through
-a pull request — and a docs-only PR would burn a full CI run, so this handover
-is not worth one. It travels the way every previous handover did: commit it on
-the next ticket's branch, with that ticket's first commit. Until then do not
-run `git checkout -- HANDOVER.md`, which reverts to HEAD and would destroy it.
+## Done this session, and verified
 
-No SHA is written here as a fact to rely on. Read the head with
-`git rev-parse HEAD` and compare it to whatever any run or status reports
-before trusting it.
+1. **#292 is shipped and retired.** PR #304 merged to `develop` as `702f07d6`
+   with a merge commit (parents `95bdc1b` and `8f79e701`, the tested head).
+   CI run 35748665512 was confirmed against `gh pr view 304 --json headRefOid`
+   before the merge (#121) — `build-and-test`, `visual` and `closing-keywords`
+   all `pass`. Dev deploy run 35753109360, every job read BY NAME: gate
+   `success`, `Deploy to Dev` `success`, `Verify dev + dev-verified`
+   **`success` and not skipped** (the #157 trap; `Comprehensive web tests` is
+   skipped by design, the gate having proved the tree). `dev-verified` read
+   OFF THE COMMIT: `state: success`. Issue closed, board read back as
+   `project=Shyden Site issue=#292 status=Done`.
 
-## What landed
+2. **#291's design question is answered and posted to the ticket**
+   (comment 5779853716). The assets listing returns each asset's id, byte
+   count and **sha256**, and no filename — so the map is derived by content
+   hash, never transcribed, and resumability falls out of the same mechanism.
+   Measured on the `Asset Store Probe` artifact. The one clause the medium
+   refuses is AC1's literal "the script uploads": there is no CLI for the
+   asset store, so the script prints the batches and the agent makes the
+   `Artifact` calls.
 
-PR **#293** merged into `develop` as a **merge commit** (`874ba41`, two
-parents), so `scripts/deploy-gate.mjs` could prove the merged tree equals
-its second parent's — verified by hand before merging: both trees are
-`2c137e9`.
-
-Gates, each read by name rather than off a run's conclusion:
-
-| where                    | job                               | result                 |
-| ------------------------ | --------------------------------- | ---------------------- |
-| CI `35695207300`         | `build-and-test`                  | success                |
-| CI `35695207300`         | `visual`                          | success                |
-| PR body `35695207302`    | `closing-keywords`                | success                |
-| deploy-dev `35700714482` | `Gate — this tree already passed` | success                |
-| deploy-dev `35700714482` | `Comprehensive web tests`         | **skipped, by design** |
-| deploy-dev `35700714482` | `Deploy to Dev`                   | success                |
-| deploy-dev `35700714482` | `Verify dev + dev-verified`       | success                |
-
-`dev-verified = success`, read **off the commit** `874ba41`, not off the
-run. The skip above is the gate working: the suite already passed on the
-PR, so it is not run twice. The job that must never skip is
-`Verify dev + dev-verified`, and it ran.
-
-`develop`'s required contexts are `build-and-test` and `visual`, with
-`strict=true`. `closing-keywords` is green but **not required** — that is
-#278, repository administration, which the App holds read-only.
-
-**#277 is closed.** The duplication scan reports 0 undecided pairs, down
-from 27 at the branch point.
-
-## Filed this session
-
-**#294** — nine touch-target assertions check height alone and none of the
-44px reads are rounded. The evidence came out of #277 and was deliberately
-left there: widening an assertion is coverage, not refactoring.
-
-Its scope was **derived from disk, and the handover it came from was wrong**:
-nine height-only sites across **four** e2e specs, not six, plus two sites in
-`tests/device/ios/journeys.journey.ts` that assert both dimensions unrounded
-and cannot take `atLeast44` at all, because they measure a WebDriver `rect`
-rather than a Playwright `Locator`. Two sites are not simple conversions and
-the ticket says why: `classroom-groups-roster.spec.ts:173` measures
-`el.closest('label')` in-page on purpose, and `homepage.spec.ts:235-236`
-keeps an inline copy the unproved-loop scanner matches by shape.
+3. **#291 is started, TDD, 4 tests green.**
+   `scripts/upload-evidence-assets.mjs` + `tests/unit/upload-assets.test.ts`.
+   `parseAssetListing` reads the listing's own text and refuses three ways: a
+   line the format does not explain, a text with no header, and a listing
+   holding fewer assets than its header declares (the listing PAGES, so a page
+   taken for the whole store re-uploads everything beyond it). An empty store
+   reads as empty, because that is what a first run sees.
 
 ## Then, in order — a cold session can start here
 
-1. Nothing is in flight. Pick the next ticket off the open board; there is
-   no wait to resume and no gate outstanding.
-2. Candidates, all previously noted as untouched: **#189** (full-screen board
-   clips a wrapped group card), **#249**, **#188**, **#294** (just filed),
-   **#241**, **#95**.
-3. **This is a dev deploy, not a release.** A promotion PR `develop → main`
-   is a release action and is Shyden's alone, after his manual test. Do not
-   open one because `dev-verified` went green.
+1. **Continue #291's test list**, drafted at
+   `scratchpad/291-test-list.md`. Next is the sha256 join itself: the map
+   pairs every key with the id whose sha256 matches its file, with a liveness
+   control proving two different files land on different ids (a join returning
+   `listing[0].id` for everything must go RED).
+2. Then batching (≤25 per call, derived from the plan), the byte-count
+   refusal, and the `PROBES` entry in `tests/unit/script-entry.test.ts`
+   (`status: 2`, `says: 'usage: upload-evidence-assets.mjs'`) with the entry
+   behind `import.meta.main` (#276).
+3. Mutation-verify in both directions, predictions written FIRST, and run the
+   WHOLE file per mutation (a filtered run is how a vacuous guard survives).
+4. `npm run format` here is `prettier --check` — use `npx prettier --write`.
+
+## Waiting on Shyden — nothing here is mine to do
+
+- **#189** (P0), unchanged: evidence page
+  https://claude.ai/artifact/Go5PdbKiroPHAJNA1gkeNr needs his sign-off, and
+  AC11 needs the reported case confirmed on a **real iOS device**.
+- **#241** is blocked on him: repository administration (secrets into
+  environments, splitting the Cloudflare token). The App cannot do either.
+- **#278** needs one administration step: `closing-keywords` is not a gate
+  until it joins `required_status_checks.contexts`. It ran `pass` on #304.
+- **#299's amended AC2 wants one eyeball**: the next Dependabot pull request
+  should carry `dependencies` + `npm` (or `+ github-actions`) and **no**
+  `Labels` comment.
 
 ## Environment note, not a code problem
 
-`claude-mem` cannot save memories: the observer's allowance on the provider
-is exhausted (since 2026-09-21T21:28:27Z), reporting _"Provider reported the
-inference allowance exhausted"_. Nothing from any session is being captured
-until it resets or the observer is pointed at another provider in
-`~/.claude-mem/settings.json`. **Do not restart the worker** — that clears
-the backoff protecting the provider.
+`claude-mem` still cannot save memories: the observer's allowance on the
+provider is exhausted (since 2026-09-21T21:28:27Z) — _"Provider reported the
+inference allowance exhausted"_. **Do not restart the worker** — that clears
+the backoff protecting the provider. File-based memory under
+`~/.claude/projects/.../memory/` is unaffected and was written to this session.
