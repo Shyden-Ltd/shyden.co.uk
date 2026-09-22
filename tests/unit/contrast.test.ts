@@ -2,13 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
-import {
-  contrast,
-  over,
-  parseColour,
-  type RGB,
-  type RGBA,
-} from '../wcag';
+import { contrast, over, parseColour, type RGB, type RGBA } from '../wcag';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.

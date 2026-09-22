@@ -24,12 +24,12 @@ chromium: the three contrast tests (3 passed) and
 
 ## Commits
 
-| SHA | what | pairs left |
-| --- | --- | --- |
-| `5e031d6` | the scan (`tests/unit/duplication.ts`) and the guard, red on purpose | 27 |
-| `2e95074` | `src/`: blank `Student` (4 copies) → `grouping.ts`; `button` (4 copies) → new `src/scripts/dom.ts` | 25 |
-| `488079a` | reporters: the whole JSONL writer → `tests/reporters/dashboard-jsonl.ts`, with 11 new assertions | 23 |
-| `8430c02` | the WCAG formula (5 copies) → `tests/wcag.ts`; `contrastRatio` reads in the browser, computes in node | 21 |
+| SHA       | what                                                                                                  | pairs left |
+| --------- | ----------------------------------------------------------------------------------------------------- | ---------- |
+| `5e031d6` | the scan (`tests/unit/duplication.ts`) and the guard, red on purpose                                  | 27         |
+| `2e95074` | `src/`: blank `Student` (4 copies) → `grouping.ts`; `button` (4 copies) → new `src/scripts/dom.ts`    | 25         |
+| `488079a` | reporters: the whole JSONL writer → `tests/reporters/dashboard-jsonl.ts`, with 11 new assertions      | 23         |
+| `8430c02` | the WCAG formula (5 copies) → `tests/wcag.ts`; `contrastRatio` reads in the browser, computes in node | 21         |
 
 ## The scan
 
@@ -59,6 +59,7 @@ before collapsing** — each file's `analyze` differs, and the shared shape may
 be the repo's guard IDIOM rather than a duplicate.
 
 **Group C — three singles.**
+
 - `atLeast44` (1.000) `chrome.spec.ts:224` ↔ `glory-points.spec.ts:132` —
   identical touch-target assertion. Collapse into `helpers.ts`.
 - the storage/cookie probe (1.000) `classroom-groups-io.spec.ts:579` ↔
@@ -79,6 +80,7 @@ Whatever is decided, write the reason into `SEPARATE`.
 
 **Below the scan's floor, already decided, needing only the write-up in the
 ticket:**
+
 - `isLocale` ↔ `isMvpLocale` — **separate**. `MVP_LOCALES` is deliberately
   wider than `LOCALES` (`metadata.ts` says so, `locale-metadata.test.ts:41`
   pins the seam). They are equal by value today and must not be collapsed.

@@ -31,6 +31,37 @@ const keyOf = (pair: DuplicatePair): string =>
     .join('  <->  ');
 
 /**
+ * The measurement behind every entry below, written once because six copies
+ * of a paragraph is the defect this file exists to find.
+ *
+ * What is left in these bodies, after `expectNoHorizontalScroll` took the
+ * measurement into `tests/viewport.ts`, is the test's own setup: size the
+ * viewport, open a page, assert. Collapsing THAT means generating the
+ * `test()` calls from a helper -- and a helper is not a spec file.
+ *
+ * Measured, both directions, on `site-meta.spec.ts`'s four 404 tests.
+ * Dropping their `@emulated-viewport` tag turns `viewport-tagging.test.ts`
+ * red, naming the test and the line that resizes: the guard is live.
+ * Generating those same four tests, still untagged, from `tests/viewport.ts`
+ * leaves the WHOLE unit suite green -- 2054 passed, the same two deliberate
+ * failures, nothing new red. Four tests that resize a viewport, none tagged,
+ * and no guard in the repository can see them, because `specDirs()` derives
+ * from the directories that hold spec files and `tests/` root is not one.
+ *
+ * So the duplication is the price of the tag guard being able to read the
+ * declarations at all. A spec file is a source-scanning guard's input, and
+ * moving code out of it is the same blindness this repo has now measured
+ * three times -- #198's `rendered-text.spec.ts`, `homepage.spec.ts`'s
+ * deliberately inline 44px loop, and here.
+ */
+const TEST_BODY_STAYS_IN_THE_SPEC =
+  'the no-horizontal-scroll family: the measurement is shared ' +
+  '(`expectNoHorizontalScroll`), and what remains is the test declaration ' +
+  'itself. Generating it from a helper puts `test()` and `setViewportSize` ' +
+  'outside `specDirs()`, where `viewport-tagging.test.ts` cannot read them ' +
+  '-- measured: four untagged viewport tests, whole unit suite green.';
+
+/**
  * Pairs read and deliberately left separate, each with the reason a reader
  * needs before deciding to collapse it after all.
  *
@@ -38,7 +69,32 @@ const keyOf = (pair: DuplicatePair): string =>
  * fails when one stops matching a real pair, so a line cannot outlive the
  * code it excuses and quietly start excusing something else.
  */
-const SEPARATE: ReadonlyMap<string, string> = new Map([]);
+const SEPARATE: ReadonlyMap<string, string> = new Map([
+  [
+    'tests/e2e/classroom-groups-controls.spec.ts:anonymous  <->  tests/e2e/classroom-groups-roster.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+  [
+    'tests/e2e/classroom-groups-controls.spec.ts:anonymous  <->  tests/e2e/glory-points.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+  [
+    'tests/e2e/classroom-groups-controls.spec.ts:anonymous  <->  tests/e2e/site-meta.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+  [
+    'tests/e2e/classroom-groups-controls.spec.ts:anonymous  <->  tests/prod/prod-sanity.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+  [
+    'tests/e2e/classroom-groups-roster.spec.ts:anonymous  <->  tests/prod/prod-sanity.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+  [
+    'tests/e2e/glory-points.spec.ts:anonymous  <->  tests/e2e/site-meta.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+]);
 
 describe('a function body has one home across files', () => {
   it('scans the whole tracked tree, not a list', () => {
@@ -64,7 +120,15 @@ describe('a function body has one home across files', () => {
     // An allow-list entry outliving its code is how a guard stops guarding:
     // the next duplicate between those two files inherits the excuse.
     const live = new Set(PAIRS.map(keyOf));
-    expect([...SEPARATE.keys()].filter((key) => !live.has(key))).toEqual([]);
+    const recorded = [...SEPARATE.keys()];
+    // The population sits inside the assertion (#118): an empty `SEPARATE`
+    // has nothing to outlive, and would satisfy a bare filter for free.
+    expect(
+      searched(
+        recorded.filter((key) => !live.has(key)),
+        { of: recorded, what: 'recorded verdicts' },
+      ),
+    ).toEqual([]);
   });
 });
 
