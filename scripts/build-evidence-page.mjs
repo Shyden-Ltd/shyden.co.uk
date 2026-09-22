@@ -67,7 +67,7 @@ const esc = (s) =>
  * @param {any} report
  */
 const flattenReport = (report) => {
-  /** @type {{ title: string, project: string, status: string, duration: number, file: string, video: string | undefined }[]} */
+  /** @type {{ title: string, block: string, project: string, status: string, duration: number, file: string, video: string | undefined }[]} */
   const out = [];
   /**
    * @param {any} suite
@@ -83,6 +83,12 @@ const flattenReport = (report) => {
         for (const r of t.results)
           out.push({
             title: [...ancestors, spec.title].filter(Boolean).join(' > '),
+            // The describes this journey sits in, joined the same way the
+            // title is. Taken from the ancestors ARRAY rather than by
+            // splitting the joined title, because a test whose own title
+            // contains ` > ` would otherwise be read as a block boundary
+            // that does not exist.
+            block: ancestors.filter(Boolean).join(' > '),
             project: t.projectName,
             status: r.status,
             duration: r.duration,
@@ -570,12 +576,24 @@ export const renderEvidencePage = ({
   // operator nothing about which he is looking at.
   //
   // Derived from the report itself rather than from the spec sources or a
-  // list: a spec RECORDS when any result of its own carries a video. There is
-  // no second statement of the policy that could drift from the first.
-  const recordingSpecs = new Set(
-    specs.filter((s) => s.video).map((s) => s.file),
+  // list: a BLOCK RECORDS when any result of its own carries a video. There
+  // is no second statement of the policy that could drift from the first.
+  //
+  // The BLOCK, not the file (#292). A spec opts in as a whole -- one
+  // `test.use(recorded)` at the top -- so a file-keyed policy answers for
+  // every journey in it, and a block that renders nothing (reading bytes out
+  // of `dist/`, never navigating) came back as a recording that went astray:
+  // #165's wording on #214's fact, which is the very confusion #214 exists to
+  // stop. Operator decision 2026-09-22: derive the finer key from the report,
+  // rather than state the policy a second time in an annotation.
+  //
+  // Keyed by file AND block, because two files may name a block alike.
+  const blockKey = (/** @type {{ file: string, block: string }} */ s) =>
+    `${s.file}\u0000${s.block}`;
+  const recordingBlocks = new Set(
+    specs.filter((s) => s.video).map((s) => blockKey(s)),
   );
-  const specFileOf = new Map(specs.map((s) => [s.title, s.file]));
+  const specEntryOf = new Map(specs.map((s) => [s.title, s]));
   /** @param {string} title */
   const noRecordingNote = (title) => {
     // `order` is built from the manifest AND the report, so a title the report
@@ -587,9 +605,11 @@ export const renderEvidencePage = ({
     // `has`, not `get() === undefined`: a journey the report DOES carry whose
     // entry has no file is still a spec that did not ask to be recorded, and
     // the two cases are only distinguishable through the key.
-    if (!specFileOf.has(title)) return 'no test result';
-    const file = specFileOf.get(title);
-    return file !== undefined && recordingSpecs.has(file)
+    if (!specEntryOf.has(title)) return 'no test result';
+    const entry = specEntryOf.get(title);
+    return entry !== undefined &&
+      entry.file !== undefined &&
+      recordingBlocks.has(blockKey(entry))
       ? 'recording missing'
       : 'not recorded by policy';
   };
