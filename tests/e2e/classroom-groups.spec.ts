@@ -12,7 +12,7 @@ import {
 } from '../../src/lib/i18n';
 import { recorded, shoot } from './evidence';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
-import { expectNoHorizontalScroll } from '../viewport';
+import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
   openRoster,
   addSeveral,
@@ -1456,8 +1456,10 @@ test.describe('out-of-date groups', () => {
       await page.getByLabel('Students in each group').fill('3');
       await expect(page.locator('#cg-stale')).toBeVisible();
       await expectNoHorizontalScroll(page);
-      const box = await page.locator('#cg-stale button').boundingBox();
-      expect(box?.height).toBeGreaterThanOrEqual(44);
+      await atLeast44(
+        page.locator('#cg-stale button'),
+        'the stale notice button',
+      );
     },
   );
 

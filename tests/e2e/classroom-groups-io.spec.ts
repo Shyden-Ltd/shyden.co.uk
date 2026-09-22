@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { recordErrors } from './recorders';
+import { atLeast44 } from '../viewport';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import {
@@ -787,7 +788,7 @@ test.describe('the handover destination is chosen, not assumed', () => {
     await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
     await openIo(page);
     const summary = page.locator('#cg-io-both-toggle');
-    expect((await summary.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    await atLeast44(summary, '#cg-io-both-toggle');
     await summary.click();
     const choices = page.locator('.cg-io-both-target');
     // `.all()` resolves to [] when nothing matches -- it neither waits nor
@@ -799,7 +800,7 @@ test.describe('the handover destination is chosen, not assumed', () => {
     // change.
     await expect(choices).toHaveCount(otherLocales('en').length);
     for (const choice of await choices.all()) {
-      expect((await choice.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+      await atLeast44(choice);
     }
   });
 

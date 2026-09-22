@@ -1,95 +1,82 @@
-# Handover — 2026-09-22, #277: PR #293 open, waiting on CI
+# Handover — 2026-09-22: #277 is merged, deployed to dev and verified
 
-Branch **`277-one-home-for-near-duplicate-functions`**, on top of `develop`
-(`13103ac`), pushed. **PR #293** is open into `develop`:
-https://github.com/Shyden-Ltd/shyden.co.uk/pull/293
+Branch **`develop`**, level with `origin/develop`. Nothing is running,
+nothing is waiting. `277-one-home-for-near-duplicate-functions` is merged
+and deleted both locally and on the remote.
 
-No SHA is written here on purpose. Read the local head with
-`git rev-parse HEAD` and the PR's with
-`gh pr view 293 --json headRefOid`, and compare those two to whatever a
-CI run reports before trusting it.
+**This file is the only thing in the working tree, and it is uncommitted on
+purpose.** `develop` refuses a direct push — every change reaches it through
+a pull request — and a docs-only PR would burn a full CI run, so this handover
+is not worth one. It travels the way every previous handover did: commit it on
+the next ticket's branch, with that ticket's first commit. Until then do not
+run `git checkout -- HANDOVER.md`, which reverts to HEAD and would destroy it.
 
-## State
+No SHA is written here as a fact to rely on. Read the head with
+`git rev-parse HEAD` and compare it to whatever any run or status reports
+before trusting it.
 
-- `npm run typecheck` — **0 errors, 0 warnings, 0 hints**.
-- `npm run test:unit` — **2057 passed, 0 failed**. The two deliberate failures
-  the previous handover described are both resolved.
-- `npm run format` (`prettier --check .`) — clean.
-- `npm run test:e2e` — **2874 passed, 6 skipped, 0 failed**, all six
-  projects, 20.9m. Read by project name, not from the exit code.
-- The duplication scan reports **0 undecided pairs**, down from 27 at the
-  branch point and 21 at the previous handover.
+## What landed
 
-## What landed since the last handover
+PR **#293** merged into `develop` as a **merge commit** (`874ba41`, two
+parents), so `scripts/deploy-gate.mjs` could prove the merged tree equals
+its second parent's — verified by hand before merging: both trees are
+`2c137e9`.
 
-| SHA       | what                                                                                                                     |
-| --------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `038a52b` | the page-overflow measurement (21 copies, 12 files, 3 suites) → `tests/viewport.ts`; `atLeast44` (2 of 3 copies) with it |
-| `75e3432` | the "did the page store a name?" probe (4 copies) → `tests/e2e/helpers.ts`                                               |
-| `0f392d1` | the source-scanning guard body (4 copies) → `tests/unit/spec-scan.ts`, and ONE derived scope                             |
-| `9ecd24f` | the grouping journey (4 copies) → `tests/make-groups.ts`; retires a weaker `locale-parity` copy                          |
-| `9ccab0f` | `ast.ts`: a parameter binds its name; the last six pairs recorded SEPARATE                                               |
+Gates, each read by name rather than off a run's conclusion:
 
-## The three findings worth keeping, all measured
+| where                    | job                               | result                 |
+| ------------------------ | --------------------------------- | ---------------------- |
+| CI `35695207300`         | `build-and-test`                  | success                |
+| CI `35695207300`         | `visual`                          | success                |
+| PR body `35695207302`    | `closing-keywords`                | success                |
+| deploy-dev `35700714482` | `Gate — this tree already passed` | success                |
+| deploy-dev `35700714482` | `Comprehensive web tests`         | **skipped, by design** |
+| deploy-dev `35700714482` | `Deploy to Dev`                   | success                |
+| deploy-dev `35700714482` | `Verify dev + dev-verified`       | success                |
 
-1. **`download-tagging.test.ts` scanned `tests/e2e` only.** The other three
-   guards scanned `specDirs()`. Mutation M6 — an untagged `downloadText`
-   call planted in `tests/prod/prod-sanity.spec.ts` — is **RED** with the
-   shared scope and **GREEN** with the old one (measured by checking out the
-   pre-collapse guard beside the same mutation). Nothing outside
-   `tests/e2e` reads a download's bytes today, so the hole was latent.
-2. **`classroom-groups-roster.spec.ts`'s privacy probe read two of four
-   places.** Its test is 'a typed name never reaches localStorage or
-   sessionStorage' — the address bar and the cookie jar went unread. Routing
-   it through the one home widened it.
-3. **The three inline grouping journeys click `#cg-sound-toggle`
-   unconditionally**, where the file-local helper opens it only when hidden.
-   Each goes to a fresh page first, so none is broken today.
+`dev-verified = success`, read **off the commit** `874ba41`, not off the
+run. The skip above is the gate working: the suite already passed on the
+PR, so it is not run twice. The job that must never skip is
+`Verify dev + dev-verified`, and it ran.
 
-## The six SEPARATE verdicts, and why they are not a cop-out
+`develop`'s required contexts are `build-and-test` and `visual`, with
+`strict=true`. `closing-keywords` is green but **not required** — that is
+#278, repository administration, which the App holds read-only.
 
-All six are the no-horizontal-scroll family. The measurement is already
-shared; what remains is the test declaration. Measured on `site-meta.spec.ts`:
+**#277 is closed.** The duplication scan reports 0 undecided pairs, down
+from 27 at the branch point.
 
-- drop the `@emulated-viewport` tag → `viewport-tagging.test.ts` goes RED,
-  naming the test and the resizing line. The guard is live.
-- generate those same four tests, still untagged, from `tests/viewport.ts` →
-  the **whole unit suite is green**. Four untagged viewport tests and no
-  guard in the repository can see them, because `specDirs()` derives from
-  the directories holding spec files and `tests/` root is not one.
+## Filed this session
+
+**#294** — nine touch-target assertions check height alone and none of the
+44px reads are rounded. The evidence came out of #277 and was deliberately
+left there: widening an assertion is coverage, not refactoring.
+
+Its scope was **derived from disk, and the handover it came from was wrong**:
+nine height-only sites across **four** e2e specs, not six, plus two sites in
+`tests/device/ios/journeys.journey.ts` that assert both dimensions unrounded
+and cannot take `atLeast44` at all, because they measure a WebDriver `rect`
+rather than a Playwright `Locator`. Two sites are not simple conversions and
+the ticket says why: `classroom-groups-roster.spec.ts:173` measures
+`el.closest('label')` in-page on purpose, and `homepage.spec.ts:235-236`
+keeps an inline copy the unproved-loop scanner matches by shape.
 
 ## Then, in order — a cold session can start here
 
-1. **Read every CI job on PR #293 BY NAME.** A run that concludes `success`
-   is not a verdict on its jobs (#157). Before merging, compare the run's SHA
-   to `gh pr view 293 --json headRefOid` — a waiter locks onto the head at
-   the moment it starts and will happily report green for a superseded
-   commit (#121).
-2. **Merge with a MERGE COMMIT, never a squash.** `scripts/deploy-gate.mjs`
-   proves the merge's tree equals its second parent's, which a squash does
-   not have, so a squash refuses the deploy.
-3. The push to `develop` fires `deploy-dev.yml`. Confirm the deploy by
-   reading **`dev-verified`** off the COMMIT, and each job by name —
-   `verify-dev` has been skipped before while the run still concluded
-   `success`.
-4. This is a **dev deploy, not a release.** A promotion PR `develop → main`
-   is a release action and is Shyden's call, after his manual test.
+1. Nothing is in flight. Pick the next ticket off the open board; there is
+   no wait to resume and no gate outstanding.
+2. Candidates, all previously noted as untouched: **#189** (full-screen board
+   clips a wrapped group card), **#249**, **#188**, **#294** (just filed),
+   **#241**, **#95**.
+3. **This is a dev deploy, not a release.** A promotion PR `develop → main`
+   is a release action and is Shyden's alone, after his manual test. Do not
+   open one because `dev-verified` went green.
 
-## Follow-ups to file (evidence is in this branch, not yet in a ticket)
+## Environment note, not a code problem
 
-- **Nine height-only 44px assertions** across six e2e specs assert
-  `box.height >= 44` without the width and without rounding. That is a
-  weaker claim than `atLeast44`, and the unrounded form can read 43.9999 for
-  a declared `min-height: 44px`. Widening them is a coverage change, not a
-  refactor, so it was left alone deliberately — `tests/viewport.ts`'s
-  docblock records this.
-- **`homepage.spec.ts` keeps a third `atLeast44` copy inline on purpose**,
-  because the unproved-loop scanner in `event-collectors.test.ts` matches
-  that exact shape. Cross-referenced in both directions now.
-
-## Untouched by this ticket
-
-Everything in the previous handover's waiting list still stands: **#278**
-(add `closing-keywords` to `required_status_checks.contexts` on `develop`
-and `main` — administration, which the App holds read-only), **#189**,
-**#241**, **#249**, **#188**, **#95**.
+`claude-mem` cannot save memories: the observer's allowance on the provider
+is exhausted (since 2026-09-21T21:28:27Z), reporting _"Provider reported the
+inference allowance exhausted"_. Nothing from any session is being captured
+until it resets or the observer is pointed at another provider in
+`~/.claude-mem/settings.json`. **Do not restart the worker** — that clears
+the backoff protecting the provider.

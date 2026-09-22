@@ -2,7 +2,11 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { searched } from '../source-files';
-import { expectNoHorizontalScroll } from '../viewport';
+import {
+  atLeast44,
+  expectNoHorizontalScroll,
+  rectAtLeast44,
+} from '../viewport';
 import {
   addSeveral,
   contrastRatio,
@@ -143,21 +147,43 @@ test.describe('the roster table', () => {
     },
   );
 
-  // Not a claim about the 320px CARD layout (a later stage-3 task's own
-  // job, and design spec section 3 is explicit that a table cannot meet
-  // 44px at 320px with six columns -- that is WHY the reflow exists). This
-  // only proves the HEIGHT half of the touch-target rule, which fixed
-  // percentage-width columns cannot squeeze the way width can be squeezed,
-  // so it holds regardless of viewport -- run at each project's own default
-  // (desktop for chromium/firefox/webkit, a phone's own default for
-  // mobile-chrome/mobile-safari) rather than pinned to one.
-  test('per-row controls meet the 44px minimum height', async ({ page }) => {
+  // Run at each project's own default viewport (desktop for
+  // chromium/firefox/webkit, a phone's own default for
+  // mobile-chrome/mobile-safari) rather than pinned to one, so the table
+  // layout and the phone CARD layout are both covered.
+  //
+  // #294 widened this from height alone to the full 44x44 claim, and
+  // MEASURED which controls can carry it. Every control here does, in both
+  // layouts, with ONE exception that is a design decision rather than an
+  // omission -- see `#` below.
+  test('per-row controls meet the 44px touch target', async ({ page }) => {
     await openRoster(page);
     const row = page.locator('.cg-student').first();
-    for (const label of ['#', 'Name', 'Sex', 'Together', 'Apart']) {
-      const box = (await row.getByLabel(label).boundingBox())!;
-      expect(box.height, label).toBeGreaterThanOrEqual(44);
+    for (const label of ['Name', 'Sex', 'Together', 'Apart']) {
+      await atLeast44(row.getByLabel(label), label);
     }
+    // `#` is the one control on this page held to the HEIGHT half alone.
+    // The card layout gives it 2 of 12 columns on purpose -- "a class
+    // register number is rarely more than 3 digits", and design spec
+    // section 3 is explicit that no arrangement of six full-width targets
+    // fits a phone at all, which is the whole reason the reflow exists.
+    // ClassroomGroupsPage.astro's `td:nth-child(2)` rule says so and names
+    // this test; this is the other half of that cross-reference.
+    //
+    // Measured under #294, which is why the exception is this narrow
+    // rather than the whole row: 43.28px wide on mobile-chrome and 42.80px
+    // on mobile-safari, against 80.78px on chromium's desktop default. The
+    // other four controls clear the floor in BOTH layouts. Kept as an
+    // inline exception, spelled out, rather than a height-only export from
+    // tests/viewport.ts -- a weaker helper anyone could reach for is the
+    // trivial escape hatch #118 was filed about, and an exception a reader
+    // meets at the site cannot be reached for by accident.
+    //
+    // It is ordered AFTER the loop deliberately. As the loop's first entry
+    // it failed first and Playwright stopped the test there, so the four
+    // controls behind it were never measured on a phone at all.
+    const number = (await row.getByLabel('#').boundingBox())!;
+    expect(Math.round(number.height), '# height').toBeGreaterThanOrEqual(44);
     // The checkbox itself is drawn small on purpose, matching this page's
     // existing `.switch input` convention -- its REAL tap target is the
     // <label> wrapping it. Measuring the bare input here would repeat the
@@ -167,10 +193,10 @@ test.describe('the roster table', () => {
     // `.closest('label')`, not the input's own rect.
     const absent = await row.getByLabel('Absent').evaluate((el) => {
       const target = el.closest('label') ?? el;
-      const r = target.getBoundingClientRect();
-      return r.height;
+      const { width, height } = target.getBoundingClientRect();
+      return { width, height };
     });
-    expect(absent, 'Absent (label)').toBeGreaterThanOrEqual(44);
+    rectAtLeast44(absent, 'Absent (label)');
   });
 
   test('no console errors while building a roster', async ({ page }) => {
@@ -930,12 +956,13 @@ test.describe('removing a student', () => {
 
   test('the Remove button meets the 44px touch target', async ({ page }) => {
     await openRoster(page);
-    const box = await page
-      .locator('.cg-student')
-      .first()
-      .getByRole('button', { name: 'Remove' })
-      .boundingBox();
-    expect(box?.height).toBeGreaterThanOrEqual(44);
+    await atLeast44(
+      page
+        .locator('.cg-student')
+        .first()
+        .getByRole('button', { name: 'Remove' }),
+      'Remove',
+    );
   });
 });
 
@@ -1107,10 +1134,10 @@ test.describe('the Students box becomes a read-out', () => {
   // by inspection because it shares a CSS class with one that is measured.
   test('the Clear all button meets the 44px touch target', async ({ page }) => {
     await openRoster(page);
-    const box = await page
-      .getByRole('button', { name: 'Clear all' })
-      .boundingBox();
-    expect(box?.height).toBeGreaterThanOrEqual(44);
+    await atLeast44(
+      page.getByRole('button', { name: 'Clear all' }),
+      'Clear all',
+    );
   });
 
   // Not in the brief -- design spec section 4's own example shows exactly
