@@ -31,7 +31,7 @@
 
   /* Brand. --on-accent is the ink for anything sitting ON mint: white scores
      1.39:1 there, so a filled button labelled #fff would be unreadable. */
-  --accent: #38f5c8;
+  --accent: #38c8f5;
   --accent-ink: #7fffe0;
   --on-accent: #04140f;
   --violet: #7a5cff;
