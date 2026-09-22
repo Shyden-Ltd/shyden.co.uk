@@ -220,7 +220,11 @@ jobs:
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
       # expected / actual / diff PNGs, which is the whole point: a visual
-      # failure that can only be reproduced locally gets ignored.
+      # failure that can only be reproduced locally gets ignored. The gate's
+      # images and the measurement's are in separate folders under
+      # `test-results/`: the measure step's start deletes its own folder, and
+      # while the two shared one it deleted the very diff this step exists to
+      # keep (#311).
       - name: Keep the visual diff
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

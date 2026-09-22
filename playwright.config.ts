@@ -108,6 +108,13 @@ export const VISUAL_MEASURE_PROJECT = {
   use: { ...devices['Desktop Chrome'] },
   testMatch: visualOnly,
   expect: { toHaveScreenshot: { threshold: 0 } },
+  // A folder of its own, never the gate's (#311). Playwright deletes the
+  // outputDir of every project a run selects as that run starts, and CI
+  // measures straight after the gate -- after a red one above all. Sharing
+  // the gate's folder, the measurement deleted the comparison's expected,
+  // actual and diff images before the job could upload them. Still under
+  // `test-results/`, so the one upload keeps both.
+  outputDir: 'test-results/visual-measure',
 };
 
 const ENGINES = [
