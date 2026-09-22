@@ -32,11 +32,15 @@ import {
   PUBLISH_MAX_BYTES,
   PUBLISH_MAX_FILES,
   PUBLISH_NOTE,
-  publishedVideoPath,
   reconcileFiles,
   renderEvidencePage,
   videoCandidates,
-  videoFiles,
+  ASSET_MAX_FILES,
+  ASSET_MAX_BYTES,
+  ASSET_MAX_FILE_BYTES,
+  assetUploads,
+  assetVideoPaths,
+  assertAssetLimits,
 } from '../../scripts/build-evidence-page.mjs';
 
 /**
@@ -197,7 +201,27 @@ const png = (width: number) => {
   ]);
 };
 
-/** The builder as an operator runs it: its own process, reading only the disk. */
+/**
+ * A `/_blob/<id>` as the asset store answers with one. The id is server-minted
+ * and opaque, so a test fabricates a stable stand-in from the key -- the SHAPE
+ * is what the page has to handle, and the shape is fixed.
+ */
+const blobPath = (key: string) =>
+  `/_blob/${[...key]
+    .reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)
+    .toString(16)
+    .padStart(32, '0')}`;
+
+/**
+ * The builder as an operator runs it: its own process, reading only the disk.
+ *
+ * TWO PASSES since #268, because an asset id is minted by the upload and
+ * cannot be known before it. `--plan` writes what to upload; the upload here
+ * is stood in for, since the store is a platform the unit suite does not
+ * reach, and the ids it invents are the only fabricated thing in this harness.
+ * A plan that refuses is returned as-is: the refusals these tests assert all
+ * happen before anything would be uploaded.
+ */
 const runBuilder = (
   dir: string,
   page: string,
@@ -205,9 +229,40 @@ const runBuilder = (
 ) => {
   const content = join(dir, 'content.json');
   writeFileSync(content, JSON.stringify(CONTENT));
+  const planned = spawnSync(
+    process.execPath,
+    [script, '--plan', '--evidence', dir, '--out', page],
+    { encoding: 'utf8' },
+  );
+  if (planned.status !== 0) return planned;
+  const uploads: Record<string, string> = JSON.parse(
+    readFileSync(`${page}.uploads.json`, 'utf8'),
+  );
+  const assets = join(dir, 'assets.json');
+  writeFileSync(
+    assets,
+    JSON.stringify(
+      Object.fromEntries(
+        Object.keys(uploads).map((key, n) => [
+          key,
+          `/_blob/${n.toString(16).padStart(32, '0')}`,
+        ]),
+      ),
+    ),
+  );
   return spawnSync(
     process.execPath,
-    [script, '--evidence', dir, '--content', content, '--out', page],
+    [
+      script,
+      '--evidence',
+      dir,
+      '--content',
+      content,
+      '--out',
+      page,
+      '--assets',
+      assets,
+    ],
     { encoding: 'utf8' },
   );
 };
@@ -310,15 +365,15 @@ describe('a run that recorded nothing still publishes (#214 AC7)', () => {
     ]);
     const candidates = videoCandidates(report);
     expect(candidates).toEqual([]);
-    expect(videoFiles(candidates)).toEqual({});
-    expect(
-      reconcileFiles({ desired: videoFiles(candidates), published: [] }),
-    ).toEqual({});
-    // A page that USED to carry recordings and now carries none must retract
-    // them, rather than leaving files nothing on the page names.
+    expect(assetUploads(candidates)).toEqual({});
+    expect(reconcileFiles({ desired: {}, published: [] })).toEqual({});
+    // A page that USED to carry recordings as supporting files must retract
+    // them, rather than leaving files nothing on the page names. Since #268
+    // that is every capture: recordings are assets, so `desired` is always
+    // empty and this is the only thing `reconcileFiles` still does.
     expect(
       reconcileFiles({
-        desired: videoFiles(candidates),
+        desired: {},
         published: ['evidence/a-chromium.webm'],
       }),
     ).toEqual({ 'evidence/a-chromium.webm': null });
@@ -1050,13 +1105,17 @@ describe('the build says what the publish has to grant', () => {
     expect(build(), 'the page no longer reaches for db').toContain("use('db')");
   });
 
-  it('names the files map the recordings travel in', () => {
-    // The sidecar is inert unless the publish carries it: the page would
-    // reference recordings nothing ever uploaded, and a broken `src` reads as
-    // a journey that was never recorded. A publish argument cannot be enforced
-    // from in here, so the note is its only carrier -- the same reason the
-    // capability is named above.
-    expect(PUBLISH_NOTE).toContain('files');
+  it('names the capability the recordings need, and what it costs', () => {
+    // Recordings moved from supporting files to the asset store (#268), and
+    // the upload is refused unless the publish declared `assets` -- every
+    // journey would then reference a recording nothing stored, and a broken
+    // `src` reads as a journey that was never recorded. A publish argument
+    // cannot be enforced from in here, so the note is its only carrier.
+    expect(PUBLISH_NOTE).toContain('"assets": {}');
+    // And the consequence the operator accepted, carried with it: a page
+    // declaring assets can never be made public. Written where the person
+    // publishing reads it, not only in the ticket.
+    expect(PUBLISH_NOTE).toContain('organization-internal');
   });
 });
 
@@ -1169,61 +1228,17 @@ describe('an evidence capture is identified by its own bytes', () => {
 });
 
 /**
- * Recordings published BESIDE the page, so capture scope and video completeness
- * stop competing for the 16 MB one page is allowed (#158).
+ * Where the published-path rules used to be.
  *
- * Twice the shots have spent a budget the recordings needed. #146 filed it; #189
- * hit it again at a different scope, where 105 shots at quality 90 came to
- * 10.0MB and pushed all 35 recordings out of a page that still looked complete.
- * A page carries media as base64 `data:` URIs at 4/3 of the bytes; a supporting
- * file is fetched separately and charged against different ceilings entirely --
- * 15 MB per binary, 64 MB and 255 entries per publish.
- *
- * Which media moves is FORCED by that entry ceiling, not chosen: full scope is
- * 175 shots + 120 recordings + the page = 296 entries, over the 255 a publish
- * allows. So the recordings move and the shots stay inline -- the recordings are
- * the larger bytes, and the ones that were being dropped.
- *
- * The published path is RELATIVE, with no leading slash. An artifact does not
- * serve a root-relative path, so `/evidence/x.webm` yields a broken `src` and a
- * journey that reads as never recorded -- silence indistinguishable from
- * evidence, which is what `mediaType` already refuses to emit. Exact equality on
- * the whole map is therefore the assertion; a `startsWith` probe would pass on a
- * path the publish cannot serve.
+ * Until #268 a recording travelled as a supporting file under `evidence/`, and
+ * two rules lived here: every recording mapped to a relative published path,
+ * and two recordings landing on one path was a THROW. Both are gone with the
+ * route that needed them -- an asset is keyed by the raw journey key, which is
+ * unique by construction, so the collision cannot be spelled. What replaced
+ * them is `recordings travel in the asset store (#268)` at the end of this
+ * file, and the historical collision pair is asserted there so the reason this
+ * is now impossible does not become folklore.
  */
-describe('recordings are published beside the page, not inside it', () => {
-  it('maps every recording to a relative published path, keyed by journey and engine', () => {
-    expect(
-      videoFiles([
-        { key: 'a-journey|chromium', abs: '/run/one.webm' },
-        { key: 'a-journey|Mobile Safari', abs: '/run/two.webm' },
-      ]),
-    ).toEqual({
-      'evidence/a-journey-chromium.webm': '/run/one.webm',
-      'evidence/a-journey-mobile-safari.webm': '/run/two.webm',
-    });
-  });
-
-  it('refuses two recordings whose published paths collide, naming both files', () => {
-    // Slugging joins on the same separator the key does, so a journey ending
-    // where an engine begins can land on one path: `a-b|c` and `a|b-c` both
-    // publish as `a-b-c.webm`. `Object.fromEntries` keeps the LAST silently,
-    // which puts one journey's recording under another journey's claim -- the
-    // stale-video hazard #158 exists to remove, arriving from the other end.
-    let refusal = 'the build did not refuse';
-    try {
-      videoFiles([
-        { key: 'a-b|c', abs: '/run/one.webm' },
-        { key: 'a|b-c', abs: '/run/two.webm' },
-      ]);
-    } catch (error) {
-      refusal = (error as Error).message;
-    }
-    expect(refusal).toContain('evidence/a-b-c.webm');
-    expect(refusal).toContain('/run/one.webm');
-    expect(refusal).toContain('/run/two.webm');
-  });
-});
 
 /**
  * A second capture must not leave the first capture's recordings behind.
@@ -1363,32 +1378,40 @@ describe('a page too large to publish is refused, not trimmed', () => {
 });
 
 /**
- * Every media reference the page emits is one a publish can actually serve.
+ * Every media reference the page emits is one the ARTIFACT can serve.
  *
- * An artifact serves a supporting file by RELATIVE path. A root-relative `src`
- * is not served at all, and the failure is a broken `<video>` on a journey that
- * then reads as never recorded -- the silence this ticket exists to remove, in
- * the one place no type can see it: the path is built in `publishedVideoPath`
- * and interpolated into markup somewhere else, with no compiler between them.
+ * This rule used to read "nothing root-relative", and that was right for as
+ * long as a recording was a supporting file: an artifact serves those by
+ * relative path, so a leading slash was a broken `<video>` on a journey that
+ * then read as never recorded. #268 moved recordings into the asset store,
+ * which serves `/_blob/<id>` -- root-relative -- in every view, so the old rule
+ * would now go red on a correct page.
  *
- * Asserted over the page's own rendered bytes for that reason. It passes the day
- * it is written, so its evidence comes from mutation: point the path at
- * `/evidence/...` and this is what goes red.
+ * Widening it to "anything goes" would have retired the guard instead of
+ * re-aiming it, so it asserts the property it always meant: every `src` is
+ * something this artifact serves, which is a `data:` URI for a shot or a
+ * `/_blob/` path for a recording, and nothing else. A relative `evidence/...`
+ * path is now as broken as `/evidence/...` was, and both fail here.
+ *
+ * Asserted over the page's own rendered bytes, because the path is built in
+ * one place and interpolated into markup in another with no compiler between.
  */
-describe('the page references its recordings by a path a publish serves', () => {
-  it('emits no root-relative media reference', () => {
+describe('the page references its recordings by a path the artifact serves', () => {
+  it('emits only media references the artifact serves', () => {
     const key = 'a-journey|chromium';
-    const html = build({ videos: new Map([[key, publishedVideoPath(key)]]) });
+    const html = build({ videos: new Map([[key, blobPath(key)]]) });
     const srcs = [...html.matchAll(/src="([^"]*)"/g)].map((m) => m[1]);
 
-    const rooted = srcs.filter((src) => src.startsWith('/'));
-    expect(searched(rooted, { of: srcs, what: 'media references' })).toEqual(
-      [],
+    const unservable = srcs.filter(
+      (src) => !src.startsWith('data:') && !src.startsWith('/_blob/'),
     );
+    expect(
+      searched(unservable, { of: srcs, what: 'media references' }),
+    ).toEqual([]);
     // A positive control on the POPULATION, not merely on its size: the shots
     // are data URIs and would satisfy `searched` on their own, leaving the
-    // recording -- the only relative path here -- entirely unexamined.
-    expect(srcs).toContain(publishedVideoPath(key));
+    // recording -- the only blob path here -- entirely unexamined.
+    expect(srcs).toContain(blobPath(key));
   });
 });
 
@@ -1396,8 +1419,8 @@ describe('the page references its recordings by a path a publish serves', () => 
  * A journey the report names is on the page, captured or not.
  *
  * The journey list was derived from the MANIFEST alone, so a test that asserted
- * without calling `shoot()` got no section -- while `videoFiles` publishes a
- * file for EVERY recording, because `video` is `on` for the whole run whenever
+ * without calling `shoot()` got no section -- while the upload stores one for
+ * EVERY recording, because `video` is `on` for the whole run whenever
  * `EVIDENCE_DIR` is set. Two populations with no compiler between them: entries
  * come from the recordings, `src` attributes come from the journey list.
  *
@@ -1450,14 +1473,14 @@ describe('a journey that captured nothing is still on the page', () => {
     const videos = new Map(
       [`${SLUG}|chromium`, 'a-journey|chromium'].map((key) => [
         key,
-        publishedVideoPath(key),
+        blobPath(key),
       ]),
     );
     const html = build({ report: reportNamingAnUncapturedJourney, videos });
     const keys = [...videos.keys()];
 
     const unreferenced = keys.filter(
-      (key) => !html.includes(`src="${publishedVideoPath(key)}"`),
+      (key) => !html.includes(`src="${blobPath(key)}"`),
     );
     expect(
       searched(unreferenced, {
@@ -1531,7 +1554,7 @@ describe('the builder builds its page from any checkout path (#221)', () => {
  * describes were ONE journey: captures pooled into a single strip, per-engine
  * results taken from whichever spec matched first. Measured on a 7-spec run:
  * 275 distinct leaf titles, 5 used twice, every pair an English block and its
- * Indonesian counterpart. `videoFiles` was the only thing that noticed,
+ * Indonesian counterpart. The published-path map was the only thing that noticed,
  * because it alone demands a unique path, and it refused the whole build.
  */
 describe('a journey is identified by its full title path', () => {
@@ -1635,5 +1658,316 @@ describe('a journey is identified by its full title path', () => {
     expect(html).toContain(rendered(title));
     expect(html).toContain('title="passed"');
     expect(html).not.toContain('title="not run"');
+  });
+});
+
+/**
+ * #268. A recording travels in the artifact's ASSET STORE, not as a published
+ * supporting file.
+ *
+ * Measured 2026-09-22 against the real runtime, prediction recorded first: one
+ * artifact holds **5000 assets and 1 GiB**, where a publish carries **255
+ * entries and 64 MB**. Six specs produce 199 recordings and seven produce 280,
+ * so the seven-spec run #263's AC6 asks for could not be published at all. The
+ * asset store does not economise against that ceiling, it removes it.
+ *
+ * An id is assigned by the server, so the build is TWO passes by construction:
+ * `--plan` writes what to upload, the upload answers with `/_blob/<id>` for
+ * each, and the build proper is given that map. There is no one-pass shape --
+ * an id cannot be known before the upload that mints it.
+ */
+describe('recordings travel in the asset store (#268)', () => {
+  let scratch = '';
+  beforeAll(() => {
+    scratch = mkdtempSync(join(tmpdir(), 'evidence-assets-'));
+  });
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  /** A recording on disk, because the builder reads every one it is told of. */
+  const recording = (name: string, size: number) => {
+    const path = join(scratch, name);
+    writeFileSync(path, Buffer.alloc(size));
+    return path;
+  };
+
+  /**
+   * An evidence directory with one captured assertion and one recording, as a
+   * run leaves it. The manifest row is stamped inside the reported run, or
+   * `capturesOfThisRun` reads it as an earlier run's and refuses.
+   */
+  const runDirectory = (name: string) => {
+    const dir = mkdtempSync(join(scratch, name));
+    mkdirSync(join(dir, 'chromium'));
+    writeFileSync(join(dir, 'chromium', 'a__01.png'), png(1));
+    writeFileSync(
+      join(dir, EVIDENCE_MANIFEST),
+      JSON.stringify(
+        manifestRow(
+          {
+            project: 'chromium',
+            title: 'suite > a journey',
+            order: 1,
+            label: 'first thing',
+            file: 'chromium/a__01.png',
+          },
+          new Date(Date.parse(REPORT.stats.startTime) + 5_000),
+        ),
+      ) + '\n',
+    );
+    writeFileSync(
+      join(dir, EVIDENCE_REPORT),
+      JSON.stringify(
+        reportOf([
+          {
+            journey: 'a journey',
+            project: 'chromium',
+            video: recording(`${name}.webm`, 10),
+          },
+        ]),
+      ),
+    );
+    return dir;
+  };
+
+  it('pins the ceilings that were measured, not assumed', () => {
+    // The literals are the measurement. A derived-looking expression here
+    // would move with the code and assert nothing about the platform (#117).
+    expect(ASSET_MAX_FILES).toBe(5000);
+    expect(ASSET_MAX_BYTES).toBe(1073741824);
+    expect(ASSET_MAX_FILE_BYTES).toBe(20 * 1024 * 1024);
+  });
+
+  it('plans one upload per recording, keyed by the journey it belongs to', () => {
+    expect(
+      assetUploads([
+        { key: 'a journey|chromium', abs: '/tmp/one.webm' },
+        { key: 'a journey|webkit', abs: '/tmp/two.webm' },
+      ]),
+    ).toEqual({
+      'a journey|chromium': '/tmp/one.webm',
+      'a journey|webkit': '/tmp/two.webm',
+    });
+  });
+
+  it('cannot collide on a slug, because nothing is slugged', () => {
+    // The published path joined journey and engine on the separator the key
+    // itself uses, so `a-b|c` and `a|b-c` both became `a-b-c.webm` and the
+    // build refused. An asset is keyed by the raw key, which is unique by
+    // construction, so this pair is two uploads rather than a refusal.
+    const planned = assetUploads([
+      { key: 'a-b|c', abs: '/tmp/one.webm' },
+      { key: 'a|b-c', abs: '/tmp/two.webm' },
+    ]);
+    // The pair that used to collide: slugged on the key's own separator, both
+    // became `evidence/a-b-c.webm`. Asserted as the whole population, so the
+    // two survive as two and the reason is not left as folklore.
+    expect(planned).toEqual({
+      'a-b|c': '/tmp/one.webm',
+      'a|b-c': '/tmp/two.webm',
+    });
+  });
+
+  it('refuses two recordings whose journeys slug to one key', () => {
+    // NOT the retired collision. The key is `slugOf(title)|project`, and
+    // `videoCandidates` returns an array, so `a journey` and `a-journey` slug
+    // the same way and arrive as two candidates under one key. A Map keeps the
+    // last in silence. Found by a failing expectation while writing the plan
+    // test, after the first draft of `assetUploads` claimed the key was unique
+    // by construction -- it is not.
+    let refusal = 'the build did not refuse';
+    try {
+      assetUploads([
+        { key: 'a-journey|chromium', abs: '/run/one.webm' },
+        { key: 'a-journey|chromium', abs: '/run/two.webm' },
+      ]);
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('a-journey|chromium');
+    expect(refusal).toContain('/run/one.webm');
+    expect(refusal).toContain('/run/two.webm');
+  });
+
+  it('resolves the page src from the uploaded map', () => {
+    expect(
+      assetVideoPaths({
+        uploaded: { 'a journey|chromium': '/_blob/deadbeef' },
+        candidates: [{ key: 'a journey|chromium', abs: '/tmp/one.webm' }],
+      }),
+    ).toEqual(new Map([['a journey|chromium', '/_blob/deadbeef']]));
+  });
+
+  it('refuses a recording the uploaded map does not carry', () => {
+    // Nothing is silently dropped: a journey whose recording never uploaded
+    // would render with no `src` and read as never recorded, which is the
+    // failure this whole file exists to prevent.
+    expect(() =>
+      assetVideoPaths({
+        uploaded: {},
+        candidates: [{ key: 'a journey|chromium', abs: '/tmp/one.webm' }],
+      }),
+    ).toThrow(/1 recording\(s\) were planned but never uploaded/);
+  });
+
+  it('refuses an uploaded entry no recording asked for', () => {
+    // The other direction: a stale map from an earlier run would pair a
+    // current journey with an older recording and look entirely normal.
+    expect(() =>
+      assetVideoPaths({
+        uploaded: {
+          'a journey|chromium': '/_blob/a',
+          'gone|webkit': '/_blob/b',
+        },
+        candidates: [{ key: 'a journey|chromium', abs: '/tmp/one.webm' }],
+      }),
+    ).toThrow(/1 uploaded asset\(s\) belong to no recording in this run/);
+  });
+
+  it('refuses a blob path that is not one', () => {
+    expect(() =>
+      assetVideoPaths({
+        uploaded: { 'a journey|chromium': 'https://example.test/x.webm' },
+        candidates: [{ key: 'a journey|chromium', abs: '/tmp/one.webm' }],
+      }),
+    ).toThrow(/is not a \/_blob\/ path/);
+  });
+
+  it('refuses more assets than one artifact holds', () => {
+    const uploads = Object.fromEntries(
+      Array.from({ length: ASSET_MAX_FILES + 1 }, (_, i) => [
+        `j${i}|chromium`,
+        `/tmp/${i}.webm`,
+      ]),
+    );
+    expect(() => assertAssetLimits({ uploads, sizeOf: () => 10 })).toThrow(
+      /5001 assets, over the 5000 one artifact holds/,
+    );
+  });
+
+  it('refuses a recording over the per-asset ceiling', () => {
+    expect(() =>
+      assertAssetLimits({
+        uploads: { 'a|chromium': '/tmp/big.webm' },
+        sizeOf: () => ASSET_MAX_FILE_BYTES + 1,
+      }),
+    ).toThrow(
+      /\/tmp\/big\.webm at 20\.00MB, over the 20\.00MB one asset allows/,
+    );
+  });
+
+  it('allows a recording exactly at the per-asset ceiling', () => {
+    // The boundary itself, because `>` and `>=` are one character apart and
+    // only a test at the exact value can tell them apart. 20 MiB is allowed;
+    // one byte more is not, which the row below asserts.
+    expect(
+      assertAssetLimits({
+        uploads: { 'a|chromium': '/tmp/exact.webm' },
+        sizeOf: () => ASSET_MAX_FILE_BYTES,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('allows a run exactly at the store ceiling', () => {
+    // Spread over 1024 files of 1 MiB, not one file of 1 GiB: a single file
+    // that size breaches the PER-ASSET ceiling first, so the version of this
+    // test that used one file was asserting the wrong refusal and failed.
+    const uploads = Object.fromEntries(
+      Array.from({ length: 1024 }, (_, i) => [
+        `j${i}|chromium`,
+        `/tmp/${i}.webm`,
+      ]),
+    );
+    expect(
+      assertAssetLimits({ uploads, sizeOf: () => 1048576 }),
+    ).toBeUndefined();
+    // And one byte more, spread the same way, is refused.
+    expect(() =>
+      assertAssetLimits({
+        uploads: { ...uploads, 'extra|chromium': '/tmp/extra.webm' },
+        sizeOf: () => 1048576,
+      }),
+    ).toThrow(/over the 1024\.00MB one artifact holds/);
+  });
+
+  it('allows exactly as many assets as one artifact holds', () => {
+    const uploads = Object.fromEntries(
+      Array.from({ length: ASSET_MAX_FILES }, (_, i) => [
+        `j${i}|chromium`,
+        `/tmp/${i}.webm`,
+      ]),
+    );
+    expect(assertAssetLimits({ uploads, sizeOf: () => 10 })).toBeUndefined();
+  });
+
+  it('refuses a run whose recordings exceed the store', () => {
+    expect(() =>
+      assertAssetLimits({
+        uploads: { 'a|chromium': '/tmp/a.webm', 'b|chromium': '/tmp/b.webm' },
+        sizeOf: () => ASSET_MAX_BYTES / 2 + 1,
+      }),
+    ).toThrow(/over the 1024\.00MB one artifact holds/);
+  });
+
+  it('plans the upload without reading a single screenshot', () => {
+    // The plan pass runs before content and before any capture is encoded: it
+    // needs the recordings and nothing else, and a plan refused over a missing
+    // --content would be a pass refusing an argument it does not use.
+    const dir = runDirectory('plan-');
+    const page = join(dir, 'page.html');
+    const planned = spawnSync(
+      process.execPath,
+      [
+        'scripts/build-evidence-page.mjs',
+        '--plan',
+        '--evidence',
+        dir,
+        '--out',
+        page,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(planned.status, planned.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(`${page}.uploads.json`, 'utf8'))).toEqual({
+      'a-journey|chromium': join(scratch, 'plan-.webm'),
+    });
+    expect(existsSync(page), 'the plan pass wrote a page').toBe(false);
+  });
+
+  it('refuses to build a page for recordings nothing uploaded', () => {
+    // Without the map every journey would render with no source, which reads
+    // exactly like a run that recorded nothing. The refusal is at the command
+    // line and leaves no page behind, for the same reason a missing recording
+    // does: a page on disk invites publishing it anyway.
+    const dir = runDirectory('unmapped-');
+    const content = join(dir, 'content.json');
+    writeFileSync(content, JSON.stringify(CONTENT));
+    const page = join(dir, 'page.html');
+    const refused = spawnSync(
+      process.execPath,
+      [
+        'scripts/build-evidence-page.mjs',
+        '--evidence',
+        dir,
+        '--content',
+        content,
+        '--out',
+        page,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(refused.status, refused.stdout).not.toBe(0);
+    expect(refused.stderr).toContain('no --assets map was given');
+    expect(existsSync(page), 'a page was written with no recordings').toBe(
+      false,
+    );
+  });
+
+  it('accepts a run that fits, and says nothing', () => {
+    expect(
+      assertAssetLimits({
+        uploads: { 'a|chromium': '/tmp/a.webm' },
+        sizeOf: () => 1024,
+      }),
+    ).toBeUndefined();
   });
 });

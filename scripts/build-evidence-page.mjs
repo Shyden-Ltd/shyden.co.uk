@@ -54,8 +54,11 @@ const esc = (s) =>
  * on a 7-spec run -- 275 distinct leaf titles, 5 used twice, every pair an
  * English block and its Indonesian counterpart -- a page would have shown one
  * journey wearing two languages' evidence, and nothing about it would have
- * looked wrong (#263). `videoFiles` was the only thing that noticed, because it
- * alone demands a unique path, and it refused the whole build.
+ * looked wrong (#263). The published-path map was the only thing that noticed,
+ * because it alone demanded a unique path, and it refused the whole build. That
+ * map is gone since #268 -- an asset is keyed by the raw key, which is unique by
+ * construction -- so this rule is the only thing standing between a page and
+ * that collision now.
  *
  * The file-level suite's own title is NOT included: `shoot` drops it, and the
  * two formats have to agree by construction rather than by a heuristic that
@@ -262,74 +265,170 @@ export const videoCandidates = (report) => {
  * is a removal rule that stops matching, which looks exactly like a capture with
  * nothing to remove.
  */
-export const PUBLISHED_PREFIX = 'evidence/';
+export /**
+ * Where an EARLIER capture published its recordings as supporting files.
+ *
+ * Nothing writes this prefix any more -- recordings went to the asset store in
+ * #268 -- but `reconcileFiles` still has to REMOVE what earlier captures left
+ * under it. A path left out of a redeploy's map is kept, not removed, so
+ * dropping this constant with the route that wrote it would strand every
+ * recording ever published this way against the 255-entry ceiling.
+ */
+const PUBLISHED_PREFIX = 'evidence/';
+
+/** Where the artifact serves a stored asset, in every view (#268). */
+const BLOB_PREFIX = '/_blob/';
 
 /**
- * Where one recording is published, from the `journey|engine` key it is held
- * under.
+ * A byte count in megabytes, as every ceiling in this file reports one. One
+ * home: it was declared inside `assertPublishLimits`, and the asset ceilings
+ * below report the same way (#80).
  *
- * One home, because two callers need the same answer: the files map a publish
- * carries, and the `src` the page points at. Spelled twice, the day one moved
- * the page would reference a path nothing published -- a broken `src` on a
- * journey that then reads as never recorded.
- *
- * @param {string} key
+ * @param {number} n
  * @returns {string}
  */
-export const publishedVideoPath = (key) => {
-  const [journey, project] = key.split('|');
-  return `${PUBLISHED_PREFIX}${journey}-${slugOf(project)}.webm`;
-};
+const mb = (n) => `${(n / 1048576).toFixed(2)}MB`;
 
 /**
- * Every recording as a supporting file: published path -> the file on disk.
+ * What one artifact's ASSET STORE holds, measured against the real runtime on
+ * 2026-09-22 with the prediction recorded first (#268).
  *
- * The page carries media as base64 `data:` URIs at 4/3 of the bytes, all of it
- * inside the 16 MB one page is allowed, so scope and video completeness compete
- * for the same budget -- and the loser is silent (#146, again at a different
- * scope in #189). A supporting file is fetched separately and charged against
- * other ceilings: 15 MB per binary, 64 MB and 255 entries per publish.
+ * The store reports its own limits: `25 files, 2350 of 1073741824 bytes used
+ * (limit 5000 files)`. Set against a publish's 255 entries and 64 MB, this is
+ * not a tighter budget to economise against -- it is a different one, with
+ * roughly nineteen times the entries. Six specs produce 199 recordings and
+ * seven produce 280, so #263's AC6 could not be met on published files at all.
  *
- * Which media moves is forced by the entry ceiling rather than chosen: full
- * scope is 175 shots + 120 recordings + the page = 296 entries, over the 255 a
- * publish allows. The recordings move because they are the larger bytes and the
- * ones being dropped; the shots stay inline.
+ * Literals, deliberately. A value derived from the code it guards moves with
+ * the code and asserts nothing about the platform (#117); these are pinned
+ * against the measurement and `tests/unit/evidence-page.test.ts` pins them
+ * again, so a platform change is a red test rather than a refused publish.
+ */
+export const ASSET_MAX_FILES = 5000;
+export const ASSET_MAX_BYTES = 1073741824;
+export const ASSET_MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Every recording to upload: the journey it belongs to -> the file on disk.
  *
- * The path is RELATIVE with no leading slash -- an artifact does not serve a
- * root-relative path, and the failure is a broken `src` on a journey that then
- * reads as never recorded.
+ * ONE COLLISION CLASS IS RETIRED AND ONE IS NOT, and the difference is worth
+ * stating because the first draft of this function got it wrong.
  *
- * Two recordings landing on one path is a THROW. Slugging joins on the same
- * separator the key does, so a journey ending where an engine begins collides:
- * `a-b|c` and `a|b-c` both publish as `a-b-c.webm`. Keeping the last silently
- * would file one journey's recording under another journey's claim, which is the
- * stale-video hazard this ticket exists to remove, arriving from the other end.
+ * Retired: the published path slugged the key into a FILENAME and joined
+ * journey and engine on the separator the key itself uses, so `a-b|c` and
+ * `a|b-c` both became `a-b-c.webm`. Nothing is slugged here, so two distinct
+ * keys cannot meet.
  *
- * Accumulated in a Map, not an object literal: `'constructor' in {}` is true, so
- * a journey slugged to a prototype member would report a collision that is not
- * there.
+ * NOT retired: the key is `slugOf(title)|project` and `videoCandidates`
+ * returns an ARRAY, so two journeys whose titles slug the same way -- `a
+ * journey` and `a-journey` -- arrive as two candidates under ONE key. A Map
+ * would keep the last in silence, filing one journey's recording under
+ * another's claim, which is the hazard this whole file exists to remove. It is
+ * more likely since #263 made a key the full title path, describes included.
+ * So the refusal moved here rather than being deleted with the path that used
+ * to carry it.
+ *
+ * Accumulated in a Map, not an object literal: `'constructor' in {}` is true,
+ * so a journey slugged to a prototype member would report a collision that is
+ * not there.
  *
  * @param {{ key: string, abs: string }[]} candidates
  * @returns {Record<string, string>}
  */
-export const videoFiles = (candidates) => {
-  const files = new Map();
+export const assetUploads = (candidates) => {
+  const uploads = new Map();
   const collisions = [];
   for (const { key, abs } of candidates) {
-    const path = publishedVideoPath(key);
-    const taken = files.get(path);
-    if (taken === undefined) files.set(path, abs);
-    else collisions.push(`${path}: ${taken} and ${abs}`);
+    const taken = uploads.get(key);
+    if (taken === undefined) uploads.set(key, abs);
+    else collisions.push(`${key}: ${taken} and ${abs}`);
   }
   if (collisions.length)
     throw new Error(
-      `build-evidence-page: ${collisions.length} published path(s) claimed by ` +
+      `build-evidence-page: ${collisions.length} journey key(s) claimed by ` +
         `more than one recording:\n  ${collisions.join('\n  ')}\n` +
-        "Refusing to publish a recording under another journey's claim: the " +
-        'page would pair a current assertion with the wrong recording, and ' +
-        'nothing about it would look wrong.',
+        'Two journeys whose titles slug the same way share a key, and keeping ' +
+        "the last would pair one journey's assertion with another journey's " +
+        'recording. Nothing about that page would look wrong.',
     );
-  return Object.fromEntries(files);
+  return Object.fromEntries(uploads);
+};
+
+/**
+ * The `src` the page points at for each journey, from the map the upload
+ * answered with.
+ *
+ * Checked in BOTH directions, because each failure is silent in its own way. A
+ * planned recording missing from the map renders a journey with no source,
+ * which reads exactly like one that was never recorded. An entry in the map
+ * that no recording asked for is a stale map from an earlier run, and pairing
+ * a current journey with an older recording is the hazard this file exists to
+ * prevent -- nothing about the page would look wrong.
+ *
+ * @param {{ uploaded: Record<string, string>, candidates: { key: string, abs: string }[] }} input
+ * @returns {Map<string, string>}
+ */
+export const assetVideoPaths = ({ uploaded, candidates }) => {
+  const wanted = new Set(candidates.map(({ key }) => key));
+  const missing = candidates.filter(({ key }) => !Object.hasOwn(uploaded, key));
+  if (missing.length)
+    throw new Error(
+      `build-evidence-page: ${missing.length} recording(s) were planned but ` +
+        `never uploaded:\n  ${missing.map(({ key }) => key).join('\n  ')}\n` +
+        'A journey with no source reads as one that was never recorded. Run ' +
+        'the upload again, or rebuild the plan.',
+    );
+  const extra = Object.keys(uploaded).filter((key) => !wanted.has(key));
+  if (extra.length)
+    throw new Error(
+      `build-evidence-page: ${extra.length} uploaded asset(s) belong to no ` +
+        `recording in this run:\n  ${extra.join('\n  ')}\n` +
+        "That is a map from an earlier run. Pairing this run's journeys " +
+        "with an earlier run's recordings would look entirely normal.",
+    );
+  for (const [key, path] of Object.entries(uploaded))
+    if (!path.startsWith(BLOB_PREFIX))
+      throw new Error(
+        `build-evidence-page: ${key} resolves to ${path}, which is not a ` +
+          `${BLOB_PREFIX} path. An asset is served at ${BLOB_PREFIX}<id> in ` +
+          'every view; anything else is a link off the artifact.',
+      );
+  return new Map(candidates.map(({ key }) => [key, uploaded[key]]));
+};
+
+/**
+ * A run whose recordings the asset store could not hold is refused before
+ * anything is uploaded, rather than part-way through the eleventh call.
+ *
+ * @param {{ uploads: Record<string, string>, sizeOf: (source: string) => number }} input
+ * @returns {void}
+ */
+export const assertAssetLimits = ({ uploads, sizeOf }) => {
+  const sources = Object.values(uploads);
+  const over = [];
+  if (sources.length > ASSET_MAX_FILES)
+    over.push(
+      `${sources.length} assets, over the ${ASSET_MAX_FILES} one artifact holds`,
+    );
+  const sized = sources.map(
+    (/** @type {string} */ source) =>
+      /** @type {[string, number]} */ ([source, sizeOf(source)]),
+  );
+  for (const [source, bytes] of sized)
+    if (bytes > ASSET_MAX_FILE_BYTES)
+      over.push(
+        `${source} at ${mb(bytes)}, over the ${mb(ASSET_MAX_FILE_BYTES)} one asset allows`,
+      );
+  const total = sized.reduce((n, [, bytes]) => n + bytes, 0);
+  if (total > ASSET_MAX_BYTES)
+    over.push(
+      `${mb(total)} in total, over the ${mb(ASSET_MAX_BYTES)} one artifact holds`,
+    );
+  if (over.length)
+    throw new Error(
+      `build-evidence-page: the upload would carry ${over.join('; and ')}. ` +
+        'Refusing to start an upload the store would reject part-way.',
+    );
 };
 
 /**
@@ -404,7 +503,6 @@ export const assertPublishLimits = ({ files, sizeOf }) => {
   }
   const carried = entries.length - removals;
   /** @param {number} n */
-  const mb = (n) => `${(n / 1048576).toFixed(2)}MB`;
 
   const over = [];
   if (entries.length > PUBLISH_MAX_FILES)
@@ -510,8 +608,8 @@ export const renderEvidencePage = ({
   //
   // Derived from the manifest ALONE, this list omitted any test that asserted
   // without calling `shoot()` -- while `video` is `on` for the whole run
-  // whenever `EVIDENCE_DIR` is set, so that test IS recorded and `videoFiles`
-  // publishes its recording regardless. Full scope measured 120 recordings
+  // whenever `EVIDENCE_DIR` is set, so that test IS recorded and the upload
+  // stores its recording regardless. Full scope measured 120 recordings
   // published and 100 referenced: 20 files served to a page that named their
   // journeys nowhere, and four journeys that ran on five engines -- `no console
   // errors on load` among them -- absent from the coverage an operator signs
@@ -977,11 +1075,20 @@ ${journeyHtml}
  * enforce it. Printing it is what stops the next person having to remember.
  */
 export const PUBLISH_NOTE =
-  'publish with capabilities {"db": {}}, AND the files map written beside ' +
-  "this page — without the capability claude.use('db') resolves null, the " +
-  'page says "ticks are local to this view", and the sign-off is recorded ' +
-  'NOWHERE; without the files the page references recordings nothing ' +
-  'uploaded, and a journey with a broken src reads as one never recorded.';
+  'publish with capabilities {"db": {}, "assets": {}} — without db ' +
+  "claude.use('db') resolves null, the page says \"ticks are local to this " +
+  'view", and the sign-off is recorded NOWHERE; without assets the upload is ' +
+  'refused and every journey references a recording nothing stored, which ' +
+  'reads as one never recorded. A page declaring assets is ' +
+  'organization-internal and can never be made public (operator decision, ' +
+  '2026-09-22, #268).';
+
+/** What the upload pass has to do, said out loud by `--plan`. */
+export const UPLOAD_NOTE =
+  'upload each of these to the artifact with asset: true (25 per call), then ' +
+  'write {"<key>": "/_blob/<id>"} and pass it as --assets. The key is the ' +
+  'journey and engine, not the filename: matching on filenames is how a ' +
+  "current journey gets paired with an earlier run's recording.";
 
 /**
  * What a capture actually is, read from its own first bytes.
@@ -1093,9 +1200,22 @@ const main = () => {
   // The paths the artifact already serves, saved from a file listing. Absent on
   // a first publish; without it nothing can be removed, only added.
   const publishedPath = arg('published');
-  if (!dir || !contentPath || !out) {
+  // Two passes, because an asset id is minted by the upload and cannot be
+  // known before it (#268). `--plan` writes what to upload; the upload answers
+  // with a `/_blob/<id>` for each; `--assets` builds the page from that map.
+  const planning = process.argv.includes('--plan');
+  const assetsPath = arg('assets');
+  if (!dir || !out || (!planning && !contentPath)) {
     console.error(
-      'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--published <listing.json>]',
+      'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--published <listing.json>] [--assets <map.json>]\n' +
+        '       build-evidence-page.mjs --plan --evidence <dir> --out <file.html>',
+    );
+    process.exit(2);
+  }
+  if (planning && assetsPath) {
+    console.error(
+      'build-evidence-page: --plan writes the upload list; --assets reads the ' +
+        'answer to it. Passing both asks for one pass to be two.',
     );
     process.exit(2);
   }
@@ -1111,9 +1231,40 @@ const main = () => {
       .map((l) => JSON.parse(l)),
     report,
   );
-  const content = JSON.parse(readFileSync(contentPath, 'utf8'));
   // Before any capture is encoded: a missing recording refuses the whole page.
   const candidates = videoCandidates(report);
+
+  // Recordings live in the artifact's ASSET STORE, which holds 5000 files and
+  // 1 GiB against a publish's 255 entries and 64 MB (#268, measured). The
+  // publish itself therefore carries no recording at all -- only the removal
+  // of any an earlier capture published as supporting files, which a redeploy
+  // would otherwise keep.
+  const uploads = assetUploads(candidates);
+  if (planning) {
+    assertAssetLimits({ uploads, sizeOf: (source) => statSync(source).size });
+    const planOut = `${out}.uploads.json`;
+    writeFileSync(planOut, `${JSON.stringify(uploads, null, 2)}\n`, 'utf8');
+    console.log(
+      `planned ${Object.keys(uploads).length} recording(s) to upload (${planOut})`,
+    );
+    console.log(UPLOAD_NOTE);
+    return;
+  }
+  if (!assetsPath && candidates.length > 0)
+    throw new Error(
+      `build-evidence-page: ${candidates.length} recording(s) have to reach ` +
+        'the asset store before the page can reference them, and no --assets ' +
+        'map was given. Run --plan first, upload what it lists, then pass the ' +
+        'map back. Refusing to build a page whose every journey would read as ' +
+        'never recorded.',
+    );
+  // Only now: `--plan` needs no content, and reading it would refuse a plan
+  // over an argument the plan does not use.
+  if (!contentPath) {
+    console.error('build-evidence-page: --content is required unless --plan');
+    process.exit(2);
+  }
+  const content = JSON.parse(readFileSync(contentPath, 'utf8'));
 
   // Read ONCE: the same buffer answers what the file is, how big it renders
   // and what goes in the src.
@@ -1145,15 +1296,16 @@ const main = () => {
   // Nothing is selected and nothing is dropped: every recording the report
   // names is published, or the build has already refused above.
   const files = reconcileFiles({
-    desired: videoFiles(candidates),
+    desired: {},
     published: publishedPath
       ? JSON.parse(readFileSync(publishedPath, 'utf8'))
       : [],
   });
   assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
-  const videos = new Map(
-    candidates.map((c) => [c.key, publishedVideoPath(c.key)]),
-  );
+  const videos = assetVideoPaths({
+    uploaded: assetsPath ? JSON.parse(readFileSync(assetsPath, 'utf8')) : {},
+    candidates,
+  });
 
   const html = renderEvidencePage({
     manifest,
