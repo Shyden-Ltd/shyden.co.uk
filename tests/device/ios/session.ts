@@ -22,7 +22,7 @@
  * below. Both are inert when nothing reads them, so a plain `npm run
  * test:ios` is unaffected.
  */
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
@@ -34,6 +34,7 @@ import {
   type Interaction,
   type InteractionMode,
 } from './interaction';
+import { startServerProcess } from './server-process';
 import {
   waitFor,
   WebDriver,
@@ -193,50 +194,16 @@ async function pickFreePort(): Promise<number> {
 /**
  * Precondition 2: `safaridriver` starts and answers `GET /status`.
  *
- * Measured response shape: `{"value":{"message":"","ready":true}}` -- no
- * `build`/`os` sub-objects the generic W3C spec allows for, so this reads
- * only the two fields safaridriver actually sends.
- *
  * Remote Automation is asserted to already be enabled (`safaridriver
  * --enable` already run) rather than run here -- this project does not
  * modify the phone's settings, provisioning or signing.
  */
 async function startSafaridriver(port: number): Promise<ChildProcess> {
-  const child = spawn('safaridriver', ['-p', String(port)], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+  return startServerProcess('safaridriver', ['-p', String(port)], {
+    isReady: () => WebDriver.isReady(`http://127.0.0.1:${port}`),
+    timeout: 15_000,
+    describe: `safaridriver on port ${port} to answer GET /status with ready:true`,
   });
-
-  let earlyExit: { code: number | null; signal: NodeJS.Signals | null } | null =
-    null;
-  child.once('exit', (code, signal) => {
-    earlyExit = { code, signal };
-  });
-
-  try {
-    await waitFor(
-      async () => {
-        if (earlyExit) {
-          const exit: { code: number | null; signal: NodeJS.Signals | null } =
-            earlyExit;
-          throw new Error(
-            `safaridriver exited before answering GET /status (code=${exit.code}, signal=${exit.signal})`,
-          );
-        }
-        const response = await fetch(`http://127.0.0.1:${port}/status`);
-        const body = (await response.json()) as { value?: { ready?: boolean } };
-        return body.value?.ready === true ? true : undefined;
-      },
-      {
-        timeout: 15_000,
-        describe: `safaridriver on port ${port} to answer GET /status with ready:true`,
-      },
-    );
-  } catch (error) {
-    child.kill();
-    throw error;
-  }
-
-  return child;
 }
 
 // ── Precondition 3: the PHONE, asked directly, can reach a Mac address ────
@@ -437,13 +404,15 @@ async function resolveReachableBaseUrl(
  * timeout) -- so session creation is retried, bounded, in the same
  * condition-based spirit as this file's `waitFor` (poll a real signal,
  * timeout is a safety net, never a blind sleep), but NOT through `waitFor`
- * itself: that helper catches every thrown error from its predicate and
- * keeps retrying regardless of what it was, which is exactly wrong here --
- * a genuine, non-transient failure (wrong UDID, a real protocol error)
- * must fail on its FIRST attempt, not be retried for the full timeout
- * before finally surfacing. Only the specific `"session not created"`
- * WebDriver error is treated as retryable; anything else propagates
- * immediately.
+ * itself. `waitFor` abandons a poll still pending at its deadline, which is
+ * right for a read and wrong here: `POST /session` CREATES the one session
+ * the phone allows, and an attempt abandoned mid-flight can still create
+ * it, locking the next run out. So every attempt here runs to completion
+ * (#309). A genuine, non-transient failure (wrong UDID, a real protocol
+ * error) must fail on its FIRST attempt, not be retried for the full
+ * timeout before finally surfacing: only the specific `"session not
+ * created"` WebDriver error is treated as retryable; anything else
+ * propagates immediately.
  */
 async function createSessionWithRetry(
   port: number,
