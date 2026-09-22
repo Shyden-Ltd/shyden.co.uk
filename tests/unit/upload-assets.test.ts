@@ -110,6 +110,21 @@ describe('pairing a recording with the asset that holds it', () => {
     expect(map['a-journey']).not.toBe(map['another-journey']);
   });
 
+  it('gives two keys the same id when their recordings are byte-identical', () => {
+    // Measured on the real store: 25 identical files were stored under 25 ids
+    // sharing ONE sha256. Two journeys whose recordings are byte-identical
+    // therefore resolve to the same asset, which is correct -- the same bytes
+    // render the same recording -- and is why nothing here may assume one id
+    // per key.
+    const twin = join(dir, 'twin.webm');
+    writeFileSync(twin, 'first recording');
+    const map = assetsMap({
+      plan: { ...recordings, twin },
+      stored,
+    });
+    expect(map.twin).toBe(map['a-journey']);
+  });
+
   it('refuses a key whose recording the store does not hold, naming it', () => {
     // By the time the map is built every recording has been uploaded, so a
     // key with no asset is a journey that will render with no source -- which
