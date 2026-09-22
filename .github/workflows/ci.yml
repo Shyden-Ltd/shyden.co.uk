@@ -37,6 +37,27 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
+# What a job in this workflow is handed when it states nothing of its own.
+# Without this line that is the REPOSITORY default, measured `write` on
+# 2026-09-22 (`actions/permissions/workflow`) -- a value that lives in
+# settings rather than in source, and can be widened again by a change no
+# diff here would show. This workflow reads a checkout and runs a suite.
+#
+# `visual` inherits exactly this and needs nothing more. `build-and-test`
+# keeps its own block, because a job block REPLACES the inherited set rather
+# than adding to it: dropping it would take `issues: read` with it and blind
+# the dependabot-label step (#299). Both artifact uploads are unaffected --
+# they authenticate with the runner's own runtime token, not this one, which
+# is invisible on a green run and so was proved on a RED one (#301 AC2).
+#
+# Changing the repository default is administration, and so the operator's.
+# `tests/unit/pipeline-wiring.test.ts` derives this rule from the filesystem,
+# so a workflow added later is covered the day it appears rather than the day
+# someone remembers (#24, #49, #80).
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-26.04
