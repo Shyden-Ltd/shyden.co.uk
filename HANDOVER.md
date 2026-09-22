@@ -1,131 +1,87 @@
-# Handover — 2026-09-22, #277 in progress
+# Handover — 2026-09-22, #277: every pair has a verdict
 
-Branch **`277-one-home-for-near-duplicate-functions`**, four commits on top of
-`develop` (`13103ac`). Nothing is pushed, no PR is open, nothing is running.
+Branch **`277-one-home-for-near-duplicate-functions`**, nine commits on top of
+`develop` (`13103ac`), head **`9ccab0f8d9d35b72edde75e842ca8d933707b102`**. Nothing is pushed, no PR is
+open.
 
-Read the SHA with `git rev-parse HEAD` — never retype a tail.
+Re-read the SHA with `git rev-parse HEAD` rather than retyping this one.
 
 ## State
 
-`npm run typecheck` is clean (0 errors, 0 hints). `npm run test:unit` is
-**2054 passed, 2 failed**, and both failures are deliberate:
+- `npm run typecheck` — **0 errors, 0 warnings, 0 hints**.
+- `npm run test:unit` — **2057 passed, 0 failed**. The two deliberate failures
+  the previous handover described are both resolved.
+- `npm run format` (`prettier --check .`) — clean.
+- `npm run test:e2e` — **running when this was written; read the verdict
+  before doing anything else.** Output: `/private/tmp/claude-501/-Users-shyden-Developer-Repos-shyden-co-uk/e8d36821-d766-4456-92d7-535121e7aed6/scratchpad/e2e.txt`.
+  Group A, B, C and D all edited e2e specs, so this is the gate that matters.
+- The duplication scan reports **0 undecided pairs**, down from 27 at the
+  branch point and 21 at the previous handover.
 
-- `duplication.test.ts` — "finds no cross-file duplicate that has not been
-  given a verdict": **21 pairs still undecided**. This is the ticket's own
-  worklist and goes green when every pair has a verdict.
-- `absence-liveness.test.ts` — flags `duplication.test.ts`'s own "carries no
-  verdict for a pair that no longer exists" assertion, correctly: `SEPARATE`
-  is empty, so that assertion is vacuous. Resolved by the verdicts below, or
-  by restructuring that test — see **Decision outstanding**.
+## What landed since the last handover
 
-The e2e suite has **not** been run whole. Targeted runs that did pass on
-chromium: the three contrast tests (3 passed) and
-`print-legibility.spec.ts` + `locale-beta.spec.ts` (18 passed).
+| SHA       | what                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `038a52b` | the page-overflow measurement (21 copies, 12 files, 3 suites) → `tests/viewport.ts`; `atLeast44` (2 of 3 copies) with it |
+| `75e3432` | the "did the page store a name?" probe (4 copies) → `tests/e2e/helpers.ts`                                               |
+| `0f392d1` | the source-scanning guard body (4 copies) → `tests/unit/spec-scan.ts`, and ONE derived scope                             |
+| `9ecd24f` | the grouping journey (4 copies) → `tests/make-groups.ts`; retires a weaker `locale-parity` copy                          |
+| `9ccab0f` | `ast.ts`: a parameter binds its name; the last six pairs recorded SEPARATE                                               |
 
-## Commits
+## The three findings worth keeping, all measured
 
-| SHA       | what                                                                                                  | pairs left |
-| --------- | ----------------------------------------------------------------------------------------------------- | ---------- |
-| `5e031d6` | the scan (`tests/unit/duplication.ts`) and the guard, red on purpose                                  | 27         |
-| `2e95074` | `src/`: blank `Student` (4 copies) → `grouping.ts`; `button` (4 copies) → new `src/scripts/dom.ts`    | 25         |
-| `488079a` | reporters: the whole JSONL writer → `tests/reporters/dashboard-jsonl.ts`, with 11 new assertions      | 23         |
-| `8430c02` | the WCAG formula (5 copies) → `tests/wcag.ts`; `contrastRatio` reads in the browser, computes in node | 21         |
+1. **`download-tagging.test.ts` scanned `tests/e2e` only.** The other three
+   guards scanned `specDirs()`. Mutation M6 — an untagged `downloadText`
+   call planted in `tests/prod/prod-sanity.spec.ts` — is **RED** with the
+   shared scope and **GREEN** with the old one (measured by checking out the
+   pre-collapse guard beside the same mutation). Nothing outside
+   `tests/e2e` reads a download's bytes today, so the hole was latent.
+2. **`classroom-groups-roster.spec.ts`'s privacy probe read two of four
+   places.** Its test is 'a typed name never reaches localStorage or
+   sessionStorage' — the address bar and the cookie jar went unread. Routing
+   it through the one home widened it.
+3. **The three inline grouping journeys click `#cg-sound-toggle`
+   unconditionally**, where the file-local helper opens it only when hidden.
+   Each goes to a fresh page first, so none is broken today.
 
-## The scan
+## The six SEPARATE verdicts, and why they are not a cop-out
 
-`npx vitest run tests/unit/duplication.test.ts` prints the live list in the
-failure message. 6s. It derives its file set from `git ls-files`, prints every
-function-like node at ANY depth with `removeComments`, and compares cross-file
-pairs by banded Levenshtein at `DUPLICATE_RATIO = 0.85`,
-`MIN_PRINTED_LENGTH = 120`.
+All six are the no-horizontal-scroll family. The measurement is already
+shared; what remains is the test declaration. Measured on `site-meta.spec.ts`:
 
-## The 21 remaining pairs, and the verdict each needs
-
-**Group A — the "no horizontal scroll at Npx" family (11 pairs).**
-`classroom-groups-controls.spec.ts:363/399/422/445`, `glory-points.spec.ts:154/159`,
-`site-meta.spec.ts:35/40`, `chrome.spec.ts:290`, `classroom-groups-roster.spec.ts:410`,
-`prod-sanity.spec.ts:94`. All are `setViewportSize` → `goto` → measure
-`scrollWidth - clientWidth` → `toBeLessThanOrEqual(0)`. Intended home:
-one helper in `tests/e2e/helpers.ts` (`expectNoHorizontalScroll(page)` or
-`overflowOf(page)`). CLAUDE.md's own note — "a hand-written list of things to
-check will miss the one that breaks" — is about exactly this family.
-
-**Group B — the meta-guard bodies (5 pairs).**
-`isolated-context-tagging.test.ts:150`, `viewport-tagging.test.ts:231`,
-`parked-tests.test.ts:249`, `download-tagging.test.ts:107`. All are
-`files.flatMap(analyze)` → `expect(searched(findings, …)).toEqual([])`.
-Candidate home: a shared `expectClean({ files, analyze, what })`. **Judge
-before collapsing** — each file's `analyze` differs, and the shared shape may
-be the repo's guard IDIOM rather than a duplicate.
-
-**Group C — three singles.**
-
-- `atLeast44` (1.000) `chrome.spec.ts:224` ↔ `glory-points.spec.ts:132` —
-  identical touch-target assertion. Collapse into `helpers.ts`.
-- the storage/cookie probe (1.000) `classroom-groups-io.spec.ts:579` ↔
-  `classroom-groups-privacy.spec.ts:558`. Collapse into `helpers.ts`.
-- `locale-parity.spec.ts:65` ↔ `locale-routing.test.ts:41` (0.867) — the same
-  `localisePath` vs `urlFor` assertion in an e2e spec and a unit test. The
-  unit one derives its paths from `sitePaths()`; the e2e one uses a hand-list
-  `PAGES`. **Check whether PAGES ⊆ sitePaths() before deciding** — if it is,
-  the e2e copy is a pure assertion costing a browser and should go.
-
-**Group D — dev/prod sanity (2 pairs).**
-`prod-sanity.spec.ts:70` ↔ `dev-sanity.spec.ts:27`, and
-`classroom-groups-privacy.spec.ts:329` ↔ `prod-sanity.spec.ts:70`: the
-"deal 8 students into groups of 4" journey. Likely verdict **deliberately
-separate** — `tests/prod/` and `tests/dev/` are separate suites against
-separate targets and CLAUDE.md says prod asserts what only rendering can.
-Whatever is decided, write the reason into `SEPARATE`.
-
-**Below the scan's floor, already decided, needing only the write-up in the
-ticket:**
-
-- `isLocale` ↔ `isMvpLocale` — **separate**. `MVP_LOCALES` is deliberately
-  wider than `LOCALES` (`metadata.ts` says so, `locale-metadata.test.ts:41`
-  pins the seam). They are equal by value today and must not be collapsed.
-  Add a cross-reference comment to each.
-- `findIosDeviceOrThrow` ↔ `findIosDevice` — **separate**, reason already
-  written in both files and measured (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`
-  from constructor parameter properties). Worth re-verifying the claim on the
-  pinned Node before recording it as still true.
-
-## Decision outstanding
-
-If every pair collapses, `SEPARATE` ends empty and the "carries no verdict for
-a pair that no longer exists" test is vacuous — which is what
-`absence-liveness` is flagging now. Either Group D supplies the first real
-entry, or that test is restructured. **Do not widen `absence-liveness` to
-accept the current shape** — that is the trivial escape hatch #118 exists
-about.
+- drop the `@emulated-viewport` tag → `viewport-tagging.test.ts` goes RED,
+  naming the test and the resizing line. The guard is live.
+- generate those same four tests, still untagged, from `tests/viewport.ts` →
+  the **whole unit suite is green**. Four untagged viewport tests and no
+  guard in the repository can see them, because `specDirs()` derives from
+  the directories holding spec files and `tests/` root is not one.
 
 ## Then, in order
 
-1. Every pair has a verdict; unit suite green.
-2. **Mutation-verify the guard**: paste a real function body into a second
-   file and watch it go red; remove a `SEPARATE` entry and watch that go red
-   too. Both directions, per CLAUDE.md.
-3. Run the **whole** e2e suite, alone, nothing else running — Group A, B and C
-   all edit e2e specs. `npm run test:e2e`.
-4. `npm run format` is `prettier --check`; use `npx prettier --write`.
-5. PR into `develop`. Body must not put a closing keyword beside `#277` —
-   check with `node scripts/closing-keywords.mjs <file> "body"`.
+1. Read the e2e verdict in `/private/tmp/claude-501/-Users-shyden-Developer-Repos-shyden-co-uk/e8d36821-d766-4456-92d7-535121e7aed6/scratchpad/e2e.txt` — every project, by name. A run that
+   concludes is not a run that passed.
+2. Any e2e failure is most likely `makeGroups` (now idempotent where three
+   copies were not) or `expectNothingStored` (now checks url and cookies
+   where the roster copy checked neither) — both are deliberate widenings.
+3. PR into `develop`. The body must not put a closing keyword beside
+   `#277`: check it with
+   `node scripts/closing-keywords.mjs <file> "this pull request body"`.
 
-## Follow-up to file (evidence is in this session, not yet in a ticket)
+## Follow-ups to file (evidence is in this branch, not yet in a ticket)
 
-**`ast.ts`'s call graph resolves a call by BARE NAME** when a file has no local
-binding for it. Adding `tests/unit/duplication.ts` with a function called
-`declarationsIn` — a name `tests/playwright-declarations.ts` already owns for
-something else — made `absence-liveness` report **25 assertions in four
-untouched files** as unproved. Measured: `reaches()` for `analyze`, `scan`,
-`scanned` and `locatorLoops` all flipped `false` → `true` purely from the new
-file's presence. It errs toward a false alarm, which is the safe direction,
-but a false alarm is what gets a working control deleted. Renaming mine to
-`functionBodiesIn` cleared it; the fragility is untouched.
+- **Nine height-only 44px assertions** across six e2e specs assert
+  `box.height >= 44` without the width and without rounding. That is a
+  weaker claim than `atLeast44`, and the unrounded form can read 43.9999 for
+  a declared `min-height: 44px`. Widening them is a coverage change, not a
+  refactor, so it was left alone deliberately — `tests/viewport.ts`'s
+  docblock records this.
+- **`homepage.spec.ts` keeps a third `atLeast44` copy inline on purpose**,
+  because the unproved-loop scanner in `event-collectors.test.ts` matches
+  that exact shape. Cross-referenced in both directions now.
 
 ## Untouched by this ticket
 
-Everything in the previous handover's "Waiting on Shyden" table still stands:
-**#278** (add `closing-keywords` to `required_status_checks.contexts` on
-`develop` and `main` — administration, the App holds it read-only), **#189**,
+Everything in the previous handover's waiting list still stands: **#278**
+(add `closing-keywords` to `required_status_checks.contexts` on `develop`
+and `main` — administration, which the App holds read-only), **#189**,
 **#241**, **#249**, **#188**, **#95**.
