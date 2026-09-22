@@ -11,7 +11,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 
 /** Where the artifact serves a stored asset, in every view (#268). */
 const BLOB_PREFIX = '/_blob/';
@@ -93,6 +93,10 @@ export const parseAssetListing = (text) => {
  */
 export const assetsMap = ({ plan, stored }) => {
   const byDigest = new Map(stored.map((asset) => [asset.sha256, asset]));
+  // Annotated, not inferred: an empty object literal types as `{}`, the
+  // narrowest type that value inhabits, which cannot be indexed by a string
+  // and is not the `Record` this returns (#157).
+  /** @type {Record<string, string>} */
   const map = {};
   const missing = [];
   const wrongSize = [];
@@ -152,3 +156,64 @@ export const pendingUploads = ({ plan, stored }) => {
     batches.push(pending.slice(at, at + UPLOAD_BATCH));
   return batches;
 };
+
+/**
+ * A named argument's value, or undefined.
+ *
+ * @param {string} name
+ * @returns {string | undefined}
+ */
+const arg = (name) => {
+  const at = process.argv.indexOf(`--${name}`);
+  return at === -1 ? undefined : process.argv[at + 1];
+};
+
+/**
+ * EVERY EFFECT IS IN HERE, reached only under `import.meta.main` (#276), so
+ * importing this module for its pure exports runs nothing.
+ *
+ * Two passes, because an id cannot be known before its upload. Without
+ * `--out` it prints what is still to upload, one line per call; with `--out`
+ * it derives the map from a fresh listing and writes it, refusing anything it
+ * cannot account for.
+ *
+ * @returns {void}
+ */
+const main = () => {
+  const planPath = arg('plan');
+  const listingPath = arg('listing');
+  const out = arg('out');
+  if (!planPath || !listingPath) {
+    console.error(
+      'usage: upload-evidence-assets.mjs --plan <file.uploads.json> --listing <listing.txt> [--out <assets.json>]\n' +
+        '       without --out it prints the batches still to upload; with it, ' +
+        'it writes the map the page is built from.',
+    );
+    process.exit(2);
+  }
+  const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+  const stored = parseAssetListing(readFileSync(listingPath, 'utf8'));
+  if (!out) {
+    const batches = pendingUploads({ plan, stored });
+    if (!batches.length) {
+      console.log(
+        'upload-evidence-assets: the store already holds every recording in ' +
+          'that plan. Re-run the listing, then pass --out to write the map.',
+      );
+      return;
+    }
+    console.log(
+      `upload-evidence-assets: ${batches.flat().length} recording(s) still ` +
+        `to upload, in ${batches.length} call(s) of at most ${UPLOAD_BATCH}:`,
+    );
+    for (const batch of batches) console.log(JSON.stringify(batch));
+    return;
+  }
+  const map = assetsMap({ plan, stored });
+  writeFileSync(out, `${JSON.stringify(map, null, 2)}\n`, 'utf8');
+  console.log(
+    `upload-evidence-assets: wrote ${Object.keys(map).length} pairing(s) to ${out}`,
+  );
+};
+
+if (import.meta.main) main();
