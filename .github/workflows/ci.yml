@@ -160,8 +160,21 @@ jobs:
             echo "Anything below is a difference the gate cannot see."
             echo
             echo '```'
-            grep -E 'pixels .*are different|Error: |✘|passed|failed' measure.log \
-              | head -40 || echo 'no comparison output'
+            # The grep's OWN status decides the fallback. `||` tests the
+            # PIPELINE's status, which is the last command's, and a `head`
+            # between the two exits 0 whether or not grep matched -- so the
+            # fallback was dead code and a run that measured nothing rendered
+            # an empty block under a confident heading (#286).
+            if drift=$(grep -E 'pixels .*are different|Error: |✘|passed|failed' measure.log); then
+              # One line per comparison. The list reporter prints each ratio
+              # once per attempt, and awk de-duplicates IN PLACE, so the table
+              # keeps the order the run produced it in rather than sorting.
+              # No cap: ten comparisons overflowed forty lines and the last
+              # two were dropped with nothing in the output saying so.
+              printf '%s\n' "$drift" | awk '!seen[$0]++'
+            else
+              echo 'no comparison output'
+            fi
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
       # expected / actual / diff PNGs, which is the whole point: a visual

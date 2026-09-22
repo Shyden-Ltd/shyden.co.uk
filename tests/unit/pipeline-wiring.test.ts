@@ -1527,11 +1527,19 @@ describe('the drift measurement reports, and never gates (#224)', () => {
   // indistinguishable -- the same shape as `/glory-points` matching inside
   // `/id/glory-points` (#21 Stage 4). `\\b` does not help either: `-` is a
   // non-word character, so `\\bvisual\\b` matches inside `visual-measure`.
+  /** A fallback that carries information, as opposed to a bare `|| true`. */
+  const INFORMATIVE_FALLBACK = /\|\|\s*(echo|printf)\b/;
+
   const GATE_PROJECT = /--project=visual(?![\w-])/;
   const isGate = (s: Record<string, unknown>) =>
     typeof s.run === 'string' && GATE_PROJECT.test(s.run);
+  // The SAME prefix trap one level down, and it was left as a bare
+  // `includes` while the comment above spelled the lesson out: mutation M3
+  // renamed the project to `visual-measurement` and this still matched, so a
+  // guard meant to notice the measuring step had vanished stayed green (#286).
+  const MEASURE_PROJECT = /--project=visual-measure(?![\w-])/;
   const isMeasure = (s: Record<string, unknown>) =>
-    typeof s.run === 'string' && s.run.includes('--project=visual-measure');
+    typeof s.run === 'string' && MEASURE_PROJECT.test(s.run);
 
   it('measures after the gate has decided the build', () => {
     const gate = indexOf(isGate);
@@ -1555,6 +1563,56 @@ describe('the drift measurement reports, and never gates (#224)', () => {
     const steps = visualSteps();
     expect(steps[indexOf(isMeasure)]['continue-on-error']).toBe(true);
     expect(steps[indexOf(isGate)]['continue-on-error']).toBeUndefined();
+  });
+
+  // #286: this table is the evidence #224 was decided on, and it was being
+  // cut. Playwright's list reporter prints each comparison's ratio three
+  // times, so ten comparisons overflow forty lines -- the last two were
+  // dropped from the table with nothing in the output saying so.
+  it('prints every comparison rather than the first N lines', () => {
+    const measure = visualSteps()[indexOf(isMeasure)].run as string;
+    expect(
+      withoutCommentLines(measure),
+      'a cap silently drops measurements off the end of the table',
+    ).not.toMatch(/\|\s*head\s+-/);
+  });
+
+  // #286: `||` tests the PIPELINE's status, which is the LAST command's.
+  // `grep ... | head -40 || echo 'no comparison output'` reads head's status,
+  // and head exits 0 whether or not grep matched a single line, so the
+  // fallback could never run. A measurement that produced nothing rendered an
+  // EMPTY block under a confident heading, and silence reads as "nothing
+  // drifted" when it means "nothing was measured".
+  //
+  // Every line of every workflow script is the population, not the lines that
+  // happen to carry a fallback: after a fix there may be no fallback left at
+  // all, and a guard whose population its own fix empties is vacuous by
+  // construction (#118).
+  it('lets a fallback test the status of the command producing its text', () => {
+    const lines = workflowYamlNames().flatMap((file) =>
+      workflowJobs(workflow(file), file).flatMap((job) =>
+        job.runs.flatMap((run) =>
+          withoutCommentLines(run)
+            .split('\n')
+            .map((line) => ({ file, line })),
+        ),
+      ),
+    );
+
+    const findings = lines
+      .filter(
+        ({ line }) =>
+          INFORMATIVE_FALLBACK.test(line) && line.split('||')[0].includes('|'),
+      )
+      .map(({ file, line }) => `${file}: ${line.trim()}`);
+
+    expect(
+      searched(findings, {
+        of: lines.map(({ line }) => line),
+        what: 'lines of workflow run scripts',
+      }),
+      'a command between a fallback and the status it tests makes it dead code',
+    ).toEqual([]);
   });
 
   it('writes its numbers where they can be read back, not only to the summary', () => {
