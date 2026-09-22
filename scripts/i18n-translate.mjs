@@ -57,15 +57,16 @@ const OPTIONS = ['--send', '--prune'];
 const USAGE = `usage: npm run i18n:translate -- <locale> [${OPTIONS.join(' | ')}]`;
 
 /**
- * @param {string} message
- * @returns {never} so a `if (!requested) die(...)` NARROWS what follows --
- *   without it every later `cache[target]` is `string | undefined`.
+ * What one DeepL call needs: where to send it, what to sign it with, and which
+ * locale it is for. Bound in `main` and passed in, because reading these off
+ * module scope is what made this file load its key and send its catalogue on
+ * import (#276).
+ *
+ * @typedef {object} Deepl
+ * @property {string} endpoint
+ * @property {string} apiKey
+ * @property {(typeof TRANSLATABLE_LOCALES)[number]} target
  */
-// ── arguments ──────────────────────────────────────────────────────────────
-const args = argv.slice(2);
-const send = args.includes('--send');
-const prune = args.includes('--prune');
-const requested = args.find((a) => !a.startsWith('--'));
 
 /**
  * @param {string} value
@@ -78,121 +79,41 @@ const isTranslatable = (value) =>
   // tuple of literals demands the union it is trying to decide.
   /** @type {readonly string[]} */ (TRANSLATABLE_LOCALES).includes(value);
 
-// Refused, not ignored: a mistyped `--prune` read as no option at all is a
-// dry run, which at a glance looks like the prune it was meant to be.
-const unknown = args.filter((a) => a.startsWith('--') && !OPTIONS.includes(a));
-if (unknown.length > 0) die(`unknown option ${unknown.join(', ')} — ${USAGE}`);
-if (send && prune)
-  die('--send and --prune cannot be combined: a send prunes as it writes');
-if (!requested) die(USAGE);
-if (!isTranslatable(requested))
-  die(`${requested} is not an MVP locale (${TRANSLATABLE_LOCALES.join(', ')})`);
-if (requested === 'en') die('en is the source language, not a target');
-
 /**
- * The validated target, as the LOCALE it has just been proved to be.
+ * The one way the cache is written, so a prune and a send cannot drift.
  *
- * `argv` gives a `string`; every function below takes the locale union, and
- * `Array.prototype.includes` narrows nothing on its own. The predicate above
- * is what makes this a rename rather than a cast that could outlive its own
- * check -- move a guard and this stops compiling, where a cast would go on
- * asserting something nothing had checked.
+ * @param {Record<string, Record<string, string>>} cache every locale's drafts
+ * @param {string} target the locale being written
+ * @param {Record<string, string>} known the drafts kept for it
+ * @returns {void}
  */
-const target = requested;
-
-// ── what would be sent ─────────────────────────────────────────────────────
-const cache = existsSync(CACHE) ? JSON.parse(readFileSync(CACHE, 'utf8')) : {};
-
-/**
- * Every distinct sentence the translator is sent, from every catalogue the
- * site ships (`translatableSentences`, one home since #164).
- *
- * Cached by the SOURCE TEXT rather than a hash of it — no collisions, and the
- * cache file stays reviewable in a diff, which matters when the thing being
- * reviewed is a translation.
- */
-const strings = translatableSentences();
-
-/** The drafts still worth keeping, and the stale ones any write drops (#164). */
-const { kept: known, stale } = pruneDrafts(cache[target] ?? {}, strings);
-
-/**
- * Never drafted, or cached with a draft whose slots changed: a cached draft
- * `assembleMessage` would refuse is sent again rather than trusted (#136).
- */
-const pending = [...strings].filter((s) => needsSending(s, known[s]));
-const characters = pending.reduce((n, s) => n + s.length, 0);
-const manual = untranslatedKeys(en);
-
-console.log(`target        ${target} → DeepL ${deeplLanguage(target)}`);
-console.log(`catalogue     ${strings.size} translatable strings`);
-console.log(`cached        ${strings.size - pending.length}`);
-console.log(
-  `to send       ${pending.length} strings, ${characters} characters`,
-);
-console.log(`stale         ${stale.length} drafts no catalogue sends`);
-console.log(`needs a human ${manual.length} keys (symbols)`);
-console.log(`do-not-send   ${DO_NOT_TRANSLATE.length} protected terms`);
-
-/** The one way the cache is written, so a prune and a send cannot drift. */
-const writeCache = () => {
+function writeCache(cache, target, known) {
   cache[target] = known;
   writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);
-};
-
-if (prune) {
-  // Nothing stale, nothing written: a locale with no drafts is not given an
-  // empty entry, and a cache that is already clean is left untouched.
-  if (stale.length > 0) writeCache();
-  console.log(
-    `\n✓ dropped ${stale.length} stale drafts — nothing sent, no key read.`,
-  );
-  exit(0);
 }
-
-if (!send) {
-  console.log('\nDRY RUN — nothing sent. Add --send to spend quota.');
-  exit(0);
-}
-
-// ── the call ───────────────────────────────────────────────────────────────
-/**
- * The key, read from the environment or `.env.local` -- and only here, in the
- * one mode that sends. A dry run and a prune never load it.
- *
- * Never printed, never interpolated into a URL or an error. `.env.local` is
- * gitignored (`.env.*`), and the same value lives as a repo secret.
- */
-const apiKey =
-  env.DEEPL_API_KEY ??
-  (existsSync('.env.local')
-    ? (/^DEEPL_API_KEY=(.*)$/m.exec(readFileSync('.env.local', 'utf8'))?.[1] ??
-      '')
-    : '');
-if (!apiKey.trim()) die('DEEPL_API_KEY is not set (env or .env.local)');
-const endpoint = deeplEndpoint(apiKey);
 
 /**
  *  Every source drafted, in order, 50 texts to a request.
  *
  * @param {string[]} sources
  * @param {Record<string, unknown>} options
+ * @param {Deepl} deepl the endpoint, the key and the target locale
  */
-async function draftAll(sources, options) {
+async function draftAll(sources, options, deepl) {
   const drafts = [];
   for (let i = 0; i < sources.length; i += BATCH) {
     const batch = sources.slice(i, i + BATCH);
-    const response = await fetch(endpoint, {
+    const response = await fetch(deepl.endpoint, {
       method: 'POST',
       headers: {
-        Authorization: `DeepL-Auth-Key ${apiKey.trim()}`,
+        Authorization: `DeepL-Auth-Key ${deepl.apiKey.trim()}`,
         'Content-Type': 'application/json',
       },
       // The names and legal facts come back exactly as they went in, because
       // `buildRequestBody` wraps them in the tag this request ignores. Built
       // there, not here: in this file it could only be checked by calling the
       // network, and for one release it was not checked at all (#22).
-      body: JSON.stringify(buildRequestBody(batch, target, options)),
+      body: JSON.stringify(buildRequestBody(batch, deepl.target, options)),
     });
     // The status only, never the body: a DeepL error can echo the request.
     if (!response.ok) die(`DeepL responded ${response.status}`);
@@ -207,34 +128,153 @@ async function draftAll(sources, options) {
   return drafts;
 }
 
-(await draftAll(pending, { tagSlots: false })).forEach((draft, n) => {
-  known[pending[n]] = draft;
-});
-
 /**
- * Sent bare, a slot keeps its spacing and the words beside it whole, but DeepL
- * now and then drops one; sent tagged, it is kept but can be glued to a word.
- * So a sentence whose bare draft changed a slot is sent again with its slots
- * tagged, and the better of the two drafts kept (#136, measured in
- * translate.ts).
+ * Draft the locale named on the command line, or report what a draft would
+ * cost.
+ *
+ * EVERY EFFECT IS IN HERE, reached only under `import.meta.main` (#276).
+ * Until then all of it ran at module scope, so importing this file read
+ * `DEEPL_API_KEY`, SENT THE CATALOGUE TO DEEPL and rewrote the cache -- from
+ * nothing more than a test that wanted one of its helpers.
+ *
+ * @returns {Promise<void>}
  */
-const retry = pending.filter((s) => !slotsKept(s, known[s]));
-if (retry.length > 0) {
-  console.log(`retrying ${retry.length} with tagged slots`);
-  (await draftAll(retry, { tagSlots: true })).forEach((draft, n) => {
-    known[retry[n]] = betterDraft(retry[n], known[retry[n]], draft);
-  });
-}
-const unresolved = retry.filter((s) => !slotsKept(s, known[s]));
-for (const s of unresolved)
-  console.log(
-    `  both drafts changed a slot — needs a human: ${JSON.stringify(s)}`,
-  );
+export async function main() {
+  // ── arguments ──────────────────────────────────────────────────────────────
+  const args = argv.slice(2);
+  const send = args.includes('--send');
+  const prune = args.includes('--prune');
+  const requested = args.find((a) => !a.startsWith('--'));
 
-writeCache();
-console.log(`\n✓ cache written to ${CACHE}`);
-console.log(`  dropped ${stale.length} stale drafts`);
-console.log(
-  `  ${manual.length} keys still need a human — see untranslatedKeys`,
-);
-console.log('  Nothing was added to LOCALES. That is #22.');
+  // Refused, not ignored: a mistyped `--prune` read as no option at all is a
+  // dry run, which at a glance looks like the prune it was meant to be.
+  const unknown = args.filter(
+    (a) => a.startsWith('--') && !OPTIONS.includes(a),
+  );
+  if (unknown.length > 0)
+    die(`unknown option ${unknown.join(', ')} — ${USAGE}`);
+  if (send && prune)
+    die('--send and --prune cannot be combined: a send prunes as it writes');
+  if (!requested) die(USAGE);
+  if (!isTranslatable(requested))
+    die(
+      `${requested} is not an MVP locale (${TRANSLATABLE_LOCALES.join(', ')})`,
+    );
+  if (requested === 'en') die('en is the source language, not a target');
+
+  /**
+   * The validated target, as the LOCALE it has just been proved to be.
+   *
+   * `argv` gives a `string`; every function below takes the locale union, and
+   * `Array.prototype.includes` narrows nothing on its own. The predicate above
+   * is what makes this a rename rather than a cast that could outlive its own
+   * check -- move a guard and this stops compiling, where a cast would go on
+   * asserting something nothing had checked.
+   */
+  const target = requested;
+
+  // ── what would be sent ─────────────────────────────────────────────────────
+  const cache = existsSync(CACHE)
+    ? JSON.parse(readFileSync(CACHE, 'utf8'))
+    : {};
+
+  /**
+   * Every distinct sentence the translator is sent, from every catalogue the
+   * site ships (`translatableSentences`, one home since #164).
+   *
+   * Cached by the SOURCE TEXT rather than a hash of it — no collisions, and the
+   * cache file stays reviewable in a diff, which matters when the thing being
+   * reviewed is a translation.
+   */
+  const strings = translatableSentences();
+
+  /** The drafts still worth keeping, and the stale ones any write drops (#164). */
+  const { kept: known, stale } = pruneDrafts(cache[target] ?? {}, strings);
+
+  /**
+   * Never drafted, or cached with a draft whose slots changed: a cached draft
+   * `assembleMessage` would refuse is sent again rather than trusted (#136).
+   */
+  const pending = [...strings].filter((s) => needsSending(s, known[s]));
+  const characters = pending.reduce((n, s) => n + s.length, 0);
+  const manual = untranslatedKeys(en);
+
+  console.log(`target        ${target} → DeepL ${deeplLanguage(target)}`);
+  console.log(`catalogue     ${strings.size} translatable strings`);
+  console.log(`cached        ${strings.size - pending.length}`);
+  console.log(
+    `to send       ${pending.length} strings, ${characters} characters`,
+  );
+  console.log(`stale         ${stale.length} drafts no catalogue sends`);
+  console.log(`needs a human ${manual.length} keys (symbols)`);
+  console.log(`do-not-send   ${DO_NOT_TRANSLATE.length} protected terms`);
+
+  if (prune) {
+    // Nothing stale, nothing written: a locale with no drafts is not given an
+    // empty entry, and a cache that is already clean is left untouched.
+    if (stale.length > 0) writeCache(cache, target, known);
+    console.log(
+      `\n✓ dropped ${stale.length} stale drafts — nothing sent, no key read.`,
+    );
+    exit(0);
+  }
+
+  if (!send) {
+    console.log('\nDRY RUN — nothing sent. Add --send to spend quota.');
+    exit(0);
+  }
+
+  // ── the call ───────────────────────────────────────────────────────────────
+  /**
+   * The key, read from the environment or `.env.local` -- and only here, in the
+   * one mode that sends. A dry run and a prune never load it.
+   *
+   * Never printed, never interpolated into a URL or an error. `.env.local` is
+   * gitignored (`.env.*`), and the same value lives as a repo secret.
+   */
+  const apiKey =
+    env.DEEPL_API_KEY ??
+    (existsSync('.env.local')
+      ? (/^DEEPL_API_KEY=(.*)$/m.exec(
+          readFileSync('.env.local', 'utf8'),
+        )?.[1] ?? '')
+      : '');
+  if (!apiKey.trim()) die('DEEPL_API_KEY is not set (env or .env.local)');
+  const endpoint = deeplEndpoint(apiKey);
+  /** @type {Deepl} */
+  const deepl = { endpoint, apiKey, target };
+
+  (await draftAll(pending, { tagSlots: false }, deepl)).forEach((draft, n) => {
+    known[pending[n]] = draft;
+  });
+
+  /**
+   * Sent bare, a slot keeps its spacing and the words beside it whole, but DeepL
+   * now and then drops one; sent tagged, it is kept but can be glued to a word.
+   * So a sentence whose bare draft changed a slot is sent again with its slots
+   * tagged, and the better of the two drafts kept (#136, measured in
+   * translate.ts).
+   */
+  const retry = pending.filter((s) => !slotsKept(s, known[s]));
+  if (retry.length > 0) {
+    console.log(`retrying ${retry.length} with tagged slots`);
+    (await draftAll(retry, { tagSlots: true }, deepl)).forEach((draft, n) => {
+      known[retry[n]] = betterDraft(retry[n], known[retry[n]], draft);
+    });
+  }
+  const unresolved = retry.filter((s) => !slotsKept(s, known[s]));
+  for (const s of unresolved)
+    console.log(
+      `  both drafts changed a slot — needs a human: ${JSON.stringify(s)}`,
+    );
+
+  writeCache(cache, target, known);
+  console.log(`\n✓ cache written to ${CACHE}`);
+  console.log(`  dropped ${stale.length} stale drafts`);
+  console.log(
+    `  ${manual.length} keys still need a human — see untranslatedKeys`,
+  );
+  console.log('  Nothing was added to LOCALES. That is #22.');
+}
+
+if (import.meta.main) await main();

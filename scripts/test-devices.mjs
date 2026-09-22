@@ -1151,20 +1151,34 @@ async function cleanup() {
   await cleanupLeakedIosSession();
 }
 
-// Ctrl+C (or a CI-style SIGTERM) must not skip cleanup -- a leaked iOS
-// session locks the phone out of every later run, which is worse than
-// letting the interrupted run's own results go unreported. The default
-// Node behaviour for these signals is to exit immediately without running
-// pending `finally` blocks, so this is not redundant with the try/finally
-// in `main()` below -- it is the path that catches what that one cannot.
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, async () => {
-    process.stdout.write(
-      `\n==> Received ${signal}, cleaning up before exit...\n`,
-    );
-    await cleanup();
-    process.exit(130);
-  });
+/**
+ * Ctrl+C (or a CI-style SIGTERM) must not skip cleanup -- a leaked iOS
+ * session locks the phone out of every later run, which is worse than
+ * letting the interrupted run's own results go unreported. The default
+ * Node behaviour for these signals is to exit immediately without running
+ * pending `finally` blocks, so this is not redundant with the try/finally
+ * in `main()` below -- it is the path that catches what that one cannot.
+ *
+ * INSTALLED BY `main()`, never as the file loads (#276). Registering a
+ * handler is SILENT, so the import guard #227 added -- which asserts that
+ * importing this module prints nothing -- could not see it: an import left
+ * two handlers behind, and a SIGTERM to whatever process had done the
+ * importing then ran `adb` cleanup from it. Measured: a unit-suite run
+ * printed this script's own "Received SIGTERM, cleaning up before exit"
+ * and two `adb` failures.
+ *
+ * @returns {void}
+ */
+function cleanUpOnSignal() {
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, async () => {
+      process.stdout.write(
+        `\n==> Received ${signal}, cleaning up before exit...\n`,
+      );
+      await cleanup();
+      process.exit(130);
+    });
+  }
 }
 
 async function main() {
@@ -1176,6 +1190,8 @@ async function main() {
     die(
       `test-devices.mjs takes no arguments, received: ${unexpected.join(' ')}`,
     );
+
+  cleanUpOnSignal();
 
   mkdirSync(TEST_RESULTS_DIR, { recursive: true });
   mkdirSync(DASHBOARD_STATE_DIR, { recursive: true });
