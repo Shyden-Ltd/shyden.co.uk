@@ -53,18 +53,22 @@ export function isChromeForeground(): boolean {
 export const DEVTOOLS_SOCKET = '@chrome_devtools_remote';
 
 /**
- * Every DevTools socket listening on the device -- Chrome's own and any WebView's
- * (`@webview_devtools_remote_<pid>`) -- read from `/proc/net/unix`, whose last field on each
- * line is the socket's path. Returns the paths rather than a yes/no so that a failed wait prints
- * what WAS listening, not the whole socket table. Compared exactly, never by substring:
- * `@chrome_devtools_remote` is a prefix of names it must not match.
+ * The Chrome and WebView DevTools sockets listening on the device (`@chrome_devtools_remote`,
+ * `@webview_devtools_remote_<pid>`), read from `/proc/net/unix`, whose last field on each line
+ * is the socket's path. Returns the paths rather than a yes/no so that a failed wait prints what
+ * WAS listening, not the whole socket table.
+ *
+ * Only those two families: other apps open DevTools sockets of their own (measured on the test
+ * phone: a social app's JS engine, a messaging app's Stetho), and a failure message is no place
+ * to list which apps are installed on someone's phone. Callers compare the result exactly, never
+ * by substring, so a differently suffixed socket cannot stand in for Chrome's.
  */
 export function devToolsSockets(): string[] {
   return execFileSync('adb', ['shell', 'cat', '/proc/net/unix'])
     .toString()
     .split('\n')
     .map((line) => line.trim().split(/\s+/).pop() ?? '')
-    .filter((path) => path.includes('devtools_remote'));
+    .filter((path) => /^@(chrome|webview)_devtools_remote/.test(path));
 }
 
 export function hasDevToolsSocket(): boolean {
