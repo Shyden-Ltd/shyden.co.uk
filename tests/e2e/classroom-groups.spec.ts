@@ -10,7 +10,7 @@ import {
   getStrings,
   localisePath,
 } from '../../src/lib/i18n';
-import { notRecorded, recorded, shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
@@ -477,16 +477,21 @@ test.describe('classroom group creator', () => {
   // rather than assumed); sound-on requests really are ours, same-origin;
   // and the tool really keeps working when every one of those requests is
   // blocked -- the one that stands in for a browser that cannot decode AAC.
-  // This one journey renders NOTHING: it reads bytes out of `dist/` and
-  // never navigates, so Playwright records blank frames. A blank video on a
-  // passing journey is indistinguishable from a capture that failed to
-  // start, so the block opts out and the page says `not recorded by policy`
-  // instead (#292).
+  // Its own block, and its own fixture. This journey renders NOTHING: it
+  // reads bytes out of `dist/` and never navigates, so asking for `page`
+  // opened a browser context that recorded ~2 KB of blank frames -- a blank
+  // video on a PASSING journey, which a reviewer cannot tell from a capture
+  // that failed to start. `request` fetches over an API context and opens no
+  // page, so there is no recording to suppress. The block is what lets the
+  // evidence page say `not recorded by policy` rather than `recording
+  // missing`, since it derives that from the block's own results (#292).
+  //
+  // NOT `test.use({ video: 'off' })` here: Playwright refuses `video` in a
+  // describe outright -- "it forces a new worker" -- and no source-text
+  // guard can see that, so a green suite hid it until the spec was run.
   test.describe('the sound assets on disk', () => {
-    test.use(notRecorded);
-
     test('all six sound assets are reachable from the built site and appear in dist/', async ({
-      page,
+      request,
     }) => {
       const files = listM4aFiles(join('dist'));
 
@@ -506,7 +511,7 @@ test.describe('classroom group creator', () => {
         ).toHaveLength(1);
 
         const urlPath = distPathToUrlPath(matches[0]);
-        const response = await page.request.get(urlPath);
+        const response = await request.get(urlPath);
         expect(
           response.ok(),
           `GET ${urlPath} was not reachable from the built site (status ${response.status()})`,

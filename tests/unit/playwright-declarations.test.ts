@@ -309,19 +309,13 @@ describe('every declaration and test.use() in the spec corpus can be read', () =
     ).toEqual([]);
   });
 
-  it('the only shared options objects are the recording pair, from their home', () => {
-    // The exception to "options are an object literal" is exactly these two,
-    // and it is stated HERE rather than hidden in the reader. A spec may hand
-    // `test.use()` a name only when that name is one of the recording pair
-    // and it came from `./evidence` -- the single home `video:` is allowed to
-    // live in (#214). Any other name reads as options this corpus cannot
-    // check, which is the thing the guard above exists to prevent.
-    //
-    // TWO names, not one, since #292: a spec opts IN as a whole, and a block
-    // inside it that renders nothing opts back OUT with `notRecorded`. Both
-    // live in the home, so a describe cannot reach for `{ video: 'off' }` and
-    // slip past the derivation guard.
-    const HOMED = ['recorded', 'notRecorded'] as const;
+  it('the only shared options object is the recording opt-in, from its home', () => {
+    // The exception to "options are an object literal" is exactly one, and it
+    // is stated HERE rather than hidden in the reader. A spec may hand
+    // `test.use()` a name only when that name is `recorded` and it came from
+    // `./evidence` -- the single home `video:` is allowed to live in (#214).
+    // Any other name reads as options this corpus cannot check, which is the
+    // thing the guard above exists to prevent.
     const files = specDirs().flatMap(tsFilesUnder);
     const wrong: string[] = [];
     const sharedUses: string[] = [];
@@ -331,16 +325,13 @@ describe('every declaration and test.use() in the spec corpus can be read', () =
         if (use.shared === undefined) continue;
         sharedUses.push(`${where(sf, use.call)}: ${use.shared}`);
         const text = sf.getFullText();
-        const shared = use.shared;
-        if (!HOMED.some((name) => name === shared))
-          wrong.push(`${where(sf, use.call)}: shared options "${shared}"`);
+        if (use.shared !== 'recorded')
+          wrong.push(`${where(sf, use.call)}: shared options "${use.shared}"`);
         else if (
-          !new RegExp(
-            `import \\{[^}]*\\b${shared}\\b[^}]*\\} from '\\./evidence'`,
-          ).test(text)
+          !/import \{[^}]*\brecorded\b[^}]*\} from '\.\/evidence'/.test(text)
         )
           wrong.push(
-            `${where(sf, use.call)}: ${shared} not imported from './evidence'`,
+            `${where(sf, use.call)}: recorded not imported from './evidence'`,
           );
       }
     }

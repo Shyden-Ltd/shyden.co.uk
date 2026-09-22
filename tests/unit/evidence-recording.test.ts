@@ -24,7 +24,6 @@ import {
   callsIn,
   declarationsIn,
   enclosingDeclaration,
-  useCallsIn,
 } from '../playwright-declarations';
 
 const E2E = 'tests/e2e';
@@ -117,6 +116,7 @@ const declaresRecorded = (text: string): boolean =>
  * journey whose recording a reviewer wants opt out of having one -- so every
  * doubt resolves to "it renders".
  */
+const PAGE = 'page';
 const REQUEST = 'request';
 
 /** The names a callback binds from its fixtures object, `{ page, ... }`. */
@@ -170,33 +170,33 @@ const reachesTheBrowser = (
   return reaches;
 };
 
-/** Each journey a `notRecorded` block holds, and whether it renders. */
-interface OptedOut {
+/** A journey in a recording spec, and whether it would record blank frames. */
+interface Journey {
   readonly where: string;
-  readonly renders: boolean;
+  readonly blank: boolean;
 }
 
 /**
- * The journeys inside every `test.use(notRecorded)` block in one spec.
+ * Every journey in one spec, and whether its recording would be blank.
+ *
+ * Blank means it asked for the `page` fixture -- which opens a browser
+ * context, and so a video -- and then never reached the browser through it.
+ * A journey that binds no page, or binds `request` instead, opens no context
+ * and is recorded not at all, which is the thing to aim for rather than a
+ * thing to flag.
  *
  * Parsed from the COMMENT-STRIPPED source, so a spec's own prose can neither
  * satisfy nor defeat this, exactly as the file-level halves above are.
  */
-const optedOutIn = (path: string, text: string): OptedOut[] => {
+const journeysIn = (path: string, text: string): Journey[] => {
   const sf = parseSource(text, path);
   const declarations = declarationsIn(sf);
-  const optedOutBlocks = new Set(
-    useCallsIn(sf)
-      .filter((use) => use.shared === 'notRecorded')
-      .map((use) => enclosingDeclaration(use.call, declarations))
-      .filter((owner) => owner !== undefined),
-  );
   /**
    * Setup that runs FOR a scope, which is Playwright's HOOKS and nothing
    * else. Reading "the first parameter of any callback" as a fixture is what
    * a first draft did, and a module-level `.map((row) => row.textContent())`
-   * then marked the whole file as reaching the browser -- every opted-out
-   * journey in it flagged, for a reason none of them had.
+   * then marked a whole file as reaching the browser -- every journey in it
+   * called rendering, for a reason none of them had.
    */
   const HOOKS = new Set(['beforeEach', 'beforeAll', 'afterEach', 'afterAll']);
   const scopeReaches = new Set<unknown>();
@@ -218,25 +218,25 @@ const optedOutIn = (path: string, text: string): OptedOut[] => {
     )
       scopeReaches.add(enclosingDeclaration(call, declarations) ?? 'FILE');
   }
-  const out: OptedOut[] = [];
-  for (const declaration of declarations.filter((d) => d.kind === 'test')) {
-    const ancestors: typeof declarations = [];
-    for (
-      let owner = enclosingDeclaration(declaration.call, declarations);
-      owner !== undefined;
-      owner = enclosingDeclaration(owner.call, declarations)
-    )
-      ancestors.push(owner);
-    if (!ancestors.some((owner) => optedOutBlocks.has(owner))) continue;
-    out.push({
-      where: `${path}:${declaration.line} ${declaration.title}`,
-      renders:
+  return declarations
+    .filter((declaration) => declaration.kind === 'test')
+    .map((declaration) => {
+      const ancestors: typeof declarations = [];
+      for (
+        let owner = enclosingDeclaration(declaration.call, declarations);
+        owner !== undefined;
+        owner = enclosingDeclaration(owner.call, declarations)
+      )
+        ancestors.push(owner);
+      const reaches =
         reachesTheBrowser(declaration.body) ||
         scopeReaches.has('FILE') ||
-        ancestors.some((owner) => scopeReaches.has(owner)),
+        ancestors.some((owner) => scopeReaches.has(owner));
+      return {
+        where: `${path}:${declaration.line} ${declaration.title}`,
+        blank: fixtureNames(declaration.body).has(PAGE) && !reaches,
+      };
     });
-  }
-  return out;
 };
 
 describe('evidence recording is opt-in, and the opt-in is derived', () => {
@@ -331,19 +331,28 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
     });
   });
 
-  it('a block that opts out of recording really renders nothing (#292)', () => {
-    // The opt-out exists so a journey that puts nothing on screen carries no
-    // blank video. This is the half that stops it being reached for by a
-    // journey whose recording a reviewer would actually watch -- the reverse
-    // mistake, and the expensive one, because the evidence is simply gone.
-    const optedOut = SPECS.flatMap((path) => optedOutIn(path, sourceOf(path)));
-    const rendering = optedOut.filter((j) => j.renders).map((j) => j.where);
+  it('no journey in a recording spec records blank frames (#292)', () => {
+    // A journey that asks for `page` and never reaches the browser through it
+    // opens a context, records about 2 KB of blank frames, and puts a blank
+    // video on a PASSING journey -- which a reviewer cannot tell from a
+    // capture that failed to start. Measured on the seven-spec evidence run
+    // (#268 AC2): 1,965 bytes against a median of 94,751, the only one of 281
+    // under 10 KB.
+    //
+    // Derived from every recording spec on disk rather than from the one the
+    // ticket happened to measure.
+    const recording = SPECS.filter((path) => declaresRecorded(sourceOf(path)));
+    const journeys = nonEmpty(
+      recording.flatMap((path) => journeysIn(path, sourceOf(path))),
+      'journeys in recording specs',
+    );
+    const blank = journeys.filter((journey) => journey.blank);
     expect(
-      searched(rendering, {
-        of: optedOut.map((j) => j.where),
-        what: 'journeys inside a notRecorded block',
-      }),
-      rendering.join('\n'),
+      searched(
+        blank.map((journey) => journey.where),
+        { of: journeys.map((journey) => journey.where), what: 'journeys' },
+      ),
+      blank.map((journey) => journey.where).join('\n'),
     ).toEqual([]);
   });
 
@@ -351,12 +360,11 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
     // The control, on input written HERE. A proof taken from the corpus alone
     // cannot tell a detector that stopped detecting from a corpus that
     // stopped offending -- #112's guard counted six entries and six blanks
-    // the same way. Each case below is one this repo really contains.
+    // the same way. Every shape below is one this repo really contains.
     const spec = [
       'test.use(recorded);',
-      "test.describe('opted out', () => {",
-      '  test.use(notRecorded);',
-      "  test('reads bytes off disk', async ({ page }) => {",
+      "test.describe('a block', () => {",
+      "  test('asks for a page and only fetches bytes', async ({ page }) => {",
       "    await page.request.get('/x.m4a');",
       '  });',
       "  test('navigates', async ({ page }) => {",
@@ -365,30 +373,32 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
       "  test('hands the page to a helper', async ({ page }) => {",
       '    await openTool(page);',
       '  });',
-      "  test('reaches through another fixture', async ({ groups }) => {",
-      "    await groups.add('Ada');",
+      "  test('fetches through the request fixture', async ({ request }) => {",
+      "    await request.get('/x.m4a');",
       '  });',
       "  test('binds no fixture at all', async () => {",
       '    expect(1).toBe(1);',
       '  });',
       '});',
     ].join('\n');
-    const found = optedOutIn('tests/e2e/synthetic.spec.ts', spec);
-    expect(found.map((j) => j.where.replace(/^.*? /, ''))).toEqual([
-      'reads bytes off disk',
+    const found = journeysIn('tests/e2e/synthetic.spec.ts', spec);
+    expect(found.map((journey) => journey.where.replace(/^\S+ /, ''))).toEqual([
+      'asks for a page and only fetches bytes',
       'navigates',
       'hands the page to a helper',
-      'reaches through another fixture',
+      'fetches through the request fixture',
       'binds no fixture at all',
     ]);
-    // `page.request` and no fixture at all are the two that render nothing;
-    // handing `page` to a helper counts even though nothing here can see what
-    // the helper does with it.
-    expect(found.map((j) => j.renders)).toEqual([
+    // Only the first records blank frames. Handing `page` to a helper counts
+    // as reaching the browser even though nothing here can see what the
+    // helper does with it -- under-detecting is the unsafe direction. The
+    // last two open no context at all, so they are recorded not at all, which
+    // is the fix rather than the defect.
+    expect(found.map((journey) => journey.blank)).toEqual([
+      true,
       false,
-      true,
-      true,
-      true,
+      false,
+      false,
       false,
     ]);
   });

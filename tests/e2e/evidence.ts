@@ -146,24 +146,3 @@ export const captureOptions = (path: string) => ({
  * pair, and the source is the authority.
  */
 export const recorded = { video: DIR ? ('on' as const) : ('off' as const) };
-
-/**
- * A BLOCK's opt-out: `test.use(notRecorded)` inside a `test.describe`.
- *
- * A spec opts IN as a whole, so a journey that renders nothing -- one that
- * reads bytes out of `dist/` and never navigates -- still carries about 2 KB
- * of blank frames. On the evidence page that is a blank video on a PASSING
- * journey, which a reviewer cannot tell from a capture that failed to start:
- * silence presented as evidence, the same class as `toBeHidden` passing on an
- * element that does not exist. Measured on the seven-spec run (#268 AC2):
- * 1,965 bytes against a median of 94,751, and the only one of 281 under 10 KB.
- *
- * Declared HERE so `video:` keeps exactly one home outside
- * `playwright.config.ts`. A describe writing `test.use({ video: 'off' })` for
- * itself would opt out behind the derivation guard's back, which is what
- * `evidence-recording.test.ts` refuses.
- *
- * `'off'` unconditionally, with no `DIR` to consult: there is no run in which
- * a recording of nothing is wanted.
- */
-export const notRecorded = { video: 'off' as const };
