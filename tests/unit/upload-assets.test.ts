@@ -106,4 +106,25 @@ describe('pairing a recording with the asset that holds it', () => {
     // shape above only if this is asserted.
     expect(map['a-journey']).not.toBe(map['another-journey']);
   });
+
+  it('refuses a key whose recording the store does not hold, naming it', () => {
+    // By the time the map is built every recording has been uploaded, so a
+    // key with no asset is a journey that will render with no source -- which
+    // reads exactly like one that was never recorded. Before the upload the
+    // same state means "still to do", and that reading belongs to
+    // `pendingUploads`, not here.
+    expect(() => assetsMap({ plan: recordings, stored: [stored[0]] })).toThrow(
+      /another-journey/,
+    );
+  });
+
+  it('refuses an asset whose stored byte count is not the file it came from', () => {
+    // The listing reports what the store actually holds. If that disagrees
+    // with the file on disk, the upload did not land what we think it did,
+    // and the page would show it to the operator as evidence.
+    const short = [stored[0], { ...stored[1], bytes: stored[1].bytes - 1 }];
+    expect(() => assetsMap({ plan: recordings, stored: short })).toThrow(
+      /byte/,
+    );
+  });
 });

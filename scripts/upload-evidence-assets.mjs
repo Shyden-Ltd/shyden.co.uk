@@ -11,7 +11,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 
 /** Where the artifact serves a stored asset, in every view (#268). */
 const BLOB_PREFIX = '/_blob/';
@@ -94,9 +94,34 @@ export const parseAssetListing = (text) => {
 export const assetsMap = ({ plan, stored }) => {
   const byDigest = new Map(stored.map((asset) => [asset.sha256, asset]));
   const map = {};
+  const missing = [];
+  const wrongSize = [];
   for (const [key, abs] of Object.entries(plan)) {
     const asset = byDigest.get(sha256Of(abs));
-    if (asset) map[key] = `${BLOB_PREFIX}${asset.id}`;
+    if (!asset) {
+      missing.push(`${key}: ${abs}`);
+      continue;
+    }
+    const bytes = statSync(abs).size;
+    if (asset.bytes !== bytes)
+      wrongSize.push(
+        `${key}: the store holds ${asset.bytes} bytes, ${abs} is ${bytes}`,
+      );
+    map[key] = `${BLOB_PREFIX}${asset.id}`;
   }
+  if (missing.length)
+    throw new Error(
+      `upload-evidence-assets: ${missing.length} recording(s) the store does ` +
+        `not hold:\n  ${missing.join('\n  ')}\n` +
+        'A journey with no source renders exactly like one that was never ' +
+        'recorded. Run the upload the plan asks for before building the map.',
+    );
+  if (wrongSize.length)
+    throw new Error(
+      `upload-evidence-assets: ${wrongSize.length} asset(s) are not the size ` +
+        `of the file they came from:\n  ${wrongSize.join('\n  ')}\n` +
+        'The store is reporting something other than what was uploaded, and ' +
+        'the page would put it in front of the operator as evidence.',
+    );
   return map;
 };
