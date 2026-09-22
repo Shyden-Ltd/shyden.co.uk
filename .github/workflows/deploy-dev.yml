@@ -91,6 +91,13 @@ jobs:
     # tests/unit/pipeline-wiring.test.ts, which fails if any job running the
     # suite carries a different one.
     timeout-minutes: 45
+    # The workflow grants `contents: read`; this job additionally reads the
+    # repository's labels, which live under the issues scope. Declaring a job
+    # block replaces the inherited set rather than adding to it, so the
+    # checkout's `contents: read` is restated here.
+    permissions:
+      contents: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -98,6 +105,15 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # The same check `build-and-test` runs, in the same order. The merge path
+      # trusts this job to run exactly what that one runs -- a step in one and
+      # not the other means a dispatched branch is verified by a different
+      # suite from the one the gate believes it passed, which
+      # tests/unit/pipeline-wiring.test.ts fails on.
+      - name: Every label dependabot.yml names exists
+        run: node scripts/dependabot-labels.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run format
       - run: npm run build
       - run: npm run typecheck

@@ -46,6 +46,17 @@ jobs:
     # suite a merge runs (#157). A policy, not a measurement --
     # tests/unit/pipeline-wiring.test.ts pins it and fails if the copies drift.
     timeout-minutes: 45
+    # Narrowed from the repository default, which is `write` for any workflow
+    # that states nothing (measured 2026-09-22 on
+    # `actions/permissions/workflow`). This job reads a checkout and reads
+    # this repository's labels, and writes nothing anywhere. Declaring ANY
+    # permission sets every other one to none, so the checkout's `contents:
+    # read` is restated beside it; labels live under the issues scope, which
+    # is what `issues: read` buys. The artifact upload below is unaffected --
+    # it authenticates with the runner's own runtime token, not this one.
+    permissions:
+      contents: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -53,6 +64,16 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Every label `.github/dependabot.yml` asks for must exist, or Dependabot
+      # drops it and posts a configuration-error comment in its place -- which
+      # it did on every pull request from 2026-09-21 until #299. The claim is
+      # about REPOSITORY STATE, so no unit test can judge it; it runs here
+      # because `build-and-test` is the context branch protection requires, and
+      # a job of its own would not be a gate until that list named it (#33).
+      - name: Every label dependabot.yml names exists
+        run: node scripts/dependabot-labels.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run format
       - run: npm run build
       - run: npm run typecheck
