@@ -3,7 +3,7 @@ import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { recorded } from './evidence';
-import { expectNoHorizontalScroll } from '../viewport';
+import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
 
@@ -104,11 +104,11 @@ test.describe('language switcher', () => {
   test('the control and its entries are touchable', async ({ page }) => {
     await page.goto('/');
     const summary = page.locator(`${SWITCHER} > summary`);
-    expect((await summary.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await atLeast44(summary, 'the switcher summary');
 
     await summary.click();
     const entry = page.locator(`${SWITCHER} li a`).first();
-    expect((await entry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await atLeast44(entry, 'the first switcher entry');
   });
 
   test(
