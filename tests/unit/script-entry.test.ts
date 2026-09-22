@@ -498,6 +498,14 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 2,
     says: 'usage: build-evidence-page.mjs',
   },
+  // With no plan and no listing it has nothing to pair, so it refuses before
+  // reading anything. Its refusal is also the only cheap proof its entry point
+  // ran: a skipped `main()` exits 0 in silence.
+  'upload-evidence-assets.mjs': {
+    args: [],
+    status: 2,
+    says: 'usage: upload-evidence-assets.mjs',
+  },
   // Without the API it can prove nothing, so it refuses to proceed.
   'deploy-gate.mjs': {
     args: [],
