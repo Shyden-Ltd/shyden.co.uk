@@ -368,3 +368,55 @@ export const contrastRatio = async (target: Locator): Promise<number> => {
   );
   return contrast(mixed, over(ground, [255, 255, 255]));
 };
+
+/**
+ * Every place a browser could have kept a pupil's name, in one read (#277).
+ *
+ * Four probes had grown for the same claim, and they did not agree about
+ * where to look. `classroom-groups-privacy.spec.ts` had two -- an object of
+ * four fields, and a joined string of the same four -- `classroom-groups-
+ * io.spec.ts` had the joined string inline, and `classroom-groups-
+ * roster.spec.ts` read `localStorage` and `sessionStorage` ONLY. That last
+ * one asserts "a typed name never reaches storage" while looking at two of
+ * the four places a name could go: the address bar and the cookie jar were
+ * never checked, so the test most specifically about a typed name was the
+ * weakest of the four. Collapsing them is a coverage fix as much as a
+ * refactor.
+ *
+ * The cookie field's own reason, kept from the copy that had it: the plan's
+ * snippet checked the first three, and a cookie is the fourth place a name
+ * could be written to.
+ */
+export const everywhereItCouldHide = (page: Page) =>
+  page.evaluate(() => ({
+    local: JSON.stringify({ ...localStorage }),
+    session: JSON.stringify({ ...sessionStorage }),
+    url: location.href,
+    cookies: document.cookie,
+  }));
+
+/**
+ * Assert none of `names` appears anywhere the page could have persisted it.
+ *
+ * This is an absence assertion over a population read at runtime, so it
+ * carries its own liveness controls (#118): with no names there is nothing
+ * to look for, and a probe that quietly stopped reading one of the four
+ * places would pass every call here while covering less than its name says.
+ * Both are asserted rather than assumed -- an emptied probe and a clean page
+ * look identical from the outside.
+ */
+export const expectNothingStored = async (
+  page: Page,
+  when: string,
+  ...names: readonly string[]
+): Promise<void> => {
+  expect(names.length, `${when}: no name to look for`).toBeGreaterThan(0);
+  const stored = await everywhereItCouldHide(page);
+  expect(
+    Object.keys(stored),
+    `${when}: the probe stopped reading somewhere a name could hide`,
+  ).toEqual(['local', 'session', 'url', 'cookies']);
+  for (const [where, value] of Object.entries(stored))
+    for (const name of names)
+      expect(value, `${where} — ${when}`).not.toContain(name);
+};

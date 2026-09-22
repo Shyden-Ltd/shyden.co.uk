@@ -4,12 +4,13 @@ import { recordErrors } from './recorders';
 import { searched } from '../source-files';
 import { expectNoHorizontalScroll } from '../viewport';
 import {
-  openRoster,
   addSeveral,
-  markAbsent,
-  giveEveryoneASex,
-  expectStudentsBoxReports,
   contrastRatio,
+  expectNothingStored,
+  expectStudentsBoxReports,
+  giveEveryoneASex,
+  markAbsent,
+  openRoster,
 } from './helpers';
 
 test.use(recorded);
@@ -482,12 +483,11 @@ test.describe('the roster is never persisted', () => {
       .first()
       .getByLabel('Name')
       .fill('PrivacyProbeStudentName');
-    const stored = await page.evaluate(() => ({
-      local: JSON.stringify({ ...localStorage }),
-      session: JSON.stringify({ ...sessionStorage }),
-    }));
-    expect(stored.local).not.toContain('PrivacyProbeStudentName');
-    expect(stored.session).not.toContain('PrivacyProbeStudentName');
+    await expectNothingStored(
+      page,
+      'after typing a name',
+      'PrivacyProbeStudentName',
+    );
   });
 });
 

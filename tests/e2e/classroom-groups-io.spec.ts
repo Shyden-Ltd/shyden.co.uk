@@ -4,14 +4,15 @@ import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import {
   buildRoster,
-  rosterOf,
-  upload,
-  downloadText,
-  downloadName,
-  todayISO,
   buildRosterAtPath,
+  downloadName,
+  downloadText,
+  expectNothingStored,
   giveEveryoneASex,
   handoverTo,
+  rosterOf,
+  todayISO,
+  upload,
 } from './helpers';
 import { recorded } from './evidence';
 
@@ -575,17 +576,8 @@ test.describe('exporting in both languages', () => {
     await newPage.waitForLoadState();
     await newPage.locator('#cg-students-toggle').click();
     await expect(newPage.locator('.cg-student')).toHaveCount(1);
-    for (const p of [page, newPage]) {
-      const seen = await p.evaluate(() =>
-        [
-          JSON.stringify({ ...localStorage }),
-          JSON.stringify({ ...sessionStorage }),
-          location.href,
-          document.cookie,
-        ].join(' '),
-      );
-      expect(seen).not.toContain('Ana');
-    }
+    for (const p of [page, newPage])
+      await expectNothingStored(p, 'after the handover', 'Ana');
   });
 
   test('the source keeps the roster until the new tab acknowledges', async ({

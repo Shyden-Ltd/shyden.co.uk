@@ -5,6 +5,7 @@ import { recorded, shoot } from './evidence';
 import {
   buildRoster,
   buildRosterAtPath,
+  expectNothingStored,
   upload,
   downloadName,
   giveEveryoneASex,
@@ -12,6 +13,9 @@ import {
 } from './helpers';
 
 test.use(recorded);
+
+/** The two pupils every probe in this file looks for. */
+const ROSTER_NAMES = ['Ana', 'Budi'] as const;
 
 /**
  * The page makes a promise in both languages: "No class list ever leaves this
@@ -397,29 +401,6 @@ test.describe('privacy — when storage is unavailable', () => {
  * would pass a single check at the end and still have leaked.
  */
 test.describe('privacy — the roster never leaves memory', () => {
-  /** Storage, session storage and the address bar, in one read. */
-  const everywhereItCouldHide = (page: import('@playwright/test').Page) =>
-    page.evaluate(() => ({
-      local: JSON.stringify({ ...localStorage }),
-      session: JSON.stringify({ ...sessionStorage }),
-      url: location.href,
-      // Cookies too -- the plan's own snippet checked the first three, but
-      // a cookie is the fourth place a name could be written to and the
-      // one nothing else in this suite looks at.
-      cookies: document.cookie,
-    }));
-
-  const expectNothingStored = async (
-    page: import('@playwright/test').Page,
-    when: string,
-  ) => {
-    const stored = await everywhereItCouldHide(page);
-    for (const [where, value] of Object.entries(stored)) {
-      expect(value, `${where} — ${when}`).not.toContain('Ana');
-      expect(value, `${where} — ${when}`).not.toContain('Budi');
-    }
-  };
-
   test('nothing about the class is stored, after every operation', async ({
     page,
   }) => {
@@ -430,15 +411,23 @@ test.describe('privacy — the roster never leaves memory', () => {
       ['F', 'Ana'],
       ['M', 'Budi'],
     ]);
-    await expectNothingStored(page, 'after building the roster');
+    await expectNothingStored(
+      page,
+      'after building the roster',
+      ...ROSTER_NAMES,
+    );
 
     await page.locator('.cg-student').first().getByLabel('Absent').check();
-    await expectNothingStored(page, 'after marking a student absent');
+    await expectNothingStored(
+      page,
+      'after marking a student absent',
+      ...ROSTER_NAMES,
+    );
 
     await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
-    await expectNothingStored(page, 'after shuffling');
+    await expectNothingStored(page, 'after shuffling', ...ROSTER_NAMES);
 
     // POSITIVE CONTROL. Everything above passes trivially if storage is
     // simply unreadable in this context, or if `everywhereItCouldHide` is
@@ -455,7 +444,11 @@ test.describe('privacy — the roster never leaves memory', () => {
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('cg-sound')))
       .toBe('off');
-    await expectNothingStored(page, 'after a preference was written');
+    await expectNothingStored(
+      page,
+      'after a preference was written',
+      ...ROSTER_NAMES,
+    );
   });
 
   test('a reload loses the roster', async ({ page }) => {
@@ -551,28 +544,12 @@ test.describe('privacy — the roster never leaves memory', () => {
  * the end.
  */
 test.describe('privacy — the roster still never persists, after the new paths', () => {
-  const nowhere = async (
-    page: import('@playwright/test').Page,
-    when: string,
-  ) => {
-    const seen = await page.evaluate(() =>
-      [
-        JSON.stringify({ ...localStorage }),
-        JSON.stringify({ ...sessionStorage }),
-        location.href,
-        document.cookie,
-      ].join(' '),
-    );
-    expect(seen, when).not.toContain('Ana');
-    expect(seen, when).not.toContain('Budi');
-  };
-
   test('an import writes nothing', async ({ page }) => {
     await page.goto('/classroom-groups');
     await page.locator('#cg-io-toggle').click();
     await upload(page, 'ok.csv', 'number,name\n1,Ana\n2,Budi\n');
     await expect(page.getByText('Imported 2 students.')).toBeVisible();
-    await nowhere(page, 'after an import');
+    await expectNothingStored(page, 'after an import', ...ROSTER_NAMES);
   });
 
   test('an export writes nothing, and leaves no object URL behind', async ({
@@ -584,7 +561,7 @@ test.describe('privacy — the roster still never persists, after the new paths'
     ]);
     await page.locator('#cg-io-toggle').click();
     await downloadName(page, 'Export class list');
-    await nowhere(page, 'after an export');
+    await expectNothingStored(page, 'after an export', ...ROSTER_NAMES);
     // The blob URL is revoked the moment the click is dispatched, so no
     // <a> holding the file's bytes is left in the document -- see
     // io-ui.ts's own `download` for why that matters here.
@@ -612,8 +589,16 @@ test.describe('privacy — the roster still never persists, after the new paths'
     await newPage.waitForLoadState();
     await newPage.locator('#cg-students-toggle').click();
     await expect(newPage.locator('.cg-student')).toHaveCount(2);
-    await nowhere(page, 'source tab after the handover');
-    await nowhere(newPage, 'receiving tab after the handover');
+    await expectNothingStored(
+      page,
+      'source tab after the handover',
+      ...ROSTER_NAMES,
+    );
+    await expectNothingStored(
+      newPage,
+      'receiving tab after the handover',
+      ...ROSTER_NAMES,
+    );
   });
 
   test('a reload after an import still loses the roster', async ({ page }) => {
