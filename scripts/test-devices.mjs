@@ -672,7 +672,15 @@ function isIosPresent() {
 // ── one-off discovery: how many tests does grepInvert exclude by design? ──
 
 /**
- * `android-chrome`'s `grepInvert: /@emulated-viewport|@requires-isolated-context/`
+ * The `--grep` pattern that SELECTS what `android-chrome`'s `grepInvert` excludes. Declared
+ * once and used for the listing and both messages; tests/unit/excluded-by-design.test.ts holds
+ * it to the config's `grepInvert`, character for character. It was once two hand-typed copies,
+ * and this one missed `@requires-download-bytes` for as long as that tag existed (#308).
+ */
+const EXCLUDED_BY_DESIGN_GREP = '@emulated-viewport|@requires-isolated-context';
+
+/**
+ * `android-chrome`'s `grepInvert`
  * (playwright.device.config.ts) excludes tagged tests before Playwright's own JSON
  * reporter ever sees them -- they are not "skipped", they are never collected, so the
  * real run's own report has no number for them at all. This asks separately, freshly,
@@ -711,14 +719,14 @@ async function countExcludedByDesign() {
       '--config=playwright.config.ts',
       '--project=chromium',
       '--list',
-      '--grep=@emulated-viewport|@requires-isolated-context',
+      `--grep=${EXCLUDED_BY_DESIGN_GREP}`,
       '--reporter=json',
     ],
     { env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile } },
   );
   if (code !== 0) {
     throw new Error(
-      'expected `playwright test --list --grep=@emulated-viewport|@requires-isolated-context` to exit 0 ' +
+      `expected \`playwright test --list --grep=${EXCLUDED_BY_DESIGN_GREP}\` to exit 0 ` +
         `(it only lists tests, never runs them) -- got code ${code}. Cannot compute the Android group's ` +
         'skipped-by-design count.',
     );
@@ -1310,8 +1318,8 @@ async function main() {
     );
     const excludedByDesign = await countExcludedByDesign();
     process.stdout.write(
-      `==> ${excludedByDesign} test(s) excluded by design (@emulated-viewport or ` +
-        '@requires-isolated-context) for the Android group.\n',
+      `==> ${excludedByDesign} test(s) excluded by design ` +
+        `(${EXCLUDED_BY_DESIGN_GREP.split('|').join(' or ')}) for the Android group.\n`,
     );
 
     process.stdout.write(
