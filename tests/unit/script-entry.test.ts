@@ -548,6 +548,14 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'usage: npm run i18n:translate -- <locale>',
   },
+  // Takes no arguments either, and refuses one before it reads the config or
+  // reaches for `gh` -- so the probe proves the entry point ran without a
+  // token, a network call or a repository (#299).
+  'dependabot-labels.mjs': {
+    args: ['--no-such-flag'],
+    status: 1,
+    says: 'usage: node scripts/dependabot-labels.mjs',
+  },
   // It had no refusal at all, being written never to fail an install, so #276
   // gave it the one the other argument-free scripts have. `prepare` passes
   // nothing, so nothing that is not already a mistake reaches it.
