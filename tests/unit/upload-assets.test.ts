@@ -7,6 +7,7 @@ import {
 } from '../../scripts/upload-evidence-assets.mjs';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -173,5 +174,45 @@ describe('what is still to upload', () => {
     const batches = pendingUploads({ plan, stored: [] });
     expect(batches.map((batch) => batch.length)).toEqual([25, 25, 10]);
     expect(UPLOAD_BATCH).toBe(25);
+  });
+});
+
+describe('what a refusal looks like from the command line', () => {
+  let dir = '';
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'upload-cli-'));
+    writeFileSync(join(dir, 'a.webm'), 'a recording nobody uploaded');
+    writeFileSync(
+      join(dir, 'plan.json'),
+      JSON.stringify({ 'a-journey': join(dir, 'a.webm') }),
+    );
+    writeFileSync(
+      join(dir, 'listing.txt'),
+      'Assets of https://x: 0 files, 0 of 1073741824 bytes used (limit 5000 files).\n',
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('refuses with one line and exit 1, not an unhandled stack trace', () => {
+    const run = spawnSync(
+      process.execPath,
+      [
+        'scripts/upload-evidence-assets.mjs',
+        '--plan',
+        join(dir, 'plan.json'),
+        '--listing',
+        join(dir, 'listing.txt'),
+        '--out',
+        join(dir, 'assets.json'),
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(run.stderr).toContain('a-journey');
+    // A stack trace is what an unhandled throw looks like. Every other script
+    // here refuses through `die`, and an operator reading `at main (...)` has
+    // been shown an internal error rather than a decision.
+    expect(run.stderr).not.toContain('at main');
+    expect(run.stderr.startsWith('✗')).toBe(true);
+    expect(run.status).toBe(1);
   });
 });

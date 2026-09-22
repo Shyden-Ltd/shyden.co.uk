@@ -12,6 +12,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { die, messageOf } from './errors.mjs';
 
 /** Where the artifact serves a stored asset, in every view (#268). */
 const BLOB_PREFIX = '/_blob/';
@@ -191,6 +192,23 @@ const main = () => {
     );
     process.exit(2);
   }
+  try {
+    run({ planPath, listingPath, out });
+  } catch (error) {
+    // Every refusal in here is a decision, not a crash. An unhandled throw
+    // prints `at main (...)` at whoever is reading, which shows them an
+    // internal error where a one-line answer belongs (#227).
+    die(messageOf(error));
+  }
+};
+
+/**
+ * The work, once the arguments are known.
+ *
+ * @param {{ planPath: string, listingPath: string, out: string | undefined }} input
+ * @returns {void}
+ */
+const run = ({ planPath, listingPath, out }) => {
   const plan = JSON.parse(readFileSync(planPath, 'utf8'));
   const stored = parseAssetListing(readFileSync(listingPath, 'utf8'));
   if (!out) {
