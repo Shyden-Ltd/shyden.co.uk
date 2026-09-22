@@ -39,6 +39,25 @@ updates:
       - dependency-name: 'typescript'
         update-types:
           - 'version-update:semver-major'
+      # prettier-plugin-astro is held at 1.0.0 (#296). Measured 2026-09-22 on
+      # the group PR #265: 1.0.1 re-indents the continuation lines of every
+      # multi-line CSS block comment inside an `.astro` <style> block by two
+      # spaces, AGAIN on every run -- one line went 7 -> 9 -> 11 -> 13 -> 15
+      # -> 17 over five `--write` passes and `--check` still called it dirty.
+      # No fixed point means no commit can satisfy `npm run format`. Isolated
+      # against a 2x2 matrix: the plugin alone, under both prettier 3.9.6 and
+      # 3.9.8. Already reported and already fixed upstream:
+      # withastro/prettier-plugin-astro#487, opened 2026-09-18 and closed as
+      # completed on 2026-09-21 by a maintainer. No release carries the fix
+      # yet -- 1.0.1 (2026-09-17) is still the latest on npm as of 2026-09-22
+      # -- so 1.0.2 is the release expected to lift this hold. ONE version is
+      # named, deliberately -- 1.0.2 is not ignored, so
+      # it arrives on the usual schedule and the format gate judges it, and
+      # the hold lifts without anybody remembering it exists. Do not widen
+      # this to update-types: supply-chain.test.ts goes red if you do.
+      - dependency-name: 'prettier-plugin-astro'
+        versions:
+          - '1.0.1'
     groups:
       patch-updates:
         update-types:
