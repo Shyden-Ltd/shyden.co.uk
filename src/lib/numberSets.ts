@@ -1,4 +1,4 @@
-import { MAX_STUDENTS } from './grouping';
+import { MAX_STUDENTS, anonymousStudent } from './grouping';
 import type { Student } from './grouping';
 import { LETTERS } from './roster';
 
@@ -203,10 +203,12 @@ export const studentsForInput = (
 
   return Array.from({ length: count }, (_, index) => {
     const number = index + 1;
+    // Built ON the blank record rather than beside it (#277): the three
+    // fields a number set decides are the three named here, and the rest —
+    // `name`, `sex`, and whatever a later field turns out to be — default
+    // wherever `Student` itself is defined, not here as well.
     return {
-      number,
-      name: null,
-      sex: null,
+      ...anonymousStudent(number),
       absent: absent.has(number),
       together: together.get(number) ?? null,
       apart: apart.get(number) ?? null,

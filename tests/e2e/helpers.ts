@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { contrast, over, parseColour } from '../wcag';
 
 /**
  * Fixtures for driving the roster into a starting state -- Stage 3, 4 and 5
@@ -328,36 +329,94 @@ export const handoverTo = async (page: Page, language: string | RegExp) => {
  * differ by one term would disagree about the same pixels, and the suite that
  * got the lenient one would pass while the page failed a real audit.
  */
-export const contrastRatio = async (target: Locator): Promise<number> =>
-  target.evaluate((el) => {
+export const contrastRatio = async (target: Locator): Promise<number> => {
+  // The browser READS; the arithmetic happens in node, against the one copy
+  // of the WCAG formula this repo has (#277). A `page.evaluate` callback is
+  // serialised and cannot import, so a callback that did the maths itself
+  // was a copy by construction -- and three of them had accumulated, all
+  // linearising at a different constant from the two node-side copies.
+  const painted = await target.evaluate((el) => {
     const style = getComputedStyle(el);
-    const opacity = Number(style.opacity);
     // Start at the element itself -- it may paint its own background -- and
     // walk up until something does, the same resolution the browser performs
     // when compositing.
     let bgEl: Element | null = el;
-    let backgroundCss = 'rgba(0, 0, 0, 0)';
+    let background = 'rgb(255, 255, 255)';
     while (bgEl) {
       const c = getComputedStyle(bgEl).backgroundColor;
       if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') {
-        backgroundCss = c;
+        background = c;
         break;
       }
       bgEl = bgEl.parentElement;
     }
-    const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
-    const [ir, ig, ib] = nums(style.color);
-    const [br, bgn, bb] = nums(backgroundCss);
-    const mix = (i: number, b: number) => opacity * i + (1 - opacity) * b;
-    const lin = (c: number) => {
-      const s = c / 255;
-      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    };
-    const luminance = (r: number, g: number, b: number) =>
-      0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    const textLum = luminance(mix(ir, br), mix(ig, bgn), mix(ib, bb));
-    const bgLum = luminance(br, bgn, bb);
-    const lighter = Math.max(textLum, bgLum);
-    const darker = Math.min(textLum, bgLum);
-    return (lighter + 0.05) / (darker + 0.05);
+    return { colour: style.color, background, opacity: Number(style.opacity) };
   });
+
+  const ink = parseColour(painted.colour);
+  const ground = parseColour(painted.background);
+  if (ink === null || ground === null)
+    throw new Error(
+      `unreadable computed colour: ${painted.colour} on ${painted.background}`,
+    );
+  // The element's own opacity dims its text against what is behind it. A
+  // colour token that passes AA on paper can still fail once the browser has
+  // mixed it -- the bug this was first written for, in classroom-groups.
+  const mixed = over(
+    { rgb: ink.rgb, alpha: ink.alpha * painted.opacity },
+    over(ground, [255, 255, 255]),
+  );
+  return contrast(mixed, over(ground, [255, 255, 255]));
+};
+
+/**
+ * Every place a browser could have kept a pupil's name, in one read (#277).
+ *
+ * Four probes had grown for the same claim, and they did not agree about
+ * where to look. `classroom-groups-privacy.spec.ts` had two -- an object of
+ * four fields, and a joined string of the same four -- `classroom-groups-
+ * io.spec.ts` had the joined string inline, and `classroom-groups-
+ * roster.spec.ts` read `localStorage` and `sessionStorage` ONLY. That last
+ * one asserts "a typed name never reaches storage" while looking at two of
+ * the four places a name could go: the address bar and the cookie jar were
+ * never checked, so the test most specifically about a typed name was the
+ * weakest of the four. Collapsing them is a coverage fix as much as a
+ * refactor.
+ *
+ * The cookie field's own reason, kept from the copy that had it: the plan's
+ * snippet checked the first three, and a cookie is the fourth place a name
+ * could be written to.
+ */
+export const everywhereItCouldHide = (page: Page) =>
+  page.evaluate(() => ({
+    local: JSON.stringify({ ...localStorage }),
+    session: JSON.stringify({ ...sessionStorage }),
+    url: location.href,
+    cookies: document.cookie,
+  }));
+
+/**
+ * Assert none of `names` appears anywhere the page could have persisted it.
+ *
+ * This is an absence assertion over a population read at runtime, so it
+ * carries its own liveness controls (#118): with no names there is nothing
+ * to look for, and a probe that quietly stopped reading one of the four
+ * places would pass every call here while covering less than its name says.
+ * Both are asserted rather than assumed -- an emptied probe and a clean page
+ * look identical from the outside.
+ */
+export const expectNothingStored = async (
+  page: Page,
+  when: string,
+  ...names: readonly string[]
+): Promise<void> => {
+  expect(names.length, `${when}: no name to look for`).toBeGreaterThan(0);
+  const stored = await everywhereItCouldHide(page);
+  expect(
+    Object.keys(stored),
+    `${when}: the probe stopped reading somewhere a name could hide`,
+  ).toEqual(['local', 'session', 'url', 'cookies']);
+  for (const [where, value] of Object.entries(stored))
+    for (const name of names)
+      expect(value, `${where} — ${when}`).not.toContain(name);
+};

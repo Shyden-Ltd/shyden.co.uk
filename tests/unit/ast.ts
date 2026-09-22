@@ -446,13 +446,24 @@ export function callGraph(files: readonly string[]): CallGraph {
   const fileOf = new Map<string, string>();
   const keysByName = new Map<string, string[]>();
   /**
-   * Every name bound at all in a file, functions and variables alike.
+   * Every name bound at all in a file: functions, variables and PARAMETERS.
    *
    * A local binding shadows an import whatever its shape.
    * `parked-tests.test.ts` builds a `const source` string; three files away,
    * `locale-switcher.test.ts` declares a `source()` that reads a file. Take
    * only functions into account and the string inherits the reader's
    * property, which flagged five behavioural assertions as unproved.
+   *
+   * Parameters were the shape this missed, and it cost two false alarms
+   * (#277). `workflow-jobs.test.ts` has `onlyJob = (lines: string) => ...`,
+   * which builds YAML in memory and touches no disk; `dashboard-jsonl.
+   * test.ts` declares `const lines = (file) => readFileSync(...)`. The
+   * PARAMETER fell through to the by-bare-name fallback and inherited the
+   * reader, so two behavioural absence assertions -- input written beside
+   * them -- were reported as needing a discovery control they have no use
+   * for. A false alarm is how a working control gets deleted, and adding a
+   * ritual control to satisfy one is how a guard acquires the escape hatch
+   * #118 exists about.
    */
   const bound = new Map<string, Set<string>>();
 
@@ -474,7 +485,10 @@ export function callGraph(files: readonly string[]): CallGraph {
           }
         }
       }
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name))
+      if (
+        (ts.isVariableDeclaration(node) || ts.isParameter(node)) &&
+        ts.isIdentifier(node.name)
+      )
         bound.set(file, (bound.get(file) ?? new Set()).add(node.name.text));
       if (mine && ts.isCallExpression(node) && ts.isIdentifier(node.expression))
         calls.get(mine)?.add(node.expression.text);

@@ -3,6 +3,7 @@ import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { recorded } from './evidence';
+import { expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
 
@@ -126,15 +127,10 @@ test.describe('language switcher', () => {
         // Not vacuous: a switcher hidden at 320px would satisfy "no overflow"
         // trivially, and would also be the wrong fix.
         await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(
-          overflow,
+        await expectNoHorizontalScroll(
+          page,
           `${path} scrolls sideways at 320px`,
-        ).toBeLessThanOrEqual(0);
+        );
       }
     },
   );

@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { expectNothingFound } from './spec-scan';
 import ts from 'typescript';
 import { parseSource } from './ast';
-import { specDirs } from '../spec-dirs';
-import { searched, tsFilesUnder } from '../source-files';
 import { declarationsIn, type Declaration } from '../playwright-declarations';
 
 /**
@@ -48,8 +46,6 @@ import { declarationsIn, type Declaration } from '../playwright-declarations';
  * skipped. That is a smaller claim than "tracked", and it is one this file
  * can actually keep.
  */
-
-const SCAN_DIRS = specDirs();
 
 /** Any `#123`. Deliberately NOT a `/g/` regex: a global regex carries
  * `lastIndex` between `.test()` calls and would report alternating results
@@ -247,13 +243,6 @@ describe('parked tests must name an issue', () => {
   });
 
   it('the e2e corpus parks nothing without naming an issue', () => {
-    const files = SCAN_DIRS.flatMap(tsFilesUnder);
-    const findings = files.flatMap((file) =>
-      findUnreferencedParkedTests(file, readFileSync(file, 'utf8')),
-    );
-    expect(
-      searched(findings, { of: files, what: 'e2e corpus files' }),
-      findings.join('\n'),
-    ).toEqual([]);
+    expectNothingFound(findUnreferencedParkedTests);
   });
 });

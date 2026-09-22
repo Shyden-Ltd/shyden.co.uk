@@ -12,6 +12,7 @@ import {
 } from '../../src/lib/i18n';
 import { recorded, shoot } from './evidence';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+import { expectNoHorizontalScroll } from '../viewport';
 import {
   openRoster,
   addSeveral,
@@ -851,12 +852,7 @@ test.describe('class name and results heading', () => {
       await page.selectOption('#cg-speed', 'skip');
       await page.click('#cg-go');
       await expect(page.locator('#cg-results-h')).toBeVisible();
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
     },
   );
 
@@ -1459,12 +1455,7 @@ test.describe('out-of-date groups', () => {
       await shuffle(page);
       await page.getByLabel('Students in each group').fill('3');
       await expect(page.locator('#cg-stale')).toBeVisible();
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
       const box = await page.locator('#cg-stale button').boundingBox();
       expect(box?.height).toBeGreaterThanOrEqual(44);
     },
@@ -2068,23 +2059,7 @@ test.describe('the no-scroll rule, measured', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
-    const contrast = await page.locator('#cg-go').evaluate((el) => {
-      const style = getComputedStyle(el);
-      const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
-      const [ir, ig, ib] = nums(style.color);
-      const [br, bg, bb] = nums(style.backgroundColor);
-      const lin = (c: number) => {
-        const s = c / 255;
-        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-      };
-      const luminance = (r: number, g: number, b: number) =>
-        0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-      const textLum = luminance(ir, ig, ib);
-      const bgLum = luminance(br, bg, bb);
-      const lighter = Math.max(textLum, bgLum);
-      const darker = Math.min(textLum, bgLum);
-      return (lighter + 0.05) / (darker + 0.05);
-    });
+    const contrast = await contrastRatio(page.locator('#cg-go'));
     expect(contrast).toBeGreaterThanOrEqual(4.5);
   });
 

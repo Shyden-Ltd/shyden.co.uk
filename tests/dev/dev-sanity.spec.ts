@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { makeGroups } from '../make-groups';
 import {
   LOCALES,
   localisePath,
@@ -30,12 +31,7 @@ test('the Classroom Group Creator loads on dev', async ({ page }) => {
   await expect(page.locator('#cg-form')).toBeVisible();
   // The script is what makes this page a tool rather than a form that leaks.
   // If the bundle 404s after a partial deploy, this is where it shows.
-  await page.fill('#cg-count', '8');
-  await page.fill('#cg-size', '4');
-  // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7.
-  await page.locator('#cg-sound-toggle').click();
-  await page.selectOption('#cg-speed', 'skip');
-  await page.click('#cg-go');
+  await makeGroups(page, '8', '4');
   await expect(page.locator('#cg-results .student')).toHaveCount(8);
 });
 

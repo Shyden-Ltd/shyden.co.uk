@@ -10,6 +10,7 @@
  * the means of producing it.
  */
 import {
+  anonymousStudent,
   buildGroups,
   type Student,
   type Mode,
@@ -29,7 +30,6 @@ import {
 } from '../lib/roster';
 import {
   renderRoster,
-  anonymousStudent,
   type RosterHandlers,
   type PrintColumn,
 } from './roster-ui';

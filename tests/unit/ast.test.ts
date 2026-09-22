@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import ts from 'typescript';
-import { bind, derivationOf, type Bound } from './ast';
+import { bind, callGraph, derivationOf, type Bound } from './ast';
 
 /**
  * The resolver both meta-guards stand on (#184).
@@ -406,5 +409,44 @@ describe('a derivation stops where it is told, and names what it cannot see into
     expect(new Set(opaque)).toEqual(
       new Set(['load', 'helper', 'p', 'missing']),
     );
+  });
+});
+
+describe('a parameter binds its name, like any other local (#277)', () => {
+  /**
+   * `callGraph` reads its files from disk, so the fixture is on disk. Two
+   * files, one name: a module-scope `lines` that reads a file, and three
+   * files away a PARAMETER called `lines` that is handed a string.
+   *
+   * Before this, only `const` bound a name, so the parameter fell through to
+   * the by-bare-name fallback and inherited the reader. Two behavioural
+   * absence assertions in `workflow-jobs.test.ts` -- input written beside
+   * them -- were reported as needing a discovery control, which is the false
+   * alarm that gets a working control deleted.
+   */
+  const corpus = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ast-binding-'));
+    const reader = join(dir, 'reader.ts');
+    const user = join(dir, 'user.ts');
+    writeFileSync(
+      reader,
+      "const lines = (file: string) => readFileSync(file, 'utf8').split('\n');\n" +
+        'export const count = (f: string) => lines(f).length;\n',
+    );
+    writeFileSync(
+      user,
+      'export const onlyJob = (lines: string) => parse(`jobs:\n${lines}`);\n',
+    );
+    return { reader, user };
+  };
+
+  it('does not give a parameter the property of a same-named reader', () => {
+    const { reader, user } = corpus();
+    const reached = callGraph([reader, user]).close(new Set(['readFileSync']));
+    // One name, two files, opposite answers -- which is the whole claim.
+    // The `true` is also the positive control: a graph that resolved nothing
+    // at all would satisfy the `false` for a reason of its own.
+    expect(reached.reaches(reader, 'lines')).toBe(true);
+    expect(reached.reaches(user, 'lines')).toBe(false);
   });
 });

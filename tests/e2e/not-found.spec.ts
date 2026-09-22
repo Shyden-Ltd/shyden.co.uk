@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { shoot } from './evidence';
+import { expectNoHorizontalScroll } from '../viewport';
 import {
   LOCALES,
   DEFAULT_LOCALE,
@@ -75,14 +76,7 @@ test.describe('the 404 answers everyone', () => {
           name: getSiteStrings(LOCALES[LOCALES.length - 1]).notFound.heading,
         }),
       ).toBeVisible();
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow, 'the 404 scrolls sideways at 320px').toBeLessThanOrEqual(
-        0,
-      );
+      const overflow = await expectNoHorizontalScroll(page, 'the 404 at 320px');
       await shoot(page, `320px: last language visible, overflow ${overflow}px`);
     },
   );

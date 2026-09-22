@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { searched } from '../source-files';
+import { contrast, over, parseColour, type RGB } from '../wcag';
 import { recorded, shoot } from './evidence';
 
 test.use(recorded);
@@ -24,27 +25,20 @@ test.use(recorded);
  * that judged the ink against the page's own background would confirm a
  * legible pair that never reaches the sheet.
  */
-const PAPER: [number, number, number] = [255, 255, 255];
+const PAPER: RGB = [255, 255, 255];
 const BODY_TEXT = 4.5;
 
-const channel = (value: number): number => {
-  const c = value / 255;
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-};
-const luminance = ([r, g, b]: [number, number, number]): number =>
-  0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-const ratio = (
-  a: [number, number, number],
-  b: [number, number, number],
-): number => {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
-};
-
-/** `rgb(r, g, b)` / `rgba(r, g, b, a)` as the browser always reports it. */
-const parse = (value: string): [number, number, number] | null => {
-  const m = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+/**
+ * Composited onto the paper before it is judged.
+ *
+ * The old local `parse` here read the first three numbers and dropped any
+ * alpha, so `rgba(0, 0, 0, 0.1)` was measured as pure black — 21:1, when
+ * what reaches the sheet is barely a grey. `parseColour` returns the alpha
+ * and `over` puts it on the paper first, which is what the printer does.
+ */
+const inkOnPaper = (colour: string): RGB | null => {
+  const parsed = parseColour(colour);
+  return parsed === null ? null : over(parsed, PAPER);
 };
 
 /**
@@ -118,11 +112,11 @@ for (const { path, prepare } of [
     );
 
     const illegible = inks
-      .map(({ colour, where }) => ({ colour, where, rgb: parse(colour) }))
-      .filter(({ rgb }) => rgb === null || ratio(rgb, PAPER) < BODY_TEXT)
+      .map(({ colour, where }) => ({ colour, where, rgb: inkOnPaper(colour) }))
+      .filter(({ rgb }) => rgb === null || contrast(rgb, PAPER) < BODY_TEXT)
       .map(
         ({ colour, where, rgb }) =>
-          `${where} — ${colour} is ${rgb ? ratio(rgb, PAPER).toFixed(2) : '?'}:1 on white`,
+          `${where} — ${colour} is ${rgb ? contrast(rgb, PAPER).toFixed(2) : '?'}:1 on white`,
       );
 
     expect(

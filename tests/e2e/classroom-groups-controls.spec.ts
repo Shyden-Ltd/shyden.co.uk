@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { makeGroups } from '../make-groups';
 import { recordErrors } from './recorders';
 import { sampledPaths } from './locale-sampling';
 import { searched } from '../source-files';
@@ -10,6 +11,7 @@ import {
   rosterOf,
 } from './helpers';
 import { recorded } from './evidence';
+import { horizontalOverflow, expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
 
@@ -22,27 +24,6 @@ test.use(recorded);
  * horizontal scroll, touch targets, console errors — which this page, the
  * only one that ships a script and about ten controls, did not.
  */
-
-const makeGroups = async (
-  page: import('@playwright/test').Page,
-  count: string,
-  size: string,
-) => {
-  await page.fill('#cg-count', count);
-  await page.fill('#cg-size', size);
-  // Stage 2, Task 7 folded Sound & animation into the tool's fourth
-  // collapsible section -- #cg-speed now lives in #cg-sound-body, which
-  // starts collapsed, so it has to be open before `selectOption` can act on
-  // it (same reasoning as the leftovers radios inside #cg-grouping-body,
-  // Stage 2 Task 4). Idempotent: this helper can run more than once per
-  // test, and a second click would close what the first one opened.
-  const soundBody = page.locator('#cg-sound-body');
-  if (await soundBody.isHidden()) {
-    await page.locator('#cg-sound-toggle').click();
-  }
-  await page.selectOption('#cg-speed', 'skip');
-  await page.click('#cg-go');
-};
 
 test.describe('the controls that had no tests', () => {
   // Stage 3, Task 8 (design spec section 5) removed the theme picker and
@@ -363,12 +344,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         async ({ page }) => {
           await page.setViewportSize({ width, height: 900 });
           await page.goto(path);
-          const overflow = await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-          );
-          expect(overflow).toBeLessThanOrEqual(0);
+          await expectNoHorizontalScroll(page);
         },
       );
     }
@@ -400,12 +376,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await page.locator('#cg-grouping-toggle').click();
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -423,12 +394,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await page.locator('#cg-sound-toggle').click();
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -446,12 +412,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await makeGroups(page, '120', '4');
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -591,11 +552,7 @@ test.describe('classroom groups — mobile-first layout', () => {
           for (const id of ids) {
             await page.goto(path);
             await page.locator(`#${id}`).click();
-            const overflow = await page.evaluate(
-              () =>
-                document.documentElement.scrollWidth -
-                document.documentElement.clientWidth,
-            );
+            const overflow = await horizontalOverflow(page);
             if (overflow > 0)
               failures.push(
                 `${path} @${width}px with #${id} open: ${overflow}px`,
@@ -604,11 +561,7 @@ test.describe('classroom groups — mobile-first layout', () => {
           // …and every section open at once, which no earlier test did.
           await page.goto(path);
           for (const id of ids) await page.locator(`#${id}`).click();
-          const all = await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-          );
+          const all = await horizontalOverflow(page);
           if (all > 0)
             failures.push(`${path} @${width}px with ALL open: ${all}px`);
           expect(
@@ -1909,12 +1862,7 @@ test.describe('a full roster at the narrow end', () => {
         await addSeveral(page, 29);
         await expect(page.locator('.cg-student')).toHaveCount(30);
 
-        const over = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(over, 'document scrolls sideways').toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page, 'document scrolls sideways');
 
         // Page-level scrollWidth is not containment: content can overflow a
         // CARD by 34.5px and produce zero document scroll, which is how the

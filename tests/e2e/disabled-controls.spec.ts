@@ -4,6 +4,7 @@ import { searched } from '../source-files';
 import { MAX_ROSTER } from '../../src/lib/roster';
 import { addSeveral, openRoster, setSex } from './helpers';
 import { recorded } from './evidence';
+import { expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
 
@@ -537,12 +538,7 @@ test.describe('a disabled control affords that it is disabled', () => {
 
       // The instrument classroom-groups-controls.spec.ts already uses, so
       // the second home cannot disagree with the first about what counts.
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
     },
   );
 });

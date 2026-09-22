@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
-import type { Locator } from '@playwright/test';
+import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
 
@@ -221,15 +221,6 @@ test.describe('header + footer', () => {
 });
 
 test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
-  const atLeast44 = async (locator: Locator) => {
-    const box = await locator.boundingBox();
-    expect(box).not.toBeNull();
-    // Round to the nearest device pixel: engines can report a sub-pixel value
-    // like 43.9999 for a declared `min-height: 44px` (fixed-point layout math).
-    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
-    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
-  };
-
   test(
     'mobile: wordmark, menu button, nav links and footer email are ≥44px',
     { tag: '@emulated-viewport' },
@@ -291,12 +282,7 @@ test.describe('mobile layout: no horizontal overflow', () => {
       await page.setViewportSize({ width: 320, height: 800 });
       await page.goto('/');
       await page.locator('header details.menu > summary').click();
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
     },
   );
 });

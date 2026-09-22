@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { expectNothingFound } from './spec-scan';
 import ts from 'typescript';
 import { parseSource } from './ast';
-import { specDirs } from '../spec-dirs';
-import { searched, tsFilesUnder } from '../source-files';
 import {
   declarationsIn,
   enclosingDeclaration,
@@ -46,7 +44,6 @@ import {
  */
 
 const REQUIRES_ISOLATED_CONTEXT_TAG = '@requires-isolated-context';
-const SCAN_DIRS = specDirs();
 
 function useInTestMessage(
   file: string,
@@ -148,15 +145,7 @@ function analyze(file: string, text: string): string[] {
 
 describe('a real device cannot isolate a JavaScript-disabled context', () => {
   it('every test inside a javaScriptEnabled:false describe is tagged @requires-isolated-context, and no tag is stale', () => {
-    const files = SCAN_DIRS.flatMap(tsFilesUnder);
-
-    const findings = files.flatMap((file) =>
-      analyze(file, readFileSync(file, 'utf8')),
-    );
-    expect(
-      searched(findings, { of: files, what: 'spec files' }),
-      findings.join('\n'),
-    ).toEqual([]);
+    expectNothingFound(analyze);
   });
 });
 

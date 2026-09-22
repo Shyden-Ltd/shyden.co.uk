@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { contrastRatio } from './helpers';
 import { recorded, shoot } from './evidence';
+import { expectNoHorizontalScroll } from '../viewport';
 import {
   LOCALES,
   DEFAULT_LOCALE,
@@ -194,15 +195,10 @@ test.describe('every unverified language is marked BETA', () => {
         await expect(page.locator(NOTICE)).toHaveCount(
           isBetaLocale(locale) ? 1 : 0,
         );
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(
-          overflow,
+        const overflow = await expectNoHorizontalScroll(
+          page,
           `${path} scrolls sideways at 320px with the BETA marker`,
-        ).toBeLessThanOrEqual(0);
+        );
         await shoot(
           page,
           `${locale} at 320px: badge visible, overflow ${overflow}px`,
