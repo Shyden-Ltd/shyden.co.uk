@@ -10,7 +10,7 @@ import {
   getStrings,
   localisePath,
 } from '../../src/lib/i18n';
-import { recorded, shoot } from './evidence';
+import { notRecorded, recorded, shoot } from './evidence';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
@@ -477,34 +477,43 @@ test.describe('classroom group creator', () => {
   // rather than assumed); sound-on requests really are ours, same-origin;
   // and the tool really keeps working when every one of those requests is
   // blocked -- the one that stands in for a browser that cannot decode AAC.
-  test('all six sound assets are reachable from the built site and appear in dist/', async ({
-    page,
-  }) => {
-    const files = listM4aFiles(join('dist'));
+  // This one journey renders NOTHING: it reads bytes out of `dist/` and
+  // never navigates, so Playwright records blank frames. A blank video on a
+  // passing journey is indistinguishable from a capture that failed to
+  // start, so the block opts out and the page says `not recorded by policy`
+  // instead (#292).
+  test.describe('the sound assets on disk', () => {
+    test.use(notRecorded);
 
-    for (const role of [
-      'shuffle',
-      'land-1',
-      'land-2',
-      'land-3',
-      'land-4',
-      'done',
-    ]) {
-      const pattern = new RegExp(`^${role}\\.[\\w-]+\\.m4a$`);
-      const matches = files.filter((f) => pattern.test(basename(f)));
-      expect(
-        matches,
-        `expected exactly one built asset for "${role}" in dist/, found: [${matches.join(', ')}]`,
-      ).toHaveLength(1);
+    test('all six sound assets are reachable from the built site and appear in dist/', async ({
+      page,
+    }) => {
+      const files = listM4aFiles(join('dist'));
 
-      const urlPath = distPathToUrlPath(matches[0]);
-      const response = await page.request.get(urlPath);
-      expect(
-        response.ok(),
-        `GET ${urlPath} was not reachable from the built site (status ${response.status()})`,
-      ).toBe(true);
-      expect((await response.body()).length).toBeGreaterThan(0);
-    }
+      for (const role of [
+        'shuffle',
+        'land-1',
+        'land-2',
+        'land-3',
+        'land-4',
+        'done',
+      ]) {
+        const pattern = new RegExp(`^${role}\\.[\\w-]+\\.m4a$`);
+        const matches = files.filter((f) => pattern.test(basename(f)));
+        expect(
+          matches,
+          `expected exactly one built asset for "${role}" in dist/, found: [${matches.join(', ')}]`,
+        ).toHaveLength(1);
+
+        const urlPath = distPathToUrlPath(matches[0]);
+        const response = await page.request.get(urlPath);
+        expect(
+          response.ok(),
+          `GET ${urlPath} was not reachable from the built site (status ${response.status()})`,
+        ).toBe(true);
+        expect((await response.body()).length).toBeGreaterThan(0);
+      }
+    });
   });
 
   test('with sound off, a full shuffle fetches no audio at all', async ({
