@@ -33,8 +33,21 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { parseSource } from './ast';
 
-/** One function-like node, printed for comparison. */
-export interface Declaration {
+/**
+ * One function-like node, printed for comparison.
+ *
+ * Named `FunctionBody` rather than `Declaration`, and read by
+ * `functionBodiesIn` rather than `declarationsIn`, because
+ * `tests/playwright-declarations.ts` already owns both of those names for a
+ * different thing. This scan found that collision the hard way: the call
+ * graph in `ast.ts` resolves a call by BARE NAME when the file has no local
+ * binding for it, so a second `declarationsIn` that reads a file donated
+ * "derives from the filesystem" to four unrelated guards, and 25 assertions
+ * nobody had touched were reported as unproved. One name, two behaviours is
+ * the other half of the hazard this module hunts — a renamed copy is one
+ * behaviour under two names.
+ */
+export interface FunctionBody {
   /** `path/to/file.ts:42`, repo-relative, for a finding a human has to open. */
   readonly at: string;
   readonly file: string;
@@ -48,8 +61,8 @@ export interface Declaration {
 
 export interface DuplicatePair {
   readonly ratio: number;
-  readonly a: Declaration;
-  readonly b: Declaration;
+  readonly a: FunctionBody;
+  readonly b: FunctionBody;
 }
 
 /**
@@ -69,7 +82,7 @@ export const DUPLICATE_RATIO = 0.85;
 
 const printer = ts.createPrinter({ removeComments: true });
 
-const isFunctionLike = (node: ts.Node): boolean =>
+const isComparableFunction = (node: ts.Node): boolean =>
   ts.isFunctionDeclaration(node) ||
   ts.isFunctionExpression(node) ||
   ts.isArrowFunction(node) ||
@@ -81,7 +94,7 @@ const isFunctionLike = (node: ts.Node): boolean =>
  * call graph; a scan that collects callbacks needs the third and a fallback,
  * because an argument to `evaluate` has no name at all.
  */
-const nameOf = (node: ts.Node): string => {
+const nameOfBody = (node: ts.Node): string => {
   if (ts.isFunctionDeclaration(node) && node.name) return node.name.text;
   if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name))
     return node.name.text;
@@ -105,17 +118,17 @@ const nameOf = (node: ts.Node): string => {
  * is worth what #79's guards over an empty array were worth. The fixtures
  * are that watching, and they need a body this scan has not read off disk.
  */
-export function declarationsOf(source: string, file: string): Declaration[] {
+export function functionBodiesOf(source: string, file: string): FunctionBody[] {
   const sf = parseSource(source, file);
-  const found: Declaration[] = [];
+  const found: FunctionBody[] = [];
   const visit = (node: ts.Node): void => {
-    if (isFunctionLike(node)) {
+    if (isComparableFunction(node)) {
       const text = printer.printNode(ts.EmitHint.Unspecified, node, sf);
       if (text.length >= MIN_PRINTED_LENGTH)
         found.push({
           at: `${file}:${sf.getLineAndCharacterOfPosition(node.getStart()).line + 1}`,
           file,
-          name: nameOf(node),
+          name: nameOfBody(node),
           text,
           start: node.getStart(),
           end: node.end,
@@ -133,8 +146,8 @@ export function declarationsOf(source: string, file: string): Declaration[] {
 }
 
 /** Every function-like node in the file at `file`, at any depth. */
-export const declarationsIn = (file: string): Declaration[] =>
-  declarationsOf(readFileSync(file, 'utf8'), file);
+export const functionBodiesIn = (file: string): FunctionBody[] =>
+  functionBodiesOf(readFileSync(file, 'utf8'), file);
 
 /**
  * Levenshtein distance, stopped as soon as it cannot come in under `max`.
@@ -219,7 +232,7 @@ const histogramDistance = (a: Int32Array, b: Int32Array): number => {
 };
 
 /** The ratio, with both cheap bounds applied first. `0` means "below". */
-const ratioOf = (
+const boundedSimilarity = (
   a: string,
   b: string,
   ha: Int32Array,
@@ -248,9 +261,9 @@ export const similarity = (
   a: string,
   b: string,
   minRatio = DUPLICATE_RATIO,
-): number => ratioOf(a, b, histogram(a), histogram(b), minRatio);
+): number => boundedSimilarity(a, b, histogram(a), histogram(b), minRatio);
 
-const encloses = (outer: Declaration, inner: Declaration): boolean =>
+const encloses = (outer: FunctionBody, inner: FunctionBody): boolean =>
   outer.file === inner.file &&
   outer.start <= inner.start &&
   outer.end >= inner.end &&
@@ -266,7 +279,7 @@ const encloses = (outer: Declaration, inner: Declaration): boolean =>
  * pair already encloses both of its halves.
  */
 export function duplicatePairs(
-  declarations: readonly Declaration[],
+  declarations: readonly FunctionBody[],
   minRatio = DUPLICATE_RATIO,
 ): DuplicatePair[] {
   // Sorted by printed length, so the inner loop is a sliding window: once a
@@ -281,7 +294,13 @@ export function duplicatePairs(
       const [a, b] = [bySize[i], bySize[j]];
       if (b.decl.text.length > a.decl.text.length / minRatio) break;
       if (a.decl.file === b.decl.file) continue;
-      const ratio = ratioOf(a.decl.text, b.decl.text, a.hist, b.hist, minRatio);
+      const ratio = boundedSimilarity(
+        a.decl.text,
+        b.decl.text,
+        a.hist,
+        b.hist,
+        minRatio,
+      );
       if (ratio > 0) pairs.push({ ratio, a: a.decl, b: b.decl });
     }
   const bySpan = [...pairs].sort(

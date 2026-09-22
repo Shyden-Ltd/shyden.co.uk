@@ -652,7 +652,22 @@ function shuffled<T>(items: readonly T[], random: () => number): T[] {
   return out;
 }
 
-const anonymous = (number: number): Student => ({
+/**
+ * A new, unnamed, unlettered, present student — one home for what an empty
+ * field means.
+ *
+ * Takes the number rather than computing it, so the caller decides numbering:
+ * `classroom-groups.ts` already holds `nextNumber` for the first row of a
+ * batch, and a constructor that numbered itself would be a second opinion
+ * about identity in a tool where the number IS the identity.
+ *
+ * It was a private `anonymous` here and a character-identical, exported
+ * `anonymousStudent` in `src/scripts/roster-ui.ts` until #277, with a third
+ * copy inline in `numberSets.ts` and a fourth in the test factory. Four
+ * places to decide what a seventh field defaults to, and the typechecker
+ * cannot say they disagree — each one is valid on its own.
+ */
+export const anonymousStudent = (number: number): Student => ({
   number,
   name: null,
   sex: null,
@@ -665,7 +680,7 @@ function normaliseStudents(input: number | Student[]): Student[] {
   if (typeof input === 'number') {
     if (!Number.isFinite(input) || input < 1) return [];
     return Array.from({ length: Math.floor(input) }, (_, i) =>
-      anonymous(i + 1),
+      anonymousStudent(i + 1),
     );
   }
   // A record list is taken as given. Renumbering it would throw away the one

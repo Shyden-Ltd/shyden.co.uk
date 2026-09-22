@@ -29,6 +29,7 @@
  * (`classroom-groups.ts`'s own `render()`, `who.textContent = label(student)`).
  */
 import type { Student } from '../lib/grouping';
+import { button } from './dom';
 import {
   MAX_ROSTER,
   availableLetters,
@@ -92,21 +93,6 @@ export interface RosterHandlers {
    */
   onClearAll: () => void;
 }
-
-/** A new, unnamed, unlettered, present student — the shape both `onAdd` and
- *  `onAddSeveral` (classroom-groups.ts) build one of per row; kept here too
- *  since a mobile-card empty-state test (a later task) may need the same
- *  shape client-side. Takes the number rather than computing it, so the
- *  caller (which already needs `nextNumber` for the FIRST row of a batch)
- *  is the one place that decides numbering, not this module. */
-export const anonymousStudent = (number: number): Student => ({
-  number,
-  name: null,
-  sex: null,
-  absent: false,
-  together: null,
-  apart: null,
-});
 
 /**
  * Which column a print mirror belongs to, stamped onto the span so whatever
@@ -186,14 +172,6 @@ const patched = (
   index: number,
   fields: Partial<Student>,
 ): Student[] => roster.map((s, i) => (i === index ? { ...s, ...fields } : s));
-
-const button = (text: string, className: string): HTMLButtonElement => {
-  const b = document.createElement('button');
-  b.type = 'button'; // never 'submit' -- these live inside #cg-form
-  b.className = className;
-  b.textContent = text;
-  return b;
-};
 
 /**
  * The id of the "roster is full" paragraph, so the two add buttons can name

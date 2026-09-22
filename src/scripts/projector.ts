@@ -1,5 +1,6 @@
 import type { Strings } from '../lib/i18n';
 import { fitScale, fontThatFits } from '../lib/fit';
+import { button } from './dom';
 
 /**
  * The projector view: the groups on the wall, for the class to read.
@@ -101,14 +102,8 @@ export function renderProjector(
   stage.id = 'cg-board-stage';
   board.appendChild(stage);
 
-  const shuffle = doc.createElement('button');
-  shuffle.type = 'button';
-  shuffle.className = 'cg-board-shuffle';
-  shuffle.textContent = t.boardShuffle;
-  const exit = doc.createElement('button');
-  exit.type = 'button';
-  exit.className = 'cg-board-exit';
-  exit.textContent = t.boardExit;
+  const shuffle = button(t.boardShuffle, 'cg-board-shuffle', doc);
+  const exit = button(t.boardExit, 'cg-board-exit', doc);
   bar.append(shuffle, exit);
 
   /**
