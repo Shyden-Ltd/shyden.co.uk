@@ -76,6 +76,22 @@ describe('waitFor', () => {
     expect({ value, polls }).toEqual({ value: 'found', polls: 3 });
   });
 
+  it('gives up at its timeout even while a poll has not settled', async () => {
+    const began = performance.now();
+
+    const outcome = await waitFor(() => new Promise<never>(() => undefined), {
+      timeout: 300,
+      describe: 'a session that has stopped answering',
+    }).catch((error: unknown) => error);
+
+    const elapsed = Math.round(performance.now() - began);
+    expect(elapsed, `the wait gave up after ${elapsed} ms`).toBeLessThan(1_000);
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toContain(
+      'Timed out after 300ms waiting for: a session that has stopped answering.',
+    );
+  });
+
   it('reports a retryable error that never clears at the timeout, naming it', async () => {
     await expect(
       waitFor(

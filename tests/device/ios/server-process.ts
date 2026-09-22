@@ -47,21 +47,36 @@ export async function startServerProcess(
     stream.on('data', keepTail);
   }
 
+  // `ended` answers "is it over?" between polls; `whenEnded` interrupts a
+  // poll already in flight, because the port the server failed to bind may
+  // belong to something that accepts the readiness request and never answers.
+  let ended: Error | undefined;
+  const { promise: whenEnded, reject: endWith } =
+    Promise.withResolvers<never>();
+  whenEnded.catch(() => undefined); // it settles when the server ends, long after the wait if it started
+  const end = (error: Error): void => {
+    ended ??= error;
+    endWith(ended);
+  };
+
   // `close`, not `exit`: it fires once the output streams have ended, so the
   // message carries everything the server printed, and it also follows a
   // failed spawn, which emits `error` and never `exit`.
-  let ended: Error | undefined;
   const onSpawnError = (error: Error): void => {
-    ended ??= new Error(
-      `${command} could not be started (${error.message}) while waiting for: ${readiness.describe}`,
+    end(
+      new Error(
+        `${command} could not be started (${error.message}) while waiting for: ${readiness.describe}`,
+      ),
     );
   };
   child.on('error', onSpawnError);
   child.once('close', (code, signal) => {
     const printed = output.trim();
-    ended ??= new Error(
-      `${command} exited (code=${code}, signal=${signal}) while waiting for: ${readiness.describe}. ` +
-        (printed ? `It printed: ${printed}` : 'It printed nothing.'),
+    end(
+      new Error(
+        `${command} exited (code=${code}, signal=${signal}) while waiting for: ${readiness.describe}. ` +
+          (printed ? `It printed: ${printed}` : 'It printed nothing.'),
+      ),
     );
   });
 
@@ -69,7 +84,8 @@ export async function startServerProcess(
     await waitFor(
       async () => {
         if (ended) throw ended;
-        return (await readiness.isReady()) ? true : undefined;
+        const ready = await Promise.race([readiness.isReady(), whenEnded]);
+        return ready ? true : undefined;
       },
       {
         timeout: readiness.timeout,

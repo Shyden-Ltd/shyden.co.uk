@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import type { ChildProcess } from 'node:child_process';
-import { createServer } from 'node:net';
+import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServerProcess } from '../device/ios/server-process';
@@ -36,18 +36,41 @@ afterEach(() => {
   for (const child of running.splice(0)) child.kill();
 });
 
-/** A port nothing listens on: bound, then let go. */
-async function freePort(): Promise<number> {
-  const server = createServer();
+async function listenOnAnyPort(server: Server): Promise<number> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (address === null || typeof address === 'string') {
     throw new Error(`expected a TCP address, got ${String(address)}`);
   }
+  return address.port;
+}
+
+/** A port nothing listens on: bound, then let go. */
+async function freePort(): Promise<number> {
+  const server = createServer();
+  const port = await listenOnAnyPort(server);
   await new Promise<void>((resolve, reject) =>
     server.close((error) => (error ? reject(error) : resolve())),
   );
-  return address.port;
+  return port;
+}
+
+/**
+ * A port held by something that accepts a connection and never answers:
+ * what a readiness `fetch` meets when another process owns the port the
+ * server failed to bind.
+ */
+async function silentListener(): Promise<{ port: number; close: () => void }> {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => sockets.add(socket));
+  const port = await listenOnAnyPort(server);
+  return {
+    port,
+    close: () => {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    },
+  };
 }
 
 /** `GET /status` the way `startSafaridriver` asks it: a refused connection throws. */
@@ -101,6 +124,31 @@ describe('startServerProcess', () => {
       },
       message,
     ).toEqual({ exitCode: true, signal: true, printed: true, awaited: true });
+  });
+
+  it('reports a server that dies while its readiness check is still waiting for an answer', async () => {
+    const holder = await silentListener();
+    const began = performance.now();
+
+    const outcome = await startServerProcess(
+      node,
+      ['-e', DIES_LIKE_A_TAKEN_PORT],
+      {
+        isReady: answersStatus(holder.port),
+        timeout: 15_000,
+        describe: `the server on port ${holder.port} to answer GET /status with ready:true`,
+      },
+    )
+      .catch((error: unknown) => error)
+      .finally(holder.close);
+
+    const elapsed = Math.round(performance.now() - began);
+    expect(elapsed, `the exit was reported after ${elapsed} ms`).toBeLessThan(
+      2_000,
+    );
+    expect(messageOf(outcome)).toContain(
+      'It printed: Unable to start the server: Address already in use',
+    );
   });
 
   it('names the signal that killed a server at startup', async () => {
