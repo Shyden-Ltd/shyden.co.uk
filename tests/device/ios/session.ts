@@ -412,13 +412,15 @@ async function resolveReachableBaseUrl(
  * timeout) -- so session creation is retried, bounded, in the same
  * condition-based spirit as this file's `waitFor` (poll a real signal,
  * timeout is a safety net, never a blind sleep), but NOT through `waitFor`
- * itself: that helper catches every thrown error from its predicate and
- * keeps retrying regardless of what it was, which is exactly wrong here --
- * a genuine, non-transient failure (wrong UDID, a real protocol error)
- * must fail on its FIRST attempt, not be retried for the full timeout
- * before finally surfacing. Only the specific `"session not created"`
- * WebDriver error is treated as retryable; anything else propagates
- * immediately.
+ * itself. `waitFor` abandons a poll still pending at its deadline, which is
+ * right for a read and wrong here: `POST /session` CREATES the one session
+ * the phone allows, and an attempt abandoned mid-flight can still create
+ * it, locking the next run out. So every attempt here runs to completion
+ * (#309). A genuine, non-transient failure (wrong UDID, a real protocol
+ * error) must fail on its FIRST attempt, not be retried for the full
+ * timeout before finally surfacing: only the specific `"session not
+ * created"` WebDriver error is treated as retryable; anything else
+ * propagates immediately.
  */
 async function createSessionWithRetry(
   port: number,

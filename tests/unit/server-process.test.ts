@@ -1,5 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, onTestFinished } from 'vitest';
 import type { ChildProcess } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,8 +14,8 @@ import { startServerProcess } from '../device/ios/server-process';
  * needs no phone and no Mac-only binary: one that dies at startup the way
  * `safaridriver` does when its port is taken (measured: exit code 1 after
  * 215 ms, printing "Unable to start the server: Address already in use"),
- * one killed by a signal, one that cannot be started at all, and one that
- * takes a moment before it listens.
+ * one killed by a signal, one that cannot be started at all, one that takes
+ * a moment before it listens, and one that never answers at all.
  */
 
 const node = process.execPath;
@@ -30,11 +31,38 @@ const LISTENS_AFTER_A_MOMENT = [
   "    .listen(port, '127.0.0.1');",
   '}, 300);',
 ].join('\n');
+const RUNS_WITHOUT_ANSWERING =
+  "require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => undefined, 1_000);";
 
+// Awaits each child's `close`, so whatever a server's end sets off happens
+// inside the test that started it, not after the file has finished.
 const running: ChildProcess[] = [];
-afterEach(() => {
-  for (const child of running.splice(0)) child.kill();
+afterEach(async () => {
+  await Promise.all(
+    running.splice(0).map(
+      (child) =>
+        new Promise<void>((resolve) => {
+          if (child.exitCode !== null || child.signalCode !== null) {
+            resolve();
+            return;
+          }
+          child.once('close', () => resolve());
+          child.kill();
+        }),
+    ),
+  );
 });
+
+/** Whether a process with this pid exists; `kill(pid, 0)` sends nothing. */
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    throw error;
+  }
+}
 
 async function listenOnAnyPort(server: Server): Promise<number> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -176,6 +204,32 @@ describe('startServerProcess', () => {
       { command: message.includes(missing), cause: message.includes('ENOENT') },
       message,
     ).toEqual({ command: true, cause: true });
+  });
+
+  it('stops a server that never answers once the wait gives up on it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'server-process-'));
+    onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+    const pidFile = join(dir, 'pid');
+
+    const outcome = await startServerProcess(
+      node,
+      ['-e', RUNS_WITHOUT_ANSWERING, pidFile],
+      {
+        isReady: async () => false,
+        timeout: 500,
+        describe: 'a server that never answers',
+      },
+    ).catch((error: unknown) => error);
+
+    expect(messageOf(outcome)).toContain(
+      'Timed out after 500ms waiting for: a server that never answers.',
+    );
+    const pid = Number(readFileSync(pidFile, 'utf8'));
+    expect(
+      pid,
+      'the server wrote its pid before the wait gave up',
+    ).toBeGreaterThan(0);
+    await expect.poll(() => isRunning(pid), { timeout: 5_000 }).toBe(false);
   });
 
   it('polls through refused connections until a server that is slow to start answers', async () => {

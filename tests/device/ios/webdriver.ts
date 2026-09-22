@@ -198,11 +198,9 @@ export async function waitFor<T>(
 
   for (;;) {
     let observed: string;
-    let expired = false;
     try {
       const result = await settledBy(predicate(), deadline);
       if (result === UNSETTLED) {
-        expired = true;
         observed = 'a poll that had not settled when the time ran out';
       } else if (result) {
         return result;
@@ -214,7 +212,7 @@ export async function waitFor<T>(
       observed = `threw ${error instanceof Error ? error.message : String(error)}`;
     }
 
-    if (expired || Date.now() >= deadline) {
+    if (Date.now() >= deadline) {
       throw new Error(
         `Timed out after ${timeout}ms waiting for: ${options.describe}. Last observed: ${observed}`,
       );

@@ -53,7 +53,6 @@ export async function startServerProcess(
   let ended: Error | undefined;
   const { promise: whenEnded, reject: endWith } =
     Promise.withResolvers<never>();
-  whenEnded.catch(() => undefined); // it settles when the server ends, long after the wait if it started
   const end = (error: Error): void => {
     ended ??= error;
     endWith(ended);
