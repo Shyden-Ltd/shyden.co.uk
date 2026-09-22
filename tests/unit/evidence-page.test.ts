@@ -1855,6 +1855,50 @@ describe('recordings travel in the asset store (#268)', () => {
     );
   });
 
+  it('allows a recording exactly at the per-asset ceiling', () => {
+    // The boundary itself, because `>` and `>=` are one character apart and
+    // only a test at the exact value can tell them apart. 20 MiB is allowed;
+    // one byte more is not, which the row below asserts.
+    expect(
+      assertAssetLimits({
+        uploads: { 'a|chromium': '/tmp/exact.webm' },
+        sizeOf: () => ASSET_MAX_FILE_BYTES,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('allows a run exactly at the store ceiling', () => {
+    // Spread over 1024 files of 1 MiB, not one file of 1 GiB: a single file
+    // that size breaches the PER-ASSET ceiling first, so the version of this
+    // test that used one file was asserting the wrong refusal and failed.
+    const uploads = Object.fromEntries(
+      Array.from({ length: 1024 }, (_, i) => [
+        `j${i}|chromium`,
+        `/tmp/${i}.webm`,
+      ]),
+    );
+    expect(
+      assertAssetLimits({ uploads, sizeOf: () => 1048576 }),
+    ).toBeUndefined();
+    // And one byte more, spread the same way, is refused.
+    expect(() =>
+      assertAssetLimits({
+        uploads: { ...uploads, 'extra|chromium': '/tmp/extra.webm' },
+        sizeOf: () => 1048576,
+      }),
+    ).toThrow(/over the 1024\.00MB one artifact holds/);
+  });
+
+  it('allows exactly as many assets as one artifact holds', () => {
+    const uploads = Object.fromEntries(
+      Array.from({ length: ASSET_MAX_FILES }, (_, i) => [
+        `j${i}|chromium`,
+        `/tmp/${i}.webm`,
+      ]),
+    );
+    expect(assertAssetLimits({ uploads, sizeOf: () => 10 })).toBeUndefined();
+  });
+
   it('refuses a run whose recordings exceed the store', () => {
     expect(() =>
       assertAssetLimits({
