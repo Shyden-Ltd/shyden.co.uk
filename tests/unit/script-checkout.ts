@@ -44,6 +44,13 @@ export function scriptCheckout(): ScriptCheckout {
   const root = join(base, 'check out');
   mkdirSync(root);
   cpSync('scripts', join(root, 'scripts'), { recursive: true });
+  // `src` too, and whole: three scripts import the catalogues from
+  // `../src/lib/i18n/`, so a checkout holding only `scripts/` cannot run them
+  // at all -- the import throws before `main()` is reached, and the refusal
+  // the probe is watching for never happens (#276). Copied entire rather than
+  // the one directory they read today, because a fixture that holds less than
+  // a checkout does drifts from it silently; it is 2 MB, once per run.
+  cpSync('src', join(root, 'src'), { recursive: true });
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
   const link = join(base, 'linked');
   symlinkSync(root, link, 'dir');

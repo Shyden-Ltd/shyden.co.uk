@@ -215,6 +215,251 @@ describe('the entry-check rules read the parse tree (#221)', () => {
   });
 });
 
+/**
+ * Whether a node DOES something when it is evaluated, as against merely
+ * being a value. A call, a construction and an await are the three shapes
+ * that can reach the world outside the expression.
+ */
+const isWorkNode = (node: ts.Node): boolean =>
+  ts.isCallExpression(node) ||
+  ts.isNewExpression(node) ||
+  ts.isAwaitExpression(node);
+
+/** What a work node does, named by its callee, or `await` for an await. */
+const workText = (sf: ts.SourceFile, node: ts.Node): string =>
+  ts.isCallExpression(node) || ts.isNewExpression(node)
+    ? node.expression.getText(sf).split('\n')[0].slice(0, 48)
+    : 'await';
+
+/**
+ * Modules whose exports change something outside this process: the file
+ * system, another process, the network. Listed by what they DO rather than
+ * by a list of pure builtins to exempt, because the pure set is unbounded
+ * and this one is not.
+ */
+const IO_MODULES = new Set([
+  'node:fs',
+  'node:fs/promises',
+  'fs',
+  'fs/promises',
+  'node:child_process',
+  'child_process',
+  'node:http',
+  'node:https',
+  'node:net',
+  'node:dgram',
+  'http',
+  'https',
+  'net',
+  'dgram',
+]);
+
+/**
+ * The local names an I/O module is reached by in this file: each named or
+ * default import, and a namespace import, whose every member counts.
+ */
+const ioBindings = (sf: ts.SourceFile): ReadonlySet<string> => {
+  const names = new Set<string>();
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier))
+      continue;
+    if (!IO_MODULES.has(st.moduleSpecifier.text)) continue;
+    const clause = st.importClause;
+    if (!clause) continue;
+    if (clause.name) names.add(clause.name.text);
+    const bindings = clause.namedBindings;
+    if (!bindings) continue;
+    if (ts.isNamespaceImport(bindings)) names.add(bindings.name.text);
+    else for (const element of bindings.elements) names.add(element.name.text);
+  }
+  return names;
+};
+
+/** Whether a call reaches an I/O module, directly or through its namespace. */
+const callsIo = (node: ts.Node, io: ReadonlySet<string>): boolean => {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = node.expression;
+  if (ts.isIdentifier(callee))
+    return io.has(callee.text) || callee.text === 'fetch';
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    io.has(callee.expression.text)
+  );
+};
+
+/** Whether any condition between a node and the top of its file is `import.meta.main`. */
+const underImportMetaMain = (node: ts.Node): boolean =>
+  gatesOf(node).some(
+    ({ condition, holds }) => holds && isImportMetaMain(condition),
+  );
+
+/** Work a module does as it loads: where it is, and what it does. */
+interface LoadTimeWork {
+  readonly at: string;
+  readonly what: string;
+}
+
+/** A statement that only declares things, and so builds the module rather than running it. */
+const isDeclarationOnly = (st: ts.Statement): boolean =>
+  ts.isVariableStatement(st) ||
+  ts.isFunctionDeclaration(st) ||
+  ts.isClassDeclaration(st) ||
+  ts.isInterfaceDeclaration(st) ||
+  ts.isTypeAliasDeclaration(st) ||
+  ts.isEnumDeclaration(st) ||
+  ts.isImportDeclaration(st) ||
+  ts.isExportDeclaration(st) ||
+  ts.isEmptyStatement(st);
+
+/**
+ * Everything a file does while it is being imported, outside an
+ * `import.meta.main` decision.
+ *
+ * The line is drawn by STATEMENT KIND, not by a list of calls held to be
+ * pure. Module scope exists to build the module, so a declaration is allowed
+ * to call things -- `path.join`, `new Set`, `Object.fromEntries` and
+ * `createRequire` all run at load time in scripts that are entirely correct,
+ * and an allowlist of pure calls would have to grow forever to keep saying
+ * so. A statement evaluated for its EFFECT alone -- an expression statement,
+ * an `if`, a loop, a `try` -- is the program running, and importing the
+ * module runs it.
+ *
+ * Two shapes cross that line and are caught anyway: a declaration whose
+ * initialiser awaits, because a top-level await is the program running by
+ * another spelling, and one that calls an I/O module directly, because
+ * `const out = spawnSync(...)` spawns a process on import however it is
+ * spelled. What remains uncovered is a declaration calling a LOCAL helper
+ * that does I/O; stated rather than hidden, because a guard whose limits are
+ * not written down is read as covering everything.
+ *
+ * This is the gap #221's rules left. They ask which condition decides a
+ * load-time `main()`, so a script calling `main()` unconditionally produces
+ * no decision and a script with no `main()` at all produces nothing to look
+ * at: both were invisible to every rule meant to govern them (#276).
+ */
+const loadTimeWork = (sf: ts.SourceFile): LoadTimeWork[] => {
+  const io = ioBindings(sf);
+  const found: LoadTimeWork[] = [];
+
+  for (const st of sf.statements) {
+    const declaresOnly = isDeclarationOnly(st);
+    if (ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) continue;
+
+    let reported = false;
+    const visit = (node: ts.Node): void => {
+      if (reported || ts.isFunctionLike(node)) return;
+      if (isWorkNode(node) && !underImportMetaMain(node)) {
+        // A declaration may call; it may not await, and it may not do I/O.
+        const offends = declaresOnly
+          ? ts.isAwaitExpression(node) || callsIo(node, io)
+          : true;
+        if (offends) {
+          found.push({ at: where(sf, node), what: workText(sf, node) });
+          reported = true;
+          return;
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(st);
+  }
+  return found;
+};
+
+/**
+ * What the load-time rule makes of a source: what it does as it loads, and
+ * how many statements it read to decide. The count is the liveness control --
+ * `work: []` over nothing examined is not a clean verdict, it is silence, and
+ * an assertion that cannot tell them apart is the vacuity #118 was filed
+ * about.
+ */
+const judgeSource = (sf: ts.SourceFile) => ({
+  examined: sf.statements.filter(
+    (st) => !ts.isImportDeclaration(st) && !ts.isExportDeclaration(st),
+  ).length,
+  work: loadTimeWork(sf).map(({ what }) => what),
+});
+
+/** What the load-time rule makes of a fixture body. */
+const judgeWork = (body: string) => judgeSource(fixture(body));
+
+describe('the load-time rule reads the parse tree (#276)', () => {
+  it.each([
+    ['a guarded entry point', 'if (import.meta.main) await main();'],
+    ['work inside the guard', 'if (import.meta.main) { writeFileSync(a, b); }'],
+    ['a constant built from a call', "const R = '='.repeat(72);"],
+    ['a constant built with new', 'const S = new Set([1, 2]);'],
+    ['a path joined at load', "const P = path.join(a, 'b');"],
+    ['an immediately-invoked builder', 'export const Q = (() => 90)();'],
+    [
+      'a function that does the work',
+      'function main() { writeFileSync(a, b); }',
+    ],
+    ['an arrow that does the work', 'const go = () => { console.log(1); };'],
+    [
+      'a handler registered inside a function',
+      'function m() { process.once(s, f); }',
+    ],
+    [
+      'a comment describing work',
+      '/* console.log(1); process.exit(0); */ const X = 1;',
+    ],
+  ])('allows %s', (_name, body) => {
+    // One statement read, nothing done: the count is what makes the empty
+    // list a verdict rather than silence.
+    expect(judgeWork(body)).toEqual({ examined: 1, work: [] });
+  });
+
+  it.each([
+    ['printing', 'console.log(1);', ['console.log']],
+    ['exiting', 'process.exit(0);', ['process.exit']],
+    ['an unconditional entry point', 'await main();', ['await']],
+    ['a refusal guarded by an if', 'if (!t) die(USAGE);', ['die']],
+    [
+      'work behind any other condition',
+      'if (x) writeFileSync(a, b);',
+      ['writeFileSync'],
+    ],
+    [
+      'a handler registered at load',
+      'for (const s of S) { process.once(s, f); }',
+      ['process.once'],
+    ],
+    [
+      'a try around a spawn',
+      'try { execFileSync(a, b); } catch (e) { console.log(e); }',
+      ['execFileSync'],
+    ],
+    [
+      'a top-level await in a declaration',
+      'const r = await draftAll(p);',
+      ['await'],
+    ],
+  ])('refuses %s', (_name, body, what) => {
+    expect(judgeWork(body)).toEqual({ examined: 1, work: what });
+  });
+
+  it.each([
+    [
+      'a spawn assigned to a constant',
+      "import { spawnSync } from 'node:child_process';\nconst out = spawnSync('git', []);",
+      ['spawnSync'],
+    ],
+    [
+      'a read through a namespace',
+      "import * as fs from 'node:fs';\nconst t = fs.readFileSync(p);",
+      ['fs.readFileSync'],
+    ],
+    ['a fetch assigned to a constant', 'const r = fetch(url);', ['fetch']],
+  ])('refuses I/O even in a declaration: %s', (_name, body, what) => {
+    expect(judgeSource(parseSource(`${body}\n`, 'fixture.mjs'))).toEqual({
+      examined: 1,
+      work: what,
+    });
+  });
+});
+
 /** Every file the rules can read: modules in JavaScript or TypeScript. */
 const MODULE = /\.[cm]?[jt]s$/;
 
@@ -289,6 +534,27 @@ const PROBES: Readonly<Record<string, Probe>> = {
     env: { PATH: '/nonexistent' },
     status: 1,
     says: 'docker is not available',
+  },
+  // The three that did all their work at module scope until #276. Each refuses
+  // on `argv` alone, before it reads the cache or the catalogue, so the probe
+  // proves the entry point ran without touching either.
+  'i18n-scaffold.mjs': {
+    args: [],
+    status: 1,
+    says: 'name a locale: npm run i18n:scaffold -- zh',
+  },
+  'i18n-translate.mjs': {
+    args: [],
+    status: 1,
+    says: 'usage: npm run i18n:translate -- <locale>',
+  },
+  // It had no refusal at all, being written never to fail an install, so #276
+  // gave it the one the other argument-free scripts have. `prepare` passes
+  // nothing, so nothing that is not already a mistake reaches it.
+  'install-hooks.mjs': {
+    args: ['--no-such-flag'],
+    status: 1,
+    says: 'install-hooks.mjs takes no arguments',
   },
 };
 
@@ -402,5 +668,48 @@ describe('a guarded script can be imported without running (#227)', () => {
     const run = importsSilently('dashboard.mjs');
     expect(`${run.stdout}${run.stderr}`).toBe('');
     expect(run.status).toBe(0);
+  });
+
+  // The three from #276. `i18n-translate.mjs` is the one that mattered: until
+  // it was guarded, importing it read DEEPL_API_KEY, sent the whole catalogue
+  // to DeepL and rewrote the cache. Each exports `main`, and checking that the
+  // export is a function is the liveness control -- a module that failed to
+  // resolve is exactly as quiet as one that loaded and did nothing.
+  it.each([
+    ['i18n-scaffold.mjs'],
+    ['i18n-translate.mjs'],
+    ['install-hooks.mjs'],
+  ])('%s imports without running', (script) => {
+    const run = importsSilently(script, 'main');
+    expect(`${run.stdout}${run.stderr}`).toBe('');
+    expect(run.status).toBe(0);
+  });
+});
+
+/**
+ * The rule #221 could not reach.
+ *
+ * `decisionsIn` answers "which condition decides this load-time `main()`?",
+ * so it is silent about a script that calls `main()` unconditionally and
+ * blind to one with no `main()` at all: both were in neither the set it
+ * judged nor the `PROBES` table it derived from that set, and the guard
+ * covered exactly the scripts that were already correct (#276).
+ *
+ * Measured when it was written: `i18n-scaffold.mjs`, `i18n-translate.mjs`
+ * and `install-hooks.mjs` did all their work at module scope, and
+ * `test-devices.mjs` registered two signal handlers there -- importing
+ * `i18n-translate.mjs` would have sent the catalogue to DeepL, and importing
+ * `test-devices.mjs` left a SIGTERM handler that runs `adb` cleanup in
+ * whatever process did the importing.
+ */
+describe('a script does no work while it loads (#276)', () => {
+  it('leaves every effect to an import.meta.main decision', () => {
+    const work = modules.flatMap((file) =>
+      loadTimeWork(parseFile(file)).map(({ at, what }) => `${at} ${what}`),
+    );
+    expect(
+      searched(work, { of: modules, what: 'scripts' }),
+      'a module that works while it loads runs its program on import',
+    ).toEqual([]);
   });
 });
