@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { makeGroups } from '../make-groups';
 import { recordErrors } from './recorders';
 import { sampledPaths } from './locale-sampling';
 import { searched } from '../source-files';
@@ -23,27 +24,6 @@ test.use(recorded);
  * horizontal scroll, touch targets, console errors — which this page, the
  * only one that ships a script and about ten controls, did not.
  */
-
-const makeGroups = async (
-  page: import('@playwright/test').Page,
-  count: string,
-  size: string,
-) => {
-  await page.fill('#cg-count', count);
-  await page.fill('#cg-size', size);
-  // Stage 2, Task 7 folded Sound & animation into the tool's fourth
-  // collapsible section -- #cg-speed now lives in #cg-sound-body, which
-  // starts collapsed, so it has to be open before `selectOption` can act on
-  // it (same reasoning as the leftovers radios inside #cg-grouping-body,
-  // Stage 2 Task 4). Idempotent: this helper can run more than once per
-  // test, and a second click would close what the first one opened.
-  const soundBody = page.locator('#cg-sound-body');
-  if (await soundBody.isHidden()) {
-    await page.locator('#cg-sound-toggle').click();
-  }
-  await page.selectOption('#cg-speed', 'skip');
-  await page.click('#cg-go');
-};
 
 test.describe('the controls that had no tests', () => {
   // Stage 3, Task 8 (design spec section 5) removed the theme picker and

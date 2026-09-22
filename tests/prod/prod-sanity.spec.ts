@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { makeGroups } from '../make-groups';
 import { deployedRoutes } from '../site-pages';
 import { expectNoHorizontalScroll } from '../viewport';
 
@@ -72,11 +73,7 @@ test('the Classroom Group Creator forms groups', async ({ page }) => {
   await page.goto('/classroom-groups');
   await expect(page.locator('#cg-form')).toBeVisible();
 
-  await page.fill('#cg-count', '8');
-  await page.fill('#cg-size', '4');
-  await page.locator('#cg-sound-toggle').click();
-  await page.selectOption('#cg-speed', 'skip');
-  await page.click('#cg-go');
+  await makeGroups(page, '8', '4');
 
   await expect(page.locator('#cg-results .student')).toHaveCount(8);
 });

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { LOCALES, localisePath, type Locale } from '../../src/lib/i18n/index';
+import { LOCALES, type Locale } from '../../src/lib/i18n/index';
 import {
   siteEn,
   siteId,
@@ -62,13 +62,14 @@ test.describe('every locale, every page', () => {
     expect(LOCALES.filter((l) => !SITE[l])).toEqual([]);
   });
 
-  test('localisePath agrees with the route layout for every locale', () => {
-    for (const locale of LOCALES)
-      for (const { path } of PAGES)
-        expect(localisePath(path, locale), `${path} in ${locale}`).toBe(
-          urlFor(path, locale),
-        );
-  });
+  // 'localisePath agrees with the route layout for every locale' is retired
+  // here (#277). `locale-routing.test.ts` makes exactly that assertion over
+  // `sitePaths()`, DERIVED from the page files, where this copy walked a
+  // hand-written `PAGES` holding two of them. `site-pages.ts`'s own docblock
+  // records the same failure from the other direction: the dev and prod
+  // sanity suites kept hand-written tables, `sitePaths()` grew to four, and
+  // both gates went on testing three. It is also a pure-function assertion
+  // that was costing a browser to make.
 
   test('the translated titles actually differ from English', () => {
     // Vacuity guard. Every per-page assertion below compares the rendered

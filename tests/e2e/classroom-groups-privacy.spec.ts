@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { makeGroups } from '../make-groups';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import { recorded, shoot } from './evidence';
@@ -332,12 +333,7 @@ test.describe('privacy — when storage is unavailable', () => {
 
   test('the tool still makes groups', async ({ page }) => {
     await page.goto('/classroom-groups');
-    await page.fill('#cg-count', '8');
-    await page.fill('#cg-size', '4');
-    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7.
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
-    await page.click('#cg-go');
+    await makeGroups(page, '8', '4');
 
     await expect(page.locator('#cg-results .student')).toHaveCount(8);
   });
