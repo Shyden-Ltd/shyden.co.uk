@@ -5,6 +5,7 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServerProcess } from '../device/ios/server-process';
+import { WebDriver } from '../device/ios/webdriver';
 
 /**
  * `startServerProcess` starts `safaridriver` and waits for it to answer
@@ -101,13 +102,9 @@ async function silentListener(): Promise<{ port: number; close: () => void }> {
   };
 }
 
-/** `GET /status` the way `startSafaridriver` asks it: a refused connection throws. */
+/** The readiness check `startSafaridriver` makes, against a server on `port`. */
 function answersStatus(port: number): () => Promise<boolean> {
-  return async () => {
-    const response = await fetch(`http://127.0.0.1:${port}/status`);
-    const body = (await response.json()) as { value?: { ready?: boolean } };
-    return body.value?.ready === true;
-  };
+  return () => WebDriver.isReady(`http://127.0.0.1:${port}`);
 }
 
 /** Starts `node -e <script>` against a free port and settles, timing it. */

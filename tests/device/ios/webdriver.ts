@@ -265,6 +265,24 @@ export class WebDriver {
     );
   }
 
+  /**
+   * W3C `GET /status`: whether the server is ready to create a session. A
+   * refused connection throws, which a caller polling a server that is still
+   * starting reads as "not yet".
+   *
+   * Measured response shape: `{"value":{"message":"","ready":true}}` -- no
+   * `build`/`os` sub-objects the generic W3C spec allows for, so this reads
+   * only the field safaridriver actually sends that the answer depends on.
+   */
+  static async isReady(serverUrl: string): Promise<boolean> {
+    const value = await wireRequest('GET', `${serverUrl}/status`);
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      (value as { ready?: unknown }).ready === true
+    );
+  }
+
   /** Always call in a `finally` -- see this file's module doc and session.ts. */
   async deleteSession(): Promise<void> {
     await wireRequest('DELETE', this.sessionUrl());

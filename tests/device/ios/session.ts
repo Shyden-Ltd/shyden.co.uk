@@ -194,21 +194,13 @@ async function pickFreePort(): Promise<number> {
 /**
  * Precondition 2: `safaridriver` starts and answers `GET /status`.
  *
- * Measured response shape: `{"value":{"message":"","ready":true}}` -- no
- * `build`/`os` sub-objects the generic W3C spec allows for, so this reads
- * only the two fields safaridriver actually sends.
- *
  * Remote Automation is asserted to already be enabled (`safaridriver
  * --enable` already run) rather than run here -- this project does not
  * modify the phone's settings, provisioning or signing.
  */
 async function startSafaridriver(port: number): Promise<ChildProcess> {
   return startServerProcess('safaridriver', ['-p', String(port)], {
-    isReady: async () => {
-      const response = await fetch(`http://127.0.0.1:${port}/status`);
-      const body = (await response.json()) as { value?: { ready?: boolean } };
-      return body.value?.ready === true;
-    },
+    isReady: () => WebDriver.isReady(`http://127.0.0.1:${port}`),
     timeout: 15_000,
     describe: `safaridriver on port ${port} to answer GET /status with ready:true`,
   });
