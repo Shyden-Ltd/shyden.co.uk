@@ -95,12 +95,12 @@ const declaresRecorded = (text: string): boolean =>
   text.includes('test.use(recorded)');
 
 /**
- * Whether a journey puts ANYTHING on screen -- the question `notRecorded`
- * answers (#292), which is not the question `recorded` answers.
+ * Whether a journey reaches the browser at all (#292) -- which is not the
+ * question `recorded` answers.
  *
  * A spec EARNS a recording by acting; a journey inside it still renders when
  * it merely navigates, and that recording shows the page. Only a journey that
- * does neither records blank frames, and only that may opt out.
+ * does neither records blank frames, and only while it holds a `page`.
  *
  * The test is its FIXTURES, because they are the whole channel to the
  * browser. A journey that renders nothing touches none of them -- or touches
