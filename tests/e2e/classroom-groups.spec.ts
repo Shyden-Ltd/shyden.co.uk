@@ -12,6 +12,7 @@ import {
 } from '../../src/lib/i18n';
 import { recorded, shoot } from './evidence';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+import { expectNoHorizontalScroll } from '../viewport';
 import {
   openRoster,
   addSeveral,
@@ -851,12 +852,7 @@ test.describe('class name and results heading', () => {
       await page.selectOption('#cg-speed', 'skip');
       await page.click('#cg-go');
       await expect(page.locator('#cg-results-h')).toBeVisible();
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
     },
   );
 
@@ -1459,12 +1455,7 @@ test.describe('out-of-date groups', () => {
       await shuffle(page);
       await page.getByLabel('Students in each group').fill('3');
       await expect(page.locator('#cg-stale')).toBeVisible();
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
       const box = await page.locator('#cg-stale button').boundingBox();
       expect(box?.height).toBeGreaterThanOrEqual(44);
     },

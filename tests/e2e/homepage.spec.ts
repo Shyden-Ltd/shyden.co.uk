@@ -3,6 +3,7 @@ import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
 
@@ -250,12 +251,7 @@ test.describe('mobile-first layout', () => {
       async ({ page }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/');
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        const overflow = await expectNoHorizontalScroll(page);
         // This is the guard the marquee tripped: a rotated-and-scaled element
         // is not clipped by an ancestor's `overflow`, so it pushed 10px of
         // sideways scroll at every width. 1217 unit tests could not see it.

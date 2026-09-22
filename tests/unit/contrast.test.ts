@@ -4,7 +4,6 @@ import { filesUnder, nonEmpty, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
 import {
   contrast,
-  luminance,
   over,
   parseColour,
   type RGB,

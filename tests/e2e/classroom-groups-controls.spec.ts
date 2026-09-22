@@ -10,6 +10,7 @@ import {
   rosterOf,
 } from './helpers';
 import { recorded } from './evidence';
+import { horizontalOverflow, expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
 
@@ -363,12 +364,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         async ({ page }) => {
           await page.setViewportSize({ width, height: 900 });
           await page.goto(path);
-          const overflow = await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-          );
-          expect(overflow).toBeLessThanOrEqual(0);
+          await expectNoHorizontalScroll(page);
         },
       );
     }
@@ -400,12 +396,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await page.locator('#cg-grouping-toggle').click();
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -423,12 +414,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await page.locator('#cg-sound-toggle').click();
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -446,12 +432,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await makeGroups(page, '120', '4');
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -591,11 +572,7 @@ test.describe('classroom groups — mobile-first layout', () => {
           for (const id of ids) {
             await page.goto(path);
             await page.locator(`#${id}`).click();
-            const overflow = await page.evaluate(
-              () =>
-                document.documentElement.scrollWidth -
-                document.documentElement.clientWidth,
-            );
+            const overflow = await horizontalOverflow(page);
             if (overflow > 0)
               failures.push(
                 `${path} @${width}px with #${id} open: ${overflow}px`,
@@ -604,11 +581,7 @@ test.describe('classroom groups — mobile-first layout', () => {
           // …and every section open at once, which no earlier test did.
           await page.goto(path);
           for (const id of ids) await page.locator(`#${id}`).click();
-          const all = await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-          );
+          const all = await horizontalOverflow(page);
           if (all > 0)
             failures.push(`${path} @${width}px with ALL open: ${all}px`);
           expect(
@@ -1909,12 +1882,7 @@ test.describe('a full roster at the narrow end', () => {
         await addSeveral(page, 29);
         await expect(page.locator('.cg-student')).toHaveCount(30);
 
-        const over = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(over, 'document scrolls sideways').toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page, 'document scrolls sideways');
 
         // Page-level scrollWidth is not containment: content can overflow a
         // CARD by 34.5px and produce zero document scroll, which is how the

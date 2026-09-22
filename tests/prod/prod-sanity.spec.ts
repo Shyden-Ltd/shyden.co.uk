@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { deployedRoutes } from '../site-pages';
+import { expectNoHorizontalScroll } from '../viewport';
 
 /**
  * Every route the site serves, derived. #49.
@@ -94,15 +95,7 @@ test.describe('no page scrolls sideways at 320px', () => {
       async ({ page }) => {
         await page.setViewportSize({ width: 320, height: 720 });
         await page.goto(path);
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(
-          overflow,
-          `${path} overflows by ${overflow}px`,
-        ).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page, path);
       },
     );
   }

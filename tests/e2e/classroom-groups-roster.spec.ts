@@ -2,6 +2,7 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { searched } from '../source-files';
+import { expectNoHorizontalScroll } from '../viewport';
 import {
   openRoster,
   addSeveral,
@@ -137,12 +138,7 @@ test.describe('the roster table', () => {
         .nth(0)
         .getByLabel('Name')
         .fill('Maria Anastasia Wijayanti');
-      const over = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(over).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
     },
   );
 
@@ -410,12 +406,7 @@ test.describe('an absent student', () => {
     async ({ page }) => {
       await page.setViewportSize({ width: 320, height: 900 });
       await markAbsent(page);
-      const over = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(over).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
     },
   );
 });
@@ -1448,12 +1439,7 @@ test(
     await page.setViewportSize({ width: 320, height: 900 });
     await openRoster(page);
     await addSeveral(page, 99);
-    const over = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    );
-    expect(over).toBeLessThanOrEqual(0);
+    await expectNoHorizontalScroll(page);
   },
 );
 
