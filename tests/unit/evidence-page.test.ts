@@ -1677,6 +1677,58 @@ describe('a journey is identified by its full title path', () => {
  * an id cannot be known before the upload that mints it.
  */
 describe('recordings travel in the asset store (#268)', () => {
+  let scratch = '';
+  beforeAll(() => {
+    scratch = mkdtempSync(join(tmpdir(), 'evidence-assets-'));
+  });
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  /** A recording on disk, because the builder reads every one it is told of. */
+  const recording = (name: string, size: number) => {
+    const path = join(scratch, name);
+    writeFileSync(path, Buffer.alloc(size));
+    return path;
+  };
+
+  /**
+   * An evidence directory with one captured assertion and one recording, as a
+   * run leaves it. The manifest row is stamped inside the reported run, or
+   * `capturesOfThisRun` reads it as an earlier run's and refuses.
+   */
+  const runDirectory = (name: string) => {
+    const dir = mkdtempSync(join(scratch, name));
+    mkdirSync(join(dir, 'chromium'));
+    writeFileSync(join(dir, 'chromium', 'a__01.png'), png(1));
+    writeFileSync(
+      join(dir, EVIDENCE_MANIFEST),
+      JSON.stringify(
+        manifestRow(
+          {
+            project: 'chromium',
+            title: 'suite > a journey',
+            order: 1,
+            label: 'first thing',
+            file: 'chromium/a__01.png',
+          },
+          new Date(Date.parse(REPORT.stats.startTime) + 5_000),
+        ),
+      ) + '\n',
+    );
+    writeFileSync(
+      join(dir, EVIDENCE_REPORT),
+      JSON.stringify(
+        reportOf([
+          {
+            journey: 'a journey',
+            project: 'chromium',
+            video: recording(`${name}.webm`, 10),
+          },
+        ]),
+      ),
+    );
+    return dir;
+  };
+
   it('pins the ceilings that were measured, not assumed', () => {
     // The literals are the measurement. A derived-looking expression here
     // would move with the code and assert nothing about the platform (#117).
@@ -1713,6 +1765,27 @@ describe('recordings travel in the asset store (#268)', () => {
       'a-b|c': '/tmp/one.webm',
       'a|b-c': '/tmp/two.webm',
     });
+  });
+
+  it('refuses two recordings whose journeys slug to one key', () => {
+    // NOT the retired collision. The key is `slugOf(title)|project`, and
+    // `videoCandidates` returns an array, so `a journey` and `a-journey` slug
+    // the same way and arrive as two candidates under one key. A Map keeps the
+    // last in silence. Found by a failing expectation while writing the plan
+    // test, after the first draft of `assetUploads` claimed the key was unique
+    // by construction -- it is not.
+    let refusal = 'the build did not refuse';
+    try {
+      assetUploads([
+        { key: 'a-journey|chromium', abs: '/run/one.webm' },
+        { key: 'a-journey|chromium', abs: '/run/two.webm' },
+      ]);
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toContain('a-journey|chromium');
+    expect(refusal).toContain('/run/one.webm');
+    expect(refusal).toContain('/run/two.webm');
   });
 
   it('resolves the page src from the uploaded map', () => {
@@ -1789,6 +1862,60 @@ describe('recordings travel in the asset store (#268)', () => {
         sizeOf: () => ASSET_MAX_BYTES / 2 + 1,
       }),
     ).toThrow(/over the 1024\.00MB one artifact holds/);
+  });
+
+  it('plans the upload without reading a single screenshot', () => {
+    // The plan pass runs before content and before any capture is encoded: it
+    // needs the recordings and nothing else, and a plan refused over a missing
+    // --content would be a pass refusing an argument it does not use.
+    const dir = runDirectory('plan-');
+    const page = join(dir, 'page.html');
+    const planned = spawnSync(
+      process.execPath,
+      [
+        'scripts/build-evidence-page.mjs',
+        '--plan',
+        '--evidence',
+        dir,
+        '--out',
+        page,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(planned.status, planned.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(`${page}.uploads.json`, 'utf8'))).toEqual({
+      'a-journey|chromium': join(scratch, 'plan-.webm'),
+    });
+    expect(existsSync(page), 'the plan pass wrote a page').toBe(false);
+  });
+
+  it('refuses to build a page for recordings nothing uploaded', () => {
+    // Without the map every journey would render with no source, which reads
+    // exactly like a run that recorded nothing. The refusal is at the command
+    // line and leaves no page behind, for the same reason a missing recording
+    // does: a page on disk invites publishing it anyway.
+    const dir = runDirectory('unmapped-');
+    const content = join(dir, 'content.json');
+    writeFileSync(content, JSON.stringify(CONTENT));
+    const page = join(dir, 'page.html');
+    const refused = spawnSync(
+      process.execPath,
+      [
+        'scripts/build-evidence-page.mjs',
+        '--evidence',
+        dir,
+        '--content',
+        content,
+        '--out',
+        page,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(refused.status, refused.stdout).not.toBe(0);
+    expect(refused.stderr).toContain('no --assets map was given');
+    expect(existsSync(page), 'a page was written with no recordings').toBe(
+      false,
+    );
   });
 
   it('accepts a run that fits, and says nothing', () => {

@@ -311,21 +311,48 @@ export const ASSET_MAX_FILE_BYTES = 20 * 1024 * 1024;
 /**
  * Every recording to upload: the journey it belongs to -> the file on disk.
  *
- * Keyed by the RAW key, which is unique by construction because it is a Map
- * key upstream. The published path had to slug the key into a filename and
- * joined journey and engine on the separator the key itself uses, so `a-b|c`
- * and `a|b-c` both became `a-b-c.webm` and the build refused rather than file
- * one journey's recording under another's claim. Nothing is slugged here, so
- * that collision class does not exist -- it is retired by construction, not by
- * deleting a guard and hoping.
+ * ONE COLLISION CLASS IS RETIRED AND ONE IS NOT, and the difference is worth
+ * stating because the first draft of this function got it wrong.
  *
- * Accumulated in a Map, not an object literal: `'constructor' in {}` is true.
+ * Retired: the published path slugged the key into a FILENAME and joined
+ * journey and engine on the separator the key itself uses, so `a-b|c` and
+ * `a|b-c` both became `a-b-c.webm`. Nothing is slugged here, so two distinct
+ * keys cannot meet.
+ *
+ * NOT retired: the key is `slugOf(title)|project` and `videoCandidates`
+ * returns an ARRAY, so two journeys whose titles slug the same way -- `a
+ * journey` and `a-journey` -- arrive as two candidates under ONE key. A Map
+ * would keep the last in silence, filing one journey's recording under
+ * another's claim, which is the hazard this whole file exists to remove. It is
+ * more likely since #263 made a key the full title path, describes included.
+ * So the refusal moved here rather than being deleted with the path that used
+ * to carry it.
+ *
+ * Accumulated in a Map, not an object literal: `'constructor' in {}` is true,
+ * so a journey slugged to a prototype member would report a collision that is
+ * not there.
  *
  * @param {{ key: string, abs: string }[]} candidates
  * @returns {Record<string, string>}
  */
-export const assetUploads = (candidates) =>
-  Object.fromEntries(new Map(candidates.map(({ key, abs }) => [key, abs])));
+export const assetUploads = (candidates) => {
+  const uploads = new Map();
+  const collisions = [];
+  for (const { key, abs } of candidates) {
+    const taken = uploads.get(key);
+    if (taken === undefined) uploads.set(key, abs);
+    else collisions.push(`${key}: ${taken} and ${abs}`);
+  }
+  if (collisions.length)
+    throw new Error(
+      `build-evidence-page: ${collisions.length} journey key(s) claimed by ` +
+        `more than one recording:\n  ${collisions.join('\n  ')}\n` +
+        'Two journeys whose titles slug the same way share a key, and keeping ' +
+        "the last would pair one journey's assertion with another journey's " +
+        'recording. Nothing about that page would look wrong.',
+    );
+  return Object.fromEntries(uploads);
+};
 
 /**
  * The `src` the page points at for each journey, from the map the upload
