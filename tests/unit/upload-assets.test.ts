@@ -2,6 +2,8 @@ import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import {
   assetsMap,
   parseAssetListing,
+  pendingUploads,
+  UPLOAD_BATCH,
 } from '../../scripts/upload-evidence-assets.mjs';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -126,5 +128,50 @@ describe('pairing a recording with the asset that holds it', () => {
     expect(() => assetsMap({ plan: recordings, stored: short })).toThrow(
       /byte/,
     );
+  });
+});
+
+describe('what is still to upload', () => {
+  let dir = '';
+  const plan: Record<string, string> = {};
+  const stored: { id: string; bytes: number; sha256: string }[] = [];
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'upload-pending-'));
+    // Sixty, so the batching is exercised by a number no call can take at
+    // once. Derived from the plan, never a written-out list: a hand-written
+    // list misses the entry that breaks.
+    for (let n = 0; n < 60; n += 1) {
+      const key = `journey-${n}`;
+      const abs = join(dir, `${key}.webm`);
+      const body = `recording ${n}`;
+      writeFileSync(abs, body);
+      plan[key] = abs;
+      if (n < 4)
+        stored.push({
+          id: createHash('md5').update(key).digest('hex'),
+          bytes: Buffer.byteLength(body),
+          sha256: createHash('sha256').update(body).digest('hex'),
+        });
+    }
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('leaves out every recording the store already holds', () => {
+    const batches = pendingUploads({ plan, stored });
+    const paths = batches.flat();
+    expect(paths).toHaveLength(56);
+    // The liveness control: an empty store must give back all sixty, or a
+    // function returning nothing at all would satisfy the count above only
+    // by accident of arithmetic.
+    expect(pendingUploads({ plan, stored: [] }).flat()).toHaveLength(60);
+    for (let n = 0; n < 4; n += 1)
+      expect(paths).not.toContain(plan[`journey-${n}`]);
+  });
+
+  it('never puts more in one batch than a single call takes', () => {
+    const batches = pendingUploads({ plan, stored: [] });
+    expect(batches.map((batch) => batch.length)).toEqual([25, 25, 10]);
+    expect(UPLOAD_BATCH).toBe(25);
   });
 });

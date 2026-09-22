@@ -125,3 +125,30 @@ export const assetsMap = ({ plan, stored }) => {
     );
   return map;
 };
+
+/**
+ * How many files one upload call takes, as the tool states it. Pinned to a
+ * literal by the suite: every other assertion about batching derives from
+ * this, and a value derived from the thing it checks would move with it (#117).
+ */
+export const UPLOAD_BATCH = 25;
+
+/**
+ * The recordings still to upload, in batches a single call can take.
+ *
+ * An upload of 1,400 files WILL be interrupted, so a recording the store
+ * already holds is recognised by its content and left out rather than sent
+ * again. Derived from the plan; a hand-written list misses the entry that
+ * breaks (#24, #49).
+ *
+ * @param {{ plan: Record<string, string>, stored: { id: string, bytes: number, sha256: string }[] }} input
+ * @returns {string[][]}
+ */
+export const pendingUploads = ({ plan, stored }) => {
+  const held = new Set(stored.map((asset) => asset.sha256));
+  const pending = Object.values(plan).filter((abs) => !held.has(sha256Of(abs)));
+  const batches = [];
+  for (let at = 0; at < pending.length; at += UPLOAD_BATCH)
+    batches.push(pending.slice(at, at + UPLOAD_BATCH));
+  return batches;
+};
