@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { parseAssetListing } from '../../scripts/upload-evidence-assets.mjs';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
+import {
+  assetsMap,
+  parseAssetListing,
+} from '../../scripts/upload-evidence-assets.mjs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * A real listing, copied verbatim from `Artifact action:"list" scope:"assets"`
@@ -61,5 +68,42 @@ describe('reading what the asset store already holds', () => {
     expect(() => parseAssetListing(truncated)).toThrow(
       /2 asset line\(s\) against the 99 its header declares/,
     );
+  });
+});
+
+describe('pairing a recording with the asset that holds it', () => {
+  let dir = '';
+  /** Real files, really hashed: the join this script exists for is content. */
+  const recordings: Record<string, string> = {};
+  const stored: { id: string; bytes: number; sha256: string }[] = [];
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'upload-assets-'));
+    for (const [key, body] of [
+      ['a-journey', 'first recording'],
+      ['another-journey', 'second recording, different bytes'],
+    ]) {
+      const abs = join(dir, `${key}.webm`);
+      writeFileSync(abs, body);
+      recordings[key] = abs;
+      stored.push({
+        id: createHash('md5').update(key).digest('hex'),
+        bytes: Buffer.byteLength(body),
+        sha256: createHash('sha256').update(body).digest('hex'),
+      });
+    }
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('gives each key the id of the asset whose content is that file', () => {
+    const map = assetsMap({ plan: recordings, stored });
+    expect(map).toEqual({
+      'a-journey': `/_blob/${stored[0].id}`,
+      'another-journey': `/_blob/${stored[1].id}`,
+    });
+    // The control that matters: two different recordings must not resolve to
+    // one id. A join returning the first asset for everything satisfies the
+    // shape above only if this is asserted.
+    expect(map['a-journey']).not.toBe(map['another-journey']);
   });
 });

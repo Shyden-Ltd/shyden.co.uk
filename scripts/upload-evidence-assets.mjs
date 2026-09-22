@@ -10,6 +10,21 @@
  * reports beside each stored asset.
  */
 
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+/** Where the artifact serves a stored asset, in every view (#268). */
+const BLOB_PREFIX = '/_blob/';
+
+/**
+ * A file's content digest, in the spelling the asset store reports.
+ *
+ * @param {string} abs
+ * @returns {string}
+ */
+const sha256Of = (abs) =>
+  createHash('sha256').update(readFileSync(abs)).digest('hex');
+
 /** The count the listing states for itself, which every asset line is checked against. */
 const DECLARED_FILES = /^Assets of \S+: (\d+) files,/m;
 
@@ -63,4 +78,25 @@ export const parseAssetListing = (text) => {
         'time. Continue the listing with `after` until it is whole.',
     );
   return assets;
+};
+
+/**
+ * The map the page is built from: every journey key against the asset that
+ * holds that recording's bytes.
+ *
+ * Paired by CONTENT, never by the order the uploads happened in. An id read
+ * out of one tool result and written beside the wrong key is the failure this
+ * whole script exists to remove, and a sha256 cannot be mis-paired by hand.
+ *
+ * @param {{ plan: Record<string, string>, stored: { id: string, bytes: number, sha256: string }[] }} input
+ * @returns {Record<string, string>}
+ */
+export const assetsMap = ({ plan, stored }) => {
+  const byDigest = new Map(stored.map((asset) => [asset.sha256, asset]));
+  const map = {};
+  for (const [key, abs] of Object.entries(plan)) {
+    const asset = byDigest.get(sha256Of(abs));
+    if (asset) map[key] = `${BLOB_PREFIX}${asset.id}`;
+  }
+  return map;
 };
