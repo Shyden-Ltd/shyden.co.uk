@@ -1,5 +1,10 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { contrast, over, parseColour } from '../wcag';
+import {
+  deviceDownloadText,
+  emptyDeviceDownloads,
+  onRealDevice,
+} from '../device/device-downloads';
 
 /**
  * Fixtures for driving the roster into a starting state -- Stage 3, 4 and 5
@@ -201,12 +206,21 @@ export const upload = async (page: Page, name: string, body: string) => {
   });
 };
 
-/** The bytes a download actually contains, not the button that produced it. */
+/**
+ * The bytes a download actually contains, not the button that produced it.
+ *
+ * On the real phone the file is saved ON THE PHONE, where the Mac-side stream behind
+ * `createReadStream()` cannot reach it, so it is read back over adb instead (#308). The phone's
+ * download folder is emptied first, so the file read back is this download's and cannot be an
+ * earlier one under the same name.
+ */
 export const downloadText = async (page: Page, button: string | RegExp) => {
+  if (onRealDevice()) emptyDeviceDownloads();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: button }).click(),
   ]);
+  if (onRealDevice()) return deviceDownloadText(download);
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk));

@@ -3,10 +3,16 @@ import {
   expect,
   chromium,
   type BrowserContext,
+  type Download,
   type Page,
   type APIRequestContext,
 } from '@playwright/test';
 import { ensureChromeForegroundOrRecover } from '../device/chrome-foreground';
+import {
+  DEVICE_DOWNLOAD_BEHAVIOUR,
+  emptyDeviceDownloads,
+  onRealDevice,
+} from '../device/device-downloads';
 import type { BaseUrlAwareApi } from '../base-url-calls';
 
 const CDP_URL = process.env.ANDROID_CDP_URL ?? 'http://127.0.0.1:9222';
@@ -177,7 +183,19 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
   browser: [
     async ({}, use) => {
       const browser = await chromium.connectOverCDP(CDP_URL);
+      // Attached over plain CDP, Playwright points the phone's downloads at a folder on the
+      // Mac, and every one of them ends `canceled` (#308). This points them at the phone's
+      // own folder. Chrome keeps the download PATH per browser context but download EVENTS
+      // per session, so Playwright's own session still sees every download; this session
+      // stays open for the worker's life, because detaching may put the behaviour back.
+      const downloads = await browser.newBrowserCDPSession();
+      await downloads.send(
+        'Browser.setDownloadBehavior',
+        DEVICE_DOWNLOAD_BEHAVIOUR,
+      );
+      emptyDeviceDownloads();
       await use(browser);
+      emptyDeviceDownloads();
       // Disconnects the client. It does not close Chrome on the phone.
       await browser.close();
     },
@@ -270,6 +288,11 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     await ensureChromeForegroundOrRecover(testInfo.title);
 
     const page = await context.newPage();
+    // Every download a test causes must COMPLETE on the phone (#308). A test that checks only a
+    // filename would otherwise pass over a download that never saved, which is how every export
+    // in the phone run failed, `canceled` with 0 bytes, while its tests stayed green.
+    const downloads: Download[] = [];
+    page.on('download', (download) => downloads.push(download));
     const resolvedBaseURL = requireBaseURL(baseURL);
 
     // This context was never created via `newContext({ baseURL })` -- Chrome made it, not
@@ -329,9 +352,24 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     }
 
     await use(page);
+    const unfinished = (
+      await Promise.all(
+        downloads.map(async (download) => ({
+          name: download.suggestedFilename(),
+          failure: await download.failure(),
+        })),
+      )
+    ).filter(({ failure }) => failure !== null);
     await page.close().catch(() => {});
+    if (unfinished.length > 0)
+      throw new Error(
+        `${unfinished.length} download(s) this test caused did not complete on the phone: ` +
+          unfinished
+            .map(({ name, failure }) => `"${name}" (${failure})`)
+            .join(', '),
+      );
   },
 });
 
-export const test = process.env.PW_REAL_DEVICE === '1' ? realDeviceTest : base;
+export const test = onRealDevice() ? realDeviceTest : base;
 export { expect };
