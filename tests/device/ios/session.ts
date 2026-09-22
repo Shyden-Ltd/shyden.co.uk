@@ -22,7 +22,7 @@
  * below. Both are inert when nothing reads them, so a plain `npm run
  * test:ios` is unaffected.
  */
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
@@ -34,6 +34,7 @@ import {
   type Interaction,
   type InteractionMode,
 } from './interaction';
+import { startServerProcess } from './server-process';
 import {
   waitFor,
   WebDriver,
@@ -202,41 +203,15 @@ async function pickFreePort(): Promise<number> {
  * modify the phone's settings, provisioning or signing.
  */
 async function startSafaridriver(port: number): Promise<ChildProcess> {
-  const child = spawn('safaridriver', ['-p', String(port)], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+  return startServerProcess('safaridriver', ['-p', String(port)], {
+    isReady: async () => {
+      const response = await fetch(`http://127.0.0.1:${port}/status`);
+      const body = (await response.json()) as { value?: { ready?: boolean } };
+      return body.value?.ready === true;
+    },
+    timeout: 15_000,
+    describe: `safaridriver on port ${port} to answer GET /status with ready:true`,
   });
-
-  let earlyExit: { code: number | null; signal: NodeJS.Signals | null } | null =
-    null;
-  child.once('exit', (code, signal) => {
-    earlyExit = { code, signal };
-  });
-
-  try {
-    await waitFor(
-      async () => {
-        if (earlyExit) {
-          const exit: { code: number | null; signal: NodeJS.Signals | null } =
-            earlyExit;
-          throw new Error(
-            `safaridriver exited before answering GET /status (code=${exit.code}, signal=${exit.signal})`,
-          );
-        }
-        const response = await fetch(`http://127.0.0.1:${port}/status`);
-        const body = (await response.json()) as { value?: { ready?: boolean } };
-        return body.value?.ready === true ? true : undefined;
-      },
-      {
-        timeout: 15_000,
-        describe: `safaridriver on port ${port} to answer GET /status with ready:true`,
-      },
-    );
-  } catch (error) {
-    child.kill();
-    throw error;
-  }
-
-  return child;
 }
 
 // ── Precondition 3: the PHONE, asked directly, can reach a Mac address ────
