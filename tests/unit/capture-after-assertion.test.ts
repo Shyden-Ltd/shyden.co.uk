@@ -1,4 +1,7 @@
-import { describe, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, it, expect } from 'vitest';
+import { specDirs } from '../spec-dirs';
+import { searched, tsFilesUnder } from '../source-files';
 import { blankCommentLines } from './source-text';
 import { expectNothingFound, type Analyze } from './spec-scan';
 
@@ -73,8 +76,39 @@ const capturesBeforeAssertion: Analyze = (file, source) => {
   return findings;
 };
 
+/**
+ * Every capture site the scan above can see, as `file:line`.
+ *
+ * The liveness control for this guard, and it is a different question from the
+ * one `expectNothingFound` already answers. That control proves FILES were
+ * scanned; it cannot notice that `shoot` was renamed, which would leave the
+ * scan matching nothing and reporting a clean tree forever. #112 is the
+ * precedent: the guard written to remove a vacuity class carried that class
+ * itself, because its own control was never mutated.
+ */
+const capturesSeen = (): string[] =>
+  specDirs()
+    .flatMap(tsFilesUnder)
+    .flatMap((file) =>
+      blankCommentLines(readFileSync(file, 'utf8'))
+        .split('\n')
+        .flatMap((line, index) =>
+          CAPTURE.test(line) ? [`${file}:${index + 1}`] : [],
+        ),
+    );
+
 describe('an evidence capture documents an assertion that already passed', () => {
   it('never runs before the assertion it claims to document', () => {
     expectNothingFound(capturesBeforeAssertion);
+  });
+
+  it('is reading real captures, so a clean scan means something', () => {
+    const captures = capturesSeen();
+    expect(
+      searched(captures, {
+        of: captures,
+        what: 'evidence captures in the spec directories',
+      }),
+    ).not.toEqual([]);
   });
 });
