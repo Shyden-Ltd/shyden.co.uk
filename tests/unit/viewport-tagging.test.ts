@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { expectNothingFound } from './spec-scan';
 import ts from 'typescript';
 import { parseSource } from './ast';
-import { specDirs } from '../spec-dirs';
-import { searched, tsFilesUnder } from '../source-files';
 import {
   callsIn,
   declarationsIn,
@@ -62,7 +60,6 @@ import {
  */
 
 const EMULATED_VIEWPORT_TAG = '@emulated-viewport';
-const SCAN_DIRS = specDirs();
 
 type Api = 'page.setViewportSize(...)' | 'test.use({ viewport })';
 
@@ -229,15 +226,7 @@ function analyze(file: string, text: string): string[] {
 
 describe('a real phone cannot resize its own screen', () => {
   it('every test that resizes the viewport is tagged @emulated-viewport, none the phone runs reads it, and no tag is stale', () => {
-    const files = SCAN_DIRS.flatMap(tsFilesUnder);
-
-    const findings = files.flatMap((file) =>
-      analyze(file, readFileSync(file, 'utf8')),
-    );
-    expect(
-      searched(findings, { of: files, what: 'spec files' }),
-      findings.join('\n'),
-    ).toEqual([]);
+    expectNothingFound(analyze);
   });
 });
 

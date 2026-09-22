@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { expectNothingFound } from './spec-scan';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { parseSource } from './ast';
 import { withoutTsComments } from './source-text';
-import { searched, specFilesUnder } from '../source-files';
+import { specFilesUnder } from '../source-files';
 import {
   callsIn,
   declarationsIn,
@@ -105,14 +106,7 @@ function analyze(file: string, text: string): string[] {
 
 describe('every test that reads a download’s bytes is tagged', () => {
   it(`is tagged ${TAG}, and no tag is stale`, () => {
-    const files = specFilesUnder('tests/e2e');
-    const findings = files.flatMap((file) =>
-      analyze(file, readFileSync(file, 'utf8')),
-    );
-    expect(
-      searched(findings, { of: files, what: 'e2e spec files' }),
-      findings.join('\n'),
-    ).toEqual([]);
+    expectNothingFound(analyze);
   });
 
   // Guards the guard: without this, a scan that found nothing at all --
