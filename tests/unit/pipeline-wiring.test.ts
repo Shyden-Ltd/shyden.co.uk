@@ -20,12 +20,15 @@ import { nonEmpty, searched, trackedFiles } from '../source-files';
 import { VISUAL_PROJECT } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
+  inheritedPermissionsFindings,
   jobsDownstreamOfAConditionalJob,
   parseCleanYaml,
   skippedUpstreamFindings,
   producibleContexts,
   unboundedJobFindings,
   workflowJobs,
+  workflowLevelWrites,
+  type DeclaredPermissions,
   type WorkflowJob,
 } from '../workflow-jobs';
 import { parseFile } from './ast';
@@ -1753,6 +1756,89 @@ describe('no two concurrently launched groups share an output folder (#230)', ()
     );
     expect(
       searched(nested, { of: dirs, what: 'gauntlet output folders' }),
+    ).toEqual([]);
+  });
+});
+
+// ---- what a job that states nothing is handed (#301) ----------------------
+//
+// A job with no `permissions:` inherits the workflow's; a workflow with none
+// inherits the REPOSITORY default, measured `write` on 2026-09-22 on
+// `actions/permissions/workflow`. `ci.yml` stated none, so its `visual` job --
+// and any job added later to the one workflow that runs on every pull request
+// -- was handed the right to push commits, edit issues and open pull requests
+// in order to read a checkout and run a suite.
+//
+// The default itself is repository administration, and so the operator's; the
+// declaration is the half this repository controls, and it is the half that
+// survives a settings change in either direction.
+describe('no job inherits the repository default permissions (#301)', () => {
+  const declaredPermissions = (): DeclaredPermissions[] =>
+    workflowYamlNames().map((file) => ({
+      file,
+      permissions: (
+        parseCleanYaml(workflow(file), file) as { permissions?: unknown }
+      ).permissions,
+    }));
+
+  it('every workflow states a workflow-level permissions block', () => {
+    const declared = declaredPermissions();
+    expect(
+      searched(inheritedPermissionsFindings(declared), {
+        of: declared.map(({ file }) => file),
+        what: 'workflow files',
+      }),
+    ).toEqual([]);
+  });
+
+  // Four of the finder's five branches cannot fire on this repository's own
+  // configuration, and a detector branch nothing has ever matched is vacuous
+  // whatever it was written to catch (#118). Synthetic input is the only way
+  // to watch them fire, and `fine.yml` is here so a finder that reported
+  // everything would fail this test rather than pass the one above.
+  it('reports a silent workflow, a shorthand, a list and a rejected value', () => {
+    expect(
+      inheritedPermissionsFindings([
+        { file: 'silent.yml', permissions: undefined },
+        { file: 'empty.yml', permissions: null },
+        { file: 'shorthand.yml', permissions: 'write-all' },
+        { file: 'listed.yml', permissions: ['contents'] },
+        { file: 'typo.yml', permissions: { contents: true } },
+        { file: 'fine.yml', permissions: { contents: 'read' } },
+      ]),
+    ).toEqual([
+      'silent.yml states no workflow-level permissions',
+      'empty.yml states no workflow-level permissions',
+      "shorthand.yml grants every scope with the 'write-all' shorthand",
+      'listed.yml declares permissions that are not a mapping',
+      'typo.yml grants contents: true, which is not read, write or none',
+    ]);
+  });
+
+  // Presence cannot pin a LEVEL, and no rule over every workflow can ask for
+  // read-only: `release-tag.yml` needs `contents: write` to cut a tag. This
+  // asks it of the workflows a PULL REQUEST can start, derived from the
+  // parsed `on:` rather than named -- those are the ones whose run can be
+  // provoked by a branch nobody here has reviewed, which is the case the
+  // repository default was never chosen for.
+  it('no workflow a pull request can start grants a write scope to a silent job', () => {
+    const startedByPullRequest = ({ file }: DeclaredPermissions): boolean => {
+      const on = (parseCleanYaml(workflow(file), file) as { on?: unknown }).on;
+      if (typeof on === 'string') return on === 'pull_request';
+      if (Array.isArray(on)) return on.includes('pull_request');
+      return typeof on === 'object' && on !== null && 'pull_request' in on;
+    };
+    const onPullRequest = declaredPermissions().filter(startedByPullRequest);
+    const writes = onPullRequest.flatMap(({ file, permissions }) =>
+      workflowLevelWrites(permissions).map(
+        (scope) => `${file} grants ${scope} at the workflow level`,
+      ),
+    );
+    expect(
+      searched(writes, {
+        of: onPullRequest.map(({ file }) => file),
+        what: 'workflows a pull request can start',
+      }),
     ).toEqual([]);
   });
 });

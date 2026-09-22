@@ -392,3 +392,71 @@ export function producibleContexts(text: string, file: string): string[] {
 
   return contexts;
 }
+
+/** What a permission scope may be set to; anything else the runner rejects. */
+const PERMISSION_VALUES = new Set(['read', 'write', 'none']);
+
+/** A workflow's own `permissions:`, as parsed, beside the file it came from. */
+export interface DeclaredPermissions {
+  readonly file: string;
+  readonly permissions: unknown;
+}
+
+/**
+ * A finding for every workflow whose silent jobs fall back to the REPOSITORY
+ * default.
+ *
+ * A job stating no `permissions:` inherits the workflow's; a workflow stating
+ * none inherits the repository default, which lives in settings rather than
+ * in source and was measured `write` here on 2026-09-22
+ * (`actions/permissions/workflow`). Absence is therefore the widest grant the
+ * settings allow, written as nothing at all -- and nothing at all is what a
+ * diff shows for it. Declaring the set is the half this repository controls;
+ * the default itself is administration, and so the operator's (#301).
+ *
+ * `read-all` and `write-all` grant every scope in one word, so a workflow
+ * carrying one satisfies a presence check while handing the next job exactly
+ * the breadth this exists to stop it inheriting: only a mapping names what it
+ * grants. A value the runner would reject is reported rather than trusted,
+ * because a `workflow_dispatch`-only workflow would not find out until the
+ * day someone needed it.
+ */
+export function inheritedPermissionsFindings(
+  workflows: readonly DeclaredPermissions[],
+): string[] {
+  return workflows.flatMap(({ file, permissions }) => {
+    if (permissions === undefined || permissions === null)
+      return [`${file} states no workflow-level permissions`];
+    if (typeof permissions === 'string')
+      return [`${file} grants every scope with the '${permissions}' shorthand`];
+    if (!isMapping(permissions))
+      return [`${file} declares permissions that are not a mapping`];
+    return Object.entries(permissions)
+      .filter(
+        ([, value]) =>
+          typeof value !== 'string' || !PERMISSION_VALUES.has(value),
+      )
+      .map(
+        ([scope, value]) =>
+          `${file} grants ${scope}: ${JSON.stringify(value)}, ` +
+          'which is not read, write or none',
+      );
+  });
+}
+
+/**
+ * Every scope a workflow-level block grants at `write`, sorted.
+ *
+ * Read off the declaration, never off a job: a job block REPLACES the
+ * inherited set rather than adding to it, so what a workflow hands a job
+ * that says nothing is exactly this.
+ */
+export function workflowLevelWrites(permissions: unknown): string[] {
+  if (typeof permissions === 'string')
+    return permissions === 'read-all' ? [] : ['every scope'];
+  if (!isMapping(permissions)) return [];
+  return Object.entries(permissions)
+    .filter(([, value]) => value === 'write')
+    .map(([scope]) => scope)
+    .sort();
+}
