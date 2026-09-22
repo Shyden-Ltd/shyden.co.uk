@@ -1,0 +1,96 @@
+import { describe, it, expect } from 'vitest';
+import { waitFor } from '../device/ios/webdriver';
+
+/**
+ * `waitFor` treats a thrown predicate as "not yet" and polls again (#309).
+ *
+ * That is right for a transient failure, such as a `fetch` refused because a
+ * server is still starting, and wrong for a terminal one: a `safaridriver`
+ * that had already exited will never answer, yet its exit was re-thrown and
+ * swallowed on every poll until the 15 s timeout, and only then reported.
+ *
+ * A caller now says which thrown errors are worth another poll. Anything else
+ * ends the wait at once, rejecting with the very error the predicate threw.
+ */
+describe('waitFor', () => {
+  it('ends the wait at once on an error the caller says is not worth retrying', async () => {
+    const exited = new Error(
+      'safaridriver exited before answering GET /status (code=1, signal=null)',
+    );
+    let polls = 0;
+    const started = performance.now();
+
+    const outcome = await waitFor(
+      async () => {
+        polls += 1;
+        throw exited;
+      },
+      {
+        timeout: 15_000,
+        describe: 'a server that has already exited',
+        retryable: (error) => error !== exited,
+      },
+    ).catch((error: unknown) => error);
+
+    const elapsed = Math.round(performance.now() - started);
+    expect(
+      { polls, withinOneSecond: elapsed < 1_000 },
+      `the wait took ${elapsed} ms over ${polls} polls`,
+    ).toEqual({ polls: 1, withinOneSecond: true });
+    expect(outcome).toBe(exited);
+  });
+
+  it('polls again on an error the caller says is worth retrying, until the condition holds', async () => {
+    const exited = new Error('safaridriver exited');
+    let polls = 0;
+
+    const value = await waitFor(
+      async () => {
+        polls += 1;
+        if (polls < 3) throw new TypeError('fetch failed');
+        return 'ready';
+      },
+      {
+        timeout: 5_000,
+        interval: 10,
+        describe: 'a server that is still starting',
+        retryable: (error) => error !== exited,
+      },
+    );
+
+    expect({ value, polls }).toEqual({ value: 'ready', polls: 3 });
+  });
+
+  it('polls again on every thrown error when the caller names no rule, as it always has', async () => {
+    let polls = 0;
+
+    const value = await waitFor(
+      async () => {
+        polls += 1;
+        if (polls < 3) throw new Error('no such element');
+        return 'found';
+      },
+      { timeout: 5_000, interval: 10, describe: 'an element to appear' },
+    );
+
+    expect({ value, polls }).toEqual({ value: 'found', polls: 3 });
+  });
+
+  it('reports a retryable error that never clears at the timeout, naming it', async () => {
+    await expect(
+      waitFor(
+        async () => {
+          throw new TypeError('fetch failed');
+        },
+        {
+          timeout: 300,
+          interval: 50,
+          describe: 'a server that never starts',
+          retryable: () => true,
+        },
+      ),
+    ).rejects.toThrow(
+      'Timed out after 300ms waiting for: a server that never starts. Last observed: threw fetch failed',
+    );
+  });
+});

@@ -134,6 +134,12 @@ export interface WaitForOptions {
   readonly timeout?: number;
   readonly interval?: number;
   readonly describe: string;
+  /**
+   * Whether an error the predicate threw is worth another poll. Omitted,
+   * every thrown error is. An error this rejects ends the wait at once and
+   * is rethrown as-is: the caller already knows no later poll can succeed.
+   */
+  readonly retryable?: (error: unknown) => boolean;
 }
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
@@ -152,7 +158,10 @@ const DEFAULT_WAIT_INTERVAL_MS = 200;
  *
  * A thrown predicate (e.g. a transient fetch failure) is caught and
  * recorded rather than aborting the wait -- callers do not need their own
- * try/catch just to poll for an element that has not appeared yet.
+ * try/catch just to poll for an element that has not appeared yet. A caller
+ * that knows a failure is terminal says so with `retryable`, and that
+ * failure ends the wait at once instead of being retried until the timeout:
+ * a `safaridriver` that has already exited will never answer (#309).
  */
 export async function waitFor<T>(
   predicate: () => Promise<T | undefined | null | false | 0 | ''>,
@@ -160,6 +169,7 @@ export async function waitFor<T>(
 ): Promise<T> {
   const timeout = options.timeout ?? DEFAULT_WAIT_TIMEOUT_MS;
   const interval = options.interval ?? DEFAULT_WAIT_INTERVAL_MS;
+  const retryable = options.retryable ?? (() => true);
   const deadline = Date.now() + timeout;
   let lastValue: unknown;
   let lastError: unknown;
@@ -171,6 +181,7 @@ export async function waitFor<T>(
       lastValue = result;
       if (result) return result;
     } catch (error) {
+      if (!retryable(error)) throw error;
       lastError = error;
     }
 
