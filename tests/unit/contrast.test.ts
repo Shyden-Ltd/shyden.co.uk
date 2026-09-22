@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
+import {
+  contrast,
+  luminance,
+  over,
+  parseColour,
+  type RGB,
+  type RGBA,
+} from '../wcag';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -18,59 +26,6 @@ import { stylesheetCss } from './source-text';
 const TOKENS_FILE = 'src/styles/tokens.css';
 const SRC = 'src';
 
-type RGB = readonly [number, number, number];
-type RGBA = { rgb: RGB; alpha: number };
-
-/** One sRGB channel, linearised per WCAG 2.x relative luminance. */
-const channel = (value: number): number => {
-  const c = value / 255;
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-};
-
-const luminance = ([r, g, b]: RGB): number =>
-  0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-
-const contrast = (a: RGB, b: RGB): number => {
-  const [la, lb] = [luminance(a), luminance(b)];
-  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
-  return (hi + 0.05) / (lo + 0.05);
-};
-
-/**
- * A CSS colour as this repo writes them: `#abc`, `#aabbcc`, or the space-
- * separated form `rgb(255 255 255 / 0.35)`.
- *
- * Aurora's borders and glass surfaces are ALPHAS, not hex (#17). A guard that
- * read only hex would silently classify every one of them as "not a colour"
- * and drop it from the pair check AND from the exhaustiveness check — green,
- * while blind to exactly the tokens that design leans on hardest.
- */
-const parseColour = (value: string): RGBA | null => {
-  const text = value.trim();
-
-  const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (hex !== null) {
-    const h = hex[1];
-    const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
-    const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
-    return { rgb: [r, g, b], alpha: 1 };
-  }
-
-  const fn = text.match(
-    /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[/,]\s*([\d.]+)(%?)\s*)?\)$/i,
-  );
-  if (fn === null) return null;
-
-  const [r, g, b] = [fn[1], fn[2], fn[3]].map(Number);
-  const alpha =
-    fn[4] === undefined
-      ? 1
-      : fn[5] === '%'
-        ? Number(fn[4]) / 100
-        : Number(fn[4]);
-  return { rgb: [r, g, b], alpha };
-};
-
 const isColour = (value: string): boolean => parseColour(value) !== null;
 
 /** Contrast between two literal CSS colours — for the WCAG pin only. */
@@ -80,12 +35,6 @@ const ratioOf = (a: string, b: string): number => {
     throw new Error(`unreadable colour: ${a} / ${b}`);
   return contrast(x.rgb, y.rgb);
 };
-
-/** Source-over compositing, which is what a browser does with an alpha. */
-const over = (fg: RGBA, ground: RGB): RGB =>
-  [0, 1, 2].map((i) =>
-    Math.round(fg.alpha * fg.rgb[i] + (1 - fg.alpha) * ground[i]),
-  ) as unknown as RGB;
 
 /**
  * The `:root` custom properties, read with CSS comments stripped.

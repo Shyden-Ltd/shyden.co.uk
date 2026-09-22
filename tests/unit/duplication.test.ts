@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DUPLICATE_RATIO,
   MIN_PRINTED_LENGTH,
-  declarationsIn,
-  declarationsOf,
+  functionBodiesIn,
+  functionBodiesOf,
   duplicatePairs,
   similarity,
   type DuplicatePair,
@@ -21,7 +21,7 @@ const SCANNED = trackedFiles(
   (path) => /^(src|tests|scripts)\//.test(path) && /\.(ts|mjs)$/.test(path),
 );
 
-const DECLARATIONS = SCANNED.flatMap(declarationsIn);
+const DECLARATIONS = SCANNED.flatMap(functionBodiesIn);
 const PAIRS = duplicatePairs(DECLARATIONS);
 
 /** `file:name <-> file:name`, without line numbers, which drift. */
@@ -101,8 +101,8 @@ describe('the scan itself', () => {
         '  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;',
         '};',
       ].join('\n');
-    const [a] = declarationsOf(shape('channel'), 'a.ts');
-    const [b] = declarationsOf(shape('lin'), 'b.ts');
+    const [a] = functionBodiesOf(shape('channel'), 'a.ts');
+    const [b] = functionBodiesOf(shape('lin'), 'b.ts');
     expect(similarity(a.text, b.text)).toBe(1);
   });
 
@@ -115,8 +115,8 @@ describe('the scan itself', () => {
         '  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;',
         '};',
       ].join('\n');
-    const [a] = declarationsOf(body('one reason'), 'a.ts');
-    const [b] = declarationsOf(body('a completely different reason'), 'b.ts');
+    const [a] = functionBodiesOf(body('one reason'), 'a.ts');
+    const [b] = functionBodiesOf(body('a completely different reason'), 'b.ts');
     expect(similarity(a.text, b.text)).toBe(1);
   });
 
@@ -132,7 +132,7 @@ describe('the scan itself', () => {
         };
         return inner(1);
       };`;
-    const names = declarationsOf(nested, 'a.ts').map((d) => d.name);
+    const names = functionBodiesOf(nested, 'a.ts').map((d) => d.name);
     expect(names).toContain('inner');
     expect(names).toContain('outer');
   });
@@ -147,8 +147,8 @@ describe('the scan itself', () => {
         return inner(value) + inner(value) + inner(value);
       };`;
     const pairs = duplicatePairs([
-      ...declarationsOf(source, 'a.ts'),
-      ...declarationsOf(source, 'b.ts'),
+      ...functionBodiesOf(source, 'a.ts'),
+      ...functionBodiesOf(source, 'b.ts'),
     ]);
     // Both `outer` and `inner` match across the two files; only `outer` is
     // reported, because a report that lists the same finding at every depth
@@ -168,11 +168,11 @@ describe('the scan itself', () => {
         const c = value / 255;
         return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
       };`;
-    expect(duplicatePairs(declarationsOf(source, 'a.ts'))).toEqual([]);
+    expect(duplicatePairs(functionBodiesOf(source, 'a.ts'))).toEqual([]);
   });
 
   it('ignores a body shorter than the floor', () => {
     const source = 'const f = (a: number) => a + 1;';
-    expect(declarationsOf(source, 'a.ts')).toEqual([]);
+    expect(functionBodiesOf(source, 'a.ts')).toEqual([]);
   });
 });

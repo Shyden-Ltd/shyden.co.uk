@@ -8,6 +8,7 @@ import {
   markAbsent,
   giveEveryoneASex,
   expectStudentsBoxReports,
+  contrastRatio,
 } from './helpers';
 
 test.use(recorded);
@@ -397,26 +398,9 @@ test.describe('an absent student', () => {
   // background just as much as the row's.
   test('the pill text meets the WCAG AA contrast floor', async ({ page }) => {
     await markAbsent(page);
-    const contrast = await page
-      .locator('.cg-absent-pill')
-      .first()
-      .evaluate((el) => {
-        const style = getComputedStyle(el);
-        const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
-        const [ir, ig, ib] = nums(style.color);
-        const [br, bg, bb] = nums(style.backgroundColor);
-        const lin = (c: number) => {
-          const s = c / 255;
-          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-        };
-        const luminance = (r: number, g: number, b: number) =>
-          0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-        const textLum = luminance(ir, ig, ib);
-        const bgLum = luminance(br, bg, bb);
-        const lighter = Math.max(textLum, bgLum);
-        const darker = Math.min(textLum, bgLum);
-        return (lighter + 0.05) / (darker + 0.05);
-      });
+    const contrast = await contrastRatio(
+      page.locator('.cg-absent-pill').first(),
+    );
     expect(contrast).toBeGreaterThanOrEqual(4.5);
   });
 
