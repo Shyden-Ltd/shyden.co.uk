@@ -80,16 +80,37 @@ export const expectNoHorizontalScroll = async (
  * would then silently stop asking for a liveness proof. Its comment says so;
  * this is the cross-reference.
  *
- * Nine further sites assert the height alone, unrounded. That is a WEAKER
- * claim, not this one -- a 20px-wide button passes it -- so they are left
- * alone here rather than quietly widened, which would be a coverage change
- * wearing a refactor's clothes.
+ * TEN further sites asserted the height alone, unrounded -- a strictly
+ * WEAKER claim that a 20px-wide button passes -- and #294 widened every one
+ * of them to this one. TEN, not the nine that ticket was filed with: the
+ * pair in `classroom-groups-controls.spec.ts` was collapsed into
+ * `heights.every((h) => h >= 44)`, which a hand-written list missed and a
+ * scan derived from disk did not.
+ *
+ * Four of those sites hold a measured rect rather than a `Locator` -- two
+ * measure the `<label>` wrapping a deliberately small checkbox through an
+ * in-page `evaluate`, and two more are the iOS journey corpus's WebDriver
+ * rects. `rectAtLeast44` is the home they share, so the floor, the rounding
+ * and the both-dimensions policy are decided in exactly one place whatever
+ * did the measuring. The journey corpus still cannot import it -- that
+ * corpus runs under vitest and this module's `expect` is Playwright's -- so
+ * it rounds inline and cross-references here.
  */
-export const atLeast44 = async (locator: Locator): Promise<void> => {
-  const box = await locator.boundingBox();
-  expect(box).not.toBeNull();
+export const rectAtLeast44 = (
+  rect: { readonly width: number; readonly height: number },
+  what: string,
+): void => {
   // Round to the nearest device pixel: engines can report a sub-pixel value
   // like 43.9999 for a declared `min-height: 44px` (fixed-point layout math).
-  expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
-  expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
+  expect(Math.round(rect.width), `${what} width`).toBeGreaterThanOrEqual(44);
+  expect(Math.round(rect.height), `${what} height`).toBeGreaterThanOrEqual(44);
+};
+
+export const atLeast44 = async (
+  locator: Locator,
+  what = locator.toString(),
+): Promise<void> => {
+  const box = await locator.boundingBox();
+  expect(box, `${what} has a box`).not.toBeNull();
+  rectAtLeast44(box!, what);
 };

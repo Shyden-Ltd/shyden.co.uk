@@ -11,7 +11,11 @@ import {
   rosterOf,
 } from './helpers';
 import { recorded } from './evidence';
-import { horizontalOverflow, expectNoHorizontalScroll } from '../viewport';
+import {
+  horizontalOverflow,
+  expectNoHorizontalScroll,
+  rectAtLeast44,
+} from '../viewport';
 
 test.use(recorded);
 
@@ -1239,13 +1243,19 @@ test.describe('Grouping options', () => {
 
       const body = page.locator('#cg-grouping-body');
       await page.locator('#cg-grouping-toggle').click();
-      const heights = await body
+      const labels = await body
         .locator('#cg-sex-mix, #cg-sex-separate')
         .evaluateAll((els) =>
-          els.map((el) => el.closest('label')!.getBoundingClientRect().height),
+          els.map((el) => {
+            const { width, height } = el
+              .closest('label')!
+              .getBoundingClientRect();
+            return { id: el.id, width, height };
+          }),
         );
-      expect(heights).toHaveLength(2);
-      expect(heights.every((h) => h >= 44)).toBe(true);
+      expect(labels).toHaveLength(2);
+      for (const { id, width, height } of labels)
+        rectAtLeast44({ width, height }, `${id} (label)`);
     },
   );
 
