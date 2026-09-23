@@ -91,3 +91,20 @@ updates:
       patch-updates:
         update-types:
           - 'patch'
+
+  # The back-translation engine (#95). Its digest lives in a Dockerfile
+  # because Dependabot reads no image out of a workflow file; this entry is
+  # what keeps that pin from rotting. supply-chain.test.ts fails for any
+  # directory holding a Dockerfile that no `docker` entry watches.
+  - package-ecosystem: 'docker'
+    directory: '/docker/libretranslate'
+    target-branch: 'develop'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'UTC'
+    labels:
+      - 'dependencies'
+      - 'docker'
+    open-pull-requests-limit: 5
