@@ -32,7 +32,8 @@ import { shoot } from './evidence';
 const EPSILON = 0.5;
 
 type Rect = { left: number; right: number; top: number; bottom: number };
-type Item = { name: string; rects: Rect[] };
+/** `wraps`: each piece of the item's text that runs onto more than one line. */
+type Item = { name: string; rects: Rect[]; wraps: string[] };
 type Row = { left: number; right: number; items: Item[] };
 
 /**
@@ -129,17 +130,29 @@ const headerRow = (page: Page): Promise<Row> =>
             return cut;
           });
         };
+        const shows = (r: Rect) => r.right - r.left > 0 && r.bottom - r.top > 0;
         const texts: Rect[] = [];
+        const wraps: string[] = [];
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          if (node.textContent?.trim()) texts.push(...painted(node));
+          const text = node.textContent?.trim();
+          if (!text) continue;
+          const lines = painted(node).filter(shows);
+          // One text node on two lines is a label that did not fit: "Bahasa
+          // Indonesia" wrapped at its space, or 中文 broken between its
+          // characters. Squeezed that way a row can fit with no overlap at
+          // all, which is how mutation M3 passed the first version of this
+          // guard.
+          if (new Set(lines.map((r) => Math.round(r.top))).size > 1)
+            wraps.push(text);
+          texts.push(...lines);
         }
         const rects = [plain(el.getBoundingClientRect()), ...texts].filter(
-          (r) => r.right - r.left > 0 && r.bottom - r.top > 0,
+          shows,
         );
         const name =
           el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '';
-        return { name, rects };
+        return { name, rects, wraps };
       });
     return {
       left: box.left + parseFloat(style.paddingLeft),
@@ -155,7 +168,10 @@ const overlap = (a: Rect, b: Rect): number => {
   return x > EPSILON && y > EPSILON ? x : 0;
 };
 
-/** Every collision in one row: item against item, and item against the row. */
+/**
+ * Every collision in one row: item against item, item against the row, and
+ * text that had to wrap to fit.
+ */
 const collisions = (row: Row): string[] => {
   const found: string[] = [];
   row.items.forEach((a, i) => {
@@ -169,6 +185,8 @@ const collisions = (row: Row): string[] => {
           `"${a.name}" and "${b.name}" overlap by ${worst.toFixed(1)}px`,
         );
     }
+    for (const text of a.wraps)
+      found.push(`"${a.name}" wraps "${text}" onto more than one line`);
     for (const r of a.rects) {
       const out = Math.max(row.left - r.left, r.right - row.right);
       if (out > EPSILON)

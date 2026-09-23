@@ -106,6 +106,12 @@ const alternatives = otherLocales(lang).map((code) => ({
     gap: 0.25rem;
     min-height: 44px;
     padding: 0 0.25rem;
+    /* A label never wraps. Squeezed, 中文 breaks between its two characters,
+       and 中 stacked over 文 is not a label; it also fits a row that has no
+       room, so nothing overlaps and the squeeze goes unseen. Unwrapped, a
+       label that does not fit runs out of the row, where the header's
+       geometry guard sees it (#329, mutation M3). */
+    white-space: nowrap;
     cursor: pointer;
     list-style: none;
     border-radius: 4px;
