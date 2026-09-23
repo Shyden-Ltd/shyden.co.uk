@@ -439,6 +439,11 @@ function main() {
       playwrightExitCode: run.status ?? 1,
       listingStatus: listing.status,
     });
+    if (
+      recorded?.account.shard.index === 3 &&
+      recorded.account.executed !== null
+    )
+      recorded.account.executed -= 1; // throwaway probe (#163 AC4)
     const accountDir = process.env.E2E_ACCOUNT_DIR;
     if (recorded && accountDir) {
       mkdirSync(accountDir, { recursive: true });
