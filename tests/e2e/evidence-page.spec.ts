@@ -12,7 +12,7 @@ import {
 import { test as base, expect } from './fixtures';
 import { contrastRatio } from './helpers';
 import { recordErrors } from './recorders';
-import { recorded } from './evidence';
+import { recorded, shoot } from './evidence';
 
 /**
  * The evidence page's sign-off ticks, driven through the page's OWN rendered
@@ -820,6 +820,7 @@ test.describe('evidence page sign-off, whatever the write order', () => {
         journeySection(page, title).locator('img'),
         `"${title}" shows the capture its manifest row names`,
       ).toHaveCount(1);
+    await shoot(page, 'five journeys, each counted once', signOff(page));
   });
 
   test('the save status is exposed to assistive technology as a status message', async ({
@@ -832,6 +833,7 @@ test.describe('evidence page sign-off, whatever the write order', () => {
     const status = page.locator('#state');
     await expect(status).toHaveRole('status');
     await expect(status).toHaveText(/^Ready\b/);
+    await shoot(page, 'the save status is a status message', status);
   });
 
   test('the status says so when live updates stop', async ({
@@ -960,6 +962,7 @@ test.describe('evidence page sign-off, whatever the write order', () => {
       verdictCovers: null,
       note: '',
     });
+    await shoot(page, 'written back only in its own shape', signOff(page));
   });
 
   test('a read that fails after live updates have loaded the sign-off changes nothing', async ({
@@ -1003,6 +1006,9 @@ const coveredBy = (html: string): string[] =>
   journeysOf(html)
     .map(({ id }) => id)
     .sort();
+
+/** The sign-off section: progress, the notice, the verdict buttons and the note. */
+const signOff = (page: Page) => page.locator('#signoff');
 
 const approveButton = (page: Page) =>
   page.getByRole('button', { name: /^Signed off\b/ });
@@ -1061,6 +1067,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       await storedVerdict(page),
       'the approval records the journeys it was given on',
     ).toEqual({ verdict: 'approved', covers: coveredBy(HTML) });
+    await shoot(page, 'approved on five journeys', signOff(page));
 
     await republish(page, HTML_WITH_ADDED);
     const notice = outOfDate(page);
@@ -1084,6 +1091,11 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       await storedVerdict(page),
       'opening the page changed nothing stored',
     ).toEqual({ verdict: 'approved', covers: coveredBy(HTML) });
+    await shoot(
+      page,
+      'republished with a sixth journey: out of date, naming it',
+      signOff(page),
+    );
 
     await writtenAfter(
       page,
@@ -1095,6 +1107,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       await storedVerdict(page),
       'the approval now records every journey on the page',
     ).toEqual({ verdict: 'approved', covers: coveredBy(HTML_WITH_ADDED) });
+    await shoot(page, 'one press: approved on all six', signOff(page));
   });
 
   test('an unchanged rebuild keeps the approval', async ({
@@ -1108,6 +1121,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       verdict: 'approved',
       covers: coveredBy(HTML),
     });
+    await shoot(page, 'rebuilt unchanged: still approved', signOff(page));
   });
 
   test('a journey removed since puts the approval out of date, and is named', async ({
@@ -1121,6 +1135,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     await expect(notice).toContainText(`No longer on the page: ${DROPPED}.`);
     await expect(notice, 'nothing was added').not.toContainText('Added since');
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(page, 'a removed journey is named', signOff(page));
   });
 
   test('a removed id the store holds is shown as text, never read as markup', async ({
@@ -1139,6 +1154,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       notice.locator('img'),
       'nothing in the notice was parsed from the store',
     ).toHaveCount(0);
+    await shoot(page, 'stored markup shown as text', notice);
   });
 
   test('a sign-off saved before verdicts recorded their journeys is out of date, never approved', async ({
@@ -1162,6 +1178,11 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
         'journeys on this page.',
     );
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(
+      page,
+      'a sign-off from before #197: out of date',
+      signOff(page),
+    );
   });
 
   test('a request for more tests goes out of date the same way', async ({
@@ -1180,6 +1201,11 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       notice.getByRole('link', { name: ADDED, exact: true }),
     ).toBeVisible();
     await expect(moreButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(
+      page,
+      'more tests, asked before the change: out of date',
+      signOff(page),
+    );
   });
 
   test('a tick or a note on an out-of-date page leaves the approval out of date', async ({
@@ -1204,6 +1230,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     ).toEqual({ verdict: 'approved', covers: coveredBy(HTML) });
     await expect(outOfDate(page)).toBeVisible();
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(page, 'ticked and noted: still out of date', signOff(page));
   });
 
   test('pressing a given verdict again withdraws it, and it then covers nothing', async ({
@@ -1222,6 +1249,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     );
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
     expect(await storedVerdict(page)).toEqual({ verdict: null, covers: null });
+    await shoot(page, 'withdrawn: no verdict, nothing covered', signOff(page));
   });
 
   test("the notice's link takes focus, and Enter goes to the journey it names", async ({
@@ -1238,8 +1266,14 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     });
     await link.focus();
     await expect(link).toBeFocused();
+    await shoot(page, 'the link to the added journey has focus', signOff(page));
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(`${ORIGIN}/#j-${ADDED_ID}`);
+    await shoot(
+      page,
+      'Enter went to the added journey',
+      page.locator(`#j-${ADDED_ID}`),
+    );
   });
 
   test("Shift+Tab from the verdict buttons reaches the notice's link (WCAG 2.1.1)", async ({
@@ -1268,6 +1302,11 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       link,
       'the notice sits just before the verdict buttons in the Tab order',
     ).toBeFocused();
+    await shoot(
+      page,
+      'Shift+Tab from the buttons reached the link',
+      signOff(page),
+    );
   });
 
   for (const scheme of ['light', 'dark'] as const)
@@ -1301,6 +1340,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
           `the ${part} in the ${scheme} theme`,
         ).toBeGreaterThanOrEqual(4.5);
       }
+      await shoot(page, `the notice in the ${scheme} theme`, notice);
     });
 
   test('without storage, a verdict given in this view covers this view', async ({
@@ -1320,6 +1360,11 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
       page.locator('#state'),
       'the verdict is reported unsaved',
     ).toHaveText(/^Not saved\b/);
+    await shoot(
+      page,
+      'no storage: given here, and said unsaved',
+      signOff(page),
+    );
   });
 
   test('an out-of-date verdict still reads out of date after live updates stop', async ({
@@ -1334,6 +1379,7 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     await expect(page.locator('#state')).toHaveText(/^Live updates stopped\b/);
     await expect(outOfDate(page)).toBeVisible();
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(page, 'live updates stopped: still out of date', signOff(page));
   });
 });
 
