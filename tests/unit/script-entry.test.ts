@@ -556,6 +556,14 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'usage: npm run i18n:translate -- <locale>',
   },
+  // With no engine it could read nothing back, so it refuses before any
+  // request (#95) -- and a skipped `main()` would exit 0 in silence.
+  'i18n-back-translate.mjs': {
+    args: [],
+    env: { BACK_TRANSLATE_URL: undefined },
+    status: 1,
+    says: 'BACK_TRANSLATE_URL must be the engine',
+  },
   // Takes no arguments either, and refuses one before it reads the config or
   // reaches for `gh` -- so the probe proves the entry point ran without a
   // token, a network call or a repository (#299).
