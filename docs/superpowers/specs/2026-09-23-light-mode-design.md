@@ -157,7 +157,13 @@ At narrow widths the language switcher shows the **compact label decided for #32
 
 **The one script.** It lives in one source file, `src/scripts/theme.inline.js`. It is plain JavaScript because it ships exactly as written. It is type-checked through `// @ts-check` and kept to a few hundred bytes, because every page carries it. Its explanation lives in a template comment beside the place where `BaseLayout.astro` emits it, which the build strips, rather than in the shipped file.
 
-`BaseLayout.astro` emits it as a classic inline script, `<script is:inline set:html={themeScript}>`, straight after the viewport `<meta>`. On today's build that puts it before both stylesheet links (checked on the built homepage), so it is parsed and run before the first paint and makes no request. It does five things:
+`BaseLayout.astro` emits it as a classic inline script, `<script is:inline set:html={themeScript}>`, straight after the viewport `<meta>`. On today's build that puts it before both stylesheet links (checked on the built homepage), so it is parsed and run before the first paint and makes no request.
+
+The site sends no Content-Security-Policy: none is set in `public/_headers`, in `functions/_middleware.js` or anywhere under `src/`, which is why `/classroom-groups`'s own inline script runs today. The theme script relies on that. If a policy is ever added, it must allow this script by its hash in `script-src`, or every page flashes and the switch stops working. Because the inventory guard pins the script's content (§6.4), its hash changes only when the file does.
+
+Storing the choice sets no cookie and sends nothing anywhere. It writes one word, and only when the visitor presses the switch, which is the same footing on which `/classroom-groups` already keeps `'cg-sound'`.
+
+It does five things:
 
 1. **Reads the saved choice.** It calls `localStorage.getItem('theme')` inside `try`/`catch`, the same guard `/classroom-groups` uses for `'cg-sound'`, because some privacy modes throw `SecurityError` on touching storage. If the value is exactly `light` or `dark`, it stamps `data-theme` on `<html>`.
 2. **Reveals the switch.** It stamps `data-theme-switch` on `<html>`, which turns `--switch-display` on (§4). So **with JavaScript off the switch never appears** and the device setting applies.
@@ -398,3 +404,8 @@ It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`wit
 **Pass 8, 2026-09-23.** A complete read with every lens at once. It found 1 problem: pass 7's per-theme assertion compared the rendered ground against the theme's `--bg`, which a print run could never satisfy, since paper is white in either theme. A print run now asserts its theme in screen media, before switching to print.
 
 **Pass 9, 2026-09-23.** A complete read of every line. It found 4 problems, all of one kind: acceptance criteria lagging behind requirements added to the body. AC11 lacked the per-theme assertion, AC12 the baselines' names and control sequence, and AC19 the `searched()` liveness. Separately, "`--danger` keeps only its card pairs" contradicted the table's `--danger` on `--bg` row. Every requirement added in passes 5 to 8 was then checked against §10, and each now has its criterion.
+
+**Pass 10, 2026-09-23.** It re-read every region changed since its last full reading, and checked mechanically that all 26 body requirements have their criterion and all 33 § references resolve. It then applied the two lenses no pass had used. It found 2 unstated assumptions:
+
+- **security:** the inline script works only because the site sends no Content-Security-Policy (checked in `_headers`, the middleware and `src/`), which is now stated, together with what a future policy must allow;
+- **privacy:** the basis for storing the choice on the visitor's device was unstated.
