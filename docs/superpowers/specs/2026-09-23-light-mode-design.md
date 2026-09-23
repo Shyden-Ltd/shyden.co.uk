@@ -281,6 +281,7 @@ Every new or rewritten guard is mutation-verified in both directions before it l
 | the reveal rule taken out of `@media screen`                            | not printed                               |
 | the switch's accessible name removed                                    | accessibility                             |
 | a per-theme project set to the other scheme                             | that run's own theme assertion            |
+| the click delegation removed, with the sanity suites run against a local build | the dev-sanity and prod-sanity switch checks |
 
 ## 7. Cleanup in the same ticket (part 4)
 
@@ -418,3 +419,5 @@ It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`wit
 - §1 said the brand green was "the only colour on the page", but the page also carries the ShyTalk mark, the flags and the app screenshot. The claim is now about Studio's palette;
 - §9's risk table lacked the future Content-Security-Policy that pass 10 wrote into §5;
 - the entries for passes 8, 9 and 11 claimed complete reads that were partial. They now say what each actually read.
+
+**Pass 13, 2026-09-23.** A second read of every line in one sitting. It found 1 problem: the switch checks added to dev-sanity and prod-sanity in pass 2 are new guards, but §6.8 gave them no mutation. They run against deployed sites, so their mutation runs the same suites against a local build.
