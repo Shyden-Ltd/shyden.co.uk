@@ -225,12 +225,13 @@ describe('checkLabels: a label against the rest of its locale', () => {
   });
 
   it('copy with the same English is no variant when one rendering holds the other', () => {
-    const column = unit('rosterColAbsent', 'Absent', '缺席');
-    const count = unit('stateAbsent', '{n} absent', '{n} 缺席');
+    // One way only: `第 {n} 组` holds `组`, and `组` does not hold `第`.
+    const column = unit('csv.groupColumn', 'Group', '组');
+    const heading = unit('groupLabel', 'Group {n}', '第 {n} 组');
 
-    expect(checkLabels([column, count], 'zh')).toEqual([
+    expect(checkLabels([column, heading], 'zh')).toEqual([
       { ...column, status: 'unchecked', witnesses: [], variants: [] },
-      { ...count, status: 'unchecked', witnesses: [], variants: [] },
+      { ...heading, status: 'unchecked', witnesses: [], variants: [] },
     ]);
   });
 
