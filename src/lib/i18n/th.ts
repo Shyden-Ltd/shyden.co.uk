@@ -93,7 +93,7 @@ export const th: Catalogue = {
   rosterColName: 'ชื่อ',
   rosterColSex: 'เพศ',
   rosterColAbsent: 'ไม่มา',
-  rosterColTogether: 'ร่วมกัน',
+  rosterColTogether: 'ด้วยกัน',
   rosterColApart: 'แยก',
   rosterUnset: '—',
   rosterSexMale: 'M',
@@ -122,9 +122,9 @@ export const th: Catalogue = {
   rosterClearAll: 'ลบทั้งหมด',
   stateNoneAdded: 'ยังไม่มีข้อมูล',
   stateNamed: '{n} ชื่อ',
-  stateAbsent: '{n} ไม่มี',
-  stateTogether: '{n} ร่วมกัน',
-  stateApart: '{n} ห่างกัน',
+  stateAbsent: '{n} ไม่มา',
+  stateTogether: '{n} ด้วยกัน',
+  stateApart: '{n} แยกกัน',
   stateAdded: '{n} ได้เพิ่มแล้ว',
   stateNone: 'ไม่มี',
   stateMixed: 'แบ่งตามเพศ',
@@ -134,7 +134,7 @@ export const th: Catalogue = {
   stateUnsaved:
     'การเปลี่ยนแปลงที่ยังไม่บันทึก — ส่งออกเพื่อเก็บรักษาการเปลี่ยนแปลงเหล่านั้น',
   makeGroups: 'สร้างกลุ่ม',
-  again: 'สับไพ่ใหม่',
+  again: 'สับใหม่',
   needsJs: 'เครื่องมือนี้ต้องเปิดใช้งาน JavaScript',
   resultsHeading: 'กลุ่มของคุณ',
   resultsHeadingNamed: '{className} — กลุ่มของคุณ',
@@ -216,9 +216,9 @@ export const th: Catalogue = {
   printGroupsHeading: 'กลุ่ม',
   printedOn: 'พิมพ์จาก{on}',
   printHereToday: '{here} นักเรียนที่มาร่วมเรียนวันนี้ · {absent} ไม่มา',
-  boardOpen: 'หน้าจอเต็ม',
+  boardOpen: 'เต็มหน้าจอ',
   boardExit: 'ปิดโหมดเต็มหน้าจอ',
-  boardShuffle: 'สับไพ่ใหม่',
+  boardShuffle: 'สับใหม่',
   staleRefuseExport: 'กลุ่มเหล่านี้ล้าสมัยแล้ว โปรดจัดเรียงใหม่ก่อนที่จะบันทึก',
   staleRefusePrint: 'กลุ่มเหล่านี้ล้าสมัยแล้ว โปรดจัดเรียงใหม่ก่อนพิมพ์',
   staleRefuseBoard: 'กลุ่มเหล่านี้ล้าสมัยแล้ว โปรดสับใหม่ก่อนที่จะแสดงออกมา',
@@ -246,7 +246,7 @@ export const th: Catalogue = {
     KEEP_APART_NO_ARRANGEMENT:
       'ไม่มีทางที่จะจัดชั้นเรียนของคุณให้เข้าอยู่ใน {groupsTried} กลุ่มได้ โดยยังคงรักษาการเว้นระยะห่างระหว่างทุกคนที่จำเป็นต้องเว้นระยะห่างได้ ดังนั้น คุณต้องเพิ่มจำนวนกลุ่มให้มากขึ้น หรือยกเลิกกฎข้อใดข้อหนึ่ง',
     KEEP_APART_SEARCH_GAVE_UP:
-      'มีกฎการเว้นระยะห่างที่นี่มากเกินไปจนยากที่จะปฏิบัติตาม ลองลบออกบางส่วนดู',
+      'มีกฎ “ให้อยู่คนละกลุ่ม” มากเกินไปจนยากที่จะปฏิบัติตาม ลองลบออกบางส่วนดู',
     BOTH_RULES_NO_ARRANGEMENT:
       'ไม่มีวิธีใดที่จะจัดนักเรียนในชั้นของคุณให้เข้าอยู่ใน {groupsTried} กลุ่มได้ โดยยังคงปฏิบัติตามกฎตัวอักษรที่อยู่ติดกันและกฎตัวอักษรที่อยู่แยกกันทั้งหมดในเวลาเดียวกัน การค้นหาไม่สามารถระบุได้ว่ากฎประเภทใดเป็นปัญหา ดังนั้นลองใช้วิธีแก้ไขอย่างใดอย่างหนึ่งต่อไปนี้: ขยายขนาดกลุ่มให้ใหญ่ขึ้น หรือกำหนดตัวอักษรที่อยู่ติดกันให้กับนักเรียนจำนวนน้อยลง หรือสร้างกลุ่มเพิ่มเติม หรือยกเลิกกฎตัวอักษรที่อยู่แยกกันหนึ่งข้อ',
     BOTH_RULES_SEARCH_GAVE_UP:

@@ -11,6 +11,7 @@ import {
   type Locale,
 } from '../../src/lib/i18n/locales';
 import { getSiteStrings } from '../../src/lib/i18n';
+import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import { backTranslationUnits } from '../../src/lib/i18n/back-translate';
 import { checkLabels } from '../../src/lib/i18n/label-check';
 
@@ -40,13 +41,16 @@ import { checkLabels } from '../../src/lib/i18n/label-check';
  * table the record of it: changing a value here is changing what was signed
  * off, and it may not be done without a fresh operator read.
  *
- * Scope is the roster column family, because #249 propagates these six keys
- * out of one table header and into the empty option of three dropdowns on
- * every row. The rest of the catalogues' short labels need the same treatment
- * and that sweep is #161, whose list must be derived rather than read. The CSV
- * export writes its own copy of these headers and is held apart as #252: there
- * the header word is a parsing token, so correcting one breaks importing a file
- * a teacher has already exported.
+ * Scope began as the roster column family, because #249 propagates these six
+ * keys out of one table header and into the empty option of three dropdowns
+ * on every row. #161 widened it. Every short label that disagreed with its
+ * own locale's copy went to the operator on one sheet, and everything he
+ * read there is pinned here: the 29 corrections he approved, the sentences
+ * that came with them, and the values he chose to keep. Those keys are
+ * spelled the way `backTranslationUnits` spells a path (`howToSteps[2]`,
+ * `site.glory.heading`, `csv.columns.apart`), so a flag and its pin name the
+ * same copy. A CSV header word is a parsing token as well as copy (#252), so
+ * correcting one keeps the old word readable: `supersededColumns`.
  */
 const VERIFIED: Record<Locale, Record<string, string>> = {
   en: {
@@ -64,6 +68,14 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterColAbsent: 'Tidak hadir',
     rosterColTogether: 'Bersama',
     rosterColApart: 'Terpisah',
+    // #161's sheet, read by the operator on 2026-09-23.
+    'csv.columns.apart': 'terpisah',
+    'csv.columns.together': 'bersama',
+    keepApartLabel: 'Jangan bersama',
+    modeLabel: 'Bagi berdasarkan',
+    'site.home.opensAt': 'membuka',
+    stateApart: '{n} dipisahkan',
+    stateTogether: '{n} disatukan',
   },
   zh: {
     rosterColNumber: '#',
@@ -72,6 +84,26 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterColAbsent: '缺席',
     rosterColTogether: '在一起',
     rosterColApart: '分开',
+    // #161's sheet, read by the operator on 2026-09-23.
+    again: '重新洗牌',
+    boardShuffle: '重新洗牌',
+    'csv.columns.apart': '分开',
+    'csv.columns.name': '姓名',
+    'errors.KEEP_APART_SEARCH_GAVE_UP':
+      '这里的“分开”规则太多，难以逐一处理。试着删除其中一些吧。',
+    howToHeading: '使用方法',
+    'howToSteps[2]': '点击“开始分组”。',
+    ioReplaceWarning:
+      '这将取代您当前的班级名单——{total}名学生，其中{named}名已命名。',
+    keepApartLabel: '分开',
+    makeGroups: '开始分组',
+    modeGroupCount: '组数',
+    resultsHeading: '您的分组',
+    resultsHeadingNamed: '{className} — 您的分组',
+    stateAdded: '{n} 已添加',
+    stateApart: '{n} 分开',
+    stateNamed: '{n} 已命名',
+    stateNone: '无',
   },
   vi: {
     rosterColNumber: '#',
@@ -80,29 +112,90 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterColAbsent: 'Vắng mặt',
     rosterColTogether: 'Cùng nhau',
     rosterColApart: 'Tách biệt',
+    // #161's sheet, read by the operator on 2026-09-23.
+    'csv.columns.apart': 'tách biệt',
+    'errors.KEEP_APART_SEARCH_GAVE_UP':
+      'Ở đây có quá nhiều quy tắc xếp khác nhóm, khó mà xử lý hết được. Hãy thử loại bỏ một số quy tắc trong số đó.',
+    ioReplaceWarning:
+      'Danh sách này sẽ thay thế danh sách lớp hiện tại của bạn — {total} học sinh, {named} em đã có tên.',
+    keepApartLabel: 'Xếp khác nhóm',
+    modeLabel: 'Phân chia theo',
+    sectionStudentsHeading: 'Thông tin học sinh',
+    'site.glory.heading': 'Máy tính Glory Points',
+    'site.glory.title': 'Máy tính Glory Points — Shyden',
+    'site.home.workGloryTitle': 'Máy tính Glory Points',
+    stateAdded: '{n} đã được thêm vào',
+    stateApart: '{n} tách biệt',
+    stateNamed: '{n} đã có tên',
+    stateNone: 'không có',
   },
   th: {
     rosterColNumber: '#',
     rosterColName: 'ชื่อ',
     rosterColSex: 'เพศ',
     rosterColAbsent: 'ไม่มา',
-    rosterColTogether: 'ร่วมกัน',
+    rosterColTogether: 'ด้วยกัน',
     rosterColApart: 'แยก',
+    // #161's sheet, read by the operator on 2026-09-23.
+    again: 'สับใหม่',
+    boardOpen: 'เต็มหน้าจอ',
+    boardShuffle: 'สับใหม่',
+    'csv.columns.absent': 'ไม่มา',
+    'csv.columns.apart': 'แยกกัน',
+    'csv.columns.together': 'ด้วยกัน',
+    'csv.fileName.class-list': 'รายชื่อชั้น',
+    'errors.KEEP_APART_SEARCH_GAVE_UP':
+      'มีกฎ “ให้อยู่คนละกลุ่ม” มากเกินไปจนยากที่จะปฏิบัติตาม ลองลบออกบางส่วนดู',
+    keepApartLabel: 'ให้อยู่คนละกลุ่ม',
+    printClassListHeading: 'รายชื่อนักเรียน',
+    printWhatClassList: 'รายชื่อนักเรียน',
+    rosterAbsentPill: 'ไม่มา',
+    'site.glory.heading': 'เครื่องคำนวณ Glory Points',
+    'site.glory.title': 'เครื่องคำนวณ Glory Points — Shyden',
+    'site.home.workGloryTitle': 'เครื่องคำนวณ Glory Points',
+    stateAbsent: '{n} ไม่มา',
+    stateAdded: '{n} ได้เพิ่มแล้ว',
+    stateApart: '{n} แยกกัน',
+    stateTogether: '{n} ด้วยกัน',
   },
 };
 
 const CATALOGUES: Record<Locale, Catalogue> = { en, id, zh, vi, th };
 
 /**
- * Only the string leaves. A `Catalogue` also holds message templates, which
- * are functions; if a `rosterCol*` key ever became one it would drop out of
- * the derived key set below and the count control would go red rather than
- * this file quietly stopping to assert it.
+ * Only the top-level strings: the nested tables (`errors`, `warnings`) and
+ * the lists (`howToSteps`) are not columns. A message is a string too (#136),
+ * so a `rosterCol*` key that became one would stay in the derived set below.
  */
 const stringsOf = (catalogue: Catalogue): Record<string, string> =>
   Object.fromEntries(
     Object.entries(catalogue).filter(([, value]) => typeof value === 'string'),
   ) as Record<string, string>;
+
+/**
+ * The copy at a pinned key, read from the catalogue the key names: `site.`
+ * for the page chrome, `csv.` for the words a downloaded file carries, and
+ * the page catalogue otherwise. A key that names nothing reads as
+ * `undefined`, which no pinned value equals, so a pin that outlives its copy
+ * goes red rather than silently asserting nothing.
+ */
+const copyAt = (locale: Locale, key: string): unknown => {
+  const [root, path]: [unknown, string] = key.startsWith('site.')
+    ? [getSiteStrings(locale), key.slice('site.'.length)]
+    : key.startsWith('csv.')
+      ? [CSV_LOCALES[locale], key.slice('csv.'.length)]
+      : [CATALOGUES[locale], key];
+  return path
+    .replace(/\[(\d+)\]/g, '.$1')
+    .split('.')
+    .reduce<unknown>(
+      (table, step) =>
+        table !== null && typeof table === 'object'
+          ? (table as Record<string, unknown>)[step]
+          : undefined,
+      root,
+    );
+};
 
 /**
  * Derived from the catalogue, never listed here. A seventh roster column
@@ -113,15 +206,15 @@ const rosterColumnKeys = Object.keys(stringsOf(en))
   .filter((key) => key.startsWith('rosterCol'))
   .sort();
 
-describe('the roster column labels a teacher reads', () => {
+describe('the copy the operator read and approved', () => {
   it('every locale renders the value the operator approved', () => {
     const live = Object.fromEntries(
       LOCALES.map((locale) => [
         locale,
         Object.fromEntries(
-          rosterColumnKeys.map((key) => [
+          Object.keys(VERIFIED[locale]).map((key) => [
             key,
-            stringsOf(CATALOGUES[locale])[key],
+            copyAt(locale, key),
           ]),
         ),
       ]),
@@ -130,7 +223,7 @@ describe('the roster column labels a teacher reads', () => {
     expect(live).toEqual(VERIFIED);
   });
 
-  it('the pin covers every locale and every column, with nothing blank', () => {
+  it('the pin covers every locale and every roster column, with nothing blank', () => {
     expect(Object.keys(CATALOGUES).sort()).toEqual([...LOCALES].sort());
     expect(Object.keys(VERIFIED).sort()).toEqual([...LOCALES].sort());
 
@@ -140,17 +233,20 @@ describe('the roster column labels a teacher reads', () => {
       nonEmpty(rosterColumnKeys, 'rosterCol* keys in the English catalogue'),
     ).toHaveLength(6);
 
-    for (const locale of LOCALES) {
-      expect(Object.keys(VERIFIED[locale]).sort()).toEqual(rosterColumnKeys);
-    }
-
-    const values = LOCALES.flatMap((locale) =>
-      rosterColumnKeys.map((key) => VERIFIED[locale][key]),
+    const unpinned = LOCALES.flatMap((locale) =>
+      rosterColumnKeys
+        .filter((key) => !Object.hasOwn(VERIFIED[locale], key))
+        .map((key) => `${locale} ${key}`),
     );
+    expect(
+      searched(unpinned, { of: rosterColumnKeys, what: 'roster columns' }),
+    ).toEqual([]);
+
+    const values = LOCALES.flatMap((locale) => Object.values(VERIFIED[locale]));
     expect(
       searched(
         values.filter((value) => value.trim() === ''),
-        { of: values, what: 'pinned roster column labels' },
+        { of: values, what: 'pinned values' },
       ),
     ).toEqual([]);
   });
@@ -168,67 +264,17 @@ describe('the roster column labels a teacher reads', () => {
  * in neither, and this goes red.
  *
  * Exact in both directions: a listed label that stops disagreeing goes red
- * too, so the list cannot outlive what it describes. It empties as #161's
- * sheet is answered, each entry moving to a pin or to a corrected catalogue.
+ * too, so the list cannot outlive what it describes. It emptied when #161's
+ * sheet was answered (2026-09-23), each entry moving to a pin or to a
+ * corrected catalogue, and it stays as the place a new flag waits while the
+ * operator reads it.
  */
 const AWAITING_READ: Record<Locale, readonly string[]> = {
   en: [],
-  id: [
-    'csv.columns.apart',
-    'csv.columns.together',
-    'keepApartLabel',
-    'modeLabel',
-    'site.home.opensAt',
-    'stateApart',
-    'stateTogether',
-  ],
-  zh: [
-    'again',
-    'boardShuffle',
-    'csv.columns.apart',
-    'csv.columns.name',
-    'howToHeading',
-    'keepApartLabel',
-    'makeGroups',
-    'modeGroupCount',
-    'resultsHeading',
-    'resultsHeadingNamed',
-    'stateAdded',
-    'stateApart',
-    'stateNamed',
-    'stateNone',
-  ],
-  vi: [
-    'csv.columns.apart',
-    'keepApartLabel',
-    'modeLabel',
-    'sectionStudentsHeading',
-    'site.glory.heading',
-    'site.home.workGloryTitle',
-    'stateAdded',
-    'stateApart',
-    'stateNamed',
-    'stateNone',
-  ],
-  th: [
-    'again',
-    'boardOpen',
-    'boardShuffle',
-    'csv.columns.absent',
-    'csv.columns.apart',
-    'csv.columns.together',
-    'csv.fileName.class-list',
-    'keepApartLabel',
-    'printClassListHeading',
-    'printWhatClassList',
-    'rosterAbsentPill',
-    'site.glory.heading',
-    'site.home.workGloryTitle',
-    'stateAbsent',
-    'stateAdded',
-    'stateApart',
-    'stateTogether',
-  ],
+  id: [],
+  zh: [],
+  vi: [],
+  th: [],
 };
 
 describe('short labels that disagree with their own locale', () => {
