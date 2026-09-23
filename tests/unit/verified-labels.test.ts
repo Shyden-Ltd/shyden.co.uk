@@ -5,8 +5,14 @@ import { id } from '../../src/lib/i18n/id';
 import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
 import { th } from '../../src/lib/i18n/th';
-import { LOCALES, type Locale } from '../../src/lib/i18n/locales';
+import {
+  DEFAULT_LOCALE,
+  LOCALES,
+  type Locale,
+} from '../../src/lib/i18n/locales';
 import { getSiteStrings } from '../../src/lib/i18n';
+import { backTranslationUnits } from '../../src/lib/i18n/back-translate';
+import { checkLabels } from '../../src/lib/i18n/label-check';
 
 /**
  * The values of the roster's column labels, pinned to what the operator read
@@ -147,6 +153,120 @@ describe('the roster column labels a teacher reads', () => {
         { of: values, what: 'pinned roster column labels' },
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * Short labels that disagree with their own locale, awaiting the operator's
+ * read (#161).
+ *
+ * `checkLabels` flags a label whose rendering appears in none of the copy that
+ * uses its English and says more, and a label whose namesake renders the same
+ * English in other words. Every flag is either pinned in `VERIFIED` above --
+ * the operator has read that value -- or listed here until he has. A label
+ * that starts to disagree, in a re-seeded locale or on the day it is added, is
+ * in neither, and this goes red.
+ *
+ * Exact in both directions: a listed label that stops disagreeing goes red
+ * too, so the list cannot outlive what it describes. It empties as #161's
+ * sheet is answered, each entry moving to a pin or to a corrected catalogue.
+ */
+const AWAITING_READ: Record<Locale, readonly string[]> = {
+  en: [],
+  id: [
+    'csv.columns.apart',
+    'csv.columns.together',
+    'keepApartLabel',
+    'modeLabel',
+    'site.home.opensAt',
+    'stateApart',
+    'stateTogether',
+  ],
+  zh: [
+    'again',
+    'boardShuffle',
+    'csv.columns.apart',
+    'csv.columns.name',
+    'howToHeading',
+    'keepApartLabel',
+    'makeGroups',
+    'modeGroupCount',
+    'resultsHeading',
+    'resultsHeadingNamed',
+    'stateAdded',
+    'stateApart',
+    'stateNamed',
+    'stateNone',
+  ],
+  vi: [
+    'csv.columns.apart',
+    'keepApartLabel',
+    'modeLabel',
+    'sectionStudentsHeading',
+    'site.glory.heading',
+    'site.home.workGloryTitle',
+    'stateAdded',
+    'stateApart',
+    'stateNamed',
+    'stateNone',
+  ],
+  th: [
+    'again',
+    'boardOpen',
+    'boardShuffle',
+    'csv.columns.absent',
+    'csv.columns.apart',
+    'csv.columns.together',
+    'csv.fileName.class-list',
+    'keepApartLabel',
+    'printClassListHeading',
+    'printWhatClassList',
+    'rosterAbsentPill',
+    'site.glory.heading',
+    'site.home.workGloryTitle',
+    'stateAbsent',
+    'stateAdded',
+    'stateApart',
+    'stateTogether',
+  ],
+};
+
+describe('short labels that disagree with their own locale', () => {
+  it("every one is pinned or awaiting the operator's read", () => {
+    const unread = Object.fromEntries(
+      LOCALES.map((locale) => {
+        const labels = checkLabels(backTranslationUnits(locale), locale);
+        const flagged = labels
+          .filter(
+            ({ status, variants }) =>
+              status === 'disagrees' || variants.length > 0,
+          )
+          .map(({ key }) => key)
+          .filter((key) => !Object.hasOwn(VERIFIED[locale], key));
+        // A check that stopped finding witnesses would flag nothing, and an
+        // emptied list would then agree with it. Only English has no labels.
+        const witnessed = labels
+          .filter(({ status }) => status !== 'unchecked')
+          .map(({ key }) => key);
+        return [
+          locale,
+          locale === DEFAULT_LOCALE
+            ? flagged
+            : [
+                ...searched(flagged, {
+                  of: witnessed,
+                  what: `${locale} labels with a witness`,
+                }),
+              ].sort(),
+        ];
+      }),
+    );
+
+    expect(unread).toEqual(
+      Object.fromEntries(
+        LOCALES.map((locale) => [locale, [...AWAITING_READ[locale]].sort()]),
+      ),
+    );
   });
 });
 
