@@ -214,6 +214,17 @@ function messagePairs(
 
 /** A message slot (`{names}`), which is not copy on either side. */
 const SLOT = /\{[^{}]*\}/g;
+
+/**
+ * A unit as the engine is sent it: without its slots.
+ *
+ * The score leaves slots out on both sides, and the engine mangles them: on
+ * 24 historical corrections (2026-09-23) `{on}` came back as `MHon}` and `{n}`
+ * as `(3nd)`, debris in 13 of the pairs, and in none once slots were left out.
+ * A slot sent is noise and nothing else.
+ */
+export const sendable = (text: string): string =>
+  text.replace(SLOT, ' ').replace(/\s+/g, ' ').trim();
 /** Punctuation, symbols and spacing: a full stop Thai does not write is not drift. */
 const NOT_COMPARED = /[\p{P}\p{S}\s]/gu;
 /** chrF's standard reach: character n-grams of one to six. */
@@ -438,6 +449,21 @@ export function engineConfig(
   return { url: raw.replace(/\/+$/, ''), ...(apiKey ? { apiKey } : {}) };
 }
 
+/**
+ * Labels are reviewed apart from sentences, at the house rule's boundary:
+ * since #114 every label of three words or fewer is audited separately from
+ * prose. Measured on #95, this is where the score misleads. Read back word
+ * for word, a correct synonym scores near 0 and a homonym defect can score
+ * 100 -- the vi and zh "Sex" fixes of 2026-09-20 both scored 100 before and
+ * 9 after.
+ */
+const LABEL_WORDS = 3;
+const isLabel = (english: string): boolean =>
+  english.replace(SLOT, ' ').trim().split(/\s+/).filter(Boolean).length <=
+  LABEL_WORDS;
+const LABEL_CAVEAT =
+  'Read back word for word, a correct label can score near 0 and a wrong one 100: `Giới tính` (gender) reads back as *Gender* for *Sex* and scores 9, where the `Tình dục` (sexual intercourse) it replaced read back as *Sex* and scored 100. Judge these by eye; the order is only a place to start (#95, #161).';
+
 /** A value inside one Markdown table cell, whatever characters it carries. */
 const cell = (text: string): string =>
   text
@@ -446,6 +472,16 @@ const cell = (text: string): string =>
     .replace(/>/g, '&gt;')
     .replace(/\|/g, '\\|')
     .replace(/\s*\n\s*/g, ' ');
+
+/** Rows as a review table, in the order given. */
+const table = (rows: readonly Comparison[]): string[] => [
+  '| chrF | key | English | translation | back-translation |',
+  '| ---: | --- | --- | --- | --- |',
+  ...rows.map(
+    (row) =>
+      `| ${Math.round(row.score)} | \`${row.key}\` | ${cell(row.english)} | ${cell(row.translation)} | ${cell(row.backTranslation)} |`,
+  ),
+];
 
 function median(sorted: readonly number[]): number {
   const middle = Math.floor(sorted.length / 2);
@@ -469,23 +505,31 @@ export function reviewMarkdown(
       return `<details><summary>${locale} — 0 compared</summary>\n\nNothing was read back.\n\n</details>`;
     const scores = rows.map(({ score }) => score);
     const heading = `${locale} — ${rows.length} compared, lowest ${Math.round(scores[0])}, median ${Math.round(median(scores))}`;
+    const sentences = rows.filter((row) => !isLabel(row.english));
+    const labels = rows.filter((row) => isLabel(row.english));
     return [
       `<details><summary>${heading}</summary>`,
       '',
-      '| chrF | key | English | translation | back-translation |',
-      '| ---: | --- | --- | --- | --- |',
-      ...rows.map(
-        (row) =>
-          `| ${Math.round(row.score)} | \`${row.key}\` | ${cell(row.english)} | ${cell(row.translation)} | ${cell(row.backTranslation)} |`,
-      ),
-      '',
+      ...(sentences.length > 0
+        ? ['#### Sentences, worst first', '', ...table(sentences), '']
+        : []),
+      ...(labels.length > 0
+        ? [
+            '#### Labels of three words or fewer',
+            '',
+            LABEL_CAVEAT,
+            '',
+            ...table(labels),
+            '',
+          ]
+        : []),
       '</details>',
     ].join('\n');
   });
   return [
     '## Back-translation review',
     '',
-    `Every translated locale, read back into English by **${engine}**, which did not write it. The score is chrF, 0 to 100: how much of the English's character sequences the round trip kept. Advisory: nothing fails on a score (#95), so read the lowest rows first.`,
+    `Every translated locale, read back into English by **${engine}**, which did not write it. The score is chrF, 0 to 100: how much of the English's character sequences the round trip kept. Advisory: nothing fails on a score (#95). Sentences are listed worst first; labels are listed apart, because the score cannot judge them.`,
     '',
     ...sections.flatMap((section) => [section, '']),
   ].join('\n');

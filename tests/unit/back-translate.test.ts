@@ -25,6 +25,7 @@ import {
   libreTranslateBody,
   livenessProblems,
   reviewMarkdown,
+  sendable,
   translatedTexts,
   unitsBetween,
   worstFirst,
@@ -420,6 +421,21 @@ describe('the LibreTranslate request and its answer', () => {
   });
 });
 
+describe('sendable: what the engine is sent', () => {
+  // The score leaves slots out on both sides, and the engine mangles them --
+  // `{on}` came back as `MHon}` and `{n}` as `(3nd)` in 13 of 24 historical
+  // pairs measured on 2026-09-23 -- so a slot sent is only noise.
+  it.each([
+    ['a slot at the start', '{n} đã được thêm vào', 'đã được thêm vào'],
+    ['a slot glued to a word', 'Nhóm{n}', 'Nhóm'],
+    ['slots between words', '{names} ถูก {x} เก็บ', 'ถูก เก็บ'],
+    ['plain copy', 'Tambah siswa', 'Tambah siswa'],
+    ['nothing but a slot', '{n}', ''],
+  ])('%s', (_, text, want) => {
+    expect(sendable(text)).toBe(want);
+  });
+});
+
 describe('engineConfig: a missing engine fails loudly', () => {
   it('refuses to run without an engine address', () => {
     expect(() => engineConfig({})).toThrow(/BACK_TRANSLATE_URL/);
@@ -499,6 +515,45 @@ describe('reviewMarkdown: the page a reviewer reads', () => {
     );
   });
 
+  it('reviews sentences apart from labels of three words or fewer', () => {
+    const split = reviewMarkdown(
+      [
+        {
+          ...compared('vi', 'sentence', 40),
+          english: 'Keep these students together in one group',
+        },
+        {
+          ...compared('vi', 'label', 9, 'Gender', 'Giới tính'),
+          english: 'Sex',
+        },
+      ],
+      ['vi'],
+      'engine',
+    );
+    const at = (needle: string) => split.indexOf(needle);
+    expect([
+      at('#### Sentences') > -1,
+      at('| `sentence` |') > at('#### Sentences'),
+      at('#### Labels of three words or fewer') > at('| `sentence` |'),
+      at('| `label` |') > at('#### Labels of three words or fewer'),
+    ]).toEqual([true, true, true, true]);
+  });
+
+  it('counts a label by its words, never its slots', () => {
+    const slotted = reviewMarkdown(
+      [{ ...compared('th', 'slotted', 50), english: '{n} added' }],
+      ['th'],
+      'engine',
+    );
+    // The heading is found first: `indexOf` answers -1 for a missing one, and
+    // every row sits "after" -1, which is how this passed before the split
+    // existed.
+    const labels = slotted.indexOf('#### Labels of three words or fewer');
+    expect(labels, 'no labels section').toBeGreaterThan(-1);
+    expect(slotted.indexOf('| `slotted` |')).toBeGreaterThan(labels);
+    expect(slotted).not.toContain('#### Sentences');
+  });
+
   it('keeps every value inside its own table cell', () => {
     const awkward = reviewMarkdown(
       [compared('vi', 'k', 10, 'a | b\nc <b>d</b>', 'x|y')],
@@ -548,6 +603,8 @@ describe('scripts/i18n-back-translate.mjs', () => {
   interface StandIn {
     url: string;
     log: string[];
+    /** Every text the engine was asked to read, in order. */
+    sent: string[];
   }
 
   async function standIn(options: {
@@ -556,6 +613,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     refuse?: { status: number; error: string };
   }): Promise<StandIn> {
     const log: string[] = [];
+    const sent: string[] = [];
     server = createServer((request, response) => {
       // Decoded as a stream, so a Thai character split across two chunks
       // arrives whole rather than as two replacement characters.
@@ -578,6 +636,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
             source: string;
           };
           log.push(`POST /translate ${source} ${q.length}`);
+          sent.push(...q);
           if (options.refuse) {
             reply(options.refuse.status, { error: options.refuse.error });
             return;
@@ -594,7 +653,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     await new Promise<void>((done) => listening.listen(0, '127.0.0.1', done));
     log.push('listening');
     const { port } = listening.address() as AddressInfo;
-    return { url: `http://127.0.0.1:${port}`, log };
+    return { url: `http://127.0.0.1:${port}`, log, sent };
   }
 
   /** One run of the real script, with only the environment a test gives it. */
@@ -645,11 +704,26 @@ describe('scripts/i18n-back-translate.mjs', () => {
       const units = backTranslationUnits(locale);
       const mine = report().comparisons.filter((row) => row.locale === locale);
       expect(mine, locale).toHaveLength(units.length);
+      // Written out here, not taken from the module: the slots the engine is
+      // spared, then the stand-in's answer.
       for (const row of mine)
         expect(row.backTranslation, `${locale} ${row.key}`).toBe(
-          `back:${row.translation}`,
+          `back:${row.translation
+            .replace(/\{[^{}]*\}/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()}`,
         );
     }
+    // Not one slot reached the engine, and the copy around them did: the
+    // Vietnamese group label is `Nhóm {n}`.
+    expect(
+      searched(
+        engine.sent.filter((text) => /[{}]/.test(text)),
+        { of: engine.sent, what: 'texts sent to the engine' },
+      ),
+      'a slot sent is noise the engine mangles',
+    ).toEqual([]);
+    expect(engine.sent).toContain('Nhóm');
     // Every section, parsed off its line rather than found as a substring.
     expect(
       [

@@ -39,6 +39,7 @@ import {
   libreTranslateBody,
   livenessProblems,
   reviewMarkdown,
+  sendable,
   translatedTexts,
 } from '../src/lib/i18n/back-translate.ts';
 
@@ -95,10 +96,14 @@ async function main() {
   const comparisons = [];
   for (const { locale, source } of plan) {
     const units = backTranslationUnits(locale);
-    // The same translation under several keys is read once.
-    const distinct = [...new Set(units.map(({ translation }) => translation))];
+    // Sent without its slots, and the same text under several keys once. A
+    // translation that is nothing but slots is sent nowhere and reads back as
+    // nothing, which scores 0 and heads the review.
+    const distinct = [
+      ...new Set(units.map(({ translation }) => sendable(translation))),
+    ].filter((text) => text !== '');
     /** @type {Map<string, string>} */
-    const back = new Map();
+    const back = new Map([['', '']]);
     for (let at = 0; at < distinct.length; at += BATCH) {
       const texts = distinct.slice(at, at + BATCH);
       const answer = await call(`${url}/translate`, {
@@ -111,7 +116,7 @@ async function main() {
       );
     }
     for (const unit of units) {
-      const backTranslation = back.get(unit.translation);
+      const backTranslation = back.get(sendable(unit.translation));
       // Every distinct translation was sent and every answer checked for
       // count, so this cannot happen -- and if it ever does, it is a broken
       // run, not a unit quietly scored against nothing.
