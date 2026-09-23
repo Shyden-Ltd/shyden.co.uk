@@ -8,7 +8,9 @@ import {
 } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import { publishedPaths } from './published-paths';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
+
+test.use(recorded);
 
 /**
  * The header row has room for everything in it, in every locale (#329).
