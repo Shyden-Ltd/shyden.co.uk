@@ -95,6 +95,54 @@ export function accountFileName({ index, total }) {
   return `e2e-account-${index}-of-${total}.json`;
 }
 
+/**
+ * What a shard writes down about its own run, and the file it goes in: `null`
+ * for a run that was not a shard, which writes nothing. Built here, beside the
+ * verdict that reads it, so the one account a shard can write is one the
+ * verdict can read.
+ *
+ * @param {{
+ *   argv: readonly string[],
+ *   enumerated: number | null,
+ *   executed: number | null,
+ *   playwrightExitCode: number,
+ *   listingStatus: number | null,
+ * }} run
+ * @returns {{ file: string, account: ShardAccount } | null}
+ */
+export function shardAccount({
+  argv,
+  enumerated,
+  executed,
+  playwrightExitCode,
+  listingStatus,
+}) {
+  const shard = shardOf(argv);
+  if (shard === null) return null;
+  return {
+    file: accountFileName(shard),
+    account: { shard, enumerated, executed, playwrightExitCode, listingStatus },
+  };
+}
+
+/**
+ * What a shard prints about its count, in place of `reconcile()`'s PARTIAL
+ * notice. That notice says a narrowed run was "NOT judged against the full
+ * suite", which is true of `--project=chromium` at a desk and false of a CI
+ * shard: build-and-test judges the sum.
+ *
+ * @param {ShardAccount} account
+ */
+export function shardNotice({ shard, enumerated, executed }) {
+  const ran = executed === null ? 'an unreadable number' : String(executed);
+  const of = enumerated === null ? 'an unknown number of' : `the ${enumerated}`;
+  return (
+    `\nSHARD ${shard.index} of ${shard.total} — ran ${ran} of ${of} tests the suite holds.\n` +
+    'build-and-test holds the sum of every shard against the suite ' +
+    '(scripts/e2e-shards.mjs).\n'
+  );
+}
+
 const ACCOUNT_FILE = /^e2e-account-.*\.json$/;
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */

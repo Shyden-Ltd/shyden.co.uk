@@ -7,6 +7,8 @@ import {
   accountFileName,
   accountFindings,
   needsFindings,
+  shardAccount,
+  shardNotice,
   shardOf,
 } from '../../scripts/e2e-shards.mjs';
 
@@ -126,6 +128,74 @@ describe('accountFileName: one file per shard', () => {
       accountFileName({ index, total: 4 }),
     );
     expect(new Set(names).size).toBe(4);
+  });
+});
+
+describe('shardAccount: what a shard writes down about its own run', () => {
+  const measured = {
+    enumerated: 7,
+    executed: 7,
+    playwrightExitCode: 0,
+    listingStatus: 0,
+  };
+
+  // The writer and the reader share this module, so the one account a shard
+  // can write is one the verdict can read. A round trip, not two fixtures.
+  it('is an account the verdict accepts, filed under its own name', () => {
+    const recorded = shardAccount({ argv: ['--shard=1/1'], ...measured });
+    expect(recorded?.file).toBe('e2e-account-1-of-1.json');
+    expect(accountFindings([recorded?.account])).toEqual([]);
+  });
+
+  it('carries what the run measured, not what it was meant to', () => {
+    const recorded = shardAccount({
+      argv: ['--shard=1/1'],
+      ...measured,
+      executed: 6,
+    });
+    expect(accountFindings([recorded?.account])).toEqual([
+      expect.stringMatching(/6 of the 7/),
+    ]);
+  });
+
+  // A report nobody could read is still worth an account: the verdict names
+  // the shard that measured nothing, instead of a shard that never reported.
+  it('records a run whose report could not be read as having measured nothing', () => {
+    const recorded = shardAccount({
+      argv: ['--shard=2/2'],
+      ...measured,
+      executed: null,
+    });
+    expect(recorded?.account.executed).toBeNull();
+    expect(accountFindings([recorded?.account]).join('\n')).toMatch(
+      /shard 2 of 2 accounted for no tests at all/,
+    );
+  });
+
+  it('is null for a run that was not a shard', () => {
+    expect(
+      shardAccount({ argv: ['--project=chromium'], ...measured }),
+    ).toBeNull();
+  });
+});
+
+describe('shardNotice: what a shard says about its own count', () => {
+  // `reconcile()` calls any narrowed run PARTIAL and "NOT judged against the
+  // full suite". True of `--project=chromium` at a desk; false of a CI shard,
+  // whose count build-and-test judges. The log must not tell a reader looking
+  // at a red shard that nothing checks it.
+  it('names the shard, its count and who holds the sum', () => {
+    const notice = shardNotice({
+      shard: { index: 2, total: 4 },
+      enumerated: SUITE,
+      executed: 553,
+      playwrightExitCode: 0,
+      listingStatus: 0,
+    });
+    expect(notice).toMatch(/SHARD 2 of 4/);
+    expect(notice).toMatch(/553 of the 2210/);
+    expect(notice).toMatch(/build-and-test/);
+    expect(notice).not.toMatch(/NOT judged/);
   });
 });
 

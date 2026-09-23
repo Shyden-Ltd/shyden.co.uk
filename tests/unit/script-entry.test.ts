@@ -513,6 +513,14 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'GITHUB_REPOSITORY and GITHUB_TOKEN are required',
   },
+  // With no needs to read and no shard accounts, build-and-test's verdict has
+  // nothing to vouch for, so it refuses rather than pass on nothing (#163).
+  'e2e-shards.mjs': {
+    args: [],
+    env: { NEEDS_JSON: undefined },
+    status: 1,
+    says: 'build-and-test REFUSED',
+  },
   // Playwright rejects the option, so the run writes no report, and the
   // reconciliation refuses rather than call that a pass.
   'test-e2e.mjs': {
