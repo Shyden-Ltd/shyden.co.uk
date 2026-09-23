@@ -110,9 +110,15 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
 
-  # The e2e suite, split into parallel shards (#163). The whole suite took
-  # 22.9 to 28.5 minutes in one job, under a 45-minute budget it was growing
-  # into, and every pull request waited all of it.
+  # The e2e suite, split into parallel shards (#163). In one job it took 25.7
+  # to 39.3 minutes (median 36.9, its last eight green runs) under a 45-minute
+  # budget, and every pull request waited all of it.
+  #
+  # EIGHT, measured rather than guessed. Playwright hands each shard an equal
+  # COUNT of tests in project order, so a shard is roughly one engine's slice,
+  # and the engines differ about threefold per test. At four (run
+  # 35830220134) chromium's shard took 4.9 minutes and the firefox-and-webkit
+  # one 13.2, which is the wall-clock. Eight splits the slow slices.
   e2e:
     name: e2e shard ${{ matrix.shard }} of ${{ strategy.job-total }}
     runs-on: ubuntu-26.04
@@ -125,7 +131,7 @@ jobs:
       # way: build-and-test refuses a cancelled shard as surely as a failed one.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
