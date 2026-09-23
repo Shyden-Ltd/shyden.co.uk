@@ -1426,13 +1426,18 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
  * guard that derives from it, so moving the constant cannot move both sides and
  * quietly restore the hole (#117).
  *
- * RESTATED FOR A SHARD (#163). The whole suite ran under 45 minutes until it
- * was split, and 45 minutes for a quarter of the suite would bound nothing a
- * shard could plausibly take: a shard hung for 40 minutes would read as slow,
- * not stuck. The policy is now per shard, and no job runs the unsplit suite:
- * the dispatch path calls ci.yml rather than keeping a copy of its steps. The
- * number is set against the shard durations measured on the pull request that
- * split the suite, with the same margin the old policy was meant to keep.
+ * RESTATED FOR A SHARD (#163). By the time the suite was split it took up to
+ * 39.3 minutes of those 45 (its last eight green runs, median 36.9): a margin
+ * of 1.15 that the suite's growth had eaten from 1.58. And 45 minutes for an
+ * eighth of the suite would bound nothing a shard could plausibly take: a
+ * shard hung for 40 minutes would read as slow, not stuck. The policy is now
+ * per shard, and no job runs the unsplit suite: the dispatch path calls
+ * ci.yml rather than keeping a copy of its steps.
+ *
+ * MEASURED on PR #320, five green eight-shard runs of one head (run
+ * 35832427906, attempts 1 to 5): the slowest shard of each took 8.3 to 8.9
+ * minutes, so 20 is 2.2 times the slowest. Revisit it when that falls under
+ * 1.5, rather than when a shard is cancelled.
  */
 const E2E_SHARD_BUDGET_MINUTES = 20;
 
