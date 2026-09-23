@@ -200,9 +200,11 @@ A new `theme.spec.ts` covers:
 
 - **no flash, both directions.** One case is a saved `light` choice on a device preferring dark; the other is a saved `dark` choice on a device preferring light. An init script records `getComputedStyle(documentElement).backgroundColor` in the first animation frame, which runs before the first paint, and it must equal the saved theme's `--bg`. A static guard backs it on every built page: the theme script is inline, classic (no `type="module"`, which would defer it), inside `<head>` and before every stylesheet. The static guard covers a script that is moved or made a module, which a fast page could otherwise hide from a timing test;
 - **persistence** across a reload, a second page, and a new browser context carrying the same storage;
-- **Back**: switch on page B, go back to page A from the back-forward cache, and A shows the new theme. The test asserts that `pageshow` reported `persisted: true`, because a page reloaded instead of restored re-runs the head script and would pass without the handler ever running. An engine that never restores from the cache in the test browser reports a skip with that reason, never a pass;
+- **Back**: switch on page B, go back to page A from the back-forward cache, and A shows the new theme. The test asserts that `pageshow` reported `persisted: true`, because a page reloaded instead of restored re-runs the head script and would pass without the handler ever running. An engine that never restores from the cache in the test browser reports a skip with that reason, never a pass. So that the handler is proven even if every engine skips, a second case runs in every engine: it changes the saved choice underneath an open page, dispatches a `pageshow` with `persisted: true`, and asserts that the theme and `aria-pressed` follow. That case is the one the §6.8 mutation turns red;
 - **storage refused**: `localStorage` throws, the switch still changes the page, no error reaches the console, and nothing is saved;
 - **the OS changes** while no choice is saved: emulated `colorScheme` flips, the page follows, and so does `aria-pressed`;
+- **instant**: in the first animation frame after the click, the page's ground is already the new theme's `--bg`. Nothing transitions;
+- **not printed**: under emulated print media, the switch is not rendered;
 - **without JavaScript** the switch is absent and the device setting applies;
 - **accessibility**: the name is the locale's own `themeDarkMode` in each of the five locales, `aria-pressed` is correct in each state, the target is 44 × 44, and the focus ring is visible.
 
@@ -264,7 +266,7 @@ Every new or rewritten guard is mutation-verified in both directions before it l
 | a project's `colorScheme` removed, or a new config added without one    | the scheme-declared guard                 |
 | the `try`/`catch` around the save removed                               | storage refused (page still switches)     |
 | the save removed                                                        | persistence                               |
-| the `pageshow` handler removed                                          | Back                                      |
+| the `pageshow` handler removed                                          | Back (the synthetic `pageshow` case)      |
 | the OS-change listener removed                                          | the OS changes                            |
 | `--switch-display` shown on bare `:root`                                | without JavaScript                        |
 | the light `--wordmark-tile` changed                                     | the wordmark-tile guard                   |
@@ -370,3 +372,9 @@ Splitting it keeps the light-mode pull request's diff to the feature itself. It 
 - a return from the back-forward cache re-applied the theme but did not say it refreshes `aria-pressed`, which would otherwise announce the old state.
 
 The review page gained the work cards as refined in pass 3.
+
+**Pass 5, 2026-09-23.** A second lens: it checked that each acceptance criterion can be decided by a test, that each of the 30 § references resolves (all do), that each number traces to a measurement, and that each mechanism can be built. It found 3 problems:
+
+- "switches instantly" (AC3) had no test;
+- "the switch does not print" (AC10) had no test;
+- if no test engine restores from the back-forward cache, every Back case skips and the `pageshow` mutation could never go red. A synthetic `pageshow` case now runs in every engine.
