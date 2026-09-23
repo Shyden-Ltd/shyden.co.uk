@@ -10,6 +10,8 @@ import { filesUnder, searched } from '../source-files';
  * `translate.ts` is the DeepL harness's decisions -- its glossary and request
  * building (#21). `back-translate.ts` imports every locale's catalogue at once
  * (#95): reached from a page, it would put all five on every page.
+ * `label-check.ts` reads its units from `back-translate.ts` (#161), so it
+ * carries the same five.
  *
  * The guard this replaces looked for the SUBSTRING `i18n/translate` in each
  * shipped file. A sibling in `src/lib/i18n/` importing `./translate` never
@@ -19,6 +21,7 @@ import { filesUnder, searched } from '../source-files';
 const CLI_ONLY = [
   'src/lib/i18n/translate.ts',
   'src/lib/i18n/back-translate.ts',
+  'src/lib/i18n/label-check.ts',
 ];
 
 const CODE = /\.(ts|mts|js|mjs|astro)$/;
