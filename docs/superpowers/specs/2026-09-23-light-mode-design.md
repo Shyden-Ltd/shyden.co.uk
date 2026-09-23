@@ -8,7 +8,7 @@
 
 Aurora (#17) becomes the site's **dark** mode, exactly as it ships today. A second identity, **Studio**, becomes its **light** mode. One button in the header switches between them instantly, and the visitor's choice persists. Until a visitor chooses, the site follows the device's own setting.
 
-Studio answers the question Aurora answers with glow: _what carries the atmosphere when there is no darkness to glow against?_ Its answer is **depth, not colour**. A cool grey ground, pure white cards that sit forward of it, window light at the top left and cool shade falling off to the right and below. The brand green is the only colour on the page.
+Studio answers the question Aurora answers with glow: _what carries the atmosphere when there is no darkness to glow against?_ Its answer is **depth, not colour**. A cool grey ground, pure white cards that sit forward of it, window light at the top left and cool shade falling off to the right and below. Its palette has one colour, the brand green; everything else it paints is light and shade. What a page shows, such as the ShyTalk mark, the flags and the app screenshot, keeps its own colours in both themes.
 
 The #142 body says this work branches from `17-aurora`. That branch has since merged, so this work branches from `develop`.
 
@@ -307,6 +307,7 @@ One new catalogue key, `themeDarkMode`, reads "Dark mode" in English. It is type
 | Back shows a page in the theme the visitor just left                  | §5: the saved choice is re-applied on `pageshow`                                                                                       |
 | a real phone's own setting changes the gauntlet's results             | §6.2: the device harness pins the scheme per run                                                                                       |
 | a visitor's storage is refused                                        | §5: the page still switches; the choice just is not remembered                                                                         |
+| a Content-Security-Policy added later blocks the inline script        | §5: the policy must allow the script by its hash, which is stable because §6.4 pins the script's content                               |
 
 ## 10. Acceptance criteria
 
@@ -401,13 +402,19 @@ It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`wit
 - the light baselines did not name the capture, compare and mutate sequence, without which a written set proves nothing;
 - the per-theme runs never asserted which theme they rendered, so a misconfigured light run would pass on the dark palette.
 
-**Pass 8, 2026-09-23.** A complete read with every lens at once. It found 1 problem: pass 7's per-theme assertion compared the rendered ground against the theme's `--bg`, which a print run could never satisfy, since paper is white in either theme. A print run now asserts its theme in screen media, before switching to print.
+**Pass 8, 2026-09-23.** A read of the head of the spec and of §6.2 to §7, with every lens at once. It found 1 problem: pass 7's per-theme assertion compared the rendered ground against the theme's `--bg`, which a print run could never satisfy, since paper is white in either theme. A print run now asserts its theme in screen media, before switching to print.
 
-**Pass 9, 2026-09-23.** A complete read of every line. It found 4 problems, all of one kind: acceptance criteria lagging behind requirements added to the body. AC11 lacked the per-theme assertion, AC12 the baselines' names and control sequence, and AC19 the `searched()` liveness. Separately, "`--danger` keeps only its card pairs" contradicted the table's `--danger` on `--bg` row. Every requirement added in passes 5 to 8 was then checked against §10, and each now has its criterion.
+**Pass 9, 2026-09-23.** A read of §3 to §6.1 and of §8 to the end. It found 4 problems, all of one kind: acceptance criteria lagging behind requirements added to the body. AC11 lacked the per-theme assertion, AC12 the baselines' names and control sequence, and AC19 the `searched()` liveness. Separately, "`--danger` keeps only its card pairs" contradicted the table's `--danger` on `--bg` row. Every requirement added in passes 5 to 8 was then checked against §10, and each now has its criterion.
 
 **Pass 10, 2026-09-23.** It re-read every region changed since its last full reading, and checked mechanically that all 26 body requirements have their criterion and all 33 § references resolve. It then applied the two lenses no pass had used. It found 2 unstated assumptions:
 
 - **security:** the inline script works only because the site sends no Content-Security-Policy (checked in `_headers`, the middleware and `src/`), which is now stated, together with what a future policy must allow;
 - **privacy:** the basis for storing the choice on the visitor's device was unstated.
 
-**Pass 11, 2026-09-23.** A complete read adding the lenses not yet applied: accessibility beyond the switch's semantics, forced colours, performance and rollback. It found 1 problem: the switch's look was unspecified. With no fill or border, its icon is what identifies it under SC 1.4.11, so the icon's colour matters. It now follows the header's menu button: `currentColor` from `--ink`, 13.33:1 at worst. Performance (a few hundred inline bytes, no request) and rollback (a stale `theme` key is ignored by a site without the script) raised nothing.
+**Pass 11, 2026-09-23.** A read of §5 adding the lenses not yet applied: accessibility beyond the switch's semantics, forced colours, performance and rollback. It found 1 problem: the switch's look was unspecified. With no fill or border, its icon is what identifies it under SC 1.4.11, so the icon's colour matters. It now follows the header's menu button: `currentColor` from `--ink`, 13.33:1 at worst. Performance (a few hundred inline bytes, no request) and rollback (a stale `theme` key is ignored by a site without the script) raised nothing.
+
+**Pass 12, 2026-09-23.** The first pass to read every line of the spec in a single sitting; passes 8 to 11 had each covered the changed regions and some spans. It found 3 problems:
+
+- §1 said the brand green was "the only colour on the page", but the page also carries the ShyTalk mark, the flags and the app screenshot. The claim is now about Studio's palette;
+- §9's risk table lacked the future Content-Security-Policy that pass 10 wrote into §5;
+- the entries for passes 8, 9 and 11 claimed complete reads that were partial. They now say what each actually read.
