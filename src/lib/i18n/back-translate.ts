@@ -459,8 +459,10 @@ export function engineConfig(
  */
 const LABEL_WORDS = 3;
 const isLabel = (english: string): boolean =>
-  english.replace(SLOT, ' ').trim().split(/\s+/).filter(Boolean).length <=
-  LABEL_WORDS;
+  english
+    .replace(SLOT, ' ')
+    .split(/\s+/)
+    .filter((token) => /\p{L}/u.test(token)).length <= LABEL_WORDS;
 const LABEL_CAVEAT =
   'Read back word for word, a correct label can score near 0 and a wrong one 100: `Giới tính` (gender) reads back as *Gender* for *Sex* and scores 9, where the `Tình dục` (sexual intercourse) it replaced read back as *Sex* and scored 100. Judge these by eye; the order is only a place to start (#95, #161).';
 

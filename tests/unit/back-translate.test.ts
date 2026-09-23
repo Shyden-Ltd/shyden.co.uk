@@ -541,7 +541,8 @@ describe('reviewMarkdown: the page a reviewer reads', () => {
 
   it('counts a label by its words, never its slots', () => {
     const slotted = reviewMarkdown(
-      [{ ...compared('th', 'slotted', 50), english: '{n} added' }],
+      // Two words and two slots: a label by its words, a sentence by its tokens.
+      [{ ...compared('th', 'slotted', 50), english: '{n} of {total} chosen' }],
       ['th'],
       'engine',
     );
