@@ -1,6 +1,6 @@
 # Light mode: Studio beside Aurora (#142)
 
-**Status:** design approved in four parts on 2026-09-23 and revised by the review passes logged in §12. This written spec awaits the operator's approval. No plan and no code exist yet, and none will until the spec is approved.
+**Status:** approved by the operator on 2026-09-23 (UTC), after the four design parts and the review passes logged in §12. Next: the implementation plan, which is reviewed before any code.
 
 **Comparison and review page:** https://claude.ai/artifact/RXZDsNzcjVEosHnYMAnqBw (version 3: the three candidates as rendered, Studio refined, the two wordmark options, and the work cards with the refined badge).
 
