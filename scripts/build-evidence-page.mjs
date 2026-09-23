@@ -30,6 +30,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
+import { signOffOf, standingOf } from './evidence-signoff.mjs';
 
 /**
  * @param {unknown} s
@@ -867,6 +868,12 @@ button:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
 button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent)}
 button[aria-pressed="true"]{color:var(--on-accent)}
 textarea{width:100%;max-width:100%;font:inherit;font-size:.92rem;padding:11px;border:1px solid var(--rule);border-radius:6px;background:var(--ground);color:var(--ink);min-height:88px;resize:vertical}
+.standing:not(:empty){border:2px solid var(--alert);background:var(--raise);padding:12px 14px;margin:16px 0}
+.standing p{margin:0 0 6px}
+.standing p:last-child{margin-bottom:0}
+.standing strong{color:var(--alert)}
+.standing a{color:var(--accent-ink)}
+.standing code{font-family:var(--mono);font-size:.9em}
 .state{font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);margin-top:12px}
 .state.saved{color:var(--accent-ink)}
 
@@ -922,6 +929,7 @@ ${journeyHtml}
   <h2 style="margin-top:0">Sign-off</h2>
   <p class="count" id="progress">0 of ${journeys.length} journeys reviewed</p>
   <p class="sub">Nothing merges on green CI alone. This ticket progresses only on your explicit decision below.</p>
+  <div class="standing" id="standing" role="status"></div>
   <div class="choices">
     <button type="button" id="btn-approve" aria-pressed="false">Signed off &mdash; may merge to develop</button>
     <button type="button" id="btn-more" aria-pressed="false">More tests needed</button>
@@ -938,6 +946,11 @@ ${journeyHtml}
 <script>
 (function () {
   'use strict';
+  // The stored sign-off's shape, and where its verdict stands against this
+  // page's journeys, embedded by their own source text: the unit tests and the
+  // pre-merge check run these same functions (evidence-signoff.mjs, #197).
+  ${signOffOf.toString()}
+  ${standingOf.toString()}
   var JOURNEYS = ${JSON.stringify(journeys.map((j) => j.id))};
   var DOC = 'signoff/' + ${JSON.stringify(content.signoffKey ?? 'ticket')};
   var JOURNEY_KEY = 'journey:';
@@ -949,10 +962,10 @@ ${journeyHtml}
   // The stored sign-off as this view last received it, always as the page's
   // OWN copy: the runtime delivers snapshots frozen, and a page that keeps one
   // as its state drops every later edit without an error (#172).
-  var server = copyOf(undefined);
-  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict'
-  // and 'note'. The page shows the server copy with these laid over it, so no
-  // snapshot, early or late, can repaint an edit away.
+  var server = signOffOf(undefined);
+  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict',
+  // 'verdictCovers' and 'note'. The page shows the server copy with these laid
+  // over it, so no snapshot, early or late, can repaint an edit away.
   var pending = Object.create(null);
   var db = null, storageAbsent = false, loaded = false, saveTimer = null;
   var stateEl = document.getElementById('state');
@@ -960,24 +973,14 @@ ${journeyHtml}
   var noteEl = document.getElementById('note');
   var approve = document.getElementById('btn-approve');
   var more = document.getElementById('btn-more');
+  var standingEl = document.getElementById('standing');
+  // What the out-of-date notice last said. It is a live region, so it is
+  // rebuilt only when that changes: a rebuild on every tick would be
+  // announced again on every tick.
+  var shownStanding = '';
   function say(m, ok) { stateEl.textContent = m; stateEl.className = 'state' + (ok ? ' saved' : ''); }
   function codeOf(e) { return e && typeof e.code === 'string' ? e.code : 'unknown'; }
   function hasPending() { return Object.keys(pending).length > 0; }
-  // Keeps only the shape this page writes. The store is shared by every
-  // viewer, so what it delivers is untrusted input.
-  function copyOf(body) {
-    var source = body && typeof body === 'object' ? body : {};
-    var stored = source.journeys && typeof source.journeys === 'object' ? source.journeys : {};
-    var journeys = {};
-    Object.keys(stored).forEach(function (id) {
-      if (typeof stored[id] === 'boolean') journeys[id] = stored[id];
-    });
-    return {
-      journeys: journeys,
-      verdict: source.verdict === 'approved' || source.verdict === 'more' ? source.verdict : null,
-      note: typeof source.note === 'string' ? source.note : ''
-    };
-  }
   function overlay(target, edits) {
     Object.keys(edits).forEach(function (key) {
       if (key.indexOf(JOURNEY_KEY) === 0) target.journeys[key.slice(JOURNEY_KEY.length)] = edits[key];
@@ -985,9 +988,63 @@ ${journeyHtml}
     });
     return target;
   }
-  function view() { return overlay(copyOf(server), pending); }
+  function view() { return overlay(signOffOf(server), pending); }
+  function paragraph(parts) {
+    var p = document.createElement('p');
+    parts.forEach(function (part) {
+      p.appendChild(typeof part === 'string' ? document.createTextNode(part) : part);
+    });
+    standingEl.appendChild(p);
+  }
+  function listed(nodes) {
+    var parts = [];
+    nodes.forEach(function (node, at) {
+      if (at > 0) parts.push(', ');
+      parts.push(node);
+    });
+    return parts;
+  }
+  function linkTo(id) {
+    var link = document.createElement('a');
+    var section = document.getElementById('j-' + id);
+    var heading = section ? section.querySelector('h3') : null;
+    link.href = '#j-' + id;
+    link.textContent = heading ? heading.textContent : id;
+    return link;
+  }
+  // A removed journey is named by the id the shared store holds, so it is
+  // written as text and never parsed as markup.
+  function idOf(id) {
+    var code = document.createElement('code');
+    code.textContent = id;
+    return code;
+  }
+  function showStanding(standing) {
+    var said = JSON.stringify(standing);
+    if (said === shownStanding) return;
+    shownStanding = said;
+    while (standingEl.firstChild) standingEl.removeChild(standingEl.firstChild);
+    if (!standing.stale) return;
+    var signedOff = standing.verdict === 'approved';
+    var lead = document.createElement('strong');
+    lead.textContent = signedOff ? 'Your sign-off is out of date.' : 'Your decision is out of date.';
+    var onPage = JOURNEYS.length === 1 ? 'the 1 journey' : 'the ' + JOURNEYS.length + ' journeys';
+    if (standing.unrecorded) {
+      paragraph([lead, ' It was saved before ' + (signedOff ? 'sign-offs' : 'decisions') +
+        ' recorded the journeys they cover, so it cannot be matched to ' + onPage + ' on this page.']);
+    } else {
+      paragraph([lead, signedOff ? ' You signed off before this page changed.' : ' You asked for more tests before this page changed.']);
+      if (standing.added.length > 0) paragraph(['Added since: '].concat(listed(standing.added.map(linkTo)), ['.']));
+      if (standing.removed.length > 0) paragraph(['No longer on the page: '].concat(listed(standing.removed.map(idOf)), ['.']));
+    }
+    paragraph([
+      (standing.unrecorded ? 'Review them, then ' : 'Review what changed, then ') +
+        (signedOff ? 'press “' + approve.textContent + '” again.' : 'decide again.')
+    ]);
+  }
   function paint() {
     var shown = view(), done = 0;
+    var standing = standingOf(shown, JOURNEYS);
     JOURNEYS.forEach(function (id) {
       var box = document.getElementById('chk-' + id);
       if (!box) return;
@@ -998,8 +1055,10 @@ ${journeyHtml}
       if (on) done++;
     });
     progressEl.textContent = done + ' of ' + JOURNEYS.length + ' journeys reviewed';
-    approve.setAttribute('aria-pressed', String(shown.verdict === 'approved'));
-    more.setAttribute('aria-pressed', String(shown.verdict === 'more'));
+    // A verdict shows as given only while it covers exactly these journeys.
+    approve.setAttribute('aria-pressed', String(standing.verdict === 'approved' && !standing.stale));
+    more.setAttribute('aria-pressed', String(standing.verdict === 'more' && !standing.stale));
+    showStanding(standing);
     if (document.activeElement !== noteEl) noteEl.value = shown.note;
   }
   function schedule() {
@@ -1007,8 +1066,8 @@ ${journeyHtml}
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 400);
   }
-  function change(key, value) {
-    pending[key] = value;
+  function change(edits) {
+    Object.keys(edits).forEach(function (key) { pending[key] = edits[key]; });
     paint();
     if (storageAbsent) { say(NOT_SAVED, false); return; }
     // set() replaces the whole document, so nothing is written before the
@@ -1035,7 +1094,7 @@ ${journeyHtml}
     });
   }
   function receive(snap) {
-    server = copyOf(snap.data());
+    server = signOffOf(snap.data());
     if (!loaded) {
       loaded = true;
       if (hasPending()) schedule();
@@ -1047,12 +1106,25 @@ ${journeyHtml}
     storageAbsent = true;
     say(LOCAL, false);
   }
+  // Giving a verdict records the journeys it is given on (#197), and pressing
+  // the one already given, while it still covers this page, withdraws it.
+  // Nothing else writes that list, so a tick or a note on an out-of-date page
+  // cannot renew an approval.
+  function decide(verdict) {
+    var standing = standingOf(view(), JOURNEYS);
+    var withdraw = standing.verdict === verdict && !standing.stale;
+    change({ verdict: withdraw ? null : verdict, verdictCovers: withdraw ? null : JOURNEYS.slice() });
+  }
   document.querySelectorAll('input[data-journey]').forEach(function (box) {
-    box.addEventListener('change', function () { change(JOURNEY_KEY + box.dataset.journey, box.checked); });
+    box.addEventListener('change', function () {
+      var edit = {};
+      edit[JOURNEY_KEY + box.dataset.journey] = box.checked;
+      change(edit);
+    });
   });
-  approve.addEventListener('click', function () { change('verdict', view().verdict === 'approved' ? null : 'approved'); });
-  more.addEventListener('click', function () { change('verdict', view().verdict === 'more' ? null : 'more'); });
-  noteEl.addEventListener('input', function () { change('note', noteEl.value); });
+  approve.addEventListener('click', function () { decide('approved'); });
+  more.addEventListener('click', function () { decide('more'); });
+  noteEl.addEventListener('input', function () { change({ note: noteEl.value }); });
   var lb = document.getElementById('lb'), lbImg = document.getElementById('lb-img'), lbCap = document.getElementById('lb-cap');
   document.addEventListener('click', function (e) {
     var img = e.target.closest ? e.target.closest('.shot img') : null;
