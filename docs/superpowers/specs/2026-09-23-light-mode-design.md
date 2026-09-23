@@ -1,103 +1,110 @@
 # Light mode: Studio beside Aurora (#142)
 
-**Status:** design approved in four parts on 2026-09-23. This written spec awaits the operator's review. No plan and no code exist yet, and none will until the spec is approved.
+**Status:** design approved in four parts on 2026-09-23 and revised by review pass 1 on the same day (§12). This written spec awaits the operator's approval. No plan and no code exist yet, and none will until the spec is approved.
 
 **Comparison and review page:** https://claude.ai/artifact/RXZDsNzcjVEosHnYMAnqBw (version 2: the three candidates as rendered, Studio refined, and the two wordmark options).
 
 ## 1. What this is
 
-Aurora (#17) becomes the site's **dark** mode, unchanged. A second identity, **Studio**, becomes its **light** mode. One button in the header switches between them instantly, and the visitor's choice persists. Until a visitor chooses, the site follows the device's own setting.
+Aurora (#17) becomes the site's **dark** mode, exactly as it ships today. A second identity, **Studio**, becomes its **light** mode. One button in the header switches between them instantly, and the visitor's choice persists. Until a visitor chooses, the site follows the device's own setting.
 
 Studio answers the question Aurora answers with glow: _what carries the atmosphere when there is no darkness to glow against?_ Its answer is **depth, not colour**. A cool grey ground, pure white cards that sit forward of it, window light at the top left and cool shade falling off to the right and below. The brand green is the only colour on the page.
 
+The #142 body says this work branches from `17-aurora`. That branch has since merged, so this work branches from `develop`.
+
 ## 2. Decisions on record
 
-| date       | decision                                                                                                                                                                                                                                                                                                                                         | source       |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| 2026-09-11 | _"the current design should be considered 'dark mode' and we should be able to toggle between dark mode and light mode easily … instantly switchable by the click of a single button and be persisted."_ And: _"a background that's non-intrusive and compatible with each mode."_                                                                | #142 body    |
-| 2026-09-11 | The zero-JS invariant is amended: **exactly one inline theme script**, with no bundle and no network request. It must be inline and blocking in `<head>`.                                                                                                                                                                                       | #142 body    |
-| 2026-09-11 | The default follows `prefers-color-scheme`: an explicit choice wins, then the OS preference. The stated cost was accepted: a visitor on a light-mode device never sees Aurora unless they toggle.                                                                                                                                               | #142 body    |
-| 2026-09-11 | _"its own identity, not an inversion."_ No mechanical inversion, and no reuse of Aurora's hues at lower alpha. The background is the **same mechanism in both themes**: one `body::before` layer whose token values change.                                                                                                                    | #142 comment |
-| 2026-09-23 | **Studio** is chosen over Paper and Sea glass.                                                                                                                                                                                                                                                                                                 | interactive  |
-| 2026-09-23 | Design part 1 approved (the palette and its three refinements). Part 2: the **ShyTalk mark on its own tile**. Part 3 approved (the switch, including the English label "Dark mode"). Part 4 approved (tests and cleanup).                                                                                                                         | interactive  |
+| date       | decision                                                                                                                                                                                                                                                                         | source       |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 2026-09-11 | _"the current design should be considered 'dark mode' and we should be able to toggle between dark mode and light mode easily … instantly switchable by the click of a single button and be persisted."_ And: _"a background that's non-intrusive and compatible with each mode."_ | #142 body    |
+| 2026-09-11 | The zero-JS invariant is amended: **exactly one inline theme script**, with no bundle and no network request. It must be inline and blocking in `<head>`.                                                                                                                          | #142 body    |
+| 2026-09-11 | The default follows `prefers-color-scheme`: an explicit choice wins, then the OS preference. The stated cost was accepted: a visitor on a light-mode device never sees Aurora unless they toggle.                                                                                  | #142 body    |
+| 2026-09-11 | _"its own identity, not an inversion."_ No mechanical inversion, and no reuse of Aurora's hues at lower alpha. The background is the **same mechanism in both themes**: one `body::before` layer whose token values change.                                                       | #142 comment |
+| 2026-09-23 | **Studio** is chosen over Paper and Sea glass.                                                                                                                                                                                                                                    | interactive  |
+| 2026-09-23 | Design part 1 approved (the palette and its three refinements). Part 2: the **ShyTalk mark on its own tile**. Part 3 approved (the switch, including the English label "Dark mode"). Part 4 approved (tests and cleanup).                                                            | interactive  |
+| 2026-09-23 | **At narrow widths the language switcher shows a compact label**: its flag, a short code and the BETA mark, with the full name in its open list. This fixes #329 and makes room for the switch.                                                                                  | #329 comment |
+| 2026-09-23 | **Aurora's atmosphere stays as it is.** The #142 body had read "non-intrusive" as also an instruction to tone the dark atmosphere down. The operator kept Aurora as #17 shipped it.                                                                                               | #142 comment |
 
 ## 3. The palette
 
 ### 3.1 Tokens
 
-Every colour token is defined on bare `:root` with its **Studio** value. Aurora redefines the tokens, and only the tokens (§4). Values marked "unchanged" are today's Aurora values.
+Every colour token is defined on bare `:root` with its **Studio** value. Aurora redefines the tokens, and only the tokens (§4). "Unchanged" means today's Aurora value.
 
-| token                | Studio (light, bare `:root`) | Aurora (dark)                 | role                                                        |
-| -------------------- | ---------------------------- | ----------------------------- | ----------------------------------------------------------- |
-| `--bg`               | `#eef1f4`                    | `#04070d` unchanged           | page ground                                                 |
-| `--surface`          | `#ffffff`                    | `#070d16` unchanged           | cards; on Studio a card is identified by fill as well as edge |
-| `--ink`              | `#111821`                    | `#eaf2ff` unchanged           | text                                                        |
-| `--ink-soft`         | `#4d5866`                    | `#8fa6c6` unchanged           | secondary text                                              |
-| `--disabled-fill`    | `#dde2e8`                    | `#2a323f` unchanged           | an unavailable control (#250)                               |
-| `--accent`           | `#006652`                    | `#38f5c8` unchanged           | links, kickers, filled buttons                              |
-| `--accent-ink`       | `#004d3e`                    | `#7fffe0` unchanged           | accent text where it needs more weight                      |
-| `--on-accent`        | `#ffffff`                    | `#04140f` unchanged           | ink on an accent fill                                       |
-| `--danger`           | `#b42318`                    | `#ff6b5a` unchanged           | errors                                                      |
-| `--border`           | `rgb(17 24 33 / 0.1)`        | `rgb(255 255 255 / 0.11)`     | decorative rules only                                       |
-| `--border-strong`    | `rgb(17 24 33 / 0.55)`       | `rgb(255 255 255 / 0.4)`      | every control boundary (WCAG 1.4.11)                        |
-| `--glass`            | `rgb(255 255 255 / 0.6)`     | `rgb(255 255 255 / 0.055)`    | translucent panels                                          |
-| `--accent-glow`      | `transparent`                | `rgb(56 245 200 / 0.3)`       | the glow behind the language band (§3.3)                    |
-| `--dock-shadow`      | `rgb(17 24 33 / 0.14)`       | `rgb(0 0 0 / 0.55)`           | the docked action row's shadow (#188)                       |
-| `--lift-shadow`      | `rgb(17 24 33 / 0.18)`       | `rgb(0 0 0 / 0.55)`           | **new**: the phone mockup's shadow (§3.3)                    |
-| `--pool-top-left`    | `rgb(255 255 255 / 0.7)`     | `rgb(56 245 200 / 0.08)`      | **renamed** from `--aurora-mint`                            |
-| `--pool-top-right`   | `rgb(60 80 110 / 0.045)`     | `rgb(122 92 255 / 0.1)`       | **renamed** from `--aurora-violet`                          |
-| `--pool-foot`        | `rgb(30 45 65 / 0.055)`      | `rgb(24 74 110 / 0.14)`       | **renamed** from `--aurora-deep`                            |
-| `--shaft`            | `rgb(255 255 255 / 0.35)`    | `rgb(255 255 255 / 0.05)`     | **renamed** from `--aurora-shaft`                           |
-| `--wordmark-tile`    | `#0f0d15`                    | `transparent`                 | **new**: the ShyTalk mark's tile (§3.4)                      |
-| `--wordmark-pad`     | `0.12em 0.42em 0.18em`       | `0`                           | **new**: the tile's padding, zero in dark so Aurora does not move |
-| `--switch-moon`      | `inline-block`               | `none`                        | **new**: the switch shows a moon in light…                  |
-| `--switch-sun`       | `none`                       | `inline-block`                | **new**: …and a sun in dark (§5)                            |
+| token             | Studio (light, bare `:root`) | Aurora (dark)              | role                                                              |
+| ----------------- | ---------------------------- | -------------------------- | ----------------------------------------------------------------- |
+| `--bg`            | `#eef1f4`                    | `#04070d` unchanged        | page ground                                                       |
+| `--surface`       | `#ffffff`                    | `#070d16` unchanged        | cards                                                             |
+| `--ink`           | `#111821`                    | `#eaf2ff` unchanged        | text                                                              |
+| `--ink-soft`      | `#4d5866`                    | `#8fa6c6` unchanged        | secondary text                                                    |
+| `--disabled-fill` | `#dde2e8`                    | `#2a323f` unchanged        | an unavailable control (#250)                                     |
+| `--accent`        | `#006652`                    | `#38f5c8` unchanged        | links, kickers, filled buttons                                    |
+| `--accent-ink`    | `#004d3e`                    | `#7fffe0` unchanged        | the deeper accent: hover fills and emphasised accent text         |
+| `--on-accent`     | `#ffffff`                    | `#04140f` unchanged        | ink on an accent fill                                             |
+| `--danger`        | `#b42318`                    | `#ff6b5a` unchanged        | errors                                                            |
+| `--border`        | `rgb(17 24 33 / 0.1)`        | `rgb(255 255 255 / 0.11)`  | decorative rules only                                             |
+| `--border-strong` | `rgb(17 24 33 / 0.55)`       | `rgb(255 255 255 / 0.4)`   | every control boundary (WCAG 1.4.11)                              |
+| `--glass`         | `rgb(255 255 255 / 0.6)`     | `rgb(255 255 255 / 0.055)` | the badge on a work card                                          |
+| `--accent-glow`   | `transparent`                | `rgb(56 245 200 / 0.3)`    | the glow behind the language band (§3.3)                          |
+| `--dock-shadow`   | `rgb(17 24 33 / 0.14)`       | `rgb(0 0 0 / 0.55)`        | the docked action row's shadow (#188)                             |
+| `--lift-shadow`   | `rgb(17 24 33 / 0.18)`       | `rgb(0 0 0 / 0.55)`        | **new**: the phone mockup's shadow (§3.3)                         |
+| `--pool-top-left` | `rgb(255 255 255 / 0.7)`     | `rgb(56 245 200 / 0.08)`   | **renamed** from `--aurora-mint`                                  |
+| `--pool-top-right` | `rgb(60 80 110 / 0.045)`    | `rgb(122 92 255 / 0.1)`    | **renamed** from `--aurora-violet`                                |
+| `--pool-foot`     | `rgb(30 45 65 / 0.055)`      | `rgb(24 74 110 / 0.14)`    | **renamed** from `--aurora-deep`                                  |
+| `--shaft`         | `rgb(255 255 255 / 0.35)`    | `rgb(255 255 255 / 0.05)`  | **renamed** from `--aurora-shaft`                                 |
+| `--wordmark-tile` | `#0f0d15`                    | `transparent`              | **new**: the ShyTalk mark's tile (§3.4)                           |
+| `--wordmark-pad`  | `0.12em 0.42em 0.18em`       | `0`                        | **new**: the tile's padding, zero in dark so Aurora does not move |
+| `--switch-moon`   | `inline-block`               | `none`                     | **new**: the switch shows a moon in light…                        |
+| `--switch-sun`    | `none`                       | `inline-block`             | **new**: …and a sun in dark (§5)                                  |
 
 `color-scheme` travels with the palette: `light` on bare `:root` and `dark` in the dark blocks. The `html { color-scheme: dark }` rule that sits outside the tokens today is removed. `accent-color: var(--accent)` stays as it is.
 
-Retired, because no page uses them (0 `var()` references under `src/`): `--violet`, `--deep` and `--glass-2`. So are their `DECORATIVE` entries and the `--ink-soft` on `--glass-2` pair in `contrast.test.ts`. The `DECORATIVE` note calls `--violet` and `--deep` "gradient stops in the page atmosphere", but the atmosphere draws from its own `--aurora-*` values, so the note describes something that is not drawn.
+Three tokens are retired because no page uses them (0 `var()` references under `src/`): `--violet`, `--deep` and `--glass-2`. Their `DECORATIVE` entries and the pairs naming them in `contrast.test.ts` go with them. That note calls `--violet` and `--deep` "gradient stops in the page atmosphere", but the atmosphere draws from its own `--aurora-*` values, so it describes something that is not drawn.
 
 ### 3.2 Contrast, measured
 
-The maths is `tests/wcag.ts`, applied to every pair declared in `contrast.test.ts`. Any pair drawn over the atmosphere is scored against **all 16 subsets** of its four layers, in **both** stacking orders, and the worst is kept (§6.1 explains why). Every row passes. The figures come from the scorer's output file and were not typed by hand:
+The maths is `tests/wcag.ts`. The pairs are those of `contrast.test.ts`, with the glass pairs corrected to the stack the site actually draws (§6.1). Any pair drawn over the atmosphere is scored against **all 16 subsets** of its four layers, in **both** stacking orders, and the worst result is kept. Every row passes. The figures come from the scorer's output file and were not typed by hand:
 
-| pair | level | Studio (light) | Aurora (dark) |
-| --- | --- | --- | --- |
-| `--ink on --bg` | 4.5 | 15.75 | 17.90 |
-| `--ink on --surface` | 4.5 | 17.85 | 17.29 |
-| `--ink on --glass+--bg` | 4.5 | 16.94 | 16.24 |
-| `--ink-soft on --bg` | 4.5 | 6.38 | 8.10 |
-| `--ink-soft on --surface` | 4.5 | 7.23 | 7.83 |
-| `--ink-soft on --glass+--bg` | 4.5 | 6.87 | 7.35 |
-| `--ink-soft on --glass-2+--bg` | 4.5 | 7.05 | 6.77 |
-| `--accent on --bg` | 4.5 | 6.13 | 14.46 |
-| `--accent on --surface` | 4.5 | 6.95 | 13.97 |
-| `--accent on --glass+--bg` | 4.5 | 6.60 | 13.12 |
-| `--accent-ink on --bg` | 4.5 | 8.69 | 16.60 |
-| `--accent-ink on --surface` | 4.5 | 9.85 | 16.03 |
-| `--on-accent on --accent` | 4.5 | 6.95 | 13.54 |
-| `--on-accent on --accent-ink` | 4.5 | 9.85 | 15.54 |
-| `--danger on --bg` | 4.5 | 5.80 | 7.20 |
-| `--danger on --surface` | 4.5 | 6.57 | 6.96 |
-| `--ink on atmosphere+--bg` | 4.5 | 13.33 | 11.16 |
-| `--ink-soft on atmosphere+--bg` | 4.5 | 5.40 | 5.05 |
-| `--accent on atmosphere+--bg` | 4.5 | 5.19 | 9.02 |
-| `--border-strong+--bg on atmosphere+--bg` | 3 | 3.63 | 3.38 |
-| `--border-strong+--bg on --bg` | 3 | 3.83 | 3.72 |
-| `--border-strong+--surface on --surface` | 3 | 3.97 | 3.79 |
-| `--ink-soft on --disabled-fill` | 4.5 | 5.55 | 5.19 |
+| foreground | ground | needs | Studio (light) | Aurora (dark) |
+| --- | --- | --- | --- | --- |
+| `--ink` | `--bg` | 4.5 | 15.75 | 17.90 |
+| `--ink` | `--surface` | 4.5 | 17.85 | 17.29 |
+| `--ink-soft` | `--bg` | 4.5 | 6.38 | 8.10 |
+| `--ink-soft` | `--surface` | 4.5 | 7.23 | 7.83 |
+| `--accent` | `--bg` | 4.5 | 6.13 | 14.46 |
+| `--accent` | `--surface` | 4.5 | 6.95 | 13.97 |
+| `--accent` | `--glass over --surface` | 4.5 | 6.95 | 12.51 |
+| `--accent-ink` | `--bg` | 4.5 | 8.69 | 16.60 |
+| `--accent-ink` | `--surface` | 4.5 | 9.85 | 16.03 |
+| `--on-accent` | `--accent` | 4.5 | 6.95 | 13.54 |
+| `--on-accent` | `--accent-ink` | 4.5 | 9.85 | 15.54 |
+| `--danger` | `--bg` | 4.5 | 5.80 | 7.20 |
+| `--danger` | `--surface` | 4.5 | 6.57 | 6.96 |
+| `--ink` | `atmosphere over --bg` | 4.5 | 13.33 | 11.16 |
+| `--ink-soft` | `atmosphere over --bg` | 4.5 | 5.40 | 5.05 |
+| `--accent` | `atmosphere over --bg` | 4.5 | 5.19 | 9.02 |
+| `--border-strong over atmosphere over --bg` | `atmosphere over --bg` | 3 | 3.63 | 3.38 |
+| `--border-strong over --bg` | `--bg` | 3 | 3.83 | 3.72 |
+| `--border-strong over --surface` | `--surface` | 3 | 3.97 | 3.79 |
+| `--ink-soft` | `--disabled-fill` | 4.5 | 5.55 | 5.19 |
 
-The `--glass-2` row leaves with that token. Studio's tightest body-text pair is the accent over the shade pools, at 5.19:1.
+Studio's tightest body-text pair is the accent over the shade pools, at 5.19:1. Its tightest control boundary is `--border-strong` over the atmosphere, at 3.63:1 against the 3:1 floor.
 
 ### 3.3 Refinements approved in part 1
 
 - **The language band has no glow in light mode.** `Marquee.astro` paints `box-shadow: 0 0 50px var(--accent-glow)` inside a container with `overflow: clip`. On a light ground the clipped glow painted a flat grey box. A glow reads as light only against darkness, so in Studio `--accent-glow` is `transparent`.
-- **The phone mockup's shadow becomes a token.** `PhoneFrame.astro:77` hard-codes `rgb(0 0 0 / 0.55)`. It becomes `var(--lift-shadow)`, with that same value in Aurora (so dark is pixel-identical) and a softer one in Studio.
+- **The phone mockup's shadow becomes a token.** `PhoneFrame.astro:77` hard-codes `rgb(0 0 0 / 0.55)`. It becomes `var(--lift-shadow)`, which keeps that value in Aurora, so dark is pixel-identical, and takes a softer one in Studio.
 - **The atmosphere tokens are renamed by position.** The same layer carries window light in one theme and mint in the other, so a name that describes Aurora's hue is wrong for half the site.
 
 ### 3.4 The ShyTalk mark (part 2)
 
-The mark keeps ShyTalk's own two tones (`SHYTALK_MARK.shy` `#e8e0f0`, `.talk` `#d0bcff`). Those were made for a dark ground and measure 1.28:1 and 1.70:1 on white. In light mode the mark sits on **ShyTalk's own tile colour**, `SHYTALK_MARK.tile` `#0f0d15`, like a logo badge: `background: var(--wordmark-tile)` and `padding: var(--wordmark-pad)`, with a fixed radius. In dark mode the tile is transparent and the padding is zero, so Aurora does not move. In print the existing rule still renders the mark in ink, and the print block sets the tile transparent and the padding to zero. A unit guard asserts that the light `--wordmark-tile` equals `SHYTALK_MARK.tile`, because the colour now lives in two files.
+The mark keeps ShyTalk's own two tones: `SHYTALK_MARK.shy` `#e8e0f0` and `.talk` `#d0bcff`. They were made for a dark ground and measure 1.28:1 and 1.70:1 on white.
+
+- **Light mode.** The mark sits on **ShyTalk's own tile colour**, `SHYTALK_MARK.tile` `#0f0d15`, like a logo badge. It uses `background: var(--wordmark-tile)`, `padding: var(--wordmark-pad)` and a 14px radius, as rendered on the review page. On the tile the two tones measure 15.02:1 and 11.32:1.
+- **Dark mode.** The tile is transparent and the padding is zero, so Aurora does not move.
+- **Print.** The existing rule still renders the mark in ink, and the print block sets the tile transparent and the padding to zero.
+
+A unit guard asserts that the light `--wordmark-tile` equals `SHYTALK_MARK.tile`, because the colour now lives in two files.
 
 ## 4. How the three states resolve
 
@@ -128,140 +135,201 @@ The mark keeps ShyTalk's own two tones (`SHYTALK_MARK.shy` `#e8e0f0`, `.talk` `#
 - **An explicit choice wins in both directions.** `[data-theme="light"]` defeats a dark OS through the `:not()` guard. `[data-theme="dark"]` applies whatever the OS says.
 - **No choice follows the OS, live.** The media query re-evaluates when the device's setting changes, with no script involved.
 - **Both dark blocks are screen-only.** This is load-bearing for print. The dark blocks' selectors carry specificity (0,2,0), and the print block's `:root` carries (0,1,0). If the dark blocks applied in print, a visitor in dark mode would print Aurora's near-white ink onto white paper, the blank-sheet defect found on 2026-09-11. Screen-only, they never reach the print cascade, and paper keeps being measured against white alone.
-- **The Aurora palette is written twice**: once per dark block, because the unstamped state needs the media query and the stamped state must not. A unit guard parses both blocks, with comments stripped, and asserts they declare the same tokens with the same values. A third copy cannot drift silently either, since the guard derives the dark blocks from the file rather than listing them.
+- **The Aurora palette is written twice**, because the unstamped state needs the media query and the stamped state must not. A **dark block** is any rule in `tokens.css` that declares `color-scheme: dark`. A unit guard finds them by that declaration, with comments stripped, and asserts they all declare the same tokens with the same values. A third copy added later is compared the same way.
 - **No colour has its only definition inside a theme block.** A unit guard asserts that every token a dark block declares is also declared on bare `:root`.
 
 ## 5. The switch (part 3)
 
-**Placement.** A 44 × 44px button in the header, immediately before the language switcher, at every width. It is never inside the phone menu, so it is always one tap. Measured on today's header at 320px, the wordmark (74px), the menu (44px) and the language switcher (110px) leave 60px, so a 44px button fits with 16px to spare. The existing no-horizontal-scroll tests at 320px pin it.
+**Placement.** A 44 × 44px button in the header, immediately before the language switcher, at every width. It is never inside the phone menu, so it is always one tap.
 
-**What it is.** A `<button type="button">` exposed as a **toggle button**. Its accessible name is **"Dark mode"**, from the catalogue key `themeDarkMode` in all five locales, and `aria-pressed="true"` means dark is on. The name stays fixed; only the pressed state changes, which is the WAI-ARIA toggle-button pattern. The icons are decorative (`aria-hidden`): a moon while light is showing, a sun while dark is showing, each shown by `display: var(--switch-moon)` / `var(--switch-sun)`, so the icon cannot disagree with the palette. The switch has a visible focus ring, and switching is instant, with no transition. In print the switch is hidden, like the skip link: it is a screen affordance, not part of the record.
+The switch and the language switcher form **one group** in the header row. The row is `justify-content: space-between`, so a fourth separate item would float in the middle of the row on a wide screen rather than sit beside the language switcher.
 
-**The one script.** It lives in one source file, `src/scripts/theme.inline.js`. It is plain JavaScript because it ships exactly as written; it is type-checked through `// @ts-check` and kept to a few hundred bytes, because every page carries it. Its explanation lives in a template comment beside the place where `BaseLayout.astro` emits it, which the build strips, rather than in the shipped file. `BaseLayout.astro` emits it with `<script is:inline set:html={themeScript}>` straight after the viewport `<meta>`, which puts it before every stylesheet. It is parsed and run before the first paint and makes no request. It does four things:
+At narrow widths the language switcher shows the **compact label decided for #329**: its flag, a short code and the BETA mark, with the full name in its open list. That is what makes room. Today, at 320px, the switcher is 110px wide in English, 133px in Thai, 138px in Chinese, 172px in Vietnamese and 184px in Indonesian, and in Indonesian the header's three items already need 14px more than the row has (#329). #329 lands first. Its geometry guard derives the header's items, so from the day the switch exists it proves that nothing in the header overlaps, in every locale, at every width from 320px.
 
-1. Reads `localStorage.getItem('theme')` inside `try`/`catch`, the same guard `/classroom-groups` uses for `'cg-sound'`, because some privacy modes throw `SecurityError` on touching storage. If the value is exactly `light` or `dark`, it stamps `data-theme` on `<html>`.
-2. Stamps `data-theme-switch` on `<html>`. The button's CSS shows it only under that attribute, so **with JavaScript off the button never appears** and the device setting applies.
-3. Handles clicks by **delegation** on `document`, because the button does not exist yet when a head script runs. A click computes the current theme (the stamp, or `matchMedia('(prefers-color-scheme: dark)')` when unstamped), stamps the opposite and saves it. If saving throws, the page still switches; the choice just is not remembered.
-4. Keeps `aria-pressed` true to the theme on `DOMContentLoaded`, after a click, and when the OS setting changes while no choice is saved.
+**What it is.** A `<button type="button">` exposed as a **toggle button**. Its accessible name is **"Dark mode"** in English, and in each locale its own translation of the catalogue key `themeDarkMode`. `aria-pressed="true"` means dark is on. The name stays fixed; only the pressed state changes, which is the WAI-ARIA toggle-button pattern. The icons are decorative (`aria-hidden`): a moon while light is showing and a sun while dark is showing, each shown by `display: var(--switch-moon)` / `var(--switch-sun)`, so the icon cannot disagree with the palette. The switch has a visible focus ring, and switching is instant, with no transition. In print the switch is hidden, like the skip link: it is a screen affordance, not part of the record.
 
-**Not included, deliberately:** a third "follow the device" option in the interface (the operator asked for a single button), syncing open tabs (a tab picks the choice up on its next page load), and a cookie (the site is static and has no server to read one).
+**The one script.** It lives in one source file, `src/scripts/theme.inline.js`. It is plain JavaScript because it ships exactly as written. It is type-checked through `// @ts-check` and kept to a few hundred bytes, because every page carries it. Its explanation lives in a template comment beside the place where `BaseLayout.astro` emits it, which the build strips, rather than in the shipped file.
+
+`BaseLayout.astro` emits it as a classic inline script, `<script is:inline set:html={themeScript}>`, straight after the viewport `<meta>`. On today's build that puts it before both stylesheet links (checked on the built homepage), so it is parsed and run before the first paint and makes no request. It does five things:
+
+1. **Reads the saved choice.** It calls `localStorage.getItem('theme')` inside `try`/`catch`, the same guard `/classroom-groups` uses for `'cg-sound'`, because some privacy modes throw `SecurityError` on touching storage. If the value is exactly `light` or `dark`, it stamps `data-theme` on `<html>`.
+2. **Reveals the switch.** It stamps `data-theme-switch` on `<html>`, and the switch's CSS shows it only under that attribute. So **with JavaScript off the switch never appears** and the device setting applies.
+3. **Handles clicks by delegation** on `document`, because the switch does not exist yet when a head script runs. A click computes the current theme (the stamp, or `matchMedia('(prefers-color-scheme: dark)')` when unstamped), stamps the opposite and saves it. If saving throws, the page still switches; the choice just is not remembered.
+4. **Keeps `aria-pressed` true to the theme**: on `DOMContentLoaded`, after a click, and when the OS setting changes while no choice is saved.
+5. **Re-applies the saved choice on `pageshow`** when the page comes back from the back-forward cache. Without this, a visitor who switches theme and presses Back would see the page they left, in the theme they left.
+
+**Not included, deliberately:**
+
+- a third "follow the device" option in the interface, because the operator asked for a single button;
+- syncing open tabs, because a tab picks the choice up on its next page load;
+- a cookie. The pages are prerendered files, so a cookie would only help if something rendered the theme into each response. That would put `functions/` on the path of every page view for a preference `localStorage` already keeps without sending it anywhere.
 
 ## 6. How it is proven (part 4)
 
 ### 6.1 Contrast, in both themes
 
-`contrast.test.ts` reads **both** palettes: light from bare `:root` and dark from the dark block. It runs every pair against each. Two defects in the current model are fixed on the way:
+`contrast.test.ts` reads **both** palettes: light from bare `:root`, and dark from a dark block (§4). It runs every pair against each. Three defects in the current model are fixed on the way:
 
 - **Stacking order.** CSS paints the **first** background layer on top, so `body::before` puts the shaft at the **bottom**, while the test's `ATMOSPHERE` stacks it on top. In dark mode the test's order was only stricter (`--ink-soft` 5.05:1, against 5.22:1 in paint order). The stack is now **derived from the `body::before` rule itself**, the `var()` names in declaration order, so it cannot disagree with what the browser paints.
-- **The worst case.** "Every stop composited at once" is the worst case only when every layer moves the ground towards the ink. That holds in Aurora, where every layer lightens a near-black ground under light ink, and **fails in Studio**, where the shaft brightens the ground under dark ink while the pools darken it. The worst case is now taken over **every subset** of the four layers. Measured while designing: Studio's first draft passed "all at once" and failed at 3.92:1 against its two shade pools alone.
+- **The worst case.** "Every stop composited at once" is the worst case only when every layer moves the ground towards the ink. That holds in Aurora, where every layer lightens a near-black ground under light ink, and **fails in Studio**, where the shaft brightens the ground under dark ink while the pools darken it. The worst case is now taken over **every subset** of the four layers. Measured while designing: Studio's first draft passed with all four layers at once (5.15:1 in paint order) and failed at 3.92:1 against its two shade pools alone.
+- **The glass pairs.** The suite composites `--glass` over the page ground, `--bg`. The site's one glass fill, `.work-card-badge` (`WorkCard.astro:60`), sits inside a card whose own background is the opaque `--surface`, and it carries `--accent` text. The pairs become the stack that is drawn: `--accent` on `--glass` over `--surface`. The `--ink` and `--ink-soft` on glass pairs describe text no page puts there, so they go.
 
 The stale claim in `tokens.css`, that `--ink-soft` over the atmosphere scores 5.11:1, is corrected to the measured figures.
 
 ### 6.2 Every Playwright project declares its scheme
 
-No Playwright config sets `colorScheme` today, so every project runs under Playwright's **default, which is light**. The day Studio lands, every existing e2e test, dev-sanity and prod-sanity would silently start testing a different palette. So:
+No Playwright config sets `colorScheme` today, so every project runs under Playwright's **default, which is light**. The day Studio lands, every existing e2e test, dev-sanity, prod-sanity and the device suite would silently start testing a different palette. So:
 
-- every project in every config (`playwright.config.ts`, `playwright.dev.config.ts`, `playwright.prod.config.ts`) and the device harness declares `colorScheme` explicitly. The general suite declares **dark**, so every existing test keeps testing exactly what it tests today, and a unit guard fails any project that leaves it to the default;
-- the palette-reading guards run **once per theme**: `palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, and every assertion in `classroom-groups.spec.ts` that reads a computed colour. Print runs under both, and additionally with a stamped `dark` choice, proving paper ignores the screen theme;
+- **every project in every config declares `colorScheme`.** That covers `playwright.config.ts`, `playwright.dev.config.ts`, `playwright.device.config.ts` and `playwright.prod.config.ts`. The unit guard **derives the configs from the filesystem** (`playwright*.config.ts`) rather than from this list, so a fifth config cannot slip past it. The general suite declares **dark**, so every existing test keeps testing exactly what it tests today;
+- **the palette-reading guards run once per theme.** Those are `palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, and every assertion in `classroom-groups.spec.ts` that reads a computed colour. Print runs under both themes, and additionally with a stamped `dark` choice, proving that paper ignores the screen theme;
 - **dev-sanity** proves on the deployed dev site that the switch toggles, and that the choice survives a reload;
-- the **device gauntlet** pins the theme per run: Android Chrome over CDP through `Emulation.setEmulatedMedia`, and iOS Safari by stamping a saved choice before the measured load. Its results therefore never depend on the phone's own setting.
+- **the device gauntlet pins the theme per run**: Android Chrome over CDP through `Emulation.setEmulatedMedia`, and iOS Safari by stamping a saved choice before the measured load. Its results therefore never depend on the phone's own setting.
 
 ### 6.3 The switch, rendered
 
 A new `theme.spec.ts` covers:
 
-- **no flash, both directions.** A saved `light` choice on a device preferring dark, and a saved `dark` choice on a device preferring light. An init script records `getComputedStyle(documentElement).backgroundColor` in the first animation frame, which runs before the first paint, and it must equal the saved theme's `--bg`. A static guard backs it on every built page: the theme script is inline, inside `<head>`, before every stylesheet, and carries no `async`, `defer` or `type="module"`. The static guard covers a moved or deferred script, which a fast page could otherwise hide from a timing test;
+- **no flash, both directions.** One case is a saved `light` choice on a device preferring dark; the other is a saved `dark` choice on a device preferring light. An init script records `getComputedStyle(documentElement).backgroundColor` in the first animation frame, which runs before the first paint, and it must equal the saved theme's `--bg`. A static guard backs it on every built page: the theme script is inline, classic (no `type="module"`, which would defer it), inside `<head>` and before every stylesheet. The static guard covers a script that is moved or made a module, which a fast page could otherwise hide from a timing test;
 - **persistence** across a reload, a second page, and a new browser context carrying the same storage;
-- **storage refused**: `localStorage` throws, the button still switches the page, no error reaches the console, and nothing is saved;
-- **the OS changes** while no choice is saved: emulated `colorScheme` flips, the page follows, and `aria-pressed` follows it;
-- **without JavaScript** the button is absent and the device setting applies;
-- **accessibility**: the name is "Dark mode" in each locale, `aria-pressed` is correct in each state, the target is 44 × 44, and the focus ring is visible.
+- **Back**: switch on page B, go back to page A from the back-forward cache, and A shows the new theme;
+- **storage refused**: `localStorage` throws, the switch still changes the page, no error reaches the console, and nothing is saved;
+- **the OS changes** while no choice is saved: emulated `colorScheme` flips, the page follows, and so does `aria-pressed`;
+- **without JavaScript** the switch is absent and the device setting applies;
+- **accessibility**: the name is the locale's own `themeDarkMode` in each of the five locales, `aria-pressed` is correct in each state, the target is 44 × 44, and the focus ring is visible.
 
 ### 6.4 The script inventory, pinned
 
-The two guards that hold "the homepage ships no JavaScript" (`locale-switcher.test.ts:112` and `classroom-groups.spec.ts:2087`) are rewritten to pin **what may exist** rather than count to zero.
+The two guards that hold "the homepage ships no JavaScript" are rewritten to pin **what may exist** rather than count to zero: `locale-switcher.test.ts:112` (_ships no JavaScript, because the homepage ships none_) and `classroom-groups.spec.ts:2087` (_the homepage still ships no JavaScript_).
 
-What exists today was measured in a browser on the current build:
+What exists today was measured in a browser on all 16 built pages:
 
-- the homepage in both locales, and the 404, carry no script;
-- `/glory-points` carries one module;
-- `/classroom-groups` carries one module and one small inline script of its own (505 bytes, in the body).
+- the homepage in all five locales, and the 404, carry no script;
+- `/glory-points` in each locale carries one module;
+- `/classroom-groups` in each locale carries one module and one small inline script of its own (505 bytes, in the body).
 
-After this change, **every page carries the theme script exactly once**: inline, in `<head>`, and identical in content to `src/scripts/theme.inline.js`. The homepage in both locales and the 404 carry **nothing else**, and the tool pages' own scripts are unchanged.
+After this change, **every page carries the theme script exactly once**: inline, in `<head>`, and identical in content to `src/scripts/theme.inline.js`. The homepage in all five locales and the 404 carry **nothing else**, and the tool pages' own scripts are unchanged.
 
 The inventory is read from a real DOM (`document.scripts`), never by matching `<script` in the HTML text. On today's build a text match counts a comment on `/classroom-groups` that only mentions the tag.
 
 ### 6.5 Visual baselines, both themes
 
-The visual suite captures every page in both themes, so **12 baselines become 24**. The light set is new. The existing 12 are re-captured once, because the switch now sits in every header, and their diff against today's is reviewed to show changes in the header alone: the switch, and the header items it moves along. Both sets are captured and compared in the pinned `linux/amd64` Playwright image, as today.
+Each of the visual suite's 12 views is captured in both themes, so **12 baselines become 24**. The light set is new. The existing 12 are re-captured once, because the switch now sits in every header, and their diff against today's is reviewed to show changes in the header alone: the switch, and the header items it moves along. Both sets are captured and compared in the pinned `linux/amd64` Playwright image, as today.
 
-### 6.6 Every guard watched failing
+### 6.6 No colour a theme cannot see
 
-Every new or rewritten guard is mutation-verified in both directions before it lands, following the repo rule. The minimum set:
+Theme logic lives only in `tokens.css`. Components read tokens and never test the theme, so a colour written straight into a component is the one thing a theme cannot reach.
 
-| mutation                                                            | must turn red                         |
-| ------------------------------------------------------------------- | ------------------------------------- |
-| a second inline script on the homepage                              | the one-script guard                  |
-| the theme script given `defer`, or moved to the end of `<body>`     | the static no-flash guard             |
-| the stamp delayed by a `setTimeout`                                 | the first-frame no-flash test         |
-| one token changed in only one of the two dark blocks                | the dark-blocks-identical guard       |
-| a token declared only inside a dark block                           | the bare-`:root` completeness guard   |
-| the dark blocks' `@media screen` wrapper removed                    | print legibility (stamped dark)       |
-| `--ink-soft` lightened to fail over a single shade pool             | the subset worst-case contrast test   |
-| a project's `colorScheme` removed                                   | the scheme-declared guard             |
-| the save made to throw                                              | storage-refused (page still switches) |
-| the light `--wordmark-tile` changed                                 | the wordmark-tile guard               |
+A unit guard scans every style under `src/` outside `tokens.css`, with comments stripped by `tests/unit/source-text.ts`. It refuses any colour literal (hex, `rgb()`, `hsl()`, a named colour) that is not on a short allowlist, and every allowlist entry carries its reason. Today's literals set the allowlist's shape:
+
+- the light callouts on `/classroom-groups`, which carry their own ground, ink and border in either theme;
+- print-only rules;
+- a scrim and shadows that read on both grounds;
+- the flags.
+
+The phone mockup's shadow leaves the list by becoming `--lift-shadow`. The dead `var(--…, fallback)` values leave with the §7 cleanup.
+
+### 6.7 Evidence for sign-off
+
+The evidence page for the operator's sign-off shows every built page in both themes at 320px and 1280px, in all five locales. It also shows the interactive states:
+
+- the phone menu open;
+- the language list open, showing the compact label;
+- the switch focused;
+- `/classroom-groups` with results, on the full-screen board, with the roster, and with the docked bar;
+- the print preview of `/classroom-groups`.
+
+### 6.8 Every guard watched failing
+
+Every new or rewritten guard is mutation-verified in both directions before it lands, following the repo rule. These are the minimum mutations, one per guard:
+
+| mutation                                                                | must turn red                             |
+| ----------------------------------------------------------------------- | ----------------------------------------- |
+| a second inline script on the homepage                                  | the script-inventory guard                |
+| the theme script made a module, or moved to the end of `<body>`         | the static no-flash guard                 |
+| the stamp delayed by a `setTimeout`                                     | the first-frame no-flash test             |
+| one token changed in only one dark block                                | the dark-blocks-identical guard           |
+| a token declared only inside a dark block                               | the bare-`:root` completeness guard       |
+| the dark blocks' `@media screen` wrapper removed                        | print legibility with a stamped dark      |
+| `--ink-soft` lightened so it fails over the shade pools alone           | the subset worst-case contrast test       |
+| a project's `colorScheme` removed, or a new config added without one    | the scheme-declared guard                 |
+| the save made to throw                                                  | storage refused (page still switches)     |
+| the save removed                                                        | persistence                               |
+| the `pageshow` handler removed                                          | Back                                      |
+| the OS-change listener removed                                          | the OS changes                            |
+| the `data-theme-switch` gate removed from the switch's CSS              | without JavaScript                        |
+| the light `--wordmark-tile` changed                                     | the wordmark-tile guard                   |
+| `color: #fff` written into a component                                  | the colour-literal guard                  |
 
 ## 7. Cleanup in the same ticket (part 4)
 
-- `ClassroomGroupsPage.astro` still quotes the pre-Aurora palette. The comment near line 1094 (`--ink` `#16171c`, `--bg` `#f7f6f2`) is corrected, and the dead fallbacks `var(--bg, #f7f6f2)` and `var(--border, #e7e4dc)` near line 2871 lose their fallbacks. The same goes for `LanguageSwitcher.astro`'s `var(--surface, …)` fallbacks, since every token is always defined.
+- `ClassroomGroupsPage.astro` still quotes the pre-Aurora palette. The comment near line 1094 (`--ink` `#16171c`, `--bg` `#f7f6f2`) is corrected, and the fallbacks `var(--bg, #f7f6f2)` and `var(--border, #e7e4dc)` near line 2871 are dropped. So are `LanguageSwitcher.astro`'s `var(--surface, …)` fallbacks, since every token is always defined.
 - `--violet`, `--deep` and `--glass-2` are removed (§3.1).
 - The 5.11:1 comment in `tokens.css` is corrected (§6.1).
 - The atmosphere tokens are renamed (§3.3), and every reference follows, including `contrast.test.ts`.
-- `CLAUDE.md`'s working agreement says the homepage ships zero JavaScript. It is amended to say the homepage ships exactly one inline script, the theme script, and to name the guard that pins it.
+- `CLAUDE.md`'s working agreement reads "Homepage ships zero JS. Only `/glory-points` and `/classroom-groups` have scripts, in both locales." It is amended to say that the homepage ships exactly one inline script, the theme script, and to name the guard that pins it. "In both locales" becomes the five locales the site builds.
 - #141's paint-cost figure stands. The atmosphere keeps its four gradients and their geometry; only the colour values change.
 
 ## 8. Translation
 
-One new catalogue key, `themeDarkMode`, reads "Dark mode" in English. It is typed through `Catalogue`, so a missing locale fails `astro check`. The id, zh, vi and th values are machine-drafted like the rest of those catalogues. The label is two words, so it passes through the short-label guards (`label-check.test.ts`, `verified-labels.test.ts`) and the back-translation gate like every other label, and `locale-fallbacks.test.ts` refuses English left in zh, vi or th.
+One new catalogue key, `themeDarkMode`, reads "Dark mode" in English. It is typed through `Catalogue`, so a missing locale fails `astro check`. The id, zh, vi and th values are machine-drafted like the rest of those catalogues. The label is two words, so it goes through the short-label guards (`label-check.test.ts`, `verified-labels.test.ts`) and the back-translation gate like every other label, and `locale-fallbacks.test.ts` refuses English left in zh, vi or th.
 
 ## 9. Risks
 
-| risk                                                                       | answer                                                                                                                                                                                              |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a component selector written against `:root[data-theme]` is scoped by Astro | theme logic lives only in `tokens.css`; components read tokens and never test the theme, so no scoped rule can mis-stamp it                                                                          |
-| a whole suite silently changes palette                                     | §6.2: every project declares its scheme, and a guard enforces it                                                                                                                                    |
-| the two Aurora blocks drift apart                                          | §4: a guard derives both blocks and asserts they are equal                                                                                                                                          |
-| print follows a dark screen                                                | §4: the dark blocks are screen-only, proven with a stamped dark choice                                                                                                                              |
-| a real phone's own setting changes the gauntlet's results                  | §6.2: the device harness pins the scheme per run                                                                                                                                                    |
-| a visitor's storage is refused                                             | §5: the page still switches; the choice just is not remembered                                                                                                                                      |
+| risk                                                                  | answer                                                                                                                                 |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| a component colour a theme cannot reach                               | §6.6: every literal outside `tokens.css` is refused unless it is allowlisted with its reason                                          |
+| a whole suite silently changes palette                                | §6.2: every project declares its scheme, and a guard derived from the filesystem enforces it                                          |
+| the two Aurora blocks drift apart                                     | §4: a guard finds every dark block by its `color-scheme` and asserts they are equal                                                    |
+| print follows a dark screen                                           | §4: the dark blocks are screen-only, proven with a stamped dark choice                                                                 |
+| the header runs out of room in a long-label locale                    | §5: the compact label from #329, whose geometry guard covers every header item in every locale                                        |
+| Back shows a page in the theme the visitor just left                  | §5: the saved choice is re-applied on `pageshow`                                                                                       |
+| a real phone's own setting changes the gauntlet's results             | §6.2: the device harness pins the scheme per run                                                                                       |
+| a visitor's storage is refused                                        | §5: the page still switches; the choice just is not remembered                                                                         |
 
 ## 10. Acceptance criteria
 
 These replace the criteria in the #142 issue body once this spec is approved.
 
-1. The Studio palette (§3.1) is complete on bare `:root`. Aurora redefines only tokens, in two screen-only blocks a unit guard proves identical. No token is defined only inside a theme block.
+1. The Studio palette (§3.1) is complete on bare `:root`. Aurora redefines only tokens, in screen-only blocks that a unit guard finds by their `color-scheme: dark` and proves identical. No token is defined only inside a theme block. Aurora's values are unchanged.
 2. Three states: a `[data-theme]` stamp wins in both directions, and with no stamp the page follows `prefers-color-scheme` live.
-3. One 44 × 44px button in the header, before the language switcher, at every width, with no horizontal scroll at 320px. It is a toggle button named "Dark mode" (translated), pressed when dark, showing a moon in light and a sun in dark. It switches instantly, and the choice persists across pages, reloads and sessions.
-4. No flash in either direction, proven by the first-frame test and by the static head-position guard, both mutation-verified.
-5. Every page carries the theme script exactly once, inline in `<head>` and identical to `src/scripts/theme.inline.js`. The homepage (both locales) and the 404 carry no other script. The inventory is read from a real DOM. The two former zero-JS guards are rewritten to pin this and are mutation-verified.
-6. Without JavaScript the switch is absent and the device setting applies. With storage refused, the switch works for the page and nothing is saved.
-7. One `body::before` layer in both themes, painting Studio's values in light mode. The language band has no glow in light mode, and the phone mockup's shadow comes from `--lift-shadow`.
-8. Contrast: every pair passes in both themes, taking the worst over every subset of the atmosphere layers, in the paint order derived from `body::before`.
-9. Print is measured against white alone and is identical whichever theme the screen shows, including a stamped dark choice.
-10. The palette-reading guards (§6.2) run once per theme.
-11. The visual suite holds 24 baselines, 12 per theme, and the re-captured dark set differs from today's only in the header.
-12. Every Playwright project declares `colorScheme`, enforced by a guard. Dev-sanity proves the switch on the deployed dev site. The device gauntlet pins the scheme per run.
-13. The ShyTalk mark sits on `SHYTALK_MARK.tile` in light mode (guarded), is unchanged in dark mode, and prints in ink.
-14. The §7 cleanup is done, and the atmosphere tokens carry their positional names everywhere.
-15. `themeDarkMode` exists in all five catalogues and passes every locale guard.
-16. Every new or rewritten guard in §6.6 has been watched failing and then passing.
+3. One 44 × 44px switch in the header, grouped with the language switcher and before it, at every width. At narrow widths it sits beside #329's compact language label, and nothing in the header overlaps, in every locale, at every width from 320px. It is a toggle button named by the locale's `themeDarkMode` ("Dark mode" in English), pressed when dark, showing a moon in light and a sun in dark. It switches instantly.
+4. The choice persists across pages, reloads, sessions and Back.
+5. No flash in either direction, proven by the first-frame test and by the static guard (inline, classic, in `<head>`, before every stylesheet), both mutation-verified.
+6. Every built page carries the theme script exactly once, inline in `<head>` and identical to `src/scripts/theme.inline.js`. The homepage in all five locales and the 404 carry no other script. The inventory is read from a real DOM. The two former zero-JS guards are rewritten to pin this and are mutation-verified.
+7. Without JavaScript the switch is absent and the device setting applies. With storage refused, the switch works for the page and nothing is saved.
+8. One `body::before` layer in both themes, painting Studio's values in light mode. The language band has no glow in light mode, and the phone mockup's shadow comes from `--lift-shadow`.
+9. Contrast: every pair passes in both themes, taking the worst over every subset of the atmosphere layers, in the paint order derived from `body::before`, with the glass pairs as drawn (§6.1).
+10. Print is measured against white alone and is identical whichever theme the screen shows, including a stamped dark choice. The switch does not print.
+11. The palette-reading guards (§6.2) run once per theme.
+12. The visual suite holds 24 baselines, each of its 12 views in both themes, and the re-captured dark set differs from today's only in the header.
+13. Every project in every `playwright*.config.ts` declares `colorScheme`, enforced by a guard that derives the configs from the filesystem. Dev-sanity proves the switch on the deployed dev site. The device gauntlet pins the scheme per run.
+14. The ShyTalk mark sits on `SHYTALK_MARK.tile` in light mode (guarded), is unchanged in dark mode, and prints in ink.
+15. No colour literal outside `tokens.css` except the allowlisted ones, each with its reason (§6.6).
+16. The §7 cleanup is done, and the atmosphere tokens carry their positional names everywhere.
+17. `themeDarkMode` exists in all five catalogues and passes every locale guard.
+18. The evidence page (§6.7) covers every page, both themes, all five locales and the listed states.
+19. Every new or rewritten guard has been watched failing and then passing. §6.8 lists the minimum mutations.
 
 ## 11. Delivery
 
-The work lands as two pull requests under #142, in this order:
+Three pull requests, in this order:
 
-1. **Groundwork that changes no pixel.** It renames the atmosphere tokens, retires the unused ones, corrects the stale comments and fallbacks, introduces `--lift-shadow`, moves the contrast suite to the derived paint order and the subset worst case, and declares `colorScheme` in every project. The unchanged visual suite proves nothing moved.
-2. **Light mode.** Studio, the two dark blocks, the script, the switch, the translation, `theme.spec.ts`, the palette guards per theme, the light baselines and the `CLAUDE.md` amendment.
+1. **#142 groundwork, changing no pixel.** It renames the atmosphere tokens, retires the unused ones, corrects the stale comments and fallbacks, introduces `--lift-shadow`, and moves the contrast suite to the derived paint order, the subset worst case and the glass pairs as drawn. It also declares `colorScheme` in every project and adds the colour-literal guard. The unchanged visual suite proves nothing moved.
+2. **#329, the compact language label.** It is its own ticket, with its own geometry guard. It can land before, after or beside the groundwork, but always before step 3.
+3. **#142 light mode.** Studio, the dark blocks, the script, the switch, the translation, `theme.spec.ts`, the palette guards per theme, the light baselines and the `CLAUDE.md` amendment.
 
-Splitting it keeps the second pull request's diff to the feature itself. It also means a rename that missed a reference fails loudly while no colour has changed yet to hide it.
+Splitting it keeps the light-mode pull request's diff to the feature itself. It also means a rename that missed a reference fails loudly while no colour has changed yet to hide it.
+
+## 12. Review log
+
+**Pass 1, 2026-09-23.** It checked every factual claim against the repo and a real browser, and found 24 problems. The substantive ones:
+
+- the switch's placement had been measured in English only; #329 was filed, and the operator decided the compact label;
+- the site builds **five** locales, not two;
+- there are **four** Playwright configs, not three;
+- the site has `functions/`, so "no server" was false;
+- `defer` does nothing on an inline script, so it could not be the mutation;
+- the glass pairs modelled a stack no page draws;
+- a return from the back-forward cache would have shown the stale theme;
+- nothing guarded against a colour a theme cannot reach;
+- the #142 body's "tone Aurora down" conflicted with this spec, and the operator kept Aurora.
