@@ -42,7 +42,7 @@ test.use(recorded);
 const LANGUAGES: readonly Locale[] = ['zh', 'vi', 'th'];
 
 /** Visible copy is both: `toHaveText` alone passes on a hidden element. */
-const readsAs = async (target: Locator, text: string) => {
+const expectVisibleText = async (target: Locator, text: string) => {
   await expect(target).toBeVisible();
   await expect(target).toHaveText(text);
 };
@@ -64,14 +64,14 @@ test.describe('the copy the operator approved on #161', () => {
       await tool.waitForLoadState();
 
       const go = tool.locator('#cg-go');
-      await readsAs(go, t.makeGroups);
+      await expectVisibleText(go, t.makeGroups);
       await shoot(tool, `${locale}: the button reads “${t.makeGroups}”`, go);
 
       const howTo = tool.locator('#cg-howto-toggle');
       await expect(howTo).toHaveAttribute('aria-expanded', 'false');
       await howTo.click();
       const step = tool.locator('#cg-howto-body ol li').nth(2);
-      await readsAs(step, t.howToSteps[2]);
+      await expectVisibleText(step, t.howToSteps[2]);
       await shoot(
         tool,
         `${locale}: the third step reads “${t.howToSteps[2]}”`,
@@ -80,7 +80,7 @@ test.describe('the copy the operator approved on #161', () => {
 
       const students = tool.locator('#cg-students-toggle');
       await expect(students).toContainText(t.sectionStudentsHeading);
-      await readsAs(
+      await expectVisibleText(
         students.locator('.state'),
         [
           t.stateNamed({ n: 5 }),
@@ -109,10 +109,10 @@ test.describe('the copy the operator approved on #161', () => {
 
       await go.click();
       const heading = tool.locator('#cg-results-h');
-      await readsAs(heading, t.resultsHeading);
-      await readsAs(go, t.again);
+      await expectVisibleText(heading, t.resultsHeading);
+      await expectVisibleText(go, t.again);
       const board = tool.locator('#cg-board-open');
-      await readsAs(board, t.boardOpen);
+      await expectVisibleText(board, t.boardOpen);
       await shoot(
         tool,
         `${locale}: the groups are headed “${t.resultsHeading}”, with “${t.again}” and “${t.boardOpen}”`,
@@ -121,7 +121,10 @@ test.describe('the copy the operator approved on #161', () => {
 
       await tool.getByLabel(t.classLabel, { exact: true }).fill('6A');
       await go.click();
-      await readsAs(heading, t.resultsHeadingNamed({ className: '6A' }));
+      await expectVisibleText(
+        heading,
+        t.resultsHeadingNamed({ className: '6A' }),
+      );
       await shoot(
         tool,
         `${locale}: named for the class, the groups are headed “${t.resultsHeadingNamed({ className: '6A' })}”`,
@@ -141,7 +144,7 @@ test.describe('the copy the operator approved on #161', () => {
       // reaches it. A capture taken after the fade would show a ghost.
       await shuffle.focus();
       await expect(bar).not.toHaveClass(/\bfaded\b/);
-      await readsAs(shuffle, t.boardShuffle);
+      await expectVisibleText(shuffle, t.boardShuffle);
       await shoot(
         tool,
         `${locale}: the board offers “${t.boardShuffle}”`,
@@ -187,7 +190,7 @@ test.describe('the copy the operator approved on #161', () => {
       await page.goto(localisePath('/glory-points', locale));
 
       const heading = page.getByRole('heading', { level: 1 });
-      await readsAs(heading, glory.heading);
+      await expectVisibleText(heading, glory.heading);
       await expect(page).toHaveTitle(glory.title);
       await shoot(
         page,
