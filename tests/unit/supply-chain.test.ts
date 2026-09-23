@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { withoutYamlComments, withoutYamlQuotes } from './source-text';
-import { nonEmpty, searched } from '../source-files';
+import { filesUnder, nonEmpty, searched } from '../source-files';
 import { parseCleanYaml } from '../workflow-jobs';
 
 /**
@@ -222,6 +222,65 @@ describe('Dependabot keeps the pins from rotting', () => {
       'an ecosystem defaults to the default branch, bypassing the develop gate',
     ).toBe(ecosystems);
     expect(config).not.toMatch(/target-branch:\s*["']?main["']?/);
+  });
+});
+
+/**
+ * A container image CI runs is pinned, and something keeps it current. #95.
+ *
+ * The back-translation engine is the first image CI runs that no npm version
+ * moves (the visual job's Playwright image follows the installed Playwright).
+ * Its pin lives in a Dockerfile, not in the workflow, because Dependabot reads
+ * no image out of a workflow file: a digest written there is exactly the pin
+ * nobody bumps. Both halves are derived from disk, so a Dockerfile added
+ * anywhere is held to them the day it appears.
+ */
+describe('a container image CI runs is pinned, and watched', () => {
+  const dockerfiles = () =>
+    filesUnder('.', (path) => basename(path) === 'Dockerfile');
+  /** Comment lines start with `#`, so an anchored FROM never reads one. */
+  const fromLines = () =>
+    dockerfiles().flatMap((file) =>
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .map((text, i) => ({ where: `${file}:${i + 1}`, text: text.trim() }))
+        .filter(({ text }) => /^FROM\s/i.test(text)),
+    );
+
+  it('builds every Dockerfile FROM a digest, beside the version it names', () => {
+    const loose = fromLines()
+      .filter(
+        ({ text }) =>
+          !/^FROM\s+\S+:[^\s:@/]+@sha256:[0-9a-f]{64}(\s+AS\s+\S+)?$/i.test(
+            text,
+          ),
+      )
+      .map(({ where, text }) => `${where} ${text}`);
+
+    expect(
+      searched(loose, { of: fromLines(), what: 'FROM lines' }),
+      'a tag can be repointed under us, and a bare digest is unreviewable',
+    ).toEqual([]);
+  });
+
+  it('has Dependabot watching every directory that holds a Dockerfile', () => {
+    const config = parseCleanYaml(dependabot(), DEPENDABOT) as {
+      updates?: { 'package-ecosystem'?: string; directory?: string }[];
+    };
+    const watched = new Set(
+      (config.updates ?? [])
+        .filter((entry) => entry['package-ecosystem'] === 'docker')
+        .map((entry) => (entry.directory ?? '').replace(/(.)\/+$/, '$1')),
+    );
+    const unwatched = dockerfiles()
+      .map((file) => dirname(file))
+      .map((dir) => (dir === '.' ? '/' : `/${dir}`))
+      .filter((dir) => !watched.has(dir));
+
+    expect(
+      searched(unwatched, { of: dockerfiles(), what: 'Dockerfiles' }),
+      'a digest nobody bumps rots',
+    ).toEqual([]);
   });
 });
 

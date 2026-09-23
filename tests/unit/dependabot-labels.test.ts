@@ -43,7 +43,7 @@ describe('the labels dependabot.yml asks for', () => {
     // failure this file exists for. The ecosystem labels are the point of the
     // `labels:` key -- without them a dependency PR says only `dependencies`,
     // and an npm bump is indistinguishable from an action bump at a glance.
-    expect(labels).toEqual(['dependencies', 'github-actions', 'npm']);
+    expect(labels).toEqual(['dependencies', 'docker', 'github-actions', 'npm']);
   });
 
   it('come from the parsed document, so a comment cannot add one', () => {

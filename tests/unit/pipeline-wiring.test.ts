@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { dirname, join, normalize, resolve, sep } from 'node:path';
 import {
   codeWithoutComments,
   withoutCommentLines,
@@ -1917,6 +1917,115 @@ describe('no job inherits the repository default permissions (#301)', () => {
         of: onPullRequest.map(({ file }) => file),
         what: 'workflows a pull request can start',
       }),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * #95. The back-translation review runs on the real engine, can go red, and
+ * runs whenever anything it reads changes.
+ *
+ * Advisory by design -- no score fails it -- which makes the three ways it
+ * could quietly stop meaning anything the ones to hold: an engine that is not
+ * the pinned one, an error swallowed into a green check, and a change to its
+ * own inputs that does not start it at all.
+ */
+describe('the back-translation review', () => {
+  const FILE = 'back-translation.yml';
+  const SCRIPT = 'scripts/i18n-back-translate.mjs';
+  const parsed = () =>
+    parseCleanYaml(workflow(FILE), FILE) as {
+      on?: Record<string, { paths?: string[] } | null>;
+      jobs?: Record<
+        string,
+        {
+          'continue-on-error'?: unknown;
+          steps?: { 'continue-on-error'?: unknown }[];
+        }
+      >;
+    };
+  /** The review job's shell, with its comment lines gone. */
+  const scripts = () =>
+    jobNamed(FILE, 'review')
+      .runs.map((run) => withoutCommentLines(run))
+      .join('\n');
+
+  it('runs the script', () => {
+    expect(scripts()).toMatch(
+      /^\s*node scripts\/i18n-back-translate\.mjs\s*$/m,
+    );
+  });
+
+  it('builds its engine from the Dockerfile Dependabot watches', () => {
+    expect(scripts()).toMatch(
+      /^\s*docker build\b[^\n]*\sdocker\/libretranslate\s*$/m,
+    );
+    expect(existsSync('docker/libretranslate/Dockerfile')).toBe(true);
+  });
+
+  it('can go red: nothing in it continues on error', () => {
+    const job = parsed().jobs?.review;
+    const steps = job?.steps ?? [];
+    const excused = [
+      job?.['continue-on-error'],
+      ...steps.map((step) => step['continue-on-error']),
+    ].filter((value) => value !== undefined);
+    expect(
+      searched(excused, { of: steps, what: 'review steps' }),
+      'a liveness failure swallowed here is a green check over nothing',
+    ).toEqual([]);
+  });
+
+  /** Every module a script loads at run time, following relative imports. */
+  function importClosure(entry: string): string[] {
+    const seen = new Set<string>();
+    const visit = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const code = withoutTsComments(readFileSync(file, 'utf8'));
+      // A type-only import is erased before the script runs.
+      for (const [, specifier] of code.matchAll(
+        /^import\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm,
+      ))
+        visit(normalize(join(dirname(file), specifier)));
+    };
+    visit(entry);
+    return [...seen].sort();
+  }
+
+  const globToRegExp = (glob: string): RegExp =>
+    new RegExp(
+      `^${glob
+        .split('**')
+        .map((part) =>
+          part
+            .split('*')
+            .map((text) => text.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+            .join('[^/]*'),
+        )
+        .join('.*')}$`,
+    );
+
+  it('starts for a pull request that changes anything it reads', () => {
+    const triggers = parsed().on ?? {};
+    expect(Object.keys(triggers).sort()).toEqual([
+      'pull_request',
+      'workflow_dispatch',
+    ]);
+    const paths = triggers.pull_request?.paths ?? [];
+    const inputs = [
+      ...importClosure(SCRIPT),
+      'docker/libretranslate/Dockerfile',
+      `.github/workflows/${FILE}`,
+    ];
+    // The closure is followed, not listed: this is its floor, not its size.
+    expect(inputs.length, 'the import walk found nothing').toBeGreaterThan(10);
+    const unwatched = inputs.filter(
+      (file) => !paths.some((glob) => globToRegExp(glob).test(file)),
+    );
+    expect(
+      searched(unwatched, { of: inputs, what: 'files the review reads' }),
+      'a change to one of these would not start the review',
     ).toEqual([]);
   });
 });
