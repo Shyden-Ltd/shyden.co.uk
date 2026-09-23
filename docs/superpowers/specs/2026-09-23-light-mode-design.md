@@ -190,7 +190,7 @@ The stale claim in `tokens.css`, that `--ink-soft` over the atmosphere scores 5.
 No Playwright config sets `colorScheme` today, so every project runs under Playwright's **default, which is light**. The day Studio lands, every existing e2e test, dev-sanity, prod-sanity and the device suite would silently start testing a different palette. So:
 
 - **every project in every config declares `colorScheme`.** That covers `playwright.config.ts`, `playwright.dev.config.ts`, `playwright.device.config.ts` and `playwright.prod.config.ts`. The unit guard **derives the configs from the filesystem** (`playwright*.config.ts`) rather than from this list, so a fifth config cannot slip past it. The general suite declares **dark**, so every existing test keeps testing exactly what it tests today;
-- **the palette-reading guards run once per theme.** Those are `palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, and every assertion in `classroom-groups.spec.ts` that reads a computed colour. Print runs under both themes, and additionally with a stamped `dark` choice, proving that paper ignores the screen theme;
+- **the palette-reading guards run once per theme.** Those are `palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, and every assertion in `classroom-groups.spec.ts` that reads a computed colour. Print runs under both themes, and additionally with a stamped `dark` choice, proving that paper ignores the screen theme. **Every per-theme run first asserts the theme it rendered**, by reading the page's computed ground against that theme's `--bg`, so a run that was meant to be light but rendered dark fails rather than passing on the other palette. The device gauntlet makes the same assertion on each phone;
 - **dev-sanity and prod-sanity** each prove on their deployed site that the switch toggles and that the choice survives a reload. The switch is a rendering fact, so it belongs in the browser runs, not the `curl` smoke;
 - **the device gauntlet pins the theme per run**: Android Chrome over CDP through `Emulation.setEmulatedMedia`, and iOS Safari by stamping a saved choice before the measured load. Its results therefore never depend on the phone's own setting.
 
@@ -224,7 +224,7 @@ The inventory is read from a real DOM (`document.scripts`), never by matching `<
 
 ### 6.5 Visual baselines, both themes
 
-Each of the visual suite's 12 views is captured in both themes, so **12 baselines become 24**. The light set is new, named with a `-light` suffix. The dark set keeps today's file names, so that its diff can be reviewed file by file. The existing 12 are re-captured once, because the switch now sits in every header, and their diff against today's is reviewed to show changes in the header alone: the switch, and the header items it moves along. Both sets are captured and compared in the pinned `linux/amd64` Playwright image, as today.
+Each of the visual suite's 12 views is captured in both themes, so **12 baselines become 24**. The light set is new, named with a `-light` suffix. The dark set keeps today's file names, so that its diff can be reviewed file by file. The existing 12 are re-captured once, because the switch now sits in every header, and their diff against today's is reviewed to show changes in the header alone: the switch, and the header items it moves along. Both sets are captured and compared in the pinned `linux/amd64` Playwright image, as today. The light set goes through the repo's control sequence before it counts: capture; run unchanged and confirm it compared and wrote nothing; recolour one Studio token and confirm red, with the diff naming the region; restore and confirm green. A set that was only ever written has compared nothing.
 
 ### 6.6 No colour a theme cannot see
 
@@ -274,6 +274,7 @@ Every new or rewritten guard is mutation-verified in both directions before it l
 | `transition: background-color 0.2s` added to `html`                     | instant                                   |
 | the reveal rule taken out of `@media screen`                            | not printed                               |
 | the switch's accessible name removed                                    | accessibility                             |
+| a per-theme project set to the other scheme                             | that run's own theme assertion            |
 
 ## 7. Cleanup in the same ticket (part 4)
 
@@ -388,3 +389,8 @@ The review page gained the work cards as refined in pass 3.
 - the three rendered checks added in pass 5 and the accessibility check had no mutations, against "one per guard".
 
 It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`withoutAstroComments`, `astroCodeViews`, `astroStyleViews`).
+
+**Pass 7, 2026-09-23.** It traced every mechanism to the test that proves it, and every test to the mutation that breaks it. It found 2 liveness gaps:
+
+- the light baselines did not name the capture, compare and mutate sequence, without which a written set proves nothing;
+- the per-theme runs never asserted which theme they rendered, so a misconfigured light run would pass on the dark palette.
