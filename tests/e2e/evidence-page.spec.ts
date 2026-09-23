@@ -3,6 +3,7 @@ import type { Page, TestInfo } from '@playwright/test';
 import { renderEvidencePage } from '../../scripts/build-evidence-page.mjs';
 import {
   installDbStandIn,
+  type Completion,
   type DbStandInOptions,
   type StandInWindow,
   type StoredBody,
@@ -24,7 +25,9 @@ import { recorded } from './evidence';
  * text cannot freeze an object.
  *
  * Every behaviour runs against both orders a write can complete in (see
- * `db-stand-in.ts`). Ticks are found through their journey's HEADING, never
+ * `db-stand-in.ts`), and a store slower than the page's save window is
+ * played out step by step, the test releasing each completion itself
+ * (#260). Ticks are found through their journey's HEADING, never
  * through the checkbox's own name, so these tests fail on the tick they name
  * and not on the naming defect #172 also fixes.
  */
@@ -509,6 +512,295 @@ for (const { order, when } of ORDERS) {
     });
   });
 }
+
+/**
+ * What a slow-store scenario does next: click a numbered journey's tick,
+ * wait for the page's next write (`saved`), or release the oldest held
+ * write's confirmation or resolution.
+ */
+type Step = 'tick 1' | 'tick 2' | 'untick 1' | 'saved' | Completion;
+
+/** The journeys a scenario's steps name by number. */
+const NUMBERED: Readonly<Record<string, string>> = {
+  '1': TITLES[0],
+  '2': TITLES[1],
+};
+
+/**
+ * Stored before every scenario, so the page and the store each have a tick
+ * no step touches, and a scenario that takes a tick back still ends with
+ * something that must be shown.
+ */
+const ALREADY_STORED = TITLES[4];
+
+/** Each order a write's two completions can reach the page in. */
+const COMPLETION_ORDERS = [
+  {
+    first: 'confirm',
+    second: 'resolve',
+    eachWrite: 'is confirmed, then resolves',
+    bothLines: 'are both confirmed before either resolves',
+  },
+  {
+    first: 'resolve',
+    second: 'confirm',
+    eachWrite: 'resolves, then is confirmed',
+    bothLines: 'both resolve before either is confirmed',
+  },
+] as const;
+
+/** What a person does after the first tick: another tick, or taking it back. */
+const SECOND_EDITS = [
+  {
+    step: 'tick 2',
+    what: 'a tick on a second journey',
+    left: [TITLES[0], TITLES[1]],
+  },
+  { step: 'untick 1', what: 'the first tick taken back', left: [] },
+] as const;
+
+const NOUN = { confirm: 'confirmation', resolve: 'resolution' } as const;
+
+/**
+ * Every place a second edit can land against a first write the store has
+ * not finished: inside that write's window before either completion,
+ * between its two completions, or saved while it is still in flight, the
+ * completions then arriving write by write or line by line. Derived from
+ * the completion orders and the edits, so an order or an edit added above
+ * is played out in every position.
+ */
+const SLOW_STORE_SCENARIOS = COMPLETION_ORDERS.flatMap((order) =>
+  SECOND_EDITS.flatMap((edit) => {
+    const { first, second } = order;
+    const scenario = (when: string, steps: readonly Step[]) => ({
+      name: `${edit.what}, ${when}`,
+      steps,
+      left: edit.left,
+    });
+    return [
+      scenario(
+        `made while the first write is in flight, which ${order.eachWrite} before the next save`,
+        ['tick 1', 'saved', edit.step, first, second, 'saved', first, second],
+      ),
+      scenario(
+        `made between the first write's ${NOUN[first]} and its ${NOUN[second]}`,
+        ['tick 1', 'saved', first, edit.step, second, 'saved', first, second],
+      ),
+      scenario(
+        `saved while the first write is in flight; each write ${order.eachWrite}`,
+        ['tick 1', 'saved', edit.step, 'saved', first, second, first, second],
+      ),
+      scenario(
+        `saved while the first write is in flight; the writes ${order.bothLines}`,
+        ['tick 1', 'saved', edit.step, 'saved', first, first, second, second],
+      ),
+    ];
+  }),
+);
+
+/** What the page showed, and the store held, straight after one step. */
+interface Observed {
+  step: Step;
+  /** Journey ids the page shows ticked. */
+  shown: string[];
+  /** Journey ids the store holds as ticked. */
+  stored: string[];
+  status: string;
+}
+
+/**
+ * Plays a scenario out inside ONE page task and reads the page back after
+ * every step. A timer turn follows each step, and timers fall due in
+ * deadline order: a turn queued straight after a tick is due before that
+ * tick's 400 ms save, so no release can slip past the save it is meant to
+ * precede, however loaded the machine. `saved` is the one step that waits:
+ * for the page's own save, then one turn for the write's echo.
+ */
+const playOut = (page: Page, steps: readonly Step[]) =>
+  page.evaluate(
+    async ({ all, numbered, doc }) => {
+      const standIn = (window as StandInWindow).__dbStandIn;
+      const turn = (ms = 0) =>
+        new Promise<void>((resolve) => setTimeout(resolve, ms));
+      const observed: Observed[] = [];
+      let saves = 0;
+      for (const step of all) {
+        if (step === 'saved') {
+          saves += 1;
+          const deadline = Date.now() + 5000;
+          while (standIn.writes() < saves) {
+            if (Date.now() > deadline)
+              throw new Error(
+                `the page made ${standIn.writes()} writes; "saved" waited for write ${saves}`,
+              );
+            await turn(10);
+          }
+        } else if (step === 'confirm' || step === 'resolve') {
+          standIn.release(step);
+        } else {
+          const [kind, number = ''] = step.split(' ');
+          const title = numbered[number] ?? '';
+          const section = Array.from(
+            document.querySelectorAll('section.journey'),
+          ).find(
+            (candidate) => candidate.querySelector('h3')?.textContent === title,
+          );
+          const box = section?.querySelector('input[type="checkbox"]');
+          const label = section?.querySelector('label');
+          if (!(box instanceof HTMLInputElement) || !label)
+            throw new Error(`no tick found for "${title}"`);
+          if (box.checked === (kind === 'tick'))
+            throw new Error(
+              `"${step}" found "${title}" ${box.checked ? 'ticked' : 'unticked'} already`,
+            );
+          label.click();
+        }
+        await turn();
+        const journeys = (standIn.read(doc)?.journeys ?? {}) as Record<
+          string,
+          unknown
+        >;
+        observed.push({
+          step,
+          shown: Array.from(
+            document.querySelectorAll<HTMLInputElement>('input[data-journey]'),
+          )
+            .filter((box) => box.checked)
+            .map((box) => box.dataset['journey'] ?? '')
+            .sort(),
+          stored: Object.keys(journeys)
+            .filter((id) => journeys[id] === true)
+            .sort(),
+          status: document.getElementById('state')?.textContent ?? '',
+        });
+      }
+      return observed;
+    },
+    { all: steps, numbered: NUMBERED, doc: DOC },
+  );
+
+test.describe('evidence page sign-off ticks, when the store is slower than the save window', () => {
+  // The two orders above complete a write 60 ms after it is made, so a test
+  // that waits for each write before its next tick never has two writes in
+  // flight and never ticks between a write's two completions. A phone on a
+  // slow connection does both (#260). Under `as-released` nothing completes
+  // until the test releases it, so every ordering here is forced, not hoped
+  // for.
+  test('the stand-in completes no held write by itself, and releases each completion oldest first', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, { order: 'as-released' });
+    const trace = await page.evaluate(async () => {
+      const { claude, __dbStandIn: standIn } = window as StandInWindow;
+      const db = await claude.use('db');
+      if (!db) return ['use resolved null'];
+      const path = 'stand-in/held';
+      const ref = db.doc(path);
+      const seen: string[] = [];
+      const turn = (ms = 0) =>
+        new Promise<void>((resolve) => setTimeout(resolve, ms));
+      const stored = () =>
+        seen.push(
+          `stored ${JSON.stringify(standIn.read(path)?.['n'] ?? null)}`,
+        );
+      ref.onSnapshot((snap) => {
+        seen.push(
+          `snapshot ${JSON.stringify(snap.data()?.['n'] ?? null)}, pending ${snap.metadata.hasPendingWrites}`,
+        );
+      });
+      await turn();
+      for (const n of [1, 2]) {
+        void ref.set({ n }).then(() => seen.push(`write ${n} resolved`));
+        await turn();
+      }
+      // Five times what an automatic order takes to complete a write.
+      await turn(300);
+      stored();
+      for (const completion of [
+        'confirm',
+        'resolve',
+        'resolve',
+        'confirm',
+      ] as const) {
+        seen.push(
+          `release ${completion}: write ${standIn.release(completion)}`,
+        );
+        await turn();
+        stored();
+      }
+      try {
+        standIn.release('confirm');
+        seen.push('a release with nothing held was allowed');
+      } catch (refusal) {
+        seen.push(String(refusal));
+      }
+      return seen;
+    });
+    expect(trace).toEqual([
+      'snapshot null, pending false',
+      'snapshot 1, pending true',
+      'snapshot 2, pending true',
+      'stored null',
+      // Write 1 is stored; the view still carries write 2 over it, pending.
+      'snapshot 2, pending true',
+      'release confirm: write 1',
+      'stored 1',
+      'release resolve: write 1',
+      'write 1 resolved',
+      'stored 1',
+      // The store takes write 2 at its first completion, here its resolution.
+      'release resolve: write 2',
+      'write 2 resolved',
+      'stored 2',
+      'snapshot 2, pending false',
+      'release confirm: write 2',
+      'stored 2',
+      'Error: no write is waiting to confirm',
+    ]);
+  });
+
+  for (const { name, steps, left } of SLOW_STORE_SCENARIOS) {
+    test(name, async ({ page }, testInfo) => {
+      await openEvidencePage(page, testInfo, {
+        order: 'as-released',
+        seed: signedOff([ALREADY_STORED]),
+      });
+      const observed = await playOut(page, steps);
+      const intended = new Set<string>([ALREADY_STORED]);
+      for (const seen of observed) {
+        const [kind, number = ''] = seen.step.split(' ');
+        const title = NUMBERED[number];
+        if (title && kind === 'tick') intended.add(title);
+        if (title && kind === 'untick') intended.delete(title);
+        expect(
+          seen.shown,
+          `after "${seen.step}", the page shows exactly what the person ticked`,
+        ).toEqual(idsOf([...intended]));
+        if (/^Saved\b/.test(seen.status))
+          expect(
+            seen.stored,
+            `after "${seen.step}", the status reads "${seen.status}", so the store holds what the page shows`,
+          ).toEqual(seen.shown);
+      }
+      const last = observed.at(-1);
+      expect(
+        last?.status,
+        'the page says Saved once every write has completed',
+      ).toMatch(/^Saved\b/);
+      expect(
+        last?.stored,
+        'the store keeps exactly what the person left ticked',
+      ).toEqual(idsOf([ALREADY_STORED, ...left]));
+      expect(
+        await counters(page),
+        'the page made one write per save, and every one was released',
+      ).toMatchObject({
+        writes: steps.filter((step) => step === 'saved').length,
+        inflight: 0,
+      });
+    });
+  }
+});
 
 test.describe('evidence page sign-off, whatever the write order', () => {
   test('each tick is named for the journey it marks', async ({
