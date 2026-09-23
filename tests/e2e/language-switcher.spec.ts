@@ -8,7 +8,7 @@ import {
 } from '../../src/lib/i18n';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
-import { recorded } from './evidence';
+import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
@@ -62,6 +62,11 @@ const expectLabel = async (
   // The label changes and the control's name does not (#329, AC9).
   await expect(summary).toHaveAccessibleName(
     getSiteStrings(locale).language.label,
+  );
+  await shoot(
+    page,
+    `${where}: the switcher shows ${text}`,
+    page.locator('header'),
   );
 };
 
@@ -134,6 +139,11 @@ test.describe('language switcher', () => {
         await expect(entry).toHaveAttribute('hreflang', other);
         await expect(entry).toHaveAttribute('lang', other);
       }
+      await shoot(
+        page,
+        `${locale}: every language listed, ${LOCALE_METADATA[locale].nativeName} first and ticked`,
+        page.locator(`${SWITCHER} ul`),
+      );
     }
   });
 

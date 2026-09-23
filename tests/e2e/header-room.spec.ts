@@ -213,8 +213,10 @@ const addStandIn = (page: Page) =>
     const standIn = document.createElement('button');
     standIn.type = 'button';
     standIn.setAttribute('aria-label', name);
+    // The dashed outline is for the evidence picture: an outline takes no
+    // space, so the stand-in is seen without changing what is measured.
     standIn.style.cssText =
-      'flex: none; width: 44px; height: 44px; margin: 0; padding: 0; border: 0; background: none';
+      'flex: none; width: 44px; height: 44px; margin: 0; padding: 0; border: 0; background: none; outline: 2px dashed; outline-offset: -2px';
     bar.insertBefore(standIn, switcher);
   }, STAND_IN);
 
