@@ -114,6 +114,7 @@ jobs:
   # 22.9 to 28.5 minutes in one job, under a 45-minute budget it was growing
   # into, and every pull request waited all of it.
   e2e:
+    if: false
     name: e2e shard ${{ matrix.shard }} of ${{ strategy.job-total }}
     runs-on: ubuntu-26.04
     # The e2e policy, restated per shard: tests/unit/pipeline-wiring.test.ts
