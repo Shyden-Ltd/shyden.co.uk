@@ -28,7 +28,7 @@ const LISTENS_AFTER_A_MOMENT = [
   'const port = Number(process.argv[1]);',
   'setTimeout(() => {',
   "  require('node:http')",
-  "    .createServer((request, response) => response.end(JSON.stringify({ value: { message: '', ready: true } })))",
+  "    .createServer((_, response) => response.end(JSON.stringify({ value: { message: '', ready: true } })))",
   "    .listen(port, '127.0.0.1');",
   '}, 300);',
 ].join('\n');

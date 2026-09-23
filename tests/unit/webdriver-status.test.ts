@@ -22,7 +22,7 @@ afterEach(async () => {
 
 /** A server answering every request with `body`; resolves to its base URL. */
 async function answering(body: unknown): Promise<string> {
-  const server = createServer((request, response) =>
+  const server = createServer((_, response) =>
     response.end(JSON.stringify(body)),
   );
   servers.push(server);
