@@ -2,7 +2,7 @@
 
 **Status:** design approved in four parts on 2026-09-23 and revised by the review passes logged in §12. This written spec awaits the operator's approval. No plan and no code exist yet, and none will until the spec is approved.
 
-**Comparison and review page:** https://claude.ai/artifact/RXZDsNzcjVEosHnYMAnqBw (version 2: the three candidates as rendered, Studio refined, and the two wordmark options).
+**Comparison and review page:** https://claude.ai/artifact/RXZDsNzcjVEosHnYMAnqBw (version 3: the three candidates as rendered, Studio refined, the two wordmark options, and the work cards with the refined badge).
 
 ## 1. What this is
 
@@ -163,7 +163,7 @@ At narrow widths the language switcher shows the **compact label decided for #32
 2. **Reveals the switch.** It stamps `data-theme-switch` on `<html>`, which turns `--switch-display` on (§4). So **with JavaScript off the switch never appears** and the device setting applies.
 3. **Handles clicks by delegation** on `document`, because the switch does not exist yet when a head script runs. A click computes the current theme (the stamp, or `matchMedia('(prefers-color-scheme: dark)')` when unstamped), stamps the opposite and saves it. If saving throws, the page still switches; the choice just is not remembered.
 4. **Keeps `aria-pressed` true to the theme**: on `DOMContentLoaded`, after a click, and when the OS setting changes while no choice is saved.
-5. **Re-applies the saved choice on `pageshow`** when the page comes back from the back-forward cache. Without this, a visitor who switches theme and presses Back would see the page they left, in the theme they left.
+5. **Re-applies the saved choice, and `aria-pressed` with it, on `pageshow`** when the page comes back from the back-forward cache. Without this, a visitor who switches theme and presses Back would see the page they left, in the theme they left.
 
 **Not included, deliberately:**
 
@@ -302,7 +302,7 @@ These replace the criteria in the #142 issue body once this spec is approved.
 
 1. The Studio palette (§3.1) is complete on bare `:root`. Aurora redefines only tokens, in screen-only blocks that a unit guard finds by their `color-scheme: dark` and proves identical. No token is defined only inside a theme block. Aurora's values are unchanged.
 2. Three states: a `[data-theme]` stamp wins in both directions, and with no stamp the page follows `prefers-color-scheme` live.
-3. One 44 × 44px switch in the header, grouped with the language switcher and before it, at every width. At narrow widths it sits beside #329's compact language label, and nothing in the header overlaps, in every locale, at every width from 320px. It is a toggle button named by the locale's `themeDarkMode` ("Dark mode" in English), pressed when dark, showing a moon in light and a sun in dark. It switches instantly.
+3. One 44 × 44px switch in the header, grouped with the language switcher and before it, at every width. At narrow widths it sits beside #329's compact language label, and nothing in the header overlaps, in every locale, at every width from 320px. It is a toggle button named by the locale's `themeDarkMode` ("Dark mode" in English), pressed when dark, showing a moon in light and a sun in dark, with a visible focus ring. It switches instantly.
 4. The choice persists across pages, reloads, sessions and Back.
 5. No flash in either direction, proven by the first-frame test and by the static guard (inline, classic, in `<head>`, before every stylesheet), both mutation-verified.
 6. Every built page carries the theme script exactly once, inline in `<head>` and identical to `src/scripts/theme.inline.js`. The homepage in all five locales and the 404 carry no other script. The inventory is read from a real DOM. The two former zero-JS guards are rewritten to pin this and are mutation-verified.
@@ -363,3 +363,10 @@ Splitting it keeps the light-mode pull request's diff to the feature itself. It 
 - guards that discover their population needed `searched()` liveness;
 - one mutation described the scenario under test rather than a break in it: making the save throw *is* storage refused. It is now the removal of the `try`/`catch`;
 - two references had gone stale since pass 2.
+
+**Pass 4, 2026-09-23.** It found 2 problems, both omissions:
+
+- AC3 did not state the switch's focus ring, which §6.3 tests;
+- a return from the back-forward cache re-applied the theme but did not say it refreshes `aria-pressed`, which would otherwise announce the old state.
+
+The review page gained the work cards as refined in pass 3.
