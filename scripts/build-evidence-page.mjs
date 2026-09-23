@@ -1154,6 +1154,29 @@ ${journeyHtml}
 };
 
 /**
+ * The journey ids a rendered page declares, in page order, read from the one
+ * line of its script that declares them (`var JOURNEYS = [...]`, above). The
+ * pre-merge check reads the page as PUBLISHED, so it learns the journeys from
+ * the page itself and never from a rebuild that may differ from it (#197).
+ *
+ * @param {string} html
+ * @returns {string[]}
+ */
+export const journeysOfPage = (html) => {
+  const lists = [...html.matchAll(/\bvar JOURNEYS = (\[[^\]\n]*\]);/g)];
+  if (lists.length !== 1)
+    throw new Error(
+      `journeysOfPage: the page declares ${lists.length} journey lists, ` +
+        'where an evidence page declares exactly one',
+    );
+  /** @type {unknown} */
+  const ids = JSON.parse(lists[0]?.[1] ?? '');
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string'))
+    throw new Error('journeysOfPage: the journey list is not a list of ids');
+  return ids;
+};
+
+/**
  * What the publish has to grant, said out loud at build time.
  *
  * The page writes the ticks and the verdict through `claude.use('db')`, which

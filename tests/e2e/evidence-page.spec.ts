@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { renderEvidencePage } from '../../scripts/build-evidence-page.mjs';
+import { evidencePageOf } from '../evidence-fixture';
 import {
   installDbStandIn,
   type Completion,
@@ -45,59 +45,10 @@ const SIGNOFF_KEY = 'ticket-172-fixture';
 /** Where a published page keeps its sign-off, as `signoff/ticket-136` does. */
 const DOC = `signoff/${SIGNOFF_KEY}`;
 const ORIGIN = 'https://evidence.test';
-/** A real 1x1 PNG, so no capture on the fixture page is a broken image. */
-const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
 
-/**
- * The page exactly as the builder renders it for a ticket with these journeys.
- * The manifest and the report spell each journey the same way, as the builder
- * requires since #263: a prefix on one side alone renders every journey twice,
- * once with its capture and once without, which this fixture did until #197.
- */
-const pageOf = (titles: readonly string[]): string => {
-  const manifest = titles.map((title, index) => ({
-    project: 'chromium',
-    title,
-    order: 1,
-    label: `what ${title} shows`,
-    file: `chromium/journey-${index + 1}.png`,
-  }));
-  return renderEvidencePage({
-    manifest,
-    report: {
-      stats: {
-        startTime: '2026-09-14T15:09:00.000Z',
-        duration: 1000,
-        expected: titles.length,
-        unexpected: 0,
-        flaky: 0,
-        skipped: 0,
-      },
-      suites: [
-        {
-          specs: titles.map((title) => ({
-            title,
-            tests: [
-              {
-                projectName: 'chromium',
-                results: [{ status: 'passed', duration: 100, attachments: [] }],
-              },
-            ],
-          })),
-        },
-      ],
-    },
-    content: {
-      title: 'Evidence page fixture',
-      eyebrow: 'fixture',
-      headline: `A page with ${titles.length} journeys to sign off`,
-      lede: 'Rendered by the real builder.',
-      signoffKey: SIGNOFF_KEY,
-    },
-    shots: new Map(manifest.map((entry) => [entry.file, PIXEL])),
-  });
-};
+/** The page exactly as the builder renders it for a ticket with these journeys. */
+const pageOf = (titles: readonly string[]): string =>
+  evidencePageOf(titles, SIGNOFF_KEY);
 
 /** The page exactly as the builder renders it for a five-journey ticket. */
 const HTML: string = pageOf(TITLES);

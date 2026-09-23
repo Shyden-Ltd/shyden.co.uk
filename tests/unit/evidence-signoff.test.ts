@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, it, expect } from 'vitest';
 import { signOffOf, standingOf } from '../../scripts/evidence-signoff.mjs';
-import { renderEvidencePage } from '../../scripts/build-evidence-page.mjs';
+import { evidencePageOf } from '../evidence-fixture';
 
 /**
  * Where an evidence page's stored verdict stands against the journeys the
@@ -24,14 +24,16 @@ const current = (verdict: 'approved' | 'more') => ({
   removed: [],
 });
 
-/** The runtime delivers stored documents frozen all the way down (#172). */
-const frozen = <T>(value: T): T => {
-  if (value && typeof value === 'object') {
-    Object.values(value).forEach(frozen);
-    Object.freeze(value);
-  }
-  return value;
-};
+/**
+ * A copy frozen all the way down, as the runtime delivers stored documents
+ * (#172). JSON.parse hands its reviver each value after that value's
+ * children, so freezing there freezes the whole body with no walker of our
+ * own, as `db-stand-in.ts` does (one-home.test.ts).
+ */
+const frozen = <T>(value: T): T =>
+  JSON.parse(JSON.stringify(value), (_key, part: unknown) =>
+    part && typeof part === 'object' ? Object.freeze(part) : part,
+  ) as T;
 
 describe('a verdict stands only against the journeys it was given on (#197)', () => {
   it('an approval given on A, on a page showing A, is current', () => {
@@ -204,57 +206,12 @@ describe('the stored sign-off is read in the shape the page writes', () => {
   });
 });
 
-/** A real 1x1 PNG, so the fixture page carries a decodable capture. */
-const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
-
-/** The page exactly as the builder renders it for a two-journey ticket. */
-const renderFixture = (): string => {
-  const titles = ['the first journey', 'the second journey'];
-  const manifest = titles.map((title, index) => ({
-    project: 'chromium',
-    title,
-    order: 1,
-    label: `what ${title} shows`,
-    file: `chromium/journey-${index + 1}.png`,
-  }));
-  return renderEvidencePage({
-    manifest,
-    report: {
-      stats: {
-        startTime: '2026-09-23T00:00:00.000Z',
-        duration: 1000,
-        expected: titles.length,
-        unexpected: 0,
-        flaky: 0,
-        skipped: 0,
-      },
-      suites: [
-        {
-          specs: titles.map((title) => ({
-            title,
-            tests: [
-              {
-                projectName: 'chromium',
-                results: [{ status: 'passed', duration: 100, attachments: [] }],
-              },
-            ],
-          })),
-        },
-      ],
-    },
-    content: {
-      title: 'Evidence page fixture',
-      headline: 'A page with two journeys to sign off',
-      signoffKey: 'ticket-197-fixture',
-    },
-    shots: new Map(manifest.map((entry) => [entry.file, PIXEL])),
-  });
-};
-
 describe('the page runs these functions, not a copy of them', () => {
   it('embeds each function by its own source text', () => {
-    const html = renderFixture();
+    const html = evidencePageOf(
+      ['the first journey', 'the second journey'],
+      'ticket-197-fixture',
+    );
     for (const fn of [signOffOf, standingOf]) {
       expect(html, fn.name).toContain(fn.toString());
     }
