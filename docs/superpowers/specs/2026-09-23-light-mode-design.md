@@ -195,7 +195,7 @@ The stale claim in `tokens.css`, that `--ink-soft` over the atmosphere scores 5.
 
 No Playwright config sets `colorScheme` today, so every project runs under Playwright's **default, which is light**. The day Studio lands, every existing e2e test, dev-sanity, prod-sanity and the device suite would silently start testing a different palette. So:
 
-- **every project in every config declares `colorScheme`.** That covers `playwright.config.ts`, `playwright.dev.config.ts`, `playwright.device.config.ts` and `playwright.prod.config.ts`. The unit guard **derives the configs from the filesystem** (`playwright*.config.ts`) rather than from this list, so a fifth config cannot slip past it. The general suite declares **dark**, so every existing test keeps testing exactly what it tests today;
+- **every project in every config declares `colorScheme`.** That covers `playwright.config.ts`, `playwright.dev.config.ts`, `playwright.device.config.ts` and `playwright.prod.config.ts`. The unit guard **derives the configs from the filesystem** (`playwright*.config.ts`) rather than from this list, so a fifth config cannot slip past it. The general suite declares **dark**, so every existing test keeps testing the palette it tests today;
 - **the palette-reading guards run once per theme.** Those are `palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, and every assertion in `classroom-groups.spec.ts` that reads a computed colour. Print runs under both themes, and additionally with a stamped `dark` choice, proving that paper ignores the screen theme. **Every per-theme run first asserts the theme it rendered**, by reading the page's computed ground against that theme's `--bg`, so a run that was meant to be light but rendered dark fails rather than passing on the other palette. A print run makes this assertion in screen media, before it switches to print, because on paper the ground is white whatever the theme. The device gauntlet makes the same assertion on each phone;
 - **dev-sanity and prod-sanity** each prove on their deployed site that the switch toggles and that the choice survives a reload. The switch is a rendering fact, so it belongs in the browser runs, not the `curl` smoke;
 - **the device gauntlet pins the theme per run**: Android Chrome over CDP through `Emulation.setEmulatedMedia`, and iOS Safari by stamping a saved choice before the measured load. Its results therefore never depend on the phone's own setting.
@@ -212,7 +212,8 @@ A new `theme.spec.ts` covers:
 - **instant**: in the first animation frame after the click, the page's ground is already the new theme's `--bg`. Nothing transitions;
 - **not printed**: under emulated print media, the switch is not rendered;
 - **without JavaScript** the switch is absent and the device setting applies;
-- **accessibility**: the name is the locale's own `themeDarkMode` in each of the five locales, `aria-pressed` is correct in each state, the target is 44 × 44, and the focus ring is visible.
+- **accessibility**: the name is the locale's own `themeDarkMode` in each of the five locales, `aria-pressed` is correct in each state, the target is 44 × 44, and the focus ring is visible;
+- **keyboard**: Enter and Space each toggle the switch. The two existing walks through the Tab order, in `chrome.spec.ts` and `skip-link.spec.ts`, are updated to expect the switch at its place in the header, before the language switcher. They are not loosened to step past it.
 
 ### 6.4 The script inventory, pinned
 
@@ -280,6 +281,7 @@ Every new or rewritten guard is mutation-verified in both directions before it l
 | `transition: background-color 0.2s` added to `html`                     | instant                                   |
 | the reveal rule taken out of `@media screen`                            | not printed                               |
 | the switch's accessible name removed                                    | accessibility                             |
+| the switch given `tabindex="-1"`                                         | keyboard, and both Tab-order walks        |
 | a per-theme project set to the other scheme                             | that run's own theme assertion            |
 | the click delegation removed, with the sanity suites run against a local build | the dev-sanity and prod-sanity switch checks |
 
@@ -421,3 +423,5 @@ It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`wit
 - the entries for passes 8, 9 and 11 claimed complete reads that were partial. They now say what each actually read.
 
 **Pass 13, 2026-09-23.** A second read of every line in one sitting. It found 1 problem: the switch checks added to dev-sanity and prod-sanity in pass 2 are new guards, but §6.8 gave them no mutation. They run against deployed sites, so their mutation runs the same suites against a local build.
+
+**Pass 14, 2026-09-23.** A mechanical check that each of the 20 guards named in the body has its mutation (all do), then a read of every line. It found 1 problem: the switch is a new focusable element in every header, so the two existing Tab-order walks (`chrome.spec.ts`, `skip-link.spec.ts`) will meet it. §6.2's "every existing test keeps testing exactly what it tests today" held only for the palette. The walks now expect the switch, keyboard activation is tested, and the sentence says what it means.
