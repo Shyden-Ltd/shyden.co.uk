@@ -17,7 +17,11 @@ import {
   withoutTsComments,
 } from './source-text';
 import { nonEmpty, searched, trackedFiles } from '../source-files';
-import { VISUAL_PROJECT } from '../../playwright.config';
+import type { Project } from '@playwright/test';
+import playwrightConfig, {
+  VISUAL_MEASURE_PROJECT,
+  VISUAL_PROJECT,
+} from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
   inheritedPermissionsFindings,
@@ -1639,6 +1643,80 @@ describe('the drift measurement reports, and never gates (#224)', () => {
 
   it('runs even when the gate went red, which is when it is worth having', () => {
     expect(visualSteps()[indexOf(isMeasure)].if).toBe('always()');
+  });
+
+  // The measurement must not destroy the evidence of the failure it follows
+  // (#311). Playwright deletes the `outputDir` of every project a run selects
+  // as that run starts (`createRemoveOutputDirsTask`, over
+  // `testRun.filteredProjects`), and both projects inherited the config's
+  // `test-results/desktop`. So on a red gate the measure step -- `always()`,
+  // so that it runs then above all -- deleted the comparison's expected,
+  // actual and diff images before `Keep the visual diff` uploaded anything.
+  // Run 35772454043 failed on 528 pixels, and its artifact held one image
+  // set: the measurement's, with a single differing pixel.
+
+  /** Where a project's run writes, and so what the start of its run deletes. */
+  const outputDirOf = (project: Project): string =>
+    resolve(project.outputDir ?? playwrightConfig.outputDir ?? 'test-results');
+
+  /** Whether deleting, or uploading, `dir` reaches `path`. */
+  const reaches = (dir: string, path: string): boolean =>
+    path === dir || path.startsWith(dir + sep);
+
+  it('measures into a folder of its own, so its start cannot delete the gate diff (#311)', () => {
+    const gate = outputDirOf(VISUAL_PROJECT);
+    const measure = outputDirOf(VISUAL_MEASURE_PROJECT);
+    expect(
+      reaches(measure, gate),
+      `the measure step clears ${measure} as it starts, and the gate's diff is in ${gate}`,
+    ).toBe(false);
+    // The other way round too, because the gate is also run on its own: a
+    // gate run must not take a measurement's images with it either.
+    expect(
+      reaches(gate, measure),
+      `a gate run clears ${gate} as it starts, and the measurement is in ${measure}`,
+    ).toBe(false);
+  });
+
+  it('uploads the gate diff and the measurement diff together (#311)', () => {
+    const uploads = nonEmpty(
+      visualSteps().filter(
+        (step) =>
+          typeof step.uses === 'string' &&
+          step.uses.startsWith('actions/upload-artifact@'),
+      ),
+      "upload-artifact steps in ci.yml's visual job",
+    );
+    const paths = nonEmpty(
+      uploads
+        .flatMap((step) =>
+          String(
+            (step.with as { path?: unknown } | undefined)?.path ?? '',
+          ).split('\n'),
+        )
+        .map((line) => line.trim())
+        .filter(Boolean),
+      "paths the visual job's uploads keep",
+    );
+    // A glob or a `!` exclusion is a matching rule this guard would have to
+    // re-implement to read, so it is refused rather than approved unread.
+    const unreadable = paths.filter((path) => /[*?[\]{}!]/.test(path));
+    expect(searched(unreadable, { of: paths, what: 'upload paths' })).toEqual(
+      [],
+    );
+
+    const keeps = (dir: string) =>
+      paths.some((path) => reaches(resolve(path), dir));
+    const gate = outputDirOf(VISUAL_PROJECT);
+    const measure = outputDirOf(VISUAL_MEASURE_PROJECT);
+    expect(
+      keeps(gate),
+      `the gate's diff is written to ${gate}, which no upload path reaches`,
+    ).toBe(true);
+    expect(
+      keeps(measure),
+      `the measurement's diff is written to ${measure}, which no upload path reaches`,
+    ).toBe(true);
   });
 });
 
