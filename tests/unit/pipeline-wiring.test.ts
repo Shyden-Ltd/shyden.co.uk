@@ -37,6 +37,7 @@ import {
 } from '../workflow-jobs';
 import { parseFile } from './ast';
 import { declarationsIn } from '../playwright-declarations';
+import { REQUIRED_CHECKS } from '../../scripts/deploy-gate.mjs';
 
 /**
  * The plain `test(...)` declarations `spec` makes, read by the parser. A test
@@ -289,22 +290,65 @@ describe('the deploy pipeline runs what it claims to', () => {
     // `workflow_dispatch` puts an ARBITRARY branch on dev. It has no second
     // parent and no PR checks, so there is nothing for the tree gate to verify.
     // Dropping this path would quietly remove a documented capability.
-    const suite = jobBlockRunning(
-      workflowSteps('deploy-dev.yml'),
-      'npm run test:e2e',
-    );
-    expect(suite).toContain("if: github.event_name != 'push'");
+    const dispatch = jobNamed('deploy-dev.yml', 'test');
+    expect(dispatch.uses).toBe(CI_WORKFLOW);
+    expect(dispatch.condition).toBe("github.event_name != 'push'");
   });
 
-  it('the merge path trusts a check that runs exactly what the dispatch path runs', () => {
+  it("the dispatch path runs the merge path's own workflow, so the two cannot drift", () => {
     // A push deploys because `ci.yml`'s `build-and-test` passed on the tree,
-    // and the gate reads that conclusion, never the steps behind it. So it is
-    // evidence of the suite only while the job RUNS the suite: drop a step and
-    // every later merge passes the gate untested. The dispatch path runs its
-    // own copy for want of that evidence, so the two must not drift (#157).
-    const trusted = jobNamed('ci.yml', 'build-and-test').runs;
-    expect(trusted.filter(runsTheE2eSuite)).toEqual(['npm run test:e2e']);
-    expect(jobNamed('deploy-dev.yml', 'test').runs).toEqual(trusted);
+    // and the gate reads that conclusion, never the work behind it. A
+    // dispatched branch has no such conclusion, so it runs the suite itself.
+    // Until #163 it ran a COPY of build-and-test's steps, which this test held
+    // equal (#157). Sharding split those steps across three jobs, and a copy
+    // of three jobs is three chances to drift, so the dispatch path now CALLS
+    // ci.yml: the suite a dispatched branch runs is, by construction, the
+    // suite the merge gate believes a pull request passed.
+    const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      on?: Record<string, unknown>;
+    };
+    // The whole trigger set, exactly: callable, and still nothing else.
+    expect(Object.keys(ci.on ?? {}).sort()).toEqual([
+      'pull_request',
+      'workflow_call',
+    ]);
+    expect(jobNamed('deploy-dev.yml', 'test').uses).toBe(CI_WORKFLOW);
+  });
+
+  it('the dispatch path grants the workflow it calls every permission its jobs ask for', () => {
+    // A called workflow's token can only be narrowed, never widened: a job in
+    // ci.yml asking for a scope its caller did not grant makes GitHub refuse
+    // the whole run at startup. The merge path never shows it, because a pull
+    // request's run is not called, so the refusal would surface the first day
+    // somebody needs the escape hatch.
+    type Permissions = Record<string, string>;
+    const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      permissions?: Permissions;
+      jobs: Record<string, { permissions?: Permissions }>;
+    };
+    const dev = parseCleanYaml(
+      workflow('deploy-dev.yml'),
+      'deploy-dev.yml',
+    ) as {
+      jobs: Record<string, { permissions?: Permissions }>;
+    };
+    const granted = dev.jobs.test?.permissions ?? {};
+    const LEVEL: Record<string, number> = { none: 0, read: 1, write: 2 };
+    const asked = [
+      ci.permissions ?? {},
+      ...Object.values(ci.jobs).map((job) => job.permissions ?? {}),
+    ].flatMap((each) => Object.entries(each));
+    const refused = asked
+      .filter(
+        ([scope, level]) => LEVEL[granted[scope] ?? 'none'] < LEVEL[level],
+      )
+      .map(
+        ([scope, level]) =>
+          `ci.yml asks for ${scope}: ${level}, and the dispatch path grants ${granted[scope] ?? 'none'}`,
+      );
+    expect(
+      searched(refused, { of: asked, what: 'permissions ci.yml asks for' }),
+    ).toEqual([]);
   });
 
   // The merge gate. `dev-verified` has to be POSTED by something, or branch
@@ -917,16 +961,20 @@ describe('the deploy pipeline runs what it claims to', () => {
 
     // The group's pull request number is empty on any other event, and an
     // empty key is one group for every run: a second trigger would let a run
-    // on one branch cancel a run on another.
+    // on one branch cancel a run on another. So a trigger other than a pull
+    // request is allowed only because the key falls back to the run's own id,
+    // a group of one that cancels nothing. The one such trigger is
+    // `workflow_call`, the dispatch path running this suite (#163).
     expect(
-      Object.keys(ci.on ?? {}),
-      'ci.yml must run on pull requests only while its group is keyed by one',
-    ).toEqual(['pull_request']);
+      Object.keys(ci.on ?? {}).sort(),
+      'a trigger besides pull_request needs a key no other run shares',
+    ).toEqual(['pull_request', 'workflow_call']);
 
     // Exactly these two, in any order. Every workflow in the repo shares one
     // namespace of groups, so the key names this workflow; it names the pull
-    // request, so a push never cancels another PR's run; and it names nothing
-    // finer, because a key per commit puts each push in a group of its own and
+    // request, so a push never cancels another PR's run, and a run with no
+    // pull request falls back to its own id; and it names nothing finer,
+    // because a key per commit puts each push in a group of its own and
     // cancels nothing at all.
     const keyedBy = [
       ...String(ci.concurrency?.group ?? '').matchAll(/\$\{\{\s*(.+?)\s*\}\}/g),
@@ -934,7 +982,10 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(
       [...keyedBy].sort(),
       `ci.yml's concurrency group is keyed by [${keyedBy.join(', ')}]`,
-    ).toEqual(['github.event.pull_request.number', 'github.workflow']);
+    ).toEqual([
+      'github.event.pull_request.number || github.run_id',
+      'github.workflow',
+    ]);
     expect(ci.concurrency?.['cancel-in-progress']).toBe(true);
   });
 
@@ -1374,8 +1425,16 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
  * The budget is a POLICY, pinned as a literal and asserted separately from the
  * guard that derives from it, so moving the constant cannot move both sides and
  * quietly restore the hole (#117).
+ *
+ * RESTATED FOR A SHARD (#163). The whole suite ran under 45 minutes until it
+ * was split, and 45 minutes for a quarter of the suite would bound nothing a
+ * shard could plausibly take: a shard hung for 40 minutes would read as slow,
+ * not stuck. The policy is now per shard, and no job runs the unsplit suite:
+ * the dispatch path calls ci.yml rather than keeping a copy of its steps. The
+ * number is set against the shard durations measured on the pull request that
+ * split the suite, with the same margin the old policy was meant to keep.
  */
-const E2E_JOB_BUDGET_MINUTES = 45;
+const E2E_SHARD_BUDGET_MINUTES = 20;
 
 /**
  * A step script that runs the e2e suite: the command itself, never a longer
@@ -1386,7 +1445,7 @@ const runsTheE2eSuite = (script: string): boolean =>
 
 describe('every job runs under a budget of its own (#157)', () => {
   it('pins the e2e budget as a chosen policy, not a number nobody picked', () => {
-    expect(E2E_JOB_BUDGET_MINUTES).toBe(45);
+    expect(E2E_SHARD_BUDGET_MINUTES).toBe(20);
   });
 
   it('no job in any workflow runs on the runner default budget', () => {
@@ -1402,23 +1461,192 @@ describe('every job runs under a budget of its own (#157)', () => {
     ).toEqual([]);
   });
 
-  it('every job running the e2e suite carries exactly the e2e budget', () => {
+  it('every job running the e2e suite carries exactly the shard budget', () => {
     const suites = workflowGraphs().flatMap(({ name, jobs }) =>
       jobs
         .filter((job) => job.runs.some(runsTheE2eSuite))
         .map((job) => ({ name, job })),
     );
     const offBudget = suites
-      .filter(({ job }) => job.timeoutMinutes !== E2E_JOB_BUDGET_MINUTES)
+      .filter(({ job }) => job.timeoutMinutes !== E2E_SHARD_BUDGET_MINUTES)
       .map(
         ({ name, job }) =>
-          `${name}: ${job.id} has timeout-minutes ${job.timeoutMinutes ?? 'absent'}, not ${E2E_JOB_BUDGET_MINUTES}`,
+          `${name}: ${job.id} has timeout-minutes ${job.timeoutMinutes ?? 'absent'}, not ${E2E_SHARD_BUDGET_MINUTES}`,
       );
     expect(
       searched(offBudget, {
         of: suites,
         what: 'jobs running npm run test:e2e',
       }),
+    ).toEqual([]);
+  });
+});
+
+/** The workflow the dispatch path calls, as a caller job names it. */
+const CI_WORKFLOW = './.github/workflows/ci.yml';
+
+/**
+ * The e2e step every shard runs. The total is the matrix's own size, never a
+ * number written beside it, so the two cannot disagree: a matrix of five with
+ * `/4` spelled out would run shard 5 of 4, which Playwright refuses, and a
+ * matrix of three would leave a quarter of the suite to no shard at all.
+ */
+const E2E_SHARD_COMMAND =
+  'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}';
+
+/** Where each shard writes its account, and where build-and-test reads them. */
+const E2E_ACCOUNTS = 'e2e-accounts';
+
+/**
+ * `build-and-test` once the suite is split (#163).
+ *
+ * Branch protection requires it by NAME and the deploy gate deploys because it
+ * passed, so its success has to go on meaning what it meant when it ran the
+ * suite itself: every step ran, and the whole suite ran. It runs none of that
+ * now. It stands for the jobs that do, and `scripts/e2e-shards.mjs` is its
+ * verdict over them; `tests/unit/e2e-shards.test.ts` holds that verdict's
+ * logic. What is held here is the wiring the verdict cannot see from inside a
+ * run: what it is handed, when it runs, and which jobs it stands for.
+ */
+describe('build-and-test stands for the whole suite, run as shards (#163)', () => {
+  type Step = {
+    run?: string;
+    uses?: string;
+    if?: string;
+    env?: Record<string, string>;
+    with?: Record<string, unknown>;
+  };
+  type Job = {
+    steps?: Step[];
+    strategy?: { 'fail-fast'?: unknown; matrix?: Record<string, unknown> };
+  };
+  const ciParsed = () =>
+    parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      jobs: Record<string, Job>;
+    };
+
+  // A skipped required check is reported to branch protection as PASSING. An
+  // aggregate whose condition could turn false would read green exactly when a
+  // shard failed or was skipped (#157), so it has no condition that can: it
+  // runs always(), and refuses in a step.
+  it('is never skipped: it runs always(), and refuses in a step instead', () => {
+    expect(jobNamed('ci.yml', 'build-and-test').condition).toBe('always()');
+  });
+
+  // Derived, not listed. A job added to ci.yml later is either required by
+  // name itself -- repository administration, which the deploy gate must then
+  // read too (REQUIRED_CHECKS) -- or build-and-test stands for it. A job that
+  // is neither gates nothing, however red it goes (#33).
+  it('stands for every other ci.yml job that is not required by name itself', () => {
+    const jobs = workflowJobs(workflow('ci.yml'), 'ci.yml');
+    const aggregate = jobNamed('ci.yml', 'build-and-test');
+    const standsFor = jobs
+      .map(({ id }) => id)
+      .filter((id) => !REQUIRED_CHECKS.includes(id));
+    expect([...aggregate.needs].sort()).toEqual(standsFor.sort());
+
+    // Liveness, and the property the gate is trusted for: among the jobs it
+    // stands for are the ones running the unit suite and the e2e suite.
+    const stood = jobs.filter(({ id }) => aggregate.needs.includes(id));
+    expect(stood.some(({ runs }) => runs.includes('npm run test:unit'))).toBe(
+      true,
+    );
+    expect(stood.some(({ runs }) => runs.some(runsTheE2eSuite))).toBe(true);
+  });
+
+  it('hands its verdict every job it needs, and every shard account', () => {
+    const verdict = (ciParsed().jobs['build-and-test']?.steps ?? []).find(
+      (step) => step.run?.includes('scripts/e2e-shards.mjs'),
+    );
+    // Every account FILE the download brought, never a directory for the
+    // verdict to list: an unmatched glob stays the literal pattern, which the
+    // verdict refuses by name (#84).
+    expect(verdict?.run?.trim()).toBe(
+      `node scripts/e2e-shards.mjs ${E2E_ACCOUNTS}/*.json`,
+    );
+    // An env var, not an interpolation into the script: `toJSON(needs)`
+    // carries job outputs, and an expression spliced into a `run:` is code.
+    expect(verdict?.env?.NEEDS_JSON).toBe('${{ toJSON(needs) }}');
+  });
+
+  it('runs the e2e suite only as shards, each told its place in the matrix', () => {
+    const e2e = workflowJobs(workflow('ci.yml'), 'ci.yml').filter(({ runs }) =>
+      runs.some(runsTheE2eSuite),
+    );
+    expect(e2e.map(({ id }) => id)).toEqual(['e2e']);
+    expect(e2e[0].runs.filter(runsTheE2eSuite)).toEqual([E2E_SHARD_COMMAND]);
+  });
+
+  it('schedules shards 1 to N, and lets each one finish when another fails', () => {
+    const strategy = ciParsed().jobs.e2e?.strategy;
+    const shards = strategy?.matrix?.shard;
+    expect(Array.isArray(shards)).toBe(true);
+    const list = shards as unknown[];
+    // More than one, or it is not a split at all.
+    expect(list.length).toBeGreaterThan(1);
+    expect(list).toEqual(list.map((_, i) => i + 1));
+    // A failing shard would otherwise CANCEL its siblings, and every test they
+    // had not reached would go unreported: one red run would show one shard's
+    // failures and hide the rest. The gate is unaffected either way, because
+    // a cancelled shard refuses as surely as a failed one.
+    expect(strategy?.['fail-fast']).toBe(false);
+  });
+
+  it('each shard writes its account where build-and-test reads it', () => {
+    const steps = ciParsed().jobs.e2e?.steps ?? [];
+    const run = steps.find((step) => step.run?.includes('npm run test:e2e'));
+    expect(run?.env?.E2E_ACCOUNT_DIR).toBe(E2E_ACCOUNTS);
+    // Uploaded whatever the shard's outcome, and an empty upload is an error:
+    // a shard that wrote nothing has nothing to add up.
+    const upload = steps.find(
+      (step) =>
+        step.uses?.startsWith('actions/upload-artifact@') &&
+        step.with?.path === E2E_ACCOUNTS,
+    );
+    expect(upload?.if).toBe('always()');
+    expect(upload?.with?.['if-no-files-found']).toBe('error');
+  });
+});
+
+/**
+ * Every artifact a matrix job uploads is named per leg (#163, AC7).
+ *
+ * `upload-artifact` refuses a second artifact of the same name in one run. Two
+ * shards uploading one name would each race to be first, and the loser's step
+ * would fail -- on a red run, the very run whose traces are wanted, and it
+ * would take that shard's evidence with it.
+ */
+describe('a matrix job names every artifact per leg', () => {
+  it('every upload in a matrix job names its leg', () => {
+    const uploads = workflowYamlNames().flatMap((file) => {
+      const parsed = parseCleanYaml(workflow(file), file) as {
+        jobs?: Record<
+          string,
+          {
+            strategy?: { matrix?: unknown };
+            steps?: { uses?: string; with?: { name?: unknown } }[];
+          }
+        >;
+      };
+      return Object.entries(parsed.jobs ?? {})
+        .filter(([, job]) => job.strategy?.matrix !== undefined)
+        .flatMap(([id, job]) =>
+          (job.steps ?? [])
+            .filter((step) => step.uses?.startsWith('actions/upload-artifact@'))
+            .map((step) => ({
+              where: `${file}: ${id}`,
+              name: String(step.with?.name ?? ''),
+            })),
+        );
+    });
+    const shared = uploads
+      .filter(({ name }) => !/\$\{\{\s*matrix\./.test(name))
+      .map(
+        ({ where, name }) =>
+          `${where} uploads '${name}', the same name on every leg`,
+      );
+    expect(
+      searched(shared, { of: uploads, what: 'uploads in matrix jobs' }),
     ).toEqual([]);
   });
 });

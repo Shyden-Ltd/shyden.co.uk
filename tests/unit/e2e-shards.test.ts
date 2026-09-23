@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -358,24 +358,29 @@ describe('the verdict, run as build-and-test runs it', () => {
       rmSync(dir, { recursive: true, force: true });
   });
 
-  const accountsDir = (accounts: Account[], nested = false) => {
+  const scratch = () => {
     const dir = mkdtempSync(join(tmpdir(), 'e2e-accounts-'));
     dirs.push(dir);
-    for (const each of accounts) {
-      // `download-artifact` without `merge-multiple` puts each artifact in a
-      // folder of its own; with it, all of them in one. Both must be read.
-      const home = nested ? join(dir, `e2e-account-${each.shard.index}`) : dir;
-      mkdirSync(home, { recursive: true });
-      writeFileSync(
-        join(home, accountFileName(each.shard)),
-        JSON.stringify(each),
-      );
-    }
     return dir;
   };
 
-  const verdict = (dir: string, needs: unknown) =>
-    spawnSync(process.execPath, [SCRIPT, dir], {
+  /**
+   * Each account in the file its shard writes, handed over as the list the
+   * workflow's shell glob produces. The verdict reads the files it is given
+   * and lists no directory, so an empty download cannot read as an empty
+   * directory that proved nothing (#84).
+   */
+  const accountFiles = (accounts: Account[]) => {
+    const dir = scratch();
+    return accounts.map((each) => {
+      const file = join(dir, accountFileName(each.shard));
+      writeFileSync(file, JSON.stringify(each));
+      return file;
+    });
+  };
+
+  const verdict = (files: string[], needs: unknown) =>
+    spawnSync(process.execPath, [SCRIPT, ...files], {
       encoding: 'utf8',
       env: { ...process.env, NEEDS_JSON: JSON.stringify(needs) },
     });
@@ -386,19 +391,14 @@ describe('the verdict, run as build-and-test runs it', () => {
   };
 
   it('passes when every job succeeded and the shards add up, and says so', () => {
-    const run = verdict(accountsDir(whole()), succeeded);
+    const run = verdict(accountFiles(whole()), succeeded);
     expect(run.stderr).toBe('');
     expect(run.status).toBe(0);
     expect(run.stdout).toMatch(/4 shards ran 2210 of the 2210 tests/);
   });
 
-  it('reads accounts from one folder per artifact too', () => {
-    const run = verdict(accountsDir(whole(), true), succeeded);
-    expect(run.status).toBe(0);
-  });
-
   it('fails when a shard failed, even though the accounts add up', () => {
-    const run = verdict(accountsDir(whole()), {
+    const run = verdict(accountFiles(whole()), {
       ...succeeded,
       e2e: { result: 'failure', outputs: {} },
     });
@@ -407,25 +407,44 @@ describe('the verdict, run as build-and-test runs it', () => {
   });
 
   it('fails when the accounts fall short, even though every job succeeded', () => {
-    const run = verdict(accountsDir(whole().slice(0, 3)), succeeded);
+    const run = verdict(accountFiles(whole().slice(0, 3)), succeeded);
     expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/shard 4 of 4/);
   });
 
-  it('fails, rather than passing on nothing, when the folder is missing', () => {
-    const run = verdict(
-      join(tmpdir(), 'e2e-accounts-that-were-never-downloaded'),
-      succeeded,
-    );
+  // bash leaves a glob that matches nothing as the literal pattern, so a
+  // download that brought no account arrives as one path that does not exist.
+  it('fails, naming it, when the glob matched no account at all', () => {
+    const unmatched = join(scratch(), '*.json');
+    const run = verdict([unmatched], succeeded);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`${unmatched} does not exist`);
+    expect(run.stderr).toMatch(/no shard accounted for itself/);
+  });
+
+  it('fails, rather than passing on nothing, when it is handed no files', () => {
+    const run = verdict([], succeeded);
     expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/no shard accounted for itself/);
   });
 
+  it('names a file that is not an account at all', () => {
+    const [first, ...rest] = accountFiles(whole());
+    writeFileSync(first, '{ not json');
+    const run = verdict([first, ...rest], succeeded);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/not an account/);
+  });
+
   it('fails when it is handed no needs to read', () => {
-    const run = spawnSync(process.execPath, [SCRIPT, accountsDir(whole())], {
-      encoding: 'utf8',
-      env: { ...process.env, NEEDS_JSON: '' },
-    });
+    const run = spawnSync(
+      process.execPath,
+      [SCRIPT, ...accountFiles(whole())],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, NEEDS_JSON: '' },
+      },
+    );
     expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/could not be read/);
   });

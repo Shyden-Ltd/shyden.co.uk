@@ -26,8 +26,7 @@
  * Usage, as the workflow runs it:
  *   NEEDS_JSON='${{ toJSON(needs) }}' node scripts/e2e-shards.mjs <accounts-dir>
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { messageOf } from './errors.mjs';
 
 /** @typedef {{ index: number, total: number }} Shard */
@@ -142,8 +141,6 @@ export function shardNotice({ shard, enumerated, executed }) {
     '(scripts/e2e-shards.mjs).\n'
   );
 }
-
-const ACCOUNT_FILE = /^e2e-account-.*\.json$/;
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) =>
@@ -310,36 +307,29 @@ export function accountFindings(accounts) {
 }
 
 /**
- * Every account under `dir`, read from its own file. `download-artifact`
- * places each artifact in a folder of its own unless told to merge them, so
- * the walk is recursive. A missing directory is no accounts, which the
- * verdict refuses; a file that is not JSON arrives as something that is not an
- * account, which the verdict names.
+ * One account, read from the file it was given. A file that is not JSON
+ * arrives as something that is not an account, which the verdict names.
  *
- * @param {string} dir
- * @returns {unknown[]}
+ * @param {string} file
+ * @returns {unknown}
  */
-function readAccounts(dir) {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { recursive: true, encoding: 'utf8' })
-    .map((relative) => join(dir, relative))
-    .filter(
-      (file) => ACCOUNT_FILE.test(basename(file)) && statSync(file).isFile(),
-    )
-    .sort()
-    .map((file) => {
-      try {
-        return JSON.parse(readFileSync(file, 'utf8'));
-      } catch (cause) {
-        return { unreadable: file, error: messageOf(cause) };
-      }
-    });
+function loadAccount(file) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch (cause) {
+    return { unreadable: file, error: messageOf(cause) };
+  }
 }
 
 const RULE = '='.repeat(72);
 
 function main() {
-  const dir = process.argv[2] ?? '';
+  // The FILES, never a directory to list: the workflow hands over its shell
+  // glob's expansion. A glob that matched nothing arrives as the pattern
+  // itself, a path that does not exist, and is refused by name; no files at
+  // all is no accounts, which the verdict refuses too. So an empty download
+  // cannot pass as an empty directory that proved nothing (#84).
+  const files = process.argv.slice(2);
 
   /** @type {unknown} */
   let needs;
@@ -349,8 +339,17 @@ function main() {
     needs = undefined;
   }
 
-  const accounts = readAccounts(dir);
-  const findings = [...needsFindings(needs), ...accountFindings(accounts)];
+  const missing = files.filter((file) => !existsSync(file));
+  const accounts = files
+    .filter((file) => existsSync(file))
+    .map((file) => loadAccount(file));
+  const findings = [
+    ...needsFindings(needs),
+    ...missing.map(
+      (file) => `${file} does not exist, so it holds no shard's account`,
+    ),
+    ...accountFindings(accounts),
+  ];
   if (findings.length > 0) {
     console.error(
       `\n${RULE}\n  build-and-test REFUSED — the jobs it stands for do not add up to a pass\n\n` +
