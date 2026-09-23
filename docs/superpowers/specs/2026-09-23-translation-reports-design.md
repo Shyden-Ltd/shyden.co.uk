@@ -123,7 +123,7 @@ computed-style contrast guards apply. Each input sets `width: 100%` with
 `box-sizing: border-box`, because a text input's intrinsic width is what pinned
 `#cg-form` wide at 320px in the past. Status paragraphs carry `role="status"`.
 
-### 3.5 Copy (English source, **for operator approval before translation**)
+### 3.5 Copy (English source, **approved by the operator on 2026-09-23**)
 
 A new `report` section in `src/lib/i18n/site.ts`, machine-drafted for id, zh, vi
 and th like every other string. They are BETA like everything else, and they
@@ -449,5 +449,6 @@ input `width: 400px` (the 320px guard goes red).
     WCAG AA, and causes no horizontal scroll at 320px when open, in every
     locale.
 11. No third-party request is added.
-12. The English copy in 3.5 is approved by the operator before translation.
+12. [x] The English copy in 3.5 is approved by the operator before translation
+    (2026-09-23).
 13. Mutation-verified both ways (section 10).
