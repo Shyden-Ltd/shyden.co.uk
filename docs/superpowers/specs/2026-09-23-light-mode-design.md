@@ -427,3 +427,7 @@ It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`wit
 **Pass 14, 2026-09-23.** A mechanical check that each of the 20 guards named in the body has its mutation (all do), then a read of every line. It found 1 problem: the switch is a new focusable element in every header, so the two existing Tab-order walks (`chrome.spec.ts`, `skip-link.spec.ts`) will meet it. §6.2's "every existing test keeps testing exactly what it tests today" held only for the palette. The walks now expect the switch, keyboard activation is tested, and the sentence says what it means.
 
 **Pass 15, 2026-09-23.** A read of every line. It found 1 problem, a repeat of pass 9's kind: pass 14 added a keyboard requirement to §6.3 but not to §10, so AC3 now states it. The mechanical check that every body requirement has its criterion, first run in pass 10, now runs on every pass rather than once.
+
+**Pass 16, 2026-09-23.** Every mechanical check at once: all 50 § references resolve, all 21 guards have their mutation, all 28 body requirements have their criterion, and no corrected phrase has come back. Then a read of every line. **It found nothing**, so the review loop ended here.
+
+The findings per pass ran 24, 11, 6, 2, 3, 2, 2, 1, 4, 2, 1, 3, 1, 1, 1 and then 0.
