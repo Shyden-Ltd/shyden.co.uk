@@ -35,10 +35,17 @@
  */
 import { spawnSync } from 'node:child_process';
 import { messageOf } from './errors.mjs';
-import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EVIDENCE_REPORT } from './evidence-files.mjs';
+import { shardAccount, shardNotice, shardOf } from './e2e-shards.mjs';
 
 /** `playwright test --list` closes with e.g. `Total: 2094 tests in 18 files`. */
 const LIST_FOOTER = /^Total:\s+(\d+)\s+tests?\b/m;
@@ -369,6 +376,9 @@ export function reportLocation(env = process.env) {
 
 function main() {
   const argv = process.argv.slice(2);
+  // Refuses a shard it could not account for BEFORE spending a run on it:
+  // the account written below needs to say which shard this was (#163).
+  shardOf(argv);
   const filtered = isFilteredRun(argv);
   const { passthrough, reporter } = mergeReporters(argv);
 
@@ -409,13 +419,39 @@ function main() {
 
     let executed = null;
     let parsed = null;
+    /** @type {unknown} */
+    let unreadable = null;
     try {
       parsed = JSON.parse(readFileSync(reportPath, 'utf8'));
       executed = countExecuted(parsed.stats);
     } catch (cause) {
+      unreadable = cause;
+    }
+
+    // A CI shard writes down what it ran BEFORE anything below can end the
+    // process, so build-and-test names a shard that measured nothing rather
+    // than one that never reported. Its sum across shards is held there
+    // against the suite (`scripts/e2e-shards.mjs`, #163).
+    const recorded = shardAccount({
+      argv,
+      enumerated,
+      executed,
+      playwrightExitCode: run.status ?? 1,
+      listingStatus: listing.status,
+    });
+    const accountDir = process.env.E2E_ACCOUNT_DIR;
+    if (recorded && accountDir) {
+      mkdirSync(accountDir, { recursive: true });
+      writeFileSync(
+        join(accountDir, recorded.file),
+        `${JSON.stringify(recorded.account, null, 2)}\n`,
+      );
+    }
+
+    if (unreadable !== null) {
       console.error(
         `\n${RULE}\n  E2E RECONCILIATION FAILED — the run produced no readable report\n\n` +
-          `  ${messageOf(cause)}\n\n` +
+          `  ${messageOf(unreadable)}\n\n` +
           '  Without it there is no count to check, so this cannot be treated as\n' +
           `  a pass.\n${RULE}\n`,
       );
@@ -474,7 +510,13 @@ function main() {
       playwrightExitCode: run.status ?? 1,
       listing,
     });
-    if (verdict.message) console.error(verdict.message);
+    // A shard is narrowed on purpose and judged elsewhere, so it says that
+    // instead of reconcile()'s PARTIAL notice, which says nothing judges it.
+    const message =
+      recorded && verdict.partial
+        ? shardNotice(recorded.account)
+        : verdict.message;
+    if (message) console.error(message);
     if (!liveness.ok)
       console.error(
         `\n${RULE}\n  NAVIGATION TIMINGS: THE COLLECTOR RECORDED NOTHING\n${RULE}\n` +

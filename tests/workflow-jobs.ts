@@ -45,6 +45,13 @@ export interface WorkflowJob {
    * because secret names are case-insensitive, then de-duplicated and sorted.
    */
   readonly secrets: readonly string[];
+  /**
+   * The reusable workflow the job calls, as its job-level `uses:` names it;
+   * `undefined` for a job of steps. Such a job runs nothing itself and may
+   * declare neither a runner nor a budget: the jobs it calls do, in their own
+   * file (#163).
+   */
+  readonly uses: string | undefined;
 }
 
 const isMapping = (value: unknown): value is Record<string, unknown> =>
@@ -96,9 +103,14 @@ function timeoutMinutesOf(
  * repository does not use -- reading either as an empty list would make an
  * absence assertion over the labels green without a label having been read,
  * which is the one failure this guard exists to prevent (#118).
+ *
+ * The one job with no runner of its own is a job calling a reusable workflow:
+ * GitHub refuses `runs-on` there, and the jobs it calls ask for their runners
+ * in their own file, where this same rule reads them (#163).
  */
 function runsOnOf(job: Record<string, unknown>, where: string): string[] {
   const value = job['runs-on'];
+  if (job.uses !== undefined && value === undefined) return [];
   if (typeof value === 'string') return [value];
   if (Array.isArray(value))
     return value.map((label: unknown, index) => {
@@ -220,8 +232,20 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
       runsOn: runsOnOf(body, where),
       environment: environmentOf(body, where),
       secrets: secretsOf(body, shared, where),
+      uses: usesOf(body, where),
     };
   });
+}
+
+function usesOf(
+  job: Record<string, unknown>,
+  where: string,
+): string | undefined {
+  const { uses } = job;
+  if (uses === undefined) return undefined;
+  if (typeof uses !== 'string')
+    throw new Error(`${where}: uses is not a workflow reference`);
+  return uses;
 }
 
 /** What the runner gives a job that declares no `timeout-minutes` of its own. */
@@ -236,7 +260,15 @@ export const RUNNER_DEFAULT_TIMEOUT_MINUTES = 360;
  */
 export function unboundedJobFindings(jobs: readonly WorkflowJob[]): string[] {
   const ceiling = RUNNER_DEFAULT_TIMEOUT_MINUTES - 1;
-  return jobs.flatMap(({ id, timeoutMinutes }) => {
+  return jobs.flatMap(({ id, timeoutMinutes, uses }) => {
+    // A caller may not declare a budget: the jobs it calls carry theirs, and
+    // they are judged in their own file -- when that file is one of ours.
+    if (uses !== undefined)
+      return uses.startsWith('./')
+        ? []
+        : [
+            `${id} calls ${uses}, a workflow outside this repository whose budgets no guard here can read`,
+          ];
     if (timeoutMinutes === undefined)
       return [
         `${id} declares no timeout-minutes, so the runner gives it ${RUNNER_DEFAULT_TIMEOUT_MINUTES} minutes`,
