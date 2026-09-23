@@ -181,7 +181,7 @@ At narrow widths the language switcher shows the **compact label decided for #32
 - **Stacking order.** CSS paints the **first** background layer on top, so `body::before` puts the shaft at the **bottom**, while the test's `ATMOSPHERE` stacks it on top. In dark mode the test's order was only stricter (`--ink-soft` 5.05:1, against 5.22:1 in paint order). The stack is now **derived from the `body::before` rule itself**, the `var()` names in declaration order, so it cannot disagree with what the browser paints.
 - **The worst case.** "Every stop composited at once" is the worst case only when every layer moves the ground towards the ink. That holds in Aurora, where every layer lightens a near-black ground under light ink, and **fails in Studio**, where the shaft brightens the ground under dark ink while the pools darken it. The worst case is now taken over **every subset** of the four layers. Measured while designing: Studio's first draft passed with all four layers at once (5.15:1 in paint order) and failed at 3.92:1 against its two shade pools alone.
 - **The glass pairs.** The suite composites `--glass` over the page ground, `--bg`. The site's one glass fill, `.work-card-badge` (`WorkCard.astro:60`), sits inside a card whose own background is the opaque `--surface`, and it carries `--accent` text. The pairs become the stack that is drawn: `--accent` on `--glass` over `--surface`. The `--ink` and `--ink-soft` on glass pairs describe text no page puts there, so they go.
-- **Pairs follow the painted ground.** `--accent-ink` is the link hover colour (`a:hover` in `tokens.css`), drawn wherever links are, so it gains the pair over the atmosphere that `--accent` already has. `--danger` keeps only its card pairs: its one use, the Glory Points error, sits in `div.card` on `--surface`, as a real DOM showed. Scored over the full atmosphere it would read 4.49:1 in Aurora, a failure on a ground that is never painted behind it. Each pair's ground is checked in a browser before a failure is believed.
+- **Pairs follow the painted ground.** `--accent-ink` is the link hover colour (`a:hover` in `tokens.css`), drawn wherever links are, so it gains the pair over the atmosphere that `--accent` already has. `--danger` gains no pair over the atmosphere, and its existing flat pairs stay: its one use, the Glory Points error, sits in `div.card` on `--surface`, as a real DOM showed. Scored over the full atmosphere it would read 4.49:1 in Aurora, a failure on a ground that is never painted behind it. Each pair's ground is checked in a browser before a failure is believed.
 
 The stale claim in `tokens.css`, that `--ink-soft` over the atmosphere scores 5.11:1, is corrected to the measured figures.
 
@@ -316,15 +316,15 @@ These replace the criteria in the #142 issue body once this spec is approved.
 8. One `body::before` layer in both themes, painting Studio's values in light mode. The language band has no glow in light mode, and the phone mockup's shadow comes from `--lift-shadow`.
 9. Contrast: every pair passes in both themes, taking the worst over every subset of the atmosphere layers, in the paint order derived from `body::before`, with the glass pairs as drawn (§6.1).
 10. Print is measured against white alone and is identical whichever theme the screen shows, including a stamped dark choice. The switch does not print.
-11. The palette-reading guards (§6.2) run once per theme.
-12. The visual suite holds 24 baselines, each of its 12 views in both themes, and the re-captured dark set differs from today's only in the header.
+11. The palette-reading guards (§6.2) run once per theme, and each run first asserts the theme it rendered (a print run does so in screen media).
+12. The visual suite holds 24 baselines, each of its 12 views in both themes. The dark set keeps today's file names and differs from today's only in the header. The light set carries a `-light` suffix and has been through the capture, compare and mutate sequence (§6.5).
 13. Every project in every `playwright*.config.ts` declares `colorScheme`, enforced by a guard that derives the configs from the filesystem. Dev-sanity and prod-sanity prove the switch on their deployed sites. The device gauntlet pins the scheme per run.
 14. The ShyTalk mark sits on `SHYTALK_MARK.tile` in light mode (guarded), is unchanged in dark mode, and prints in ink.
 15. No colour literal outside `tokens.css` except the allowlisted ones, each with its reason (§6.6).
 16. The §7 cleanup is done, and the atmosphere tokens carry their positional names everywhere.
 17. `themeDarkMode` exists in all five catalogues and passes every locale guard.
 18. The evidence page (§6.7) covers every page, both themes, all five locales and the listed states.
-19. Every new or rewritten guard has been watched failing and then passing. §6.8 lists the minimum mutations.
+19. Every new or rewritten guard has been watched failing and then passing, and every guard that discovers its population asserts that population with `searched()`. §6.8 lists the minimum mutations.
 
 ## 11. Delivery
 
@@ -396,3 +396,5 @@ It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`wit
 - the per-theme runs never asserted which theme they rendered, so a misconfigured light run would pass on the dark palette.
 
 **Pass 8, 2026-09-23.** A complete read with every lens at once. It found 1 problem: pass 7's per-theme assertion compared the rendered ground against the theme's `--bg`, which a print run could never satisfy, since paper is white in either theme. A print run now asserts its theme in screen media, before switching to print.
+
+**Pass 9, 2026-09-23.** A complete read of every line. It found 4 problems, all of one kind: acceptance criteria lagging behind requirements added to the body. AC11 lacked the per-theme assertion, AC12 the baselines' names and control sequence, and AC19 the `searched()` liveness. Separately, "`--danger` keeps only its card pairs" contradicted the table's `--danger` on `--bg` row. Every requirement added in passes 5 to 8 was then checked against §10, and each now has its criterion.
