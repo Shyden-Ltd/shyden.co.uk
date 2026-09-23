@@ -1,6 +1,6 @@
 # Light mode: Studio beside Aurora (#142)
 
-**Status:** design approved in four parts on 2026-09-23 and revised by review pass 1 on the same day (§12). This written spec awaits the operator's approval. No plan and no code exist yet, and none will until the spec is approved.
+**Status:** design approved in four parts on 2026-09-23 and revised by the review passes logged in §12. This written spec awaits the operator's approval. No plan and no code exist yet, and none will until the spec is approved.
 
 **Comparison and review page:** https://claude.ai/artifact/RXZDsNzcjVEosHnYMAnqBw (version 2: the three candidates as rendered, Studio refined, and the two wordmark options).
 
@@ -44,7 +44,7 @@ Every colour token is defined on bare `:root` with its **Studio** value. Aurora 
 | `--danger`        | `#b42318`                    | `#ff6b5a` unchanged        | errors                                                            |
 | `--border`        | `rgb(17 24 33 / 0.1)`        | `rgb(255 255 255 / 0.11)`  | decorative rules only                                             |
 | `--border-strong` | `rgb(17 24 33 / 0.55)`       | `rgb(255 255 255 / 0.4)`   | every control boundary (WCAG 1.4.11)                              |
-| `--glass`         | `rgb(255 255 255 / 0.6)`     | `rgb(255 255 255 / 0.055)` | the badge on a work card                                          |
+| `--glass`         | `rgb(17 24 33 / 0.05)`       | `rgb(255 255 255 / 0.055)` | the badge on a work card                                          |
 | `--accent-glow`   | `transparent`                | `rgb(56 245 200 / 0.3)`    | the glow behind the language band (§3.3)                          |
 | `--dock-shadow`   | `rgb(17 24 33 / 0.14)`       | `rgb(0 0 0 / 0.55)`        | the docked action row's shadow (#188)                             |
 | `--lift-shadow`   | `rgb(17 24 33 / 0.18)`       | `rgb(0 0 0 / 0.55)`        | **new**: the phone mockup's shadow (§3.3)                         |
@@ -73,7 +73,7 @@ The maths is `tests/wcag.ts`. The pairs are those of `contrast.test.ts`, correct
 | `--ink-soft` | `--surface` | 4.5 | 7.23 | 7.83 |
 | `--accent` | `--bg` | 4.5 | 6.13 | 14.46 |
 | `--accent` | `--surface` | 4.5 | 6.95 | 13.97 |
-| `--accent` | `--glass over --surface` | 4.5 | 6.95 | 12.51 |
+| `--accent` | `--glass over --surface` | 4.5 | 6.27 | 12.51 |
 | `--accent-ink` | `--bg` | 4.5 | 8.69 | 16.60 |
 | `--accent-ink` | `--surface` | 4.5 | 9.85 | 16.03 |
 | `--on-accent` | `--accent` | 4.5 | 6.95 | 13.54 |
@@ -176,7 +176,7 @@ At narrow widths the language switcher shows the **compact label decided for #32
 
 ### 6.1 Contrast, in both themes
 
-`contrast.test.ts` reads **both** palettes: light from bare `:root`, and dark from a dark block (§4). It runs every pair against each. Three defects in the current model are fixed on the way:
+`contrast.test.ts` reads **both** palettes: light from bare `:root`, and dark from a dark block (§4). It runs every pair against each. Four defects in the current model are fixed on the way:
 
 - **Stacking order.** CSS paints the **first** background layer on top, so `body::before` puts the shaft at the **bottom**, while the test's `ATMOSPHERE` stacks it on top. In dark mode the test's order was only stricter (`--ink-soft` 5.05:1, against 5.22:1 in paint order). The stack is now **derived from the `body::before` rule itself**, the `var()` names in declaration order, so it cannot disagree with what the browser paints.
 - **The worst case.** "Every stop composited at once" is the worst case only when every layer moves the ground towards the ink. That holds in Aurora, where every layer lightens a near-black ground under light ink, and **fails in Studio**, where the shaft brightens the ground under dark ink while the pools darken it. The worst case is now taken over **every subset** of the four layers. Measured while designing: Studio's first draft passed with all four layers at once (5.15:1 in paint order) and failed at 3.92:1 against its two shade pools alone.
@@ -200,7 +200,7 @@ A new `theme.spec.ts` covers:
 
 - **no flash, both directions.** One case is a saved `light` choice on a device preferring dark; the other is a saved `dark` choice on a device preferring light. An init script records `getComputedStyle(documentElement).backgroundColor` in the first animation frame, which runs before the first paint, and it must equal the saved theme's `--bg`. A static guard backs it on every built page: the theme script is inline, classic (no `type="module"`, which would defer it), inside `<head>` and before every stylesheet. The static guard covers a script that is moved or made a module, which a fast page could otherwise hide from a timing test;
 - **persistence** across a reload, a second page, and a new browser context carrying the same storage;
-- **Back**: switch on page B, go back to page A from the back-forward cache, and A shows the new theme;
+- **Back**: switch on page B, go back to page A from the back-forward cache, and A shows the new theme. The test asserts that `pageshow` reported `persisted: true`, because a page reloaded instead of restored re-runs the head script and would pass without the handler ever running. An engine that never restores from the cache in the test browser reports a skip with that reason, never a pass;
 - **storage refused**: `localStorage` throws, the switch still changes the page, no error reaches the console, and nothing is saved;
 - **the OS changes** while no choice is saved: emulated `colorScheme` flips, the page follows, and so does `aria-pressed`;
 - **without JavaScript** the switch is absent and the device setting applies;
@@ -250,7 +250,7 @@ The evidence page for the operator's sign-off shows every built page in both the
 
 ### 6.8 Every guard watched failing
 
-Every new or rewritten guard is mutation-verified in both directions before it lands, following the repo rule. These are the minimum mutations, one per guard:
+Every new or rewritten guard is mutation-verified in both directions before it lands, following the repo rule. Every guard that **discovers** its population asserts that population with the repo's `searched()` liveness control, counted by content, so an empty discovery cannot pass. That covers the built pages, the Playwright configs, the dark blocks, the scanned source files and the header's items. These are the minimum mutations, one per guard:
 
 | mutation                                                                | must turn red                             |
 | ----------------------------------------------------------------------- | ----------------------------------------- |
@@ -262,11 +262,11 @@ Every new or rewritten guard is mutation-verified in both directions before it l
 | the dark blocks' `@media screen` wrapper removed                        | print legibility with a stamped dark choice |
 | `--ink-soft` lightened so it fails over the shade pools alone           | the subset worst-case contrast test       |
 | a project's `colorScheme` removed, or a new config added without one    | the scheme-declared guard                 |
-| the save made to throw                                                  | storage refused (page still switches)     |
+| the `try`/`catch` around the save removed                               | storage refused (page still switches)     |
 | the save removed                                                        | persistence                               |
 | the `pageshow` handler removed                                          | Back                                      |
 | the OS-change listener removed                                          | the OS changes                            |
-| the `data-theme-switch` gate removed from the switch's CSS              | without JavaScript                        |
+| `--switch-display` shown on bare `:root`                                | without JavaScript                        |
 | the light `--wordmark-tile` changed                                     | the wordmark-tile guard                   |
 | `color: #fff` written into a component                                  | the colour-literal guard                  |
 
@@ -355,3 +355,11 @@ Splitting it keeps the light-mode pull request's diff to the feature itself. It 
 - prod-sanity did not prove the switch;
 - the absence of `theme-color` was unstated;
 - the rest were a grammar slip and two places that pointed at the old reveal rule.
+
+**Pass 3, 2026-09-23.** It found 6 problems:
+
+- Studio's `--glass` was white on a white card, so the work-card badge had no visible fill. It now has a faint ink tint, rendered on the real cards (the accent reads 6.27:1 on it);
+- the Back test could pass on a reload, so it now asserts `persisted: true`;
+- guards that discover their population needed `searched()` liveness;
+- one mutation described the scenario under test rather than a break in it: making the save throw *is* storage refused. It is now the removal of the `try`/`catch`;
+- two references had gone stale since pass 2.
