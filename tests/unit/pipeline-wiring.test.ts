@@ -1592,6 +1592,32 @@ describe('build-and-test stands for the whole suite, run as shards (#163)', () =
     expect(strategy?.['fail-fast']).toBe(false);
   });
 
+  // The suite's COLLECTION reads the built site: copy-reaches-a-page.spec.ts
+  // walks `dist` at module scope, so an unfiltered `playwright test --list`
+  // ENOENTs without it. The web server builds, but only for the run, never
+  // for the listing. Measured on run 35829226473: shard 1 of 4 passed all 742
+  // of its tests and then refused its own count, because the shard job had
+  // dropped the build step the single job used to run first (#163).
+  it('every job running the e2e suite builds the site before it', () => {
+    const suites = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter((job) => job.runs.some(runsTheE2eSuite))
+        .map((job) => ({ name, job })),
+    );
+    const unbuilt = suites
+      .filter(({ job }) => {
+        const build = job.runs.indexOf('npm run build');
+        return build === -1 || build > job.runs.findIndex(runsTheE2eSuite);
+      })
+      .map(
+        ({ name, job }) =>
+          `${name}: ${job.id} runs the e2e suite without building first`,
+      );
+    expect(
+      searched(unbuilt, { of: suites, what: 'jobs running npm run test:e2e' }),
+    ).toEqual([]);
+  });
+
   it('each shard writes its account where build-and-test reads it', () => {
     const steps = ciParsed().jobs.e2e?.steps ?? [];
     const run = steps.find((step) => step.run?.includes('npm run test:e2e'));
