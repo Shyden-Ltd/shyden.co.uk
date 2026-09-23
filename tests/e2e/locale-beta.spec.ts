@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { contrastRatio } from './helpers';
 import { recorded, shoot } from './evidence';
+import { searched } from '../source-files';
 import { expectNoHorizontalScroll } from '../viewport';
 import {
   LOCALES,
@@ -37,33 +38,37 @@ const NOTICE = '[data-beta-notice]';
 const FOOTER = 'footer#contact-legal';
 
 /**
- * The count that must appear on EVERY page in EVERY locale.
+ * The count that must appear on each page.
  *
- * Each beta locale is marked exactly once -- in the `<summary>` when it is the
- * language being read, in the `<ul>` when it is an alternative -- so the total
- * is the size of the beta set and does not vary by page. Asserted as an exact
- * number rather than "at least one": a marker painted on everything, English
- * included, would satisfy any weaker check while telling the visitor nothing.
+ * The `<ul>` lists every language, the one being read included (#329), and
+ * marks each beta locale there once. The `<summary>` marks the language being
+ * read as well, when that language is itself in beta. So an English page
+ * carries one badge per beta locale, and a beta locale's page one more.
+ * Asserted as an exact number rather than "at least one": a marker painted on
+ * everything, English included, would satisfy any weaker check while telling
+ * the visitor nothing.
  */
-const EXPECTED_BADGES = LOCALES.filter(isBetaLocale).length;
+const BETA_LOCALES = LOCALES.filter(isBetaLocale).length;
+const expectedBadges = (locale: (typeof LOCALES)[number]): number =>
+  BETA_LOCALES + (isBetaLocale(locale) ? 1 : 0);
 
 test.describe('every unverified language is marked BETA', () => {
   for (const locale of LOCALES) {
     const path = localisePath('/', locale);
     const t = getSiteStrings(locale);
 
-    test(`${locale}: marks each beta language once and English never`, async ({
+    test(`${locale}: marks each beta language once in the list, and English never`, async ({
       page,
     }) => {
       await page.goto(path);
 
       expect(
         await page.locator(BADGE).count(),
-        `${path}: expected one badge per beta locale`,
-      ).toBe(EXPECTED_BADGES);
+        `${path}: expected one badge per beta locale, and one for the summary`,
+      ).toBe(expectedBadges(locale));
       await shoot(
         page,
-        `${locale} page carries exactly ${EXPECTED_BADGES} badges`,
+        `${locale} page carries exactly ${expectedBadges(locale)} badges`,
         page.locator(SWITCHER),
       );
 
@@ -79,6 +84,11 @@ test.describe('every unverified language is marked BETA', () => {
       );
 
       await page.locator(`${SWITCHER} > summary`).click();
+      const current = page.locator(`${SWITCHER} li[aria-current]`);
+      await expect(
+        current.locator(BADGE),
+        `${path}: the current entry, ${locale}, is badged only if it is unverified`,
+      ).toHaveCount(isBetaLocale(locale) ? 1 : 0);
       for (const other of otherLocales(locale)) {
         const entry = page.locator(`${SWITCHER} li a[hreflang="${other}"]`);
         await expect(
@@ -148,6 +158,32 @@ test.describe('every unverified language is marked BETA', () => {
         `${locale} badge is announced as "${spoken.trim()}"`,
         page.locator(`${SWITCHER} > summary`),
       );
+    }
+  });
+
+  test("the badge's spoken label keeps the page's language, even inside another language's entry", async ({
+    page,
+  }) => {
+    // Each entry carries its own `lang`, so a screen reader voices 中文 in
+    // Chinese. The badge's hidden label is written in the PAGE's language --
+    // "beta translation" on an English page -- and with no `lang` of its own
+    // it inherited the entry's, handing English words to a Chinese voice.
+    for (const locale of LOCALES) {
+      await page.goto(localisePath('/', locale));
+      await page.locator(`${SWITCHER} > summary`).click();
+      const voices = await page
+        .locator(`${SWITCHER} ${BADGE} .sr`)
+        .evaluateAll((labels) =>
+          labels.map((label) => label.closest('[lang]')?.getAttribute('lang')),
+        );
+      expect(voices, `${locale}: one label per badge`).toHaveLength(
+        expectedBadges(locale),
+      );
+      const misvoiced = voices.filter((voice) => voice !== locale);
+      expect(
+        searched(misvoiced, { of: voices, what: 'badge labels' }),
+        `${locale}: badge labels voiced in another language`,
+      ).toEqual([]);
     }
   });
 

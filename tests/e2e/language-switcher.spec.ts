@@ -1,5 +1,11 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { LOCALES, localisePath } from '../../src/lib/i18n';
+import {
+  LOCALES,
+  getSiteStrings,
+  localisePath,
+  type Locale,
+} from '../../src/lib/i18n';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { recorded } from './evidence';
@@ -25,37 +31,109 @@ test.use(recorded);
 
 const SWITCHER = 'details.lang-switch';
 
+/**
+ * Below this width the menu button appears, and the switcher shows its flag
+ * and short code instead of the full name. The operator's decision for #329,
+ * 2026-09-23: one breakpoint shared with the menu, in every locale.
+ */
+const COMPACT_BELOW = 720;
+
+/**
+ * Which of the two labels shows, asserted on what is VISIBLE. Both are in the
+ * markup at every width, so the hidden one still sits in `textContent`, and a
+ * `toContainText` on the summary passes whichever the page paints.
+ */
+const expectLabel = async (
+  page: Page,
+  locale: Locale,
+  width: number,
+): Promise<void> => {
+  const summary = page.locator(`${SWITCHER} > summary`);
+  const { nativeName, shortName } = LOCALE_METADATA[locale];
+  const [shown, hidden, text] =
+    width < COMPACT_BELOW
+      ? ['.short', '.full', shortName]
+      : ['.full', '.short', nativeName];
+  const where = `${locale} at ${width}px`;
+  await expect(summary.locator(shown), `${where}: ${shown}`).toBeVisible();
+  await expect(summary.locator(shown)).toHaveText(text);
+  await expect(summary.locator(hidden), `${where}: ${hidden}`).toHaveCount(1);
+  await expect(summary.locator(hidden), `${where}: ${hidden}`).toBeHidden();
+  // The label changes and the control's name does not (#329, AC9).
+  await expect(summary).toHaveAccessibleName(
+    getSiteStrings(locale).language.label,
+  );
+};
+
 test.describe('language switcher', () => {
-  test('names the current language in its own language', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator(`${SWITCHER} > summary`)).toContainText(
-      'English',
-    );
-
-    await page.goto('/id/');
-    await expect(page.locator(`${SWITCHER} > summary`)).toContainText(
-      'Bahasa Indonesia',
-    );
-  });
-
-  test('offers every other language, each named in its own language', async ({
+  test('names the current language in its own language, as its width calls for', async ({
     page,
   }) => {
-    await page.goto('/');
-    // Every other language, derived. A count of 1 and a single hard-coded
-    // name asserted that the site had two languages, not that the switcher
-    // lists them -- and it would have gone on passing if #22 had wired the
-    // three new locales everywhere EXCEPT here.
-    const others = otherLocales('en');
-    const entries = page.locator(`${SWITCHER} li a`);
-    await expect(entries).toHaveCount(others.length);
-    for (const locale of others) {
-      const entry = entries.filter({
-        hasText: LOCALE_METADATA[locale].nativeName,
-      });
-      await expect(entry, `an entry for ${locale}`).toHaveCount(1);
-      await expect(entry).toHaveAttribute('hreflang', locale);
-      await expect(entry).toHaveAttribute('lang', locale);
+    // No viewport is set, so this runs at each project's own width -- and on a
+    // real phone, which emulates nothing: the desktop projects see the full
+    // name and the phone projects the short code, so both branches run.
+    for (const locale of LOCALES) {
+      await page.goto(localisePath('/', locale));
+      const width = await page.evaluate(() => window.innerWidth);
+      await expectLabel(page, locale, width);
+    }
+  });
+
+  test(
+    'shows the short code below 720px and the full name from 720px, in every language',
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      // Both sides of the edge, and both ends of the range (#329).
+      for (const locale of LOCALES) {
+        await page.goto(localisePath('/', locale));
+        for (const width of [320, COMPACT_BELOW - 1, COMPACT_BELOW, 1280]) {
+          await page.setViewportSize({ width, height: 720 });
+          await expectLabel(page, locale, width);
+        }
+      }
+    },
+  );
+
+  test('lists every language: the current one first and ticked, every other a link', async ({
+    page,
+  }) => {
+    for (const locale of LOCALES) {
+      await page.goto(localisePath('/', locale));
+      await page.locator(`${SWITCHER} > summary`).click();
+      // Every language, derived. A count of 1 and a single hard-coded name
+      // asserted that the site had two languages, not that the switcher lists
+      // them -- and it would have gone on passing if #22 had wired the three
+      // new locales everywhere EXCEPT here.
+      const items = page.locator(`${SWITCHER} li`);
+      await expect(items).toHaveCount(LOCALES.length);
+
+      // The current language, with its full name: at narrow widths the
+      // summary shows only a code, so this is where the name is (#329).
+      const current = items.first();
+      await expect(current).toHaveAttribute('aria-current', 'true');
+      await expect(current.locator('.name')).toBeVisible();
+      await expect(current.locator('.name')).toHaveText(
+        LOCALE_METADATA[locale].nativeName,
+      );
+      await expect(current.locator('.tick')).toBeVisible();
+      await expect(
+        current.locator('a'),
+        'the current entry is a link',
+      ).toHaveCount(0);
+      await expect(page.locator(`${SWITCHER} li[aria-current]`)).toHaveCount(1);
+      await expect(page.locator(`${SWITCHER} .tick`)).toHaveCount(1);
+
+      const entries = page.locator(`${SWITCHER} li a`);
+      await expect(entries).toHaveCount(otherLocales(locale).length);
+      for (const other of otherLocales(locale)) {
+        const entry = entries.filter({
+          hasText: LOCALE_METADATA[other].nativeName,
+        });
+        await expect(entry, `${locale}: an entry for ${other}`).toHaveCount(1);
+        await expect(entry).toBeVisible();
+        await expect(entry).toHaveAttribute('hreflang', other);
+        await expect(entry).toHaveAttribute('lang', other);
+      }
     }
   });
 
@@ -109,6 +187,10 @@ test.describe('language switcher', () => {
     await summary.click();
     const entry = page.locator(`${SWITCHER} li a`).first();
     await atLeast44(entry, 'the first switcher entry');
+    await atLeast44(
+      page.locator(`${SWITCHER} li[aria-current]`),
+      'the current language entry',
+    );
   });
 
   test(
