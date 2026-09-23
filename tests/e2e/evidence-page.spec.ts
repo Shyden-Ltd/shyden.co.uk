@@ -1123,6 +1123,24 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
   });
 
+  test('a removed id the store holds is shown as text, never read as markup', async ({
+    page,
+  }, testInfo) => {
+    // Every viewer writes the store, so a removed id is untrusted input on a
+    // page the operator signs off from.
+    const markup = '<img src="x" alt="injected">';
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: verdictOn('approved', [...coveredBy(HTML), markup]),
+    });
+    const notice = outOfDate(page);
+    await expect(notice.locator('code')).toHaveText(markup);
+    await expect(
+      notice.locator('img'),
+      'nothing in the notice was parsed from the store',
+    ).toHaveCount(0);
+  });
+
   test('a sign-off saved before verdicts recorded their journeys is out of date, never approved', async ({
     page,
   }, testInfo) => {
