@@ -224,7 +224,7 @@ The inventory is read from a real DOM (`document.scripts`), never by matching `<
 
 ### 6.5 Visual baselines, both themes
 
-Each of the visual suite's 12 views is captured in both themes, so **12 baselines become 24**. The light set is new. The existing 12 are re-captured once, because the switch now sits in every header, and their diff against today's is reviewed to show changes in the header alone: the switch, and the header items it moves along. Both sets are captured and compared in the pinned `linux/amd64` Playwright image, as today.
+Each of the visual suite's 12 views is captured in both themes, so **12 baselines become 24**. The light set is new, named with a `-light` suffix. The dark set keeps today's file names, so that its diff can be reviewed file by file. The existing 12 are re-captured once, because the switch now sits in every header, and their diff against today's is reviewed to show changes in the header alone: the switch, and the header items it moves along. Both sets are captured and compared in the pinned `linux/amd64` Playwright image, as today.
 
 ### 6.6 No colour a theme cannot see
 
@@ -271,6 +271,9 @@ Every new or rewritten guard is mutation-verified in both directions before it l
 | `--switch-display` shown on bare `:root`                                | without JavaScript                        |
 | the light `--wordmark-tile` changed                                     | the wordmark-tile guard                   |
 | `color: #fff` written into a component                                  | the colour-literal guard                  |
+| `transition: background-color 0.2s` added to `html`                     | instant                                   |
+| the reveal rule taken out of `@media screen`                            | not printed                               |
+| the switch's accessible name removed                                    | accessibility                             |
 
 ## 7. Cleanup in the same ticket (part 4)
 
@@ -378,3 +381,10 @@ The review page gained the work cards as refined in pass 3.
 - "switches instantly" (AC3) had no test;
 - "the switch does not print" (AC10) had no test;
 - if no test engine restores from the back-forward cache, every Back case skips and the `pageshow` mutation could never go red. A synthetic `pageshow` case now runs in every engine.
+
+**Pass 6, 2026-09-23.** Read as the developer who has to build it. It found 2 problems:
+
+- the light baselines had no stated names, and "the dark set differs only in the header" can only be reviewed if the dark set keeps today's names;
+- the three rendered checks added in pass 5 and the accessibility check had no mutations, against "one per guard".
+
+It confirmed that `tests/unit/source-text.ts` already reads `.astro` files (`withoutAstroComments`, `astroCodeViews`, `astroStyleViews`).
