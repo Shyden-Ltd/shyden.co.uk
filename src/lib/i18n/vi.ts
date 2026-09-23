@@ -88,7 +88,7 @@ export const vi: Catalogue = {
   speedNormal: 'Bình thường',
   speedFast: 'Nhanh',
   speedSkip: 'Bỏ qua phần hoạt hình',
-  sectionStudentsHeading: 'Thông tin về học sinh',
+  sectionStudentsHeading: 'Thông tin học sinh',
   sectionGroupingHeading: 'Các tùy chọn phân nhóm',
   sectionImportExportHeading: 'Nhập khẩu / xuất khẩu',
   sectionSoundHeading: 'Âm thanh và hoạt hình',
@@ -125,10 +125,10 @@ export const vi: Catalogue = {
   rosterRemove: 'Xóa',
   rosterClearAll: 'Xóa tất cả',
   stateNoneAdded: 'chưa có mục nào được thêm vào',
-  stateNamed: '{n} được đặt tên là',
+  stateNamed: '{n} đã có tên',
   stateAbsent: '{n} vắng mặt',
   stateTogether: '{n} cùng nhau',
-  stateApart: '{n} cách nhau',
+  stateApart: '{n} tách biệt',
   stateAdded: '{n} đã được thêm vào',
   stateNone: 'không có',
   stateMixed: 'phân loại theo giới tính',
@@ -190,7 +190,7 @@ export const vi: Catalogue = {
   ioImportLabel: 'Nhập danh sách lớp học',
   ioProblemsHeading: 'Tệp này chưa được nhập:',
   ioReplaceWarning:
-    'Danh sách này sẽ thay thế danh sách lớp hiện tại của bạn — {total} học sinh, bao gồm {named} em.',
+    'Danh sách này sẽ thay thế danh sách lớp hiện tại của bạn — {total} học sinh, {named} em đã có tên.',
   ioReplaceConfirm: 'Thay thế nó',
   ioReplaceCancel: 'Giữ lại những gì tôi đang có',
   ioImported: 'Đã nhập {total} học sinh.',
@@ -254,7 +254,7 @@ export const vi: Catalogue = {
     KEEP_APART_NO_ARRANGEMENT:
       'Không có cách nào để chia lớp của bạn thành {groupsTried} nhóm mà vẫn đảm bảo giữ khoảng cách giữa những người cần phải cách ly. Bạn phải hoặc là tạo thêm nhóm, hoặc là loại bỏ một trong các quy tắc đó.',
     KEEP_APART_SEARCH_GAVE_UP:
-      'Ở đây có quá nhiều quy tắc ngăn cách, khó mà xử lý hết được. Hãy thử loại bỏ một số quy tắc trong số đó.',
+      'Ở đây có quá nhiều quy tắc xếp khác nhóm, khó mà xử lý hết được. Hãy thử loại bỏ một số quy tắc trong số đó.',
     BOTH_RULES_NO_ARRANGEMENT:
       'Không có cách nào để chia lớp của bạn thành {groupsTried} nhóm mà vẫn đáp ứng đồng thời tất cả các quy tắc ghép chữ và tách chữ. Quá trình tìm kiếm không thể xác định được quy tắc nào là nguyên nhân gây ra vấn đề, vì vậy hãy thử một trong hai giải pháp sau: tăng quy mô các nhóm hoặc chỉ áp dụng quy tắc ghép chữ cho ít học sinh hơn, hoặc tạo thêm nhóm hoặc loại bỏ một trong các quy tắc tách chữ.',
     BOTH_RULES_SEARCH_GAVE_UP:
