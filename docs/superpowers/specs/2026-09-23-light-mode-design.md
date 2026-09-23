@@ -63,7 +63,7 @@ Three tokens are retired because no page uses them (0 `var()` references under `
 
 ### 3.2 Contrast, measured
 
-The maths is `tests/wcag.ts`. The pairs are those of `contrast.test.ts`, with the glass pairs corrected to the stack the site actually draws (§6.1). Any pair drawn over the atmosphere is scored against **all 16 subsets** of its four layers, in **both** stacking orders, and the worst result is kept. Every row passes. The figures come from the scorer's output file and were not typed by hand:
+The maths is `tests/wcag.ts`. The pairs are those of `contrast.test.ts`, corrected to the grounds the site actually paints (§6.1): the glass pair sits on the card it is drawn on, and the link-hover colour gains its pair over the atmosphere. Any pair drawn over the atmosphere is scored against **all 16 subsets** of its four layers, in **both** stacking orders, and the worst result is kept. Every row passes. The figures come from the scorer's output file and were not typed by hand:
 
 | foreground | ground | needs | Studio (light) | Aurora (dark) |
 | --- | --- | --- | --- | --- |
@@ -83,6 +83,7 @@ The maths is `tests/wcag.ts`. The pairs are those of `contrast.test.ts`, with th
 | `--ink` | `atmosphere over --bg` | 4.5 | 13.33 | 11.16 |
 | `--ink-soft` | `atmosphere over --bg` | 4.5 | 5.40 | 5.05 |
 | `--accent` | `atmosphere over --bg` | 4.5 | 5.19 | 9.02 |
+| `--accent-ink` | `atmosphere over --bg` | 4.5 | 7.36 | 10.34 |
 | `--border-strong over atmosphere over --bg` | `atmosphere over --bg` | 3 | 3.63 | 3.38 |
 | `--border-strong over --bg` | `--bg` | 3 | 3.83 | 3.72 |
 | `--border-strong over --surface` | `--surface` | 3 | 3.97 | 3.79 |
@@ -111,6 +112,7 @@ A unit guard asserts that the light `--wordmark-tile` equals `SHYTALK_MARK.tile`
 ```css
 :root {
   /* Studio: every token, plus color-scheme: light */
+  --switch-display: none;
 }
 
 @media screen and (prefers-color-scheme: dark) {
@@ -122,6 +124,10 @@ A unit guard asserts that the light `--wordmark-tile` equals `SHYTALK_MARK.tile`
 @media screen {
   :root[data-theme='dark'] {
     /* the same Aurora tokens, color-scheme: dark */
+  }
+
+  :root[data-theme-switch] {
+    --switch-display: inline-flex;
   }
 }
 
@@ -137,6 +143,7 @@ A unit guard asserts that the light `--wordmark-tile` equals `SHYTALK_MARK.tile`
 - **Both dark blocks are screen-only.** This is load-bearing for print. The dark blocks' selectors carry specificity (0,2,0), and the print block's `:root` carries (0,1,0). If the dark blocks applied in print, a visitor in dark mode would print Aurora's near-white ink onto white paper, the blank-sheet defect found on 2026-09-11. Screen-only, they never reach the print cascade, and paper keeps being measured against white alone.
 - **The Aurora palette is written twice**, because the unstamped state needs the media query and the stamped state must not. A **dark block** is any rule in `tokens.css` that declares `color-scheme: dark`. A unit guard finds them by that declaration, with comments stripped, and asserts they all declare the same tokens with the same values. A third copy added later is compared the same way.
 - **No colour has its only definition inside a theme block.** A unit guard asserts that every token a dark block declares is also declared on bare `:root`.
+- **The switch appears only once the script has run.** Its `display` comes from `--switch-display`: `none` on bare `:root`, and `inline-flex` under the script's `data-theme-switch` stamp. That rule is screen-only, so the switch never prints. It lives here, beside the theme blocks, because **no component ever tests an attribute on `:root`**: Astro scopes a component's selectors, and a rule that reads the root belongs to the one file that owns the root.
 
 ## 5. The switch (part 3)
 
@@ -146,14 +153,14 @@ The switch and the language switcher form **one group** in the header row. The r
 
 At narrow widths the language switcher shows the **compact label decided for #329**: its flag, a short code and the BETA mark, with the full name in its open list. That is what makes room. Today, at 320px, the switcher is 110px wide in English, 133px in Thai, 138px in Chinese, 172px in Vietnamese and 184px in Indonesian, and in Indonesian the header's three items already need 14px more than the row has (#329). #329 lands first. Its geometry guard derives the header's items, so from the day the switch exists it proves that nothing in the header overlaps, in every locale, at every width from 320px.
 
-**What it is.** A `<button type="button">` exposed as a **toggle button**. Its accessible name is **"Dark mode"** in English, and in each locale its own translation of the catalogue key `themeDarkMode`. `aria-pressed="true"` means dark is on. The name stays fixed; only the pressed state changes, which is the WAI-ARIA toggle-button pattern. The icons are decorative (`aria-hidden`): a moon while light is showing and a sun while dark is showing, each shown by `display: var(--switch-moon)` / `var(--switch-sun)`, so the icon cannot disagree with the palette. The switch has a visible focus ring, and switching is instant, with no transition. In print the switch is hidden, like the skip link: it is a screen affordance, not part of the record.
+**What it is.** A `<button type="button">` exposed as a **toggle button**. Its accessible name is **"Dark mode"** in English, and in each locale its own translation of the catalogue key `themeDarkMode`. `aria-pressed="true"` means dark is on. The name stays fixed; only the pressed state changes, which is the WAI-ARIA toggle-button pattern. The icons are decorative (`aria-hidden`): a moon while light is showing and a sun while dark is showing, each shown by `display: var(--switch-moon)` / `var(--switch-sun)`, so the icon cannot disagree with the palette. The server-rendered switch carries no `aria-pressed`. The script adds it on `DOMContentLoaded`, so the attribute exists only while something keeps it true. The switch has a visible focus ring, and switching is instant, with no transition. It does not print (§4): it is a screen affordance, not part of the record.
 
 **The one script.** It lives in one source file, `src/scripts/theme.inline.js`. It is plain JavaScript because it ships exactly as written. It is type-checked through `// @ts-check` and kept to a few hundred bytes, because every page carries it. Its explanation lives in a template comment beside the place where `BaseLayout.astro` emits it, which the build strips, rather than in the shipped file.
 
 `BaseLayout.astro` emits it as a classic inline script, `<script is:inline set:html={themeScript}>`, straight after the viewport `<meta>`. On today's build that puts it before both stylesheet links (checked on the built homepage), so it is parsed and run before the first paint and makes no request. It does five things:
 
 1. **Reads the saved choice.** It calls `localStorage.getItem('theme')` inside `try`/`catch`, the same guard `/classroom-groups` uses for `'cg-sound'`, because some privacy modes throw `SecurityError` on touching storage. If the value is exactly `light` or `dark`, it stamps `data-theme` on `<html>`.
-2. **Reveals the switch.** It stamps `data-theme-switch` on `<html>`, and the switch's CSS shows it only under that attribute. So **with JavaScript off the switch never appears** and the device setting applies.
+2. **Reveals the switch.** It stamps `data-theme-switch` on `<html>`, which turns `--switch-display` on (§4). So **with JavaScript off the switch never appears** and the device setting applies.
 3. **Handles clicks by delegation** on `document`, because the switch does not exist yet when a head script runs. A click computes the current theme (the stamp, or `matchMedia('(prefers-color-scheme: dark)')` when unstamped), stamps the opposite and saves it. If saving throws, the page still switches; the choice just is not remembered.
 4. **Keeps `aria-pressed` true to the theme**: on `DOMContentLoaded`, after a click, and when the OS setting changes while no choice is saved.
 5. **Re-applies the saved choice on `pageshow`** when the page comes back from the back-forward cache. Without this, a visitor who switches theme and presses Back would see the page they left, in the theme they left.
@@ -162,7 +169,8 @@ At narrow widths the language switcher shows the **compact label decided for #32
 
 - a third "follow the device" option in the interface, because the operator asked for a single button;
 - syncing open tabs, because a tab picks the choice up on its next page load;
-- a cookie. The pages are prerendered files, so a cookie would only help if something rendered the theme into each response. That would put `functions/` on the path of every page view for a preference `localStorage` already keeps without sending it anywhere.
+- a cookie. The pages are prerendered files, so a cookie would only help if something rendered the theme into each response. That would put `functions/` on the path of every page view for a preference `localStorage` already keeps without sending it anywhere;
+- a `theme-color` meta. The site sets none (checked under `src/`), so a phone's browser bar follows the page's own background in either theme.
 
 ## 6. How it is proven (part 4)
 
@@ -173,6 +181,7 @@ At narrow widths the language switcher shows the **compact label decided for #32
 - **Stacking order.** CSS paints the **first** background layer on top, so `body::before` puts the shaft at the **bottom**, while the test's `ATMOSPHERE` stacks it on top. In dark mode the test's order was only stricter (`--ink-soft` 5.05:1, against 5.22:1 in paint order). The stack is now **derived from the `body::before` rule itself**, the `var()` names in declaration order, so it cannot disagree with what the browser paints.
 - **The worst case.** "Every stop composited at once" is the worst case only when every layer moves the ground towards the ink. That holds in Aurora, where every layer lightens a near-black ground under light ink, and **fails in Studio**, where the shaft brightens the ground under dark ink while the pools darken it. The worst case is now taken over **every subset** of the four layers. Measured while designing: Studio's first draft passed with all four layers at once (5.15:1 in paint order) and failed at 3.92:1 against its two shade pools alone.
 - **The glass pairs.** The suite composites `--glass` over the page ground, `--bg`. The site's one glass fill, `.work-card-badge` (`WorkCard.astro:60`), sits inside a card whose own background is the opaque `--surface`, and it carries `--accent` text. The pairs become the stack that is drawn: `--accent` on `--glass` over `--surface`. The `--ink` and `--ink-soft` on glass pairs describe text no page puts there, so they go.
+- **Pairs follow the painted ground.** `--accent-ink` is the link hover colour (`a:hover` in `tokens.css`), drawn wherever links are, so it gains the pair over the atmosphere that `--accent` already has. `--danger` keeps only its card pairs: its one use, the Glory Points error, sits in `div.card` on `--surface`, as a real DOM showed. Scored over the full atmosphere it would read 4.49:1 in Aurora, a failure on a ground that is never painted behind it. Each pair's ground is checked in a browser before a failure is believed.
 
 The stale claim in `tokens.css`, that `--ink-soft` over the atmosphere scores 5.11:1, is corrected to the measured figures.
 
@@ -182,7 +191,7 @@ No Playwright config sets `colorScheme` today, so every project runs under Playw
 
 - **every project in every config declares `colorScheme`.** That covers `playwright.config.ts`, `playwright.dev.config.ts`, `playwright.device.config.ts` and `playwright.prod.config.ts`. The unit guard **derives the configs from the filesystem** (`playwright*.config.ts`) rather than from this list, so a fifth config cannot slip past it. The general suite declares **dark**, so every existing test keeps testing exactly what it tests today;
 - **the palette-reading guards run once per theme.** Those are `palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, and every assertion in `classroom-groups.spec.ts` that reads a computed colour. Print runs under both themes, and additionally with a stamped `dark` choice, proving that paper ignores the screen theme;
-- **dev-sanity** proves on the deployed dev site that the switch toggles, and that the choice survives a reload;
+- **dev-sanity and prod-sanity** each prove on their deployed site that the switch toggles and that the choice survives a reload. The switch is a rendering fact, so it belongs in the browser runs, not the `curl` smoke;
 - **the device gauntlet pins the theme per run**: Android Chrome over CDP through `Emulation.setEmulatedMedia`, and iOS Safari by stamping a saved choice before the measured load. Its results therefore never depend on the phone's own setting.
 
 ### 6.3 The switch, rendered
@@ -219,12 +228,13 @@ Each of the visual suite's 12 views is captured in both themes, so **12 baseline
 
 Theme logic lives only in `tokens.css`. Components read tokens and never test the theme, so a colour written straight into a component is the one thing a theme cannot reach.
 
-A unit guard scans every style under `src/` outside `tokens.css`, with comments stripped by `tests/unit/source-text.ts`. It refuses any colour literal (hex, `rgb()`, `hsl()`, a named colour) that is not on a short allowlist, and every allowlist entry carries its reason. Today's literals set the allowlist's shape:
+A unit guard scans every `.astro`, `.css` and `.ts` file under `src/` except `tokens.css`, with comments stripped by `tests/unit/source-text.ts`. It covers TypeScript because colours reach styles from there too: `shytalk-brand.ts` feeds the mark through `define:vars`. It refuses any colour literal that is not on a short allowlist, and every allowlist entry carries its reason. A colour literal is a hex value, `rgb()`/`rgba()`, `hsl()`/`hsla()`, or a named colour; `transparent` and `currentColor` are not colours a theme needs to reach. Today's literals set the allowlist's shape:
 
 - the light callouts on `/classroom-groups`, which carry their own ground, ink and border in either theme;
 - print-only rules;
 - a scrim and shadows that read on both grounds;
-- the flags.
+- ShyTalk's brand constants (`shytalk-brand.ts`), the same in both themes by design;
+- the flag artwork (`flags.ts`).
 
 The phone mockup's shadow leaves the list by becoming `--lift-shadow`. The dead `var(--…, fallback)` values leave with the §7 cleanup.
 
@@ -249,7 +259,7 @@ Every new or rewritten guard is mutation-verified in both directions before it l
 | the stamp delayed by a `setTimeout`                                     | the first-frame no-flash test             |
 | one token changed in only one dark block                                | the dark-blocks-identical guard           |
 | a token declared only inside a dark block                               | the bare-`:root` completeness guard       |
-| the dark blocks' `@media screen` wrapper removed                        | print legibility with a stamped dark      |
+| the dark blocks' `@media screen` wrapper removed                        | print legibility with a stamped dark choice |
 | `--ink-soft` lightened so it fails over the shade pools alone           | the subset worst-case contrast test       |
 | a project's `colorScheme` removed, or a new config added without one    | the scheme-declared guard                 |
 | the save made to throw                                                  | storage refused (page still switches)     |
@@ -302,7 +312,7 @@ These replace the criteria in the #142 issue body once this spec is approved.
 10. Print is measured against white alone and is identical whichever theme the screen shows, including a stamped dark choice. The switch does not print.
 11. The palette-reading guards (§6.2) run once per theme.
 12. The visual suite holds 24 baselines, each of its 12 views in both themes, and the re-captured dark set differs from today's only in the header.
-13. Every project in every `playwright*.config.ts` declares `colorScheme`, enforced by a guard that derives the configs from the filesystem. Dev-sanity proves the switch on the deployed dev site. The device gauntlet pins the scheme per run.
+13. Every project in every `playwright*.config.ts` declares `colorScheme`, enforced by a guard that derives the configs from the filesystem. Dev-sanity and prod-sanity prove the switch on their deployed sites. The device gauntlet pins the scheme per run.
 14. The ShyTalk mark sits on `SHYTALK_MARK.tile` in light mode (guarded), is unchanged in dark mode, and prints in ink.
 15. No colour literal outside `tokens.css` except the allowlisted ones, each with its reason (§6.6).
 16. The §7 cleanup is done, and the atmosphere tokens carry their positional names everywhere.
@@ -333,3 +343,15 @@ Splitting it keeps the light-mode pull request's diff to the feature itself. It 
 - a return from the back-forward cache would have shown the stale theme;
 - nothing guarded against a colour a theme cannot reach;
 - the #142 body's "tone Aurora down" conflicted with this spec, and the operator kept Aurora.
+
+**Pass 2, 2026-09-23.** It found 11 problems, all within the spec:
+
+- the colour guard's scope missed TypeScript, where `shytalk-brand.ts` and `flags.ts` hold colours;
+- "a named colour" did not say `transparent` and `currentColor` were exempt;
+- `a:hover` paints `--accent-ink` as text over the atmosphere, and it had no pair there. It now has one (7.36:1 and 10.34:1);
+- a pair for `--danger` over the atmosphere was tried and rejected, because a real DOM showed its only use sits on a card;
+- the switch's reveal rule would have had a component test `:root`, so it moved into `tokens.css` as `--switch-display`;
+- `aria-pressed` had no stated value before the script runs;
+- prod-sanity did not prove the switch;
+- the absence of `theme-color` was unstated;
+- the rest were a grammar slip and two places that pointed at the old reveal rule.
