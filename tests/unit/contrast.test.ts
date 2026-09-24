@@ -3,7 +3,15 @@ import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
 import { contrast, parseColour } from '../wcag';
-import { TOKENS_FILE, flatten, rootTokens, tokensCss } from '../palette';
+import {
+  ATMOSPHERE,
+  TOKENS_FILE,
+  atmosphereLayers,
+  flatten,
+  rootTokens,
+  tokensCss,
+  worstContrast,
+} from '../palette';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -47,23 +55,6 @@ type Pair = {
 };
 
 /**
- * The atmosphere as a layer stack, TOP-FIRST.
- *
- * Every stop composited at once is the WORST case, not the real one: the
- * three radials are positioned apart, so no pixel receives all of them. A
- * guard that measured the real overlap would need a browser and would answer
- * a question about one viewport width; this answers it for all of them, and
- * errs towards refusing a palette that would in fact have passed.
- */
-const ATMOSPHERE = [
-  '--aurora-shaft',
-  '--aurora-mint',
-  '--aurora-violet',
-  '--aurora-deep',
-  '--bg',
-] as const;
-
-/**
  * Which colour sits on which, and at what level.
  *
  * Hand-written deliberately: WHICH pairs the design puts together is a design
@@ -72,8 +63,8 @@ const ATMOSPHERE = [
  * appear here or in `DECORATIVE`, so a new token cannot be added unclassified.
  *
  * The page atmosphere is judged here as well, not left to a later pass: a
- * pair drawn over it names `ATMOSPHERE`, above, as its ground rather than the
- * flat `--bg`.
+ * pair drawn over it names the `ATMOSPHERE` placeholder from `../palette` in
+ * its stack rather than the flat `--bg`.
  */
 const PAIRS: Pair[] = [
   {
@@ -175,26 +166,26 @@ const PAIRS: Pair[] = [
   },
   {
     fg: ['--ink'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
-    where: 'body copy over the brightest possible point of the atmosphere',
+    where: 'body copy over the atmosphere, at its worst subset of layers',
   },
   {
     fg: ['--ink-soft'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
     where:
-      'secondary copy over the atmosphere — the knife edge. At mint .10 / violet .14 / deep .18 this scored 4.48:1, a failure by 0.02 that no single layer shows',
+      'secondary copy over the atmosphere, the lowest-scoring text pair drawn over it',
   },
   {
     fg: ['--accent'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
     where: 'link text and section kickers over the atmosphere',
   },
   {
-    fg: ['--border-strong', ...ATMOSPHERE],
-    bg: ATMOSPHERE,
+    fg: ['--border-strong', ATMOSPHERE, '--bg'],
+    bg: [ATMOSPHERE, '--bg'],
     level: 'ui',
     where: 'control boundaries over the atmosphere (WCAG 1.4.11)',
   },
@@ -243,6 +234,15 @@ const pairName = (p: Pair) =>
   `${p.fg.join(' over ')} on ${p.bg.join(' over ')} (${p.where})`;
 
 describe('the palette meets WCAG AA by computation, not by comment', () => {
+  it('reads the atmosphere from body::before, top-first, named by position', () => {
+    expect(atmosphereLayers(tokensCss())).toEqual([
+      '--pool-top-left',
+      '--pool-top-right',
+      '--pool-foot',
+      '--shaft',
+    ]);
+  });
+
   /**
    * The ratio function pinned against WCAG's OWN published boundary.
    *
@@ -285,19 +285,20 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
     );
   });
 
-  it('every declared pair clears its required ratio', () => {
-    const from = rootTokens(tokensCss());
+  it('every declared pair clears its required ratio, over the worst subset of the atmosphere', () => {
+    const css = tokensCss();
+    const from = rootTokens(css);
+    const layers = atmosphereLayers(css);
     const failures = PAIRS.flatMap((pair) => {
-      const fg = flatten(pair.fg, from);
-      const bg = flatten(pair.bg, from);
-      if (typeof fg === 'string') return [`${pairName(pair)} — ${fg}`];
-      if (typeof bg === 'string') return [`${pairName(pair)} — ${bg}`];
-
-      const ratio = contrast(fg, bg);
+      const scored = worstContrast(pair.fg, pair.bg, layers, from);
+      if (typeof scored === 'string') return [`${pairName(pair)} — ${scored}`];
       const need = LEVELS[pair.level];
-      return ratio >= need
+      return scored.ratio >= need
         ? []
-        : [`${pairName(pair)} — ${ratio.toFixed(2)}:1, needs ${need}:1`];
+        : [
+            `${pairName(pair)} — ${scored.ratio.toFixed(2)}:1 over ` +
+              `[${scored.subset.join(', ') || 'no layer'}], needs ${need}:1`,
+          ];
     });
 
     expect(
@@ -350,7 +351,12 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
   });
 
   it('every colour token is classified — paired or explicitly decorative', () => {
-    const paired = new Set(PAIRS.flatMap((p) => [...p.fg, ...p.bg]));
+    const layers = atmosphereLayers(tokensCss());
+    const paired = new Set(
+      PAIRS.flatMap((p) => [...p.fg, ...p.bg]).flatMap((layer) =>
+        layer === ATMOSPHERE ? layers : [layer],
+      ),
+    );
     const all = colourTokens();
     const unclassified = all
       .map(([name]) => name)
