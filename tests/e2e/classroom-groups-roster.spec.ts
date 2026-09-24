@@ -702,6 +702,20 @@ test.describe('validation as it is typed', () => {
     );
   });
 
+  // #332, the stale notice's twin. The warning paints its own cream ground
+  // and took --ink, which Aurora made near-white: 1.05:1. Scored the way the
+  // browser paints it, with the warning in its real state.
+  test('the gap warning meets the WCAG AA contrast floor', async ({ page }) => {
+    await openRoster(page);
+    await page.getByRole('button', { name: 'Add student' }).click();
+    await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
+    const warning = page.locator('#cg-roster-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText('Your class list looks incomplete.');
+    expect(await contrastRatio(warning)).toBeGreaterThanOrEqual(4.5);
+    await shoot(page, 'the gap warning on its cream ground', warning);
+  });
+
   // The block is a COMPARISON, not a one-way latch -- the same "a
   // dirty/stale flag must be able to clear again" philosophy this page
   // already applies to `dirty` (classroom-groups.ts) and `staleReason`
