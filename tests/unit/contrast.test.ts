@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
-import { contrast, over, parseColour, type RGB, type RGBA } from '../wcag';
+import { contrast, parseColour } from '../wcag';
+import { TOKENS_FILE, flatten, rootTokens, tokensCss } from '../palette';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -16,7 +17,6 @@ import { contrast, over, parseColour, type RGB, type RGBA } from '../wcag';
  * because the baseline had always been wrong (#133).
  */
 
-const TOKENS_FILE = 'src/styles/tokens.css';
 const SRC = 'src';
 
 const isColour = (value: string): boolean => parseColour(value) !== null;
@@ -29,66 +29,11 @@ const ratioOf = (a: string, b: string): number => {
   return contrast(x.rgb, y.rgb);
 };
 
-/**
- * The `:root` custom properties, read with CSS comments stripped.
- *
- * Stripped because this file's own documentation names token values, and a
- * guard satisfied by the prose explaining it is the defect this suite exists
- * to catch — five have shipped in this repo (#23, #21, #35, #49, #129).
- */
-const tokens = (): Map<string, string> => {
-  const css = stylesheetCss(
-    TOKENS_FILE,
-    readFileSync(TOKENS_FILE, 'utf8'),
-  ).join('\n');
-  const root = css.match(/:root\s*\{([\s\S]*?)\}/);
-  if (root === null) throw new Error(`no :root block in ${TOKENS_FILE}`);
-
-  const found = new Map<string, string>();
-  for (const [, name, value] of root[1].matchAll(
-    /(--[\w-]+)\s*:\s*([^;]+);/g,
-  )) {
-    found.set(name, value.trim());
-  }
-  return found;
-};
-
 const colourTokens = (): [string, string][] =>
   nonEmpty(
-    [...tokens()].filter(([, value]) => isColour(value)),
+    [...rootTokens(tokensCss())].filter(([, value]) => isColour(value)),
     `colour tokens in ${TOKENS_FILE}`,
   );
-
-/**
- * Flatten a layer stack, written TOP-FIRST, onto its opaque base.
- *
- * `['--border-strong', '--bg']` is the border as the eye actually receives it.
- * Comparing the declared `rgb(255 255 255 / .35)` against `--bg` directly
- * scores 21:1 — the ratio of pure white to near-black, a colour that is never
- * drawn anywhere. An alpha judged un-composited is a guard measuring a pixel
- * that does not exist, and it fails OPEN.
- */
-const flatten = (
-  layers: readonly string[],
-  from: Map<string, string>,
-): RGB | string => {
-  const parsed: RGBA[] = [];
-  for (const layer of layers) {
-    const value = layer.startsWith('--') ? from.get(layer) : layer;
-    if (value === undefined) return `${layer} is not defined in ${TOKENS_FILE}`;
-    const colour = parseColour(value);
-    if (colour === null) return `${layer} is not a readable colour: ${value}`;
-    parsed.push(colour);
-  }
-
-  const base = parsed[parsed.length - 1];
-  if (base.alpha !== 1)
-    return `the base of [${layers.join(', ')}] is translucent — nothing is behind it`;
-
-  return parsed
-    .slice(0, -1)
-    .reduceRight<RGB>((ground, layer) => over(layer, ground), base.rgb);
-};
 
 /** 4.5 for body copy, 3 for large text and for anything identifying a control. */
 const LEVELS = { body: 4.5, large: 3, ui: 3 } as const;
@@ -341,7 +286,7 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
   });
 
   it('every declared pair clears its required ratio', () => {
-    const from = tokens();
+    const from = rootTokens(tokensCss());
     const failures = PAIRS.flatMap((pair) => {
       const fg = flatten(pair.fg, from);
       const bg = flatten(pair.bg, from);
@@ -375,7 +320,7 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
    * the brief, separately from anything derived from it.
    */
   it('pins the disabled fill, and keeps it off every ground it is drawn on', () => {
-    const from = tokens();
+    const from = rootTokens(tokensCss());
     expect(from.get('--disabled-fill')).toBe('#2a323f');
 
     /* The class the literal cannot state, and the reason it is not simply a
