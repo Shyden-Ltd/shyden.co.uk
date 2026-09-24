@@ -989,9 +989,6 @@ test.describe('evidence page sign-off, whatever the write order', () => {
   });
 });
 
-// A real phone keeps one Chrome profile from run to run, so its localStorage
-// outlives every run (#229). One browser context stands in for that profile,
-// and each page opened in it for one run of the same test.
 /** The fixture page rebuilt with one journey more, as #188's gained its 13th. */
 const ADDED = 'the sixth journey';
 const HTML_WITH_ADDED: string = pageOf([...TITLES, ADDED]);
@@ -1383,6 +1380,9 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
   });
 });
 
+// A real phone keeps one Chrome profile from run to run, so its localStorage
+// outlives every run (#229). One browser context stands in for that profile,
+// and each page opened in it for one run of the same test.
 test.describe('the stand-in store, on a phone that keeps one profile from run to run', () => {
   const openAsRun = async (page: Page, testInfo: TestInfo, run: string) => {
     const errors = recordErrors(page);

@@ -21,6 +21,14 @@ const SCRIPT = fileURLToPath(
 const TITLES = ['the first journey', 'the second journey', 'the third journey'];
 const IDS = ['the-first-journey', 'the-second-journey', 'the-third-journey'];
 const PAGE = evidencePageOf(TITLES, 'ticket-197-check');
+/**
+ * The same page with its journey list emptied. The builder refuses a run that
+ * captured nothing, so no evidence page it writes looks like this.
+ */
+const EMPTY_PAGE = PAGE.replace(
+  /\bvar JOURNEYS = \[[^\]\n]*\];/,
+  'var JOURNEYS = [];',
+);
 
 /** A sign-off document as `ArtifactData get` saves it: its fields, nothing around them. */
 const stored = (
@@ -44,6 +52,13 @@ describe('the published page is read for the journeys it declares', () => {
     expect(() => journeysOfPage('<title>not an evidence page</title>')).toThrow(
       /declares 0 journey lists/,
     );
+  });
+
+  it('refuses a page whose journey list is empty, so an approval of nothing cannot cover it', () => {
+    expect(EMPTY_PAGE, 'the fixture list was emptied').toContain(
+      'var JOURNEYS = [];',
+    );
+    expect(() => journeysOfPage(EMPTY_PAGE)).toThrow(/declares no journeys/);
   });
 
   it('refuses a page that declares two, rather than choosing one', () => {
@@ -199,6 +214,11 @@ describe('run before a merge, it answers in its exit status', () => {
       [join(dir, 'missing.html'), doc],
       [page, fileOf('broken.json', '{')],
       [fileOf('not-a-page.html', '<title>not an evidence page</title>'), doc],
+      // An approval of nothing, on a page of nothing, is not a sign-off.
+      [
+        fileOf('no-journeys.html', EMPTY_PAGE),
+        fileOf('covers-nothing.json', JSON.stringify(stored('approved', []))),
+      ],
     ];
     for (const args of unreadable) {
       const result = run(...args);

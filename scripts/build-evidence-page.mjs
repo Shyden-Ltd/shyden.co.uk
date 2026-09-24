@@ -1173,6 +1173,11 @@ export const journeysOfPage = (html) => {
   const ids = JSON.parse(lists[0]?.[1] ?? '');
   if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string'))
     throw new Error('journeysOfPage: the journey list is not a list of ids');
+  // The builder refuses a run that captured nothing, so every evidence page
+  // declares a journey. Read as a page, an empty list would let an approval
+  // that covers nothing cover all of it and read as signed off.
+  if (ids.length === 0)
+    throw new Error('journeysOfPage: the page declares no journeys');
   return ids;
 };
 
