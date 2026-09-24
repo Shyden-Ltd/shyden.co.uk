@@ -80,12 +80,6 @@ const PAIRS: Pair[] = [
     where: 'body copy on a card',
   },
   {
-    fg: ['--ink'],
-    bg: ['--glass', '--bg'],
-    level: 'body',
-    where: 'a tool-card heading on the glass panel',
-  },
-  {
     fg: ['--ink-soft'],
     bg: ['--bg'],
     level: 'body',
@@ -96,12 +90,6 @@ const PAIRS: Pair[] = [
     bg: ['--surface'],
     level: 'body',
     where: 'secondary copy on a card',
-  },
-  {
-    fg: ['--ink-soft'],
-    bg: ['--glass', '--bg'],
-    level: 'body',
-    where: 'tool-card body copy on the glass panel',
   },
   {
     fg: ['--accent'],
@@ -118,9 +106,10 @@ const PAIRS: Pair[] = [
   },
   {
     fg: ['--accent'],
-    bg: ['--glass', '--bg'],
+    bg: ['--glass', '--surface'],
     level: 'body',
-    where: 'the tool-card open link on the glass panel',
+    where:
+      'the work-card badge: accent text on its glass fill, inside a card whose own background is the opaque --surface (WorkCard.astro). --glass is drawn nowhere else, and never under --ink or --ink-soft',
   },
   {
     fg: ['--accent-ink'],
@@ -176,6 +165,13 @@ const PAIRS: Pair[] = [
     bg: [ATMOSPHERE, '--bg'],
     level: 'body',
     where: 'link text and section kickers over the atmosphere',
+  },
+  {
+    fg: ['--accent-ink'],
+    bg: [ATMOSPHERE, '--bg'],
+    level: 'body',
+    where:
+      'link hover (a:hover in tokens.css), drawn wherever a link sits, so over the atmosphere too',
   },
   {
     fg: ['--border-strong', ATMOSPHERE, '--bg'],
