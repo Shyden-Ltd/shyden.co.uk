@@ -1,6 +1,6 @@
 # Light mode, PR 1 of 2: the groundwork (#142) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, inline in the main session (Native, the operator's choice on 2026-09-24). Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prepare the palette, its guards and every Playwright project for a second theme, without moving a single pixel.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Astro 5, CSS custom properties, Vitest (unit), Playwright (e2e and visual, in the pinned `linux/amd64` container), TypeScript.
 
-**Spec:** `docs/superpowers/specs/2026-09-23-light-mode-design.md`. This plan covers §11 step 1: §3.1 (renames, retirements, `--lift-shadow`), §3.3, §6.1, §6.2 (the declarations and their guard), §6.6 and §7 (all but the `CLAUDE.md` zero-JS line, which belongs to light mode). PR 2's plan, light mode itself, is written once this PR and #329 have merged, against the code they leave.
+**Spec:** `docs/superpowers/specs/2026-09-23-light-mode-design.md`. This plan covers §11 step 1: §3.1 (renames, retirements, `--lift-shadow`), §3.3, §6.1, §6.2 (the declarations and their guard), §6.6 and §7 (all but the `CLAUDE.md` zero-JS line, which belongs to light mode). PR 2's plan, light mode itself, is written once this PR has merged, against the code it leaves. #329 merged on 2026-09-24 (PRs #330 and #334).
 
 ## Global Constraints
 
@@ -32,7 +32,7 @@
 - **Every guard that discovers its population asserts it with `searched()`,** and every new or rewritten guard is watched failing, then passing (§6.8, CLAUDE.md).
 - **No new npm dependency** (CLAUDE.md).
 - **Commit messages and the PR body say `Refs #142`,** never a closing keyword beside an issue number (CLAUDE.md).
-- **Merge into `develop` with a merge commit,** and only after the operator signs off the evidence page (standing rule).
+- **Merge into `develop` with a merge commit, on a comprehensive self-review** (operator, 2026-09-24: _"just complete everything by yourself making sure you self-review everything comprehensively"_). That means every check green, read by name on the head being merged, the Task 9 mutation table, and a full read of the diff. No evidence-page sign-off gates this merge; the operator reviews the whole board at the end. Production stays the operator's.
 
 ## Review Focus
 
@@ -47,9 +47,9 @@
 ## Before you start
 
 - [ ] **#332 is merged** (PR #333). This plan builds on its `tests/unit/css-rules.ts` (`cssRules`, `colourLiterals`, `NAMED_COLOURS`) and edits its `tests/unit/literal-grounds.test.ts`. Check with `git ls-tree origin/develop tests/unit/css-rules.ts`, which must print one line.
-- [ ] **Bring the branch up to date.** Run `git switch 142-light-mode-beside-aurora && git fetch origin && git merge origin/develop`, a merge as the develop model uses. The branch already carries the spec and this plan.
+- [ ] **Bring the branch up to date.** Run `git switch 142-light-mode-beside-aurora && git fetch origin && git merge origin/develop`, a merge as the develop model uses. The branch already carries the spec and this plan. (Done on 2026-09-24 as `3356090`, bringing #330, #331, #332 and #334; run it again if `develop` has moved.)
 - [ ] **Take the baseline.** Run `npm run test:unit` and expect every test to pass. Note the file and test totals: every later run is compared with them.
-- [ ] **Find edits by content.** #329 (PR #330) may have merged too. It rewrites much of `LanguageSwitcher.astro` but keeps both `var(--surface, …)` fallbacks and the `ul` shadow this plan touches, so every edit here is found by its text, never by a line number.
+- [ ] **Find edits by content.** #329 (PR #330) has merged. It rewrote much of `LanguageSwitcher.astro` but kept both `var(--surface, …)` fallbacks and the `ul` shadow this plan touches, so every edit here is found by its text, never by a line number.
 - [ ] **Commit at every green gate, and always before mutating anything** (standing rule: `git checkout` restores `HEAD`).
 
 ## File map
@@ -61,6 +61,8 @@
 | `tests/unit/tokens.test.ts` (new) | Structural guards on `tokens.css`. PR 1: every declared token is read. PR 2 adds the dark-block guards here. |
 | `tests/unit/colour-literals.test.ts` (new) | The §6.6 guard and its allowlist. |
 | `tests/unit/css-rules.ts` and `.test.ts` | Gains `onPaper` (one definition of paper) and `codeColourLiterals`. |
+| `tests/unit/source-text.ts` | Gains `astroCode`, the half of `codeWithoutComments` that reads an `.astro` file outside its `<style>` blocks, so the colour guard strips comments through the one home. |
+| `tests/unit/wcag.test.ts` | Loses the test that pinned the pre-Aurora accent to the `CLAUDE.md` line Task 2 retires. |
 | `tests/unit/literal-grounds.test.ts` | Takes paper from `onPaper`. |
 | `tests/unit/contrast.test.ts` | The model moves out; the atmosphere is scored by subset; pairs follow the painted ground; `.actions` is classified. |
 | `tests/unit/browser-matrix.test.ts` | The colour-scheme guard, beside the other facts about the configs. |
@@ -257,7 +259,7 @@ describe('worstContrast', () => {
   - Expected: `Tests  10 failed (10)`, each with `not implemented: …`.
   - If a test passes against the stubs, it asserts nothing: rewrite it before going on.
 
-- [ ] **Step 4: Implement `tests/palette.ts`,** replacing the stubs whole. `flatten` moves verbatim from `contrast.test.ts`, doc comment included:
+- [ ] **Step 4: Implement `tests/palette.ts`,** replacing the stubs whole. `flatten` moves from `contrast.test.ts` with its doc comment, changed in one place: `from` widens from `Map` to `ReadonlyMap`, which every caller's `Map` satisfies:
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -433,7 +435,7 @@ export const worstContrast = (
 
 - [ ] **Step 6: Point `contrast.test.ts` at the model.**
   - Delete its local `TOKENS_FILE`, `tokens()` and `flatten` (with their doc comments).
-  - Replace the imports:
+  - Replace its three local imports, from `'../source-files'`, `'./source-text'` and `'../wcag'`, with the four below. Keep the `vitest` and `node:fs` imports: `declarationsMatching` still reads files with `readFileSync`.
 
     ```ts
     import { filesUnder, nonEmpty, searched } from '../source-files';
@@ -460,9 +462,10 @@ Refs #142"
 ### Task 2: Positional atmosphere names, scored over every subset in paint order
 
 **Files:**
-- Modify: `src/styles/tokens.css` (the four atmosphere tokens, `body::before`, the print block, two comments)
-- Modify: `tests/unit/contrast.test.ts` (`ATMOSPHERE`, `PAIRS`, the pair loop, the classification test)
+- Modify: `src/styles/tokens.css` (the four atmosphere tokens, `body::before`, the print block, two comments: the atmosphere's and the control boundaries')
+- Modify: `tests/unit/contrast.test.ts` (`ATMOSPHERE`, `PAIRS` and its doc comment, the pair loop, the classification test)
 - Modify: `CLAUDE.md` (the "Accent `#0A7D66`" line)
+- Modify: `tests/unit/wcag.test.ts` (the test that pins that line)
 
 **Interfaces:**
 - Consumes: `ATMOSPHERE`, `atmosphereLayers`, `worstContrast`, `rootTokens`, `tokensCss` (Task 1).
@@ -489,10 +492,11 @@ Refs #142"
 
 - [ ] **Step 3: Rename the tokens in `tokens.css`.** Each old name appears exactly three times: its declaration on `:root`, its `var()` in `body::before`, and its `transparent` line in the print block.
   - Replace each name as a whole word: `--aurora-mint` → `--pool-top-left`, `--aurora-violet` → `--pool-top-right`, `--aurora-deep` → `--pool-foot`, `--aurora-shaft` → `--shaft`.
-  - Then confirm with `git grep -n -e '--aurora-' -- src tests`. Expected: no output, and exit 1. Put a known positive beside it: `git grep -c -e '--pool-foot' -- src/styles/tokens.css` must print `3`.
+  - Then confirm with `git grep -n -e '--aurora-' -- src`. Expected: no output, and exit 1. Put a known positive beside it: `git grep -c -e '--pool-foot' -- src/styles/tokens.css` must print `3`. The tests are checked at the end of Step 4: until then, `contrast.test.ts`'s local `ATMOSPHERE` array still names the four old tokens.
 
 - [ ] **Step 4: Score by subset in `contrast.test.ts`.**
   - Delete the local `ATMOSPHERE` array and its doc comment; the placeholder now comes from `../palette`.
+  - In the doc comment above `PAIRS`, "a pair drawn over it names `ATMOSPHERE`, above, as its ground" becomes "a pair drawn over it names the `ATMOSPHERE` placeholder from `../palette` in its stack". Nothing named `ATMOSPHERE` sits above it any more.
   - Change the four atmosphere pairs:
 
     ```ts
@@ -507,7 +511,7 @@ Refs #142"
         bg: [ATMOSPHERE, '--bg'],
         level: 'body',
         where:
-          'secondary copy over the atmosphere — the knife edge. At top-left .10 / top-right .14 / foot .18 this scored 4.48:1, a failure by 0.02 that no single layer shows',
+          'secondary copy over the atmosphere, the lowest-scoring text pair drawn over it',
       },
       {
         fg: ['--accent'],
@@ -559,7 +563,10 @@ Refs #142"
         );
     ```
 
-- [ ] **Step 5: Correct the atmosphere comment in `tokens.css`.** Its opening already says "three radial stops and a white shaft, painted on body::before". Replace the remainder, from "Text IS read over these" through "These values leave it at 5.11:1.":
+  - Now confirm the rename reached the tests: `git grep -n -e '--aurora-' -- src tests` prints nothing and exits 1.
+
+- [ ] **Step 5: Correct the two `tokens.css` comments that carry the old stack's figures.**
+  - Replace the whole comment above the four atmosphere tokens, from `/* The Aurora atmosphere:` through `These values leave it at 5.11:1. */`, with:
 
 ```css
   /* The atmosphere: three radial pools and a white shaft, painted on
@@ -571,11 +578,21 @@ Refs #142"
      the worst.
 
      The knife edge is --ink-soft: 5.22:1 at its worst subset, which is all
-     four layers at once. At top-left .10 / top-right .14 / foot .18 it
-     scored 4.48:1, a FAILURE by 0.02 that no layer shows on its own. */
+     four layers at once. The hand-written stack this replaced put the
+     shaft on top, where the browser never paints it, and read 5.05:1. */
 ```
 
-  Expected figures, from Task 1's model on today's values, with the worst subset all four layers in every case: `--ink` 11.53, `--ink-soft` 5.22, `--accent` 9.31 and `--border-strong` 3.44. The old hand-written stack read 5.05 for `--ink-soft`.
+  - In the comment above `--border` and `--border-strong`, replace the text from "The atmosphere lightens the ground beneath a control" to the end of the comment with:
+
+```css
+     The atmosphere lightens the ground beneath a control, and at .35 the
+     boundary drops to 2.96:1 there: a 1.4.11 failure introduced by a change
+     three declarations away that touched no border at all. At .40 it is
+     3.44:1 over the atmosphere at its worst subset, 3.72:1 on --bg and
+     3.79:1 on --surface. */
+```
+
+  Expected figures, from Task 1's model on today's values, with the worst subset all four layers in every case: `--ink` 11.53, `--ink-soft` 5.22, `--accent` 9.31 and `--border-strong` 3.44 (2.96 at alpha .35). The old hand-written stack read 5.05 for `--ink-soft` and 3.38 for `--border-strong`. The retired comment's knife edge is not carried over: at "top-left .10 / top-right .14 / foot .18", `--ink-soft` scores 4.63:1 in paint order, a pass, so the 4.48:1 failure it recorded belonged to the old stack alone. The flat figures in that comment's first paragraph (1.27:1, 3.10:1, 3.17:1) are unchanged by the stack and stay.
 
 - [ ] **Step 6: Correct `CLAUDE.md`.** The line `- **Accent `#0A7D66`** is the AA floor — never lighten it without re-checking contrast.` predates Aurora; the accent is `#38f5c8` now, and #142 adds a second. Replace it with:
 
@@ -583,18 +600,22 @@ Refs #142"
 - **The palette's AA floor is computed, not remembered.** `tests/unit/contrast.test.ts` scores every token pair the site paints, over the worst subset of the page atmosphere, and fails any pair under its WCAG level. Change a colour and the suite says whether it still clears; no hex value in this file is the floor.
 ```
 
+  `tests/unit/wcag.test.ts` › _holds the accent at the AA floor this repo pinned it to_ quotes the retired line and pins `#0A7D66` on white, "a literal, from the brief". With the line gone it pins a brief that no longer exists, for a colour the site no longer paints, so delete that test. Its neighbours keep `[10, 125, 102]` as a plain fixture, which is all they need. Record the deletion and its reason in the commit body.
+
 - [ ] **Step 7: Run the whole unit suite and watch it pass.**
   - Run: `npm run test:unit`
-  - Expected: all green, and the total equals the baseline plus 10 (Task 1) plus 1.
+  - Expected: all green, and the total equals the baseline plus 10 (Task 1) plus 1 (the pin) minus 1 (the retired accent test).
 
 - [ ] **Step 8: Commit.**
 
 ```bash
-git add src/styles/tokens.css tests/unit/contrast.test.ts CLAUDE.md
+git add src/styles/tokens.css tests/unit/contrast.test.ts tests/unit/wcag.test.ts CLAUDE.md
 git commit -m "test(unit): score the atmosphere over every subset, in the order it is painted
 
 The atmosphere tokens are named by position, and the stack is derived from
 body::before. The worst case is taken over every subset of its layers.
+CLAUDE.md's pre-Aurora accent line goes, and with it the wcag test that
+pinned #0A7D66 to it: its brief no longer exists.
 
 Refs #142"
 ```
@@ -710,14 +731,7 @@ Refs #142"
   - Run: `npx vitest run tests/unit/contrast.test.ts`
   - Expected: PASS.
 
-- [ ] **Step 4: Watch the new pair fail on its own.** The value `#728fac` clears every other `--accent-ink` pair: 5.99 on `--bg`, 5.79 on `--surface`, and 5.61 under `--on-accent`. It fails only over the atmosphere, at 3.86.
-  - In `tokens.css`, set `--accent-ink: #728fac;`.
-  - Run: `npx vitest run tests/unit/contrast.test.ts`
-  - Expected: exactly one failure, naming `--accent-ink on (the atmosphere) over --bg` at 3.86:1 over all four layers.
-  - Restore the file with `git checkout -- src/styles/tokens.css`.
-  - Run the file again and expect PASS.
-
-- [ ] **Step 5: Commit.**
+- [ ] **Step 4: Commit,** before anything is mutated (Before you start):
 
 ```bash
 git add tests/unit/contrast.test.ts
@@ -725,6 +739,13 @@ git commit -m "test(unit): contrast pairs follow the ground each colour is paint
 
 Refs #142"
 ```
+
+- [ ] **Step 5: Watch the new pair fail on its own.** The value `#728fac` clears every other `--accent-ink` pair: 5.99 on `--bg`, 5.79 on `--surface`, and 5.61 under `--on-accent`. It fails only over the atmosphere, at 3.86.
+  - In `tokens.css`, set `--accent-ink: #728fac;`.
+  - Run: `npx vitest run tests/unit/contrast.test.ts`
+  - Expected: exactly one failure, naming `--accent-ink on (the atmosphere) over --bg` at 3.86:1 over all four layers.
+  - Restore the file with `git checkout HEAD -- src/styles/tokens.css`, then confirm `git status --short` prints nothing.
+  - Run the file again and expect PASS.
 
 ---
 
@@ -830,9 +851,9 @@ describe('codeColourLiterals', () => {
   it('finds hex and colour functions anywhere in code', () => {
     expect(
       codeColourLiterals(
-        "const tile = '#0f0d15';\nconst c = `rgb(${r}, ${g}, ${b})`;\nfill=\"#FF0\"\n'hsl(214 92% 88%)' 'oklch(70% 0.1 200)'",
+        "const tile = '#1a2b3c';\nconst c = `rgb(${r}, ${g}, ${b})`;\nfill=\"#FF0\"\n'hsl(214 92% 88%)' 'oklch(70% 0.1 200)'",
       ),
-    ).toEqual(['#0f0d15', '#FF0', 'rgb(${r}, ${g}, ${b})', 'hsl(214 92% 88%)', 'oklch(70% 0.1 200)']);
+    ).toEqual(['#1a2b3c', '#FF0', 'rgb(${r}, ${g}, ${b})', 'hsl(214 92% 88%)', 'oklch(70% 0.1 200)']);
   });
 
   it('finds a named colour only as a whole string or in a style attribute', () => {
@@ -926,26 +947,36 @@ Refs #142"
 
 **Files:**
 - Create: `tests/unit/colour-literals.test.ts`
+- Modify: `tests/unit/source-text.ts` (export `astroCode`)
 - Modify: `src/components/LanguageSwitcher.astro` (two `var(--surface, …)` fallbacks)
 - Modify: `src/components/pages/ClassroomGroupsPage.astro` (the `.actions` fallbacks; the comment near "0.65, not the 0.55")
 - Modify: `tests/unit/contrast.test.ts` (`DECORATIVE_SELECTORS` gains `.actions`)
 
 **Interfaces:**
-- Consumes: `cssRules`, `colourLiterals`, `onPaper`, `codeColourLiterals` (#332, Task 6); `stylesheetCss`, `withoutAstroComments`, `withoutAstroStyles`, `withoutTsComments` (`source-text.ts`); `TOKENS_FILE` (Task 1).
-- Produces: the allowlist PR 2 extends.
+- Consumes: `cssRules`, `colourLiterals`, `onPaper`, `codeColourLiterals` (#332, Task 6); `stylesheetCss`, `codeWithoutComments` (`source-text.ts`); `TOKENS_FILE` (Task 1).
+- Produces: `astroCode(text: string): string` in `source-text.ts`, and the allowlist PR 2 extends.
 
-- [ ] **Step 1: Write the guard** in `tests/unit/colour-literals.test.ts`. Its allowlist holds today's legitimate literals, so the only findings left are the dead fallbacks:
+- [ ] **Step 1: Write the guard.**
+  - First give `source-text.ts` the half of `codeWithoutComments` that the guard needs, so that comments are stripped through the one home rather than a second composition of it. Add, directly above `codeWithoutComments`:
+
+    ```ts
+    /**
+     * An `.astro` file's frontmatter, template and scripts, with every `<style>`
+     * blanked and every comment stripped: the half of `codeWithoutComments` that
+     * is not CSS, for a guard that reads the CSS itself by rule.
+     */
+    export const astroCode = (text: string): string =>
+      withoutAstroComments(withoutAstroStyles(text));
+    ```
+
+    Then, in `codeWithoutComments`, `withoutAstroComments(withoutAstroStyles(text)),` becomes `astroCode(text),`.
+  - Then write `tests/unit/colour-literals.test.ts`. Its allowlist holds today's legitimate literals, so the only findings left are the dead fallbacks:
 
 ```ts
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, searched } from '../source-files';
-import {
-  stylesheetCss,
-  withoutAstroComments,
-  withoutAstroStyles,
-  withoutTsComments,
-} from './source-text';
+import { astroCode, codeWithoutComments, stylesheetCss } from './source-text';
 import {
   codeColourLiterals,
   colourLiterals,
@@ -966,10 +997,9 @@ import { TOKENS_FILE } from '../palette';
 
 type Literal = { file: string; rule?: readonly string[]; literal: string };
 
+/** A file's code outside its CSS: an `.astro` file's non-style half, or all of a `.ts` file. */
 const codeOf = (file: string, text: string): string =>
-  file.endsWith('.astro')
-    ? withoutAstroComments(withoutAstroStyles(text))
-    : withoutTsComments(text);
+  file.endsWith('.astro') ? astroCode(text) : codeWithoutComments(file, text);
 
 const literalsIn = (file: string, text: string): Literal[] => [
   ...(file.endsWith('.ts')
@@ -1110,11 +1140,11 @@ describe('no colour a theme cannot see (#142)', () => {
   - Run: `npx vitest run tests/unit/colour-literals.test.ts`
   - Expected: the first test FAILS, with exactly these four refusals:
     - `src/components/LanguageSwitcher.astro :: summary:hover, summary:focus-visible writes rgb(0 0 0 / 0.04)`
-    - `src/components/LanguageSwitcher.astro :: li a:hover, li a:focus-visible writes rgb(0 0 0 / 0.06)`
+    - `src/components/LanguageSwitcher.astro :: a.entry:hover, a.entry:focus-visible writes rgb(0 0 0 / 0.06)`
     - `src/components/pages/ClassroomGroupsPage.astro :: @media screen { .actions writes #f7f6f2`
     - `src/components/pages/ClassroomGroupsPage.astro :: @media screen { .actions writes #e7e4dc`
   - The other two tests PASS.
-  - If #330 has merged, the switcher's selectors may read differently. The guard prints them: use what it prints.
+  - Measured on 2026-09-24, on `develop` after #330 (whose selector for the list entries is `a.entry`), with this guard run before Task 5: these four, plus `PhoneFrame.astro :: .frame writes rgb(0 0 0 / 0.55)`, which Task 5 has already removed by the time this step runs.
   - Any refusal beyond these four is a finding. Classify it with a reason, or remove it, and record it in the PR.
 
 - [ ] **Step 3: Remove the dead fallbacks.** Every token is always defined, so the fallback never applies (§7).
@@ -1147,7 +1177,7 @@ describe('no colour a theme cannot see (#142)', () => {
      the real composite in every run.
 ```
 
-  Keep the sentence that follows ("Guarded by tests/e2e/classroom-groups.spec.ts's …") as it is.
+  The sentence that follows starts on the replaced paragraph's last line ("…sitting on it. Guarded by"). Keep it: the block's last line becomes `     the real composite in every run. Guarded by`, and the lines after it ("tests/e2e/classroom-groups.spec.ts's …" to the end of the comment) stay as they are.
 
 - [ ] **Step 7: Run the whole unit suite and watch it pass.**
   - Run: `npm run test:unit`
@@ -1156,7 +1186,7 @@ describe('no colour a theme cannot see (#142)', () => {
 - [ ] **Step 8: Commit.**
 
 ```bash
-git add tests/unit/colour-literals.test.ts tests/unit/contrast.test.ts src/components/LanguageSwitcher.astro src/components/pages/ClassroomGroupsPage.astro
+git add tests/unit/colour-literals.test.ts tests/unit/source-text.ts tests/unit/contrast.test.ts src/components/LanguageSwitcher.astro src/components/pages/ClassroomGroupsPage.astro
 git commit -m "test(unit): no colour a theme cannot see
 
 Every colour literal outside tokens.css is refused unless it is allowlisted
@@ -1180,7 +1210,7 @@ Refs #142"
 
 - [ ] **Step 1: Write the failing guard** at the end of `browser-matrix.test.ts`.
   - Add `use: { colorScheme?: unknown };` to the local `ResolvedProject` type.
-  - Import `readdirSync` from `node:fs`.
+  - Import `readdirSync` from `node:fs`, and add `nonEmpty` to the import from `'../source-files'`: `one-home.test.ts` refuses a `readdirSync(` that `nonEmpty(` does not wrap on the spot (#84).
   - Add `VISUAL_PROJECT` and `VISUAL_MEASURE_PROJECT` to the import from `'../../playwright.config'` if either is missing.
   - Then add:
 
@@ -1230,7 +1260,9 @@ describe('every project declares its colour scheme (#142)', () => {
   });
 
   it('runs every resolved project light or dark, never the default', async () => {
-    const configs = readdirSync('.').filter((name) => CONFIG.test(name)).sort();
+    const configs = nonEmpty(readdirSync('.'), 'entries at the repository root')
+      .filter((name) => CONFIG.test(name))
+      .sort();
     const projects: string[] = [];
     const undeclared: string[] = [];
     for (const file of configs) {
@@ -1255,7 +1287,7 @@ describe('every project declares its colour scheme (#142)', () => {
 - [ ] **Step 2: Run it and watch it fail.**
   - Run: `npx vitest run tests/unit/browser-matrix.test.ts -t "colour scheme"`
   - Expected: FAIL, with every project listed as `undefined`: the 8 of `playwright.config.ts` (content, the five engines, visual, visual-measure), `playwright.dev.config.ts › chromium`, `playwright.prod.config.ts › chromium`, and the device config's `android-preflight` and `android-chrome`.
-  - If `project.use` is itself undefined, Playwright's resolver is not merging the top-level `use` as expected. Read `FullConfigInternal` in `node_modules/playwright/lib/common/config.js` before changing anything.
+  - Measured on 2026-09-24 with this guard run against `develop`: exactly those 12, each `undefined`, so the resolver does merge each project's `use` over the top-level one. Were `project.use` itself undefined, read `FullConfigInternal`, bundled in `node_modules/playwright/lib/common/index.js`, before changing anything.
 
 - [ ] **Step 3: Declare `dark` in each config's top-level `use`,** so every project, present or future, inherits it:
   - `playwright.config.ts`: in `use: { baseURL: 'http://localhost:4321', …`, add `colorScheme: 'dark',` after `baseURL`, with the comment `// #142: the palette every existing test was written against. A light-theme run declares light itself.`
@@ -1341,15 +1373,15 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 | id | mutation | must turn red |
 | --- | --- | --- |
 | P1 | `atmosphereLayers` reverses the list | *lists the layers top-first*; *named by position* |
-| P2 | `worstContrast` scores only `[layers]`, not `subsets(layers)` | *finds the worst subset*; *puts the same subset under the foreground* |
-| P3 | `worstContrast` expands the placeholder in `bg` only | *puts the same subset under the foreground and its ground* |
-| P4 | `rootTokens` takes the first `:root` chain at any depth | *reads the bare :root block* |
+| P2 | `worstContrast`: `named ? subsets(layers) : [[]]` becomes `named ? [layers] : [[]]` | *finds the worst subset* only. The border fixture has one layer, so its only subset is already its worst, and Aurora's worst is every layer at once: this fixture is the one thing that sees the branch |
+| P3 | `worstContrast`: `flatten(expand(fg), from)` becomes `flatten(fg.filter((layer) => layer !== ATMOSPHERE), from)`, the foreground scored over no layer | *puts the same subset under the foreground and its ground*; *every declared pair clears* (the control-boundary pair, at 2.40:1) |
+| P4 | `rootTokens`: `topLevel(css, ':root')` becomes `cssRules(css).filter(({ chain }) => chain.at(-1) === ':root').slice(0, 1)`, the first `:root` at any depth | *reads the bare :root block*; *refuses a stylesheet with no bare :root, or with two* |
 | P5 | `atmosphereLayers` accepts a layer with no token (`tokens.length > 1`) | *refuses a layer it could not score* |
-| P6 | `tokens.css`: a `body::before` layer written as `rgb(255 0 0 / 0.1)` | every contrast test reading the atmosphere (the derivation throws) |
+| P6 | `tokens.css`: a fifth `body::before` layer, `linear-gradient(rgb(255 0 0 / 0.1), transparent)`, after the shaft's | *named by position*; *every declared pair clears*; *every colour token is classified*. Each derives the layers, and the derivation throws |
 | T1 | `tokens.css`: `--unused: #123456;` added to `:root` | *declares no token that nothing reads*; *every colour token is classified* |
 | T2 | `PhoneFrame.astro`: the shadow back to `rgb(0 0 0 / 0.55)` | *declares no token that nothing reads* (`--lift-shadow`); *writes no colour literal* |
 | C1 | `tokens.css`: `--accent-ink: #728fac` | *every declared pair clears* (the link-hover pair only) |
-| C2 | the `--accent` glass pair's ground back to `--bg`, and `--glass` set to `rgb(255 255 255 / 0.2)` | *every declared pair clears* (the glass pair) |
+| C2 | `tokens.css`: `--glass: rgb(255 255 255 / 0.055)` becomes `rgb(255 255 255 / 0.35)` | *every declared pair clears* (the badge pair, at 4.40:1 over `--surface`). Over `--bg`, the ground the old pair named, the same glass reads 4.66:1 and passes: that gap is why the pair names the ground it is drawn on |
 | L1 | `ClassroomGroupsPage.astro`: `color: #fff;` added to `.tool-section` | *writes no colour literal* |
 | L2 | an allowlist entry for `#abcdef` in `.error` | *allows nothing the reader cannot find* |
 | L3 | `literalsIn` drops the `onPaper` filter | *writes no colour literal* (the print rules); *reads CSS by rule and skips paper* |
@@ -1357,7 +1389,7 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 | L5 | `codeColourLiterals` drops `NAMED_STRING` | *finds a named colour only as a whole string*; *reads CSS by rule* |
 | L6 | `codeColourLiterals` drops the style-attribute branch | *finds a named colour only as a whole string*; *reads CSS by rule* |
 | L7 | `codeColourLiterals`' `HEX` loses `&` from its look-behind | *never reads a character reference* |
-| L8 | `LanguageSwitcher.astro`: a `var(--surface, rgb(0 0 0 / 0.04))` fallback restored | *writes no colour literal* |
+| L8 | `LanguageSwitcher.astro`: `summary:focus-visible {\n    background: var(--surface);` gets back its `rgb(0 0 0 / 0.04)` fallback. The anchor carries its selector because the bare declaration occurs twice after Task 7 | *writes no colour literal* |
 | S1 | `playwright.dev.config.ts`: `colorScheme` removed | *runs every resolved project light or dark* (`dev › chromium`) |
 | S2 | a new root file `playwright.x.config.ts` with `export default { projects: [{ name: 'x' }] }` | the same test (`x`). Delete the file afterwards; the harness restores tracked files only. |
 | S3 | `playwright.config.ts`: `colorScheme: null` | the same test (all eight main projects) |
@@ -1375,32 +1407,73 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
   - Run: `npm run test:visual`. It runs the pinned `linux/amd64` image; stop any other container and background job first.
   - Expected: 12 passed, and `git status --short tests/e2e/__screenshots__` prints nothing.
 
-- [ ] **Step 2: Run the palette-reading browser specs** as the evidence run.
-  - Run: `EVIDENCE_DIR=<dir> npm run test:e2e -- tests/e2e/palette-controls.spec.ts tests/e2e/print-legibility.spec.ts tests/e2e/thai-typography.spec.ts`
+- [ ] **Step 2: Run the palette-reading browser specs.**
+  - Run: `npm run test:e2e -- tests/e2e/palette-controls.spec.ts tests/e2e/print-legibility.spec.ts tests/e2e/thai-typography.spec.ts`
   - Expected: every test green in every engine.
 
-- [ ] **Step 3: Push and open the PR.**
+- [ ] **Step 3: Run the deployed-site suites against a local build.** Task 8 changed the configs they run under, and no pull request check runs them: a stale fact there fails the deploy after the merge instead (#330, run 35948503612).
+  - Build, then `npx astro preview --port 4399` (it detaches itself).
+  - Run: `WEB_BASE_URL=http://127.0.0.1:4399 npx playwright test -c playwright.dev.config.ts`. Expected: every test passes, with no password needed.
+  - Run: `WEB_BASE_URL=http://127.0.0.1:4399 npx playwright test -c playwright.prod.config.ts --list` and `npx playwright test -c playwright.device.config.ts --list`. Expected: each lists its tests and exits 0. The device suite needs the phones, so it is listed, not run.
+  - Stop the preview with `npx astro preview stop`.
+  - Grep `tests/dev`, `tests/prod` and `tests/device` for every fact this diff's assertions changed (the renamed and retired tokens, `colorScheme`). Expected: no hit, since the diff changes no e2e assertion.
+
+- [ ] **Step 4: Push and open the PR.**
   - Run `npx prettier --write HANDOVER.md`, then `git push -u origin 142-light-mode-beside-aurora`.
   - Open a PR into `develop` titled "Light mode, groundwork: the palette and its guards get ready for a second theme (#142)".
-  - The body carries `Refs #142`, the mutation table with its results, the contrast figures from Task 2, and the list of what the allowlist excuses and why. Check it with `node scripts/closing-keywords.mjs <file> "this pull request body"`.
+  - The body carries `Refs #142`, the mutation table with its results, the contrast figures from Task 2, the visual suite's "12 compared, 0 written", the Step 3 results, and the list of what the allowlist excuses and why. Check it with `node scripts/closing-keywords.mjs <file> "this pull request body"`.
 
-- [ ] **Step 4: Wait for CI by name,** and compare the run's SHA with `gh pr view <n> --json headRefOid`. Every check must be green: `build-and-test`, `visual` and the eight e2e shards.
+- [ ] **Step 5: Wait for CI by name,** and compare the run's SHA with `gh pr view <n> --json headRefOid`, fetched to a file rather than typed. All twelve checks must be green on that head: `checks`, `closing-keywords`, `e2e shard 1 of 8` to `e2e shard 8 of 8`, `build-and-test` and `visual`.
 
-- [ ] **Step 5: Build and publish the evidence page,** the procedure #332 used. Call the evidence folder `<dir>` and the page folder `<p>`.
-  1. `node scripts/build-evidence-page.mjs --plan --evidence <dir> --out <p>/index.html` lists the recordings to upload.
-  2. Publish a placeholder `<p>/index.html` with capabilities `{"db": {}, "assets": {}}`: the uploads need the artifact's URL.
-  3. Copy the planned recordings, in plan order, to `test-results/u142/NN.webm`. The folder is gitignored, and the short paths keep each batch small.
-  4. Upload them with the `Artifact` tool: `asset: true`, `file_paths`, at most 25 per call. Keep each call's result: its ids are the second copy.
-  5. Take `Artifact` `list` `scope: "assets"` and save it verbatim to `<p>/listing.txt`.
-  6. Run `node scripts/upload-evidence-assets.mjs --plan <p>/index.html.uploads.json --listing <p>/listing.txt --out <p>/assets.json`, which pairs by sha256.
-  7. Cross-check that the upload results and the listing agree id by id, and that each listing line's bytes and sha256 match its file on disk.
-  8. Write the content file with the head, the mutation table, the contrast figures and the visual suite's "12 compared, 0 written".
-  9. Run `node scripts/build-evidence-page.mjs --evidence <dir> --content <p>/content.json --out <p>/index.html --assets <p>/assets.json`.
-  10. Republish the same path. The capabilities carry forward.
-  11. Read the `signoff` collection once, and expect it empty.
-
-- [ ] **Step 6: Merge only on the operator's sign-off.**
-  - Read `signoff/ticket-142` (`grep -o -E "var DOC = [^;]*"` on the built page confirms the key).
+- [ ] **Step 6: Self-review, then merge.**
+  - Read the whole diff against `develop` once more, with the mutation log beside it.
   - Then `gh pr merge <n> --merge --match-head-commit "$(cat <file holding the head>)"`.
-  - Watch `deploy-dev.yml`, then read `dev-verified` off the merge commit and every job by name.
-  - #142 stays open for PR 2.
+  - Watch `deploy-dev.yml`, then read `dev-verified` off the merge commit and every job by name: a skipped verify job still concludes `success` (#157).
+  - Post the results on #142 with `Refs`. #142 stays open for PR 2, and its board card stays In Progress.
+
+---
+
+## Review log
+
+Each pass runs every mechanical check, then reads the whole plan (operator, 2026-09-24: _"review the plan on a /loop until there's no findings, then approve it"_). The loop ends on a pass that finds nothing.
+
+### Pass 1, 2026-09-24: 21 findings, all fixed
+
+**Read:** the whole plan, and the spec's §1 to §11.
+
+**Mechanical checks:**
+
+- **Spec coverage.** Every PR 1 item of §3.1, §3.3, §6.1, §6.2, §6.6 and §7 maps to a task, and each §6.8 row for this PR's guards maps to a Task 9 mutation.
+- **The plan's code, run.** The plan's four new files and three edits were written into the tree and the whole unit suite run: 2408 tests, 5 failing. Three were the new guards, failing exactly where the plan predicts: the three unread tokens, the twelve undeclared projects, and the dead fallbacks. The other two were meta-guards refusing the plan's own code (findings 12 and 16).
+- **Types.** `npm run typecheck` on the same tree: 0 errors, 0 warnings, 0 hints. A planted error in `tests/` was reported, so `tests/` is in its scope.
+- **Figures.** Every ratio in the plan was recomputed with an independent replica of `tests/wcag.ts`, including its rounding in `over`.
+- **Paths, anchors and commands.** Each was checked on disk. The CI check names were read off PR #336.
+- **Mutations.** Each prediction was worked through the fixtures and the real tree.
+
+**Findings:**
+
+1. The merge gate and Task 10 still waited on an evidence-page sign-off, which the operator suspended on 2026-09-24. The execution line recommended subagents where the operator chose Native.
+2. "Before you start" called #330 a maybe. It has merged, with #331, #332 and #334, and the branch now carries them (`3356090`).
+3. Task 1 Step 6's import block dropped `vitest` and `node:fs`, but `declarationsMatching` still calls `readFileSync`.
+4. Task 1 Step 4 called `flatten`'s move verbatim, but its `from` widens to `ReadonlyMap`.
+5. Task 2 Step 3's `git grep -- src tests` could not print nothing: `contrast.test.ts`'s local `ATMOSPHERE` names the old tokens until Step 4.
+6. Task 2 Step 5 said to replace "the remainder" of a comment with a block that is a whole comment.
+7. Task 2 kept the 4.48:1 knife edge, in a `where` and in the new comment. In paint order those alphas score 4.63:1, a pass: the figure belonged to the old stack.
+8. The border comment's figures came from the old stack too (2.95 and 3.39), and its 3.73 measures 3.72. The Files line promised two comments, and the steps corrected one.
+9. The doc comment above `PAIRS` would still point at an `ATMOSPHERE` "above".
+10. `wcag.test.ts` pins `#0A7D66` to the `CLAUDE.md` line that Task 2 retires.
+11. Task 4 mutated `tokens.css` with its own edit uncommitted, against the plan's own rule.
+12. Task 6's fixture spelled `#0f0d15`, ShyTalk's tile colour, which `shytalk-brand.test.ts` refuses outside `shytalk-brand.ts` (measured).
+13. Task 7 composed its own comment stripping for code rather than going through `codeWithoutComments`, and for `.ts` it skipped the home's CSS pass.
+14. Task 7 Step 2 predicted `li a:hover`, which #330 made `a.entry:hover` (measured).
+15. Task 7 Step 6 left the implementer to guess where "Guarded by" goes. It shares the replaced paragraph's last line.
+16. Task 8's `readdirSync('.')` was unwrapped, which `one-home.test.ts` refuses (measured).
+17. Task 8 named `lib/common/config.js`, which does not exist. `FullConfigInternal` is bundled in `lib/common/index.js`.
+18. Task 9 had four wrong rows and two vague ones:
+    - P2, P3 and P4 predicted the wrong set of tests;
+    - P6 did not say what it adds;
+    - C2 as written stays green, because the glass pair reads 7.82:1 at 0.2;
+    - L8's anchor matches twice after Task 7.
+19. Task 10 named ten of the twelve checks, missing `checks` and `closing-keywords`.
+20. Task 8 changes the configs the deployed-site suites run under, and no pull request check runs those suites, yet Task 10 did not run them.
+21. The File map missed `source-text.ts` and `wcag.test.ts`.
