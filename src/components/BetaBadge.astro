@@ -30,7 +30,10 @@ const t = getSiteStrings(lang);
 
 <span class="beta" data-beta>
   {BETA_BADGE}
-  <span class="sr">{` — ${t.language.betaLabel}`}</span>
+  {/* `lang` because the label is written in the PAGE's language, and inside
+      the switcher's list it sits in another language's entry, whose own
+      `lang` would otherwise hand these words to that language's voice. */}
+  <span class="sr" lang={lang}>{` — ${t.language.betaLabel}`}</span>
 </span>
 
 <style>
