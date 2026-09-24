@@ -247,7 +247,11 @@ describe('a ground written as a literal carries its own ink (#332)', () => {
         '.n button { background: var(--accent); color: var(--on-accent); }\n' +
         '.n[hidden] { color: var(--ink); }\n' +
         '.n-note p { color: var(--ink); }\n' +
-        '@media print {\n  .n p { color: var(--ink); }\n}\n',
+        '@media print {\n  .n p { color: var(--ink); }\n}\n' +
+        // A ground painted on paper only: on screen `.q` paints nothing
+        // literal, so the screen text inside it is not on that cream.
+        '@media print {\n  .q { background: #fff; }\n}\n' +
+        '.q p { color: var(--ink); }\n',
     );
     expect(
       searched(leftAlone.map(describeInkInside), {
