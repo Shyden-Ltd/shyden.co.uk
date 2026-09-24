@@ -21,7 +21,7 @@ export default defineConfig({
     url: 'http://localhost:4321',
     reuseExistingServer: !!process.env.PW_REUSE_SERVER,
   },
-  use: { baseURL: 'http://localhost:4321' },
+  use: { baseURL: 'http://localhost:4321', colorScheme: 'dark' },
   // Never write a baseline during a run (#194). Playwright's default,
   // 'missing', writes the PNG before it fails, which is how a device run left
   // eight untracked `-android-chrome-darwin` files in the repo. Baselines
