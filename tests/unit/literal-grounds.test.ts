@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
-import { colourLiterals, cssRules, type CssDeclaration } from './css-rules';
+import {
+  colourLiterals,
+  cssRules,
+  onPaper,
+  type CssDeclaration,
+} from './css-rules';
 
 /**
  * A ground written as a literal carries its own ink (#332).
@@ -153,10 +158,7 @@ const EXEMPT: {
   {
     reason:
       'paper: the print block in tokens.css fixes every token, so on paper the ink cannot move away from a literal ground',
-    covers: (chain) =>
-      chain.some((header) =>
-        /^@media (?:only )?print(?: and .*)?$/i.test(header),
-      ),
+    covers: onPaper,
   },
   {
     reason:
