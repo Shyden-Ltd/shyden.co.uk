@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import { parseSource } from './ast';
+import { cssRules } from './css-rules';
 import {
   astroFrontmatterView,
   astroScopedCss,
@@ -90,27 +91,15 @@ const words = (value: string): string[] =>
 // ---------------------------------------------------------------------------
 // The CSS side: which classes the scoped selectors name.
 
-/** Brackets whose contents a scan steps over whole. */
-const CLOSERS: Readonly<Record<string, string>> = { '{': '}', '(': ')' };
-
-/** The index of the bracket closing the one at `at`, or the end of `text`. */
-function closer(text: string, at: number): number {
-  const open = text[at];
-  const close = CLOSERS[open];
-  let depth = 0;
-  for (let i = at; i < text.length; i += 1) {
-    if (text[i] === open) depth += 1;
-    else if (text[i] === close && (depth -= 1) === 0) return i;
-  }
-  return text.length;
-}
-
 /**
- * A CSS string. A brace, a semicolon or a dot inside one is not structure, and
- * an attribute test's value, the one place a selector can hold a dot that is
- * not a class, must be quoted to hold one.
+ * A CSS string. An attribute test's value, the one place a selector can hold
+ * a dot that is not a class, must be quoted to hold one.
  */
 const CSS_STRING = /(["'])(?:\\.|(?!\1)[^\\\n])*\1/g;
+
+/** `selector` with every string's contents blanked, so a dot in one names nothing. */
+const withoutStrings = (selector: string): string =>
+  selector.replace(CSS_STRING, (s) => s[0] + ' '.repeat(s.length - 2) + s[0]);
 
 /** A class in a selector. */
 const CLASS_SELECTOR = /\.(-?[_a-zA-Z][\w-]*)/g;
@@ -118,33 +107,28 @@ const CLASS_SELECTOR = /\.(-?[_a-zA-Z][\w-]*)/g;
 /**
  * Each class the selectors in `css` name, in order.
  *
- * A walk over the rule structure rather than a pattern over the text, because
- * a declaration holds dots too (`url(icon.png)`): only a prelude that opens a
- * block is a selector, and an at-rule's prelude is a condition, which can
- * name a class it applies to nothing (`@supports selector(.probe)`). Every
- * block is walked, since rules nest inside `@media` and inside each other.
+ * Read from the rule structure (`cssRules`, the repo's one CSS reader) rather
+ * than by a pattern over the text, because a declaration holds dots too
+ * (`url(icon.png)`): only a block's own header is a selector, and an at-rule's
+ * header is a condition, which can name a class it applies to nothing
+ * (`@supports selector(.probe)`). Every block counts, since rules nest inside
+ * `@media` and inside each other.
  */
 function selectorClasses(css: string): string[] {
-  const code = css.replace(
-    CSS_STRING,
-    (s) => s[0] + ' '.repeat(s.length - 2) + s[0],
-  );
-  const found: string[] = [];
-  const rules = (from: number, to: number): void => {
-    let start = from;
-    for (let i = from; i < to; i += 1) {
-      if (code[i] === ';' || code[i] === '}') start = i + 1;
-      if (code[i] !== '{') continue;
-      const end = closer(code, i);
-      const prelude = code.slice(start, i).trim();
-      if (!prelude.startsWith('@')) found.push(...classesIn(prelude));
-      rules(i + 1, end);
-      i = end;
-      start = end + 1;
-    }
-  };
-  rules(0, code.length);
-  return found;
+  return cssRules(css)
+    .flatMap(({ chain }) => chain.slice(-1))
+    .filter((header) => !header.startsWith('@'))
+    .flatMap((selector) => classesIn(withoutStrings(selector)));
+}
+
+/** The index of the parenthesis closing the one at `at`, or the end of `text`. */
+function closer(text: string, at: number): number {
+  let depth = 0;
+  for (let i = at; i < text.length; i += 1) {
+    if (text[i] === '(') depth += 1;
+    else if (text[i] === ')' && (depth -= 1) === 0) return i;
+  }
+  return text.length;
 }
 
 /**
