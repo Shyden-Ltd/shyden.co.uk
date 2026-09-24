@@ -4,7 +4,7 @@
 
 **Goal:** Prepare the palette, its guards and every Playwright project for a second theme, without moving a single pixel.
 
-**Architecture:** The palette model moves out of `contrast.test.ts` into a shared module, `tests/palette.ts`. It reads `tokens.css` structurally through #332's CSS rule reader. The contrast suite then scores the atmosphere the way the browser paints it: layers in `body::before`'s own order, worst case over every subset of them. Unused tokens retire, and the atmosphere tokens take names by position. Two guards join: every colour literal outside `tokens.css` must be allowlisted with its reason, and every Playwright project must declare its colour scheme. Aurora's values do not change, and the visual suite proves it.
+**Architecture:** The palette model moves out of `contrast.test.ts` into a shared module, `tests/palette.ts`. It reads `tokens.css` structurally through #332's CSS rule reader. The contrast suite then scores the atmosphere the way the browser paints it: layers in `body::before`'s own order, worst case over every subset of them. Unused tokens retire, and the atmosphere tokens take names by position. Three guards join: every token on bare `:root` must be read somewhere, every colour literal outside `tokens.css` must be allowlisted with its reason, and every Playwright project must declare its colour scheme. Aurora's values do not change, and the visual suite proves it.
 
 **Tech Stack:** Astro 5, CSS custom properties, Vitest (unit), Playwright (e2e and visual, in the pinned `linux/amd64` container), TypeScript.
 
@@ -51,6 +51,7 @@
 - [ ] **Take the baseline.** Run `npm run test:unit` and expect every test to pass. Note the file and test totals: every later run is compared with them.
 - [ ] **Find edits by content.** #329 (PR #330) has merged. It rewrote much of `LanguageSwitcher.astro` but kept both `var(--surface, …)` fallbacks and the `ul` shadow this plan touches, so every edit here is found by its text, never by a line number.
 - [ ] **Commit at every green gate, and always before mutating anything** (standing rule: `git checkout` restores `HEAD`).
+- [ ] **Move #142's card to In Progress** on the Shyden Site board (project 2), asserting the board's title before the write.
 
 ## File map
 
@@ -527,7 +528,7 @@ Refs #142"
       },
     ```
 
-  - Replace the body of `it('every declared pair clears its required ratio', …)`:
+  - Replace the whole test `it('every declared pair clears its required ratio', …)`, title included, with:
 
     ```ts
       it('every declared pair clears its required ratio, over the worst subset of the atmosphere', () => {
@@ -594,7 +595,7 @@ Refs #142"
 
   Expected figures, from Task 1's model on today's values, with the worst subset all four layers in every case: `--ink` 11.53, `--ink-soft` 5.22, `--accent` 9.31 and `--border-strong` 3.44 (2.96 at alpha .35). The old hand-written stack read 5.05 for `--ink-soft` and 3.38 for `--border-strong`. The retired comment's knife edge is not carried over: at "top-left .10 / top-right .14 / foot .18", `--ink-soft` scores 4.63:1 in paint order, a pass, so the 4.48:1 failure it recorded belonged to the old stack alone. The flat figures in that comment's first paragraph (1.27:1, 3.10:1, 3.17:1) are unchanged by the stack and stay.
 
-- [ ] **Step 6: Correct `CLAUDE.md`.** The line `- **Accent `#0A7D66`** is the AA floor — never lighten it without re-checking contrast.` predates Aurora; the accent is `#38f5c8` now, and #142 adds a second. Replace it with:
+- [ ] **Step 6: Correct `CLAUDE.md`.** The line ``- **Accent `#0A7D66`** is the AA floor — never lighten it without re-checking contrast.`` predates Aurora; the accent is `#38f5c8` now, and #142 adds a second. Replace it with:
 
 ```markdown
 - **The palette's AA floor is computed, not remembered.** `tests/unit/contrast.test.ts` scores every token pair the site paints, over the worst subset of the page atmosphere, and fails any pair under its WCAG level. Change a colour and the suite says whether it still clears; no hex value in this file is the floor.
@@ -744,7 +745,7 @@ Refs #142"
   - In `tokens.css`, set `--accent-ink: #728fac;`.
   - Run: `npx vitest run tests/unit/contrast.test.ts`
   - Expected: exactly one failure, naming `--accent-ink on (the atmosphere) over --bg` at 3.86:1 over all four layers.
-  - Restore the file with `git checkout HEAD -- src/styles/tokens.css`, then confirm `git status --short` prints nothing.
+  - Restore the file with `git checkout HEAD -- src/styles/tokens.css`, then confirm `git diff --quiet HEAD -- src/styles/tokens.css` exits 0. (A bare `git status --short` is no test here: `HANDOVER.md` is always modified in the working tree.)
   - Run the file again and expect PASS.
 
 ---
@@ -957,7 +958,7 @@ Refs #142"
 - Produces: `astroCode(text: string): string` in `source-text.ts`, and the allowlist PR 2 extends.
 
 - [ ] **Step 1: Write the guard.**
-  - First give `source-text.ts` the half of `codeWithoutComments` that the guard needs, so that comments are stripped through the one home rather than a second composition of it. Add, directly above `codeWithoutComments`:
+  - First give `source-text.ts` the half of `codeWithoutComments` that the guard needs, so that comments are stripped through the one home rather than a second composition of it. Add it above `codeWithoutComments`' own doc comment (the one opening "A source file's code with its comments stripped"), never between that comment and its declaration: there, `stranded-docblocks.test.ts` refuses the old comment sitting on the new one (measured):
 
     ```ts
     /**
@@ -1391,13 +1392,13 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 | L7 | `codeColourLiterals`' `HEX` loses `&` from its look-behind | *never reads a character reference* |
 | L8 | `LanguageSwitcher.astro`: `summary:focus-visible {\n    background: var(--surface);` gets back its `rgb(0 0 0 / 0.04)` fallback. The anchor carries its selector because the bare declaration occurs twice after Task 7 | *writes no colour literal* |
 | S1 | `playwright.dev.config.ts`: `colorScheme` removed | *runs every resolved project light or dark* (`dev › chromium`) |
-| S2 | a new root file `playwright.x.config.ts` with `export default { projects: [{ name: 'x' }] }` | the same test (`x`). Delete the file afterwards; the harness restores tracked files only. |
+| S2 | a new root file `playwright.x.config.ts` with `export default { projects: [{ name: 'x' }] }` | the same test (`x`). The harness deletes the file after the run; `git status --short -- .` then shows no `playwright.x.config.ts`. |
 | S3 | `playwright.config.ts`: `colorScheme: null` | the same test (all eight main projects) |
 | S4 | `CONFIG` becomes `/^playwright\.[\w-]+\.config\.ts$/` | *finds a config by the name Playwright gives one* |
 
   Expected: every row RED exactly as predicted. A GREEN is investigated with its three causes (CLAUDE.md, #250) before anything else. A branch no row can observe is deleted, or given its own fixture: plan one mutation per branch.
 
-- [ ] **Step 3: Keep the log** (`mut142a.log`) for the PR and the evidence page.
+- [ ] **Step 3: Keep the log** (`mut142a.log`) for the PR body.
 
 ---
 
@@ -1477,3 +1478,25 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
 19. Task 10 named ten of the twelve checks, missing `checks` and `closing-keywords`.
 20. Task 8 changes the configs the deployed-site suites run under, and no pull request check runs those suites, yet Task 10 did not run them.
 21. The File map missed `source-text.ts` and `wcag.test.ts`.
+
+### Pass 2, 2026-09-24: 8 findings, all fixed
+
+**Read:** the whole plan again, after pass 1's fixes.
+
+**Mechanical checks:**
+
+- **The plan's code, run again.** The blocks were now found by the step text before each one, never by line number. The four new files, three edits and `astroCode` were written into the tree and the whole unit suite run: 2408 tests. `one-home` and `shytalk-brand` pass. The three new guards fail as predicted, and `stranded-docblocks` failed on how `astroCode` was placed (finding 1). With `astroCode` placed as fixed below, `stranded-docblocks`, `source-text`, `one-home` and `duplication` pass.
+- **Red against the stubs.** Task 1's and Task 6's stubs and tests, run together: 15 failed and 15 passed, out of 30. That is all 10 palette tests and the 5 new `css-rules` tests failing on `not implemented`, and #332's 15 passing, as Steps 3 predict. No new test passed against a stub.
+- **Types.** `npm run typecheck`: 0 errors, 0 warnings, 0 hints across 264 files.
+- **Figures, paths and anchors.** The figures pass 1 introduced are recomputed: 2.96, 3.44, 3.72, 4.63, 4.40, 4.66 and 2.40. `npm run test:e2e` forwards its file arguments. `.tool-section {` occurs once, as L1 needs. No other test enumerates the root configs, so S2 reddens only its own. `literal-grounds` reads `var(--bg, #f7f6f2)` as a token, so Task 7 Step 4's "nothing else fails" holds.
+
+**Findings:**
+
+1. Task 7 said to add `astroCode` "directly above `codeWithoutComments`". Read as between that function's doc comment and its declaration, it strands the doc comment, which `stranded-docblocks.test.ts` refuses (measured).
+2. The architecture line counted two new guards. There are three, since the token guard of Task 3 is one.
+3. Task 2 Step 4 said to replace the pair test's body, but its block replaces the whole test, title included.
+4. Task 2 Step 6 quoted the `CLAUDE.md` line in single backticks around text that holds backticks, so it rendered broken.
+5. Task 4 Step 5 expected `git status --short` to print nothing. `HANDOVER.md` is always modified in this working tree, so it never does.
+6. Task 9 kept its log "for the evidence page", which this PR no longer builds.
+7. Task 9's S2 row said to delete the file by hand, but the harness deletes it itself.
+8. Nothing moved #142's card to In Progress, although Task 10 says it stays there.
