@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, inline in the main session (Native, the operator's choice on 2026-09-24). Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** approved on 2026-09-24 after five review passes, the last of which found nothing (see the Review log at the end).
+
 **Goal:** Prepare the palette, its guards and every Playwright project for a second theme, without moving a single pixel.
 
 **Architecture:** The palette model moves out of `contrast.test.ts` into a shared module, `tests/palette.ts`. It reads `tokens.css` structurally through #332's CSS rule reader. The contrast suite then scores the atmosphere the way the browser paints it: layers in `body::before`'s own order, worst case over every subset of them. Unused tokens retire, and the atmosphere tokens take names by position. Three guards join: every token on bare `:root` must be read somewhere, every colour literal outside `tokens.css` must be allowlisted with its reason, and every Playwright project must declare its colour scheme. Aurora's values do not change, and the visual suite proves it.
@@ -1533,3 +1535,19 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
 
 1. Task 2 Step 1 imported `ATMOSPHERE` while `contrast.test.ts` still declares its own `ATMOSPHERE` array, which is not deleted until Step 4. Under vitest the import would silently shadow the array, and every atmosphere pair would spread the placeholder string into characters. The import now moves to Step 4.
 2. Task 7 Step 6 quoted the replacement block's last line as it was before pass 3 reworded it ("the real composite…" where the line now opens with "measures").
+
+### Pass 5, 2026-09-24: no findings. The loop ends, and the plan is approved
+
+**Read:** the whole plan again, after pass 4's fixes, the review log included.
+
+**Mechanical checks:**
+
+- **Spec coverage, again.** §3.1's renames map to Task 2, its retirements to Task 3 and `--lift-shadow` to Task 5. §3.3's shadow maps to Task 5 and its renames to Task 2; its band glow is a Studio value, which is PR 2's. §6.1's paint order and subsets map to Tasks 1 and 2, its glass and link-hover pairs to Task 4, and its stale 5.11:1 to Task 2 Step 5. §6.2's declarations and filesystem-derived guard map to Task 8. §6.6's guard and allowlist map to Tasks 6 and 7, with the shadow leaving the list in Task 5, before Task 7 runs. §7 maps to Tasks 2, 3 and 7; its `CLAUDE.md` zero-JS line is PR 2's. §6.8's rows for these guards map to P2, S1, S2 and L1.
+- **Names and types across tasks.** Every import resolves to a name an earlier step creates. `ATMOSPHERE` is imported only once the local array has gone. The typecheck on the plan's code: 0 errors, 0 warnings, 0 hints.
+- **The plan's code, run.** 2408 tests, 3 failing: the three new guards, where predicted. Every meta-guard passes.
+- **Red against the stubs.** 15 failed and 15 passed, out of 30.
+- **Paths, commands, anchors and figures.** Nothing has changed since passes 2 to 4 checked them.
+
+**Findings:** none.
+
+**Approved** on 2026-09-24, self-approved under the operator's instruction of that day (_"review the plan on a /loop until there's no findings, then approve it"_). Implementation follows task by task, inline.
