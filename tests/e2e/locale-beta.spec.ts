@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { contrastRatio } from './helpers';
 import { recorded, shoot } from './evidence';
+import { expectedBadges } from '../beta-badges';
 import { searched } from '../source-files';
 import { expectNoHorizontalScroll } from '../viewport';
 import {
@@ -36,21 +37,6 @@ const SWITCHER = 'details.lang-switch';
 const BADGE = '[data-beta]';
 const NOTICE = '[data-beta-notice]';
 const FOOTER = 'footer#contact-legal';
-
-/**
- * The count that must appear on each page.
- *
- * The `<ul>` lists every language, the one being read included (#329), and
- * marks each beta locale there once. The `<summary>` marks the language being
- * read as well, when that language is itself in beta. So an English page
- * carries one badge per beta locale, and a beta locale's page one more.
- * Asserted as an exact number rather than "at least one": a marker painted on
- * everything, English included, would satisfy any weaker check while telling
- * the visitor nothing.
- */
-const BETA_LOCALES = LOCALES.filter(isBetaLocale).length;
-const expectedBadges = (locale: (typeof LOCALES)[number]): number =>
-  BETA_LOCALES + (isBetaLocale(locale) ? 1 : 0);
 
 test.describe('every unverified language is marked BETA', () => {
   for (const locale of LOCALES) {
