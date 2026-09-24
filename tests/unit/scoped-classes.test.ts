@@ -191,7 +191,7 @@ describe('scopedClassReport', () => {
       '<a class="doc"></a><div class="wide"></div>',
       '<style>',
       '  .doc { margin: 0.5rem; background: url(icon.png); }',
-      '  @media (min-width: 37.5rem) { .wide { padding: 1rem; } }',
+      '  @supports selector(.probe) { .wide { padding: 1rem; } }',
       '  @keyframes spin { from { opacity: 0.5; } to { opacity: 1; } }',
       '  a[href$=".pdf"] { text-decoration: none; }',
       '</style>',

@@ -91,11 +91,7 @@ const words = (value: string): string[] =>
 // The CSS side: which classes the scoped selectors name.
 
 /** Brackets whose contents a scan steps over whole. */
-const CLOSERS: Readonly<Record<string, string>> = {
-  '{': '}',
-  '(': ')',
-  '[': ']',
-};
+const CLOSERS: Readonly<Record<string, string>> = { '{': '}', '(': ')' };
 
 /** The index of the bracket closing the one at `at`, or the end of `text`. */
 function closer(text: string, at: number): number {
@@ -109,11 +105,12 @@ function closer(text: string, at: number): number {
   return text.length;
 }
 
-/** A CSS string: a brace, a dot or a semicolon inside one is not structure. */
+/**
+ * A CSS string. A brace, a semicolon or a dot inside one is not structure, and
+ * an attribute test's value, the one place a selector can hold a dot that is
+ * not a class, must be quoted to hold one.
+ */
 const CSS_STRING = /(["'])(?:\\.|(?!\1)[^\\\n])*\1/g;
-
-/** An at-rule whose block holds rules, rather than declarations or frames. */
-const GROUPING_AT_RULE = /^@(?:media|supports|container|layer|scope)\b/;
 
 /** A class in a selector. */
 const CLASS_SELECTOR = /\.(-?[_a-zA-Z][\w-]*)/g;
@@ -122,9 +119,10 @@ const CLASS_SELECTOR = /\.(-?[_a-zA-Z][\w-]*)/g;
  * Each class the selectors in `css` name, in order.
  *
  * A walk over the rule structure rather than a pattern over the text, because
- * a declaration holds dots too (`0.5rem`, `url(icon.png)`): only a prelude
- * that opens a block is a selector, an at-rule's prelude is a condition, and
- * `@keyframes` and `@font-face` blocks hold no selectors at all.
+ * a declaration holds dots too (`url(icon.png)`): only a prelude that opens a
+ * block is a selector, and an at-rule's prelude is a condition, which can
+ * name a class it applies to nothing (`@supports selector(.probe)`). Every
+ * block is walked, since rules nest inside `@media` and inside each other.
  */
 function selectorClasses(css: string): string[] {
   const code = css.replace(
@@ -139,9 +137,8 @@ function selectorClasses(css: string): string[] {
       if (code[i] !== '{') continue;
       const end = closer(code, i);
       const prelude = code.slice(start, i).trim();
-      const atRule = prelude.startsWith('@');
-      if (!atRule) found.push(...classesIn(prelude));
-      if (!atRule || GROUPING_AT_RULE.test(prelude)) rules(i + 1, end);
+      if (!prelude.startsWith('@')) found.push(...classesIn(prelude));
+      rules(i + 1, end);
       i = end;
       start = end + 1;
     }
@@ -151,19 +148,17 @@ function selectorClasses(css: string): string[] {
 }
 
 /**
- * The classes a selector names for the component: none inside an attribute
- * test, whose value may hold a dot, and none inside `:global(...)`, which
- * opts its contents out of the scope.
+ * The classes a selector names for the component: none inside `:global(...)`,
+ * which opts its contents out of the scope.
  */
 function classesIn(selector: string): string[] {
   let scoped = '';
   for (let i = 0; i < selector.length; i += 1) {
-    const global = selector.startsWith(':global(', i);
-    if (selector[i] !== '[' && !global) {
+    if (!selector.startsWith(':global(', i)) {
       scoped += selector[i];
       continue;
     }
-    const end = closer(selector, global ? i + ':global'.length : i);
+    const end = closer(selector, i + ':global'.length);
     scoped += ' '.repeat(end + 1 - i);
     i = end;
   }
