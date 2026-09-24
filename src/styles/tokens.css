@@ -34,8 +34,6 @@
   --accent: #38f5c8;
   --accent-ink: #7fffe0;
   --on-accent: #04140f;
-  --violet: #7a5cff;
-  --deep: #184a6e;
 
   /* #c0392b was tuned for a near-white page and scores 3.71:1 on this ground —
      below the 4.5:1 body floor. The artifact never specified an error colour;
@@ -49,13 +47,13 @@
      Control boundaries need 3:1 (WCAG 1.4.11). White reached that at alpha
      .35 while the page ground was FLAT — 3.10:1 on --bg, 3.17:1 on --surface.
      The atmosphere lightens the ground beneath a control, and at .35 the
-     boundary drops to 2.95:1 there: a 1.4.11 failure introduced by a change
+     boundary drops to 2.96:1 there: a 1.4.11 failure introduced by a change
      three declarations away that touched no border at all. At .40 it is
-     3.39:1 over the atmosphere, 3.73:1 on --bg, 3.79:1 on --surface. */
+     3.44:1 over the atmosphere at its worst subset, 3.72:1 on --bg and
+     3.79:1 on --surface. */
   --border: rgb(255 255 255 / 0.11);
   --border-strong: rgb(255 255 255 / 0.4);
   --glass: rgb(255 255 255 / 0.055);
-  --glass-2: rgb(255 255 255 / 0.09);
 
   /* The mint bloom behind the marquee band. Decorative: it is a shadow, so
      nothing is ever read against it and 1.4.11 does not reach it. */
@@ -67,20 +65,26 @@
      by design, because scroll-padding keeps a focused field clear of the row. */
   --dock-shadow: rgb(0 0 0 / 0.55);
 
-  /* The Aurora atmosphere: three radial stops and a white shaft, painted on
-     body::before. Text IS read over these, so the alphas are not a taste
-     decision — they were chosen by compositing all four onto --bg at once
-     (the worst case; the real stops sit apart) and measuring every text
-     token against that composite. The pairs are asserted in
-     tests/unit/contrast.test.ts.
+  /* The phone mockup's shadow (PhoneFrame.astro). Decorative, like the dock
+     shadow above: nothing is read against it. A token so a lighter palette
+     can soften it (#142); this is the value the frame hard-coded. */
+  --lift-shadow: rgb(0 0 0 / 0.55);
 
-     The knife edge is --ink-soft. At mint .10 / violet .14 / deep .18 with
-     the shaft it scores 4.48:1 — a FAILURE by 0.02, and one that no layer
-     shows on its own. These values leave it at 5.11:1. */
-  --aurora-mint: rgb(56 245 200 / 0.08);
-  --aurora-violet: rgb(122 92 255 / 0.1);
-  --aurora-deep: rgb(24 74 110 / 0.14);
-  --aurora-shaft: rgb(255 255 255 / 0.05);
+  /* The atmosphere: three radial pools and a white shaft, painted on
+     body::before. Named by POSITION, not by hue (#142): the same layer
+     carries window light in one theme and mint in the other. Text IS read
+     over these, so the alphas are not a taste decision. contrast.test.ts
+     scores every text token against every SUBSET of the four layers, in
+     the order body::before paints them (the first layer on top), and keeps
+     the worst.
+
+     The knife edge is --ink-soft: 5.22:1 at its worst subset, which is all
+     four layers at once. The hand-written stack this replaced put the
+     shaft on top, where the browser never paints it, and read 5.05:1. */
+  --pool-top-left: rgb(56 245 200 / 0.08);
+  --pool-top-right: rgb(122 92 255 / 0.1);
+  --pool-foot: rgb(24 74 110 / 0.14);
+  --shaft: rgb(255 255 255 / 0.05);
 
   --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
   --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
@@ -131,25 +135,16 @@ body::before {
   background:
     radial-gradient(
       60rem 40rem at 12% -8%,
-      var(--aurora-mint),
+      var(--pool-top-left),
       transparent 70%
     ),
     radial-gradient(
       52rem 36rem at 88% 2%,
-      var(--aurora-violet),
+      var(--pool-top-right),
       transparent 70%
     ),
-    radial-gradient(
-      72rem 46rem at 50% 108%,
-      var(--aurora-deep),
-      transparent 70%
-    ),
-    linear-gradient(
-      100deg,
-      transparent 30%,
-      var(--aurora-shaft) 50%,
-      transparent 70%
-    );
+    radial-gradient(72rem 46rem at 50% 108%, var(--pool-foot), transparent 70%),
+    linear-gradient(100deg, transparent 30%, var(--shaft) 50%, transparent 70%);
 }
 h1,
 h2,
@@ -328,12 +323,11 @@ main:focus {
        by default anyway, but `default` is a setting a user can change, and
        a page that depends on a default is not a page that decided. */
     --glass: transparent;
-    --glass-2: transparent;
     --accent-glow: transparent;
-    --aurora-mint: transparent;
-    --aurora-violet: transparent;
-    --aurora-deep: transparent;
-    --aurora-shaft: transparent;
+    --pool-top-left: transparent;
+    --pool-top-right: transparent;
+    --pool-foot: transparent;
+    --shaft: transparent;
   }
   html {
     background: #fff;

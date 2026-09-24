@@ -12,6 +12,7 @@ export default defineConfig({
   testDir: './tests/dev',
   use: {
     baseURL: process.env.WEB_BASE_URL ?? 'https://dev.shyden.co.uk',
+    colorScheme: 'dark',
     // Username half is ignored by the gate; only the password matters.
     httpCredentials: password ? { username: 'dev', password } : undefined,
   },

@@ -1096,13 +1096,14 @@ const sexWhyText = sexWhy(roster, t);
      screenshot-shaped bug it records.
 
      0.65, not the 0.55 an earlier pass shipped: `.group` paints no
-     background of its own, so this opacity composites `--ink` (#16171c)
-     directly over the page's actual background, `--bg` (#f7f6f2) --
-     0.55 measured 3.89:1, under the 4.5:1 AA floor for normal text, and a
+     background of its own, so this opacity composites `--ink` directly over
+     whatever the page's ground is. On the palette of the time, 0.55
+     measured 3.89:1, under the 4.5:1 AA floor for normal text, and a
      teacher reading a projected screen while it is true is exactly the
      case design spec section 8 keeps the old groups VISIBLE for, not an
-     incidental label the AA exemption would cover. 0.65 measures 5.38:1,
-     clear of the floor with margin rather than sitting on it. Guarded by
+     incidental label the AA exemption would cover. No current figure is
+     kept here, because the palette moves (#17, #142): the test named below
+     measures the real composite in every run. Guarded by
      tests/e2e/classroom-groups.spec.ts's "the dim stays above the WCAG AA
      contrast floor for normal text", which computes the real composited
      contrast from live computed styles -- the older "darker than before"
@@ -2875,8 +2876,8 @@ const sexWhyText = sexWhy(roster, t);
       margin-bottom: 0;
       padding: 0.75rem 0;
       /* Opaque, or the fields the row floats over show through it. */
-      background: var(--bg, #f7f6f2);
-      border-top: 1px solid var(--border, #e7e4dc);
+      background: var(--bg);
+      border-top: 1px solid var(--border);
       /* Cast UP over whatever scrolls beneath the row (operator decision,
          2026-09-17). Pinned at every width, the row covers the edge of the
          section above it before any scrolling; the shadow makes that read

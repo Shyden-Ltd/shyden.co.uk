@@ -272,3 +272,48 @@ export const colourLiterals = (value: string): string[] => {
     .sort((a, b) => a.index - b.index)
     .map((match) => match[0]);
 };
+
+/**
+ * Whether a rule reaches paper only: some block around it is a print-only
+ * media query. One definition, because two guards exempt paper for the same
+ * reason. The print block in tokens.css fixes every token there, so no theme
+ * reaches paper and no literal on paper escapes one.
+ */
+export const onPaper = (chain: readonly string[]): boolean =>
+  chain.some((header) => /^@media (?:only )?print(?: and .*)?$/i.test(header));
+
+/** A string whose whole content is a named colour: `'white'`, never `'white rabbit'`. */
+const NAMED_STRING = new RegExp(
+  `(['"\`])(${NAMED_COLOURS.join('|')})\\1`,
+  'gi',
+);
+
+/** A `style="…"` attribute's CSS. */
+const STYLE_ATTRIBUTE = /\bstyle=(["'])(.*?)\1/g;
+
+/** As COLOUR_FUNCTION, less `color()`: in code that is a call, not a colour. */
+const CODE_FUNCTION =
+  /(?<![\w.-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\((?:[^()]|\([^()]*\))*\)/gi;
+
+/**
+ * Every colour literal in comment-free CODE: TypeScript, or an .astro file's
+ * frontmatter, template and scripts.
+ *
+ * - A hex or a colour function counts anywhere, because in code they are
+ *   written inside strings.
+ * - A named colour counts only as a whole string, or inside a `style`
+ *   attribute: `'white'` is a colour, and `'white rabbit'` is prose.
+ * - A hex-shaped issue number in prose (`#161`) is found too. No detector
+ *   can tell it from a colour, so it is excused by name in the guard's
+ *   allowlist, never by a rule here.
+ */
+export const codeColourLiterals = (code: string): string[] => [
+  ...[...code.matchAll(HEX)].map((match) => match[0]),
+  ...[...code.matchAll(CODE_FUNCTION)].map((match) => match[0]),
+  ...[...code.matchAll(NAMED_STRING)].map((match) => match[2]),
+  ...[...code.matchAll(STYLE_ATTRIBUTE)].flatMap((match) =>
+    colourLiterals(match[2]).filter((literal) =>
+      NAMED_COLOURS.includes(literal.toLowerCase()),
+    ),
+  ),
+];

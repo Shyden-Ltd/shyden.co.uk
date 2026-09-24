@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { colourLiterals, cssRules, NAMED_COLOURS } from './css-rules';
+import {
+  codeColourLiterals,
+  colourLiterals,
+  cssRules,
+  NAMED_COLOURS,
+  onPaper,
+} from './css-rules';
 
 describe('cssRules', () => {
   it('keeps every block header a rule sits under, outermost first', () => {
@@ -148,5 +154,60 @@ describe('colourLiterals', () => {
     expect(new Set(NAMED_COLOURS).size).toBe(148);
     expect(NAMED_COLOURS).toContain('rebeccapurple');
     expect(NAMED_COLOURS).not.toContain('transparent');
+  });
+});
+
+describe('onPaper', () => {
+  it('holds for a rule inside a print-only media block, and only there', () => {
+    expect(
+      [
+        ['@media print', '.a'],
+        ['@media only print', '.a'],
+        ['@media print and (orientation: portrait)', '.a'],
+        ['@media screen', '@media print', '.a'],
+      ].filter((chain) => !onPaper(chain)),
+    ).toEqual([]);
+    expect(
+      [
+        ['.a'],
+        ['@media screen', '.a'],
+        ['@media screen, print', '.a'],
+        ['@media not print', '.a'],
+      ].filter((chain) => onPaper(chain)),
+    ).toEqual([]);
+  });
+});
+
+describe('codeColourLiterals', () => {
+  it('finds hex and colour functions anywhere in code', () => {
+    expect(
+      codeColourLiterals(
+        "const tile = '#1a2b3c';\nconst c = `rgb(${r}, ${g}, ${b})`;\nfill=\"#FF0\"\n'hsl(214 92% 88%)' 'oklch(70% 0.1 200)'",
+      ),
+    ).toEqual([
+      '#1a2b3c',
+      '#FF0',
+      'rgb(${r}, ${g}, ${b})',
+      'hsl(214 92% 88%)',
+      'oklch(70% 0.1 200)',
+    ]);
+  });
+
+  it('finds a named colour only as a whole string or in a style attribute', () => {
+    expect(
+      codeColourLiterals(
+        "const a = 'white';\nconst b = 'white rabbit';\n<p style=\"color: Red; margin: 0\">x</p>",
+      ),
+    ).toEqual(['white', 'Red']);
+  });
+
+  it('never reads a character reference or a call named color() as a colour', () => {
+    expect(
+      codeColourLiterals('&#123; &#x2014; color(x) theme.color(y)'),
+    ).toEqual([]);
+  });
+
+  it('finds a hex-shaped issue number too, which only an allowlist can excuse', () => {
+    expect(codeColourLiterals("'see #161 for why'")).toEqual(['#161']);
   });
 });

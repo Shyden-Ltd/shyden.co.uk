@@ -583,6 +583,14 @@ export const withoutAstroStyles = (text: string): string =>
   withRegionsBlanked(text, bodies(astroParts(text).markup, STYLE));
 
 /**
+ * An `.astro` file's frontmatter, template and scripts, with every `<style>`
+ * blanked and every comment stripped: the half of `codeWithoutComments` that
+ * is not CSS, for a guard that reads the CSS itself by rule.
+ */
+export const astroCode = (text: string): string =>
+  withoutAstroComments(withoutAstroStyles(text));
+
+/**
  * A source file's code with its comments stripped, chosen by extension: what
  * a guard searching a file for a spelling should scan.
  *
@@ -597,8 +605,5 @@ export const codeWithoutComments = (file: string, text: string): string => {
   if (!file.endsWith('.astro')) {
     return withoutTsComments(withoutCssComments(text));
   }
-  return [
-    withoutAstroComments(withoutAstroStyles(text)),
-    ...stylesheetCss(file, text),
-  ].join('\n');
+  return [astroCode(text), ...stylesheetCss(file, text)].join('\n');
 };

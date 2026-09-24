@@ -33,6 +33,7 @@ export default defineConfig({
   timeout: 30_000,
   use: {
     baseURL: process.env.WEB_BASE_URL ?? 'https://shyden.co.uk',
+    colorScheme: 'dark',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

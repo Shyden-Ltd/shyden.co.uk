@@ -17,14 +17,6 @@ describe('WCAG relative luminance and contrast', () => {
     expect(contrast(accent, WHITE)).toBe(contrast(WHITE, accent));
   });
 
-  it('holds the accent at the AA floor this repo pinned it to', () => {
-    // CLAUDE.md: "Accent #0A7D66 is the AA floor -- never lighten it without
-    // re-checking contrast." A literal, from the brief, not from the token.
-    const accent = parseColour('#0A7D66');
-    expect(accent).not.toBeNull();
-    expect(contrast(accent!.rgb, WHITE)).toBeGreaterThanOrEqual(4.5);
-  });
-
   it('linearises at 0.04045, which no 8-bit channel can tell from 0.03928', () => {
     // The two copies this module replaced disagreed: WCAG 2.0's published
     // text says 0.03928 and sRGB / WCAG 2.1 say 0.04045 (#277). They cannot
