@@ -1055,6 +1055,11 @@ const sexWhyText = sexWhy(roster, t);
     opacity: 0;
     transform: translateY(-0.5rem) scale(0.96);
   }
+  /* Reduced motion is not handled here. For a visitor who asked for less
+     motion, the script forces the speed to `skip`, which deals every card at
+     once, and tokens.css's reset cuts this transition to 0.01ms. Nothing for
+     the cards belongs in this file's scoped <style>: the script builds every
+     card, so none carries the scope and a rule there matches nothing (#331). */
   #cg-results .student.dealt {
     opacity: 1;
     transform: none;
@@ -1404,7 +1409,9 @@ const sexWhyText = sexWhy(roster, t);
      working rule (CLAUDE.md), restated verbatim in this task's own brief:
      "This repo has already shipped an unreadable panel that way, and a
      mockup in this project's own brainstorm did it again." #1a1a1a on
-     #fff6e3 measures ~18.7:1, far past the 4.5:1 AA floor -- this is a
+     #fff6e3 measures 16.20:1 (tests/wcag.ts; an earlier note here said
+     ~18.7:1), far past the 4.5:1 AA floor, and literal-grounds.test.ts
+     now holds the rule for every ground written as a literal -- this is a
      TINT, not a grey-out (A-09): every field in the row stays exactly as
      legible as an ordinary one, which is also why nothing here touches
      `#cg-roster input`/`select`'s own colour -- each control already paints
@@ -2930,27 +2937,33 @@ const sexWhyText = sexWhy(roster, t);
      contrast measurement, taken once and reused here rather than
      re-derived), applied to a plain, buttonless notice: a roster gap is a
      lighter-weight fact than "these groups are out of date", so this skips
-     .stale-notice's flex row entirely. Text stays --ink, not a special
-     amber tone, for the identical reason .is-absent's own tint keeps full
-     contrast rather than becoming a grey-out. */
+     .stale-notice's flex row entirely. Text is .stale-notice's #1a1a1a, not
+     a special amber tone, for the identical reason .is-absent's own tint
+     keeps full contrast rather than becoming a grey-out. It is never --ink:
+     this cream is a literal no theme moves, so its ink must be one too.
+     `color: var(--ink)` here read 1.05:1 once Aurora (#17) made --ink
+     near-white (#332), and literal-grounds.test.ts now refuses the shape. */
   .roster-warning {
     max-width: var(--measure);
     padding: 0.75rem 1rem;
     border-radius: 6px;
     border: 1px solid #956b1e;
     background: #fff6e3;
-    color: var(--ink);
+    color: #1a1a1a;
   }
 
   /* Design spec section 4's own "the amber is the same family the page
      uses for warnings" -- reused here rather than inventing a third
-     palette (the first is --accent, the second is .error's red). Text
-     stays `--ink` rather than an amber tone: the amber itself is
-     decoration ("colour is never the only signal" -- the SENTENCE is the
-     signal), so the words carrying that sentence need to be as legible as
-     anything else on the page, not merely legible enough. Measured
-     16.65:1 against this background, comfortably clear of the 4.5:1 AA
-     floor. Mobile-first column stack; `align-items: flex-start` keeps the
+     palette (the first is --accent, the second is .error's red). Text is
+     near-black rather than an amber tone: the amber itself is decoration
+     ("colour is never the only signal" -- the SENTENCE is the signal), so
+     the words carrying that sentence need to be as legible as anything else
+     on the page, not merely legible enough. It is #1a1a1a, the ink
+     .is-absent uses on this same cream, at 16.20:1, and never --ink: this
+     cream is a literal no theme moves, so its ink must be one too. It was
+     --ink (inherited) until #332, when Aurora (#17) had made --ink
+     near-white and the sentence read 1.05:1; literal-grounds.test.ts now
+     refuses the shape. Mobile-first column stack; `align-items: flex-start` keeps the
      button its own width instead of stretching full-bleed, which reads
      oddly at 320px around one short word.
 
@@ -2963,9 +2976,10 @@ const sexWhyText = sexWhy(roster, t);
      be seen is still worth fixing cheaply. #956b1e is the SAME hue and
      saturation, just darker, so it stays the family design spec section 4
      asks for rather than becoming a fourth palette; measured 4.41:1
-     against the page background, clear of the 3:1 floor WCAG 1.4.11 sets
-     for a UI component's boundary. The fill is unchanged -- this is a
-     border fix, not a redesign. */
+     against the pre-Aurora page background and 4.22:1 against Aurora's
+     `--bg`, clear of the 3:1 floor WCAG 1.4.11 sets for a UI component's
+     boundary either way. The fill is unchanged -- this is a border fix, not
+     a redesign. */
   .stale-notice {
     display: flex;
     flex-direction: column;
@@ -2977,6 +2991,7 @@ const sexWhyText = sexWhy(roster, t);
     border-radius: 6px;
     border: 1px solid #956b1e;
     background: #fff6e3;
+    color: #1a1a1a;
   }
   /* `display: flex` above is an AUTHOR rule; the native `[hidden] {
      display: none }` is only a USER-AGENT default, and author styles win a
@@ -2992,9 +3007,11 @@ const sexWhyText = sexWhy(roster, t);
   .stale-notice[hidden] {
     display: none;
   }
+  /* No colour of its own: the sentence inherits .stale-notice's #1a1a1a. This
+     rule's `color: var(--ink)` was what the sentence actually wore, and it
+     read 1.05:1 on the cream once Aurora made --ink near-white (#332). */
   .stale-notice p {
     margin: 0;
-    color: var(--ink);
   }
   /* Enhancement only -- the mobile-first column stack above is the base and
      still works perfectly well here; this just reclaims the wasted width a
@@ -3028,17 +3045,6 @@ const sexWhyText = sexWhy(roster, t);
   @media (min-width: 560px) {
     .tables {
       grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    }
-  }
-
-  /* Someone who asked their device for less motion gets the result with no
-     movement at all, even if the animation runs. */
-  @media (prefers-reduced-motion: reduce) {
-    #cg-results .student,
-    #cg-results .student.dealt {
-      opacity: 1;
-      transform: none;
-      transition: none;
     }
   }
 </style>

@@ -506,6 +506,13 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 2,
     says: 'usage: upload-evidence-assets.mjs',
   },
+  // With no page and no sign-off to read it can give no verdict, so it
+  // refuses with 2, which is neither a sign-off nor an out-of-date one (#197).
+  'signoff-status.mjs': {
+    args: [],
+    status: 2,
+    says: 'usage: signoff-status.mjs',
+  },
   // Without the API it can prove nothing, so it refuses to proceed.
   'deploy-gate.mjs': {
     args: [],

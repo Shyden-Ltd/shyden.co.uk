@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Page, TestInfo } from '@playwright/test';
-import { renderEvidencePage } from '../../scripts/build-evidence-page.mjs';
+import type { Locator, Page, TestInfo } from '@playwright/test';
+import { evidencePageOf } from '../evidence-fixture';
 import {
   installDbStandIn,
   type Completion,
@@ -10,8 +10,9 @@ import {
   type WriteOrder,
 } from './db-stand-in';
 import { test as base, expect } from './fixtures';
+import { contrastRatio } from './helpers';
 import { recordErrors } from './recorders';
-import { recorded } from './evidence';
+import { recorded, shoot } from './evidence';
 
 /**
  * The evidence page's sign-off ticks, driven through the page's OWN rendered
@@ -44,59 +45,22 @@ const SIGNOFF_KEY = 'ticket-172-fixture';
 /** Where a published page keeps its sign-off, as `signoff/ticket-136` does. */
 const DOC = `signoff/${SIGNOFF_KEY}`;
 const ORIGIN = 'https://evidence.test';
-/** A real 1x1 PNG, so no capture on the fixture page is a broken image. */
-const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
 
-const manifest = TITLES.map((title, index) => ({
-  project: 'chromium',
-  title: `evidence page > ${title}`,
-  order: 1,
-  label: `what ${title} shows`,
-  file: `chromium/journey-${index + 1}.png`,
-}));
+/** The page exactly as the builder renders it for a ticket with these journeys. */
+const pageOf = (titles: readonly string[]): string =>
+  evidencePageOf(titles, SIGNOFF_KEY);
 
 /** The page exactly as the builder renders it for a five-journey ticket. */
-const HTML: string = renderEvidencePage({
-  manifest,
-  report: {
-    stats: {
-      startTime: '2026-09-14T15:09:00.000Z',
-      duration: 1000,
-      expected: TITLES.length,
-      unexpected: 0,
-      flaky: 0,
-      skipped: 0,
-    },
-    suites: [
-      {
-        specs: TITLES.map((title) => ({
-          title,
-          tests: [
-            {
-              projectName: 'chromium',
-              results: [{ status: 'passed', duration: 100, attachments: [] }],
-            },
-          ],
-        })),
-      },
-    ],
-  },
-  content: {
-    title: 'Evidence page fixture',
-    eyebrow: 'fixture',
-    headline: 'A page with five journeys to sign off',
-    lede: 'Rendered by the real builder.',
-    signoffKey: SIGNOFF_KEY,
-  },
-  shots: new Map(manifest.map((entry) => [entry.file, PIXEL])),
-});
+const HTML: string = pageOf(TITLES);
 
-/** Journey ids as the page rendered them, each paired with its heading. */
-const JOURNEYS = Array.from(
-  HTML.matchAll(/data-journey="([^"]+)"[\s\S]*?<h3>([^<]*)<\/h3>/g),
-  ([, id = '', title = '']) => ({ id, title }),
-);
+/** Journey ids as a page rendered them, each paired with its heading. */
+const journeysOf = (html: string) =>
+  Array.from(
+    html.matchAll(/data-journey="([^"]+)"[\s\S]*?<h3>([^<]*)<\/h3>/g),
+    ([, id = '', title = '']) => ({ id, title }),
+  );
+
+const JOURNEYS = journeysOf(HTML);
 
 const idOf = (title: string): string => {
   const journey = JOURNEYS.find((candidate) => candidate.title === title);
@@ -138,11 +102,16 @@ const test = base.extend<{ pageErrors: void }>({
 
 test.use(recorded);
 
-/** Serves the page as the builder rendered it, and nothing from any other host. */
-async function serveEvidencePage(page: Page): Promise<void> {
+/**
+ * Serves the page as the builder rendered it, and nothing from any other host.
+ * Called again, it republishes to the same address, as a rebuilt evidence
+ * page is: the store, kept per test, carries over.
+ */
+async function serveEvidencePage(page: Page, html = HTML): Promise<void> {
+  await page.unroute(/^https:\/\/evidence\.test\//);
   await page.route(/^https:\/\/evidence\.test\//, (route) =>
     route.request().url() === `${ORIGIN}/`
-      ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: HTML })
+      ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: html })
       : route.fulfill({ status: 204 }),
   );
   // The builder links Google Fonts. Nothing in this suite reaches a third party.
@@ -169,27 +138,45 @@ const storeKeyOf = (testInfo: TestInfo, run: string = THIS_RUN) => {
 async function openEvidencePage(
   page: Page,
   testInfo: TestInfo,
-  options: Pick<DbStandInOptions, 'order'> & Partial<DbStandInOptions>,
+  options: Pick<DbStandInOptions, 'order'> &
+    Partial<DbStandInOptions> & { html?: string },
 ): Promise<void> {
-  await serveEvidencePage(page);
+  const { html = HTML, ...standIn } = options;
+  await serveEvidencePage(page, html);
   await page.addInitScript(installDbStandIn, {
     ...storeKeyOf(testInfo),
     seed: {},
     holdUse: false,
     subscriptionDies: false,
     getFails: false,
-    ...options,
+    ...standIn,
   });
   await page.goto(`${ORIGIN}/`);
   // Nothing is delivered while use() is held, or when every read fails and no
   // subscription lives to deliver the stored state instead.
-  if (!options.holdUse && !(options.getFails && options.subscriptionDies))
+  if (!standIn.holdUse && !(standIn.getFails && standIn.subscriptionDies))
     await expect
       .poll(
         async () => (await counters(page)).deliveries,
         'the page received its stored state',
       )
       .toBeGreaterThan(0);
+}
+
+/**
+ * Rebuilds the page from `html`, republishes it to the same address, and
+ * reopens it as its reader would. The stand-in reinstalls on the reload, so
+ * its counters start again from nothing, and the store it keeps carries over.
+ */
+async function republish(page: Page, html: string): Promise<void> {
+  await serveEvidencePage(page, html);
+  await page.reload();
+  await expect
+    .poll(
+      async () => (await counters(page)).deliveries,
+      'the republished page received its stored state',
+    )
+    .toBeGreaterThan(0);
 }
 
 const counters = (page: Page) =>
@@ -227,17 +214,25 @@ const toggle = (page: Page, title: string) =>
     .filter({ has: page.getByRole('checkbox') })
     .click();
 
-/** One tick, then wait for the page to write it and the store to confirm it, as a person would. */
-async function toggleAndWait(page: Page, title: string): Promise<void> {
+/** Does what a person does, then waits for the page to write it and the store to confirm it. */
+async function writtenAfter(
+  page: Page,
+  act: () => Promise<void>,
+  what: string,
+): Promise<void> {
   const before = (await counters(page)).writes;
-  await toggle(page, title);
+  await act();
   await expect
     .poll(async () => {
       const now = await counters(page);
       return now.writes > before && now.inflight === 0;
-    }, `the page wrote the change to "${title}" and the store confirmed it`)
+    }, `the page wrote ${what} and the store confirmed it`)
     .toBe(true);
 }
+
+/** One tick, then wait for the page to write it and the store to confirm it, as a person would. */
+const toggleAndWait = (page: Page, title: string): Promise<void> =>
+  writtenAfter(page, () => toggle(page, title), `the change to "${title}"`);
 
 /** Several ticks in ONE task, so they are certain to fall inside one save window. */
 const toggleTogether = (page: Page, titles: readonly string[]) =>
@@ -813,11 +808,32 @@ test.describe('evidence page sign-off, whatever the write order', () => {
       );
   });
 
+  test('the progress line counts each journey once, and each carries its capture', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await expect(page.locator('#progress')).toHaveText(
+      `0 of ${TITLES.length} journeys reviewed`,
+    );
+    for (const title of TITLES)
+      await expect(
+        journeySection(page, title).locator('img'),
+        `"${title}" shows the capture its manifest row names`,
+      ).toHaveCount(1);
+    await shoot(page, 'five journeys, each counted once', signOff(page));
+  });
+
   test('the save status is exposed to assistive technology as a status message', async ({
     page,
   }, testInfo) => {
     await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
-    await expect(page.getByRole('status')).toHaveText(/^Ready\b/);
+    // Asked of the save status itself, not of "the page's one status region":
+    // the out-of-date notice (#197) is a second, and a proxy would break on it
+    // while this property held.
+    const status = page.locator('#state');
+    await expect(status).toHaveRole('status');
+    await expect(status).toHaveText(/^Ready\b/);
+    await shoot(page, 'the save status is a status message', status);
   });
 
   test('the status says so when live updates stop', async ({
@@ -908,6 +924,7 @@ test.describe('evidence page sign-off, whatever the write order', () => {
             [idOf(third)]: 1,
           },
           verdict: 'hacked',
+          verdictCovers: [idOf(first), 7],
           note: 42,
           updatedAt: '2026-09-14T15:09:00.000Z',
         },
@@ -935,14 +952,17 @@ test.describe('evidence page sign-off, whatever the write order', () => {
       {
         journeys: stored?.journeys,
         verdict: stored?.verdict,
+        verdictCovers: stored?.verdictCovers,
         note: stored?.note,
       },
       'only the shape the page writes is stored',
     ).toEqual({
       journeys: { [idOf(second)]: true, [idOf(fourth)]: true },
       verdict: null,
+      verdictCovers: null,
       note: '',
     });
+    await shoot(page, 'written back only in its own shape', signOff(page));
   });
 
   test('a read that fails after live updates have loaded the sign-off changes nothing', async ({
@@ -966,6 +986,397 @@ test.describe('evidence page sign-off, whatever the write order', () => {
       page.locator('#state'),
       'the late failure does not undo a load that succeeded',
     ).toHaveText(/^Ready\b/);
+  });
+});
+
+/** The fixture page rebuilt with one journey more, as #188's gained its 13th. */
+const ADDED = 'the sixth journey';
+const HTML_WITH_ADDED: string = pageOf([...TITLES, ADDED]);
+const ADDED_ID =
+  journeysOf(HTML_WITH_ADDED).find(({ title }) => title === ADDED)?.id ?? '';
+
+/** A journey the page no longer shows, as a stored verdict would name it. */
+const DROPPED = 'a-journey-since-dropped';
+
+/** Every journey id on a rendered page, sorted: the set a verdict covers. */
+const coveredBy = (html: string): string[] =>
+  journeysOf(html)
+    .map(({ id }) => id)
+    .sort();
+
+/** The sign-off section: progress, the notice, the verdict buttons and the note. */
+const signOff = (page: Page) => page.locator('#signoff');
+
+const approveButton = (page: Page) =>
+  page.getByRole('button', { name: /^Signed off\b/ });
+const moreButton = (page: Page) =>
+  page.getByRole('button', { name: 'More tests needed', exact: true });
+
+/** The out-of-date notice, found as assistive technology meets it: a status message. */
+const outOfDate = (page: Page) =>
+  page.getByRole('status').filter({ hasText: /\bis out of date\./ });
+
+/** The verdict the store holds, and the journeys it records the verdict as covering. */
+const storedVerdict = (page: Page) =>
+  page.evaluate((doc) => {
+    const body = (window as StandInWindow).__dbStandIn.read(doc);
+    const covers = body?.verdictCovers;
+    return {
+      verdict: body?.verdict ?? null,
+      covers: Array.isArray(covers) ? [...covers].sort() : (covers ?? null),
+    };
+  }, DOC);
+
+/** A verdict given on these journeys, as an earlier visit left it. */
+const verdictOn = (
+  verdict: 'approved' | 'more',
+  covers: readonly string[],
+): Record<string, StoredBody> => ({
+  [DOC]: {
+    journeys: {},
+    verdict,
+    verdictCovers: [...covers],
+    note: '',
+    updatedAt: '2026-09-23T00:00:00.000Z',
+  },
+});
+
+/** The verdict shows as given, and the notice region is there and says nothing. */
+async function expectCurrent(page: Page, button: Locator): Promise<void> {
+  await expect(button, 'the verdict is shown as given').toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const region = page.locator('#standing');
+  await expect(region, 'the notice region is on the page').toHaveCount(1);
+  await expect(region).toHaveRole('status');
+  await expect(region, 'and it says nothing').toHaveText('');
+}
+
+test.describe('a verdict covers the journeys it was given on (#197)', () => {
+  test('approved, then rebuilt with a journey added: the approval is out of date and names it, and one press approves again', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await writtenAfter(page, () => approveButton(page).click(), 'the approval');
+    await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      await storedVerdict(page),
+      'the approval records the journeys it was given on',
+    ).toEqual({ verdict: 'approved', covers: coveredBy(HTML) });
+    await shoot(page, 'approved on five journeys', signOff(page));
+
+    await republish(page, HTML_WITH_ADDED);
+    const notice = outOfDate(page);
+    await expect(
+      notice,
+      'the stale approval is a status message, so it is announced',
+    ).toBeVisible();
+    await expect(notice).toHaveId('standing');
+    await expect(notice).toContainText(
+      'Your sign-off is out of date. You signed off before this page changed.',
+    );
+    await expect(
+      notice.getByRole('link', { name: ADDED, exact: true }),
+      'the journey added since is named',
+    ).toBeVisible();
+    await expect(
+      approveButton(page),
+      'an out-of-date approval is not shown as given',
+    ).toHaveAttribute('aria-pressed', 'false');
+    expect(
+      await storedVerdict(page),
+      'opening the page changed nothing stored',
+    ).toEqual({ verdict: 'approved', covers: coveredBy(HTML) });
+    await shoot(
+      page,
+      'republished with a sixth journey: out of date, naming it',
+      signOff(page),
+    );
+
+    await writtenAfter(
+      page,
+      () => approveButton(page).click(),
+      'the approval given again',
+    );
+    await expectCurrent(page, approveButton(page));
+    expect(
+      await storedVerdict(page),
+      'the approval now records every journey on the page',
+    ).toEqual({ verdict: 'approved', covers: coveredBy(HTML_WITH_ADDED) });
+    await shoot(page, 'one press: approved on all six', signOff(page));
+  });
+
+  test('an unchanged rebuild keeps the approval', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await writtenAfter(page, () => approveButton(page).click(), 'the approval');
+    await republish(page, pageOf(TITLES));
+    await expectCurrent(page, approveButton(page));
+    expect(await storedVerdict(page)).toEqual({
+      verdict: 'approved',
+      covers: coveredBy(HTML),
+    });
+    await shoot(page, 'rebuilt unchanged: still approved', signOff(page));
+  });
+
+  test('a journey removed since puts the approval out of date, and is named', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: verdictOn('approved', [...coveredBy(HTML), DROPPED]),
+    });
+    const notice = outOfDate(page);
+    await expect(notice).toContainText(`No longer on the page: ${DROPPED}.`);
+    await expect(notice, 'nothing was added').not.toContainText('Added since');
+    await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(page, 'a removed journey is named', signOff(page));
+  });
+
+  test('a removed id the store holds is shown as text, never read as markup', async ({
+    page,
+  }, testInfo) => {
+    // Every viewer writes the store, so a removed id is untrusted input on a
+    // page the operator signs off from.
+    const markup = '<img src="x" alt="injected">';
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: verdictOn('approved', [...coveredBy(HTML), markup]),
+    });
+    const notice = outOfDate(page);
+    await expect(notice.locator('code')).toHaveText(markup);
+    await expect(
+      notice.locator('img'),
+      'nothing in the notice was parsed from the store',
+    ).toHaveCount(0);
+    await shoot(page, 'stored markup shown as text', notice);
+  });
+
+  test('a sign-off saved before verdicts recorded their journeys is out of date, never approved', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: {
+        [DOC]: {
+          journeys: Object.fromEntries(JOURNEYS.map(({ id }) => [id, true])),
+          verdict: 'approved',
+          note: '',
+          updatedAt: '2026-09-17T23:58:26.000Z',
+        },
+      },
+    });
+    const notice = outOfDate(page);
+    await expect(notice).toContainText(
+      'Your sign-off is out of date. It was saved before sign-offs recorded ' +
+        `the journeys they cover, so it cannot be matched to the ${TITLES.length} ` +
+        'journeys on this page.',
+    );
+    await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(
+      page,
+      'a sign-off from before #197: out of date',
+      signOff(page),
+    );
+  });
+
+  test('a request for more tests goes out of date the same way', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      html: HTML_WITH_ADDED,
+      seed: verdictOn('more', coveredBy(HTML)),
+    });
+    const notice = outOfDate(page);
+    await expect(notice).toContainText(
+      'Your decision is out of date. You asked for more tests before this page changed.',
+    );
+    await expect(
+      notice.getByRole('link', { name: ADDED, exact: true }),
+    ).toBeVisible();
+    await expect(moreButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(
+      page,
+      'more tests, asked before the change: out of date',
+      signOff(page),
+    );
+  });
+
+  test('a tick or a note on an out-of-date page leaves the approval out of date', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      html: HTML_WITH_ADDED,
+      seed: verdictOn('approved', coveredBy(HTML)),
+    });
+    await expect(outOfDate(page)).toBeVisible();
+    await toggleAndWait(page, ADDED);
+    await writtenAfter(
+      page,
+      () => page.locator('#note').fill('the sixth journey looks right'),
+      'the note',
+    );
+    expect(await storedTicks(page), 'the tick was stored').toEqual([ADDED_ID]);
+    expect(
+      await storedVerdict(page),
+      'neither the tick nor the note renewed the approval',
+    ).toEqual({ verdict: 'approved', covers: coveredBy(HTML) });
+    await expect(outOfDate(page)).toBeVisible();
+    await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(page, 'ticked and noted: still out of date', signOff(page));
+  });
+
+  test('pressing a given verdict again withdraws it, and it then covers nothing', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await writtenAfter(page, () => approveButton(page).click(), 'the approval');
+    expect(await storedVerdict(page), 'given, it covers the page').toEqual({
+      verdict: 'approved',
+      covers: coveredBy(HTML),
+    });
+    await writtenAfter(
+      page,
+      () => approveButton(page).click(),
+      'the approval withdrawn',
+    );
+    await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    expect(await storedVerdict(page)).toEqual({ verdict: null, covers: null });
+    await shoot(page, 'withdrawn: no verdict, nothing covered', signOff(page));
+  });
+
+  test("the notice's link takes focus, and Enter goes to the journey it names", async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      html: HTML_WITH_ADDED,
+      seed: verdictOn('approved', coveredBy(HTML)),
+    });
+    const link = outOfDate(page).getByRole('link', {
+      name: ADDED,
+      exact: true,
+    });
+    await link.focus();
+    await expect(link).toBeFocused();
+    await shoot(page, 'the link to the added journey has focus', signOff(page));
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(`${ORIGIN}/#j-${ADDED_ID}`);
+    await shoot(
+      page,
+      'Enter went to the added journey',
+      page.locator(`#j-${ADDED_ID}`),
+    );
+  });
+
+  test("Shift+Tab from the verdict buttons reaches the notice's link (WCAG 2.1.1)", async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.skip(
+      browserName === 'webkit',
+      'Safari omits plain links from the Tab sequence unless the visitor opts in, ' +
+        'so a Tab walk here would assert a browser preference, not our markup. ' +
+        'The link takes focus on every engine in the test above.',
+    );
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      html: HTML_WITH_ADDED,
+      seed: verdictOn('approved', coveredBy(HTML)),
+    });
+    const link = outOfDate(page).getByRole('link', {
+      name: ADDED,
+      exact: true,
+    });
+    await expect(link).toBeVisible();
+    await approveButton(page).focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(
+      link,
+      'the notice sits just before the verdict buttons in the Tab order',
+    ).toBeFocused();
+    await shoot(
+      page,
+      'Shift+Tab from the buttons reached the link',
+      signOff(page),
+    );
+  });
+
+  for (const scheme of ['light', 'dark'] as const)
+    test(`the notice meets AA contrast in the ${scheme} theme`, async ({
+      page,
+    }, testInfo) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await openEvidencePage(page, testInfo, {
+        order: 'resolve-then-confirm',
+        html: HTML_WITH_ADDED,
+        seed: verdictOn('approved', [...coveredBy(HTML), DROPPED]),
+      });
+      const notice = outOfDate(page);
+      await expect(notice).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => getComputedStyle(document.body).backgroundColor,
+        ),
+        `the page is in its ${scheme} theme`,
+      ).toBe(scheme === 'dark' ? 'rgb(19, 21, 25)' : 'rgb(247, 246, 242)');
+      const parts = {
+        'lead sentence': notice.locator('strong'),
+        'first paragraph': notice.locator('p').first(),
+        'added journey link': notice.getByRole('link'),
+        'removed journey id': notice.locator('code'),
+      };
+      for (const [part, locator] of Object.entries(parts)) {
+        await expect(locator, `the notice has one ${part}`).toHaveCount(1);
+        expect(
+          await contrastRatio(locator),
+          `the ${part} in the ${scheme} theme`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      await shoot(page, `the notice in the ${scheme} theme`, notice);
+    });
+
+  test('without storage, a verdict given in this view covers this view', async ({
+    page,
+  }) => {
+    // Opened outside claude.ai, the page finds no `window.claude` at all.
+    await serveEvidencePage(page, HTML_WITH_ADDED);
+    await page.goto(`${ORIGIN}/`);
+    await expect(page.locator('#state')).toHaveText(
+      /^Ticks are local to this view\b/,
+    );
+    await toggle(page, ADDED);
+    await expect(tickBox(page, ADDED)).toBeChecked();
+    await approveButton(page).click();
+    await expectCurrent(page, approveButton(page));
+    await expect(
+      page.locator('#state'),
+      'the verdict is reported unsaved',
+    ).toHaveText(/^Not saved\b/);
+    await shoot(
+      page,
+      'no storage: given here, and said unsaved',
+      signOff(page),
+    );
+  });
+
+  test('an out-of-date verdict still reads out of date after live updates stop', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      html: HTML_WITH_ADDED,
+      seed: verdictOn('approved', coveredBy(HTML)),
+      subscriptionDies: true,
+    });
+    await expect(page.locator('#state')).toHaveText(/^Live updates stopped\b/);
+    await expect(outOfDate(page)).toBeVisible();
+    await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await shoot(page, 'live updates stopped: still out of date', signOff(page));
   });
 });
 

@@ -412,18 +412,35 @@ function astroParts(text: string): { frontmatter?: Region; markup: string } {
     : { markup };
 }
 
-/** The body of each `element` in `markup`, as a region of the file. */
-const bodies = (markup: string, element: RegExp): Region[] =>
-  [...markup.matchAll(element)].map((match) => {
-    const start = match.index + match[1].length;
-    return [start, start + match[2].length] as const;
-  });
+/**
+ * The body of each `element` in `markup` whose opening tag `keep` accepts, as
+ * a region of the file.
+ */
+const bodies = (
+  markup: string,
+  element: RegExp,
+  keep: (tag: string) => boolean = () => true,
+): Region[] =>
+  [...markup.matchAll(element)]
+    .filter((match) => keep(match[1]))
+    .map((match) => {
+      const start = match.index + match[1].length;
+      return [start, start + match[2].length] as const;
+    });
 
 /** The whole of `text` with everything outside `region` blanked. */
 const viewOf = (text: string, [start, end]: Region): string =>
   blanked(text.slice(0, start)) +
   text.slice(start, end) +
   blanked(text.slice(end));
+
+/** `text` with every one of `regions` blanked, offsets and lines intact. */
+const withRegionsBlanked = (text: string, regions: readonly Region[]): string =>
+  regions.reduce(
+    (out, [start, end]) =>
+      out.slice(0, start) + blanked(out.slice(start, end)) + out.slice(end),
+    text,
+  );
 
 /**
  * The code an `.astro` file holds — its frontmatter, then each `<script>`
@@ -440,9 +457,33 @@ const viewOf = (text: string, [start, end]: Region): string =>
  * a tag.
  */
 export function astroCodeViews(text: string): string[] {
-  const { frontmatter, markup } = astroParts(text);
-  const regions = frontmatter === undefined ? [] : [frontmatter];
-  return [...regions, ...bodies(markup, SCRIPT)].map((region) =>
+  const { frontmatter } = astroParts(text);
+  const head = frontmatter === undefined ? [] : [viewOf(text, frontmatter)];
+  return [...head, ...astroScriptViews(text)];
+}
+
+/**
+ * The frontmatter of an `.astro` file as a view, or the whole file blanked
+ * when it has none.
+ *
+ * The first of `astroCodeViews`, taken on its own: a guard reading a
+ * component's props must not read its scripts (#331), and "the first view"
+ * cannot be trusted to be the frontmatter, because in a file without one it is
+ * the first script. Blank rather than absent, so a parser handed it reads an
+ * empty program and no caller has a missing case to forget.
+ */
+export function astroFrontmatterView(text: string): string {
+  const { frontmatter } = astroParts(text);
+  return frontmatter === undefined ? blanked(text) : viewOf(text, frontmatter);
+}
+
+/**
+ * Each `<script>` body in an `.astro` file, as a view: the rest of
+ * `astroCodeViews`, for a guard that must read a page's scripts and never its
+ * frontmatter (#331).
+ */
+export function astroScriptViews(text: string): string[] {
+  return bodies(astroParts(text).markup, SCRIPT).map((region) =>
     viewOf(text, region),
   );
 }
@@ -461,6 +502,50 @@ export function astroStyleViews(text: string): string[] {
     viewOf(text, region),
   );
 }
+
+/**
+ * A `<style>` tag Astro leaves unscoped: `is:global` opts out of scoping, and
+ * `is:inline` out of processing altogether.
+ */
+const UNSCOPED = /\bis:(?:global|inline)\b/;
+
+/**
+ * The CSS Astro scopes to an `.astro` file's own elements, comment-free: each
+ * `<style>` body whose tag carries neither `is:global` nor `is:inline` (#331).
+ *
+ * A rule here reaches only the elements the component builds, because Astro
+ * stamps its `data-astro-cid-*` onto those elements and onto every selector.
+ * It lives here rather than beside its guard for the reason `stylesheetCss`
+ * gives: the stripper has no caller outside this file.
+ */
+export const astroScopedCss = (text: string): string[] =>
+  bodies(astroParts(text).markup, STYLE, (tag) => !UNSCOPED.test(tag)).map(
+    (region) => withoutCssComments(viewOf(text, region)),
+  );
+
+/**
+ * An `.astro` file's template, the markup its elements are written in, with
+ * the frontmatter, every script and style body, and every comment removed
+ * (#331).
+ *
+ * What a guard reads to learn which classes a component's own elements can
+ * carry: a class spelled in a script body belongs to whatever that script
+ * builds, and one spelled in a comment belongs to nothing. Not a view, since
+ * the comments are removed rather than blanked, so a caller can ask what the
+ * template holds but not where.
+ *
+ * Residual, named rather than chased: `withoutAstroComments`'s own, a
+ * trailing comment after an unbalanced apostrophe in template text.
+ */
+export const astroTemplate = (text: string): string => {
+  const { markup } = astroParts(text);
+  return withoutAstroComments(
+    withRegionsBlanked(markup, [
+      ...bodies(markup, SCRIPT),
+      ...bodies(markup, STYLE),
+    ]),
+  );
+};
 
 /**
  * The CSS a file holds: a `.css` file whole, an `.astro` file's `<style>`
@@ -495,11 +580,7 @@ export const stylesheetCss = (file: string, text: string): string[] =>
  * not read a `<style>` body as if it were TypeScript.
  */
 export const withoutAstroStyles = (text: string): string =>
-  bodies(astroParts(text).markup, STYLE).reduce(
-    (out, [start, end]) =>
-      out.slice(0, start) + blanked(out.slice(start, end)) + out.slice(end),
-    text,
-  );
+  withRegionsBlanked(text, bodies(astroParts(text).markup, STYLE));
 
 /**
  * A source file's code with its comments stripped, chosen by extension: what

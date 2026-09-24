@@ -601,6 +601,71 @@ test.describe('classroom group creator', () => {
         'a reduced-motion visitor downloads no audio at all',
       );
     });
+
+    /**
+     * The longest duration in a computed `transition-duration` list, in whole
+     * microseconds. Engines write 0.01ms differently (`1e-05s`, `0.00001s`),
+     * so it is compared as a number, never as text.
+     */
+    const longestMicroseconds = (durations: string): number =>
+      Math.max(
+        ...durations.split(',').map((duration) => {
+          const time = /^\s*([\d.e+-]+)(ms|s)\s*$/.exec(duration);
+          if (time === null) throw new Error(`not a CSS time: ${duration}`);
+          return Math.round(Number(time[1]) * (time[2] === 's' ? 1e6 : 1e3));
+        }),
+      );
+
+    test('sees every dealt card at rest, with nothing left to move', async ({
+      page,
+    }) => {
+      // The mechanism that works, asserted as itself (#331): tokens.css's
+      // reset cuts every transition to 0.01ms, and the script's forced `skip`
+      // deals every card at once. The page's scoped <style> once carried a
+      // reduced-motion rule for the cards that matched none of them, because
+      // the script builds every card and none carries the component's scope.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.goto('/classroom-groups');
+      await page.fill('#cg-count', '6');
+      await page.click('#cg-go');
+      const cards = page.locator('#cg-results .student');
+      await expect(cards).toHaveCount(6);
+      await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
+
+      const atRest = {
+        transition: 'at most 0.01ms',
+        transform: 'none',
+        opacity: '1',
+      };
+      await expect
+        .poll(async () =>
+          (
+            await cards.evaluateAll((elements) =>
+              elements.map((element) => {
+                const style = getComputedStyle(element);
+                return {
+                  duration: style.transitionDuration,
+                  transform: style.transform,
+                  opacity: style.opacity,
+                };
+              }),
+            )
+          ).map(({ duration, transform, opacity }) => ({
+            transition:
+              longestMicroseconds(duration) <= 10
+                ? atRest.transition
+                : duration,
+            transform,
+            opacity,
+          })),
+        )
+        .toEqual(Array(6).fill(atRest));
+      await shoot(
+        page,
+        'every dealt card at rest for a reduced-motion visitor',
+        page.locator('#cg-results'),
+      );
+    });
   });
 
   test('the fallback plays through a full shuffle when every audio request is blocked', async ({
@@ -1452,6 +1517,29 @@ test.describe('out-of-date groups', () => {
       page.locator('#cg-results .group').first(),
     );
     expect(contrast).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // #332. The notice paints its own cream ground (#fff6e3) but took its ink
+  // from --ink, which Aurora made near-white: 1.05:1, a sentence nobody could
+  // read. Scored the way the browser paints it, in the real state, so the
+  // ground is the one the sentence actually sits on rather than a token pair.
+  test('the out-of-date sentence meets the WCAG AA contrast floor', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    const sentence = page.locator('#cg-stale-text');
+    await expect(sentence).toBeVisible();
+    await expect(sentence).toHaveText(
+      'These groups are out of date — the group size changed.',
+    );
+    expect(await contrastRatio(sentence)).toBeGreaterThanOrEqual(4.5);
+    await shoot(
+      page,
+      'the out-of-date sentence on its cream notice',
+      page.locator('#cg-stale'),
+    );
   });
 
   // CLAUDE.md's binding rules apply to anything this task adds: no

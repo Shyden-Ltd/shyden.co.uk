@@ -103,6 +103,25 @@ describe('the locale metadata table', () => {
     expect(checked, 'every MVP language must be checked').toHaveLength(5);
   });
 
+  it('gives every language the short code its compact label shows', () => {
+    // Below 720px the switcher shows a flag and this code instead of the full
+    // name, which ran the Shyden wordmark under the menu button at 320px in
+    // Indonesian (#329). The five values are the operator's, 2026-09-23, so
+    // they are pinned as literals. 中文 and ไทย are already short, so their
+    // codes are their names.
+    expect(LOCALE_METADATA.en.shortName).toBe('EN');
+    expect(LOCALE_METADATA.id.shortName).toBe('ID');
+    expect(LOCALE_METADATA.zh.shortName).toBe('中文');
+    expect(LOCALE_METADATA.vi.shortName).toBe('VI');
+    expect(LOCALE_METADATA.th.shortName).toBe('ไทย');
+  });
+
+  it('gives every language a distinct, non-blank short code', () => {
+    const codes = MVP_LOCALES.map((l) => LOCALE_METADATA[l].shortName);
+    expect(codes.filter((code) => (code ?? '').trim() !== '')).toHaveLength(5);
+    expect(new Set(codes).size, 'two languages sharing a code').toBe(5);
+  });
+
   it('pairs every language with a flag, because a name alone is easy to miss', () => {
     // A flag is a country, not a language, which is exactly why the native
     // name carries the meaning and the flag is only a visual anchor.
