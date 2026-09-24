@@ -214,6 +214,8 @@ const DECORATIVE: Record<string, string> = {
     'the mint bloom behind the marquee band. A box-shadow: nothing is ever read against it, and 1.4.11 reaches only what identifies a control.',
   '--dock-shadow':
     'the shadow the pinned action row on /classroom-groups casts up over what scrolls beneath it (#188). Nothing is read against it by design: scroll-padding keeps a focused field clear of the row, and 1.4.11 reaches only what identifies a control.',
+  '--lift-shadow':
+    "the phone mockup's shadow (PhoneFrame.astro). A box-shadow: nothing is read against it, and 1.4.11 reaches only what identifies a control.",
 };
 
 const pairName = (p: Pair) =>

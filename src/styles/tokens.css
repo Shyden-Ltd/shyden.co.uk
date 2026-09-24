@@ -65,6 +65,11 @@
      by design, because scroll-padding keeps a focused field clear of the row. */
   --dock-shadow: rgb(0 0 0 / 0.55);
 
+  /* The phone mockup's shadow (PhoneFrame.astro). Decorative, like the dock
+     shadow above: nothing is read against it. A token so a lighter palette
+     can soften it (#142); this is the value the frame hard-coded. */
+  --lift-shadow: rgb(0 0 0 / 0.55);
+
   /* The atmosphere: three radial pools and a white shaft, painted on
      body::before. Named by POSITION, not by hue (#142): the same layer
      carries window light in one theme and mint in the other. Text IS read
