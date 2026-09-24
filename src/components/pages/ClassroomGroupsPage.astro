@@ -1055,6 +1055,11 @@ const sexWhyText = sexWhy(roster, t);
     opacity: 0;
     transform: translateY(-0.5rem) scale(0.96);
   }
+  /* Reduced motion is not handled here. For a visitor who asked for less
+     motion, the script forces the speed to `skip`, which deals every card at
+     once, and tokens.css's reset cuts this transition to 0.01ms. Nothing for
+     the cards belongs in this file's scoped <style>: the script builds every
+     card, so none carries the scope and a rule there matches nothing (#331). */
   #cg-results .student.dealt {
     opacity: 1;
     transform: none;
@@ -3040,17 +3045,6 @@ const sexWhyText = sexWhy(roster, t);
   @media (min-width: 560px) {
     .tables {
       grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    }
-  }
-
-  /* Someone who asked their device for less motion gets the result with no
-     movement at all, even if the animation runs. */
-  @media (prefers-reduced-motion: reduce) {
-    #cg-results .student,
-    #cg-results .student.dealt {
-      opacity: 1;
-      transform: none;
-      transition: none;
     }
   }
 </style>
