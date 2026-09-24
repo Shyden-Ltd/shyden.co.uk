@@ -485,7 +485,7 @@ Refs #142"
   });
 ```
 
-  Add `ATMOSPHERE`, `atmosphereLayers` and `worstContrast` to the import from `'../palette'`.
+  Add `atmosphereLayers` to the import from `'../palette'`, and only that. `ATMOSPHERE` and `worstContrast` join the import in Step 4, when the local `ATMOSPHERE` array goes. Imported now, `ATMOSPHERE` would be declared twice in one module. `astro check` refuses that (ts(2440)), but vitest does not. Measured on a two-file probe: its transform lets the import win at every reference, so the local array would silently become the placeholder string, and `...ATMOSPHERE` would spread it into characters.
 
 - [ ] **Step 2: Run it and watch it fail.**
   - Run: `npx vitest run tests/unit/contrast.test.ts -t "named by position"`
@@ -496,7 +496,7 @@ Refs #142"
   - Then confirm with `git grep -n -e '--aurora-' -- src`. Expected: no output, and exit 1. Put a known positive beside it: `git grep -c -e '--pool-foot' -- src/styles/tokens.css` must print `3`. The tests are checked at the end of Step 4: until then, `contrast.test.ts`'s local `ATMOSPHERE` array still names the four old tokens.
 
 - [ ] **Step 4: Score by subset in `contrast.test.ts`.**
-  - Delete the local `ATMOSPHERE` array and its doc comment; the placeholder now comes from `../palette`.
+  - Delete the local `ATMOSPHERE` array and its doc comment; the placeholder now comes from `../palette`. Add `ATMOSPHERE` and `worstContrast` to the import from `'../palette'` in the same edit.
   - In the doc comment above `PAIRS`, "a pair drawn over it names `ATMOSPHERE`, above, as its ground" becomes "a pair drawn over it names the `ATMOSPHERE` placeholder from `../palette` in its stack". Nothing named `ATMOSPHERE` sits above it any more.
   - Change the four atmosphere pairs:
 
@@ -1178,7 +1178,7 @@ describe('no colour a theme cannot see (#142)', () => {
      measures the real composite in every run.
 ```
 
-  The sentence that follows starts on the replaced paragraph's last line ("…sitting on it. Guarded by"). Keep it: the block's last line becomes `     the real composite in every run. Guarded by`, and the lines after it ("tests/e2e/classroom-groups.spec.ts's …" to the end of the comment) stay as they are.
+  The sentence that follows starts on the replaced paragraph's last line ("…sitting on it. Guarded by"). Keep it: the block's last line becomes `     measures the real composite in every run. Guarded by`, and the lines after it ("tests/e2e/classroom-groups.spec.ts's …" to the end of the comment) stay as they are.
 
 - [ ] **Step 7: Run the whole unit suite and watch it pass.**
   - Run: `npm run test:unit`
@@ -1518,3 +1518,18 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
 2. The doc comment that moves with `flatten` quoted `--border-strong` at .35 and the un-composited comparison at 21:1. Today the token is 0.4, and that comparison scores 20.17:1.
 3. Task 2 Step 1 said "the first test of the `describe`" without saying on which side of the first test's doc comment it goes. Placed after that comment, the new test would take it.
 4. Task 7 Step 6's replacement comment said "No figure is kept here" in the line after it quotes 3.89:1. It now says no *current* figure is kept.
+
+### Pass 4, 2026-09-24: 2 findings, both fixed
+
+**Read:** the whole plan again, after pass 3's fixes.
+
+**Mechanical checks:**
+
+- **The plan's code, run again.** 2408 tests, 3 failing: exactly the three new guards. Every meta-guard passes. Types: 0 errors, 0 warnings, 0 hints.
+- **Red against the stubs, again.** 15 failed and 15 passed, out of 30.
+- **Finding 1, measured rather than assumed.** A two-file probe declared an import and a `const` of the same name. The prediction was a syntax error, and that was wrong. esbuild drops the import and compiles, and vitest loads the file and resolves every reference to the import, so the local value is silently replaced. Only `astro check` refuses it, with ts(2440).
+
+**Findings:**
+
+1. Task 2 Step 1 imported `ATMOSPHERE` while `contrast.test.ts` still declares its own `ATMOSPHERE` array, which is not deleted until Step 4. Under vitest the import would silently shadow the array, and every atmosphere pair would spread the placeholder string into characters. The import now moves to Step 4.
+2. Task 7 Step 6 quoted the replacement block's last line as it was before pass 3 reworded it ("the real composite…" where the line now opens with "measures").
