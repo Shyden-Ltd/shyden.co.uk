@@ -1454,6 +1454,29 @@ test.describe('out-of-date groups', () => {
     expect(contrast).toBeGreaterThanOrEqual(4.5);
   });
 
+  // #332. The notice paints its own cream ground (#fff6e3) but took its ink
+  // from --ink, which Aurora made near-white: 1.05:1, a sentence nobody could
+  // read. Scored the way the browser paints it, in the real state, so the
+  // ground is the one the sentence actually sits on rather than a token pair.
+  test('the out-of-date sentence meets the WCAG AA contrast floor', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    const sentence = page.locator('#cg-stale-text');
+    await expect(sentence).toBeVisible();
+    await expect(sentence).toHaveText(
+      'These groups are out of date — the group size changed.',
+    );
+    expect(await contrastRatio(sentence)).toBeGreaterThanOrEqual(4.5);
+    await shoot(
+      page,
+      'the out-of-date sentence on its cream notice',
+      page.locator('#cg-stale'),
+    );
+  });
+
   // CLAUDE.md's binding rules apply to anything this task adds: no
   // horizontal scroll at 320px in any state, and every interactive target
   // is >= 44px. The full sweep across every width and every OTHER state on

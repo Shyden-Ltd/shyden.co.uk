@@ -36,6 +36,12 @@ const links = [
         <span class="bars"></span>
       </summary>
     </details>
+    {/* The language switcher lives in the BAR, not in <nav>, for two reasons,
+        both learned from a failing test. <nav> means "the site's sections"
+        and is pinned to exactly those three links; a language control is a
+        different kind of thing. And on mobile <nav> collapses behind the
+        menu button, which would hide the switcher from exactly the visitors
+        most likely to want it. */}
     <LanguageSwitcher lang={lang} pathname={Astro.url.pathname} />
     <nav id="primary-nav">
       {links.map((l) => (
@@ -61,6 +67,12 @@ const links = [
     justify-content: space-between;
   }
   .wordmark {
+    /* Never shrinks. `min-width: 44px` below is a touch-target floor, and an
+       explicit min-width replaces flex's automatic minimum (the text's own
+       width). So when the row ran out of room, flex could squeeze this box
+       to 60px while "Shyden" still needed 73.6px, and the word ran under the
+       menu button (#329). */
+    flex: none;
     display: inline-flex;
     align-items: center;
     min-width: 44px;
@@ -143,25 +155,5 @@ const links = [
       position: static;
       padding: 0;
     }
-  }
-  /* The language link lives in the BAR, not in <nav>.
-     Two reasons, both learned from a failing test:
-     1. <nav> means "the site's sections" and is pinned to exactly those three
-        links; a language control is a different kind of thing.
-     2. On mobile <nav> collapses behind the disclosure, which would have
-        hidden the switcher behind a hamburger — unreachable for exactly the
-        visitors most likely to want it. */
-  .lang {
-    margin-left: auto;
-    margin-right: 1rem;
-    min-height: 44px;
-    min-width: 44px;
-    display: inline-flex;
-    align-items: center;
-    color: var(--ink);
-    font-weight: 600;
-    font-size: 0.9rem;
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
   }
 </style>
