@@ -449,6 +449,7 @@ const DECORATIVE_SELECTORS = [
   'components/pages/ClassroomGroupsPage.astro :: .cg-print-panel',
   'components/pages/ClassroomGroupsPage.astro :: .cg-print-panel fieldset',
   'components/pages/ClassroomGroupsPage.astro :: .tool-section',
+  'components/pages/ClassroomGroupsPage.astro :: .actions',
   'pages/404.astro :: hr',
 ];
 
