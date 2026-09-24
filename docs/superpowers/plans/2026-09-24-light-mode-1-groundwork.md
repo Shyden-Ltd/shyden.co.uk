@@ -57,7 +57,7 @@
 
 | file | responsibility |
 | --- | --- |
-| `tests/palette.ts` (new) | The palette model: the bare `:root` tokens, the atmosphere layers in paint order, subsets, compositing, and a pair's worst contrast. Used by `contrast.test.ts`, `tokens.test.ts` and, in PR 2, the per-theme e2e runs. |
+| `tests/palette.ts` (new) | The palette model: the bare `:root` tokens, the atmosphere layers in paint order, subsets, compositing, and a pair's worst contrast. Used by `contrast.test.ts`, `tokens.test.ts`, `colour-literals.test.ts` (for `TOKENS_FILE`) and, in PR 2, the per-theme e2e runs. |
 | `tests/unit/palette.test.ts` (new) | Fixtures for the model. |
 | `tests/unit/tokens.test.ts` (new) | Structural guards on `tokens.css`. PR 1: every declared token is read. PR 2 adds the dark-block guards here. |
 | `tests/unit/colour-literals.test.ts` (new) | The §6.6 guard and its allowlist. |
@@ -260,7 +260,7 @@ describe('worstContrast', () => {
   - Expected: `Tests  10 failed (10)`, each with `not implemented: …`.
   - If a test passes against the stubs, it asserts nothing: rewrite it before going on.
 
-- [ ] **Step 4: Implement `tests/palette.ts`,** replacing the stubs whole. `flatten` moves from `contrast.test.ts` with its doc comment, changed in one place: `from` widens from `Map` to `ReadonlyMap`, which every caller's `Map` satisfies:
+- [ ] **Step 4: Implement `tests/palette.ts`,** replacing the stubs whole. `flatten` moves from `contrast.test.ts` with its doc comment, changed in two places. `from` widens from `Map` to `ReadonlyMap`, which every caller's `Map` satisfies. The doc comment's example quoted `--border-strong` at `.35`, its value until Aurora built the atmosphere (#17, `f3e48fc`), and "21:1", so it now quotes today's `0.4` and the 20.17:1 that comparison actually scores:
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -367,10 +367,10 @@ export const subsets = <T>(items: readonly T[]): T[][] =>
  * Flatten a layer stack, written TOP-FIRST, onto its opaque base.
  *
  * `['--border-strong', '--bg']` is the border as the eye actually receives it.
- * Comparing the declared `rgb(255 255 255 / .35)` against `--bg` directly
- * scores 21:1 — the ratio of pure white to near-black, a colour that is never
- * drawn anywhere. An alpha judged un-composited is a guard measuring a pixel
- * that does not exist, and it fails OPEN.
+ * Comparing the declared `rgb(255 255 255 / 0.4)` against `--bg` directly
+ * scores 20.17:1 — the ratio of pure white to near-black, a colour that is
+ * never drawn anywhere. An alpha judged un-composited is a guard measuring a
+ * pixel that does not exist, and it fails OPEN.
  */
 export const flatten = (
   layers: readonly string[],
@@ -472,7 +472,7 @@ Refs #142"
 - Consumes: `ATMOSPHERE`, `atmosphereLayers`, `worstContrast`, `rootTokens`, `tokensCss` (Task 1).
 - Produces: the token names `--pool-top-left`, `--pool-top-right`, `--pool-foot` and `--shaft`, which PR 2's Studio values use.
 
-- [ ] **Step 1: Write the failing pin** in `contrast.test.ts`, as the first test of `describe('the palette meets WCAG AA by computation, not by comment')`:
+- [ ] **Step 1: Write the failing pin** in `contrast.test.ts`, as the first test of `describe('the palette meets WCAG AA by computation, not by comment')`. Put it directly after the `describe(` line, above the doc comment of _computes the ratios WCAG itself publishes_, so that comment stays on its own test:
 
 ```ts
   it('reads the atmosphere from body::before, top-first, named by position', () => {
@@ -1173,9 +1173,9 @@ describe('no colour a theme cannot see (#142)', () => {
      measured 3.89:1, under the 4.5:1 AA floor for normal text, and a
      teacher reading a projected screen while it is true is exactly the
      case design spec section 8 keeps the old groups VISIBLE for, not an
-     incidental label the AA exemption would cover. No figure is kept here
-     because the palette moves (#17, #142): the test named below measures
-     the real composite in every run.
+     incidental label the AA exemption would cover. No current figure is
+     kept here, because the palette moves (#17, #142): the test named below
+     measures the real composite in every run.
 ```
 
   The sentence that follows starts on the replaced paragraph's last line ("…sitting on it. Guarded by"). Keep it: the block's last line becomes `     the real composite in every run. Guarded by`, and the lines after it ("tests/e2e/classroom-groups.spec.ts's …" to the end of the comment) stay as they are.
@@ -1500,3 +1500,21 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
 6. Task 9 kept its log "for the evidence page", which this PR no longer builds.
 7. Task 9's S2 row said to delete the file by hand, but the harness deletes it itself.
 8. Nothing moved #142's card to In Progress, although Task 10 says it stays there.
+
+### Pass 3, 2026-09-24: 4 findings, all fixed
+
+**Read:** the whole plan again, after pass 2's fixes.
+
+**Mechanical checks:**
+
+- **The plan's code, run again**, with `astroCode` placed as the plan now says. The whole unit suite ran 2408 tests with 3 failing, which are exactly the three new guards, failing where predicted. Every meta-guard passes, `stranded-docblocks` included.
+- **Types.** 0 errors, 0 warnings, 0 hints.
+- **Figures and history.** The white-on-`--bg` ratio is recomputed at 20.17:1 (finding 2). `git log -S` puts `--border-strong`'s move from .35 to 0.4 at `f3e48fc` (#17).
+- **Placement.** `contrast.test.ts` was read where Task 2's new test goes: the `describe` opens straight onto the doc comment of its first test (finding 3).
+
+**Findings:**
+
+1. The File map's "Used by" list for `tests/palette.ts` missed `colour-literals.test.ts`, which imports `TOKENS_FILE`.
+2. The doc comment that moves with `flatten` quoted `--border-strong` at .35 and the un-composited comparison at 21:1. Today the token is 0.4, and that comparison scores 20.17:1.
+3. Task 2 Step 1 said "the first test of the `describe`" without saying on which side of the first test's doc comment it goes. Placed after that comment, the new test would take it.
+4. Task 7 Step 6's replacement comment said "No figure is kept here" in the line after it quotes 3.89:1. It now says no *current* figure is kept.
