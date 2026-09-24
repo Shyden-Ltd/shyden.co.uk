@@ -6,6 +6,7 @@ import {
   localisePath,
   type Locale,
 } from '../../src/lib/i18n';
+import { layoutWidthsFrom } from '../layout-widths';
 import { searched } from '../source-files';
 import { publishedPaths } from './published-paths';
 import { recorded, shoot } from './evidence';
@@ -39,51 +40,27 @@ type Item = { name: string; rects: Rect[]; wraps: string[] };
 type Row = { left: number; right: number; items: Item[] };
 
 /**
- * Every width at which the page's layout can change, read from its own
- * stylesheets, with both sides of each breakpoint, plus 320px (the narrowest
- * the site supports) and 1280px.
- *
- * Within one layout the row's items keep their size while the row widens, so
- * the row is tightest at the lower edge of each range. Measuring both sides of
- * every breakpoint is what lets a handful of widths stand for every width from
- * 320px up. The minifier writes `min-width: 720px` as `width>=720px`, so both
- * spellings are read.
+ * Every width at which the page's layout can change: both sides of each
+ * breakpoint its stylesheets declare, plus 320px and 1280px. The browser only
+ * collects the media queries; which widths they mean is `layoutWidthsFrom`'s
+ * job, unit-tested against every way a width condition can be written.
  */
-const layoutWidths = (page: Page) =>
-  page.evaluate(() => {
-    const edges = new Set<number>();
-    const read = (rules: CSSRuleList) => {
-      for (const rule of Array.from(rules)) {
-        if (rule instanceof CSSMediaRule) {
-          const text = rule.media.mediaText;
-          const found = [
-            ...text.matchAll(/(min|max)-width\s*:\s*([\d.]+)(px|r?em)/g),
-          ].map(([, side, value, unit]) => ({ side, value, unit }));
-          for (const [, op, value, unit] of text.matchAll(
-            /width\s*(>=|<=|>|<)\s*([\d.]+)(px|r?em)/g,
-          )) {
-            found.push({
-              side: op.startsWith('>') ? 'min' : 'max',
-              value,
-              unit,
-            });
-          }
-          for (const { side, value, unit } of found) {
-            const px = Number(value) * (unit === 'px' ? 1 : 16);
-            if (side === 'min') edges.add(Math.ceil(px)).add(Math.ceil(px) - 1);
-            else edges.add(Math.floor(px)).add(Math.floor(px) + 1);
-          }
+const layoutWidths = async (page: Page) =>
+  layoutWidthsFrom(
+    await page.evaluate(() => {
+      const mediaTexts: string[] = [];
+      const read = (rules: CSSRuleList) => {
+        for (const rule of Array.from(rules)) {
+          if (rule instanceof CSSMediaRule)
+            mediaTexts.push(rule.media.mediaText);
+          if ('cssRules' in rule) read((rule as CSSGroupingRule).cssRules);
         }
-        if ('cssRules' in rule) read((rule as CSSGroupingRule).cssRules);
-      }
-    };
-    for (const sheet of Array.from(document.styleSheets)) read(sheet.cssRules);
-    const inRange = [...edges].filter((w) => w > 320 && w < 1280);
-    return {
-      edges: inRange,
-      widths: [320, ...inRange.sort((a, b) => a - b), 1280],
-    };
-  });
+      };
+      for (const sheet of Array.from(document.styleSheets))
+        read(sheet.cssRules);
+      return mediaTexts;
+    }),
+  );
 
 /** Every control the header bar renders at this width, with what it paints. */
 const headerRow = (page: Page): Promise<Row> =>
