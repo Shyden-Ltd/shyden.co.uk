@@ -6,6 +6,7 @@ import {
   getStrings,
   isBetaLocale,
 } from '../../src/lib/i18n/index';
+import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
 import { searched } from '../source-files';
 
@@ -60,18 +61,6 @@ test('the Classroom Group Creator loads on dev', async ({ page }) => {
  */
 const ROUTES = deployedRoutes();
 
-/**
- * How many BETA badges every deployed page must carry, in every locale.
- *
- * Each unverified language is marked exactly once -- in the switcher's control
- * when it is the language being read, in its list when it is an alternative --
- * so the total is the size of the beta set and does not vary by page or by
- * locale. An EXACT count, never "at least one": a marker painted on
- * everything, English included, satisfies any weaker check while telling the
- * visitor nothing.
- */
-const BETA_BADGES = LOCALES.filter(isBetaLocale).length;
-
 test.describe('every locale the site claims to serve is deployed', () => {
   for (const { locale, path, heading, englishHeading } of ROUTES) {
     test(`${path} is served in ${locale}`, async ({ page }) => {
@@ -99,8 +88,8 @@ test.describe('every locale the site claims to serve is deployed', () => {
       // only after the page is known to be a real 200.
       await expect(
         page.locator('[data-beta]'),
-        `${path}: expected one BETA badge per unverified locale`,
-      ).toHaveCount(BETA_BADGES);
+        `${path}: expected one BETA badge per unverified locale, and one more when ${locale} is one`,
+      ).toHaveCount(expectedBadges(locale));
       await expect(
         page.locator('[data-beta-notice]'),
         `${path}: ${locale === 'en' ? 'English is verified and must carry no notice' : 'the beta notice is missing'}`,
