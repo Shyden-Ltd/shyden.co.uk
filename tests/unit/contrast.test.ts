@@ -104,12 +104,6 @@ const PAIRS: Pair[] = [
     where: 'tool-card body copy on the glass panel',
   },
   {
-    fg: ['--ink-soft'],
-    bg: ['--glass-2', '--bg'],
-    level: 'body',
-    where: 'tool-card body copy, panel hovered',
-  },
-  {
     fg: ['--accent'],
     bg: ['--bg'],
     level: 'body',
@@ -206,7 +200,7 @@ const PAIRS: Pair[] = [
     bg: ['--disabled-fill'],
     level: 'body',
     where:
-      "the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning `--deep`'s entry records. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received",
+      'the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning that puts every ground a text colour sits on into a pair. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received',
   },
 ];
 
@@ -220,10 +214,6 @@ const PAIRS: Pair[] = [
 const DECORATIVE: Record<string, string> = {
   '--border':
     'decorative separators only — card outlines, header and footer rules, table rules. Every control boundary uses --border-strong.',
-  '--deep':
-    'a gradient stop in the page atmosphere, never drawn as text or a control edge. It IS a fill behind text — the earlier note here said otherwise — so it is measured as a layer in ATMOSPHERE rather than trusted as decorative.',
-  '--violet':
-    'a gradient stop in the page atmosphere. It was specified as the section kicker colour; measured, it scores 4.61:1 flat and 2.91:1 over the atmosphere, so it cannot carry small text. Kickers use --accent.',
   '--accent-glow':
     'the mint bloom behind the marquee band. A box-shadow: nothing is ever read against it, and 1.4.11 reaches only what identifies a control.',
   '--dock-shadow':

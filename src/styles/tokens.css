@@ -34,8 +34,6 @@
   --accent: #38f5c8;
   --accent-ink: #7fffe0;
   --on-accent: #04140f;
-  --violet: #7a5cff;
-  --deep: #184a6e;
 
   /* #c0392b was tuned for a near-white page and scores 3.71:1 on this ground —
      below the 4.5:1 body floor. The artifact never specified an error colour;
@@ -56,7 +54,6 @@
   --border: rgb(255 255 255 / 0.11);
   --border-strong: rgb(255 255 255 / 0.4);
   --glass: rgb(255 255 255 / 0.055);
-  --glass-2: rgb(255 255 255 / 0.09);
 
   /* The mint bloom behind the marquee band. Decorative: it is a shadow, so
      nothing is ever read against it and 1.4.11 does not reach it. */
@@ -321,7 +318,6 @@ main:focus {
        by default anyway, but `default` is a setting a user can change, and
        a page that depends on a default is not a page that decided. */
     --glass: transparent;
-    --glass-2: transparent;
     --accent-glow: transparent;
     --pool-top-left: transparent;
     --pool-top-right: transparent;
