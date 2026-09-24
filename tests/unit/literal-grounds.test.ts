@@ -225,9 +225,11 @@ describe('a ground written as a literal carries its own ink (#332)', () => {
     expect(
       tokenInkInside(
         'x.css',
-        `${notice}.m, .n > p { color: var(--ink); }\n@media (min-width: 560px) {\n  .n em { color: var(--accent); }\n}\n`,
+        // `.n>p` unspaced, so the child combinator is matched on its own
+        // rather than by the space a spaced `.n > p` also starts with.
+        `${notice}.m, .n>p { color: var(--ink); }\n@media (min-width: 560px) {\n  .n em { color: var(--accent); }\n}\n`,
       ).map(({ chain }) => chain),
-    ).toEqual([['.m, .n > p'], ['@media (min-width: 560px)', '.n em']]);
+    ).toEqual([['.m, .n>p'], ['@media (min-width: 560px)', '.n em']]);
   });
 
   it('leaves alone what carries its own ground, what is not inside, and paper', () => {

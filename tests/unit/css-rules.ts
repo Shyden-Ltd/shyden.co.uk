@@ -79,10 +79,7 @@ export function cssRules(css: string): CssRule[] {
       open.pop();
     } else if (ch === ';') {
       declare();
-    } else if (buffer !== '' || !/\s/.test(ch)) {
-      // Leading whitespace is never buffered: a `<style>` view is the whole
-      // `.astro` file with everything else blanked, and rescanning that
-      // prefix on every character would be quadratic.
+    } else {
       if (ch === '"' || ch === "'") quote = ch;
       buffer += ch;
     }
