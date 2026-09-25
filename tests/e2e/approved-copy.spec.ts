@@ -1,4 +1,3 @@
-import type { Locator } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import {
@@ -11,6 +10,7 @@ import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import {
   downloadText,
+  expectVisibleText,
   giveEveryoneASex,
   handoverTo,
   rosterWithAnAbsence,
@@ -40,12 +40,6 @@ test.use(recorded);
  * renders through the same `renderError` as every other refusal.
  */
 const LANGUAGES: readonly Locale[] = ['zh', 'vi', 'th'];
-
-/** Visible copy is both: `toHaveText` alone passes on a hidden element. */
-const expectVisibleText = async (target: Locator, text: string) => {
-  await expect(target).toBeVisible();
-  await expect(target).toHaveText(text);
-};
 
 test.describe('the copy the operator approved on #161', () => {
   for (const locale of LANGUAGES) {

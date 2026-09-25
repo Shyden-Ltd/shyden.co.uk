@@ -370,7 +370,7 @@ export const id: Catalogue = {
     // pemicunya (daftar kosong, atau semua siswa ditandai absen), bukan
     // hanya yang pertama.
     NO_STUDENTS:
-      'Tambahkan siswa, atau pastikan setidaknya satu di antaranya tidak ditandai absen.',
+      'Tambahkan siswa, atau pastikan tidak semuanya ditandai tidak hadir.',
     TOO_MANY_STUDENTS:
       'Jumlah siswa itu melebihi batas alat ini. Paling banyak {max}.',
     DUPLICATE_NUMBER:

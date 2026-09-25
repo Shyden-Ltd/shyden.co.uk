@@ -64,7 +64,7 @@ const NOT_WORDS = /\{[^{}]*\}|[\p{P}\p{S}]+/gu;
  * wherever a slot or punctuation stood. `按……划分` is two parts, `按` and
  * `划分`; a witness must carry both.
  */
-const partsOf = (text: string, locale: Locale): string[] =>
+export const partsOf = (text: string, locale: Locale): string[] =>
   text
     .normalize('NFC')
     .toLocaleLowerCase(locale)
@@ -72,7 +72,8 @@ const partsOf = (text: string, locale: Locale): string[] =>
     .map((part) => part.replace(/\s+/g, ' ').trim())
     .filter((part) => part !== '');
 
-const wordsOf = (text: string, locale: Locale): string =>
+/** The parts of a piece of copy that are words, as one space-joined string. */
+export const wordsOf = (text: string, locale: Locale): string =>
   partsOf(text, locale).join(' ');
 
 /**
