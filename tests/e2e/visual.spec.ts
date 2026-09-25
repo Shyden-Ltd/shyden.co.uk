@@ -2,6 +2,8 @@ import type { Page } from '@playwright/test';
 import { searched } from '../source-files';
 import { test, expect } from './fixtures';
 import { openRoster } from './helpers';
+import { THEMES } from '../palette';
+import { expectTheme } from '../themes';
 
 /**
  * What a 100% green suite cannot see (#33).
@@ -149,63 +151,86 @@ async function expectSamePixels(
   });
 }
 
-for (const { label, viewport } of WIDTHS) {
-  // `test.use({ viewport })` resizes every test in this group, and a real
-  // phone has one screen: the tag is what keeps android-chrome from running
-  // them (tests/unit/viewport-tagging.test.ts, #218).
-  test.describe(
-    `${label} @${viewport.width}px`,
-    { tag: '@emulated-viewport' },
-    () => {
-      test.use({ viewport });
+for (const theme of THEMES) {
+  // Dark keeps today's file names, so its diff reads file by file against
+  // the baselines it replaces; light is new, and says so (#142 §6.5).
+  const suffix = theme === 'dark' ? '' : `-${theme}`;
 
-      for (const { name, path } of PAGES) {
-        test(`${name} renders the same pixels`, async ({ page }) => {
-          await page.goto(path);
-          await expectSamePixels(page, `${name}-${label}.png`);
-        });
-      }
+  test.describe(`${theme} theme`, () => {
+    test.use({ colorScheme: theme });
 
-      // The roster's column headings exist only once a student is added, and
-      // CSS alone decides whether a sighted teacher sees them: the card layout
-      // hides the whole row, the table layout shows it again, and Remove's own
-      // heading stays hidden in both. No DOM assertion can tell a hidden heading
-      // from a shown one (#200), so the roster is captured with a student in it.
-      test('classroom-groups with a student added renders the same pixels', async ({
-        page,
-      }) => {
-        await openRoster(page);
-        // The state is proved before it can become a baseline: a roster that
-        // failed to open would be captured empty, and every later run would
-        // compare against that empty picture and pass.
-        await expect(page.locator('#cg-roster tbody tr')).toHaveCount(1);
-        await expectSamePixels(page, `classroom-groups-roster-${label}.png`);
-      });
+    for (const { label, viewport } of WIDTHS) {
+      // `test.use({ viewport })` resizes every test in this group, and a real
+      // phone has one screen: the tag is what keeps android-chrome from running
+      // them (tests/unit/viewport-tagging.test.ts, #218).
+      test.describe(
+        `${label} @${viewport.width}px`,
+        { tag: '@emulated-viewport' },
+        () => {
+          test.use({ viewport });
 
-      // The action bar as a teacher first meets it: docked on the fold, over
-      // the form it has not reached yet (#311, operator decision 2026-09-23).
-      // The full-page pictures above hold it in flow, so this is the only
-      // picture of the docked look. It is viewport-only, and a viewport capture
-      // never resizes the view, which is the step that moved the bar's label.
-      test('classroom-groups with the action bar docked renders the same pixels', async ({
-        page,
-      }) => {
-        await page.goto('/classroom-groups');
-        await settle(page);
-        // Docking is proved before it can become a baseline. A bar that had
-        // stopped docking would be photographed wherever it sat, and every
-        // later run would pass against that picture.
-        const bar = page.locator('p.actions');
-        await expect(bar).toHaveCSS('position', 'sticky');
-        const { bottom, fold } = await bar.evaluate((el) => ({
-          bottom: el.getBoundingClientRect().bottom,
-          fold: window.innerHeight,
-        }));
-        expect(bottom, 'the action bar rests on the fold').toBeCloseTo(fold, 0);
-        await expectSamePixels(page, `classroom-groups-docked-${label}.png`, {
-          fullPage: false,
-        });
-      });
-    },
-  );
+          for (const { name, path } of PAGES) {
+            test(`${name} renders the same pixels`, async ({ page }) => {
+              await page.goto(path);
+              await expectTheme(page, theme);
+              await expectSamePixels(page, `${name}-${label}${suffix}.png`);
+            });
+          }
+
+          // The roster's column headings exist only once a student is added, and
+          // CSS alone decides whether a sighted teacher sees them: the card layout
+          // hides the whole row, the table layout shows it again, and Remove's own
+          // heading stays hidden in both. No DOM assertion can tell a hidden heading
+          // from a shown one (#200), so the roster is captured with a student in it.
+          test('classroom-groups with a student added renders the same pixels', async ({
+            page,
+          }) => {
+            await openRoster(page);
+            await expectTheme(page, theme);
+            // The state is proved before it can become a baseline: a roster that
+            // failed to open would be captured empty, and every later run would
+            // compare against that empty picture and pass.
+            await expect(page.locator('#cg-roster tbody tr')).toHaveCount(1);
+            await expectSamePixels(
+              page,
+              `classroom-groups-roster-${label}${suffix}.png`,
+            );
+          });
+
+          // The action bar as a teacher first meets it: docked on the fold, over
+          // the form it has not reached yet (#311, operator decision 2026-09-23).
+          // The full-page pictures above hold it in flow, so this is the only
+          // picture of the docked look. It is viewport-only, and a viewport capture
+          // never resizes the view, which is the step that moved the bar's label.
+          test('classroom-groups with the action bar docked renders the same pixels', async ({
+            page,
+          }) => {
+            await page.goto('/classroom-groups');
+            await expectTheme(page, theme);
+            await settle(page);
+            // Docking is proved before it can become a baseline. A bar that had
+            // stopped docking would be photographed wherever it sat, and every
+            // later run would pass against that picture.
+            const bar = page.locator('p.actions');
+            await expect(bar).toHaveCSS('position', 'sticky');
+            const { bottom, fold } = await bar.evaluate((el) => ({
+              bottom: el.getBoundingClientRect().bottom,
+              fold: window.innerHeight,
+            }));
+            expect(bottom, 'the action bar rests on the fold').toBeCloseTo(
+              fold,
+              0,
+            );
+            await expectSamePixels(
+              page,
+              `classroom-groups-docked-${label}${suffix}.png`,
+              {
+                fullPage: false,
+              },
+            );
+          });
+        },
+      );
+    }
+  });
 }
