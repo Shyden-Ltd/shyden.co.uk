@@ -1,9 +1,9 @@
 # Translation reports — design (#97)
 
-**Status:** IN REVIEW. It is reviewed in passes until a pass finds nothing,
-then self-approved (operator, 2026-09-24: _"review the plan on a /loop until
-there's no findings, then approve it. do this for all future plans"_). The
-passes are logged in section 13. No plan or code exists yet.
+**Status:** APPROVED, self-approved on 2026-09-25 after review pass 7 found
+nothing (operator, 2026-09-24: _"review the plan on a /loop until there's no
+findings, then approve it. do this for all future plans"_). The passes are
+logged in section 13. No plan or code exists yet.
 On 2026-09-23 the design was put to him in four parts, each with its content in
 the question itself, and "Looks right" was recorded for all four. That was
 needed because an earlier "approval", of a design shown only in a preview
@@ -674,3 +674,11 @@ to pass 7.
 1. Pass 5's edit to the `@deployed-only` bullet left a broken wrap, the third
    edit in this review to do so. Pass 7 therefore scans every paragraph for
    a line under 50 characters that is followed by more prose.
+
+**Pass 7 (2026-09-25, at pass 6's head): no findings.** The mechanical checks
+were re-run: the same seven absent paths, all of them files the spec creates;
+all six exports present; the counts unchanged at 37/29/197 keys and 37/29/200
+forms. The wrap scan pass 6 called for ran and is live: it flagged two
+candidates, and both are deliberate (the line before `**Ticket:**`, and a list
+item that continues into a command). It read the whole document, sections 1
+to 13. **The spec is approved.**
