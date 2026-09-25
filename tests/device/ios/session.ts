@@ -41,6 +41,7 @@ import {
   WebDriverError,
   type WebElement,
 } from './webdriver';
+import { themeColour } from '../../palette';
 
 const DEV_SERVER_PORT = 4321;
 
@@ -670,7 +671,23 @@ export async function startIosSession(): Promise<DeviceSession> {
     interaction,
 
     async navigateToPath(path: string): Promise<void> {
+      // The palette is pinned per load (#142 §6.2), so no journey's result
+      // depends on the phone's own appearance setting. WebDriver cannot
+      // emulate a media feature on Safari, so the lever is the one the page
+      // itself honours: a saved choice, stamped on the origin BEFORE the
+      // measured load, which the load then proves it rendered. Dark, the
+      // palette every journey was written against.
+      await driver.navigate(`${baseUrl}/`);
+      await driver.executeScript("localStorage.setItem('theme', 'dark');");
       await driver.navigate(`${baseUrl}${path}`);
+      const ground = await driver.executeScript<string>(
+        'return getComputedStyle(document.documentElement).backgroundColor;',
+      );
+      if (ground !== themeColour('dark', '--bg'))
+        throw new Error(
+          `${path} rendered the ground ${ground}, not the dark theme's ` +
+            `${themeColour('dark', '--bg')}: the stamped choice did not take`,
+        );
       // The page's own module script (src/scripts/classroom-groups.ts) is a
       // deferred `type="module"`. `navigate` is specified to block until the
       // load event, which this project has measured to hold in practice

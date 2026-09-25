@@ -44,3 +44,19 @@ export async function saveTheme(page: Page, theme: Theme): Promise<void> {
   await page.evaluate((value) => localStorage.setItem('theme', value), theme);
   await page.reload();
 }
+
+/**
+ * The switch, proven on a deployed site (#142 §6.2): a press changes the page,
+ * and the choice survives a reload. dev-sanity and prod-sanity each run it
+ * against their own host, so it has one home here.
+ */
+export async function expectTheSwitchPersists(page: Page): Promise<void> {
+  const toggle = page.locator('header [data-theme-toggle]');
+  await page.goto('/');
+  await expectTheme(page, 'dark');
+  await toggle.click();
+  await expectTheme(page, 'light');
+  await page.reload();
+  await expectTheme(page, 'light');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+}

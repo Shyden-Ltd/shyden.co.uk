@@ -276,7 +276,7 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     for (const page of context.pages()) await page.close().catch(() => {});
   },
 
-  page: async ({ context, baseURL }, use, testInfo) => {
+  page: async ({ context, baseURL, colorScheme }, use, testInfo) => {
     // Chrome losing foreground mid-run is a real, observed failure mode (147 failed / 62
     // failed in otherwise-clean runs -- see tests/device/chrome-foreground.ts's own module
     // comment for the evidence and the design doc for the full trail).
@@ -288,6 +288,12 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     await ensureChromeForegroundOrRecover(testInfo.title);
 
     const page = await context.newPage();
+    // The theme is pinned per test (#142 §6.2). The phone's context was made
+    // by Chrome, not by Playwright, so the `colorScheme` option never reaches
+    // it by itself, and a run would follow the phone's own appearance setting.
+    // Emulating it on each page applies the project's scheme, or a test's own
+    // `test.use({ colorScheme })`, over CDP (Emulation.setEmulatedMedia).
+    await page.emulateMedia({ colorScheme });
     // Every download a test causes must COMPLETE on the phone (#308). A test that checks only a
     // filename would otherwise pass over a download that never saved, which is how every export
     // in the phone run failed, `canceled` with 0 bytes, while its tests stayed green.

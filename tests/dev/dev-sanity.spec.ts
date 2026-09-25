@@ -9,6 +9,7 @@ import {
 import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
 import { searched } from '../source-files';
+import { expectTheSwitchPersists } from '../themes';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -236,4 +237,12 @@ test.describe('the Classroom Group Creator v2 surfaces reached dev', () => {
       ).toBeVisible();
     });
   }
+});
+
+// The switch is a rendering fact, so the deployed site's browser run proves
+// it (#142 §6.2): it changes the page, and the choice survives a reload.
+test('the theme switch changes the page, and the choice survives a reload', async ({
+  page,
+}) => {
+  await expectTheSwitchPersists(page);
 });

@@ -642,9 +642,12 @@ describe.each(LOCALES)(
         values,
         `the student count never reaches storage (${locale})`,
       ).not.toContain(probeCount);
+      // `theme` is the harness's own stamp (navigateToPath pins the palette,
+      // #142), not a key this page writes.
+      const written = Object.keys(stored).filter((key) => key !== 'theme');
       expect(
-        Object.keys(stored).every((k) => k.startsWith('cg-')),
-        `every key this page writes starts "cg-" (${locale}): ${JSON.stringify(Object.keys(stored))}`,
+        written.every((k) => k.startsWith('cg-')),
+        `every key this page writes starts "cg-" (${locale}): ${JSON.stringify(written)}`,
       ).toBe(true);
     });
 
