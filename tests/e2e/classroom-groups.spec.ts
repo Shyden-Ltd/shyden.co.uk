@@ -13,7 +13,6 @@ import {
 import { recorded, shoot } from './evidence';
 import { THEMES } from '../palette';
 import { THEME_SCRIPT_SOURCE, emulateTheme } from '../themes';
-import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
   openRoster,
@@ -21,6 +20,7 @@ import {
   buildRoster,
   giveEveryoneASex,
   contrastRatio,
+  listedByThisBrowser,
 } from './helpers';
 
 test.use(recorded);
@@ -2288,23 +2288,12 @@ test.describe('every language renders its own messages', () => {
       await add.click();
       await expect(page.locator('.cg-student')).toHaveCount(2);
       const names = [t.studentNumber({ n: 1 }), t.studentNumber({ n: 2 })];
-      // The page joins a list with the browser's own Intl.ListFormat, and
-      // engines disagree: measured 2026-09-14, WebKit 26.6 spaces Thai
-      // "และ" where Chromium 153, Firefox 155 and Node's CLDR 48 do not. So
-      // the join comes from the page's engine, and every word around it from
-      // this locale's catalogue.
-      const { numberLocale } = LOCALE_METADATA[locale];
-      const join = new Intl.ListFormat(numberLocale, { type: 'conjunction' });
-      const pageJoin = await page.evaluate(
-        ([tag, items]) =>
-          new Intl.ListFormat(tag, { type: 'conjunction' }).format(items),
-        [numberLocale, names] as [string, string[]],
+      const problem = await listedByThisBrowser(
+        page,
+        locale,
+        names,
+        t.rosterNoSexMessage({ names }),
       );
-      const rendered = t.rosterNoSexMessage({ names });
-      expect(rendered.split(join.format(names)), 'the list, once').toHaveLength(
-        2,
-      );
-      const problem = rendered.replace(join.format(names), () => pageJoin);
       await expect(page.locator('#cg-roster-problem')).toHaveText(problem);
       notEnglish(
         problem,

@@ -1,4 +1,3 @@
-import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { getStrings, renderError, type Locale } from '../../src/lib/i18n/index';
@@ -11,6 +10,7 @@ import {
   buildRosterAtPath,
   expectVisibleText,
   handoverTo,
+  listedByThisBrowser,
   upload,
 } from './helpers';
 
@@ -42,35 +42,6 @@ const LANGUAGES: readonly Locale[] = ['zh', 'vi', 'th'];
 /** Four students; the first two are a together pair of mixed sex. */
 const NAMES = ['Ana', 'Budi', 'Citra', 'Dedi'];
 const byNumber = (n: number) => NAMES[n - 1] ?? String(n);
-
-/**
- * `expected` with its list of names written the way THIS browser writes it.
- *
- * `renderError` runs here in Node, and the page lists names with its own
- * engine's `Intl.ListFormat`, which differ: Node and Chromium write Thai
- * `AnaและBudi`, WebKit `Ana และ Budi`. Each page is correct for its engine,
- * so the list is taken from the browser under test. The swap must find
- * Node's list exactly once, or it would compare nothing it meant to.
- */
-const listedByThisBrowser = async (
-  page: Page,
-  locale: Locale,
-  names: string[],
-  expected: string,
-): Promise<string> => {
-  const inNode = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
-    names,
-  );
-  const inBrowser = await page.evaluate(
-    ([language, items]) =>
-      new Intl.ListFormat(language, { type: 'conjunction' }).format(items),
-    [locale, names] as const,
-  );
-  expect(expected.split(inNode), `"${inNode}" in "${expected}"`).toHaveLength(
-    2,
-  );
-  return expected.replace(inNode, inBrowser);
-};
 
 test.describe('the sentences corrected on #319', () => {
   for (const locale of LANGUAGES) {
