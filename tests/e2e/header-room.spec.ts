@@ -2,6 +2,7 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import {
   LOCALES,
+  getSiteStrings,
   localeFromPath,
   localisePath,
   type Locale,
@@ -176,44 +177,24 @@ const collisions = (row: Row): string[] => {
 };
 
 /**
- * A 44 x 44px stand-in for #142's theme switch, where the approved spec puts
- * the real one: immediately before the language switcher. It is the room AC5
- * asks for, measured before the switch exists. #142 deletes the stand-in when
- * the real switch lands, and the first test then measures the real one.
- */
-const STAND_IN = "stand-in for #142's theme switch";
-const addStandIn = (page: Page) =>
-  page.evaluate((name) => {
-    const bar = document.querySelector('header .bar');
-    const switcher = bar?.querySelector('.lang-switch');
-    if (!bar || !switcher) throw new Error('no language switcher in the bar');
-    const standIn = document.createElement('button');
-    standIn.type = 'button';
-    standIn.setAttribute('aria-label', name);
-    // The dashed outline is for the evidence picture: an outline takes no
-    // space, so the stand-in is seen without changing what is measured.
-    standIn.style.cssText =
-      'flex: none; width: 44px; height: 44px; margin: 0; padding: 0; border: 0; background: none; outline: 2px dashed; outline-offset: -2px';
-    bar.insertBefore(standIn, switcher);
-  }, STAND_IN);
-
-/**
  * What one test measures, row by row: the collisions, the rows (by content:
  * the names of the items found), and the rows or pages that measured too
  * little to mean anything. The test owns the loop and every resize, so each
  * resize sits in the body of a test tagged `@emulated-viewport`.
  */
-const survey = (standIn: boolean) => {
+const survey = (locale: Locale) => {
   const findings: string[] = [];
   const rows: string[] = [];
   const thin: string[] = [];
-  const least = standIn ? 4 : 3; // wordmark, menu or nav, switcher (+ stand-in)
+  const least = 4; // wordmark, menu or nav, theme switch, language switcher
+  // The theme switch by its own name (#142): a row without it has not
+  // measured the room AC5 asks for.
+  const themeSwitch = getSiteStrings(locale).themeDarkMode;
   return {
     /** Load a page, and read the widths its CSS can lay out. */
     open: async (page: Page, path: string): Promise<number[]> => {
       await page.goto(path);
       await page.evaluate(() => document.fonts.ready);
-      if (standIn) await addStandIn(page);
       const layout = await layoutWidths(page);
       // The widths are only as good as the CSS they were read from: with no
       // breakpoints found, 320px and 1280px would stand for every width.
@@ -229,7 +210,7 @@ const survey = (standIn: boolean) => {
       if (
         names.filter((name) => name !== '').length < least ||
         !names.includes('Shyden') ||
-        (standIn && !names.includes(STAND_IN))
+        !names.includes(themeSwitch)
       )
         thin.push(`${where} measured only [${names.join(' | ')}]`);
       for (const collision of collisions(row))
@@ -262,13 +243,12 @@ const pagesOf = async (page: Page, locale: Locale) => {
 
 test.describe('the header row has room for everything in it (#329)', () => {
   for (const locale of LOCALES) {
-    for (const standIn of [false, true]) {
-      const title = standIn
-        ? `${locale}: the header leaves room for #142's 44px switch, at any width`
-        : `${locale}: no header item overlaps another, at any width`;
-      test(title, { tag: '@emulated-viewport' }, async ({ page }) => {
+    test(
+      `${locale}: no header item overlaps another, at any width`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         const paths = await pagesOf(page, locale);
-        const header = survey(standIn);
+        const header = survey(locale);
         for (const path of paths) {
           for (const width of await header.open(page, path)) {
             await page.setViewportSize({ width, height: 800 });
@@ -284,7 +264,7 @@ test.describe('the header row has room for everything in it (#329)', () => {
           `${paths[0]} at 320px: the header row`,
           page.locator('header'),
         );
-      });
-    }
+      },
+    );
   }
 });

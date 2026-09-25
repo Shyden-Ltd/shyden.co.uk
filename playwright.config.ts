@@ -39,6 +39,7 @@ export const CONTENT_ONLY_SPECS = [
   'baseurl-guard.spec.ts',
   'locale-parity.spec.ts',
   'copy-reaches-a-page.spec.ts',
+  'theme-script.spec.ts',
 ];
 
 const contentOnly = new RegExp(

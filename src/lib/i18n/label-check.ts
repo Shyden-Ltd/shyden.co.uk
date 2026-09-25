@@ -141,6 +141,7 @@ const CHROME = 'the header or footer of every page';
 const SITE_PAGES: Record<keyof SiteStrings, string> = {
   nav: CHROME,
   menuLabel: CHROME,
+  themeDarkMode: CHROME,
   skipToContent: CHROME,
   footer: CHROME,
   language: CHROME,

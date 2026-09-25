@@ -150,10 +150,10 @@ jobs:
           grep -q 'id="cg-form"' cg.html || { echo "::error::classroom-groups form missing"; exit 1; }
           grep -qE '<script[^>]+src="[^"]*\.js"' cg.html || { echo "::error::classroom-groups ships no script"; exit 1; }
 
-          # The homepage still ships NO script — a promise this site makes and
-          # the kind of thing a bundler change breaks silently.
+          # The homepage still FETCHES no script: its one script, the theme
+          # script, is inline (#142), and a bundler change could add one silently.
           if grep -qE '<script[^>]+src="[^"]*\.js"' home.html; then
-            echo "::error::the homepage now ships JavaScript"; exit 1;
+            echo "::error::the homepage now fetches JavaScript"; exit 1;
           fi
 
           echo "Prod smoke passed against $BASE"

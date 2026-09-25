@@ -14,6 +14,7 @@ import { searched } from '../source-files';
  * As a flake that costs a re-run. The same expression asserting ABSENCE costs
  * the guard entirely — `expect(scripts).toEqual([])` is satisfied by "the
  * events have not arrived yet", so `the homepage still ships no JavaScript`
+ * (now `the homepage ships the theme script and nothing else`, #142)
  * would have passed on a homepage full of JavaScript, silently, forever.
  *
  * So absence is never asserted here without a control proving the recorder

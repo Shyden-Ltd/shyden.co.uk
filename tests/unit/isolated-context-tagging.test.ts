@@ -37,7 +37,10 @@ import {
  * THE RULE. A `test.use()` that sets `javaScriptEnabled: false` covers the
  * tests Playwright applies it to: every test in its group, nested groups
  * included, or every test in the file when it is called at file level. Each
- * covered test carries the tag; a tagged test nothing covers is stale. A
+ * covered test carries the tag. So does a test whose own body calls
+ * `newContext()`, since that is the call the real device refuses (#142: a
+ * choice carried into a new session). A tagged test that is neither is
+ * stale. A
  * `test.use()` inside a test body is a Playwright error, and a
  * `javaScriptEnabled` not written as `true` or `false` cannot be judged --
  * both are reported, never read as "JavaScript stays on".
@@ -76,13 +79,40 @@ function untaggedMessage(file: string, decl: Declaration): string {
   );
 }
 
+function newContextMessage(file: string, decl: Declaration): string {
+  return (
+    `${file}:${decl.line} -- test('${decl.title}') calls newContext(), and the real device ` +
+    'refuses a second browser context (see tests/e2e/fixtures.ts) -- tag it ' +
+    `\`${REQUIRES_ISOLATED_CONTEXT_TAG}\` so android-chrome excludes it by design instead of failing.`
+  );
+}
+
 function staleTagMessage(file: string, decl: Declaration): string {
   return (
     `${file}:${decl.line} -- test('${decl.title}') is tagged \`${REQUIRES_ISOLATED_CONTEXT_TAG}\` ` +
-    'but no test.use({ javaScriptEnabled: false }) covers it -- stale tag, silently costing ' +
+    'but no test.use({ javaScriptEnabled: false }) covers it and it calls no newContext() -- ' +
+    'stale tag, silently costing ' +
     'real-device coverage for a test that no longer needs excluding. Remove the tag, or ' +
     'restore the javaScriptEnabled: false use it is supposed to describe.'
   );
+}
+
+/** Whether a test's own body calls `newContext()`: a call, read by the parser, so a comment or a string naming it opens nothing. */
+function opensAContext(decl: Declaration): boolean {
+  let opens = false;
+  // A block body, so `visit` returns nothing: `ts.forEachChild` stops at the
+  // first callback that returns something truthy (tests/unit/ast.ts).
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'newContext'
+    )
+      opens = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(decl.body);
+  return opens;
 }
 
 /** Every group `decl` sits in, innermost first. */
@@ -135,16 +165,19 @@ function analyze(file: string, text: string): string[] {
       groupsAround(decl, declarations).some((group) =>
         coveringGroups.has(group),
       );
+    const opens = opensAContext(decl);
     const tagged = decl.tags.includes(REQUIRES_ISOLATED_CONTEXT_TAG);
     if (covered && !tagged) findings.push(untaggedMessage(file, decl));
-    else if (!covered && tagged) findings.push(staleTagMessage(file, decl));
+    else if (opens && !tagged) findings.push(newContextMessage(file, decl));
+    else if (!covered && !opens && tagged)
+      findings.push(staleTagMessage(file, decl));
   }
 
   return findings;
 }
 
-describe('a real device cannot isolate a JavaScript-disabled context', () => {
-  it('every test inside a javaScriptEnabled:false describe is tagged @requires-isolated-context, and no tag is stale', () => {
+describe('a real device has one browser context', () => {
+  it('every test run without JavaScript, or calling newContext(), is tagged @requires-isolated-context, and no tag is stale', () => {
     expectNothingFound(analyze);
   });
 });
@@ -394,5 +427,49 @@ describe('analyze() -- the scanner proven on synthetic input, not just trusted',
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain('synthetic.spec.ts:3');
     expect(findings[0]).toContain('shows the notice');
+  });
+
+  it('flags an untagged test that opens its own browser context, which the real device refuses', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('a new session', async ({ browser }) => {",
+      '  const session = await browser.newContext();',
+      '  await session.close();',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain('newContext()');
+    expect(findings[0]).toContain(REQUIRES_ISOLATED_CONTEXT_TAG);
+  });
+
+  it('accepts that test once tagged', () => {
+    expect(
+      scanned([
+        "import { test, expect } from './fixtures';",
+        '',
+        "test('a new session', { tag: '@requires-isolated-context' }, async ({ browser }) => {",
+        '  const session = await browser.newContext();',
+        '  await session.close();',
+        '});',
+        '',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('opens no context for a newContext() written only in a comment or a string', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('a note', { tag: '@requires-isolated-context' }, async ({ page }) => {",
+      '  // browser.newContext() is not called here',
+      "  await page.goto('/browser.newContext()');",
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('stale');
   });
 });

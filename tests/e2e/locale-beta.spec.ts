@@ -3,6 +3,8 @@ import { contrastRatio } from './helpers';
 import { recorded, shoot } from './evidence';
 import { expectedBadges } from '../beta-badges';
 import { searched } from '../source-files';
+import { THEMES } from '../palette';
+import { emulateTheme } from '../themes';
 import { expectNoHorizontalScroll } from '../viewport';
 import {
   LOCALES,
@@ -173,31 +175,34 @@ test.describe('every unverified language is marked BETA', () => {
     }
   });
 
-  test('the badge clears the WCAG AA floor for normal text', async ({
+  test('the badge clears the WCAG AA floor for normal text, in both themes', async ({
     page,
   }) => {
     // Both placements: the dropdown paints its own background, so the entry
-    // badge is a different composite from the one in the summary.
+    // badge is a different composite from the one in the summary. The list
+    // is opened first, so both badges are measured in each theme.
     await page.goto(localisePath('/', PREFIXED_LOCALES[0]));
-    const summaryBadge = page.locator(`${SWITCHER} > summary ${BADGE}`).first();
-    const summaryRatio = await contrastRatio(summaryBadge);
-    expect(summaryRatio).toBeGreaterThanOrEqual(4.5);
-    await shoot(
-      page,
-      `summary badge paints ${summaryRatio.toFixed(2)}:1, floor is 4.5:1`,
-      page.locator(`${SWITCHER} > summary`),
-    );
-
     await page.locator(`${SWITCHER} > summary`).click();
+    const summaryBadge = page.locator(`${SWITCHER} > summary ${BADGE}`).first();
     const entryBadge = page.locator(`${SWITCHER} li ${BADGE}`).first();
     await expect(entryBadge).toBeVisible();
-    const entryRatio = await contrastRatio(entryBadge);
-    expect(entryRatio).toBeGreaterThanOrEqual(4.5);
-    await shoot(
-      page,
-      `entry badge paints ${entryRatio.toFixed(2)}:1, floor is 4.5:1`,
-      page.locator(`${SWITCHER} ul`),
-    );
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const summaryRatio = await contrastRatio(summaryBadge);
+      expect(
+        summaryRatio,
+        `${theme}: the summary badge`,
+      ).toBeGreaterThanOrEqual(4.5);
+      const entryRatio = await contrastRatio(entryBadge);
+      expect(entryRatio, `${theme}: the entry badge`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+      await shoot(
+        page,
+        `${theme}: the badge paints ${summaryRatio.toFixed(2)}:1 in the summary and ${entryRatio.toFixed(2)}:1 in the list, floor 4.5:1`,
+        page.locator(SWITCHER),
+      );
+    }
   });
 
   test(

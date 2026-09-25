@@ -17,8 +17,9 @@ sits behind Basic auth and disallows crawling.
 Every route also exists under `/id/` in Bahasa Indonesia. Locales are declared in
 `src/lib/i18n/index.ts`; copy lives in `src/lib/i18n/{en,id,site}.ts`.
 
-**The homepage ships zero JavaScript**, and `deploy-prod.yml` fails the release
-if that ever stops being true.
+**The homepage fetches no JavaScript**: its one script, the theme script, is
+inline (#142), and `deploy-prod.yml` fails the release if the homepage ever
+fetches one.
 
 ## Tech
 

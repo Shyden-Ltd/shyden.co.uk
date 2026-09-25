@@ -16,6 +16,7 @@ export const siteEn = {
     contact: 'Contact',
   },
   menuLabel: 'Toggle navigation menu',
+  themeDarkMode: 'Dark mode',
   skipToContent: 'Skip to content',
 
   home: {
@@ -124,6 +125,7 @@ export const siteId: SiteStrings = {
     contact: 'Kontak',
   },
   menuLabel: 'Buka atau tutup menu navigasi',
+  themeDarkMode: 'Mode gelap',
   skipToContent: 'Lewati ke konten',
 
   home: {
@@ -224,6 +226,7 @@ export const siteZh: SiteStrings = {
     contact: '联系我们',
   },
   menuLabel: '切换导航菜单',
+  themeDarkMode: '深色模式',
   skipToContent: '跳转至正文',
   home: {
     title: 'Shyden Ltd — 一家新的科技公司',
@@ -315,6 +318,7 @@ export const siteVi: SiteStrings = {
     contact: 'Liên hệ',
   },
   menuLabel: 'Chuyển đổi menu điều hướng',
+  themeDarkMode: 'Chế độ tối',
   skipToContent: 'Chuyển thẳng đến nội dung',
   home: {
     title: 'Shyden Ltd — một công ty công nghệ mới',
@@ -409,6 +413,7 @@ export const siteTh: SiteStrings = {
     contact: 'ติดต่อ',
   },
   menuLabel: 'สลับเมนูนำทาง',
+  themeDarkMode: 'โหมดมืด',
   skipToContent: 'ไปตรงสู่เนื้อหา',
   home: {
     title: 'Shyden Ltd — บริษัทเทคโนโลยีน้องใหม่',

@@ -5,13 +5,16 @@ import { stylesheetCss } from './source-text';
 import { contrast, parseColour } from '../wcag';
 import {
   ATMOSPHERE,
+  THEMES,
   TOKENS_FILE,
   atmosphereLayers,
   flatten,
-  rootTokens,
+  themeTokens,
   tokensCss,
   worstContrast,
+  type Theme,
 } from '../palette';
+import { SHYTALK_MARK } from '../../src/lib/shytalk-brand';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -37,10 +40,10 @@ const ratioOf = (a: string, b: string): number => {
   return contrast(x.rgb, y.rgb);
 };
 
-const colourTokens = (): [string, string][] =>
+const colourTokens = (theme: Theme): [string, string][] =>
   nonEmpty(
-    [...rootTokens(tokensCss())].filter(([, value]) => isColour(value)),
-    `colour tokens in ${TOKENS_FILE}`,
+    [...themeTokens(tokensCss(), theme)].filter(([, value]) => isColour(value)),
+    `${theme} colour tokens in ${TOKENS_FILE}`,
   );
 
 /** 4.5 for body copy, 3 for large text and for anything identifying a control. */
@@ -198,6 +201,20 @@ const PAIRS: Pair[] = [
     where:
       'the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning that puts every ground a text colour sits on into a pair. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received',
   },
+  {
+    fg: [SHYTALK_MARK.shy],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Shy" (HomePage.astro, 2.6rem bold): on its own tile in light, and over the atmosphere in dark, where the tile is transparent (#142 §3.4)',
+  },
+  {
+    fg: [SHYTALK_MARK.talk],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Talk", on the same ground as "Shy" in each theme (#142 §3.4)',
+  },
 ];
 
 /**
@@ -216,6 +233,15 @@ const DECORATIVE: Record<string, string> = {
     'the shadow the pinned action row on /classroom-groups casts up over what scrolls beneath it (#188). Nothing is read against it by design: scroll-padding keeps a focused field clear of the row, and 1.4.11 reaches only what identifies a control.',
   '--lift-shadow':
     "the phone mockup's shadow (PhoneFrame.astro). A box-shadow: nothing is read against it, and 1.4.11 reaches only what identifies a control.",
+};
+
+/**
+ * The disabled fill in each theme, pinned against the brief (#250, #142
+ * §3.1): the level every derived guard around it is unable to assert.
+ */
+const DISABLED_FILL: Record<Theme, string> = {
+  light: '#dde2e8',
+  dark: '#2a323f',
 };
 
 const pairName = (p: Pair) =>
@@ -273,26 +299,29 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
     );
   });
 
-  it('every declared pair clears its required ratio, over the worst subset of the atmosphere', () => {
-    const css = tokensCss();
-    const from = rootTokens(css);
-    const layers = atmosphereLayers(css);
-    const failures = PAIRS.flatMap((pair) => {
-      const scored = worstContrast(pair.fg, pair.bg, layers, from);
-      if (typeof scored === 'string') return [`${pairName(pair)} — ${scored}`];
-      const need = LEVELS[pair.level];
-      return scored.ratio >= need
-        ? []
-        : [
-            `${pairName(pair)} — ${scored.ratio.toFixed(2)}:1 over ` +
-              `[${scored.subset.join(', ') || 'no layer'}], needs ${need}:1`,
-          ];
-    });
+  for (const theme of THEMES) {
+    it(`${theme}: every declared pair clears its required ratio, over the worst subset of the atmosphere`, () => {
+      const css = tokensCss();
+      const from = themeTokens(css, theme);
+      const layers = atmosphereLayers(css);
+      const failures = PAIRS.flatMap((pair) => {
+        const scored = worstContrast(pair.fg, pair.bg, layers, from);
+        if (typeof scored === 'string')
+          return [`${pairName(pair)} — ${scored}`];
+        const need = LEVELS[pair.level];
+        return scored.ratio >= need
+          ? []
+          : [
+              `${pairName(pair)} — ${scored.ratio.toFixed(2)}:1 over ` +
+                `[${scored.subset.join(', ') || 'no layer'}], needs ${need}:1`,
+            ];
+      });
 
-    expect(
-      searched(failures, { of: PAIRS, what: 'declared colour pairs' }),
-    ).toEqual([]);
-  });
+      expect(
+        searched(failures, { of: PAIRS, what: `${theme} colour pairs` }),
+      ).toEqual([]);
+    });
+  }
 
   /**
    * The disabled fill's LEVEL, pinned to a literal — the half every guard
@@ -303,57 +332,61 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
    * (disabled-controls.spec.ts) reads `--disabled-fill` off `:root` at
    * runtime and compares the control's own background to it. Both sides of
    * both move with the token, so both hold at ANY level (#117). Measured:
-   * set the fill to `--surface`'s `#070d16` and the label still scores
+   * set Aurora's fill to its `--surface`, `#070d16` and the label still scores
    * 7.5:1 and the control's background still equals the token — every guard
    * green, and a teacher sees no control at all. A level is pinned against
    * the brief, separately from anything derived from it.
    */
-  it('pins the disabled fill, and keeps it off every ground it is drawn on', () => {
-    const from = rootTokens(tokensCss());
-    expect(from.get('--disabled-fill')).toBe('#2a323f');
+  for (const theme of THEMES) {
+    it(`${theme}: pins the disabled fill, and keeps it off every ground it is drawn on`, () => {
+      const from = themeTokens(tokensCss(), theme);
+      expect(from.get('--disabled-fill')).toBe(DISABLED_FILL[theme]);
 
-    /* The class the literal cannot state, and the reason it is not simply a
+      /* The class the literal cannot state, and the reason it is not simply a
        second literal: the grounds are DERIVED. `Pair.bg` is a stack written
        top-first ENDING IN AN OPAQUE BASE, so its last layer is a ground by
        construction, and a ground added or renamed next year is covered the
        day it appears. Compared as parsed colour, so `#070d16` and
        `rgb(7 13 22)` are one finding rather than two spellings. */
-    const fill = parseColour(from.get('--disabled-fill') ?? '');
-    if (fill === null) throw new Error('--disabled-fill is not a colour');
+      const fill = parseColour(from.get('--disabled-fill') ?? '');
+      if (fill === null) throw new Error('--disabled-fill is not a colour');
 
-    const grounds = [
-      ...new Set(PAIRS.map((pair) => pair.bg[pair.bg.length - 1])),
-    ].filter((name) => name !== '--disabled-fill');
-    const collisions = grounds.filter((name) => {
-      const ground = parseColour(from.get(name) ?? '');
-      return (
-        ground !== null &&
-        ground.alpha === fill.alpha &&
-        ground.rgb.every((channel, i) => channel === fill.rgb[i])
-      );
+      const grounds = [
+        ...new Set(PAIRS.map((pair) => pair.bg[pair.bg.length - 1])),
+      ].filter((name) => name !== '--disabled-fill');
+      const collisions = grounds.filter((name) => {
+        const ground = parseColour(from.get(name) ?? '');
+        return (
+          ground !== null &&
+          ground.alpha === fill.alpha &&
+          ground.rgb.every((channel, i) => channel === fill.rgb[i])
+        );
+      });
+
+      expect(
+        searched(collisions, { of: grounds, what: 'opaque grounds' }),
+      ).toEqual([]);
     });
+  }
 
-    expect(
-      searched(collisions, { of: grounds, what: 'opaque grounds' }),
-    ).toEqual([]);
-  });
+  for (const theme of THEMES) {
+    it(`${theme}: every colour token is classified — paired or explicitly decorative`, () => {
+      const layers = atmosphereLayers(tokensCss());
+      const paired = new Set(
+        PAIRS.flatMap((p) => [...p.fg, ...p.bg]).flatMap((layer) =>
+          layer === ATMOSPHERE ? layers : [layer],
+        ),
+      );
+      const all = colourTokens(theme);
+      const unclassified = all
+        .map(([name]) => name)
+        .filter((name) => !paired.has(name) && !(name in DECORATIVE));
 
-  it('every colour token is classified — paired or explicitly decorative', () => {
-    const layers = atmosphereLayers(tokensCss());
-    const paired = new Set(
-      PAIRS.flatMap((p) => [...p.fg, ...p.bg]).flatMap((layer) =>
-        layer === ATMOSPHERE ? layers : [layer],
-      ),
-    );
-    const all = colourTokens();
-    const unclassified = all
-      .map(([name]) => name)
-      .filter((name) => !paired.has(name) && !(name in DECORATIVE));
-
-    expect(searched(unclassified, { of: all, what: 'colour tokens' })).toEqual(
-      [],
-    );
-  });
+      expect(
+        searched(unclassified, { of: all, what: 'colour tokens' }),
+      ).toEqual([]);
+    });
+  }
 });
 
 /**

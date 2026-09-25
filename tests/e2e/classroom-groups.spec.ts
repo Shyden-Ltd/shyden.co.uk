@@ -11,6 +11,8 @@ import {
   localisePath,
 } from '../../src/lib/i18n';
 import { recorded, shoot } from './evidence';
+import { THEMES } from '../palette';
+import { THEME_SCRIPT_SOURCE, emulateTheme } from '../themes';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
@@ -1513,10 +1515,13 @@ test.describe('out-of-date groups', () => {
     await shuffle(page);
     await page.getByLabel('Students in each group').fill('3');
     await expect(page.locator('#cg-results')).toHaveClass(/stale/);
-    const contrast = await contrastRatio(
-      page.locator('#cg-results .group').first(),
-    );
-    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const contrast = await contrastRatio(
+        page.locator('#cg-results .group').first(),
+      );
+      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   // #332. The notice paints its own cream ground (#fff6e3) but took its ink
@@ -1534,12 +1539,15 @@ test.describe('out-of-date groups', () => {
     await expect(sentence).toHaveText(
       'These groups are out of date — the group size changed.',
     );
-    expect(await contrastRatio(sentence)).toBeGreaterThanOrEqual(4.5);
-    await shoot(
-      page,
-      'the out-of-date sentence on its cream notice',
-      page.locator('#cg-stale'),
-    );
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      expect(await contrastRatio(sentence), theme).toBeGreaterThanOrEqual(4.5);
+      await shoot(
+        page,
+        `${theme}: the out-of-date sentence on its cream notice`,
+        page.locator('#cg-stale'),
+      );
+    }
   });
 
   // CLAUDE.md's binding rules apply to anything this task adds: no
@@ -2163,32 +2171,41 @@ test.describe('the no-scroll rule, measured', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
-    const contrast = await contrastRatio(page.locator('#cg-go'));
-    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const contrast = await contrastRatio(page.locator('#cg-go'));
+      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   // M-11. The one test in this file that never touches /classroom-groups --
-  // CLAUDE.md's "homepage ships zero JS" is a site-wide promise this task's
-  // own work could put at risk only by accident (a shared layout partial, a
-  // global script tag), so it earns a direct check rather than an inference
-  // from the tool page's own tests passing.
-  test('the homepage still ships no JavaScript', async ({ page }) => {
+  // CLAUDE.md's promise about what the homepage ships (one script, the theme
+  // script, since #142) is site-wide, and this task's own work could put it
+  // at risk only by accident (a shared layout partial, a global script tag),
+  // so it earns a direct check rather than an inference.
+  test('the homepage ships the theme script and nothing else', async ({
+    page,
+  }) => {
+    // Rewritten for #142. The promise was "the homepage ships zero JS"; it
+    // now ships exactly one script, the inline theme script, so this pins
+    // what may exist rather than counting to zero. Two measurements still,
+    // because a request recorder cannot see an inline script at all (#79):
+    // the DOM says what is on the page, and the recorder that nothing was
+    // fetched to run. theme-script.spec.ts pins the same on every page.
     const seen = recordRequests(page);
-    const response = await page.goto('/');
-    // Two measurements, because one of them cannot see half the ways this
-    // promise breaks. Astro INLINES a small script straight into the HTML --
-    // verified by building with one added: `dist/index.html` grew a
-    // `<script type="module">` and no new `_astro/*.js` was emitted -- so an
-    // inline script makes no network request at all and the recorder below
-    // stays legitimately empty. Watching only requests named the promise
-    // without measuring it (#79).
-    expect(
-      await response!.text(),
-      'the served homepage HTML carries no <script> tag',
-    ).not.toMatch(/<script/i);
+    await page.goto('/');
+    const scripts = await page.evaluate(() =>
+      [...document.scripts].map((script) => ({
+        src: script.getAttribute('src') ?? '',
+        text: script.textContent ?? '',
+      })),
+    );
+    expect(scripts, 'the homepage carries the theme script alone').toEqual([
+      { src: '', text: THEME_SCRIPT_SOURCE },
+    ]);
     seen.expectNone(
       ({ resourceType }) => resourceType === 'script',
-      'the homepage still ships no JavaScript',
+      'the homepage fetches no script',
     );
   });
 });

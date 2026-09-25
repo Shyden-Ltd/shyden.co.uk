@@ -2,6 +2,8 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { searched } from '../source-files';
+import { THEMES } from '../palette';
+import { emulateTheme } from '../themes';
 import {
   atLeast44,
   expectNoHorizontalScroll,
@@ -330,7 +332,13 @@ test.describe('an absent student', () => {
   test('is tinted, striped and labelled', async ({ page }) => {
     await markAbsent(page);
     const row = page.locator('.cg-student').first();
-    await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      await expect(row, theme).toHaveCSS(
+        'background-color',
+        'rgb(255, 246, 227)',
+      );
+    }
     await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
   });
 
@@ -399,7 +407,13 @@ test.describe('an absent student', () => {
         await page.setViewportSize({ width, height: 900 });
         await markAbsent(page);
         const row = page.locator('.cg-student').first();
-        await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
+        for (const theme of THEMES) {
+          await emulateTheme(page, theme);
+          await expect(row, theme).toHaveCSS(
+            'background-color',
+            'rgb(255, 246, 227)',
+          );
+        }
         await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
         const cards = await page
           .locator('#cg-roster')
@@ -421,10 +435,13 @@ test.describe('an absent student', () => {
   // background just as much as the row's.
   test('the pill text meets the WCAG AA contrast floor', async ({ page }) => {
     await markAbsent(page);
-    const contrast = await contrastRatio(
-      page.locator('.cg-absent-pill').first(),
-    );
-    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const contrast = await contrastRatio(
+        page.locator('.cg-absent-pill').first(),
+      );
+      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   test(
@@ -712,8 +729,15 @@ test.describe('validation as it is typed', () => {
     const warning = page.locator('#cg-roster-warning');
     await expect(warning).toBeVisible();
     await expect(warning).toContainText('Your class list looks incomplete.');
-    expect(await contrastRatio(warning)).toBeGreaterThanOrEqual(4.5);
-    await shoot(page, 'the gap warning on its cream ground', warning);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      expect(await contrastRatio(warning), theme).toBeGreaterThanOrEqual(4.5);
+      await shoot(
+        page,
+        `${theme}: the gap warning on its cream ground`,
+        warning,
+      );
+    }
   });
 
   // The block is a COMPARISON, not a one-way latch -- the same "a

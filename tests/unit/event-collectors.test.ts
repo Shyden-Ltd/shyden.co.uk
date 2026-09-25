@@ -24,7 +24,8 @@ import { withoutTsComments } from './source-text';
  *
  * That is survivable as a flake. The same expression asserting ABSENCE is
  * not — eight sites read `toEqual([])` the same instant, including
- * `the homepage still ships no JavaScript`, which would have certified a
+ * `the homepage still ships no JavaScript` (now `the homepage ships the theme
+ * script and nothing else`, #142), which would have certified a
  * homepage full of JavaScript for exactly the reason CI demonstrated. #79.
  */
 const COLLECTED_EVENTS = [

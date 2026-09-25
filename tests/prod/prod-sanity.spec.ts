@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { makeGroups } from '../make-groups';
 import { deployedRoutes } from '../site-pages';
 import { expectNoHorizontalScroll } from '../viewport';
+import { expectTheSwitchPersists } from '../themes';
 
 /**
  * Every route the site serves, derived. #49.
@@ -135,4 +136,12 @@ test('the outbound ShyTalk link points at PROD ShyTalk, never dev', async ({
   expect(href, 'no ShyTalk link found on the production homepage').toBeTruthy();
   expect(href).toContain('shytalk.shyden.co.uk');
   expect(href).not.toContain('dev.shytalk');
+});
+
+// The switch is a rendering fact, so the deployed site's browser run proves
+// it (#142 §6.2): it changes the page, and the choice survives a reload.
+test('the theme switch changes the page, and the choice survives a reload', async ({
+  page,
+}) => {
+  await expectTheSwitchPersists(page);
 });

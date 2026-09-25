@@ -22,12 +22,18 @@ import { TOKENS_FILE } from '../palette';
 
 type Literal = { file: string; rule?: readonly string[]; literal: string };
 
-/** A file's code outside its CSS: an `.astro` file's non-style half, or all of a `.ts` file. */
+/** Every kind of source file under src/ that a colour can be written in. */
+const SOURCE = /\.(astro|css|ts|js|mjs)$/;
+
+/** Code through and through: nothing in it to read as CSS by rule. */
+const isCode = (file: string): boolean => /\.(ts|js|mjs)$/.test(file);
+
+/** A file's code outside its CSS: an `.astro` file's non-style half, or all of a `.ts`, `.js` or `.mjs` file. */
 const codeOf = (file: string, text: string): string =>
   file.endsWith('.astro') ? astroCode(text) : codeWithoutComments(file, text);
 
 const literalsIn = (file: string, text: string): Literal[] => [
-  ...(file.endsWith('.ts')
+  ...(isCode(file)
     ? []
     : stylesheetCss(file, text).flatMap((css) =>
         cssRules(css)
@@ -172,11 +178,14 @@ const allows = (allowance: Allowance, found: Literal): boolean =>
 const describeLiteral = ({ file, rule, literal }: Literal): string =>
   `${file} :: ${rule === undefined ? '(code)' : rule.join(' { ')} writes ${literal}`;
 
+/** The files the guard reads: every source under src/ but the tokens themselves. */
+const scannedFiles = (): string[] =>
+  filesUnder('src', (path) => SOURCE.test(path) && path !== TOKENS_FILE);
+
 const literalsUnderSrc = (): Literal[] =>
-  filesUnder(
-    'src',
-    (path) => /\.(astro|css|ts)$/.test(path) && path !== TOKENS_FILE,
-  ).flatMap((file) => literalsIn(file, readFileSync(file, 'utf8')));
+  scannedFiles().flatMap((file) =>
+    literalsIn(file, readFileSync(file, 'utf8')),
+  );
 
 describe('no colour a theme cannot see (#142)', () => {
   it('writes no colour literal outside tokens.css but the allowed ones', () => {
@@ -236,5 +245,19 @@ describe('no colour a theme cannot see (#142)', () => {
       'x.astro :: (code) writes white',
       'x.astro :: (code) writes red',
     ]);
+  });
+
+  it('reads the theme script, and every kind of source a colour can hide in', () => {
+    // #142 put the first plain .js under src/, and a guard reading only
+    // .astro, .css and .ts would never have opened it.
+    expect(scannedFiles()).toContain('src/scripts/theme.inline.js');
+  });
+
+  it('reads a script as code, never as CSS', () => {
+    expect(
+      literalsIn('x.js', 'const a = { color: red }; const b = "#fff";').map(
+        describeLiteral,
+      ),
+    ).toEqual(['x.js :: (code) writes #fff']);
   });
 });

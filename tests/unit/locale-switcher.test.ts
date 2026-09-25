@@ -109,7 +109,7 @@ describe('the language switcher labels every alternative (tripwire 1, retired)',
     ).toBe(false);
   });
 
-  it('ships no JavaScript, because the homepage ships none', () => {
+  it('ships no JavaScript of its own, so it works with scripting off', () => {
     const src = source(SWITCHER);
     expect(
       /<details[\s>]/.test(src),
@@ -118,7 +118,8 @@ describe('the language switcher labels every alternative (tripwire 1, retired)',
     expect(
       /<script/.test(src),
       'a language switcher is exactly the control someone needs when ' +
-        'something else has already failed',
+        'something else has already failed: it must work with no script, ' +
+        'the theme script included (#142)',
     ).toBe(false);
   });
 });
