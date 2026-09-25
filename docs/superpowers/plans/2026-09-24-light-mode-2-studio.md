@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, inline in the main session (Native, the operator's choice on 2026-09-24). Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** draft, under review. Passes are logged in the Review log at the end, and the plan is approved on the first pass that finds nothing.
+**Status:** approved, 2026-09-25, on review pass 5, the first pass that found nothing. Passes are logged in the Review log at the end.
 
 **Goal:** Give the site a light identity, Studio, beside the dark one it has, Aurora, switchable in one press from the header, persisted, and following the device until the visitor chooses.
 
@@ -3578,3 +3578,15 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
 - **What it found:**
   - **P4-1, a base check no implementer could pass.** *Confirm the base* said `git rev-parse HEAD` prints `3640af2`, but the branch carries this plan's own commits on top of it, so `HEAD` never does. It now checks ancestry and that the diff from `3640af2` is this plan alone, both run here against `3e7c182`.
 - **Next:** pass 5, from a fresh scratch branch at this commit. The loop ends on a pass that finds nothing.
+
+**Pass 5, 2026-09-25 07:42Z to 11:45Z, in two sessions. It found nothing, so the plan is approved.**
+
+- **What was read.** Every line of the plan, 1 to 3580, in order, before materialising it.
+- **The mechanical checks,** on a fresh local scratch branch from `1fbcc51`, every task materialised from the text as it then read:
+  - the base check: `git merge-base --is-ancestor 3640af2 1fbcc51` exits 0, and `git diff --stat 3640af2 1fbcc51` lists this plan alone;
+  - every red and green count matched: the baseline (99 files, 2408), Task 1 (5 red, each on the stub's `not implemented` or `null`; 2413), 2 (5; 2421), 3 (3; 2422), 4 (2 unit and 43 + 1 browser red, 5 green; then 48 and 1 green; 2424; prettier flagged exactly the four predicted files; the promise grep printed 20 lines at `3640af2`, each in one of its three groups), 5 (82 red, 3 skipped, 15 passed, with 470 lines of _measured only [_; then 336 passed, 7 skipped; 2424; prettier flagged the two predicted files), 6 (3 unit and 35 browser red; then 18 and 150 green; 2427; the script 1,295 and 543 bytes), 7 (the `-z` grep printed the ten listed files; 1,145 passed; 2427), 8 (91 passed, 4 skipped), 9 (dev 27/2 and prod 18/3, the named #338 reds, with the switch test green in both; device `--list` 613 tests in 34 files, 22 in `theme.spec.ts`), 10 (120 passed);
+  - Task 11's control sequence, in the pinned container: 24 captured (12 dark modified, every change inside y 23 to 44, and 12 light added); an unchanged compare of all 24 with nothing written; the accent recoloured, 12 red; restored, 24 green with nothing written; the scheme swapped, 12 red on _the page rendered the light theme_ with no screenshot compared;
+  - every ratio in a `tokens.css` comment, recomputed with `worstContrast`: all exact;
+  - Task 13's post-merge grep (the two `session.ts` lines); the CI job names and `develop`'s protection (`{strict: true, contexts: [build-and-test, visual]}`); the evidence builders' flags against Task 14's;
+  - the Task 12 harness, extracted from this plan and byte-identical to pass 4's: `--dry` 43 of 43, then all 43 rows run for real, **in two parts**: 26 rows (U1 to U17, T1, S1 to S8) in the first session, stopped during S9 for a `/clear`; then S8 to S25 in the second, so S8 ran twice and was red both times. **All 43 were red as predicted**; S1's race did not fire.
+- **What it found:** nothing.
