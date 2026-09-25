@@ -49,7 +49,11 @@ In every **beta locale**, `isBetaLocale(lang)`, derived and never enumerated,
 so English never shows it, the footer gains a disclosure directly after the
 existing BETA notice (`src/components/Footer.astro`). It is a native
 `<details>`, closed by default, so opening it needs no JavaScript. The 404 page
-renders its footer in English and so carries no form.
+renders its footer in English and so carries no form. That leaves one gap on
+purpose: the 404 shows its `notFound` copy in every language at once, so the
+translated `notFound` strings are the only visitor-facing copy with no report
+route. The page is served for any unknown path, so it has no locale to post.
+The gap is proposed as a follow-up ticket rather than solved here.
 
 ### 3.2 The form
 
@@ -66,7 +70,7 @@ renders its footer in English and so carries no form.
            aria-describedby="report-quote-hint" />
     <p id="report-quote-hint">Start typing and choose the words from the list,
        or copy them from the page.</p>
-    <datalist id="report-strings"><!-- this page's strings, section 5 --></datalist>
+    <datalist id="report-strings"><!-- this page's strings, section 4 --></datalist>
     <label for="report-suggestion">What should it say? (optional)</label>
     <textarea id="report-suggestion" name="suggestion" maxlength="1000"></textarea>
     <label for="report-note">Anything else? (optional)</label>
@@ -88,8 +92,9 @@ The shape is illustrative; the copy is in section 3.5. The page id comes from
 the route, derived from `Astro.url.pathname` with the locale prefix and any
 trailing slash removed, so no page has to pass a prop that could be forgotten.
 The empty path is `home`. A path that is not in section 4's table renders no
-form, and the E2E completeness check (section 10) fails if a built beta-locale
-page with a footer has no form, so a new page cannot go without one quietly.
+form, and the E2E presence check (section 10) walks every built beta-locale
+page and fails on one with a footer and no form, so a new page cannot go
+without one quietly.
 
 The honeypot uses the visually-hidden pattern (`clip-path`, 1px box), never
 `display: none` (which some bots skip) and never off-screen positioning,
@@ -205,7 +210,8 @@ blow-up.
 Both the footer's `<datalist>` and the Function's validation import it, so what
 is offered and what is accepted cannot drift apart. It must not import
 `back-translate.ts` or `translate.ts`, which are CLI-only (`cli-only.test.ts`
-guards the site bundle; the Function bundle is added to that guard). If a leaf
+walks the modules the site ships, and `functions/` is added to what it walks).
+If a leaf
 walker already exists in a site-safe module it is reused, and if the only one
 lives in a CLI-only module it moves to a shared site-safe module that both
 import (the "one home" rule).
@@ -252,7 +258,7 @@ like `_middleware.js`. All the logic lives in `src/lib/report.ts`.
 | 4   | Body is at most 64 KiB                                                         | else `413`, nothing                  |
 | 5   | `locale` is a beta locale and `page` is a known page id                        | else `400`, nothing                  |
 | 6   | Honeypot `website` is empty                                                    | else `sent`, **nothing stored**      |
-| 7   | `quote` is 1–1000 characters; `suggestion` and `note` are 0–1000              | else `rejected`, nothing             |
+| 7   | `quote` is 1–1000 units and not blank; `suggestion` and `note` are 0–1000     | else `rejected`, nothing             |
 | 8   | `quote` matches a string on that page in that locale (section 5)               | else `not-found`, nothing            |
 | 9   | Insert succeeds                                                                | `sent`, one row; else `failed`       |
 
@@ -266,7 +272,9 @@ after every CRLF is folded to LF. The fold matters because a textarea's
 `maxlength` counts a line break as one unit, while submission sends every line
 break as CRLF, so an unfolded count would refuse a note the browser allowed.
 With the fold, a submission the browser allows is never refused for its
-length. Stored text keeps LF.
+length. Stored text keeps LF. Lengths are taken on the submitted text, before
+section 5's normalisation; a quote that normalises to nothing (whitespace or
+zero-width characters only) is blank, and so `rejected`.
 
 **The body cap changed from the approved design's 8 KB.** The form is
 urlencoded, so each UTF-8 byte of a non-ASCII character is sent as `%XX`. A
@@ -424,7 +432,8 @@ stub is a finding.
     protection, and `pipeline-wiring.test.ts` derives that rule, so it goes
     red if the job is added without the `needs` entry.
 - **E2E against `dist/`** (existing projects): the disclosure is present in
-  every beta locale on every page and absent in English, both derived; each
+  every beta locale on every page and absent in English, both derived from
+  the pages actually built into `dist/` (the presence check in 3.2); each
   `<datalist>` equals `reportableStrings(page, locale)` exactly, as a set;
   keyboard reachable; 44px; AA contrast; no horizontal scroll at 320px with the
   disclosure open, in every locale; each `#report-*` status is visible
@@ -492,6 +501,11 @@ submission goes red on check 2).
    `pragma_table_info('reports')` query the health check uses. **Fallback:**
    drop the constraints, which are defence in depth only, and read
    `sqlite_schema` instead.
+6. `wrangler pages dev` applies `dist/_headers` to the pages it serves, so
+   the `Referrer-Policy` mutation in section 10 reaches the browser there.
+   **Fallback:** a unit test reads `public/_headers` and pins a
+   `Referrer-Policy` under which a same-origin POST keeps its `Origin`, and
+   that test is the one that goes red.
 
 ## 12. Acceptance criteria, for the #97 body
 
@@ -564,3 +578,28 @@ holds; and every section agrees with the others.
 11. The Origin check silently depended on `Referrer-Policy`: under
     `no-referrer` a POST's `Origin` is `null`, and every real report would be
     refused. The dependency is stated in 6.1 and has a mutation.
+
+**Pass 2 (2026-09-25, a full read after pass 1's fixes): 8 findings, all
+fixed.** Checked again: the 404's footer language (`404.astro`), the
+preferences the tool page stores (`classroom-groups.ts`), and how
+`cli-only.test.ts` works.
+
+1. The `<datalist>` comment in 3.2 pointed at section 5 (matching) for the
+   page's strings, which are section 4.
+2. 3.2 called the "page with a footer has no form" check the completeness
+   check, a name section 10 gives a different test. It is the presence check
+   now, derived from the pages built into `dist/`, and section 10 says so.
+3. The 404 shows `notFound` in every language, so its translated copy is the
+   one visitor-facing copy with no route. 3.1 states the gap and proposes a
+   follow-up, where before it implied the copy was English only.
+4. Check 7 said "characters" where every other length is in UTF-16 units.
+5. Nothing said whether lengths are taken before or after normalisation, or
+   what a whitespace-only quote gets. Lengths are taken before it, and a
+   blank quote is `rejected`.
+6. "The Function bundle is added to that guard" did not match how
+   `cli-only.test.ts` works: it walks the modules the site ships, not a
+   bundle. It says `functions/` is added to that walk now.
+7. The `Referrer-Policy` mutation assumed that `wrangler pages dev` serves
+   `_headers`. That is assumption 6 now, with a fallback.
+8. The section 10 E2E bullet did not say the presence set is derived from
+   `dist/`.
