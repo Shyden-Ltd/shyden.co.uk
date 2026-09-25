@@ -8,8 +8,10 @@ import {
   darkBlocks,
   rootBlock,
   rootTokens,
+  themeTokens,
   tokensCss,
 } from '../palette';
+import { SHYTALK_MARK } from '../../src/lib/shytalk-brand';
 
 /**
  * The structure of tokens.css (#142).
@@ -108,5 +110,16 @@ describe('the two themes (#142)', () => {
     expect(
       searched(orphans, { of: dark, what: 'tokens the dark blocks declare' }),
     ).toEqual([]);
+  });
+
+  it('puts the ShyTalk mark on its own tile in light, and on nothing in dark', () => {
+    // The tile's colour now lives in two files (§3.4): SHYTALK_MARK, whose
+    // level shytalk-brand.test.ts pins, and this token, held equal to it here.
+    const css = tokensCss();
+    expect(themeTokens(css, 'light').get('--wordmark-tile')).toBe(
+      SHYTALK_MARK.tile,
+    );
+    expect(themeTokens(css, 'dark').get('--wordmark-tile')).toBe('transparent');
+    expect(themeTokens(css, 'dark').get('--wordmark-pad')).toBe('0');
   });
 });

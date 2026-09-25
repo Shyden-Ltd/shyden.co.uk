@@ -14,6 +14,7 @@ import {
   worstContrast,
   type Theme,
 } from '../palette';
+import { SHYTALK_MARK } from '../../src/lib/shytalk-brand';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -199,6 +200,20 @@ const PAIRS: Pair[] = [
     level: 'body',
     where:
       'the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning that puts every ground a text colour sits on into a pair. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received',
+  },
+  {
+    fg: [SHYTALK_MARK.shy],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Shy" (HomePage.astro, 2.6rem bold): on its own tile in light, and over the atmosphere in dark, where the tile is transparent (#142 §3.4)',
+  },
+  {
+    fg: [SHYTALK_MARK.talk],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Talk", on the same ground as "Shy" in each theme (#142 §3.4)',
   },
 ];
 

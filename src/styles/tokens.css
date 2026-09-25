@@ -62,6 +62,15 @@
   --pool-foot: rgb(30 45 65 / 0.055);
   --shaft: rgb(255 255 255 / 0.35);
 
+  /* The ShyTalk mark's tile (HomePage.astro, #142 §3.4). The mark's two
+     tones were made for a dark ground and measure 1.28:1 and 1.70:1 on
+     white, so in light it sits on ShyTalk's own tile colour, like a logo
+     badge: 15.02:1 and 11.32:1. The same value as SHYTALK_MARK.tile, held
+     equal by tests/unit/tokens.test.ts, because the colour now lives in two
+     files. */
+  --wordmark-tile: #0f0d15;
+  --wordmark-pad: 0.12em 0.42em 0.18em;
+
   --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
   --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
   --font-mono: 'Space Mono', ui-monospace, monospace;
@@ -162,6 +171,11 @@
     --pool-top-right: rgb(122 92 255 / 0.1);
     --pool-foot: rgb(24 74 110 / 0.14);
     --shaft: rgb(255 255 255 / 0.05);
+
+    /* No tile: the mark was made for this ground, and zero padding keeps it
+       exactly where Aurora always had it. */
+    --wordmark-tile: transparent;
+    --wordmark-pad: 0;
   }
 }
 
@@ -190,6 +204,8 @@
     --pool-top-right: rgb(122 92 255 / 0.1);
     --pool-foot: rgb(24 74 110 / 0.14);
     --shaft: rgb(255 255 255 / 0.05);
+    --wordmark-tile: transparent;
+    --wordmark-pad: 0;
   }
 }
 
@@ -429,6 +445,11 @@ main:focus {
     --pool-top-right: transparent;
     --pool-foot: transparent;
     --shaft: transparent;
+
+    /* The mark prints in ink (HomePage.astro), so a tile would print as a
+       dark slab around dark text, if it printed at all. None on paper. */
+    --wordmark-tile: transparent;
+    --wordmark-pad: 0;
   }
   html {
     background: #fff;

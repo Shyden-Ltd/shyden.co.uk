@@ -224,9 +224,12 @@ const features = [
   }
   /* ShyTalk brand wordmark — the exact two-tone mark from shytalk.shyden.co.uk:
      light "Shy" + light-purple glowing "Talk", bold with tight tracking.
-     Colours taken from the live logo; values live in src/lib/shytalk-brand.ts. */
+     Colours taken from the live logo; values live in src/lib/shytalk-brand.ts, and the tile's theme token in tokens.css (#142 §3.4). */
   .shytalk-wordmark {
     display: inline-block;
+    background: var(--wordmark-tile);
+    padding: var(--wordmark-pad);
+    border-radius: 14px;
     font-size: 2.6rem;
     font-weight: 700;
     letter-spacing: -0.03em;
