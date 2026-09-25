@@ -25,7 +25,17 @@
   document.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
     if (!event.target.closest('[data-theme-toggle]')) return;
-    root.dataset.theme = showing() === 'dark' ? 'light' : 'dark';
+    const theme = showing() === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = theme;
+    try {
+      localStorage.setItem('theme', theme);
+    } catch {}
     press();
   });
+  addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    apply();
+    press();
+  });
+  os.addEventListener?.('change', press);
 })();
