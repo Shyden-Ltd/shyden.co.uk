@@ -28,18 +28,75 @@ const topLevel = (css: string, selector: string): CssRule[] =>
     ({ chain }) => chain.length === 1 && chain[0] === selector,
   );
 
+/** The site's two themes (#142): light on bare `:root`, dark in the blocks that declare `color-scheme: dark`. */
+export const THEMES = ['light', 'dark'] as const;
+export type Theme = (typeof THEMES)[number];
+
 /**
- * The tokens bare `:root` declares, from exactly one such block, found by its
- * chain rather than by coming first: the print block is `:root` one level
- * down, and a theme block is `:root` with more after it.
+ * The bare `:root` block, exactly one, found by its chain rather than by
+ * coming first: the print block is `:root` one level down, and a theme block
+ * is `:root` with more after it.
  */
-export const rootTokens = (css: string): Map<string, string> => {
+export const rootBlock = (css: string): CssRule => {
   const roots = topLevel(css, ':root');
   if (roots.length !== 1)
     throw new Error(
       `expected one bare :root block in ${TOKENS_FILE}, found ${roots.length}`,
     );
-  return customProperties(roots[0]);
+  return roots[0];
+};
+
+/** The tokens bare `:root` declares: Studio's, the light theme. */
+export const rootTokens = (css: string): Map<string, string> =>
+  customProperties(rootBlock(css));
+
+/**
+ * Every block that declares `color-scheme: dark`: Aurora, written twice
+ * (#142 §4). Found by that declaration rather than by selector, so a copy
+ * added later is found, and compared, too.
+ */
+export const darkBlocks = (css: string): CssRule[] =>
+  cssRules(css).filter(({ declarations }) =>
+    declarations.some(
+      ({ property, value }) => property === 'color-scheme' && value === 'dark',
+    ),
+  );
+
+/**
+ * The tokens `theme` paints. Light is bare `:root`. Dark is bare `:root` with
+ * the first dark block laid over it: a dark block redefines tokens and only
+ * tokens, and tokens.test.ts proves every dark block identical, so the first
+ * speaks for all of them.
+ */
+export const themeTokens = (css: string, theme: Theme): Map<string, string> => {
+  const root = rootTokens(css);
+  if (theme === 'light') return root;
+  const [first] = darkBlocks(css);
+  if (first === undefined)
+    throw new Error(`no block in ${TOKENS_FILE} declares color-scheme: dark`);
+  return new Map([...root, ...customProperties(first)]);
+};
+
+/**
+ * A colour in the form `getComputedStyle` reports it: `rgb(r, g, b)`, or
+ * `rgba(r, g, b, a)` below full opacity. A browser assertion compares with
+ * this, so the page is judged against tokens.css rather than against itself.
+ */
+export const computedForm = (value: string): string => {
+  const colour = parseColour(value);
+  if (colour === null) throw new Error(`not a colour: ${value}`);
+  const [r, g, b] = colour.rgb;
+  return colour.alpha === 1
+    ? `rgb(${r}, ${g}, ${b})`
+    : `rgba(${r}, ${g}, ${b}, ${colour.alpha})`;
+};
+
+/** `theme`'s value for a colour token, as a browser reports it (#142 §6.2). */
+export const themeColour = (theme: Theme, token: string): string => {
+  const value = themeTokens(tokensCss(), theme).get(token);
+  if (value === undefined)
+    throw new Error(`${token} is not defined in the ${theme} theme`);
+  return computedForm(value);
 };
 
 /** A comma-separated list, split only at commas outside parentheses. */

@@ -59,8 +59,21 @@ describe('reading a CSS colour', () => {
   it('says no rather than guessing', () => {
     // A guard that treats an unreadable colour as a readable one drops it
     // from the check silently, which is how #17's alpha tokens went unseen.
-    for (const value of ['', 'transparent', 'currentColor', '#ab', 'rgb(1,2)'])
+    for (const value of [
+      '',
+      'currentColor',
+      '#ab',
+      'rgb(1,2)',
+      'transparentish',
+    ])
       expect(parseColour(value), value).toBeNull();
+  });
+
+  it('reads transparent as CSS defines it: black at zero alpha', () => {
+    // #142: Studio's band glow and Aurora's wordmark tile are `transparent`,
+    // and a token this reader refused would drop out of every pair it sits in.
+    expect(parseColour('transparent')).toEqual({ rgb: [0, 0, 0], alpha: 0 });
+    expect(parseColour(' Transparent ')).toEqual({ rgb: [0, 0, 0], alpha: 0 });
   });
 });
 

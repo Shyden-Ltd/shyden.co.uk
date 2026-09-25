@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   ATMOSPHERE,
   atmosphereLayers,
+  computedForm,
+  darkBlocks,
   rootTokens,
   subsets,
+  themeTokens,
   worstContrast,
 } from '../palette';
 
@@ -137,5 +140,47 @@ describe('worstContrast', () => {
     expect(worstContrast(['--missing'], ['--bg'], [], from)).toBe(
       '--missing is not defined in src/styles/tokens.css',
     );
+  });
+});
+
+describe('the themes', () => {
+  const css = [
+    ':root {\n  color-scheme: light;\n  --bg: #eef1f4;\n  --ink: #111821;\n  --font: serif;\n}',
+    "@media screen and (prefers-color-scheme: dark) {\n  :root:not([data-theme='light']) {\n    color-scheme: dark;\n    --bg: #04070d;\n    --ink: #eaf2ff;\n  }\n}",
+    "@media screen {\n  :root[data-theme='dark'] {\n    color-scheme: dark;\n    --bg: #04070d;\n    --ink: #eaf2ff;\n  }\n  :root[data-theme-switch] {\n    --switch-display: inline-flex;\n  }\n}",
+    '@media print {\n  :root {\n    --bg: #fff;\n  }\n}',
+  ].join('\n');
+
+  it('finds every dark block by its color-scheme, never by its selector', () => {
+    expect(darkBlocks(css).map(({ chain }) => chain.join(' { '))).toEqual([
+      "@media screen and (prefers-color-scheme: dark) { :root:not([data-theme='light'])",
+      "@media screen { :root[data-theme='dark']",
+    ]);
+  });
+
+  it('reads light from bare :root, and dark as bare :root with a dark block laid over it', () => {
+    expect([...themeTokens(css, 'light')]).toEqual([
+      ['--bg', '#eef1f4'],
+      ['--ink', '#111821'],
+      ['--font', 'serif'],
+    ]);
+    expect([...themeTokens(css, 'dark')]).toEqual([
+      ['--bg', '#04070d'],
+      ['--ink', '#eaf2ff'],
+      ['--font', 'serif'],
+    ]);
+  });
+
+  it('refuses a dark theme that no block declares', () => {
+    expect(() => themeTokens(':root {\n  --bg: #fff;\n}', 'dark')).toThrow(
+      'no block in src/styles/tokens.css declares color-scheme: dark',
+    );
+  });
+
+  it('writes a colour the way getComputedStyle reports it', () => {
+    expect(computedForm('#eef1f4')).toBe('rgb(238, 241, 244)');
+    expect(computedForm('rgb(17 24 33 / 0.05)')).toBe('rgba(17, 24, 33, 0.05)');
+    expect(computedForm('transparent')).toBe('rgba(0, 0, 0, 0)');
+    expect(() => computedForm('currentColor')).toThrow('not a colour');
   });
 });

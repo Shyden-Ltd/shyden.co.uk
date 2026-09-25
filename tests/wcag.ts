@@ -54,6 +54,8 @@ export const contrast = (a: RGB, b: RGB): number => {
  */
 export const parseColour = (value: string): RGBA | null => {
   const text = value.trim();
+  // CSS defines `transparent` as rgb(0 0 0 / 0), an exact value, not a guess.
+  if (/^transparent$/i.test(text)) return { rgb: [0, 0, 0], alpha: 0 };
 
   const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (hex !== null) {
