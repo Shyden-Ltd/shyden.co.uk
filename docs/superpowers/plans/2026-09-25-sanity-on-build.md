@@ -56,3 +56,22 @@ Branch `335-sanity-on-build`, from `develop` at `bd2b7cde69994bbe273dc9e552247ab
 - `--list --reporter=json`: each spec carries `tags: ['deployed-only']`, with **no `@`**, and each test carries `annotations: [{ type: 'deployed-only', description: 'x', location }]`. The spec's `file` is **relative to `testDir`** (`probe.spec.ts`), not to the repo. The guard maps each derived spec path through the config's `testDir` before comparing, and it compares tags without the `@`. Either mistake would make the guard find nothing and pass.
 
 - **Pass 7** (after the Task 1 addendum: the addendum read against Design 5 and Task 2, then a full read). No findings. The approval stands, with the guard's inputs measured.
+
+## Implementation notes (2026-09-25, 14:18-14:29Z): where the build departed from the plan, and why
+
+- **The `rm -f .astro/preview.json` is gone.** Task 3's control ran `test:sanity` without it, with a lock left behind, and passed (27 + 21). The plan predicted RED and was wrong: `checkExistingServer` (`astro/dist/core/dev/lockfile.js:122`) removes a lock whose process is dead. The only lock that blocks a preview names a live one, and there an `rm` would delete another preview's lock. Per Task 3's rule, the `rm` was deleted.
+- **`deployedOnly()` is gone; the details are literals.** `playwright-declarations.test.ts` refused a call as details it cannot read, because the tag guards read the parse tree. The meta-guard was right, so the code changed. The tag and its reason are written inline, and the unit guard's annotation check is what requires the reason.
+- **The `@deployed-only` population is pooled across both configs.** Prod has no deployed-only test, so a per-config `searched` would throw on an empty population that is correct.
+- **An empty on-build selection is read as a listing of no tests.** G1 first went red for the wrong reason: each testDir holds one spec file, so tagging all of a file's tests empties the selection, Playwright exits 1 with `No tests found`, and the coverage assertion never ran. Now it runs and names the file. G1b (a second, fully tagged spec file beside a healthy one) proves the non-empty branch.
+- **The guard also asserts the switch itself** (`webServer` absent on a deploy's listing, present and building on the on-build one), and the coverage test anchors on it first. Without the anchor, coverage read against stubs would have passed.
+
+| Mutation | Predicted | Observed |
+| --- | --- | --- |
+| Stubs (Task 2) | 6 RED, each on its own assertion | 6 RED |
+| `rm` removed | RED (lock) | GREEN, so the `rm` was deleted |
+| G1 every prod test tagged | 2 RED: coverage names `prod-sanity.spec.ts`; reason missing | as predicted (after the empty-selection fix) |
+| G1b second spec, all tagged | 1 RED naming `zz-probe.spec.ts` only | as predicted |
+| G2 robots reason `''` | 1 RED, "each says why" | as predicted |
+| G3 robots tag removed | dev run 1 failed (robots), 27 passed | as predicted |
+| G4 need removed | `pipeline-wiring` RED | RED: "stands for every other ci.yml job that is not required by name itself" |
+| G5 prod throw removed, dev URL set | prod run 1 failed (ShyTalk), 20 passed | as predicted |
