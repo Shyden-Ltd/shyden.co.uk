@@ -13,6 +13,7 @@ import {
   expectVisibleText,
   giveEveryoneASex,
   handoverTo,
+  refuseFullscreen,
   rosterWithAnAbsence,
   upload,
 } from './helpers';
@@ -45,6 +46,10 @@ test.describe('the copy the operator approved on #161', () => {
   for (const locale of LANGUAGES) {
     test(`${locale}: the tool reads as approved`, async ({ page, context }) => {
       const t = getStrings(locale);
+      // The board's words are this spec's subject, not fullscreen, which
+      // classroom-groups-projector.spec.ts owns. On the CONTEXT, so the
+      // handover popup gets it (#344).
+      await refuseFullscreen(context);
 
       // Six students: five named, one absent, two together, one apart.
       await rosterWithAnAbsence(page);
@@ -56,6 +61,11 @@ test.describe('the copy the operator approved on #161', () => {
         handoverTo(page, LOCALE_METADATA[locale].nativeName),
       ]);
       await tool.waitForLoadState();
+      // The refusal reached the popup. Without it this spec does not fail, it
+      // flakes, which is how #344 went unexplained.
+      expect(
+        await tool.evaluate(() => String(Element.prototype.requestFullscreen)),
+      ).toContain('refused');
 
       const go = tool.locator('#cg-go');
       await expectVisibleText(go, t.makeGroups);
