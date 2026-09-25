@@ -10,6 +10,7 @@ import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
 import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectTheSwitchPersists } from '../themes';
+import { deployedOnly } from '../sanity-on-build';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -99,23 +100,33 @@ test.describe('every locale the site claims to serve is deployed', () => {
   }
 });
 
-test('robots.txt disallows all crawling on the dev site', async ({
-  request,
-}) => {
-  // Served before the auth gate, so this holds with or without creds.
-  const body = await (await request.get('/robots.txt')).text();
-  expect(body).toContain('Disallow: /');
-});
+test(
+  'robots.txt disallows all crawling on the dev site',
+  deployedOnly(
+    'functions/_middleware.js serves the dev robots.txt, and a preview of dist/ runs no Pages Function',
+  ),
+  async ({ request }) => {
+    // Served before the auth gate, so this holds with or without creds.
+    const body = await (await request.get('/robots.txt')).text();
+    expect(body).toContain('Disallow: /');
+  },
+);
 
-test('an unauthenticated request is challenged with 401', async () => {
-  // Raw fetch — NOT a Playwright request context, which would inherit the
-  // config's httpCredentials and silently authenticate (making this pass a
-  // 200 as if unchallenged). fetch sends no Authorization header, so this
-  // genuinely exercises the no-credentials path.
-  const res = await fetch(`${BASE}/`, { redirect: 'manual' });
-  expect(res.status).toBe(401);
-  expect(res.headers.get('www-authenticate')).toMatch(/^Basic realm=/);
-});
+test(
+  'an unauthenticated request is challenged with 401',
+  deployedOnly(
+    'the Basic-auth gate is functions/_middleware.js, and a preview of dist/ runs no Pages Function',
+  ),
+  async () => {
+    // Raw fetch — NOT a Playwright request context, which would inherit the
+    // config's httpCredentials and silently authenticate (making this pass a
+    // 200 as if unchallenged). fetch sends no Authorization header, so this
+    // genuinely exercises the no-credentials path.
+    const res = await fetch(`${BASE}/`, { redirect: 'manual' });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toMatch(/^Basic realm=/);
+  },
+);
 
 test('every outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-env leak)', async ({
   page,
