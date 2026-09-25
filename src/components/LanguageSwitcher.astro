@@ -26,8 +26,9 @@ const { lang, pathname } = Astro.props;
  * was which. `tests/unit/locale-switcher.test.ts` failed on purpose to stop
  * that shipping; this component is what retires that tripwire.
  *
- * Zero JavaScript. The homepage ships none, and a language switcher is exactly
- * the control a visitor needs when something else has gone wrong — so it is a
+ * No JavaScript of its own. A language switcher is exactly the control a
+ * visitor needs when something else has gone wrong, the theme script included
+ * (#142) — so it is a
  * native `<details>`, the same disclosure the mobile nav already uses. It works
  * with JS disabled, is keyboard-operable for free, and closes on Escape.
  *
@@ -39,7 +40,7 @@ const { lang, pathname } = Astro.props;
  * Indonesia" ran the Shyden wordmark under the menu button at 320px (#329).
  * The full name is never lost: the open list names every language, the one
  * being read first, ticked and marked `aria-current`. Both labels are in the
- * markup and CSS picks one, so the page still ships no JavaScript. The
+ * markup and CSS picks one, so the switcher still needs no JavaScript. The
  * summary's accessible name is its `aria-label` either way.
  */
 const t = getSiteStrings(lang);

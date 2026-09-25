@@ -11,6 +11,7 @@ import {
   localisePath,
 } from '../../src/lib/i18n';
 import { recorded, shoot } from './evidence';
+import { THEME_SCRIPT_SOURCE } from '../themes';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
@@ -2168,27 +2169,33 @@ test.describe('the no-scroll rule, measured', () => {
   });
 
   // M-11. The one test in this file that never touches /classroom-groups --
-  // CLAUDE.md's "homepage ships zero JS" is a site-wide promise this task's
-  // own work could put at risk only by accident (a shared layout partial, a
-  // global script tag), so it earns a direct check rather than an inference
-  // from the tool page's own tests passing.
-  test('the homepage still ships no JavaScript', async ({ page }) => {
+  // CLAUDE.md's promise about what the homepage ships (one script, the theme
+  // script, since #142) is site-wide, and this task's own work could put it
+  // at risk only by accident (a shared layout partial, a global script tag),
+  // so it earns a direct check rather than an inference.
+  test('the homepage ships the theme script and nothing else', async ({
+    page,
+  }) => {
+    // Rewritten for #142. The promise was "the homepage ships zero JS"; it
+    // now ships exactly one script, the inline theme script, so this pins
+    // what may exist rather than counting to zero. Two measurements still,
+    // because a request recorder cannot see an inline script at all (#79):
+    // the DOM says what is on the page, and the recorder that nothing was
+    // fetched to run. theme-script.spec.ts pins the same on every page.
     const seen = recordRequests(page);
-    const response = await page.goto('/');
-    // Two measurements, because one of them cannot see half the ways this
-    // promise breaks. Astro INLINES a small script straight into the HTML --
-    // verified by building with one added: `dist/index.html` grew a
-    // `<script type="module">` and no new `_astro/*.js` was emitted -- so an
-    // inline script makes no network request at all and the recorder below
-    // stays legitimately empty. Watching only requests named the promise
-    // without measuring it (#79).
-    expect(
-      await response!.text(),
-      'the served homepage HTML carries no <script> tag',
-    ).not.toMatch(/<script/i);
+    await page.goto('/');
+    const scripts = await page.evaluate(() =>
+      [...document.scripts].map((script) => ({
+        src: script.getAttribute('src') ?? '',
+        text: script.textContent ?? '',
+      })),
+    );
+    expect(scripts, 'the homepage carries the theme script alone').toEqual([
+      { src: '', text: THEME_SCRIPT_SOURCE },
+    ]);
     seen.expectNone(
       ({ resourceType }) => resourceType === 'script',
-      'the homepage still ships no JavaScript',
+      'the homepage fetches no script',
     );
   });
 });

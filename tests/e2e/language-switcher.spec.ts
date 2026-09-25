@@ -148,8 +148,8 @@ test.describe('language switcher', () => {
   });
 
   test('opens and closes without JavaScript', async ({ page }) => {
-    // A native <details>. The homepage ships zero JS, and a language switcher
-    // is exactly the control someone needs when something else has failed.
+    // A native <details>, with no script of its own: a language switcher is
+    // exactly the control someone needs when something else has failed.
     await page.goto('/');
     const details = page.locator(SWITCHER);
     const entry = page.locator(`${SWITCHER} li a`).first();

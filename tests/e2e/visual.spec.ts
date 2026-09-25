@@ -54,8 +54,9 @@ const WIDTHS = [
 /** Wait until `page` has stopped changing on its own: script, then fonts. */
 async function settle(page: Page): Promise<void> {
   // The heading is the last thing to settle on the two tool pages, whose
-  // scripts rewrite the DOM after load. On the homepage, which ships no
-  // JavaScript at all, it is already there and this returns immediately.
+  // scripts rewrite the DOM after load. On the homepage, whose one script is
+  // the theme script and rewrites nothing, it is already there and this
+  // returns immediately.
   await expect(page.locator('h1').first()).toBeVisible();
   // Awaited INSIDE the callback, not returned from it.
   // `document.fonts.ready` resolves with the FontFaceSet itself, which is not
