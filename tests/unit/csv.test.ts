@@ -1026,6 +1026,14 @@ const HEADER_CORRECTIONS: readonly {
     corrected: 'tách biệt',
     superseded: 'riêng biệt',
   },
+  // #319: "number" as in a numeral, not a student's number.
+  { locale: 'zh', column: 'number', corrected: '编号', superseded: '数字' },
+  {
+    locale: 'th',
+    column: 'number',
+    corrected: 'หมายเลข',
+    superseded: 'ตัวเลข',
+  },
 ];
 
 describe('a corrected header word keeps old files readable', () => {

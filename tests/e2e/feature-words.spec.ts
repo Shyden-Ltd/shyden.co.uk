@@ -1,4 +1,3 @@
-import type { Locator } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { getStrings, renderError, type Locale } from '../../src/lib/i18n/index';
@@ -6,7 +5,13 @@ import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import { importFile } from '../../src/lib/csv';
 import { ERROR_CODES } from '../../src/lib/grouping';
-import { buildRoster, buildRosterAtPath, handoverTo, upload } from './helpers';
+import {
+  buildRoster,
+  buildRosterAtPath,
+  expectVisibleText,
+  handoverTo,
+  upload,
+} from './helpers';
 
 test.use(recorded);
 
@@ -36,12 +41,6 @@ const LANGUAGES: readonly Locale[] = ['zh', 'vi', 'th'];
 /** Four students; the first two are a together pair of mixed sex. */
 const NAMES = ['Ana', 'Budi', 'Citra', 'Dedi'];
 const byNumber = (n: number) => NAMES[n - 1] ?? String(n);
-
-/** Visible copy is both: `toHaveText` alone passes on a hidden element. */
-const expectVisibleText = async (target: Locator, text: string) => {
-  await expect(target).toBeVisible();
-  await expect(target).toHaveText(text);
-};
 
 test.describe('the sentences corrected on #319', () => {
   for (const locale of LANGUAGES) {

@@ -104,6 +104,11 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     stateApart: '{n} 分开',
     stateNamed: '{n} 已命名',
     stateNone: '无',
+    // #319's sheet, applied unanswered under the operator's 2026-09-24
+    // instruction to complete the board and review it once, at the end. His
+    // read of these is due then and has not been given yet.
+    'csv.columns.number': '编号',
+    printWhatGroups: '分组结果',
   },
   vi: {
     rosterColNumber: '#',
@@ -157,6 +162,12 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     stateAdded: '{n} ได้เพิ่มแล้ว',
     stateApart: '{n} แยกกัน',
     stateTogether: '{n} ด้วยกัน',
+    // #319's sheet, applied unanswered under the operator's 2026-09-24
+    // instruction to complete the board and review it once, at the end. His
+    // read of these is due then and has not been given yet.
+    'csv.columns.number': 'หมายเลข',
+    ioReplaceWarning:
+      'ข้อมูลนี้จะแทนที่รายชื่อนักเรียนปัจจุบันของคุณ — นักเรียน {total} คน มีชื่อแล้ว {named} คน',
   },
 };
 

@@ -32,6 +32,12 @@ export const openRoster = async (page: Page, path = '/classroom-groups') => {
   await page.getByRole('button', { name: /Add student|Tambah siswa/ }).click();
 };
 
+/** Visible copy is both: `toHaveText` alone passes on a hidden element. */
+export const expectVisibleText = async (target: Locator, text: string) => {
+  await expect(target).toBeVisible();
+  await expect(target).toHaveText(text);
+};
+
 /**
  * Give every roster row a sex.
  *
