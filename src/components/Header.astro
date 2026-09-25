@@ -90,10 +90,13 @@ const links = [
     color: var(--ink);
     text-decoration: none;
   }
+  /* No gap: the switch's 44px box already holds its 24px icon 10px clear of
+     the language switcher. At 320px the Thai row has 2.97px to spare on
+     Linux Firefox, whose Thai label is 10px wider than Chromium's, and a
+     0.25rem gap ran the label 1px outside the row (header-room.spec.ts). */
   .controls {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
   }
   /* Mobile disclosure toggle (the hamburger). */
   .menu > summary {
