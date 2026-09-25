@@ -61,6 +61,11 @@ test.describe('the copy the operator approved on #161', () => {
         handoverTo(page, LOCALE_METADATA[locale].nativeName),
       ]);
       await tool.waitForLoadState();
+      // The refusal reached the popup. Without it this spec does not fail, it
+      // flakes, which is how #344 went unexplained.
+      expect(
+        await tool.evaluate(() => String(Element.prototype.requestFullscreen)),
+      ).toContain('refused');
 
       const go = tool.locator('#cg-go');
       await expectVisibleText(go, t.makeGroups);
