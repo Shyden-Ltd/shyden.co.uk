@@ -1,10 +1,13 @@
 # Translation reports — design (#97)
 
-**Status:** DRAFT, waiting for the operator's review. No plan or code exists.
+**Status:** IN REVIEW. It is reviewed in passes until a pass finds nothing,
+then self-approved (operator, 2026-09-24: _"review the plan on a /loop until
+there's no findings, then approve it. do this for all future plans"_). The
+passes are logged in section 13. No plan or code exists yet.
 On 2026-09-23 the design was put to him in four parts, each with its content in
-the question itself, and "Looks right" was recorded for all four. His review of
-this spec confirms those answers, because an earlier "approval", of a design
-shown only in a preview panel he could not see, turned out not to be his.
+the question itself, and "Looks right" was recorded for all four. That was
+needed because an earlier "approval", of a design shown only in a preview
+panel he could not see, turned out not to be his.
 **Ticket:** #97. **Decisions:** #97 comments of 2026-09-10, 2026-09-11 and
 2026-09-23 (issuecomment-5788975282), plus the two answers given after that
 comment (the string picker and wrangler, section 9).
@@ -82,8 +85,11 @@ renders its footer in English and so carries no form.
 ```
 
 The shape is illustrative; the copy is in section 3.5. The page id comes from
-the route, derived from `Astro.url.pathname` with the locale prefix removed, so
-no page has to pass a prop that could be forgotten.
+the route, derived from `Astro.url.pathname` with the locale prefix and any
+trailing slash removed, so no page has to pass a prop that could be forgotten.
+The empty path is `home`. A path that is not in section 4's table renders no
+form, and the E2E completeness check (section 10) fails if a built beta-locale
+page with a footer has no form, so a new page cannot go without one quietly.
 
 The honeypot uses the visually-hidden pattern (`clip-path`, 1px box), never
 `display: none` (which some bots skip) and never off-screen positioning,
@@ -99,14 +105,17 @@ disclosure is open.
 
 - **Homepage (no script, no state):** a plain POST. The Function answers `303`
   to the same page with a fragment, `#report-sent` and so on, and CSS `:target`
-  shows that status. The homepage keeps shipping zero JavaScript.
+  shows that status. The homepage keeps its one script, the inline theme
+  script (#142), and gains nothing (`theme-script.spec.ts` pins that
+  inventory on every built page).
 - **Tool pages (`/glory-points`, `/classroom-groups`):** `/classroom-groups`
   keeps a teacher's roster in memory only; the page persists just two UI
   preferences. A full-page POST would wipe the class list. Both pages already
   ship a script, so `src/scripts/report-form.ts` exports
   `enhanceReportForm(form)`, which each page's own script calls. It intercepts
   submit, sends the same fields with `fetch` and `Accept: application/json`,
-  shows the matching status, and never reloads the page. It resets the form
+  shows the matching status and moves focus to it, as the fragment does on
+  the homepage, and never reloads the page. It resets the form
   only on `sent`, and any network failure shows `failed`. Because the footer
   component carries no `<script>`, nothing new reaches the homepage.
 
@@ -116,12 +125,16 @@ script.
 
 ### 3.4 Accessibility
 
-`<summary>`, both text fields, both textareas and the button have a hit area of
+`<summary>`, the quote field, both textareas and the button have a hit area of
 at least 44 × 44 px. Every field has a `<label>`, and hints are joined by
 `aria-describedby`. Colours come only from the palette tokens, so the existing
 computed-style contrast guards apply. Each input sets `width: 100%` with
 `box-sizing: border-box`, because a text input's intrinsic width is what pinned
-`#cg-form` wide at 320px in the past. Status paragraphs carry `role="status"`.
+`#cg-form` wide at 320px in the past. Status paragraphs carry `role="status"`
+and `tabindex="-1"`. A live region does not reliably announce text that was
+already in it and only becomes visible, so the status is announced by moving
+focus to it: the fragment does that on the homepage (navigating to a fragment
+focuses a focusable target), and the tool-page script does it explicitly.
 
 ### 3.5 Copy (English source, **approved by the operator on 2026-09-23**)
 
@@ -150,17 +163,27 @@ are reportable themselves.
 A page's **reportable strings** are the catalogue sections it reads, plus the
 shared chrome:
 
-| Page id            | Sections                                                          | Measured 2026-09-23, each beta locale |
+| Page id            | Sections                                                          | Measured 2026-09-25, each beta locale |
 | ------------------ | ----------------------------------------------------------------- | ------------------------------------- |
-| `home`             | `site.home` + chrome                                              | 36 keys, 36 forms                     |
-| `glory-points`     | `site.glory` + chrome                                             | 25 keys, 25 forms                     |
-| `classroom-groups` | the tool catalogue (`getStrings`) + chrome                        | 193 keys, 196 forms                   |
+| `home`             | `site.home` + chrome                                              | 37 keys, 37 forms                     |
+| `glory-points`     | `site.glory` + chrome                                             | 29 keys, 29 forms                     |
+| `classroom-groups` | the raw tool catalogue (`Catalogue`, as in `id.ts`) + chrome      | 197 keys, 200 forms                   |
 
-**Chrome** is every top-level section of the site catalogue except the page
+**Chrome** is every top-level entry of the site catalogue except the page
 sections (`home`, `glory`) and `notFound`, which only the English-footed 404
-renders. So a section added to the header or footer later is included without
-anyone remembering to add it, and the new `report` section is included too.
-The counts above predate `report`, which adds 13 keys to every page.
+renders. That takes in the sections (`nav`, `footer`, `language`) and the bare
+strings (`menuLabel`, `themeDarkMode`, `skipToContent`) alike. So an entry
+added to the header or footer later is included without anyone remembering to
+add it, and the new `report` section is included too. The counts above predate
+`report`, which adds 13 keys to every page. They moved between 2026-09-23 and
+2026-09-25 (36/25/193 then), because #142 added `themeDarkMode` and the glory
+copy grew. That is why the tests derive the sets and pin no count.
+
+The tool strings are walked in the **raw** catalogue, never through
+`getStrings`. `getStrings` compiles every message into a function (#136), so a
+walker over its result that collects string leaves never sees any message at
+all. Measured: 139 keys through `getStrings` against 197 in the raw
+catalogue, and every missing key is a message.
 
 These are the facts the table rests on: `HomePage.astro` reads
 `getSiteStrings(lang).home`, `GloryPointsPage.astro` reads `.glory`, and
@@ -227,30 +250,47 @@ like `_middleware.js`. All the logic lives in `src/lib/report.ts`.
 | 2   | `Origin` is present and equals the request's own origin                        | else `403`, nothing                  |
 | 3   | `Content-Type` is `application/x-www-form-urlencoded`                          | else `415`, nothing                  |
 | 4   | Body is at most 64 KiB                                                         | else `413`, nothing                  |
-| 5   | Honeypot `website` is empty                                                    | else `sent`, **nothing stored**      |
-| 6   | `locale` is a beta locale and `page` is a known page id                        | else `400`, nothing                  |
+| 5   | `locale` is a beta locale and `page` is a known page id                        | else `400`, nothing                  |
+| 6   | Honeypot `website` is empty                                                    | else `sent`, **nothing stored**      |
 | 7   | `quote` is 1–1000 characters; `suggestion` and `note` are 0–1000              | else `rejected`, nothing             |
 | 8   | `quote` matches a string on that page in that locale (section 5)               | else `not-found`, nothing            |
 | 9   | Insert succeeds                                                                | `sent`, one row; else `failed`       |
 
-Lengths are counted in UTF-16 code units, the unit HTML's `maxlength` uses, so
-a submission the browser allows is never refused for its length.
+Check 5 comes before the honeypot because the honeypot's decoy `sent` is a
+redirect, and a redirect needs a checked `locale` and `page` to build its
+target. With the honeypot first, a bot that fills it and sends a made-up
+`page` would reach a redirect with nothing safe to point at.
+
+Lengths are counted in UTF-16 code units, the unit HTML's `maxlength` uses,
+after every CRLF is folded to LF. The fold matters because a textarea's
+`maxlength` counts a line break as one unit, while submission sends every line
+break as CRLF, so an unfolded count would refuse a note the browser allowed.
+With the fold, a submission the browser allows is never refused for its
+length. Stored text keeps LF.
 
 **The body cap changed from the approved design's 8 KB.** The form is
-urlencoded, so each UTF-8 byte of a non-ASCII character is sent as `%XX`: a Thai
-character is 9 bytes on the wire, and one outside the BMP is 12. Three fields
-of 1,000 characters is therefore up to about 36 KB. 64 KiB clears that with
-room for the hidden fields.
+urlencoded, so each UTF-8 byte of a non-ASCII character is sent as `%XX`. A
+UTF-16 code unit therefore costs at most 9 bytes on the wire: a Thai character
+is one unit and 9 bytes, and a character outside the BMP is two units and 12
+bytes. Three fields of 1,000 units come to at most about 27 KB, and 64 KiB
+clears that with room for the hidden fields.
+
+The browser sends `Origin` on this form's POST because the site's
+`Referrer-Policy` is `strict-origin-when-cross-origin` (`public/_headers`).
+Under `no-referrer`, the Fetch standard serialises a POST's `Origin` as
+`null`, so check 2 would refuse every real report. The Functions-runtime tests
+in section 10 submit from a real browser, so a change to that header goes red
+there.
 
 **Redirect mode** (the default): `303`, with a `Location` built only from the
 checked `locale` and `page` through `localisePath`, plus `#report-<outcome>`,
 for example `/vi/classroom-groups#report-sent`. Nothing the visitor typed
-reaches a header. Check 6 cannot build a safe target, so it answers a plain
+reaches a header. Check 5 cannot build a safe target, so it answers a plain
 `400`.
 
 **JSON mode** (`Accept: application/json`, the tool-page script):
-`{"outcome":"sent"}` with `200`; `not-found` `422`; `rejected` and check 6
-`400`; `failed` `503`; checks 1–4 keep their own codes.
+`{"outcome":"sent"}` with `200` (the honeypot's decoy too); `not-found` `422`;
+`rejected` and check 5 `400`; `failed` `503`; checks 1–4 keep their own codes.
 
 Every response carries `Cache-Control: no-store` and
 `X-Content-Type-Options: nosniff`, because `_headers` does not apply to
@@ -304,6 +344,8 @@ exactly these statements for the D1 console:
 SELECT id, received_at, locale, page, quote, keys, suggestion, note
   FROM reports ORDER BY received_at;
 DELETE FROM reports WHERE id = ?;   -- once the report has been dealt with
+-- dev database only: the rows the dev sanity suite writes (section 10)
+DELETE FROM reports WHERE note LIKE 'automated dev check %';
 ```
 
 It also records one rule. A ticket raised from a report goes into a **public**
@@ -353,13 +395,18 @@ TDD: each new export starts as a throwing stub, and every test is seen failing
 on its own assertion before any implementation. Any test that passes against a
 stub is a finding.
 
-- **Unit (Vitest):** `reportableStrings` against the measured counts, and
-  derived. Normalisation: NFC against NFD, zero-width characters, NBSP,
-  typographic quotes, case. Matching: all three rules, a slot-spanning
-  fragment, multiple keys, 1 and 2 characters. Every check in 6.1 at its
-  boundary (1000 and 1001; 64 KiB and one byte more; empty; whitespace only;
-  emoji; control characters). The handler is called directly with real
-  `Request` objects; the D1 it is given is covered by the next bullet.
+- **Unit (Vitest):** `reportableStrings` derived from the catalogues, never
+  pinned to a count: every leaf of each page's sections is present, a message
+  key contributes one form per branch, and a key added to a chrome entry
+  appears on every page. Normalisation: NFC against NFD, zero-width
+  characters, NBSP, typographic quotes, case. Matching: all three rules, a
+  slot-spanning fragment, multiple keys, 1 and 2 characters. Every check in
+  6.1 at its boundary (1000 and 1001; 64 KiB and one byte more; empty;
+  whitespace only; emoji; control characters; a note of 1000 units that
+  arrives as more because its line breaks are CRLF). The order of checks 5
+  and 6: a filled honeypot with an unknown `page` answers `400`, never a
+  redirect. The handler is called directly with real `Request` objects; the D1
+  it is given is covered by the next bullet.
 - **Functions runtime (Playwright, new `playwright.functions.config.ts`):**
   the real Function on workerd through `wrangler pages dev`, with a local D1
   that has the real migration applied.
@@ -369,24 +416,39 @@ stub is a finding.
     **roster is still there** afterwards. This is the hazard in 3.3.
   - A cross-origin POST is refused, and a quote that matches nothing lands on
     `#report-not-found` with no row written.
-  - These run as steps inside the existing required `build-and-test` job, so
-    they gate without any change to branch protection.
+  - These run as a new `functions` job in `ci.yml`, and `build-and-test`
+    gains it in its `needs`. `build-and-test` has had no steps of its own since
+    #163. It is the aggregate that branch protection and
+    `scripts/deploy-gate.mjs` read, and it fails unless every job it needs
+    succeeded. A job it needs therefore gates with no change to branch
+    protection, and `pipeline-wiring.test.ts` derives that rule, so it goes
+    red if the job is added without the `needs` entry.
 - **E2E against `dist/`** (existing projects): the disclosure is present in
   every beta locale on every page and absent in English, both derived; each
   `<datalist>` equals `reportableStrings(page, locale)` exactly, as a set;
   keyboard reachable; 44px; AA contrast; no horizontal scroll at 320px with the
   disclosure open, in every locale; each `#report-*` status is visible
-  (`toBeVisible` + `toHaveText`) when targeted, and the others are
-  `toHaveCount(1)` + `toBeHidden`; the homepage still ships zero JavaScript.
+  (`toBeVisible` + `toHaveText`) and focused (`toBeFocused`) when targeted,
+  and the others are `toHaveCount(1)` + `toBeHidden`; the homepage's script
+  inventory is still the inline theme script alone (`theme-script.spec.ts`).
   **Completeness:** every catalogue string found in a built page's HTML is in
   that page's reportable set, so a page that starts reading a new section
   without the table in section 4 fails.
 - **Dev, after deploy (`dev-sanity.spec.ts`):** the health check returns 200,
   and one real browser submission reaches `#report-sent`. That writes one row
   per dev deploy, in the dev database only, with the note
-  `automated dev check <sha>` so it is recognisable.
+  `automated dev check <sha>` so it is recognisable. Those rows are never
+  "actioned", so the runbook carries the one statement that clears them:
+  `DELETE FROM reports WHERE note LIKE 'automated dev check %';`, run against
+  the dev database only.
 - **Prod (`prod-sanity.spec.ts`):** the health check only. Nothing is ever
   written in production by automation.
+- **Both deployed-site tests are `@deployed-only`** (#335). A pull request
+  runs `tests/dev` and `tests/prod` against a preview of its own `dist/`
+  (`sanity-on-build`), and a preview runs no Pages Function, so the health
+  check and the dev submission cannot pass there. Each carries
+  `tag: '@deployed-only'` and a `deployed-only` annotation giving that reason,
+  as `sanity-on-build.test.ts` requires.
 - **Visual:** the footer grows in beta-locale pages that have baselines, so
   those baselines are recaptured in the pinned container, reviewed old against
   new, then compared with nothing written.
@@ -399,8 +461,12 @@ nothing; store when the honeypot is filled; remove the Origin check; build
 status codes; answer the health check without querying; log the quote on
 `failed`; remove `preventDefault` from the tool-page script (the roster test
 goes red); remove the `:target` rule; put the tool-page script in the footer
-(the zero-JS guard goes red); shrink `<summary>` below 44px; give the quote
-input `width: 400px` (the 320px guard goes red).
+(the script-inventory guard in `theme-script.spec.ts` goes red); shrink
+`<summary>` below 44px; give the quote input `width: 400px` (the 320px guard
+goes red); move the honeypot check above check 5; count a note's length
+before folding CRLF; drop the tool-page script's focus move (`toBeFocused`
+goes red); set `Referrer-Policy: no-referrer` (the Functions-runtime
+submission goes red on check 2).
 
 ## 11. Assumptions, measured first in the plan
 
@@ -415,8 +481,13 @@ input `width: 400px` (the 320px guard goes red).
 3. `Intl.Segmenter` and `String.prototype.normalize` behave the same in workerd
    as in Node 24. The "2 characters" in rule 2 counts graphemes where that
    holds, and code points otherwise.
-4. `:target` on the status paragraphs works in all five engines on the
-   Playwright matrix.
+4. `:target` on the status paragraphs, and focus landing on the targeted
+   `tabindex="-1"` paragraph after the redirect, both work in all five
+   engines on the Playwright matrix. **Fallback for focus**, if an engine does
+   not move it: the status is still shown by `:target` and still carries
+   `role="status"`, and the `toBeFocused` assertion is skipped for that engine
+   with an annotation giving the measured reason. The homepage gains no
+   script to force it.
 5. D1 accepts the `CHECK` constraints in section 7 and the
    `pragma_table_info('reports')` query the health check uses. **Fallback:**
    drop the constraints, which are defence in depth only, and read
@@ -452,3 +523,44 @@ input `width: 400px` (the 320px guard goes red).
 12. [x] The English copy in 3.5 is approved by the operator before translation
     (2026-09-23).
 13. Mutation-verified both ways (section 10).
+
+## 13. Review log
+
+Each pass runs the mechanical checks and then reads the whole document. The
+checks are: every path, export and command it names exists on `develop`; every
+measured number is re-measured; every rule it cites from `CLAUDE.md` still
+holds; and every section agrees with the others.
+
+**Pass 1 (2026-09-25, against `develop` at 9782fa4): 11 findings, all fixed.**
+
+1. The status still said "waiting for the operator's review". Plans and specs
+   have been self-approved after review passes since 2026-09-24.
+2. "The homepage keeps shipping zero JavaScript" (3.3, 10 twice) went stale
+   with #142, which gave every page the inline theme script. The guard it
+   relies on is `theme-script.spec.ts`'s inventory.
+3. The counts in section 4 were stale: 36/25/193 keys are now 37/29/197, and
+   the forms are 37/29/200. The unit tests had pinned them; they now derive
+   the sets instead.
+4. "Chrome is every top-level section" missed the bare top-level strings
+   (`menuLabel`, `themeDarkMode`, `skipToContent`).
+5. The tool strings named `getStrings`, whose result hides every message
+   behind a function: 139 keys against 197. The raw catalogue is named now.
+6. Checks 5 and 6 were in the wrong order: the honeypot's decoy redirect came
+   before `locale` and `page` were checked, so it had no safe target.
+7. `maxlength` counts a textarea line break as one unit and submission sends
+   it as CRLF, so an unfolded length check refused notes the browser allowed.
+   The body cap's worst case was also 36 KB where it is 27 KB.
+8. Section 10 put the Functions tests "as steps inside `build-and-test`",
+   which has had no steps of its own since #163. It is a `functions` job that
+   `build-and-test` needs now.
+9. The dev and prod health checks, and the dev submission, would run against
+   `sanity-on-build`'s preview (#335), which runs no Function. They are
+   `@deployed-only` now, and the dev rows have a runbook statement to clear
+   them.
+10. 3.4 named "both text fields" where the form has one, and a status that
+    only becomes visible is not reliably announced by a live region. Focus now
+    moves to the status, as a new assertion, a new mutation and an assumption
+    with a fallback.
+11. The Origin check silently depended on `Referrer-Policy`: under
+    `no-referrer` a POST's `Origin` is `null`, and every real report would be
+    refused. The dependency is stated in 6.1 and has a mutation.
