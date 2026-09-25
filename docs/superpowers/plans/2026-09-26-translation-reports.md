@@ -107,8 +107,9 @@ likely first. Each one has a test in the owning task.
    (ที่). Rule 2 needs 2 graphemes, so it is `not-found`, and two clusters
    match. Task 5.
 4. **Chinese fullwidth quotation marks** (U+FF02, U+FF07) and a modifier
-   apostrophe (U+02BC) fold like the typographic ones, so a pasted zh string
-   matches. Task 5.
+   apostrophe (U+02BC) fold like the typographic ones, on both the quote and
+   the forms, so the kind of quotation mark never decides a match. Task 5's
+   normalise test.
 5. **A second submission on a tool page after a first outcome.** Exactly one
    status is visible, and it is the new one. Task 10,
    `a later outcome replaces the earlier one`.
@@ -131,7 +132,7 @@ likely first. Each one has a test in the owning task.
 | `src/lib/i18n/index.ts` | `rawCatalogue(locale)` export | 5 |
 | `src/lib/report.ts` | page table, reportable strings, normalise, match, endpoint, health | 5, 6 |
 | `tests/unit/report.test.ts` | strings, forms, normalisation, matching | 5 |
-| `tests/unit/report-endpoint.test.ts` | checks 1–8, `failed`, logging, health, schema | 6 |
+| `tests/unit/report-endpoint.test.ts` | checks 1–8, `failed`, logging, health, schema; the migration and plumbing pins | 6, 7 |
 | `migrations/0001_reports.sql` | the `reports` table (spec 7) | 7 |
 | `functions/api/report/index.js`, `health.js` | ESM plumbing only | 7 |
 | `docs/runbooks/translation-reports.md` | the D1 console statements and the public-ticket rule | 7 |
@@ -847,10 +848,12 @@ describe('a page offers its own sections plus the chrome', () => {
 
 describe('display forms', () => {
   it('gives a message one form per branch, each slot an ellipsis', () => {
+    // A select, not a plural: every beta locale has only the `other` plural
+    // category, so a plural there renders one form (unless it has `=n` keys).
     const english = catalogueLeaves(rawCatalogue('en'));
     const [key] = nonEmpty(
-      english.filter(([k, v]) => !k.includes('[') && typeof v === 'string' && /plural|select/.test(v)),
-      'plural or select messages',
+      english.filter(([k, v]) => !k.includes('[') && typeof v === 'string' && /,\s*select\s*,/.test(v)),
+      'select messages',
     )[0];
     const entry = reportableStrings('classroom-groups', 'vi').find((s) => s.key === key);
     expect(entry, key).toBeDefined();
@@ -869,12 +872,19 @@ describe('display forms', () => {
 
   it('treats a tool string as a message exactly when its English is one', () => {
     const english = new Map(catalogueLeaves(rawCatalogue('en')));
-    for (const { key, forms } of reportableStrings('classroom-groups', 'th').filter((s) => !s.key.startsWith('site.'))) {
+    const tool = reportableStrings('classroom-groups', 'th').filter((s) => !s.key.startsWith('site.'));
+    const isMessage = (key: string) => {
       const reference = english.get(key);
-      const isMessage = !key.includes('[') && typeof reference === 'string' && isMessageTemplate(reference);
-      if (!isMessage) expect(forms, key).toHaveLength(1);
-      if (!isMessage) expect(forms[0].runs, key).toHaveLength(1);
+      return !key.includes('[') && typeof reference === 'string' && isMessageTemplate(reference);
+    };
+    // Both directions, each proven non-empty: plain copy is one literal form,
+    // and a message never shows its template syntax.
+    for (const { key, forms } of nonEmpty(tool.filter((s) => !isMessage(s.key)), 'plain tool strings')) {
+      expect(forms, key).toHaveLength(1);
+      expect(forms[0].runs, key).toHaveLength(1);
     }
+    for (const { key, forms } of nonEmpty(tool.filter((s) => isMessage(s.key)), 'tool messages'))
+      for (const form of forms) expect(form.display, key).not.toMatch(/[{}]/);
   });
 
   it('offers each display once, and every one of them', () => {
@@ -927,7 +937,7 @@ describe('matching a quote (spec 5)', () => {
     expect(matchingKeys(vi.report.open, 'home', 'vi')).toContain('site.report.open');
   });
 
-  it('rule 1 survives case, spacing and typographic quotes', () => {
+  it('rule 1 survives case and spacing', () => {
     const noisy = `  ${vi.report.open.toUpperCase()}  `;
     expect(matchingKeys(noisy, 'home', 'vi')).toContain('site.report.open');
   });
@@ -1027,8 +1037,10 @@ describe('matching a quote (spec 5)', () => {
   });
 
   it('answers a 1000-unit quote against every classroom-groups form promptly', () => {
-    // A tripwire, not the Workers CPU budget: rule 3 is a linear scan, and a
-    // backtracking pattern here took seconds on this input shape.
+    // A tripwire, not the Workers CPU budget: rule 3 is a linear scan
+    // (clarification 5). A backtracking pattern such as ^a.+b.+c$ is
+    // polynomial on a long quote of this shape; this bound is not a
+    // measurement of one, only a line it must stay under.
     const quote = 'a'.repeat(999) + 'b';
     const started = performance.now();
     matchingKeys(quote, 'classroom-groups', 'vi');
@@ -1237,8 +1249,8 @@ export function matchingKeys(quote: string, page: PageId, locale: Locale): strin
 
 - [ ] **Step 5: Run green, then everything.**
       Run: `npx vitest run tests/unit/report.test.ts` → PASS.
-      Run: `npm run test:unit 2>&1 | tail -6` → only `dead-copy`'s report keys
-      fail (Task 8 fixes them).
+      Run: `npm run test:unit 2>&1 | tail -6` → only `dead-copy` fails, on
+      the `report` group (Task 8 fixes it).
       Run: `npm run typecheck 2>&1 | command grep -E "(error|warning|hint)s?"` → three lines, 0 each.
       Run: `npx prettier --write src/lib/report.ts src/lib/i18n/index.ts tests/unit/report.test.ts`.
 
@@ -1250,11 +1262,15 @@ git commit -m "feat(report): the page table, reportable strings and quote matchi
 ```
 
 - [ ] **Step 7: Mutate, whole file each time, predicting first.**
-      (a) Delete `'glory-points'`'s `siteSection` → RED on the glory leaves
-      test. (b) Accept any quote (`return reportableStrings(page, locale).map(({ key }) => key);`
+      (a) Remove a section from the page table: delete `home`'s `siteSection`.
+      Chrome is derived by exclusion, so `site.home` becomes chrome and is
+      offered on every page → RED on "none of site.home" and on "agrees with
+      label-check". (b) Accept any quote (`return reportableStrings(page, locale).map(({ key }) => key);`
       at the top of `matchingKeys`) → RED on "matches nothing" and on "spans a
-      slot". (c) Change `>= 2` to `>= 1` → RED on "refuses one character".
-      (d) Replace `lengthOf` with `text.length` → RED on the Thai test.
+      slot". (c) In `matchesForm`'s rule-2 line, change `>= 2` to `>= 1` →
+      RED on "refuses one character". (d) Make `lengthOf`'s body
+      `return text.length;` → RED on the Thai test (a two-unit cluster passes
+      as two).
       (e) Set `wholeMessageAllowed` to `form.runs.length > 1` → RED on
       "rule 3 needs two characters of fixed wording". (f) In `wholeMessage`,
       search from `at` instead of `at + 1` → RED on `'ab1c'` (an empty
@@ -1647,9 +1663,14 @@ git commit -m "feat(report): the endpoint's nine checks, the health check and a 
       1001 tests. (e) Swap `'not-found': 422` and `rejected: 400` → RED in
       JSON mode. (f) `reportHealth` answers `json({ ok: true }, 200)` without
       querying → RED on the 503 test. (g) Log `quote` in the catch → RED on
-      the leak test. (h) Move the honeypot line above check 5 → RED on "5 comes
-      before the honeypot". (i) Count before folding: drop `.replace(/\r\n/g, '\n')`
-      in `field` → RED on the CRLF test.
+      the leak test. (h) Move the honeypot line above check 5 (read `locale`
+      and `page` first, unchecked, and cast them) → RED on "5 comes before the
+      honeypot": the unchecked `page` either throws in `pagePath` or
+      redirects, and neither is a plain 400. (i) Count before folding: add
+      `|| (fields.get('note') ?? '').length > MAX_FIELD_UNITS` to the
+      `rejected` condition → RED on the CRLF test (1008 raw units). Dropping
+      the fold altogether is not this mutation: the CR it leaves is a control
+      character, so check 7 would refuse the note for a different reason.
 
 ---
 
@@ -1716,8 +1737,8 @@ describe('the Pages Functions are plumbing only', () => {
 
 ```ts
   it('walks the Pages Functions too', () => {
-    // #97 put site code behind a Function. functions/ has been in the walk
-    // since #54; this proves the new one is reached, not merely listed.
+    // #97 put site code behind a Function. functions/ was already in the
+    // walk; this proves the new one is reached, not merely listed.
     expect(shipped()).toContain('functions/api/report/index.js');
     expect(importsOf('functions/api/report/index.js').map(stem)).toContain('src/lib/report');
   });
@@ -1725,7 +1746,9 @@ describe('the Pages Functions are plumbing only', () => {
 
 - [ ] **Step 2: Run red.**
       Run: `npx vitest run tests/unit/report-endpoint.test.ts tests/unit/cli-only.test.ts 2>&1 | tail -20`
-      Expected: FAIL with ENOENT for the migration and both Functions.
+      Expected: FAIL. The migration and plumbing tests throw ENOENT, and
+      `walks the Pages Functions too` fails on `toContain`, because
+      `shipped()` does not list the file yet.
 
 - [ ] **Step 3: The migration.** Create `migrations/0001_reports.sql` with
       spec section 7's statement verbatim (the `CREATE TABLE reports (…);`
@@ -1924,7 +1947,7 @@ import { test, expect } from './fixtures';
 import { recorded } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { contrastRatio } from './helpers';
-import { PREFIXED_LOCALES, getSiteStrings, getStrings } from '../../src/lib/i18n';
+import { PREFIXED_LOCALES, getSiteStrings } from '../../src/lib/i18n';
 import { PAGE_IDS, pagePath } from '../../src/lib/report';
 
 test.use(recorded);
@@ -1945,6 +1968,10 @@ test('the disclosure opens from the keyboard and walks its fields in order', asy
   // The hints are joined by aria-describedby (spec 3.4).
   await expect(page.getByLabel(t.quoteLabel, { exact: true })).toHaveAccessibleDescription(t.quoteHint);
   await expect(page.getByLabel(t.noteLabel, { exact: true })).toHaveAccessibleDescription(t.noteHint);
+  // A formatter that re-wraps `<textarea></textarea>` gives it a default
+  // value of whitespace, which a visitor would then submit.
+  await expect(page.getByLabel(t.suggestionLabel, { exact: true })).toHaveValue('');
+  await expect(page.getByLabel(t.noteLabel, { exact: true })).toHaveValue('');
 });
 
 test('every control is at least 44px and every text meets AA', async ({ page }) => {
@@ -1965,6 +1992,7 @@ test('every control is at least 44px and every text meets AA', async ({ page }) 
     page.locator('#report-quote-hint'),
     page.locator('#report-note-hint'),
     page.locator('label[for="report-quote"]'),
+    page.getByRole('button', { name: t.send }),
   ])
     expect(await contrastRatio(text)).toBeGreaterThanOrEqual(4.5);
 });
@@ -2179,11 +2207,16 @@ git commit -m "feat(report): the footer's report form in every beta locale (Refs
       the presence walk, English pages. (b) Gate it to `lang === 'vi'` → RED
       on the presence walk for id, zh and th. (c) Delete the
       `.report-status:target` selector → RED on every `#report-*` test.
-      (d) `.report summary { min-height: 30px; }` → RED on 44px. (e)
+      (d) Append `.report summary { min-height: 30px; padding-block: 0; }` →
+      RED on 44px (the padding goes too, so the text's own line box cannot
+      reach 44px). (e)
       `#report-quote` gets `width: 400px` (append
       `.report #report-quote { width: 400px; }`) → RED on the 320px tests.
-      (f) Put a `<script>console.log(1)</script>` inside the footer →
-      `theme-script.spec.ts` RED on every page. Confirm each RED names the
+      (f) Put the tool-page script in the footer (spec 10's wording):
+      `<script>import '../scripts/report-form.ts';</script>` at the end of
+      `Footer.astro`. This is valid once Task 9 has created the file, so run
+      (f) after Task 9 → `theme-script.spec.ts` RED on the homepage and the
+      404, which gain a module they did not carry. Confirm each RED names the
       property you broke, then restore and confirm green.
 
 ---
@@ -2250,11 +2283,15 @@ describe('outcomeOf', () => {
  * script fails to load, the plain POST still works, and there is then no
  * roster to lose.
  */
+// Type-only, deliberately: a value import would put report.ts's catalogue
+// walk and matcher into the browser bundle for nothing.
 import type { Outcome } from '../lib/report';
 
-const OUTCOMES: readonly Outcome[] = ['sent', 'not-found', 'rejected', 'failed'];
+// A Record, so adding an outcome to the union without adding it here fails
+// to compile; the list is the Record's keys.
+const EVERY_OUTCOME: Record<Outcome, true> = { sent: true, 'not-found': true, rejected: true, failed: true };
 const isOutcome = (value: unknown): value is Outcome =>
-  typeof value === 'string' && (OUTCOMES as readonly string[]).includes(value);
+  typeof value === 'string' && Object.hasOwn(EVERY_OUTCOME, value);
 
 /** The outcome a response carries, and `failed` for anything else: a 403, an HTML page, a body that is not ours. */
 export async function outcomeOf(response: Response): Promise<Outcome> {
@@ -2310,8 +2347,8 @@ export function enhanceReportForm(form: HTMLFormElement): void {
       calls `enhanceReportForm` yet.
 
 - [ ] **Step 3: Failing e2e test for the tool page.** Append to
-      `tests/e2e/report-form.spec.ts` (`getStrings` is already in its i18n
-      import). The preview serving `dist/` runs no Function, so a submission
+      `tests/e2e/report-form.spec.ts`, and add `getStrings` to its
+      `../../src/lib/i18n` import. The preview serving `dist/` runs no Function, so a submission
       meets a response that is not ours. That is the `failed` path, and the
       roster must survive it (spec 3.3's hazard; Task 10 proves `sent` on the
       real runtime).
@@ -2383,10 +2420,11 @@ git commit -m "feat(report): the tool pages submit the report in place (Refs #97
       (d) What holds the `report` copy in `dead-copy`? Its group check
       matches `\.report\b` anywhere in `src/`, and `from './report-form'`
       now satisfies it by itself. Delete the footer's whole report markup
-      (not the frontmatter), and predict RED on `dead-copy` naming
-      `report.quoteLabel`, `report.intro` and the other keys with distinctive
-      names. Confirm that the key-level check is what catches it, and record
-      that in the PR body. If it stays green, the section is unguarded: make
+      (not the frontmatter), and predict RED on `dead-copy` naming the report
+      keys whose names no other code shares, such as `report.quoteLabel` and
+      `report.honeypotLabel`. Keys like `open` or `intro` may be read
+      elsewhere under the same name, so do not predict them. Confirm that
+      the key-level check is what catches it, and record that in the PR body. If it stays green, the section is unguarded: make
       `isReferenced` ignore module specifiers (strip `from '…'` and
       `import('…')` strings before matching), mutation-verify that change both
       ways, and commit it separately.
@@ -2466,14 +2504,18 @@ export function reportsWithNote(note) {
 #!/usr/bin/env node
 /**
  * Build, reset the local D1, apply the real migration, then serve dist/ with
- * the real Functions (#97). Playwright's webServer runs this and waits on
- * /api/report/health, which answers 200 only once the binding AND the
- * migration are in place, so a run cannot start against a bare database.
+ * the real Functions (#97). Playwright's webServer runs this for every run,
+ * never reusing a server, so each run and each mutation meets a fresh build
+ * and a fresh database. The first test proves the binding and the migration.
  */
 import { rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { DATABASE_ID, PASSWORD, PERSIST, PORT, d1 } from './local.mjs';
 
+/**
+ * @param {string} command
+ * @param {string[]} args
+ */
 const step = (command, args) => {
   const run = spawnSync(command, args, { stdio: 'inherit' });
   if (run.status !== 0) {
@@ -2491,7 +2533,8 @@ const server = spawn(
   ['wrangler', 'pages', 'dev', 'dist', '--ip', '127.0.0.1', '--port', String(PORT), '--compatibility-date', '2026-09-01', '--d1', `REPORTS=${DATABASE_ID}`, '--persist-to', PERSIST, '--binding', `DEV_PASSWORD=${PASSWORD}`],
   { stdio: 'inherit' },
 );
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.kill(signal));
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM']))
+  process.on(signal, () => server.kill(signal));
 server.on('exit', (code) => process.exit(code ?? 1));
 ```
 
@@ -2519,7 +2562,9 @@ export default defineConfig({
     // the health test, first in the file with one worker, is what proves the
     // binding and the migration.
     url: `${BASE_URL}/`,
-    reuseExistingServer: !process.env.CI,
+    // Never reuse: a server left running would hold an older build, and a
+    // mutation would then be tested against code it never reached.
+    reuseExistingServer: false,
     timeout: 240_000,
   },
   use: {
@@ -2531,7 +2576,8 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Failing runtime tests.** Create `tests/functions/report.spec.ts`:
+- [ ] **Step 4: The runtime tests.** Create `tests/functions/report.spec.ts`
+      (each is seen red by its own mutation in Step 8):
 
 ```ts
 import { randomUUID } from 'node:crypto';
@@ -2638,10 +2684,10 @@ test.describe('on a tool page', () => {
 });
 ```
 
-      `tests/functions/` is a new spec directory, so the derived meta-guards
-      (`spec-dirs`, `event-collectors`, `evidence-recording`) now read it. If
-      `evidence-recording` asks this spec to declare `test.use(recorded)`,
-      import `recorded` from `../e2e/evidence` and add it at file level.
+      `tests/functions/` is a new spec directory. The guards that derive their
+      scope from `specDirs()` (`spec-dirs`, `event-collectors`) now read it;
+      `evidence-recording` reads `tests/e2e` only, so no recording is declared
+      here.
 
 - [ ] **Step 5: The script, and run it red.** Add
       `"test:functions": "playwright test --config=playwright.functions.config.ts"`
@@ -2696,8 +2742,7 @@ test.describe('on a tool page', () => {
 ```
 
       Change `build-and-test`'s line to `needs: [checks, e2e, sanity-on-build, functions]`.
-      Check `WorkflowJob`'s `needs` field name in `tests/workflow-jobs.ts:16`
-      before running, and adjust the guard's property access to match it.
+      (`WorkflowJob.needs` is `readonly string[]`, `tests/workflow-jobs.ts:18`.)
       Run: `npx vitest run tests/unit/pipeline-wiring.test.ts` → PASS.
       Run: `npm run test:unit 2>&1 | tail -6` → all pass. `unboundedJobFindings`
       and the permissions guards read the new job.
@@ -2803,9 +2848,11 @@ for (const locale of PREFIXED_LOCALES)
 
 - [ ] **Step 2: Run it and watch it be live.**
       Run: `npm run build > /dev/null 2>&1; npx playwright test tests/e2e/report-completeness.spec.ts --project=chromium 2>&1 | tail -15` → all pass.
-      Then mutate: delete `'glory-points'`'s `siteSection` in `src/lib/report.ts`
+      Then mutate: add `'glory'` to `NEVER_OFFERED` in `src/lib/report.ts`
       and rebuild. Predict RED on every glory-points test, with `missing`
-      naming glory copy, and confirm. For classroom-groups, set its
+      naming glory copy, and confirm. (Deleting a page's `siteSection` is no
+      mutation here: chrome is derived by exclusion, so the section would
+      become chrome and still be offered.) For classroom-groups, set its
       `toolCatalogue: false` and predict RED with tool strings named (this
       proves the script-injected strings are read). Restore and confirm green
       on all five engines:
@@ -3007,3 +3054,55 @@ word "succeeding").
     mutation.
 14. The Task 2 spike put two handlers in one file, used an undefined
     `$SCRATCH`, and Task 3's mutation named a file that did not exist yet.
+
+**Pass 2 (2026-09-26, a full read of every line after pass 1's fixes, plus
+the mechanical path check): 22 findings, all fixed.** The path check: of 67
+distinct backticked paths, every full path absent from `origin/develop` is a
+file a task creates, or the spec (on this branch). Also checked: the visual
+suite's test titles (`${name} renders the same pixels`, so `--grep "home-id"`
+selects), and `evidence-recording`'s scope (`tests/e2e` only).
+
+1. Every beta locale has only the `other` plural category, so "a message
+   gives one form per branch" would have picked a plural and seen one form.
+   It picks a `select` now.
+2. "Exactly when its English is one" asserted one direction. Both directions
+   are asserted now, and each is proven non-empty.
+3. A test named "survives case, spacing and typographic quotes" tested no
+   quotes. It is named for what it asserts.
+4. The performance test's comment claimed a measurement nobody made.
+5. Mutation (a) in Task 5 predicted a red that could not happen: with chrome
+   derived by exclusion, deleting `glory`'s `siteSection` makes it chrome,
+   and it is still offered. The mutation deletes `home`'s now, and names the
+   two tests that go red.
+6. Mutation (c) was ambiguous once there were two `>= 2`s, and (d) did not
+   say what to replace.
+7. The same exclusion defect sat in Task 11's completeness mutation. It adds
+   `glory` to `NEVER_OFFERED` now, and says why the obvious mutation is none.
+8. Mutation (i), dropping the CRLF fold, would have gone red for the wrong
+   reason: the CR it leaves is a control character. It adds a raw-length
+   check instead. Mutation (h) says how the unchecked page fails.
+9. The cli-only comment cited "#54" without evidence. The citation is gone.
+10. Task 7's red expectation named ENOENT for a test that fails on `toContain`.
+11. Task 8 imported `getStrings` for a test Task 9 adds, which `astro check`
+    would flag as unused. Task 9 adds the import.
+12. The button's `--bg` on `--accent` was never measured. It joins the AA list.
+13. A re-wrapped `<textarea></textarea>` gets a whitespace default. The
+    keyboard test asserts both textareas start empty.
+14. Mutation (d) in Task 8 could stay above 44px through padding alone.
+15. Mutation (f) used an unrelated inline script rather than spec 10's "the
+    tool-page script in the footer", and could not run before Task 9.
+16. `report-form.ts` repeated the `Outcome` union as a list nothing checked. A
+    `Record<Outcome, true>` makes the compiler check it.
+17. The `dead-copy` mutation predicted `report.intro`, a name other code may
+    read.
+18. `serve.mjs`'s docblock said the server waits on the health route, which
+    pass 1 had changed.
+19. `serve.mjs` had untyped parameters and a `string[]` of signals, both of
+    which `checkJs` refuses.
+20. `reuseExistingServer: !process.env.CI` would let a local mutation run
+    against a server holding an older build. It is `false` now.
+21. Task 10 Step 4 was titled "failing" for tests that cannot be seen red
+    against a stub, and Step 6 told the reader to look up a field name this
+    review had already checked.
+22. Task 10 said `evidence-recording` reads `tests/functions/`. It reads
+    `tests/e2e` only.
