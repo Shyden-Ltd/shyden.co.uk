@@ -1,4 +1,9 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import {
+  expect,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 import { contrast, over, parseColour } from '../wcag';
 import {
   deviceDownloadText,
@@ -367,6 +372,27 @@ export const handoverTo = async (page: Page, language: string | RegExp) => {
   await page.locator('#cg-io-both-toggle').click();
   await page.getByRole('button', { name: language }).click();
 };
+
+/**
+ * Refuse every fullscreen request, so the board opens as an overlay.
+ *
+ * The overlay is the board iOS Safari always gets, since it never grants
+ * fullscreen on an arbitrary element, and it is the same layer either way.
+ * A spec whose subject is not fullscreen itself takes this path, because a
+ * GRANTED fullscreen can be taken back by the browser, and the board rightly
+ * closes when that happens (`projector.ts`, `fullscreenchange`). Measured on
+ * macOS WebKit at two workers (#344): a board in a `handoverTo` popup lost
+ * its granted fullscreen in 12 of 81 runs, with no exit asked for by the
+ * page, and closed under the test.
+ *
+ * Takes a context as well as a page, because an init script added to a page
+ * never reaches the popup that page opens.
+ */
+export const refuseFullscreen = (target: Page | BrowserContext) =>
+  target.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error('refused'));
+  });
 
 /**
  * The contrast ratio the browser actually PAINTS for an element's text.

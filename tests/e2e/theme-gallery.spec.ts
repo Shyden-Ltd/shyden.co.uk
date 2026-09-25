@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
-import { withGroups } from './helpers';
+import { refuseFullscreen, withGroups } from './helpers';
 import { THEMES } from '../palette';
 import { sitePaths } from '../site-pages';
 import { expectTheme } from '../themes';
@@ -87,10 +87,7 @@ for (const theme of THEMES) {
           await page.setViewportSize({ width: 1280, height: 900 });
           // A refused requestFullscreen lands in the overlay on every engine,
           // so the board renders the same way wherever this runs.
-          await page.addInitScript(() => {
-            Element.prototype.requestFullscreen = () =>
-              Promise.reject(new Error('refused'));
-          });
+          await refuseFullscreen(page);
           await withGroups(page);
           await expectTheme(page, theme);
           await expect(
