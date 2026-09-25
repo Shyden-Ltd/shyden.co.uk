@@ -6,8 +6,10 @@ import {
   getStrings,
   isBetaLocale,
 } from '../../src/lib/i18n/index';
-import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
+
+// G6 (#335): the flat copy #330 missed, restored from 1a67e91's parent.
+const BETA_BADGES = LOCALES.filter(isBetaLocale).length;
 import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectTheSwitchPersists } from '../themes';
 
@@ -89,8 +91,8 @@ test.describe('every locale the site claims to serve is deployed', () => {
       // only after the page is known to be a real 200.
       await expect(
         page.locator('[data-beta]'),
-        `${path}: expected one BETA badge per unverified locale, and one more when ${locale} is one`,
-      ).toHaveCount(expectedBadges(locale));
+        `${path}: expected one BETA badge per unverified locale`,
+      ).toHaveCount(BETA_BADGES);
       await expect(
         page.locator('[data-beta-notice]'),
         `${path}: ${locale === 'en' ? 'English is verified and must carry no notice' : 'the beta notice is missing'}`,
