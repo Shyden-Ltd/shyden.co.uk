@@ -13,6 +13,9 @@ import { expectTheSwitchPersists } from '../themes';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
+// A pull request also runs it against a preview of its own build (#335),
+// leaving out the tests tagged @deployed-only; BASE is read only by one of
+// those, the raw fetch that must reach the deployed gate.
 const BASE = process.env.WEB_BASE_URL ?? 'https://dev.shyden.co.uk';
 
 test('dev homepage loads behind Basic auth', async ({ page }) => {

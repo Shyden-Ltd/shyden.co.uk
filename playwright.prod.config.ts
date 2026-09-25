@@ -2,7 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 import { onBuild } from './tests/sanity-on-build';
 
 // Post-deploy PROD config: runs tests/prod/*.spec.ts against the REAL deployed
-// production site (no local webServer), mirroring playwright.dev.config.ts.
+// production site (no local webServer unless SANITY_ON_BUILD, below), mirroring
+// playwright.dev.config.ts.
 //
 // This exists because production was verified by `curl` — status codes and
 // grepping fetched HTML. That is a text assertion, and this repo has already

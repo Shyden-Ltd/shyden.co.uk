@@ -2,11 +2,11 @@ import { defineConfig, devices } from '@playwright/test';
 import { onBuild } from './tests/sanity-on-build';
 
 // Post-deploy sanity config: runs tests/dev/*.spec.ts against the REAL
-// deployed dev site (no local webServer). baseURL + the Basic-auth
-// credential come from env so CI — and a local run — can point at
-// https://dev.shyden.co.uk. Kept separate from playwright.config.ts
-// (testDir ./tests/e2e) so the normal `npm run test:e2e` never picks
-// these remote specs up.
+// deployed dev site (no local webServer unless SANITY_ON_BUILD, below).
+// baseURL + the Basic-auth credential come from env so CI — and a local
+// run — can point at https://dev.shyden.co.uk. Kept separate from
+// playwright.config.ts (testDir ./tests/e2e) so the normal
+// `npm run test:e2e` never picks these remote specs up.
 //
 // With SANITY_ON_BUILD=1 (`npm run test:sanity`, CI's `sanity-on-build` job) it
 // measures this tree's own build instead, built with the dev ShyTalk URL as
