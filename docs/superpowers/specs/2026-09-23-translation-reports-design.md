@@ -10,7 +10,7 @@ needed because an earlier "approval", of a design shown only in a preview
 panel he could not see, turned out not to be his.
 **Ticket:** #97. **Decisions:** #97 comments of 2026-09-10, 2026-09-11 and
 2026-09-23 (issuecomment-5788975282), plus the two answers given after that
-comment (the string picker and wrangler, section 9).
+comment (the string picker and wrangler, the last two rows of section 2).
 
 ## 1. Intent
 
@@ -211,8 +211,8 @@ Both the footer's `<datalist>` and the Function's validation import it, so what
 is offered and what is accepted cannot drift apart. It must not import
 `back-translate.ts` or `translate.ts`, which are CLI-only (`cli-only.test.ts`
 walks the modules the site ships, and `functions/` is added to what it walks).
-If a leaf
-walker already exists in a site-safe module it is reused, and if the only one
+If a leaf walker already exists in a site-safe module it is reused, and if the
+only one
 lives in a CLI-only module it moves to a shared site-safe module that both
 import (the "one home" rule).
 
@@ -292,8 +292,12 @@ there.
 
 **Redirect mode** (the default): `303`, with a `Location` built only from the
 checked `locale` and `page` through `localisePath`, plus `#report-<outcome>`,
-for example `/vi/classroom-groups#report-sent`. Nothing the visitor typed
-reaches a header. Check 5 cannot build a safe target, so it answers a plain
+for example `/vi/classroom-groups#report-sent`. The path is the form the
+site's own links use. If the host adds a trailing-slash redirect, the fragment
+survives it, because a redirect whose `Location` has no fragment keeps the
+request's. The homepage test in section 10 lands on the fragment through
+`wrangler pages dev`, and the dev submission lands on it through Cloudflare.
+Nothing the visitor typed reaches a header. Check 5 cannot build a safe target, so it answers a plain
 `400`.
 
 **JSON mode** (`Accept: application/json`, the tool-page script):
@@ -366,7 +370,7 @@ wording. It never carries the note.
 | ---------------------------------- | --------------------------------------------------------------------------------------- |
 | Cross-site form posts, drive-by bots | Origin check (403); honeypot; the WAF rule                                             |
 | Junk content                       | Quote must match real page text; length caps; body cap                                   |
-| Volume, cost                       | WAF rule; D1 free-tier limits return errors, never charges                              |
+| Volume, cost                       | WAF rule; on the Workers Free plan D1's limits return errors, never charges (plan unconfirmed, operator setup step 4) |
 | SQL injection                      | Prepared statements only                                                                 |
 | Header injection, open redirect    | `Location` built from checked values only                                                |
 | Stored XSS                         | Reports are never rendered by the site; review happens in the Cloudflare dashboard      |
@@ -386,7 +390,8 @@ remains (a guard asserts this).
 
 **Operator setup (Cloudflare, which an agent session cannot reach).** Steps 1–2
 are needed before #97's PR merges, because dev verification calls the health
-check and fails closed without them. Step 3 is needed before the prod release.
+check and fails closed without them. Steps 3 and 4 are needed before the prod
+release.
 
 1. `npx wrangler d1 create shyden-reports-dev`, then
    `npx wrangler d1 create shyden-reports`, then apply
@@ -396,6 +401,10 @@ check and fails closed without them. Step 3 is needed before the prod release.
    `shyden-reports-dev`. The same for `shyden-site` → `shyden-reports`.
 3. Security → WAF → Rate limiting rules: when `http.request.uri.path` equals
    `/api/report`, counted per IP, more than 2 requests in 10 s → Block for 10 s.
+4. Confirm which Workers plan the account is on. On Free, D1's daily limits
+   answer with errors, which the Function reports as `failed`. On Paid, usage
+   beyond the included amount is billed, and the WAF rule is then the only
+   cap on cost. Nothing in this spec has measured the plan.
 
 ## 10. Testing
 
@@ -440,9 +449,13 @@ stub is a finding.
   (`toBeVisible` + `toHaveText`) and focused (`toBeFocused`) when targeted,
   and the others are `toHaveCount(1)` + `toBeHidden`; the homepage's script
   inventory is still the inline theme script alone (`theme-script.spec.ts`).
-  **Completeness:** every catalogue string found in a built page's HTML is in
-  that page's reportable set, so a page that starts reading a new section
-  without the table in section 4 fails.
+  **Completeness:** every catalogue string found on a built page is in that
+  page's reportable set, so a page that starts reading a new section without
+  the table in section 4 fails. The strings are read from the rendered DOM
+  after the page's script has run, never from the static HTML, because the
+  tool strings arrive by script (section 4) and a static read would never
+  find one. The scan goes through `searched(...)`, so a scan that finds
+  nothing fails rather than passing.
 - **Dev, after deploy (`dev-sanity.spec.ts`):** the health check returns 200,
   and one real browser submission reaches `#report-sent`. That writes one row
   per dev deploy, in the dev database only, with the note
@@ -518,8 +531,8 @@ submission goes red on check 2).
    the Function accepts only quotes that match them (section 5). A stored
    report carries the locale, the page, the quote and every matched key.
 4. Submitting never loses anything on the page. The homepage returns to itself
-   with a visible status, and the tool pages submit in place, so a typed
-   roster survives.
+   with a visible status that takes focus, and the tool pages submit in place
+   and focus the status the same way, so a typed roster survives.
 5. Spam: honeypot, Origin check, strict validation and size caps are each
    unit-tested, and the WAF rule is documented for the operator.
 6. No personal data: no contact fields, and no IP, cookie or user agent stored.
@@ -603,3 +616,27 @@ preferences the tool page stores (`classroom-groups.ts`), and how
    `_headers`. That is assumption 6 now, with a fallback.
 8. The section 10 E2E bullet did not say the presence set is derived from
    `dist/`.
+
+**Pass 3 (2026-09-25, a full read after pass 2's fixes, with every path the
+spec names checked on `origin/develop`, since this branch is 128 commits behind
+it): 8 findings, all fixed.**
+
+1. The header said both post-comment answers were in section 9, but the
+   string picker is not. It points at section 2's last two rows now.
+2. A pass-2 edit left a broken line wrap in 4.2.
+3. The redirect relied on the fragment surviving a trailing-slash redirect by
+   the host, and did not say so. 6.1 states it now, with the two tests that
+   prove it.
+4. "D1 free-tier limits return errors, never charges" is true only on the
+   Workers Free plan, which nobody has confirmed. Section 8 says so now, and
+   operator setup gains step 4.
+5. The completeness check read "a built page's HTML". The tool strings are
+   not in the HTML, so for `/classroom-groups` it could never find one: a
+   vacuous guard. It reads the rendered DOM after the script has run, through
+   `searched(...)`.
+6. AC 4 did not carry pass 1's focus requirement.
+7. The operator-setup timing sentence did not cover the new step 4.
+8. The mechanical path check ran against this branch first, where
+   `theme-script.spec.ts` and `sanity-on-build.test.ts` do not exist yet. Both
+   were re-checked on `origin/develop`, where they do. `develop` is merged into
+   this branch before the plan is written.
