@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { makeGroups } from '../make-groups';
 import { deployedRoutes } from '../site-pages';
+import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectNoHorizontalScroll } from '../viewport';
+import { expectTheSwitchPersists } from '../themes';
 
 /**
  * Every route the site serves, derived. #49.
@@ -45,8 +47,13 @@ test('the homepage renders, and its stylesheet actually applied', async ({
   // A deploy that drops or 404s the CSS still returns 200 with all its text
   // intact — curl cannot tell the difference. The rendered background can:
   // unstyled, it is the browser default (transparent/white).
+  //
+  // Read on the ROOT, where the ground is painted (`tokens.css`: `html {
+  // background: var(--bg) }`). This read `document.body` until Aurora moved
+  // the ground to `html`, after which `body` is transparent on every CORRECT
+  // deploy and the test failed on a page whose stylesheet had applied (#338).
   const background = await page.evaluate(
-    () => getComputedStyle(document.body).backgroundColor,
+    () => getComputedStyle(document.documentElement).backgroundColor,
   );
   expect(background).not.toBe('rgba(0, 0, 0, 0)');
   expect(background).not.toBe('');
@@ -64,9 +71,25 @@ test('the Glory Points calculator computes, not just loads', async ({
   await page.fill('#glory-input', '1000');
   await page.click('#glory-submit');
 
+  // The handler fills exactly one of the two boxes. Wait for its answer,
+  // whichever it is, so the no-error invariant below runs even when the
+  // calculation fails — asserted after the result instead, a failed
+  // calculation would stop the test on the result and never name the error.
+  await expect(
+    page.locator('#glory-result:not(:empty), #glory-error:not(:empty)'),
+  ).toHaveCount(1);
+
+  // "No error shown" is an EMPTY error box, not a hidden one. `.error` keeps a
+  // `min-height` so the line is reserved and the layout does not jump when an
+  // error arrives, so the empty box is visible by design and `toBeHidden()`
+  // failed on every correct calculation (#338). A box holding text is an error
+  // shown; an empty one is not, whatever space it takes.
+  await expect(
+    page.locator('#glory-error'),
+    'a valid amount must show no error',
+  ).toHaveText('');
   await expect(page.locator('#glory-result')).toBeVisible();
   await expect(page.locator('#glory-result')).not.toBeEmpty();
-  await expect(page.locator('#glory-error')).toBeHidden();
 });
 
 test('the Classroom Group Creator forms groups', async ({ page }) => {
@@ -127,12 +150,17 @@ test('the outbound ShyTalk link points at PROD ShyTalk, never dev', async ({
   // The mirror of dev-sanity's cross-env check. The URL is env-derived
   // (PUBLIC_SHYTALK_URL) precisely so the two environments never cross, and a
   // production page sending visitors to a dev host is a leak, not a typo.
-  await page.goto('/');
-  const shytalk = page.locator('a[href*="shytalk"]').first();
-  await expect(shytalk).toHaveCount(1);
+  //
+  // Every outbound link is checked, by the host it resolves to. This took the
+  // first `a[href*="shytalk"]`, which became the header's in-page `/#shytalk`
+  // anchor and failed before any outbound link was read (#338).
+  await expectHomepageShyTalkLinksAt(page, 'shytalk.shyden.co.uk');
+});
 
-  const href = await shytalk.getAttribute('href');
-  expect(href, 'no ShyTalk link found on the production homepage').toBeTruthy();
-  expect(href).toContain('shytalk.shyden.co.uk');
-  expect(href).not.toContain('dev.shytalk');
+// The switch is a rendering fact, so the deployed site's browser run proves
+// it (#142 §6.2): it changes the page, and the choice survives a reload.
+test('the theme switch changes the page, and the choice survives a reload', async ({
+  page,
+}) => {
+  await expectTheSwitchPersists(page);
 });

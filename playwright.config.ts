@@ -39,6 +39,7 @@ export const CONTENT_ONLY_SPECS = [
   'baseurl-guard.spec.ts',
   'locale-parity.spec.ts',
   'copy-reaches-a-page.spec.ts',
+  'theme-script.spec.ts',
 ];
 
 const contentOnly = new RegExp(
@@ -275,6 +276,8 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://localhost:4321',
+    // #142: the palette every existing test was written against. A light-theme run declares light itself.
+    colorScheme: 'dark',
     // #44. A test that times out inside `page.goto` leaves ONE LINE of text
     // behind, and the run is gone: `retries` is 0 and nothing is kept. Two
     // occurrences have now been reasoned about from a stack trace and a

@@ -102,7 +102,7 @@ describe('a declared label with nothing behind it', () => {
 });
 
 describe('the check that reads repository state', () => {
-  it(`runs inside ${REQUIRED_JOB}, the context branch protection requires`, () => {
+  it(`runs inside ${REQUIRED_JOB} or a job it stands for, the context branch protection requires`, () => {
     const jobs = nonEmpty(
       workflowJobs(readFileSync(CI, 'utf8'), CI),
       `jobs in ${CI}`,
@@ -112,12 +112,20 @@ describe('the check that reads repository state', () => {
 
     // A job outside `required_status_checks.contexts` is not a gate however
     // green it is (#33), so the check belongs in the context already required
-    // rather than in a new job of its own.
+    // rather than in a new job of its own. Since the suite was split (#163)
+    // that context stands for the jobs it needs, passing only when each of
+    // them SUCCEEDED (scripts/e2e-shards.mjs), so a job it needs gates as
+    // surely as a step of its own.
+    const gating = jobs.filter(
+      ({ id }) => id === REQUIRED_JOB || (job?.needs ?? []).includes(id),
+    );
+    const runs = gating.flatMap((each) => each.runs);
     const invocations = searched(
-      (job?.runs ?? []).filter((run) =>
-        run.includes('scripts/dependabot-labels.mjs'),
-      ),
-      { of: job?.runs ?? [], what: `run steps in ${REQUIRED_JOB}` },
+      runs.filter((run) => run.includes('scripts/dependabot-labels.mjs')),
+      {
+        of: runs,
+        what: `run steps in ${REQUIRED_JOB} and the jobs it stands for`,
+      },
     );
 
     expect(invocations).toHaveLength(1);

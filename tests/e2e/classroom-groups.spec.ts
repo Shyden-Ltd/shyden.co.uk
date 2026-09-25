@@ -11,7 +11,8 @@ import {
   localisePath,
 } from '../../src/lib/i18n';
 import { recorded, shoot } from './evidence';
-import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+import { THEMES } from '../palette';
+import { THEME_SCRIPT_SOURCE, emulateTheme } from '../themes';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
   openRoster,
@@ -19,6 +20,7 @@ import {
   buildRoster,
   giveEveryoneASex,
   contrastRatio,
+  listedByThisBrowser,
 } from './helpers';
 
 test.use(recorded);
@@ -599,6 +601,71 @@ test.describe('classroom group creator', () => {
       seen.expectNone(
         urlMatching(AUDIO_URL_PATTERN),
         'a reduced-motion visitor downloads no audio at all',
+      );
+    });
+
+    /**
+     * The longest duration in a computed `transition-duration` list, in whole
+     * microseconds. Engines write 0.01ms differently (`1e-05s`, `0.00001s`),
+     * so it is compared as a number, never as text.
+     */
+    const longestMicroseconds = (durations: string): number =>
+      Math.max(
+        ...durations.split(',').map((duration) => {
+          const time = /^\s*([\d.e+-]+)(ms|s)\s*$/.exec(duration);
+          if (time === null) throw new Error(`not a CSS time: ${duration}`);
+          return Math.round(Number(time[1]) * (time[2] === 's' ? 1e6 : 1e3));
+        }),
+      );
+
+    test('sees every dealt card at rest, with nothing left to move', async ({
+      page,
+    }) => {
+      // The mechanism that works, asserted as itself (#331): tokens.css's
+      // reset cuts every transition to 0.01ms, and the script's forced `skip`
+      // deals every card at once. The page's scoped <style> once carried a
+      // reduced-motion rule for the cards that matched none of them, because
+      // the script builds every card and none carries the component's scope.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.goto('/classroom-groups');
+      await page.fill('#cg-count', '6');
+      await page.click('#cg-go');
+      const cards = page.locator('#cg-results .student');
+      await expect(cards).toHaveCount(6);
+      await expect(page.locator('#cg-results .student.dealt')).toHaveCount(6);
+
+      const atRest = {
+        transition: 'at most 0.01ms',
+        transform: 'none',
+        opacity: '1',
+      };
+      await expect
+        .poll(async () =>
+          (
+            await cards.evaluateAll((elements) =>
+              elements.map((element) => {
+                const style = getComputedStyle(element);
+                return {
+                  duration: style.transitionDuration,
+                  transform: style.transform,
+                  opacity: style.opacity,
+                };
+              }),
+            )
+          ).map(({ duration, transform, opacity }) => ({
+            transition:
+              longestMicroseconds(duration) <= 10
+                ? atRest.transition
+                : duration,
+            transform,
+            opacity,
+          })),
+        )
+        .toEqual(Array(6).fill(atRest));
+      await shoot(
+        page,
+        'every dealt card at rest for a reduced-motion visitor',
+        page.locator('#cg-results'),
       );
     });
   });
@@ -1448,10 +1515,39 @@ test.describe('out-of-date groups', () => {
     await shuffle(page);
     await page.getByLabel('Students in each group').fill('3');
     await expect(page.locator('#cg-results')).toHaveClass(/stale/);
-    const contrast = await contrastRatio(
-      page.locator('#cg-results .group').first(),
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const contrast = await contrastRatio(
+        page.locator('#cg-results .group').first(),
+      );
+      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  // #332. The notice paints its own cream ground (#fff6e3) but took its ink
+  // from --ink, which Aurora made near-white: 1.05:1, a sentence nobody could
+  // read. Scored the way the browser paints it, in the real state, so the
+  // ground is the one the sentence actually sits on rather than a token pair.
+  test('the out-of-date sentence meets the WCAG AA contrast floor', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await shuffle(page);
+    await page.getByLabel('Students in each group').fill('3');
+    const sentence = page.locator('#cg-stale-text');
+    await expect(sentence).toBeVisible();
+    await expect(sentence).toHaveText(
+      'These groups are out of date — the group size changed.',
     );
-    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      expect(await contrastRatio(sentence), theme).toBeGreaterThanOrEqual(4.5);
+      await shoot(
+        page,
+        `${theme}: the out-of-date sentence on its cream notice`,
+        page.locator('#cg-stale'),
+      );
+    }
   });
 
   // CLAUDE.md's binding rules apply to anything this task adds: no
@@ -2075,32 +2171,41 @@ test.describe('the no-scroll rule, measured', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
-    const contrast = await contrastRatio(page.locator('#cg-go'));
-    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const contrast = await contrastRatio(page.locator('#cg-go'));
+      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   // M-11. The one test in this file that never touches /classroom-groups --
-  // CLAUDE.md's "homepage ships zero JS" is a site-wide promise this task's
-  // own work could put at risk only by accident (a shared layout partial, a
-  // global script tag), so it earns a direct check rather than an inference
-  // from the tool page's own tests passing.
-  test('the homepage still ships no JavaScript', async ({ page }) => {
+  // CLAUDE.md's promise about what the homepage ships (one script, the theme
+  // script, since #142) is site-wide, and this task's own work could put it
+  // at risk only by accident (a shared layout partial, a global script tag),
+  // so it earns a direct check rather than an inference.
+  test('the homepage ships the theme script and nothing else', async ({
+    page,
+  }) => {
+    // Rewritten for #142. The promise was "the homepage ships zero JS"; it
+    // now ships exactly one script, the inline theme script, so this pins
+    // what may exist rather than counting to zero. Two measurements still,
+    // because a request recorder cannot see an inline script at all (#79):
+    // the DOM says what is on the page, and the recorder that nothing was
+    // fetched to run. theme-script.spec.ts pins the same on every page.
     const seen = recordRequests(page);
-    const response = await page.goto('/');
-    // Two measurements, because one of them cannot see half the ways this
-    // promise breaks. Astro INLINES a small script straight into the HTML --
-    // verified by building with one added: `dist/index.html` grew a
-    // `<script type="module">` and no new `_astro/*.js` was emitted -- so an
-    // inline script makes no network request at all and the recorder below
-    // stays legitimately empty. Watching only requests named the promise
-    // without measuring it (#79).
-    expect(
-      await response!.text(),
-      'the served homepage HTML carries no <script> tag',
-    ).not.toMatch(/<script/i);
+    await page.goto('/');
+    const scripts = await page.evaluate(() =>
+      [...document.scripts].map((script) => ({
+        src: script.getAttribute('src') ?? '',
+        text: script.textContent ?? '',
+      })),
+    );
+    expect(scripts, 'the homepage carries the theme script alone').toEqual([
+      { src: '', text: THEME_SCRIPT_SOURCE },
+    ]);
     seen.expectNone(
       ({ resourceType }) => resourceType === 'script',
-      'the homepage still ships no JavaScript',
+      'the homepage fetches no script',
     );
   });
 });
@@ -2183,23 +2288,12 @@ test.describe('every language renders its own messages', () => {
       await add.click();
       await expect(page.locator('.cg-student')).toHaveCount(2);
       const names = [t.studentNumber({ n: 1 }), t.studentNumber({ n: 2 })];
-      // The page joins a list with the browser's own Intl.ListFormat, and
-      // engines disagree: measured 2026-09-14, WebKit 26.6 spaces Thai
-      // "และ" where Chromium 153, Firefox 155 and Node's CLDR 48 do not. So
-      // the join comes from the page's engine, and every word around it from
-      // this locale's catalogue.
-      const { numberLocale } = LOCALE_METADATA[locale];
-      const join = new Intl.ListFormat(numberLocale, { type: 'conjunction' });
-      const pageJoin = await page.evaluate(
-        ([tag, items]) =>
-          new Intl.ListFormat(tag, { type: 'conjunction' }).format(items),
-        [numberLocale, names] as [string, string[]],
+      const problem = await listedByThisBrowser(
+        page,
+        locale,
+        names,
+        t.rosterNoSexMessage({ names }),
       );
-      const rendered = t.rosterNoSexMessage({ names });
-      expect(rendered.split(join.format(names)), 'the list, once').toHaveLength(
-        2,
-      );
-      const problem = rendered.replace(join.format(names), () => pageJoin);
       await expect(page.locator('#cg-roster-problem')).toHaveText(problem);
       notEnglish(
         problem,

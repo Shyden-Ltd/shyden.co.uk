@@ -158,7 +158,13 @@ async function settledBy<T>(
 ): Promise<T | typeof UNSETTLED> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expiry = new Promise<typeof UNSETTLED>((resolve) => {
-    timer = setTimeout(() => resolve(UNSETTLED), deadline - Date.now());
+    // A poll can start after the deadline, since the pause between polls is
+    // not cut short at it. Node would clamp the negative delay to 1 ms anyway,
+    // and warn on every run (#327); clamping here keeps the same timing.
+    timer = setTimeout(
+      () => resolve(UNSETTLED),
+      Math.max(0, deadline - Date.now()),
+    );
   });
   try {
     return await Promise.race([promise, expiry]);

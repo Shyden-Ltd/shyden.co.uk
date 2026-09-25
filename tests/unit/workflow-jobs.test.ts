@@ -332,6 +332,47 @@ describe('no job runs on the runner default budget (#157)', () => {
       searched(unboundedJobFindings(jobs), { of: jobs, what: 'fixture jobs' }),
     ).toEqual([]);
   });
+
+  // GitHub refuses `timeout-minutes` on a job that calls a reusable workflow.
+  // Such a job runs nothing itself: the jobs it calls do, and each of those
+  // carries its own budget, which this same rule judges in its own file. So
+  // the call is bounded exactly when the called file is one this repo's guards
+  // read (#163).
+  it('reads a job-level uses: as the workflow the job calls', () => {
+    const [caller, ordinary] = workflowJobs(
+      'jobs:\n  test:\n    uses: ./.github/workflows/ci.yml\n' +
+        '  build:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n',
+      'fixture.yml',
+    );
+    expect(caller.uses).toBe('./.github/workflows/ci.yml');
+    // GitHub refuses `runs-on` beside a job-level `uses:`, so a caller asks
+    // for no runner of its own; the jobs it calls do.
+    expect(caller.runsOn).toEqual([]);
+    expect(ordinary.uses).toBeUndefined();
+    expect(ordinary.runsOn).toEqual(['ubuntu-latest']);
+  });
+
+  it('passes a job calling a workflow in this repository, whose own jobs carry the budgets', () => {
+    const jobs = workflowJobs(
+      'jobs:\n  test:\n    uses: ./.github/workflows/ci.yml\n',
+      'fixture.yml',
+    );
+    expect(
+      searched(unboundedJobFindings(jobs), { of: jobs, what: 'fixture jobs' }),
+    ).toEqual([]);
+  });
+
+  it('flags a job calling a workflow in another repository, whose budgets no guard here can read', () => {
+    const elsewhere =
+      'octo/elsewhere/.github/workflows/ci.yml@0123456789abcdef0123456789abcdef01234567';
+    expect(
+      unboundedJobFindings(
+        workflowJobs(`jobs:\n  test:\n    uses: ${elsewhere}\n`, 'fixture.yml'),
+      ),
+    ).toEqual([
+      `test calls ${elsewhere}, a workflow outside this repository whose budgets no guard here can read`,
+    ]);
+  });
 });
 
 /**

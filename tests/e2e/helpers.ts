@@ -1,10 +1,17 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import {
+  expect,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 import { contrast, over, parseColour } from '../wcag';
 import {
   deviceDownloadText,
   emptyDeviceDownloads,
   onRealDevice,
 } from '../device/device-downloads';
+import type { Locale } from '../../src/lib/i18n/index';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 
 /**
  * Fixtures for driving the roster into a starting state -- Stage 3, 4 and 5
@@ -30,6 +37,42 @@ export const openRoster = async (page: Page, path = '/classroom-groups') => {
   await page.goto(path);
   await page.locator('#cg-students-toggle').click();
   await page.getByRole('button', { name: /Add student|Tambah siswa/ }).click();
+};
+
+/**
+ * `expected` with its list of names joined the way THIS browser joins them.
+ *
+ * Messages are rendered here in Node, and the page joins a list with its own
+ * engine's `Intl.ListFormat`, in the locale's `numberLocale`. Engines
+ * disagree: measured 2026-09-14, WebKit 26.6 spaces Thai "และ" where Chromium
+ * 153, Firefox 155 and Node's CLDR 48 do not. So the join comes from the
+ * page's engine and every word around it from the catalogue. Node's join must
+ * occur exactly once, or the swap would compare nothing it meant to; the
+ * replacement is a function so a `$` in a name is never read as a pattern.
+ */
+export const listedByThisBrowser = async (
+  page: Page,
+  locale: Locale,
+  names: readonly string[],
+  expected: string,
+): Promise<string> => {
+  const { numberLocale } = LOCALE_METADATA[locale];
+  const inNode = new Intl.ListFormat(numberLocale, {
+    type: 'conjunction',
+  }).format(names);
+  const inBrowser = await page.evaluate(
+    ([tag, items]) =>
+      new Intl.ListFormat(tag, { type: 'conjunction' }).format(items),
+    [numberLocale, [...names]] as [string, string[]],
+  );
+  expect(expected.split(inNode), `the list "${inNode}", once`).toHaveLength(2);
+  return expected.replace(inNode, () => inBrowser);
+};
+
+/** Visible copy is both: `toHaveText` alone passes on a hidden element. */
+export const expectVisibleText = async (target: Locator, text: string) => {
+  await expect(target).toBeVisible();
+  await expect(target).toHaveText(text);
 };
 
 /**
@@ -329,6 +372,27 @@ export const handoverTo = async (page: Page, language: string | RegExp) => {
   await page.locator('#cg-io-both-toggle').click();
   await page.getByRole('button', { name: language }).click();
 };
+
+/**
+ * Refuse every fullscreen request, so the board opens as an overlay.
+ *
+ * The overlay is the board iOS Safari always gets, since it never grants
+ * fullscreen on an arbitrary element, and it is the same layer either way.
+ * A spec whose subject is not fullscreen itself takes this path, because a
+ * GRANTED fullscreen can be taken back by the browser, and the board rightly
+ * closes when that happens (`projector.ts`, `fullscreenchange`). Measured on
+ * macOS WebKit at two workers (#344): a board in a `handoverTo` popup lost
+ * its granted fullscreen in 12 of 81 runs, with no exit asked for by the
+ * page, and closed under the test.
+ *
+ * Takes a context as well as a page, because an init script added to a page
+ * never reaches the popup that page opens.
+ */
+export const refuseFullscreen = (target: Page | BrowserContext) =>
+  target.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error('refused'));
+  });
 
 /**
  * The contrast ratio the browser actually PAINTS for an element's text.

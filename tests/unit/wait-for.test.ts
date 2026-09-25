@@ -110,3 +110,45 @@ describe('waitFor', () => {
     );
   });
 });
+
+/**
+ * The pause between polls is not cut short at the deadline, so a poll can
+ * start after it. That poll's timer was armed with a negative delay, which
+ * Node clamps to 1 ms and warns about on every unit run (#327).
+ */
+describe('waitFor, polled past its deadline', () => {
+  it('arms no negative timer, so Node has nothing to warn about', async () => {
+    const heard: string[] = [];
+    const listen = (warning: Error): void => {
+      heard.push(warning.name);
+    };
+    // Node prints each warning through its own listener. This test takes the
+    // event over while it runs, so its sentinel below is heard and not printed.
+    const printers = process.listeners('warning');
+    process.removeAllListeners('warning');
+    process.on('warning', listen);
+    try {
+      // The second poll starts about 80 ms after a 20 ms deadline.
+      await expect(
+        waitFor(async () => false, {
+          timeout: 20,
+          interval: 100,
+          describe: 'a condition that never holds',
+        }),
+      ).rejects.toThrow(
+        'Timed out after 20ms waiting for: a condition that never holds.',
+      );
+      // A warning raised here must be heard, or an empty list could come
+      // from a listener that hears nothing at all.
+      process.emitWarning('the listener is live', 'WaitForSentinelWarning');
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off('warning', listen);
+      for (const printer of printers) process.on('warning', printer);
+    }
+    expect(heard, 'the listener heard its own sentinel').toContain(
+      'WaitForSentinelWarning',
+    );
+    expect(heard).not.toContain('TimeoutNegativeWarning');
+  });
+});

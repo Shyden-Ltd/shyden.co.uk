@@ -1,5 +1,6 @@
 ---
 import '../styles/tokens.css';
+import themeScript from '../scripts/theme.inline.js?raw';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import {
@@ -51,6 +52,26 @@ const xDefault = new URL(localisePath(Astro.url.pathname, 'en'), siteOrigin)
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/* The theme script (#142 §5). Inline, classic and HERE, straight after
+         the viewport meta and before every stylesheet, because it stamps a
+         saved choice on <html> before the first paint: a visitor who chose
+         light never sees a frame of dark, or the reverse. A module, `defer`
+         or a later place in the document would all run after that frame.
+         It also reveals the switch, which exists only for a page whose script
+         ran, and handles its presses by delegation, since the switch does
+         not exist yet when a head script runs.
+
+         Its explanation lives here, where the build strips it, and not in the
+         shipped file, which every page carries exactly as written. The site
+         sends no Content-Security-Policy; one added later must allow this
+         script by its hash, which changes only when the file does, and
+         theme-script.spec.ts pins the content. The choice is one
+         localStorage word, written only when the switch is pressed: no
+         cookie, and nothing sent anywhere. Where storage is refused, the save
+         is skipped in silence and the page still switches; the choice is
+         simply not remembered (§5), which is what the script's one empty
+         catch is for. */}
+    <script is:inline set:html={themeScript}></script>
     <title>{title}</title>
     <meta name="description" content={description} />
     {

@@ -6,6 +6,7 @@ import {
   namesIn,
   buildRoster,
   giveEveryoneASex,
+  refuseFullscreen,
 } from './helpers';
 import { searched } from '../source-files';
 import { FLOOR_PX } from '../../src/scripts/projector';
@@ -90,10 +91,7 @@ test.describe('the projector view', () => {
   test('a refused requestFullscreen lands in the overlay, not in nothing', async ({
     page,
   }) => {
-    await page.addInitScript(() => {
-      Element.prototype.requestFullscreen = () =>
-        Promise.reject(new Error('refused'));
-    });
+    await refuseFullscreen(page);
     await withGroups(page);
     await page.getByRole('button', { name: 'Full screen' }).click();
     await expect(page.locator('#cg-board')).toBeVisible();
@@ -843,10 +841,7 @@ test.describe('the projector board never hides a name', () => {
     // iOS Safari never grants fullscreen on an arbitrary element, and the
     // board is the same layer either way -- so a fix proved on only one path
     // is proved on neither.
-    await page.addInitScript(() => {
-      Element.prototype.requestFullscreen = () =>
-        Promise.reject(new Error('refused'));
-    });
+    await refuseFullscreen(page);
     await boardOf(page, '25', '5');
     await expectNothingOutOfReach(
       page,

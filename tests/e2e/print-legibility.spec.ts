@@ -2,6 +2,8 @@ import { test, expect } from './fixtures';
 import { searched } from '../source-files';
 import { contrast, over, parseColour, type RGB } from '../wcag';
 import { recorded, shoot } from './evidence';
+import { THEMES } from '../palette';
+import { emulateTheme, expectTheme, saveTheme } from '../themes';
 
 test.use(recorded);
 
@@ -27,6 +29,24 @@ test.use(recorded);
  */
 const PAPER: RGB = [255, 255, 255];
 const BODY_TEXT = 4.5;
+
+/**
+ * The screens a sheet is printed from (#142 §6.2). Paper ignores the screen
+ * theme, so each must print the same legible ink. The last run stamps a
+ * saved `dark` choice on a light device: that is the state whose theme block
+ * would outrank paper if it were not screen-only.
+ */
+const PRINT_RUNS = [
+  { device: 'light', saved: null },
+  { device: 'dark', saved: null },
+  { device: 'light', saved: 'dark' },
+] as const;
+
+/** Ink a screen shows on its headings, pinned per theme against the brief (#117). */
+const SCREEN_INK = {
+  light: 'rgb(17, 24, 33)',
+  dark: 'rgb(234, 242, 255)',
+} as const;
 
 /**
  * Composited onto the paper before it is judged.
@@ -89,44 +109,53 @@ for (const { path, prepare } of [
     },
   },
 ]) {
-  test(`${path}: every printed ink is readable on white paper`, async ({
+  test(`${path}: every printed ink is readable on white paper, whatever the screen shows`, async ({
     page,
   }) => {
     await page.goto(path);
-    await prepare(page);
+    for (const { device, saved } of PRINT_RUNS) {
+      await emulateTheme(page, device);
+      if (saved !== null) await saveTheme(page, saved);
+      await prepare(page);
+      // In screen media, before the switch to print: on paper the ground is
+      // white whatever the theme, so this is the only place it can be read.
+      await expectTheme(page, saved ?? device);
+      const screen = `${saved ?? device} screen${saved ? ' (a saved choice)' : ''}`;
 
-    await page.emulateMedia({ media: 'print' });
-    const inks = await inkInUse(page);
+      await page.emulateMedia({ media: 'print' });
+      const inks = await inkInUse(page);
 
-    // Liveness: a page whose text all sat inside ancestors, or a selector that
-    // stopped matching, reports zero offenders exactly like a correct page.
-    expect(
-      inks.length,
-      `${path} rendered no text under print media — the guard measured nothing`,
-    ).toBeGreaterThan(0);
-    // Captured while print media is still emulated, which is the whole point:
-    // this image is the sheet, not the screen. A blank one here IS the defect.
-    await shoot(
-      page,
-      `${path} under print media: ${inks.length} inks measured`,
-    );
+      // Liveness: a page whose text all sat inside ancestors, or a selector
+      // that stopped matching, reports zero offenders exactly like a correct
+      // page.
+      expect(
+        inks.length,
+        `${path} from a ${screen} rendered no text under print media — the guard measured nothing`,
+      ).toBeGreaterThan(0);
 
-    const illegible = inks
-      .map(({ colour, where }) => ({ colour, where, rgb: inkOnPaper(colour) }))
-      .filter(({ rgb }) => rgb === null || contrast(rgb, PAPER) < BODY_TEXT)
-      .map(
-        ({ colour, where, rgb }) =>
-          `${where} — ${colour} is ${rgb ? contrast(rgb, PAPER).toFixed(2) : '?'}:1 on white`,
+      const illegible = inks
+        .map(({ colour, where }) => ({
+          colour,
+          where,
+          rgb: inkOnPaper(colour),
+        }))
+        .filter(({ rgb }) => rgb === null || contrast(rgb, PAPER) < BODY_TEXT)
+        .map(
+          ({ colour, where, rgb }) =>
+            `${where} — ${colour} is ${rgb ? contrast(rgb, PAPER).toFixed(2) : '?'}:1 on white`,
+        );
+      expect(
+        searched(illegible, { of: inks, what: `distinct inks on ${path}` }),
+        `${path} from a ${screen}: ink that will not survive the printer`,
+      ).toEqual([]);
+      // Captured while print media is still emulated, which is the whole
+      // point: this image is the sheet, not the screen. A blank one IS the
+      // defect.
+      await shoot(
+        page,
+        `${path} printed from a ${screen}: all ${inks.length} inks clear ${BODY_TEXT}:1 on white`,
       );
-
-    expect(
-      searched(illegible, { of: inks, what: `distinct inks on ${path}` }),
-      `${path}: ink that will not survive the printer`,
-    ).toEqual([]);
-    await shoot(
-      page,
-      `${path}: all ${inks.length} inks clear ${BODY_TEXT}:1 on white paper`,
-    );
+    }
   });
 }
 
@@ -152,56 +181,67 @@ test('a disabled control never depends on its fill reaching paper', async ({
       probe.remove();
       return rgb;
     }, name);
+  for (const theme of THEMES) {
+    await emulateTheme(page, theme);
 
-  // Read on SCREEN first: this is the value that must not survive the switch.
-  const onScreen = await resolve('--disabled-fill');
-  expect(onScreen).not.toBe('rgba(0, 0, 0, 0)');
+    // Read on SCREEN first: this is the value that must not survive the switch.
+    const onScreen = await resolve('--disabled-fill');
+    expect(onScreen, `${theme}: --disabled-fill on screen`).not.toBe(
+      'rgba(0, 0, 0, 0)',
+    );
 
-  await page.emulateMedia({ media: 'print' });
-  expect(await resolve('--disabled-fill')).toBe('rgba(0, 0, 0, 0)');
+    await page.emulateMedia({ media: 'print' });
+    expect(
+      await resolve('--disabled-fill'),
+      `${theme}: --disabled-fill on paper`,
+    ).toBe('rgba(0, 0, 0, 0)');
 
-  // ...and derived, over everything the sheet actually renders, because a
-  // token redefined at `:root` proves nothing about a component that hard-
-  // coded the same grey somewhere else.
-  const painted = await page.evaluate((grey) => {
-    const found: string[] = [];
-    let rendered = 0;
-    for (const el of document.querySelectorAll<HTMLElement>('body *')) {
-      // Client rects, not the element's own computed display: `display: none`
-      // on an ANCESTOR leaves a descendant's computed display untouched.
-      if (el.getClientRects().length === 0) continue;
-      rendered += 1;
-      if (getComputedStyle(el).backgroundColor === grey) {
-        found.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}`);
+    // ...and derived, over everything the sheet actually renders, because a
+    // token redefined at `:root` proves nothing about a component that hard-
+    // coded the same grey somewhere else.
+    const painted = await page.evaluate((grey) => {
+      const found: string[] = [];
+      let rendered = 0;
+      for (const el of document.querySelectorAll<HTMLElement>('body *')) {
+        // Client rects, not the element's own computed display: `display: none`
+        // on an ANCESTOR leaves a descendant's computed display untouched.
+        if (el.getClientRects().length === 0) continue;
+        rendered += 1;
+        if (getComputedStyle(el).backgroundColor === grey) {
+          found.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}`);
+        }
       }
-    }
-    return { found, rendered };
-  }, onScreen);
+      return { found, rendered };
+    }, onScreen);
 
-  expect(
-    searched(painted.found, {
-      of: painted.rendered,
-      what: 'elements rendered under print media',
-    }),
-    `the screen disabled grey ${onScreen} reached the sheet`,
-  ).toEqual([]);
-  await shoot(
-    page,
-    `under print media --disabled-fill is transparent and none of ${painted.rendered} rendered elements paint ${onScreen}`,
-  );
+    expect(
+      searched(painted.found, {
+        of: painted.rendered,
+        what: 'elements rendered under print media',
+      }),
+      `${theme}: the screen disabled grey ${onScreen} reached the sheet`,
+    ).toEqual([]);
+    await shoot(
+      page,
+      `${theme}: under print media --disabled-fill is transparent and none of ${painted.rendered} rendered elements paint ${onScreen}`,
+    );
+  }
 });
 
 test('the screen palette is not dragged down with the print one', async ({
   page,
 }) => {
   // The inverse. Fixing print by blackening the ink everywhere would pass
-  // every assertion above and ruin the site, so pin that screen still gets
-  // Aurora's near-white ink on its dark ground.
+  // every assertion above and ruin the site, so pin that each screen theme
+  // still paints its own ink.
   await page.goto('/classroom-groups');
-  await expect(page.locator('h1')).toHaveCSS('color', 'rgb(234, 242, 255)');
-  await shoot(
-    page,
-    'on screen the heading keeps Aurora ink rgb(234, 242, 255)',
-    page.locator('h1'),
-  );
+  for (const theme of THEMES) {
+    await emulateTheme(page, theme);
+    await expect(page.locator('h1')).toHaveCSS('color', SCREEN_INK[theme]);
+    await shoot(
+      page,
+      `on a ${theme} screen the heading keeps its ink, ${SCREEN_INK[theme]}`,
+      page.locator('h1'),
+    );
+  }
 });

@@ -458,7 +458,7 @@ export function engineConfig(
  * 9 after.
  */
 const LABEL_WORDS = 3;
-const isLabel = (english: string): boolean =>
+export const isLabel = (english: string): boolean =>
   english
     .replace(SLOT, ' ')
     .split(/\s+/)

@@ -16,6 +16,7 @@ export const siteEn = {
     contact: 'Contact',
   },
   menuLabel: 'Toggle navigation menu',
+  themeDarkMode: 'Dark mode',
   skipToContent: 'Skip to content',
 
   home: {
@@ -124,6 +125,7 @@ export const siteId: SiteStrings = {
     contact: 'Kontak',
   },
   menuLabel: 'Buka atau tutup menu navigasi',
+  themeDarkMode: 'Mode gelap',
   skipToContent: 'Lewati ke konten',
 
   home: {
@@ -224,6 +226,7 @@ export const siteZh: SiteStrings = {
     contact: '联系我们',
   },
   menuLabel: '切换导航菜单',
+  themeDarkMode: '深色模式',
   skipToContent: '跳转至正文',
   home: {
     title: 'Shyden Ltd — 一家新的科技公司',
@@ -315,6 +318,7 @@ export const siteVi: SiteStrings = {
     contact: 'Liên hệ',
   },
   menuLabel: 'Chuyển đổi menu điều hướng',
+  themeDarkMode: 'Chế độ tối',
   skipToContent: 'Chuyển thẳng đến nội dung',
   home: {
     title: 'Shyden Ltd — một công ty công nghệ mới',
@@ -364,11 +368,11 @@ export const siteVi: SiteStrings = {
     regOffice: 'Trụ sở chính:',
   },
   glory: {
-    title: 'Glory Points Máy tính — Shyden',
+    title: 'Máy tính Glory Points — Shyden',
     description:
       'Chuyển đổi điểm vinh quang YeeTalk thành xu, hạt đậu và tổng giá trị quà tặng — ngay lập tức, ngay trên trình duyệt của bạn.',
     forYeetalk: 'Dành cho YeeTalk ↗',
-    heading: 'Glory Points Máy tính',
+    heading: 'Máy tính Glory Points',
     lead: 'Điểm vinh quang là một phần của tính năng tặng quà trong ứng dụng YeeTalk. Chỉ cần nhập số điểm vinh quang mà bạn muốn đạt được, công cụ hỗ trợ này – do Shyden phát triển – sẽ tính toán chính xác số xu, hạt đậu và tổng giá trị quà tặng mà bạn cần để đạt được mục tiêu đó.',
     howToHeading: 'Cách sử dụng',
     howToSteps: [
@@ -409,6 +413,7 @@ export const siteTh: SiteStrings = {
     contact: 'ติดต่อ',
   },
   menuLabel: 'สลับเมนูนำทาง',
+  themeDarkMode: 'โหมดมืด',
   skipToContent: 'ไปตรงสู่เนื้อหา',
   home: {
     title: 'Shyden Ltd — บริษัทเทคโนโลยีน้องใหม่',
@@ -457,11 +462,11 @@ export const siteTh: SiteStrings = {
     regOffice: 'สำนักงานจดทะเบียน:',
   },
   glory: {
-    title: 'Glory Points เครื่องคิดเลข — Shyden',
+    title: 'เครื่องคำนวณ Glory Points — Shyden',
     description:
       'แปลงคะแนนเกียรติยศ YeeTalk เป็นเหรียญ ถั่ว และมูลค่ารวมของของขวัญ — ทันที ในเบราว์เซอร์ของคุณ',
     forYeetalk: 'สำหรับ YeeTalk ↗',
-    heading: 'Glory Points เครื่องคิดเลข',
+    heading: 'เครื่องคำนวณ Glory Points',
     lead: 'คะแนน Glory เป็นส่วนหนึ่งของระบบการส่งของขวัญภายในแอป YeeTalk เพียงป้อนจำนวนคะแนน Glory ที่คุณต้องการ เครื่องมือช่วยนี้ ซึ่งพัฒนาโดย Shyden จะคำนวณจำนวนเหรียญ (coins) และเมล็ด (beans) รวมถึงมูลค่ารวมของของขวัญที่คุณต้องใช้เพื่อให้ถึงเป้าหมายนั้น',
     howToHeading: 'วิธีใช้',
     howToSteps: [

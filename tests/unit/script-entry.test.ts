@@ -506,12 +506,27 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 2,
     says: 'usage: upload-evidence-assets.mjs',
   },
+  // With no page and no sign-off to read it can give no verdict, so it
+  // refuses with 2, which is neither a sign-off nor an out-of-date one (#197).
+  'signoff-status.mjs': {
+    args: [],
+    status: 2,
+    says: 'usage: signoff-status.mjs',
+  },
   // Without the API it can prove nothing, so it refuses to proceed.
   'deploy-gate.mjs': {
     args: [],
     env: { GITHUB_REPOSITORY: undefined, GITHUB_TOKEN: undefined },
     status: 1,
     says: 'GITHUB_REPOSITORY and GITHUB_TOKEN are required',
+  },
+  // With no needs to read and no shard accounts, build-and-test's verdict has
+  // nothing to vouch for, so it refuses rather than pass on nothing (#163).
+  'e2e-shards.mjs': {
+    args: [],
+    env: { NEEDS_JSON: undefined },
+    status: 1,
+    says: 'build-and-test REFUSED',
   },
   // Playwright rejects the option, so the run writes no report, and the
   // reconciliation refuses rather than call that a pass.

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CSV_LOCALES } from '../../src/lib/csv-locale';
-import { searched } from '../source-files';
+import { CSV_LOCALES, type CsvColumn } from '../../src/lib/csv-locale';
+import { nonEmpty, searched } from '../source-files';
 import { LOCALES, getStrings, type Locale } from '../../src/lib/i18n';
 import {
   serialiseRoster,
@@ -990,76 +990,135 @@ describe('a class name survives the round trip whatever is in it', () => {
 });
 
 /**
- * #252. The roster catalogue's Vietnamese and Chinese sex labels were
- * corrected on #53, and this table -- a separate set of words, written into
- * the FILE a teacher opens in Excel -- was not. `vi` wrote `tình dục`
- * (sexual intercourse) and `zh` wrote the bare `性` as the sex column header.
+ * Header words corrected after files carrying the old word could exist, with
+ * the word each one replaced.
  *
- * It is not a copy change. `parseRoster`'s `indexOf` finds a column BY ITS
- * LOCALISED HEADER WORD, and `at()` returns '' for a column it cannot find --
- * silently, with no problem reported. So correcting the export alone would
- * make every class list a teacher had already downloaded import with every
- * pupil's sex unset and no error shown, which is the failure mode this repo
- * treats as worse than a loud one. The superseded word stays readable.
+ * It is never only a copy change. `parseRoster`'s `indexOf` finds a column BY
+ * ITS LOCALISED HEADER WORD, and `at()` returns '' for a column it cannot find
+ * -- silently, with no problem reported. So correcting the export alone would
+ * make every class list a teacher had already downloaded import with that
+ * column blank and no error shown, which is the failure mode this repo treats
+ * as worse than a loud one. The superseded word stays readable.
+ *
+ * #252 corrected the sex header: `vi` wrote `tình dục` (sexual intercourse)
+ * and `zh` the bare `性`, after the roster catalogue had been corrected on
+ * #53. #161's sheet (2026-09-23) corrected two more: zh `name` wrote `名称`
+ * (the name of a thing) where the roster says `姓名`, and vi `apart` wrote
+ * `riêng biệt` where the roster says `tách biệt`.
  */
-describe('the sex column header, corrected without breaking old files', () => {
-  const CORRECTED = { vi: 'giới tính', zh: '性别' } as const;
-  const SUPERSEDED = { vi: 'tình dục', zh: '性' } as const;
+const HEADER_CORRECTIONS: readonly {
+  locale: Locale;
+  column: CsvColumn;
+  corrected: string;
+  superseded: string;
+}[] = [
+  {
+    locale: 'vi',
+    column: 'sex',
+    corrected: 'giới tính',
+    superseded: 'tình dục',
+  },
+  { locale: 'zh', column: 'sex', corrected: '性别', superseded: '性' },
+  { locale: 'zh', column: 'name', corrected: '姓名', superseded: '名称' },
+  {
+    locale: 'vi',
+    column: 'apart',
+    corrected: 'tách biệt',
+    superseded: 'riêng biệt',
+  },
+  // #319: "number" as in a numeral, not a student's number.
+  { locale: 'zh', column: 'number', corrected: '编号', superseded: '数字' },
+  {
+    locale: 'th',
+    column: 'number',
+    corrected: 'หมายเลข',
+    superseded: 'ตัวเลข',
+  },
+];
 
-  for (const locale of ['vi', 'zh'] as const) {
-    it(`${locale} exports the corrected word`, () => {
-      expect(CSV_LOCALES[locale].columns.sex).toBe(CORRECTED[locale]);
+describe('a corrected header word keeps old files readable', () => {
+  for (const { locale, column, corrected, superseded } of HEADER_CORRECTIONS) {
+    it(`${locale} exports the corrected ${column} word`, () => {
+      expect(CSV_LOCALES[locale].columns[column]).toBe(corrected);
       const file = serialiseRoster(
         [student({ number: 1, name: 'Ana', sex: 'F' })],
         '6A',
         locale,
       );
       // The header CELLS, compared exactly -- never a substring test on the
-      // whole file. `\u6027` is a substring of `\u6027\u522b`, so
-      // `not.toContain` over the text could never pass however correct the
-      // header was: the same shape as #21's prod-smoke list, where
-      // `/glory-points` is a substring of `/id/glory-points`.
+      // whole file. `性` is a substring of `性别`, so `not.toContain` over the
+      // text could never pass however correct the header was: the same shape
+      // as #21's prod-smoke list, where `/glory-points` is a substring of
+      // `/id/glory-points`.
       const headerCells = (file.split('\n')[1] ?? '').split(',');
-      expect(headerCells).toContain(CORRECTED[locale]);
-      expect(headerCells).not.toContain(SUPERSEDED[locale]);
+      expect(headerCells).toContain(corrected);
+      expect(headerCells).not.toContain(superseded);
     });
 
-    it(`${locale} still reads a file exported before the correction`, () => {
+    it(`${locale} still reads its ${column} column under the old header word`, () => {
       const table = CSV_LOCALES[locale];
       // Without this the test is a tautology: while the superseded word IS
       // still the current one, the lookup below succeeds for the wrong
       // reason and proves nothing about reading an old file.
-      expect(SUPERSEDED[locale]).not.toBe(table.columns.sex);
+      expect(superseded).not.toBe(table.columns[column]);
       // Built from the SUPERSEDED word deliberately, the way a file already
       // on a teacher's laptop is -- not by re-exporting with mutated code,
-      // which would only prove the serialiser agrees with itself.
+      // which would only prove the serialiser agrees with itself. The header
+      // and the row both follow the table's own write order.
+      const columns = Object.keys(table.columns) as CsvColumn[];
+      const cell: Record<CsvColumn, string> = {
+        number: '1',
+        name: 'Ana',
+        sex: table.sex.F,
+        absent: '',
+        together: 'A',
+        apart: 'B',
+      };
       const legacy =
         `${table.classComment} 6A\n` +
-        [
-          table.columns.number,
-          table.columns.name,
-          SUPERSEDED[locale],
-          table.columns.absent,
-          table.columns.together,
-          table.columns.apart,
-        ].join(',') +
-        `\n1,Ana,${table.sex.F},,A,\n`;
+        `${columns.map((c) => (c === column ? superseded : table.columns[c])).join(',')}\n` +
+        `${columns.map((c) => cell[c]).join(',')}\n`;
 
       const result = parseRoster(legacy, locale, getStrings(locale));
       // `ok` first: a ParseResult carries `problems` only when it failed, so
-      // asserting those first would throw on the success path and the sex
+      // asserting those first would throw on the success path and the
       // assertion below -- the one this test exists for -- would never run.
       expect(result.ok, result.ok ? '' : JSON.stringify(result.problems)).toBe(
         true,
       );
       if (!result.ok) return;
       expect(result.roster).toHaveLength(1);
-      // The whole point: the sex column was FOUND, not silently blank.
-      expect(result.roster[0]?.sex).toBe('F');
-      expect(result.roster[0]?.together).toBe('A');
+      // The whole point: every column was FOUND, the corrected one included,
+      // rather than read as silently blank.
+      expect(result.roster[0]).toMatchObject({
+        name: 'Ana',
+        sex: 'F',
+        together: 'A',
+        apart: 'B',
+      });
     });
   }
 
+  it('every superseded word the parser accepts is tested above', () => {
+    // Derived from the tables, so a word added to `supersededColumns` without
+    // a round trip above goes red, and so does a row above whose word the
+    // parser would not accept.
+    const accepted = LOCALES.flatMap((locale) =>
+      Object.entries(CSV_LOCALES[locale].supersededColumns ?? {}).flatMap(
+        ([column, words]) =>
+          (words ?? []).map((word) => `${locale} ${column} ${word}`),
+      ),
+    );
+    const tested = HEADER_CORRECTIONS.map(
+      ({ locale, column, superseded }) => `${locale} ${column} ${superseded}`,
+    );
+    expect(nonEmpty(accepted, 'superseded header words').sort()).toEqual(
+      [...tested].sort(),
+    );
+  });
+});
+
+describe('the sex column header, corrected without breaking old files', () => {
   it('every locale survives an export/import round trip with sex intact', () => {
     const sample = [
       student({ number: 1, name: 'Ana', sex: 'F', together: 'A' }),

@@ -22,20 +22,27 @@ name: CI
 # and `tests/unit/pipeline-wiring.test.ts` pins the job name that list matches.
 #
 # `pull_request`, never `pull_request_target`: a fork PR must not see secrets.
+#
+# `workflow_call` is the one other trigger, and it is not a push: it is how
+# deploy-dev.yml's dispatch path runs THIS suite on a branch that has no pull
+# request, rather than a copy of it that could drift (#163).
 on:
   pull_request:
+  workflow_call:
 # One run per pull request (#237). A push to an open PR starts a fresh run, and
 # without a group the superseded one ran on for about half an hour on a head
 # that could no longer merge. The key names this workflow, because every
 # workflow in the repo shares one namespace of groups, and the pull request, so
 # a push never cancels another PR's run. The number is empty on any event but a
-# pull request, which is one more reason this workflow has no other trigger.
+# pull request, and an empty key would be one group for every such run, so a
+# called run falls back to its own run id: a group of one, which cancels
+# nothing (#163).
 #
 # Cancelling cannot starve the deploy: scripts/deploy-gate.mjs reads checks
 # only off the head that MERGED, never a superseded one, and there it takes the
 # latest run for each name, as branch protection does.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 # What a job in this workflow is handed when it states nothing of its own.
@@ -44,12 +51,13 @@ concurrency:
 # settings rather than in source, and can be widened again by a change no
 # diff here would show. This workflow reads a checkout and runs a suite.
 #
-# `visual` inherits exactly this and needs nothing more. `build-and-test`
-# keeps its own block, because a job block REPLACES the inherited set rather
-# than adding to it: dropping it would take `issues: read` with it and blind
-# the dependabot-label step (#299). Both artifact uploads are unaffected --
-# they authenticate with the runner's own runtime token, not this one, which
-# is invisible on a green run and so was proved on a RED one (#301 AC2).
+# `e2e`, `sanity-on-build`, `build-and-test` and `visual` inherit exactly this
+# and need nothing more. `checks` keeps its own block, because a job block REPLACES the
+# inherited set rather than adding to it: dropping it would take `issues: read`
+# with it and blind the dependabot-label step (#299). Every artifact upload is
+# unaffected -- they authenticate with the runner's own runtime token, not this
+# one, which is invisible on a green run and so was proved on a RED one (#301
+# AC2) -- and so is build-and-test's download of this run's own artifacts.
 #
 # Changing the repository default is administration, and so the operator's.
 # `tests/unit/pipeline-wiring.test.ts` derives this rule from the filesystem,
@@ -59,22 +67,23 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  # Everything the merge gate ran before the e2e suite, in the same order, as a
+  # job of its own so it runs BESIDE the shards rather than ahead of them. It
+  # gates because build-and-test stands for it (#163).
+  checks:
     runs-on: ubuntu-26.04
-    # The e2e budget, one number wherever the suite runs: deploy-dev.yml's
-    # dispatch path runs these same commands under it. Without one a hung job
-    # burns the runner's 360-minute default, and since #159 this is the only
-    # suite a merge runs (#157). A policy, not a measurement --
-    # tests/unit/pipeline-wiring.test.ts pins it and fails if the copies drift.
-    timeout-minutes: 45
+    # Bounded, as every job is (#157); not the e2e policy, because this job
+    # runs none of the e2e suite.
+    timeout-minutes: 15
     # Narrowed from the repository default, which is `write` for any workflow
     # that states nothing (measured 2026-09-22 on
     # `actions/permissions/workflow`). This job reads a checkout and reads
     # this repository's labels, and writes nothing anywhere. Declaring ANY
     # permission sets every other one to none, so the checkout's `contents:
     # read` is restated beside it; labels live under the issues scope, which
-    # is what `issues: read` buys. The artifact upload below is unaffected --
-    # it authenticates with the runner's own runtime token, not this one.
+    # is what `issues: read` buys. deploy-dev.yml's dispatch path calls this
+    # workflow and must grant the same, since a called workflow's token can
+    # only be narrowed (tests/unit/pipeline-wiring.test.ts).
     permissions:
       contents: read
       issues: read
@@ -89,8 +98,9 @@ jobs:
       # drops it and posts a configuration-error comment in its place -- which
       # it did on every pull request from 2026-09-21 until #299. The claim is
       # about REPOSITORY STATE, so no unit test can judge it; it runs here
-      # because `build-and-test` is the context branch protection requires, and
-      # a job of its own would not be a gate until that list named it (#33).
+      # because build-and-test, the context branch protection requires, stands
+      # for this job, and a job nothing required stands for would not be a gate
+      # (#33).
       - name: Every label dependabot.yml names exists
         run: node scripts/dependabot-labels.mjs
         env:
@@ -99,23 +109,147 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm run test:unit
+
+  # The e2e suite, split into parallel shards (#163). In one job it took 25.7
+  # to 39.3 minutes (median 36.9, its last eight green runs) under a 45-minute
+  # budget, and every pull request waited all of it.
+  #
+  # EIGHT, measured rather than guessed. Playwright hands each shard an equal
+  # COUNT of tests in project order, so a shard is roughly one engine's slice,
+  # and the engines differ about threefold per test. At four (run
+  # 35830220134) chromium's shard took 4.9 minutes and the firefox-and-webkit
+  # one 13.2, which is the wall-clock. Eight splits the slow slices.
+  e2e:
+    name: e2e shard ${{ matrix.shard }} of ${{ strategy.job-total }}
+    runs-on: ubuntu-26.04
+    # The e2e policy, restated per shard: tests/unit/pipeline-wiring.test.ts
+    # pins it and fails if any job running the suite carries another.
+    timeout-minutes: 20
+    strategy:
+      # A failing shard would otherwise CANCEL the others, and every test they
+      # had not reached would go unreported. The gate is unaffected either
+      # way: build-and-test refuses a cancelled shard as surely as a failed one.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
       - run: npx playwright install --with-deps
-      - run: npm run test:e2e
+      # BEFORE the suite, not left to the web server. The suite's collection
+      # reads the built site (copy-reaches-a-page.spec.ts walks `dist`), and
+      # the server builds for the run but never for the unfiltered `--list`
+      # each shard is held to. Without this, run 35829226473's shard 1 passed
+      # all 742 of its tests and then refused its own count.
+      - run: npm run build
+      # The total is the matrix's own size, never a number written beside it,
+      # so the two cannot disagree. Each shard enumerates the WHOLE suite and
+      # writes down what it ran (scripts/test-e2e.mjs), for build-and-test to
+      # add up.
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        env:
+          E2E_ACCOUNT_DIR: e2e-accounts
+      # Whatever the shard's outcome, and an empty upload is an ERROR: a shard
+      # that wrote no account has nothing for build-and-test to add up.
+      # `overwrite` because re-running a failed shard uploads its account
+      # again, into a run that still holds the one it replaces.
+      - name: Keep this shard's account for build-and-test
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-account-${{ matrix.shard }}
+          path: e2e-accounts
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: error
       # Only when something failed, and only then. `actions/upload-artifact`
       # is first-party -- the same `actions` org as checkout and setup-node
       # above -- so this adds no new trust boundary, and it is SHA-pinned with
-      # its version comment like every other action here.
-      - name: Keep the failing run's Playwright traces
+      # its version comment like every other action here. Named per shard,
+      # because one run cannot hold two artifacts of one name (AC7).
+      - name: Keep the failing shard's Playwright traces
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}
+          name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           path: test-results/
           retention-days: 14
           # `warn`, never `ignore`: `ignore` is the one value that lets this
           # step go GREEN having preserved nothing, and this step IS the
           # evidence path for a red run (#131).
           if-no-files-found: warn
+
+  # The deployed-site suites, against this pull request's own build (#335).
+  # tests/dev and tests/prod otherwise run only after a deploy, so a stale fact
+  # in either went green here and failed the deploy after the merge (#330, run
+  # 35948503612). `npm run test:sanity` builds this tree and previews it for
+  # each config in turn, and leaves out the tests tagged @deployed-only, which
+  # the deploy's own run still covers. It needs no credentials: nothing it
+  # reaches is behind the dev site's Basic auth.
+  sanity-on-build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Both sanity configs declare one project, chromium.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:sanity
+      - name: Keep the failing run's Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}-sanity-on-build
+          path: test-results/
+          retention-days: 14
+          # `warn`, never `ignore`, as for the shards above (#131).
+          if-no-files-found: warn
+
+  # THE REQUIRED CONTEXT. Branch protection requires it by name and
+  # scripts/deploy-gate.mjs deploys because it passed, so it must go on meaning
+  # what it meant when it ran the suite itself: every step ran, and the whole
+  # suite ran. It runs none of that now. It stands for the jobs that do.
+  build-and-test:
+    needs: [checks, e2e, sanity-on-build]
+    # NEVER skipped. A skipped required check is reported to branch protection
+    # as passing, so an aggregate whose condition could turn false would read
+    # green exactly when a shard failed or was skipped (#157). It runs always,
+    # and refuses in the step below.
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Collect every shard's account
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: e2e-account-*
+          merge-multiple: true
+          path: e2e-accounts
+      # Every job it needs SUCCEEDED -- skipped and cancelled refused like
+      # failure -- and the shards' accounts add up to the suite each of them
+      # enumerated (scripts/e2e-shards.mjs). Run even when the download above
+      # failed, so the refusal names what is missing. The verdict is handed
+      # the glob's FILES and lists no directory: a glob matching nothing stays
+      # the literal pattern, which it refuses by name. `needs` arrives as an
+      # env var, never spliced into the script: it carries job outputs, and an
+      # expression inside `run:` is code.
+      - name: Every job succeeded, and the shards ran the whole suite
+        if: always()
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: node scripts/e2e-shards.mjs e2e-accounts/*.json
 
   # The visual-regression suite, in the SAME pinned image the baselines are
   # captured in (#33). Not a tidiness choice: a bare `ubuntu-latest` runner

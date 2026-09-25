@@ -2,7 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
-import { contrast, over, parseColour, type RGB, type RGBA } from '../wcag';
+import { contrast, parseColour } from '../wcag';
+import {
+  ATMOSPHERE,
+  THEMES,
+  TOKENS_FILE,
+  atmosphereLayers,
+  flatten,
+  themeTokens,
+  tokensCss,
+  worstContrast,
+  type Theme,
+} from '../palette';
+import { SHYTALK_MARK } from '../../src/lib/shytalk-brand';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -16,7 +28,6 @@ import { contrast, over, parseColour, type RGB, type RGBA } from '../wcag';
  * because the baseline had always been wrong (#133).
  */
 
-const TOKENS_FILE = 'src/styles/tokens.css';
 const SRC = 'src';
 
 const isColour = (value: string): boolean => parseColour(value) !== null;
@@ -29,66 +40,11 @@ const ratioOf = (a: string, b: string): number => {
   return contrast(x.rgb, y.rgb);
 };
 
-/**
- * The `:root` custom properties, read with CSS comments stripped.
- *
- * Stripped because this file's own documentation names token values, and a
- * guard satisfied by the prose explaining it is the defect this suite exists
- * to catch — five have shipped in this repo (#23, #21, #35, #49, #129).
- */
-const tokens = (): Map<string, string> => {
-  const css = stylesheetCss(
-    TOKENS_FILE,
-    readFileSync(TOKENS_FILE, 'utf8'),
-  ).join('\n');
-  const root = css.match(/:root\s*\{([\s\S]*?)\}/);
-  if (root === null) throw new Error(`no :root block in ${TOKENS_FILE}`);
-
-  const found = new Map<string, string>();
-  for (const [, name, value] of root[1].matchAll(
-    /(--[\w-]+)\s*:\s*([^;]+);/g,
-  )) {
-    found.set(name, value.trim());
-  }
-  return found;
-};
-
-const colourTokens = (): [string, string][] =>
+const colourTokens = (theme: Theme): [string, string][] =>
   nonEmpty(
-    [...tokens()].filter(([, value]) => isColour(value)),
-    `colour tokens in ${TOKENS_FILE}`,
+    [...themeTokens(tokensCss(), theme)].filter(([, value]) => isColour(value)),
+    `${theme} colour tokens in ${TOKENS_FILE}`,
   );
-
-/**
- * Flatten a layer stack, written TOP-FIRST, onto its opaque base.
- *
- * `['--border-strong', '--bg']` is the border as the eye actually receives it.
- * Comparing the declared `rgb(255 255 255 / .35)` against `--bg` directly
- * scores 21:1 — the ratio of pure white to near-black, a colour that is never
- * drawn anywhere. An alpha judged un-composited is a guard measuring a pixel
- * that does not exist, and it fails OPEN.
- */
-const flatten = (
-  layers: readonly string[],
-  from: Map<string, string>,
-): RGB | string => {
-  const parsed: RGBA[] = [];
-  for (const layer of layers) {
-    const value = layer.startsWith('--') ? from.get(layer) : layer;
-    if (value === undefined) return `${layer} is not defined in ${TOKENS_FILE}`;
-    const colour = parseColour(value);
-    if (colour === null) return `${layer} is not a readable colour: ${value}`;
-    parsed.push(colour);
-  }
-
-  const base = parsed[parsed.length - 1];
-  if (base.alpha !== 1)
-    return `the base of [${layers.join(', ')}] is translucent — nothing is behind it`;
-
-  return parsed
-    .slice(0, -1)
-    .reduceRight<RGB>((ground, layer) => over(layer, ground), base.rgb);
-};
 
 /** 4.5 for body copy, 3 for large text and for anything identifying a control. */
 const LEVELS = { body: 4.5, large: 3, ui: 3 } as const;
@@ -102,23 +58,6 @@ type Pair = {
 };
 
 /**
- * The atmosphere as a layer stack, TOP-FIRST.
- *
- * Every stop composited at once is the WORST case, not the real one: the
- * three radials are positioned apart, so no pixel receives all of them. A
- * guard that measured the real overlap would need a browser and would answer
- * a question about one viewport width; this answers it for all of them, and
- * errs towards refusing a palette that would in fact have passed.
- */
-const ATMOSPHERE = [
-  '--aurora-shaft',
-  '--aurora-mint',
-  '--aurora-violet',
-  '--aurora-deep',
-  '--bg',
-] as const;
-
-/**
  * Which colour sits on which, and at what level.
  *
  * Hand-written deliberately: WHICH pairs the design puts together is a design
@@ -127,8 +66,8 @@ const ATMOSPHERE = [
  * appear here or in `DECORATIVE`, so a new token cannot be added unclassified.
  *
  * The page atmosphere is judged here as well, not left to a later pass: a
- * pair drawn over it names `ATMOSPHERE`, above, as its ground rather than the
- * flat `--bg`.
+ * pair drawn over it names the `ATMOSPHERE` placeholder from `../palette` in
+ * its stack rather than the flat `--bg`.
  */
 const PAIRS: Pair[] = [
   {
@@ -144,12 +83,6 @@ const PAIRS: Pair[] = [
     where: 'body copy on a card',
   },
   {
-    fg: ['--ink'],
-    bg: ['--glass', '--bg'],
-    level: 'body',
-    where: 'a tool-card heading on the glass panel',
-  },
-  {
     fg: ['--ink-soft'],
     bg: ['--bg'],
     level: 'body',
@@ -160,18 +93,6 @@ const PAIRS: Pair[] = [
     bg: ['--surface'],
     level: 'body',
     where: 'secondary copy on a card',
-  },
-  {
-    fg: ['--ink-soft'],
-    bg: ['--glass', '--bg'],
-    level: 'body',
-    where: 'tool-card body copy on the glass panel',
-  },
-  {
-    fg: ['--ink-soft'],
-    bg: ['--glass-2', '--bg'],
-    level: 'body',
-    where: 'tool-card body copy, panel hovered',
   },
   {
     fg: ['--accent'],
@@ -188,9 +109,10 @@ const PAIRS: Pair[] = [
   },
   {
     fg: ['--accent'],
-    bg: ['--glass', '--bg'],
+    bg: ['--glass', '--surface'],
     level: 'body',
-    where: 'the tool-card open link on the glass panel',
+    where:
+      'the work-card badge: accent text on its glass fill, inside a card whose own background is the opaque --surface (WorkCard.astro). --glass is drawn nowhere else, and never under --ink or --ink-soft',
   },
   {
     fg: ['--accent-ink'],
@@ -230,26 +152,33 @@ const PAIRS: Pair[] = [
   },
   {
     fg: ['--ink'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
-    where: 'body copy over the brightest possible point of the atmosphere',
+    where: 'body copy over the atmosphere, at its worst subset of layers',
   },
   {
     fg: ['--ink-soft'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
     where:
-      'secondary copy over the atmosphere — the knife edge. At mint .10 / violet .14 / deep .18 this scored 4.48:1, a failure by 0.02 that no single layer shows',
+      'secondary copy over the atmosphere, the lowest-scoring text pair drawn over it',
   },
   {
     fg: ['--accent'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
     where: 'link text and section kickers over the atmosphere',
   },
   {
-    fg: ['--border-strong', ...ATMOSPHERE],
-    bg: ATMOSPHERE,
+    fg: ['--accent-ink'],
+    bg: [ATMOSPHERE, '--bg'],
+    level: 'body',
+    where:
+      'link hover (a:hover in tokens.css), drawn wherever a link sits, so over the atmosphere too',
+  },
+  {
+    fg: ['--border-strong', ATMOSPHERE, '--bg'],
+    bg: [ATMOSPHERE, '--bg'],
     level: 'ui',
     where: 'control boundaries over the atmosphere (WCAG 1.4.11)',
   },
@@ -270,7 +199,21 @@ const PAIRS: Pair[] = [
     bg: ['--disabled-fill'],
     level: 'body',
     where:
-      "the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning `--deep`'s entry records. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received",
+      'the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning that puts every ground a text colour sits on into a pair. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received',
+  },
+  {
+    fg: [SHYTALK_MARK.shy],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Shy" (HomePage.astro, 2.6rem bold): on its own tile in light, and over the atmosphere in dark, where the tile is transparent (#142 §3.4)',
+  },
+  {
+    fg: [SHYTALK_MARK.talk],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Talk", on the same ground as "Shy" in each theme (#142 §3.4)',
   },
 ];
 
@@ -284,20 +227,36 @@ const PAIRS: Pair[] = [
 const DECORATIVE: Record<string, string> = {
   '--border':
     'decorative separators only — card outlines, header and footer rules, table rules. Every control boundary uses --border-strong.',
-  '--deep':
-    'a gradient stop in the page atmosphere, never drawn as text or a control edge. It IS a fill behind text — the earlier note here said otherwise — so it is measured as a layer in ATMOSPHERE rather than trusted as decorative.',
-  '--violet':
-    'a gradient stop in the page atmosphere. It was specified as the section kicker colour; measured, it scores 4.61:1 flat and 2.91:1 over the atmosphere, so it cannot carry small text. Kickers use --accent.',
   '--accent-glow':
     'the mint bloom behind the marquee band. A box-shadow: nothing is ever read against it, and 1.4.11 reaches only what identifies a control.',
   '--dock-shadow':
     'the shadow the pinned action row on /classroom-groups casts up over what scrolls beneath it (#188). Nothing is read against it by design: scroll-padding keeps a focused field clear of the row, and 1.4.11 reaches only what identifies a control.',
+  '--lift-shadow':
+    "the phone mockup's shadow (PhoneFrame.astro). A box-shadow: nothing is read against it, and 1.4.11 reaches only what identifies a control.",
+};
+
+/**
+ * The disabled fill in each theme, pinned against the brief (#250, #142
+ * §3.1): the level every derived guard around it is unable to assert.
+ */
+const DISABLED_FILL: Record<Theme, string> = {
+  light: '#dde2e8',
+  dark: '#2a323f',
 };
 
 const pairName = (p: Pair) =>
   `${p.fg.join(' over ')} on ${p.bg.join(' over ')} (${p.where})`;
 
 describe('the palette meets WCAG AA by computation, not by comment', () => {
+  it('reads the atmosphere from body::before, top-first, named by position', () => {
+    expect(atmosphereLayers(tokensCss())).toEqual([
+      '--pool-top-left',
+      '--pool-top-right',
+      '--pool-foot',
+      '--shaft',
+    ]);
+  });
+
   /**
    * The ratio function pinned against WCAG's OWN published boundary.
    *
@@ -340,25 +299,29 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
     );
   });
 
-  it('every declared pair clears its required ratio', () => {
-    const from = tokens();
-    const failures = PAIRS.flatMap((pair) => {
-      const fg = flatten(pair.fg, from);
-      const bg = flatten(pair.bg, from);
-      if (typeof fg === 'string') return [`${pairName(pair)} — ${fg}`];
-      if (typeof bg === 'string') return [`${pairName(pair)} — ${bg}`];
+  for (const theme of THEMES) {
+    it(`${theme}: every declared pair clears its required ratio, over the worst subset of the atmosphere`, () => {
+      const css = tokensCss();
+      const from = themeTokens(css, theme);
+      const layers = atmosphereLayers(css);
+      const failures = PAIRS.flatMap((pair) => {
+        const scored = worstContrast(pair.fg, pair.bg, layers, from);
+        if (typeof scored === 'string')
+          return [`${pairName(pair)} — ${scored}`];
+        const need = LEVELS[pair.level];
+        return scored.ratio >= need
+          ? []
+          : [
+              `${pairName(pair)} — ${scored.ratio.toFixed(2)}:1 over ` +
+                `[${scored.subset.join(', ') || 'no layer'}], needs ${need}:1`,
+            ];
+      });
 
-      const ratio = contrast(fg, bg);
-      const need = LEVELS[pair.level];
-      return ratio >= need
-        ? []
-        : [`${pairName(pair)} — ${ratio.toFixed(2)}:1, needs ${need}:1`];
+      expect(
+        searched(failures, { of: PAIRS, what: `${theme} colour pairs` }),
+      ).toEqual([]);
     });
-
-    expect(
-      searched(failures, { of: PAIRS, what: 'declared colour pairs' }),
-    ).toEqual([]);
-  });
+  }
 
   /**
    * The disabled fill's LEVEL, pinned to a literal — the half every guard
@@ -369,52 +332,61 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
    * (disabled-controls.spec.ts) reads `--disabled-fill` off `:root` at
    * runtime and compares the control's own background to it. Both sides of
    * both move with the token, so both hold at ANY level (#117). Measured:
-   * set the fill to `--surface`'s `#070d16` and the label still scores
+   * set Aurora's fill to its `--surface`, `#070d16` and the label still scores
    * 7.5:1 and the control's background still equals the token — every guard
    * green, and a teacher sees no control at all. A level is pinned against
    * the brief, separately from anything derived from it.
    */
-  it('pins the disabled fill, and keeps it off every ground it is drawn on', () => {
-    const from = tokens();
-    expect(from.get('--disabled-fill')).toBe('#2a323f');
+  for (const theme of THEMES) {
+    it(`${theme}: pins the disabled fill, and keeps it off every ground it is drawn on`, () => {
+      const from = themeTokens(tokensCss(), theme);
+      expect(from.get('--disabled-fill')).toBe(DISABLED_FILL[theme]);
 
-    /* The class the literal cannot state, and the reason it is not simply a
+      /* The class the literal cannot state, and the reason it is not simply a
        second literal: the grounds are DERIVED. `Pair.bg` is a stack written
        top-first ENDING IN AN OPAQUE BASE, so its last layer is a ground by
        construction, and a ground added or renamed next year is covered the
        day it appears. Compared as parsed colour, so `#070d16` and
        `rgb(7 13 22)` are one finding rather than two spellings. */
-    const fill = parseColour(from.get('--disabled-fill') ?? '');
-    if (fill === null) throw new Error('--disabled-fill is not a colour');
+      const fill = parseColour(from.get('--disabled-fill') ?? '');
+      if (fill === null) throw new Error('--disabled-fill is not a colour');
 
-    const grounds = [
-      ...new Set(PAIRS.map((pair) => pair.bg[pair.bg.length - 1])),
-    ].filter((name) => name !== '--disabled-fill');
-    const collisions = grounds.filter((name) => {
-      const ground = parseColour(from.get(name) ?? '');
-      return (
-        ground !== null &&
-        ground.alpha === fill.alpha &&
-        ground.rgb.every((channel, i) => channel === fill.rgb[i])
-      );
+      const grounds = [
+        ...new Set(PAIRS.map((pair) => pair.bg[pair.bg.length - 1])),
+      ].filter((name) => name !== '--disabled-fill');
+      const collisions = grounds.filter((name) => {
+        const ground = parseColour(from.get(name) ?? '');
+        return (
+          ground !== null &&
+          ground.alpha === fill.alpha &&
+          ground.rgb.every((channel, i) => channel === fill.rgb[i])
+        );
+      });
+
+      expect(
+        searched(collisions, { of: grounds, what: 'opaque grounds' }),
+      ).toEqual([]);
     });
+  }
 
-    expect(
-      searched(collisions, { of: grounds, what: 'opaque grounds' }),
-    ).toEqual([]);
-  });
+  for (const theme of THEMES) {
+    it(`${theme}: every colour token is classified — paired or explicitly decorative`, () => {
+      const layers = atmosphereLayers(tokensCss());
+      const paired = new Set(
+        PAIRS.flatMap((p) => [...p.fg, ...p.bg]).flatMap((layer) =>
+          layer === ATMOSPHERE ? layers : [layer],
+        ),
+      );
+      const all = colourTokens(theme);
+      const unclassified = all
+        .map(([name]) => name)
+        .filter((name) => !paired.has(name) && !(name in DECORATIVE));
 
-  it('every colour token is classified — paired or explicitly decorative', () => {
-    const paired = new Set(PAIRS.flatMap((p) => [...p.fg, ...p.bg]));
-    const all = colourTokens();
-    const unclassified = all
-      .map(([name]) => name)
-      .filter((name) => !paired.has(name) && !(name in DECORATIVE));
-
-    expect(searched(unclassified, { of: all, what: 'colour tokens' })).toEqual(
-      [],
-    );
-  });
+      expect(
+        searched(unclassified, { of: all, what: 'colour tokens' }),
+      ).toEqual([]);
+    });
+  }
 });
 
 /**
@@ -510,6 +482,7 @@ const DECORATIVE_SELECTORS = [
   'components/pages/ClassroomGroupsPage.astro :: .cg-print-panel',
   'components/pages/ClassroomGroupsPage.astro :: .cg-print-panel fieldset',
   'components/pages/ClassroomGroupsPage.astro :: .tool-section',
+  'components/pages/ClassroomGroupsPage.astro :: .actions',
   'pages/404.astro :: hr',
 ];
 

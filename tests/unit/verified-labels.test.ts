@@ -5,8 +5,15 @@ import { id } from '../../src/lib/i18n/id';
 import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';
 import { th } from '../../src/lib/i18n/th';
-import { LOCALES, type Locale } from '../../src/lib/i18n/locales';
+import {
+  DEFAULT_LOCALE,
+  LOCALES,
+  type Locale,
+} from '../../src/lib/i18n/locales';
 import { getSiteStrings } from '../../src/lib/i18n';
+import { CSV_LOCALES } from '../../src/lib/csv-locale';
+import { backTranslationUnits } from '../../src/lib/i18n/back-translate';
+import { checkLabels } from '../../src/lib/i18n/label-check';
 
 /**
  * The values of the roster's column labels, pinned to what the operator read
@@ -34,13 +41,21 @@ import { getSiteStrings } from '../../src/lib/i18n';
  * table the record of it: changing a value here is changing what was signed
  * off, and it may not be done without a fresh operator read.
  *
- * Scope is the roster column family, because #249 propagates these six keys
- * out of one table header and into the empty option of three dropdowns on
- * every row. The rest of the catalogues' short labels need the same treatment
- * and that sweep is #161, whose list must be derived rather than read. The CSV
- * export writes its own copy of these headers and is held apart as #252: there
- * the header word is a parsing token, so correcting one breaks importing a file
- * a teacher has already exported.
+ * Scope began as the roster column family, because #249 propagates these six
+ * keys out of one table header and into the empty option of three dropdowns
+ * on every row. #161 widened it. Every short label that disagreed with its
+ * own locale's copy went to the operator on one sheet, and everything he
+ * read there is pinned here: the 29 corrections he approved, the sentences
+ * that came with them, and the values he chose to keep. Those keys are
+ * spelled the way `backTranslationUnits` spells a path (`howToSteps[2]`,
+ * `site.glory.heading`, `csv.columns.apart`), so a flag and its pin name the
+ * same copy. A CSV header word is a parsing token as well as copy (#252), so
+ * correcting one keeps the old word readable: `supersededColumns`.
+ *
+ * #319 added every message its own sheet corrected, because the feature-word
+ * check it built cannot hold them all: th `PINNED_TOO_MANY_GROUPS` said
+ * `พินของคุณ` (your PINs) and passed, since `ปักหมุด` appears once in it.
+ * Those entries carry their own comment, as the operator has not read them yet.
  */
 const VERIFIED: Record<Locale, Record<string, string>> = {
   en: {
@@ -58,6 +73,21 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterColAbsent: 'Tidak hadir',
     rosterColTogether: 'Bersama',
     rosterColApart: 'Terpisah',
+    // #161's sheet, read by the operator on 2026-09-23.
+    'csv.columns.apart': 'terpisah',
+    'csv.columns.together': 'bersama',
+    keepApartLabel: 'Jangan bersama',
+    modeLabel: 'Bagi berdasarkan',
+    'site.home.opensAt': 'membuka',
+    stateApart: '{n} dipisahkan',
+    stateTogether: '{n} disatukan',
+    // #319's sheet, applied unanswered under the operator's 2026-09-24
+    // instruction to complete the board and review it once, at the end. His
+    // read of these is due then and has not been given yet. A message is
+    // pinned whole, so every branch of a select is held, not just the one
+    // the sheet corrected.
+    'errors.NO_STUDENTS':
+      'Tambahkan siswa, atau pastikan tidak semuanya ditandai tidak hadir.',
   },
   zh: {
     rosterColNumber: '#',
@@ -66,6 +96,65 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterColAbsent: '缺席',
     rosterColTogether: '在一起',
     rosterColApart: '分开',
+    // #161's sheet, read by the operator on 2026-09-23.
+    again: '重新洗牌',
+    boardShuffle: '重新洗牌',
+    'csv.columns.apart': '分开',
+    'csv.columns.name': '姓名',
+    'errors.KEEP_APART_SEARCH_GAVE_UP':
+      '这里的“分开”规则太多，难以逐一处理。试着删除其中一些吧。',
+    howToHeading: '使用方法',
+    'howToSteps[2]': '点击“开始分组”。',
+    ioReplaceWarning:
+      '这将取代您当前的班级名单——{total}名学生，其中{named}名已命名。',
+    keepApartLabel: '分开',
+    makeGroups: '开始分组',
+    modeGroupCount: '组数',
+    resultsHeading: '您的分组',
+    resultsHeadingNamed: '{className} — 您的分组',
+    stateAdded: '{n} 已添加',
+    stateApart: '{n} 分开',
+    stateNamed: '{n} 已命名',
+    stateNone: '无',
+    // #319's sheet, applied unanswered under the operator's 2026-09-24
+    // instruction to complete the board and review it once, at the end. His
+    // read of these is due then and has not been given yet. A message is
+    // pinned whole, so every branch of a select is held, not just the one
+    // the sheet corrected.
+    'csv.columns.number': '编号',
+    csvProblemAbsent:
+      "行 {row} — 缺席 '{value}' 无法识别。请使用 {accepted}，或留空。",
+    csvProblemNoNumberColumn: '该文件中没有编号列。每个学生都需要一个编号。',
+    csvProblemNumberNotWhole: "行 {row} — 编号 '{value}' 不是整数。",
+    csvWrongLanguage:
+      '这看起来像是一份 {language} 班级名单。请打开该页面的 {version} 版本以导入它。',
+    'errors.BOTH_RULES_NO_ARRANGEMENT':
+      '无法将你的班级分成 {groupsTried} 个小组，同时满足所有“在一起”字母和所有“分开”字母。系统无法判断是哪一类规则造成了问题，因此请尝试以下任一方法：扩大小组，或者把某个“在一起”字母分配给更少的学生；或者增加小组数量，或者取消其中一条“分开”规则。',
+    'errors.BOTH_RULES_SEARCH_GAVE_UP':
+      '这里的“在一起”和“分开”字母太多，无法一次全部处理。请尝试减少任一类字母的数量，或者扩大小组。',
+    'errors.KEEP_APART_NO_ARRANGEMENT':
+      '无法将你的班级分成 {groupsTried} 个小组，同时把所有需要分开的学生都分到不同组。要么增加小组数量，要么取消其中一条规则。',
+    'errors.NO_STUDENTS':
+      '添加一些学生，或者确保其中至少有一人未被标记为缺席。',
+    'errors.PINNED_APART_CLASH':
+      '{names} 已被标记为“分开”，但一个固定的组把他们放进了同一组。请取消固定该组，或从其中一人身上移除“分开”字母。',
+    'errors.PINNED_TOO_MANY_GROUPS':
+      '{situation, select, over {您固定的组已占用 {pinnedGroupCount} 个组——超过了您要求的 {requestedGroups} 个组——导致 {remainingStudents} 名学生无组可去。请取消固定一个组，或者增加组数。} full {您固定的组已占满您要求的 {requestedGroups} 个组中的 {pinnedGroupCount} 个，剩下的 {remainingStudents} 名学生已无组可去。请取消固定一个组，或者增加组数。} other {您已将所请求的 {requestedGroups} 个小组中的 {pinnedGroupCount} 个小组固定，这意味着只剩下 {remainingStudents} 名学生——这不足以组成仍需的 {poolGroupsNeeded} 个小组。请取消固定一个小组，或者减少请求的小组数量。}}',
+    'errors.SEX_SEPARATE_SEARCH_GAVE_UP':
+      '这里的“在一起”和“分开”字母太多，无法在把男孩和女孩分到不同组的同时完成分组。请尝试减少字母数量，或者关闭此模式。',
+    'errors.SEX_SEPARATE_SPLITS_UNIT':
+      '{names} 已被标记为“在一起”，但并非全是同一性别，因此无法组成单一性别的小组。请从其中一人身上移除“在一起”字母，或关闭此模式。',
+    'errors.TOGETHER_SEARCH_GAVE_UP':
+      '这里的“在一起”字母太多，难以逐一处理。请尝试减少字母数量，或者扩大小组。',
+    'errors.TOGETHER_UNIT_TOO_LARGE':
+      '有 {unit} 名学生带有字母“{letter}”，但这里最大的小组只能容纳 {groupSize} 人。请扩大小组规模，或者把字母“{letter}”分配给更少的学生。',
+    'howToSteps[1]': '选择如何给他们分组。',
+    leftoversBunch: '把他们全都放进同一个组',
+    leftoversSpread: '把他们平均分到各组',
+    printWhatGroups: '分组结果',
+    rosterClashMessage: '{names} 被放在一起，因此无法再把他们分开。',
+    'warnings.PINNED_MIXED_SEX':
+      '{names} 被一起固定在同一组里，但他们并非全是同一性别，因此这个组没有像其他组那样按性别划分。这正是固定分组所要求的，并不是需要更正的错误。',
   },
   vi: {
     rosterColNumber: '#',
@@ -74,29 +163,167 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterColAbsent: 'Vắng mặt',
     rosterColTogether: 'Cùng nhau',
     rosterColApart: 'Tách biệt',
+    // #161's sheet, read by the operator on 2026-09-23.
+    'csv.columns.apart': 'tách biệt',
+    'errors.KEEP_APART_SEARCH_GAVE_UP':
+      'Ở đây có quá nhiều quy tắc xếp khác nhóm, khó mà xử lý hết được. Hãy thử loại bỏ một số quy tắc trong số đó.',
+    ioReplaceWarning:
+      'Danh sách này sẽ thay thế danh sách lớp hiện tại của bạn — {total} học sinh, {named} em đã có tên.',
+    keepApartLabel: 'Xếp khác nhóm',
+    modeLabel: 'Phân chia theo',
+    sectionStudentsHeading: 'Thông tin học sinh',
+    'site.glory.heading': 'Máy tính Glory Points',
+    'site.glory.title': 'Máy tính Glory Points — Shyden',
+    'site.home.workGloryTitle': 'Máy tính Glory Points',
+    stateAdded: '{n} đã được thêm vào',
+    stateApart: '{n} tách biệt',
+    stateNamed: '{n} đã có tên',
+    stateNone: 'không có',
+    // #319's sheet, applied unanswered under the operator's 2026-09-24
+    // instruction to complete the board and review it once, at the end. His
+    // read of these is due then and has not been given yet. A message is
+    // pinned whole, so every branch of a select is held, not just the one
+    // the sheet corrected.
+    csvProblemAbsent:
+      "Dòng {row} — vắng mặt '{value}' không được nhận diện. Hãy sử dụng {accepted} hoặc để trống.",
+    csvProblemNoNumberColumn:
+      'Tệp này không có cột số. Mỗi học sinh cần có số thứ tự.',
+    'errors.BOTH_RULES_NO_ARRANGEMENT':
+      'Không có cách nào để chia lớp của bạn thành {groupsTried} nhóm mà vẫn đáp ứng đồng thời mọi chữ cái “cùng nhau” và mọi chữ cái “tách biệt”. Quá trình tìm kiếm không thể xác định được loại quy tắc nào gây ra vấn đề, vì vậy hãy thử một trong hai cách: tăng quy mô các nhóm hoặc gán một chữ cái “cùng nhau” cho ít học sinh hơn; hoặc tạo thêm nhóm hoặc bỏ một trong các quy tắc “tách biệt”.',
+    'errors.BOTH_RULES_SEARCH_GAVE_UP':
+      'Ở đây có quá nhiều chữ cái “cùng nhau” và “tách biệt” để có thể xử lý hết cùng một lúc. Hãy thử dùng ít chữ cái hơn ở cả hai loại, hoặc tăng quy mô các nhóm.',
+    'errors.KEEP_APART_NO_ARRANGEMENT':
+      'Không có cách nào để chia lớp của bạn thành {groupsTried} nhóm mà vẫn tách biệt tất cả những học sinh cần được tách biệt. Hãy tạo thêm nhóm hoặc loại bỏ một trong các quy tắc.',
+    'errors.PINNED_APART_CLASH':
+      '{names} đã được đánh dấu “tách biệt” với nhau, nhưng một nhóm được ghim lại xếp các em vào cùng một nhóm. Hãy bỏ ghim nhóm đó, hoặc gỡ chữ cái “tách biệt” khỏi một trong số các em.',
+    'errors.PINNED_TOO_MANY_GROUPS':
+      '{situation, select, over {Các nhóm bạn đã ghim hiện đã dùng {pinnedGroupCount} nhóm — nhiều hơn số {requestedGroups} nhóm mà bạn đã yêu cầu — khiến {remainingStudents} học sinh không còn nhóm nào dành cho mình. Hãy bỏ ghim một nhóm hoặc yêu cầu thêm nhóm.} full {Các nhóm bạn đã ghim hiện đã chiếm {pinnedGroupCount} trong tổng số {requestedGroups} nhóm mà bạn đã yêu cầu, nên {remainingStudents} học sinh còn lại không còn nhóm nào dành cho mình. Hãy bỏ ghim một nhóm hoặc yêu cầu thêm nhóm.} other {Các nhóm bạn đã ghim đã chiếm {pinnedGroupCount} trong số {requestedGroups} nhóm mà bạn yêu cầu, do đó chỉ còn lại {remainingStudents} học sinh — con số này không đủ để tạo {poolGroupsNeeded} nhóm còn thiếu. Hãy bỏ ghim một nhóm hoặc yêu cầu ít nhóm hơn.}}',
+    'errors.SEX_SEPARATE_SEARCH_GAVE_UP':
+      'Ở đây có quá nhiều chữ cái “cùng nhau” và “tách biệt” để xử lý hết trong khi vẫn phải xếp nam và nữ vào các nhóm riêng. Hãy thử dùng ít chữ cái hơn hoặc tắt chế độ này đi.',
+    'errors.TOGETHER_APART_CLASH':
+      '{names} được đánh dấu để vừa ở cùng nhau, vừa phải tách biệt khỏi nhau. Hãy loại bỏ chữ cái biểu thị “ở cùng nhau” hoặc chữ cái biểu thị “tách biệt” khỏi một trong số các em.',
+    'errors.TOGETHER_SEARCH_GAVE_UP':
+      'Ở đây có quá nhiều chữ cái “cùng nhau” nên không thể xử lý hết. Hãy thử dùng ít chữ cái hơn, hoặc tăng quy mô các nhóm.',
+    'howToSteps[1]': 'Hãy chọn cách chia nhóm cho các em.',
+    leftoversSpread: 'Chia đều các em vào các nhóm',
+    printShowLetters:
+      'Hiển thị giới tính và các chữ cái "cùng nhau"/"tách biệt"',
+    rosterClashMessage:
+      '{names} được xếp cùng nhau, nên không thể đồng thời tách biệt các em.',
+    'warnings.PINNED_MIXED_SEX':
+      '{names} được ghim cùng nhau thành một nhóm, nhưng không phải tất cả đều cùng giới tính, nên nhóm này không được chia theo giới tính như các nhóm khác. Đó chính là điều bạn yêu cầu khi ghim nhóm, chứ không phải là một sai sót cần sửa.',
   },
   th: {
     rosterColNumber: '#',
     rosterColName: 'ชื่อ',
     rosterColSex: 'เพศ',
     rosterColAbsent: 'ไม่มา',
-    rosterColTogether: 'ร่วมกัน',
+    rosterColTogether: 'ด้วยกัน',
     rosterColApart: 'แยก',
+    // #161's sheet, read by the operator on 2026-09-23.
+    again: 'สับใหม่',
+    boardOpen: 'เต็มหน้าจอ',
+    boardShuffle: 'สับใหม่',
+    'csv.columns.absent': 'ไม่มา',
+    'csv.columns.apart': 'แยกกัน',
+    'csv.columns.together': 'ด้วยกัน',
+    'csv.fileName.class-list': 'รายชื่อชั้น',
+    'errors.KEEP_APART_SEARCH_GAVE_UP':
+      'มีกฎ “ให้อยู่คนละกลุ่ม” มากเกินไปจนยากที่จะปฏิบัติตาม ลองลบออกบางส่วนดู',
+    keepApartLabel: 'ให้อยู่คนละกลุ่ม',
+    printClassListHeading: 'รายชื่อนักเรียน',
+    printWhatClassList: 'รายชื่อนักเรียน',
+    rosterAbsentPill: 'ไม่มา',
+    'site.glory.heading': 'เครื่องคำนวณ Glory Points',
+    'site.glory.title': 'เครื่องคำนวณ Glory Points — Shyden',
+    'site.home.workGloryTitle': 'เครื่องคำนวณ Glory Points',
+    stateAbsent: '{n} ไม่มา',
+    stateAdded: '{n} ได้เพิ่มแล้ว',
+    stateApart: '{n} แยกกัน',
+    stateTogether: '{n} ด้วยกัน',
+    // #319's sheet, applied unanswered under the operator's 2026-09-24
+    // instruction to complete the board and review it once, at the end. His
+    // read of these is due then and has not been given yet. A message is
+    // pinned whole, so every branch of a select is held, not just the one
+    // the sheet corrected.
+    'csv.columns.number': 'หมายเลข',
+    csvProblemAbsent:
+      "แถว {row} — ไม่เข้าใจค่า '{value}' สำหรับการขาดเรียน ใช้ {accepted} หรือทิ้งว่างไว้",
+    csvProblemDuplicateNumber:
+      'แถว {row} — หมายเลข {value} ถูกใช้แล้วโดยแถว {firstRow}',
+    csvProblemNoNumberColumn:
+      'ไฟล์นี้ไม่มีคอลัมน์หมายเลข นักเรียนทุกคนต้องมีหมายเลข',
+    csvProblemNumberBlank:
+      'แถว {row} — ไม่ได้ใส่หมายเลข นักเรียนทุกคนต้องมีหมายเลข',
+    csvProblemNumberNotWhole: "แถว {row} — หมายเลข '{value}' ไม่ใช่จำนวนเต็ม",
+    'errors.BOTH_RULES_NO_ARRANGEMENT':
+      'ไม่มีวิธีใดที่จะจัดนักเรียนในชั้นของคุณให้เข้าอยู่ใน {groupsTried} กลุ่มได้ โดยยังคงทำตามตัวอักษร "ด้วยกัน" และตัวอักษร "แยก" ทั้งหมดในเวลาเดียวกัน การค้นหาไม่สามารถระบุได้ว่ากฎประเภทใดเป็นปัญหา ดังนั้นลองใช้วิธีแก้ไขอย่างใดอย่างหนึ่งต่อไปนี้: ขยายขนาดกลุ่มให้ใหญ่ขึ้น หรือให้ตัวอักษร "ด้วยกัน" กับนักเรียนจำนวนน้อยลง หรือสร้างกลุ่มเพิ่มเติม หรือยกเลิกกฎ "แยก" หนึ่งข้อ',
+    'errors.BOTH_RULES_SEARCH_GAVE_UP':
+      'ที่นี่มีตัวอักษร "ด้วยกัน" และ "แยก" มากเกินไปจนไม่สามารถจัดการได้ทั้งหมดในครั้งเดียว ลองใช้ตัวอักษรประเภทใดประเภทหนึ่งให้น้อยลง หรือเพิ่มขนาดกลุ่มให้ใหญ่ขึ้น',
+    'errors.KEEP_APART_NO_ARRANGEMENT':
+      'ไม่มีทางที่จะจัดชั้นเรียนของคุณให้เข้าอยู่ใน {groupsTried} กลุ่มได้ โดยยังคงแยกทุกคนที่ต้องแยกกันให้อยู่คนละกลุ่ม ดังนั้น คุณต้องเพิ่มจำนวนกลุ่มให้มากขึ้น หรือยกเลิกกฎข้อใดข้อหนึ่ง',
+    'errors.PINNED_APART_CLASH':
+      '{names} ถูกทำเครื่องหมายให้แยกกัน แต่กลุ่มที่ปักหมุดไว้ทำให้พวกเขาอยู่ในกลุ่มเดียวกัน ให้เลิกปักหมุดกลุ่มนั้น หรือลบตัวอักษร "แยก" ออกจากนักเรียนคนใดคนหนึ่ง',
+    'errors.PINNED_IN_TWO_GROUPS':
+      '{name} ถูกปักหมุดไว้ในสองกลุ่มที่แตกต่างกันพร้อมกัน นักเรียนหนึ่งคนปักหมุดไว้ได้เพียงกลุ่มเดียวเท่านั้น โปรดนำชื่อเขา/เธอออกจากกลุ่มใดกลุ่มหนึ่ง',
+    'errors.PINNED_SPLITS_UNIT':
+      '{names} ถูกทำเครื่องหมายให้อยู่ด้วยกัน แต่มีเพียงบางคนเท่านั้นที่อยู่ในกลุ่มที่ปักหมุดไว้ ให้เลิกปักหมุดกลุ่มนั้น หรือลบตัวอักษร "ด้วยกัน" ออกจากนักเรียนที่อยู่นอกกลุ่ม',
+    'errors.PINNED_TOO_MANY_GROUPS':
+      '{situation, select, over {กลุ่มที่คุณปักหมุดไว้ใช้ไปแล้ว {pinnedGroupCount} กลุ่ม — มากกว่า {requestedGroups} กลุ่มที่คุณขอ — ซึ่งทำให้นักเรียน {remainingStudents} คนไม่มีกลุ่มเหลือให้เข้าร่วม โปรดเลิกปักหมุดกลุ่มหนึ่ง หรือขอเพิ่มกลุ่มอีก} full {กลุ่มที่คุณปักหมุดไว้เต็มแล้ว {pinnedGroupCount} จาก {requestedGroups} กลุ่มที่คุณขอ ทำให้นักเรียนที่เหลือ {remainingStudents} คนไม่มีกลุ่มให้เข้าร่วม โปรดเลิกปักหมุดกลุ่มหนึ่ง หรือขอเพิ่มกลุ่มอีก} other {กลุ่มที่คุณปักหมุดไว้เต็มแล้ว {pinnedGroupCount} จาก {requestedGroups} กลุ่มที่คุณขอ เหลือนักเรียนเพียง {remainingStudents} คน — ไม่พอสำหรับ {poolGroupsNeeded} กลุ่มที่ยังต้องจัด โปรดเลิกปักหมุดกลุ่มหนึ่ง หรือขอลดจำนวนกลุ่มลง}}',
+    'errors.SEX_SEPARATE_SEARCH_GAVE_UP':
+      'ที่นี่มีตัวอักษร "ด้วยกัน" และ "แยก" มากเกินไปจนไม่สามารถจัดการได้ พร้อมกับต้องแบ่งเด็กชายและเด็กหญิงเป็นกลุ่มต่างกัน ลองใช้ตัวอักษรน้อยลง หรือปิดโหมดนี้ไป',
+    'errors.SEX_SEPARATE_SPLITS_UNIT':
+      '{names} ถูกทำเครื่องหมายให้อยู่ด้วยกัน แต่ไม่ใช่ทั้งหมดเป็นเพศเดียวกัน จึงไม่สามารถจัดเป็นกลุ่มที่มีเพศเดียวได้ โปรดลบตัวอักษร "ด้วยกัน" ออกจากนักเรียนคนใดคนหนึ่ง หรือปิดโหมดนี้',
+    'errors.TOGETHER_NO_ARRANGEMENT':
+      'ไม่มีวิธีใดที่จะจัดชั้นเรียนของคุณให้เข้าอยู่ใน {groupsTried} กลุ่มได้ โดยยังคงให้ทุกคนที่จำเป็นต้องอยู่ด้วยกันอยู่ด้วยกันได้ ให้ขยายขนาดกลุ่มให้ใหญ่ขึ้น หรือให้ตัวอักษรแต่ละตัวกับนักเรียนจำนวนน้อยลง',
+    'errors.TOGETHER_SEARCH_GAVE_UP':
+      'ที่นี่มีตัวอักษร "ด้วยกัน" มากเกินไปจนไม่สามารถจัดการได้ทั้งหมด ลองใช้ตัวอักษรให้น้อยลง หรือเพิ่มขนาดกลุ่มให้ใหญ่ขึ้น',
+    'howToSteps[1]': 'เลือกวิธีแบ่งกลุ่มนักเรียน',
+    ioReplaceWarning:
+      'ข้อมูลนี้จะแทนที่รายชื่อนักเรียนปัจจุบันของคุณ — นักเรียน {total} คน มีชื่อแล้ว {named} คน',
+    printShowLetters: 'แสดงเพศ และตัวอักษร "ด้วยกัน"/"แยก"',
+    rosterClashMessage: '{names} ถูกจัดให้อยู่ด้วยกัน จึงไม่สามารถแยกกันได้',
+    'warnings.PINNED_MIXED_SEX':
+      '{names} ถูกปักหมุดไว้ด้วยกันเป็นกลุ่มเดียว แต่ไม่ใช่ทุกคนในกลุ่มนี้เป็นเพศเดียวกัน ดังนั้นกลุ่มนี้จึงไม่ถูกแบ่งตามเพศเหมือนกลุ่มอื่น ๆ นั่นคือสิ่งที่การปักหมุดกำหนดไว้ ไม่ใช่ข้อผิดพลาดที่ต้องแก้ไข',
   },
 };
 
 const CATALOGUES: Record<Locale, Catalogue> = { en, id, zh, vi, th };
 
 /**
- * Only the string leaves. A `Catalogue` also holds message templates, which
- * are functions; if a `rosterCol*` key ever became one it would drop out of
- * the derived key set below and the count control would go red rather than
- * this file quietly stopping to assert it.
+ * Only the top-level strings: the nested tables (`errors`, `warnings`) and
+ * the lists (`howToSteps`) are not columns. A message is a string too (#136),
+ * so a `rosterCol*` key that became one would stay in the derived set below.
  */
 const stringsOf = (catalogue: Catalogue): Record<string, string> =>
   Object.fromEntries(
     Object.entries(catalogue).filter(([, value]) => typeof value === 'string'),
   ) as Record<string, string>;
+
+/**
+ * The copy at a pinned key, read from the catalogue the key names: `site.`
+ * for the page chrome, `csv.` for the words a downloaded file carries, and
+ * the page catalogue otherwise. A key that names nothing reads as
+ * `undefined`, which no pinned value equals, so a pin that outlives its copy
+ * goes red rather than silently asserting nothing.
+ */
+const copyAt = (locale: Locale, key: string): unknown => {
+  const [root, path]: [unknown, string] = key.startsWith('site.')
+    ? [getSiteStrings(locale), key.slice('site.'.length)]
+    : key.startsWith('csv.')
+      ? [CSV_LOCALES[locale], key.slice('csv.'.length)]
+      : [CATALOGUES[locale], key];
+  return path
+    .replace(/\[(\d+)\]/g, '.$1')
+    .split('.')
+    .reduce<unknown>(
+      (table, step) =>
+        table !== null && typeof table === 'object'
+          ? (table as Record<string, unknown>)[step]
+          : undefined,
+      root,
+    );
+};
 
 /**
  * Derived from the catalogue, never listed here. A seventh roster column
@@ -107,15 +334,15 @@ const rosterColumnKeys = Object.keys(stringsOf(en))
   .filter((key) => key.startsWith('rosterCol'))
   .sort();
 
-describe('the roster column labels a teacher reads', () => {
+describe('the copy the operator read and approved', () => {
   it('every locale renders the value the operator approved', () => {
     const live = Object.fromEntries(
       LOCALES.map((locale) => [
         locale,
         Object.fromEntries(
-          rosterColumnKeys.map((key) => [
+          Object.keys(VERIFIED[locale]).map((key) => [
             key,
-            stringsOf(CATALOGUES[locale])[key],
+            copyAt(locale, key),
           ]),
         ),
       ]),
@@ -124,7 +351,7 @@ describe('the roster column labels a teacher reads', () => {
     expect(live).toEqual(VERIFIED);
   });
 
-  it('the pin covers every locale and every column, with nothing blank', () => {
+  it('the pin covers every locale and every roster column, with nothing blank', () => {
     expect(Object.keys(CATALOGUES).sort()).toEqual([...LOCALES].sort());
     expect(Object.keys(VERIFIED).sort()).toEqual([...LOCALES].sort());
 
@@ -134,19 +361,86 @@ describe('the roster column labels a teacher reads', () => {
       nonEmpty(rosterColumnKeys, 'rosterCol* keys in the English catalogue'),
     ).toHaveLength(6);
 
-    for (const locale of LOCALES) {
-      expect(Object.keys(VERIFIED[locale]).sort()).toEqual(rosterColumnKeys);
-    }
-
-    const values = LOCALES.flatMap((locale) =>
-      rosterColumnKeys.map((key) => VERIFIED[locale][key]),
+    const unpinned = LOCALES.flatMap((locale) =>
+      rosterColumnKeys
+        .filter((key) => !Object.hasOwn(VERIFIED[locale], key))
+        .map((key) => `${locale} ${key}`),
     );
+    expect(
+      searched(unpinned, { of: rosterColumnKeys, what: 'roster columns' }),
+    ).toEqual([]);
+
+    const values = LOCALES.flatMap((locale) => Object.values(VERIFIED[locale]));
     expect(
       searched(
         values.filter((value) => value.trim() === ''),
-        { of: values, what: 'pinned roster column labels' },
+        { of: values, what: 'pinned values' },
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * Short labels that disagree with their own locale, awaiting the operator's
+ * read (#161).
+ *
+ * `checkLabels` flags a label whose rendering appears in none of the copy that
+ * uses its English and says more, and a label whose namesake renders the same
+ * English in other words. Every flag is either pinned in `VERIFIED` above --
+ * the operator has read that value -- or listed here until he has. A label
+ * that starts to disagree, in a re-seeded locale or on the day it is added, is
+ * in neither, and this goes red.
+ *
+ * Exact in both directions: a listed label that stops disagreeing goes red
+ * too, so the list cannot outlive what it describes. It emptied when #161's
+ * sheet was answered (2026-09-23), each entry moving to a pin or to a
+ * corrected catalogue, and it stays as the place a new flag waits while the
+ * operator reads it.
+ */
+const AWAITING_READ: Record<Locale, readonly string[]> = {
+  en: [],
+  id: [],
+  zh: [],
+  vi: [],
+  th: [],
+};
+
+describe('short labels that disagree with their own locale', () => {
+  it("every one is pinned or awaiting the operator's read", () => {
+    const unread = Object.fromEntries(
+      LOCALES.map((locale) => {
+        const labels = checkLabels(backTranslationUnits(locale), locale);
+        const flagged = labels
+          .filter(
+            ({ status, variants }) =>
+              status === 'disagrees' || variants.length > 0,
+          )
+          .map(({ key }) => key)
+          .filter((key) => !Object.hasOwn(VERIFIED[locale], key));
+        // A check that stopped finding witnesses would flag nothing, and an
+        // emptied list would then agree with it. Only English has no labels.
+        const witnessed = labels
+          .filter(({ status }) => status !== 'unchecked')
+          .map(({ key }) => key);
+        return [
+          locale,
+          locale === DEFAULT_LOCALE
+            ? flagged
+            : [
+                ...searched(flagged, {
+                  of: witnessed,
+                  what: `${locale} labels with a witness`,
+                }),
+              ].sort(),
+        ];
+      }),
+    );
+
+    expect(unread).toEqual(
+      Object.fromEntries(
+        LOCALES.map((locale) => [locale, [...AWAITING_READ[locale]].sort()]),
+      ),
+    );
   });
 });
 

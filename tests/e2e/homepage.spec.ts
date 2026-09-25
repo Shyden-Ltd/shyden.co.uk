@@ -4,6 +4,8 @@ import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { expectNoHorizontalScroll } from '../viewport';
+import { THEMES } from '../palette';
+import { emulateTheme } from '../themes';
 
 test.use(recorded);
 
@@ -116,6 +118,32 @@ test.describe('homepage content', () => {
       page,
       'the ShyTalk showcase and its two-tone wordmark',
       showcase,
+    );
+    // #142 §3.4, AC14: the mark keeps its own tones in both themes, sits on
+    // its own tile in light and on nothing in dark, and prints in the
+    // page's own ink with no tile. The tile is pinned to SHYTALK_MARK, the
+    // brief, never read back from tokens.css: a value read from the file the
+    // page is built from moves with the page, and asserts nothing (S22).
+    const tile = {
+      light: asComputedRgb(SHYTALK_MARK.tile),
+      dark: 'rgba(0, 0, 0, 0)',
+    } as const;
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      await expect(wordmark, theme).toHaveCSS(
+        'color',
+        asComputedRgb(SHYTALK_MARK.shy),
+      );
+      await expect(wordmark, theme).toHaveCSS('background-color', tile[theme]);
+    }
+    await page.emulateMedia({ media: 'print' });
+    const ink = await page
+      .locator('body')
+      .evaluate((body) => getComputedStyle(body).color);
+    await expect(wordmark, 'on paper').toHaveCSS('color', ink);
+    await expect(wordmark, 'on paper').toHaveCSS(
+      'background-color',
+      'rgba(0, 0, 0, 0)',
     );
   });
 

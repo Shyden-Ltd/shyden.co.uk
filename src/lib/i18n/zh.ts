@@ -25,8 +25,8 @@ export const zh: Catalogue = {
     '由Shyden专为教师打造。公平地分班需要花费您本就不多的时间，而手动操作又容易引发关于“偏袒”的争议。只需一次点击，即可完成分班——完全免费，无需注册，且有关您班级的信息绝不会离开您的浏览器。',
   howToSteps: [
     '请说一下你班上有多少名学生。',
-    '选择如何将它们拆分。',
-    '点击“创建组”。',
+    '选择如何给他们分组。',
+    '点击“开始分组”。',
   ],
   classLabel: '班级（可选）',
   studentsLabel: '学生人数',
@@ -67,8 +67,8 @@ export const zh: Catalogue = {
   sexWhyReturning:
     '{who} 已恢复，但未设置性别。这些选项需要为每个被分组的学生分别设置。',
   leftoversLabel: '如果还有剩余的学生',
-  leftoversSpread: '将它们平均分发出去',
-  leftoversBunch: '把它们全都归入一个组',
+  leftoversSpread: '把他们平均分到各组',
+  leftoversBunch: '把他们全都放进同一个组',
   leftoversHelp: '无论哪种情况，任何群组的人数都不会少于你所选的数量。',
   soundOn: '打开声音',
   soundOff: '畅所欲言',
@@ -100,7 +100,7 @@ export const zh: Catalogue = {
     '编号 {number} 已被 {name} 占用。每位学生都需要一个专属编号。',
   rosterNoSexMessage:
     '{names} 仍需标注 M 或 F。在分组之前，每位学生都必须标注一项。',
-  rosterClashMessage: '{names} 被放在一起，因此无法将它们分开。',
+  rosterClashMessage: '{names} 被放在一起，因此无法再把他们分开。',
   rosterGapWarning:
     '你的班级名单似乎不完整。缺少 {missing} 号的学生。如果这些学生已经转学，那也没关系——请打开“学生详情”进行核对。',
   rosterOpenRefusedMessage:
@@ -111,10 +111,10 @@ export const zh: Catalogue = {
   rosterRemove: '删除',
   rosterClearAll: '清除全部',
   stateNoneAdded: '未添加',
-  stateNamed: '{n} 名为',
+  stateNamed: '{n} 已命名',
   stateAbsent: '{n} 缺席',
   stateTogether: '{n} 一起',
-  stateApart: '{n} 之遥',
+  stateApart: '{n} 分开',
   stateAdded: '{n} 已添加',
   stateNone: '无',
   stateMixed: '按性别分类',
@@ -122,11 +122,11 @@ export const zh: Catalogue = {
   stateBunched: '一组剩菜',
   stateNothingToSave: '目前尚无内容可保存',
   stateUnsaved: '未保存的更改 — 导出以保留这些更改',
-  makeGroups: '创建群组',
-  again: '再次洗牌',
+  makeGroups: '开始分组',
+  again: '重新洗牌',
   needsJs: '此工具需要启用 JavaScript。',
-  resultsHeading: '您的群组',
-  resultsHeadingNamed: '{className} — 您的组',
+  resultsHeading: '您的分组',
+  resultsHeadingNamed: '{className} — 您的分组',
   resultsSummary: '{groups} 个小组，由 {students} 名学生组成。',
   groupLabel: '{n} 组',
   studentNumber: '学生 {n}',
@@ -136,19 +136,19 @@ export const zh: Catalogue = {
   staleRoster: '这些组已经过时了——班级名单已经变更。',
   csvProblemEmptyFile: '该文件为空。',
   csvProblemUnreadable: '无法读取该文件。请重新选择该文件。',
-  csvProblemNoNumberColumn: '该文件中没有编号列。每个学生都需要一份。',
+  csvProblemNoNumberColumn: '该文件中没有编号列。每个学生都需要一个编号。',
   csvProblemNumberBlank: '行 {row} — 编号处为空。每位学生都需要一个。',
-  csvProblemNumberNotWhole: "行 {row} — 数字 '{value}' 不是整数。",
+  csvProblemNumberNotWhole: "行 {row} — 编号 '{value}' 不是整数。",
   csvProblemDuplicateNumber: '行 {row} — 编号 {value} 已被行 {firstRow} 占用。',
   csvProblemSex:
     "行 {row} — 性别 '{value}' 无法识别。请使用 {accepted}，或留空。",
   csvProblemAbsent:
-    "行 {row} — 缺少 '{value}'，系统无法识别。请使用 {accepted}，或留空。",
+    "行 {row} — 缺席 '{value}' 无法识别。请使用 {accepted}，或留空。",
   csvProblemLetter: "第{row}行 — {column} '{value}' 不是单个字母。",
   csvProblemTooMany:
     '该文件中包含 {found} 名学生。学生详细信息最多可存储 {max} 条。',
   csvWrongLanguage:
-    '这看起来像是一个 {language} 类列表。请打开该页面的 {version} 版本以导入它。',
+    '这看起来像是一份 {language} 班级名单。请打开该页面的 {version} 版本以导入它。',
   csvLanguageName: {
     en: '英语',
     id: '印尼语',
@@ -169,7 +169,7 @@ export const zh: Catalogue = {
   ioImportLabel: '导入班级名单',
   ioProblemsHeading: '未导入此文件：',
   ioReplaceWarning:
-    '这将取代您当前的班级名单——{total}名学生，包括{named}名学生。',
+    '这将取代您当前的班级名单——{total}名学生，其中{named}名已命名。',
   ioReplaceConfirm: '替换它',
   ioReplaceCancel: '保留我所拥有的',
   ioImported: '已导入 {total} 名学生。',
@@ -186,7 +186,7 @@ export const zh: Catalogue = {
   printHeading: '打印',
   printWhat: '打印内容',
   printWhatClassList: '班级名单',
-  printWhatGroups: '集团业绩',
+  printWhatGroups: '分组结果',
   printWhatBoth: '两者',
   printOnTheClassList: '在班级名单上',
   printShowAbsent: '显示缺席的学生',
@@ -200,12 +200,12 @@ export const zh: Catalogue = {
   printHereToday: '{here} 今天到校的学生 · {absent} 缺席的学生',
   boardOpen: '全屏',
   boardExit: '退出全屏模式',
-  boardShuffle: '再次洗牌',
+  boardShuffle: '重新洗牌',
   staleRefuseExport: '这些组已过时。保存前请重新打乱顺序。',
   staleRefusePrint: '这些分组已经过时了。打印前请重新洗牌。',
   staleRefuseBoard: '这些组已经过时了。显示前请重新打乱顺序。',
   errors: {
-    NO_STUDENTS: '添加一些学生，或者确保其中至少有一人未被标记为缺勤。',
+    NO_STUDENTS: '添加一些学生，或者确保其中至少有一人未被标记为缺席。',
     TOO_MANY_STUDENTS: '该工具最多只能处理 {max} 名学生。',
     DUPLICATE_NUMBER:
       '学生编号 {number} 被重复使用了两次。请给每位学生分配一个唯一的编号。',
@@ -215,43 +215,43 @@ export const zh: Catalogue = {
     TOGETHER_APART_CLASH:
       '{names} 既被标记为“在一起”，又被标记为“分开”。请从其中一个中移除“在一起”或“分开”的字母。',
     TOGETHER_UNIT_TOO_LARGE:
-      '字母“{letter}”班有 {unit} 名学生，但这里最大的小组只能容纳 {groupSize} 人。请扩大小组规模，或者将“{letter}”班分配给更少的学生。',
+      '有 {unit} 名学生带有字母“{letter}”，但这里最大的小组只能容纳 {groupSize} 人。请扩大小组规模，或者把字母“{letter}”分配给更少的学生。',
     TOGETHER_NO_ARRANGEMENT:
       '无论如何都无法将你的班级分成 {groupsTried} 个小组，同时又让所有需要待在一起的学生保持在一起。要么扩大每个小组的规模，要么将每个字母分配给更少的学生。',
     TOGETHER_SEARCH_GAVE_UP:
-      '这里连在一起的字母太多，难以处理。试着减少字母数量，或者将字母组合得更大一些。',
+      '这里的“在一起”字母太多，难以逐一处理。请尝试减少字母数量，或者扩大小组。',
     KEEP_APART_IMPOSSIBLE:
       '{names} 都需要彼此分开，因此你至少需要 {groupsNeeded} 个组。要么增加组数，要么删除其中一条规则。',
     KEEP_APART_NO_ARRANGEMENT:
-      '要将你的班级分成 {groupsTried} 个小组，同时确保所有需要分开的人都保持距离，这是行不通的。要么增加小组数量，要么取消其中一条规则。',
+      '无法将你的班级分成 {groupsTried} 个小组，同时把所有需要分开的学生都分到不同组。要么增加小组数量，要么取消其中一条规则。',
     KEEP_APART_SEARCH_GAVE_UP:
-      '这里的“保持距离”规则太多，难以逐一处理。试着删除其中一些吧。',
+      '这里的“分开”规则太多，难以逐一处理。试着删除其中一些吧。',
     BOTH_RULES_NO_ARRANGEMENT:
-      '无法将你的班级分成 {groupsTried} 个小组，同时满足所有“字母组合”规则和所有“字母分离”规则。搜索无法判断是哪种规则导致了问题，因此请尝试以下两种解决方法之一：扩大每个小组的规模，或者将“字母组合”规则分配给更少的学生；或者增加小组数量，或者取消其中一条“字母分离”规则。',
+      '无法将你的班级分成 {groupsTried} 个小组，同时满足所有“在一起”字母和所有“分开”字母。系统无法判断是哪一类规则造成了问题，因此请尝试以下任一方法：扩大小组，或者把某个“在一起”字母分配给更少的学生；或者增加小组数量，或者取消其中一条“分开”规则。',
     BOTH_RULES_SEARCH_GAVE_UP:
-      '这里“连在一起”和“分开”的字母太多，一次难以全部处理。不妨尝试减少其中任一类字母的数量，或者将字母分组时每组数量增加一些。',
+      '这里的“在一起”和“分开”字母太多，无法一次全部处理。请尝试减少任一类字母的数量，或者扩大小组。',
     SEX_NEEDS_ALL_SET:
       '{names} 未设置性别，因此在此模式下，必须先为每位学生设置性别，该模式才能运行。请为每位学生设置性别，或关闭此功能。',
     SEX_SEPARATE_SPLITS_UNIT:
-      '{names} 已被标记为“结伴”，但并非全是同性，因此无法组成单一性别的小组。请从其中一人身上移除“结伴”标记，或关闭此模式。',
+      '{names} 已被标记为“在一起”，但并非全是同一性别，因此无法组成单一性别的小组。请从其中一人身上移除“在一起”字母，或关闭此模式。',
     SEX_SEPARATE_IMPOSSIBLE:
       '在 {groupsRequested} 个小组中，无法同时满足将男生和女生分在不同小组以及您设定的其他规则的要求。搜索功能无法确定是哪条规则导致了问题，因此请尝试以下任一解决方法：指定不同数量的小组，或者关闭此模式。',
     SEX_SEPARATE_SEARCH_GAVE_UP:
-      '这里包含的“连在一起”和“分开”的字母太多，难以在保持男孩和女孩分组的同时完成练习。请尝试减少字母数量，或者关闭此模式。',
+      '这里的“在一起”和“分开”字母太多，无法在把男孩和女孩分到不同组的同时完成分组。请尝试减少字母数量，或者关闭此模式。',
     PINNED_SPLITS_UNIT:
       '{names} 已被标记为“保持在一起”，但其中只有一部分被归入固定组。请取消固定该组，或者将组外人员的“保持在一起”标记移除。',
     PINNED_APART_CLASH:
-      '{names} 已被标记为需分开显示，但固定组会将它们归入同一组。请取消固定该组，或从其中一个名称中移除“分开”字样。',
+      '{names} 已被标记为“分开”，但一个固定的组把他们放进了同一组。请取消固定该组，或从其中一人身上移除“分开”字母。',
     PINNED_IN_TWO_GROUPS:
       '{name} 同时被固定在两个不同的组中。一名学生只能被固定在一个组中。请将其从其中一个组中移除。',
     PINNED_TOO_MANY_GROUPS:
-      '{situation, select, over {您的分组已使用了 {pinnedGroupCount} 个分组——超过了您请求的 {requestedGroups} 个分组——这导致 {remainingStudents} 名学生没有分组可加入。请取消固定一个分组，或者申请更多分组。} full {您的分组已占用了您申请的 {requestedGroups} 个分组中的 {pinnedGroupCount} 个，这意味着只有 {remainingStudents} 名学生没有被分配到分组。请取消一个分组的固定状态，或者申请更多分组。} other {您已将所请求的 {requestedGroups} 个小组中的 {pinnedGroupCount} 个小组固定，这意味着只剩下 {remainingStudents} 名学生——这不足以组成仍需的 {poolGroupsNeeded} 个小组。请取消固定一个小组，或者减少请求的小组数量。}}',
+      '{situation, select, over {您固定的组已占用 {pinnedGroupCount} 个组——超过了您要求的 {requestedGroups} 个组——导致 {remainingStudents} 名学生无组可去。请取消固定一个组，或者增加组数。} full {您固定的组已占满您要求的 {requestedGroups} 个组中的 {pinnedGroupCount} 个，剩下的 {remainingStudents} 名学生已无组可去。请取消固定一个组，或者增加组数。} other {您已将所请求的 {requestedGroups} 个小组中的 {pinnedGroupCount} 个小组固定，这意味着只剩下 {remainingStudents} 名学生——这不足以组成仍需的 {poolGroupsNeeded} 个小组。请取消固定一个小组，或者减少请求的小组数量。}}',
   },
   warnings: {
     SEX_SPILLOVER:
       '{sex, select, M {{names}加入了一个女生组，因为男生人数不足，无法单独组成一个组。这纯粹是人数分配的结果，并非需要纠正的错误。} other {{names} 加入了一个男孩小组，因为女孩人数不足，无法单独组成一个小组。这只是人数分配的结果，并非需要纠正的错误。}}',
     PINNED_MIXED_SEX:
-      '{names} 被归为一组，但组内成员并非全为同一性别，因此该组并未像其他组那样按性别划分。这正是该标签的要求，并非需要更正的错误。',
+      '{names} 被一起固定在同一组里，但他们并非全是同一性别，因此这个组没有像其他组那样按性别划分。这正是固定分组所要求的，并不是需要更正的错误。',
     SEX_BOTH_TOO_SMALL:
       '{names} 被归入一个合并组，是因为无论哪一性别的人数都不够多，无法单独组成一个组。这只是人数分布的自然结果，并非需要更正的错误。',
   },

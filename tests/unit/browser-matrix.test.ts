@@ -1,6 +1,6 @@
 import { beforeAll, describe, it, expect } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve, sep } from 'node:path';
 import config, {
@@ -8,7 +8,12 @@ import config, {
   VISUAL_PROJECT,
   VISUAL_MEASURE_PROJECT,
 } from '../../playwright.config';
-import { ignoredByGit, searched, specFilesUnder } from '../source-files';
+import {
+  ignoredByGit,
+  nonEmpty,
+  searched,
+  specFilesUnder,
+} from '../source-files';
 import { withoutTsComments } from './source-text';
 import { engineDependence } from './engine-dependence';
 
@@ -45,6 +50,7 @@ type ResolvedProject = {
   testDir: string;
   testMatch: unknown;
   testIgnore: unknown;
+  use: { colorScheme?: unknown };
 };
 
 const requireCjs = createRequire(import.meta.url);
@@ -456,5 +462,77 @@ describe('the measuring twin cannot become a gate (#224)', () => {
     expect(
       VISUAL_MEASURE_PROJECT.expect.toHaveScreenshot.threshold,
     ).toBeLessThan(gate?.threshold ?? 0);
+  });
+});
+
+/**
+ * Every project in every Playwright config declares its colour scheme (#142
+ * spec §6.2).
+ *
+ * No config set one, so every project ran under Playwright's default, light.
+ * The day the site gains a light palette, every existing test would silently
+ * start testing it. The configs are derived from the repository root, so a
+ * fifth config cannot slip past. The main config declares its visual projects
+ * only under an environment flag, so they are appended here, where no flag can
+ * hide one.
+ */
+describe('every project declares its colour scheme (#142)', () => {
+  const CONFIG = /^playwright.*\.config\.[cm]?[jt]s$/;
+
+  /** A config's module, with any variable its import sets put back. */
+  const importConfig = async (file: string): Promise<PlaywrightTestConfig> => {
+    const before = { ...process.env };
+    try {
+      return (await import(resolve(file))).default as PlaywrightTestConfig;
+    } finally {
+      for (const key of Object.keys(process.env))
+        if (!(key in before)) delete process.env[key];
+      Object.assign(process.env, before);
+    }
+  };
+
+  it('finds a config by the name Playwright gives one', () => {
+    const names = [
+      'playwright.config.ts',
+      'playwright.dev.config.ts',
+      'playwright-ct.config.ts',
+      'playwright.x.config.mjs',
+      'playwright.config.ts.bak',
+      'my.playwright.config.ts',
+      'playwright.ts',
+    ];
+    expect(names.filter((name) => CONFIG.test(name))).toEqual([
+      'playwright.config.ts',
+      'playwright.dev.config.ts',
+      'playwright-ct.config.ts',
+      'playwright.x.config.mjs',
+    ]);
+  });
+
+  it('runs every resolved project light or dark, never the default', async () => {
+    const configs = nonEmpty(readdirSync('.'), 'entries at the repository root')
+      .filter((name) => CONFIG.test(name))
+      .sort();
+    const projects: string[] = [];
+    const undeclared: string[] = [];
+    for (const file of configs) {
+      const loaded = await importConfig(file);
+      const extra =
+        file === 'playwright.config.ts'
+          ? [VISUAL_PROJECT, VISUAL_MEASURE_PROJECT]
+          : [];
+      for (const project of resolvedProjects(
+        { ...loaded, projects: [...(loaded.projects ?? []), ...extra] },
+        file,
+      )) {
+        projects.push(`${file} › ${project.name}`);
+        const scheme = project.use.colorScheme;
+        if (scheme !== 'light' && scheme !== 'dark')
+          undeclared.push(`${file} › ${project.name}: ${String(scheme)}`);
+      }
+    }
+    expect(
+      searched(undeclared, { of: projects, what: 'Playwright projects' }),
+    ).toEqual([]);
   });
 });

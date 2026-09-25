@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   astroCodeViews,
+  astroFrontmatterView,
+  astroScopedCss,
+  astroScriptViews,
   astroStyleViews,
+  astroTemplate,
   blankCommentLines,
   codeWithoutComments,
   cssComments,
@@ -369,6 +373,94 @@ describe('astroStyleViews reads only the CSS an .astro file holds', () => {
 
   it('finds no CSS in a file with no style', () => {
     expect(astroStyleViews('---\nconst a = 1;\n---\n<p>b</p>')).toEqual([]);
+  });
+});
+
+describe('astroFrontmatterView and astroScriptViews read what astroCodeViews joins', () => {
+  /**
+   * A guard that must tell a component's props from its scripts needs the two
+   * apart (#331): a prop named `lang` is not a class a script could add.
+   */
+  const page = [
+    '---',
+    "const a = 'fm';",
+    '---',
+    '<p>two</p>',
+    '<script>',
+    "  go('sc');",
+    '</script>',
+    '<script is:inline>stop();</script>',
+  ].join('\n');
+
+  it('reads the frontmatter alone, as a view of the whole file', () => {
+    const view = astroFrontmatterView(page);
+    expect(view.length).toBe(page.length);
+    expect(view.trim()).toBe("const a = 'fm';");
+  });
+
+  it('reads a file with no frontmatter as blank, never as an error', () => {
+    const markupOnly = '<p>only markup</p>';
+    expect(astroFrontmatterView(markupOnly)).toBe(
+      ' '.repeat(markupOnly.length),
+    );
+  });
+
+  it('reads each script body, and never the frontmatter', () => {
+    expect(astroScriptViews(page).map((view) => view.trim())).toEqual([
+      "go('sc');",
+      'stop();',
+    ]);
+  });
+});
+
+describe('astroScopedCss reads only the CSS Astro scopes', () => {
+  /**
+   * Astro stamps its scope onto a plain `<style>` alone: `is:global` opts out
+   * of scoping, and `is:inline` out of processing altogether (#331).
+   */
+  it('reads a plain style, and neither an is:global nor an is:inline one', () => {
+    const page = [
+      '<p>x</p>',
+      '<style>.scoped { color: red; }</style>',
+      '<style is:global>.global { margin: 0; }</style>',
+      '<style is:inline>.inline { margin: 0; }</style>',
+    ].join('\n');
+    expect(astroScopedCss(page).map((css) => css.trim())).toEqual([
+      '.scoped { color: red; }',
+    ]);
+  });
+
+  it('scopes a style whatever its other attributes', () => {
+    const page =
+      '<style define:vars={{ hue }}>.tinted { color: var(--hue); }</style>';
+    expect(astroScopedCss(page).map((css) => css.trim())).toEqual([
+      '.tinted { color: var(--hue); }',
+    ]);
+  });
+
+  it('strips the comments, so a class a comment names is not a selector', () => {
+    const page = '<style>/* .ghost is gone */ .kept { color: red; }</style>';
+    expect(astroScopedCss(page).map((css) => css.trim())).toEqual([
+      '.kept { color: red; }',
+    ]);
+  });
+});
+
+describe('astroTemplate reads the markup a page is written in', () => {
+  it('drops the frontmatter, every script and style body, and every comment', () => {
+    const page = [
+      '---',
+      'const a = \'<b class="fm">\';',
+      '---',
+      '<!-- <b class="markup-comment"> -->',
+      '{/* <b class="expression-comment"> */}',
+      '<p class="kept">text</p>',
+      '<script>const markup = \'<b class="sc">\';</script>',
+      '<style>.st { content: \'class="st"\'; }</style>',
+    ].join('\n');
+    expect(astroTemplate(page).match(/class="[^"]*"/g)).toEqual([
+      'class="kept"',
+    ]);
   });
 });
 
