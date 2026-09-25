@@ -87,7 +87,7 @@
 
 ## Before you start
 
-- [ ] **Confirm the base.** `git rev-parse HEAD` on `142-light-mode-beside-aurora` prints `3640af27e1cab40c1af69526d556767165a51732`, or a later `develop` merged in with `git merge origin/develop`.
+- [ ] **Confirm the base.** The branch carries this plan's own commits (the draft, its review passes and its approval) on top of `develop` at `3640af2`, so `HEAD` is never `3640af2` itself. On `142-light-mode-beside-aurora`, `git merge-base --is-ancestor 3640af27e1cab40c1af69526d556767165a51732 HEAD` must exit 0, and `git diff --stat 3640af2 HEAD` must list this plan's file and nothing else. If `develop` has moved on, `git merge origin/develop` first, then check the same diff against the new `develop` (review pass 4).
 - [ ] **Take the baseline.** Run `npm run test:unit` and expect every test to pass (99 files and 2408 tests at `3640af2`). Every later run is compared with these totals.
 - [ ] **Commit at every green gate, and always before mutating anything** (standing rule: `git checkout` restores `HEAD`). A bare `git status --short` always lists `HANDOVER.md`, so scope any "is the tree clean" check to a path.
 - [ ] **#142's card is already In Progress** on the Shyden Site board (project 2), as PR 1 left it. Read it back with `gh issue view 142 --json projectItems`, and never write to project 1.
@@ -3565,3 +3565,16 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
   - **P3-3, a known flake with no instruction.** One of three full visual runs failed on a stability timeout, on the light mobile `home-id` view, which passed twice when run alone. Task 11 Step 4 now says what that failure is and what to do, and Task 13 points to it.
   - **P3-4, a mutation whose count was a race.** S1 caught a fourth test, *storage refused*, in 1 harness run in 4 (0 in 5 at one worker): under load the delayed `apply()` fires after the click and deletes its stamp. Harness rows gain `may`, allowed and uncounted but printed, and S1 names that test. The edited harness was re-extracted: `--dry` 43 of 43, S1 red as predicted, and a probe proved the new branch.
 - **Next:** pass 4, from a fresh scratch branch at this commit. The loop ends on a pass that finds nothing.
+
+**Pass 4, 2026-09-25 05:38Z to 06:40Z, one session. It found 1 problem, now fixed above.**
+
+- **What was read.** Every line of the plan, 1 to 3567, in order, before materialising it; the spec's §10, AC1 to AC19, each mapped to the task that proves it.
+- **The mechanical checks,** on a fresh local scratch branch from `3e7c182`, every task materialised from the text as it then read:
+  - every red and green count matched: the baseline (99 files, 2408), Task 1 (5 red, each on the stub's `not implemented` or `null`; 2413), 2 (5; 2421), 3 (3; 2422), 4 (2 unit and 43 + 1 browser red, 5 green; then 15, 48 and 1 green; 2424; prettier flagged exactly the four predicted files), 5 (82 red, 3 skipped, 15 passed, with 470 lines of *measured only [*; then 336 passed, 7 skipped; 2424; prettier flagged the two predicted files), 6 (3 unit and 35 browser red, seven tests on five engines; then 18 and 150 green, 8 skipped; 2427), 7 (1,145 passed), 8 (91 passed, 4 skipped), 9 (dev 27/2, prod 18/3 with #338 still open, the switch test green in both; device `--list` 613 in 34 files, `theme.spec.ts` 22), 10 (120 passed), 11 (24 captured, 12 modified and 12 new; every dark change inside y 23-44 but 4 pixels in the desktop roster view, each one level on each channel; unchanged compare 24 with nothing written; accent recoloured 12 red, 420 to 174,811 px; restored 24; scheme swapped 12 red on the theme assertion, no picture compared); `npm run typecheck` 0/0/0 after every task;
+  - pass 3's four edits: Task 4's grep prints 20 lines at `3640af2`, and each is in exactly one of its three groups; Task 7's `-z` grep prints the ten files listed; Task 11 Step 4's stability-timeout bullet is present (no timeout occurred this pass); the harness carries `may`;
+  - every ratio in a `tokens.css` comment, recomputed with `worstContrast` to five places: all round to the stated figure;
+  - the script's size (1,295 and 543 bytes); Task 13's post-merge grep (the two `session.ts` lines); the CI job names and `develop`'s protection (`{strict: true, contexts: [build-and-test, visual]}`); the evidence builder's flags, content keys and `.uploads.json` name; the mutation tables against the harness rows (43 of 43, ids, runners and counts);
+  - the Task 12 harness, extracted from this plan and byte-identical to pass 3's: `--dry` 43 of 43, then all 43 rows run. **All 43 were red as predicted**; S1's race did not fire this time.
+- **What it found:**
+  - **P4-1, a base check no implementer could pass.** *Confirm the base* said `git rev-parse HEAD` prints `3640af2`, but the branch carries this plan's own commits on top of it, so `HEAD` never does. It now checks ancestry and that the diff from `3640af2` is this plan alone, both run here against `3e7c182`.
+- **Next:** pass 5, from a fresh scratch branch at this commit. The loop ends on a pass that finds nothing.
