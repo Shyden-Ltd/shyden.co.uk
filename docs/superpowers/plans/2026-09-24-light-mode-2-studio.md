@@ -67,7 +67,7 @@
    - `skip-link.spec.ts` walks the header's controls, derived from the DOM.
    - `theme.spec.ts`'s keyboard test proves Enter and Space activate the switch. It focuses the switch directly, so WebKit is covered too, and its mutation is a pseudo-button that ignores the keyboard (§6.8 names the Tab walks as the observers of `tabindex="-1"`).
 9. **Figures in comments are the scorer's, in paint order.** Aurora's `--ink-soft` knife edge stays 5.22:1; §3.2's table took the worse of two stacking orders, 5.05:1. Studio's figures equal the table's, because its worst subset, the two shade pools, is the same in either order (measured with the repo's own model on 2026-09-24).
-10. **The real Back test runs only where an engine restores from the back-forward cache.** Playwright launches Chromium with `--disable-back-forward-cache` (read in `playwright-core`'s launch switches, 2026-09-24), so `chromium` and `mobile-chrome` skip with that reason. The synthetic `pageshow` case proves the handler in every engine (§6.3).
+10. **The real Back test runs only where an engine restores from the back-forward cache.** Playwright launches Chromium with `--disable-back-forward-cache` (read in `playwright-core`'s launch switches, 2026-09-24), so `chromium` and `mobile-chrome` skip with that reason. Measured in review pass 1: `firefox`, `webkit` and `mobile-safari` did not restore the page either, so locally the test skipped on **all five** engines. The synthetic `pageshow` case is what proves the handler, in every engine (§6.3).
 11. **On iOS, the harness pins the palette by stamping `theme`**, because WebDriver cannot emulate a media feature on Safari. The privacy journey's rule "every key starts `cg-`" therefore excludes `theme` (Task 9).
 12. **PR 1's two deferred minors.**
     - **(a)** The colour guard is widened to `.js` and `.mjs` (Task 4).
@@ -79,7 +79,7 @@
 
 1. **A saved value that is not exactly `light` or `dark`**, such as an old or hand-edited `theme` of `Dark`, `auto` or `""`, is ignored. The device setting applies, nothing is stamped, `aria-pressed` follows the device, and the next press writes a valid value (Task 6).
 2. **A double press** (a double-click, or a held Enter with key repeat) toggles once per press. After two presses, the page, `aria-pressed` and the saved value all agree on where it started (Task 6).
-3. **An engine whose `MediaQueryList` has no `addEventListener`** (Safari before 14) still switches and saves, and no error reaches the console. Only `aria-pressed`'s live follow of a device change is lost (Task 6).
+3. **An engine whose `MediaQueryList` has no `addEventListener`** (Safari 13.1, the last release without it) still switches and saves, and no error reaches the console. Only `aria-pressed`'s live follow of a device change is lost (Task 6). An engine older than Safari 13.1 cannot parse the script's `?.` and `??` at all, so it behaves as scripting off: the switch stays hidden and the device setting applies (AC7).
 4. **Forced colours** (Windows High Contrast): the switch's icon stays visible, drawn in the system's own text colour, because it is `currentColor`. This runs on Chromium, the one engine that emulates `forcedColors` (Task 5).
 5. **The device changes its setting while a choice is saved:** the page does not follow, because the saved choice wins, and `aria-pressed` does not flip (Task 6).
 
@@ -108,8 +108,8 @@
 | `src/layouts/BaseLayout.astro` | Emits the script inline, after the viewport `<meta>`. |
 | `src/components/ThemeSwitch.astro` (new) | The switch. |
 | `src/components/Header.astro` | Groups the switch with the language switcher. |
-| `src/lib/i18n/site.ts`, `src/lib/i18n/label-check.ts`, `src/lib/i18n/.translations.json` | `themeDarkMode` in five locales, its page, its drafts. |
-| `tests/themes.ts` (new) | `expectTheme`, `emulateTheme`, `saveTheme`: the per-theme browser helpers, shared by e2e, dev and prod. |
+| `src/lib/i18n/site.ts`, `src/lib/i18n/label-check.ts` | `themeDarkMode` in five locales, and its page. |
+| `tests/themes.ts` (new) | `expectTheme`, `emulateTheme`, `saveTheme`, `expectTheSwitchPersists`: the per-theme browser helpers, shared by e2e, dev and prod. |
 | `tests/e2e/theme-script.spec.ts` (new) | The script inventory and the static no-flash guard, on every built page (content project). |
 | `tests/e2e/theme.spec.ts` (new) | The switch, rendered: §6.3 and the Review Focus. |
 | `tests/e2e/theme-gallery.spec.ts` (new) | Every built page in both themes at 320 and 1280px, and the interactive states: the evidence §6.7 asks for, each capture behind an assertion. |
@@ -118,6 +118,8 @@
 | `tests/unit/colour-literals.test.ts` | Widened to `.js` and `.mjs`. |
 | `tests/e2e/palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, `classroom-groups.spec.ts`, `classroom-groups-roster.spec.ts`, `disabled-controls.spec.ts`, `locale-beta.spec.ts`, `homepage.spec.ts` | The palette-reading guards, run in both themes. |
 | `tests/e2e/chrome.spec.ts`, `tests/e2e/skip-link.spec.ts` | The Tab-order walks meet the switch. |
+| `tests/e2e/header-room.spec.ts` | Its stand-in retires; each row must hold the real switch by name. |
+| `tests/unit/isolated-context-tagging.test.ts` | A test that calls `newContext()` needs `@requires-isolated-context` too. |
 | `tests/dev/dev-sanity.spec.ts`, `tests/prod/prod-sanity.spec.ts` | The switch, proven on each deployed site. |
 | `tests/e2e/fixtures.ts`, `tests/device/ios/session.ts`, `tests/device/ios/journeys.journey.ts` | The phones pin the theme per run. |
 | `tests/e2e/visual.spec.ts`, `tests/e2e/__screenshots__/` | 24 baselines. |
@@ -340,6 +342,7 @@ export const themeColour = (theme: Theme, token: string): string => {
 
 ```bash
 npx prettier --write tests/wcag.ts tests/unit/wcag.test.ts tests/palette.ts tests/unit/palette.test.ts
+npx prettier --check .
 git add tests/wcag.ts tests/unit/wcag.test.ts tests/palette.ts tests/unit/palette.test.ts
 git commit -m "test(unit): the palette model reads both themes
 
@@ -512,18 +515,18 @@ describe('the two themes (#142)', () => {
 
 - [ ] **Step 3: Run the new tests and watch them fail.**
   - Run: `npx vitest run tests/unit/tokens.test.ts tests/unit/contrast.test.ts`
-  - Expected: `tokens.test.ts` fails all 5 of its new tests:
+  - Until Step 4, `tokens.css` still holds `html { color-scheme: dark }`, and `darkBlocks` finds a block by its `color-scheme: dark`. So `html` IS the one dark block at this point, and it declares no token. That decides every count below (measured in review pass 1).
+  - Expected: `tokens.test.ts` fails 4 of its 5 new tests:
     - *declares light on bare :root*: no `color-scheme` on `:root`.
-    - *declares color-scheme only beside a palette*: `html` declares it.
-    - *keeps every dark block screen-only*: `searched` throws, *searched no dark blocks*.
-    - *declares the same tokens*: there is no dark block, so `rest` is empty and `searched` throws.
+    - *keeps every dark block screen-only*: the failure names `html`, which sits outside any `@media screen`.
+    - *declares the same tokens*: the one dark block declares none, so `rest` is empty and `searched` throws.
     - *defines no token only inside a dark block*: `searched` throws, *searched no tokens the dark blocks declare*.
-  - `contrast.test.ts` fails 4:
-    - the three `dark:` tests, each with `no block in src/styles/tokens.css declares color-scheme: dark`;
-    - *light: pins the disabled fill*, because bare `:root` is still Aurora, whose `#2a323f` is not Studio's `#dde2e8`.
 
-    The other two `light:` tests pass, for the same reason.
-  - Expected total: **9 red**.
+    *declares color-scheme only beside a palette* passes, because `html` counts as a dark block and so as a palette. Its red is mutation U10 in Task 12.
+  - `contrast.test.ts` fails 1: *light: pins the disabled fill*, because bare `:root` is still Aurora, whose `#2a323f` is not Studio's `#dde2e8`.
+    - The three `dark:` tests pass: the dark theme resolves to bare `:root` (Aurora) plus `html`'s zero tokens.
+    - The other two `light:` tests pass, because bare `:root` is Aurora and Aurora clears.
+  - Expected total: **5 red**.
 
 - [ ] **Step 4: Rewrite the head of `tokens.css`.** Replace everything from the file's first line down to and including the closing `}` of the bare `:root` block (the line after `--maxw: 1120px;`) with:
 
@@ -735,21 +738,33 @@ Then, in the `html` rule, delete the line `color-scheme: dark;` and replace the 
      on the accent. */
 ```
 
-In the comment above `body::before`, replace "the aurora is the light in the room" with "the atmosphere is the light in the room". Then add a paragraph before its last one:
+The comment above `body::before` becomes, whole. Its old wording "the aurora is the light in the room" breaks across two lines, so it cannot be matched as one string (review pass 1):
 
 ```css
+/* One fixed layer behind everything. Fixed, not absolute: the atmosphere is
+   the light in the room rather than part of the document, so it does not
+   scroll away and it paints exactly once however long the page is.
+
+   The ground sits on `html`, not `body`: at z-index -1 this layer would
+   otherwise paint BEHIND the body's own background and never be seen.
+
    The same layer paints both themes (#142); only its tokens change, so the
    geometry #141 measured the paint cost of stands.
+
+   Zero JavaScript, and `prefers-reduced-motion` needs no rule here because
+   nothing moves — it is a still gradient, not an animation. */
 ```
 
 - [ ] **Step 5: Run the tests and watch them pass.**
   - Run: `npx vitest run tests/unit/tokens.test.ts tests/unit/contrast.test.ts tests/unit/palette.test.ts`. Expected: every test passes. The `light:` pair test now scores Studio, whose worst pair is `--accent` over `[--pool-top-right, --pool-foot]` at 5.19:1.
   - Then run `npm run test:unit`. Expected: every test passes, **including `literal-grounds`, `colour-literals` and `tokens`' "declares no token that nothing reads"**, since no token was added or removed.
-  - Then run `npm run typecheck` and `npx prettier --check src/styles/tokens.css`. Expected: 0/0/0, and clean.
+  - Then run `npm run typecheck`. Expected: 0/0/0.
 
-- [ ] **Step 6: Commit.**
+- [ ] **Step 6: Format, check, commit.** The code above is not all in prettier's shape (review pass 1: `tokens.test.ts`' `declared` runs to 81 columns, and the three wrapped tests need re-indenting), so write before checking.
 
 ```bash
+npx prettier --write src/styles/tokens.css tests/unit/tokens.test.ts tests/unit/contrast.test.ts
+npx prettier --check .
 git add src/styles/tokens.css tests/unit/tokens.test.ts tests/unit/contrast.test.ts
 git commit -m "feat(tokens): Studio on bare :root, Aurora in two screen-only blocks
 
@@ -925,6 +940,7 @@ and its comment's last line, "Colours taken from the live logo; values live in s
 
 ```bash
 npx prettier --write src/styles/tokens.css src/components/pages/HomePage.astro tests/unit/tokens.test.ts tests/unit/shytalk-brand.test.ts tests/unit/contrast.test.ts
+npx prettier --check .
 git add src/styles/tokens.css src/components/pages/HomePage.astro tests/unit/tokens.test.ts tests/unit/shytalk-brand.test.ts tests/unit/contrast.test.ts
 git commit -m "feat(home): the ShyTalk mark sits on its own tile in light
 
@@ -1003,18 +1019,15 @@ export async function saveTheme(page: Page, theme: Theme): Promise<void> {
 }
 ```
 
-- [ ] **Step 2: Write the failing browser guards.** Create `tests/e2e/theme-script.spec.ts`:
+- [ ] **Step 2: Write the failing browser guards.** Neither spec below declares `test.use(recorded)` yet. `evidence-recording.test.ts` refuses a spec that records without acting, and neither acts until Task 5 gives `theme.spec.ts` its first click; `theme-script.spec.ts` never acts at all (measured in review pass 1: both go red there otherwise). Create `tests/e2e/theme-script.spec.ts`:
 
 ```ts
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { recorded } from './evidence';
 import { searched } from '../source-files';
 import { sitePaths } from '../site-pages';
 import { THEME_SCRIPT_SOURCE } from '../themes';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
-
-test.use(recorded);
 
 /**
  * The one script every page carries, pinned by what MAY exist (#142 §6.4).
@@ -1141,11 +1154,9 @@ Create `tests/e2e/theme.spec.ts`:
 ```ts
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { recorded, shoot } from './evidence';
+import { shoot } from './evidence';
 import { themeColour } from '../palette';
 import { expectTheme } from '../themes';
-
-test.use(recorded);
 
 /**
  * The switch, rendered (#142 §6.3). The project's device prefers dark, so a
@@ -1404,12 +1415,13 @@ with
     - `theme.spec.ts`: 15 of 15. The Review Focus test is on 5 engines.
     - `classroom-groups.spec.ts`: 1 of 1.
   - If the inventory fails only on the source comparison, the build changed the text, for example by compressing whitespace. Compare `script.textContent` with the file byte by byte, and fix the emission, never the comparison.
-  - Then run `npm run test:unit`, `npm run typecheck` and `npx prettier --check .`. Expected: all green, and 0/0/0. `astro check` now type-checks the script under `checkJs`.
+  - Then run `npm run test:unit` and `npm run typecheck`. Expected: all green, and 0/0/0. `astro check` now type-checks the script under `checkJs`. Formatting is checked in the commit step, after its `--write`: before it, `prettier --check .` flags `BaseLayout.astro`, `theme-script.spec.ts`, `theme.spec.ts` and `colour-literals.test.ts` (review pass 1).
 
 - [ ] **Step 7: Commit.**
 
 ```bash
 npx prettier --write src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md
+npx prettier --check .
 git add src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md
 git commit -m "feat(layout): one inline theme script in every head, pinned by inventory
 
@@ -1423,8 +1435,8 @@ Refs #142"
 **Files:**
 - Create: `src/components/ThemeSwitch.astro`
 - Modify: `src/components/Header.astro`, `src/styles/tokens.css`, `src/scripts/theme.inline.js`
-- Modify: `src/lib/i18n/site.ts`, `src/lib/i18n/label-check.ts`, `src/lib/i18n/.translations.json`
-- Test: `tests/e2e/theme.spec.ts`
+- Modify: `src/lib/i18n/site.ts`, `src/lib/i18n/label-check.ts`
+- Test: `tests/e2e/theme.spec.ts`, `tests/e2e/header-room.spec.ts`
 
 **Interfaces:**
 - Consumes: `expectTheme` (Task 4); `THEMES`, `themeColour` (Task 1); `getSiteStrings`, `LOCALES`, `localisePath` (`src/lib/i18n`); `atLeast44` (`tests/viewport.ts`).
@@ -1434,9 +1446,59 @@ Refs #142"
   - the tokens `--switch-display`, `--switch-moon` and `--switch-sun`.
 
 - [ ] **Step 1: Write the failing tests.** In `tests/e2e/theme.spec.ts`:
+  - **The `./evidence` import** becomes `import { recorded, shoot } from './evidence';`, and `test.use(recorded);` goes after the imports: this step gives the spec its first click, so it now acts, and `evidence-recording.test.ts` wants its recordings.
   - **The `../palette` import** becomes `import { THEMES, themeColour } from '../palette';`.
   - **Two new imports:** `import { atLeast44 } from '../viewport';` and `import { LOCALES, getSiteStrings, localisePath } from '../../src/lib/i18n';`.
   - **Two constants** go after the file's doc comment: `const SWITCH = 'header [data-theme-toggle]';` and `const toggle = (page: Page) => page.locator(SWITCH);`.
+  - **Retire `header-room.spec.ts`'s stand-in**, as its own comment says #142 does "when the real switch lands". Its 44px stand-in is inserted with `bar.insertBefore(standIn, switcher)`, and once the language switcher sits inside `.controls` that call throws `NotFoundError`. Before that, the stand-in would have been a second switch beside the real one. In that file:
+    - `getSiteStrings` joins the `../../src/lib/i18n` import, straight after `LOCALES,`;
+    - delete the stand-in: its doc comment (the one opening *A 44 x 44px stand-in for #142's theme switch*), `STAND_IN` and `addStandIn`, down to `}, STAND_IN);` and the blank line after it;
+    - in `survey`, the head becomes the block below. In `open`, the line `if (standIn) await addStandIn(page);` goes. In `measure`, the condition's last line `(standIn && !names.includes(STAND_IN))` becomes `!names.includes(themeSwitch)`;
+
+```ts
+const survey = (locale: Locale) => {
+  const findings: string[] = [];
+  const rows: string[] = [];
+  const thin: string[] = [];
+  const least = 4; // wordmark, menu or nav, theme switch, language switcher
+  // The theme switch by its own name (#142): a row without it has not
+  // measured the room AC5 asks for.
+  const themeSwitch = getSiteStrings(locale).themeDarkMode;
+  return {
+```
+
+    - and the describe's loop becomes one test per locale:
+
+```ts
+test.describe('the header row has room for everything in it (#329)', () => {
+  for (const locale of LOCALES) {
+    test(
+      `${locale}: no header item overlaps another, at any width`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        const paths = await pagesOf(page, locale);
+        const header = survey(locale);
+        for (const path of paths) {
+          for (const width of await header.open(page, path)) {
+            await page.setViewportSize({ width, height: 800 });
+            await header.measure(page, `${path} at ${width}px`);
+          }
+        }
+        header.expectRoom();
+        // The picture comes after the verdict, so it shows a row that passed.
+        await header.open(page, paths[0]);
+        await page.setViewportSize({ width: 320, height: 800 });
+        await shoot(
+          page,
+          `${paths[0]} at 320px: the header row`,
+          page.locator('header'),
+        );
+      },
+    );
+  }
+});
+```
+
   - **Append:**
 
 ```ts
@@ -1553,8 +1615,9 @@ test.describe('without JavaScript (#142 AC7)', () => {
 ```
 
 - [ ] **Step 2: Run them and watch them fail.**
-  - Run: `npx playwright test tests/e2e/theme.spec.ts`
+  - Run: `npx playwright test tests/e2e/theme.spec.ts tests/e2e/header-room.spec.ts`
   - Expected: the new tests fail on every engine where they run: there is no switch.
+    - **Red, header-room:** its 5 locale tests on 5 engines, each for *measured only [Shyden | Toggle navigation menu | Language]* or the desktop row's equivalent: no row holds the switch by name (measured in review pass 1 by removing the switch after Step 3).
     - **Red:** the 5 locale tests, *is 44 × 44*, *Enter and Space*, *instantly* and *does not print*, on 5 engines. The forced-colours test on `chromium` and `mobile-chrome`.
     - **Skipped:** the forced-colours test on the other three.
     - **Without JavaScript:** its 2 tests are red on all 5 engines. The locator counts 0 where the test wants 1.
@@ -1565,16 +1628,7 @@ test.describe('without JavaScript (#142 AC7)', () => {
 **The label, in five locales.**
 - In `src/lib/i18n/site.ts`, add `themeDarkMode: 'Dark mode',` after `menuLabel: 'Toggle navigation menu',` in `siteEn`.
 - In `src/lib/i18n/label-check.ts`, add `themeDarkMode: CHROME,` after `menuLabel: CHROME,` in `SITE_PAGES`.
-- Then draft the four other locales with the repo's translator. It sends only English it has no draft for, here the nine characters "Dark mode" per locale, and writes the drafts to `src/lib/i18n/.translations.json`:
-
-```bash
-npm run i18n:translate -- id --send
-npm run i18n:translate -- zh --send
-npm run i18n:translate -- vi --send
-npm run i18n:translate -- th --send
-```
-
-  Copy each draft into `site.ts`, after that locale's `menuLabel`, as `themeDarkMode`. The drafts expected, and the values to check them against, are:
+- Then write the four other locales' drafts directly into `site.ts`, each after that locale's `menuLabel`, as `themeDarkMode`. These are each platform's own standard label for the setting:
 
   | locale | draft |
   | --- | --- |
@@ -1583,7 +1637,7 @@ npm run i18n:translate -- th --send
   | `vi` | `Chế độ tối` |
   | `th` | `โหมดมืด` |
 
-  The cache is the source. If DeepL returns another draft, that draft is written, and the difference is noted in the task's commit message. If the key is unavailable, the translator dies with *DEEPL_API_KEY is not set*: stop and ask the operator, because the drafts are machine-seeded by design (§8).
+  **Do not run the translator for this label, and leave `src/lib/i18n/.translations.json` alone.** Review pass 1 dry-ran `npm run i18n:translate` for each locale. It would send **95 strings (7,370 characters) for `id` and 15 strings (721 characters) each for `zh`, `vi` and `th`**, never only "Dark mode", and `--send` would write about 110 unrelated drafts into the cache. The recent chrome keys added the same way (`a82b395`, `7198c2a`, `0bb9e3a`) never touched the cache either. The drafts stay machine-grade by design (§8), and `label-check` lists the key as `unchecked` until a witness exists. Say this, with the dry-run counts, in the PR body.
 
 **The tokens.**
 - In `tokens.css`'s bare `:root`, straight after `--wordmark-pad: 0.12em 0.42em 0.18em;`, add:
@@ -1600,7 +1654,7 @@ npm run i18n:translate -- th --send
   --switch-sun: none;
 ```
 
-- In **both** dark blocks, straight after each `--wordmark-pad: 0;`, add:
+- In **both** dark blocks, straight after each one's `--wordmark-pad: 0;`, add the lines below. The print block has a `--wordmark-pad: 0;` too, which makes three in the file; the print block's is not a target, since the switch never prints (review pass 1):
 
 ```css
     --switch-moon: none;
@@ -1761,20 +1815,21 @@ const t = getSiteStrings(lang);
 
 - [ ] **Step 4: Run everything that reads the header, and watch it pass.**
   - Run: `npx playwright test tests/e2e/theme.spec.ts tests/e2e/theme-script.spec.ts tests/e2e/header-room.spec.ts tests/e2e/chrome.spec.ts tests/e2e/language-switcher.spec.ts tests/e2e/locale-beta.spec.ts tests/e2e/skip-link.spec.ts`
-  - Expected: all green. The forced-colours test skips on `firefox`, `webkit` and `mobile-safari`. The Tab walks skip on WebKit as before.
+  - Expected: all green, 336 passed and 7 skipped. Review pass 1 measured this run with the stand-in still in place: 336 passed, 7 skipped, and 25 failed, every one of them a stand-in test. With the stand-in retired, header-room alone passed 25 of 25. The forced-colours test skips on `firefox`, `webkit` and `mobile-safari`, and the Tab walks skip on WebKit as before. With the stand-in left in, header-room's 25 stand-in tests fail on `insertBefore`.
   - **`header-room.spec.ts` is the geometry proof of AC3.** It derives every `a[href], summary, button` in `header .bar`, the switch included, and measures overlap and wrapping in every locale at every width from 320px. A red there is the header's finding, never the guard's.
   - Then run `npm run test:unit`. Expected: all green:
     - `tokens`: *declares no token that nothing reads* sees the three switch tokens read by `ThemeSwitch.astro`;
     - `dead-copy`, `i18n`, `locale-fallbacks`, `label-check` and `verified-labels`: `themeDarkMode` has no witness, so it is `unchecked`, and nothing needs pinning;
     - `colour-literals`: `currentColor` and `none` are not colours.
 
-    Also run `npm run typecheck` (0/0/0) and `npx prettier --check .`.
+    Also run `npm run typecheck` (0/0/0). Formatting is checked in Step 5, after its `--write` (before it, `ThemeSwitch.astro` and `theme.spec.ts` are flagged; review pass 1).
 
 - [ ] **Step 5: Commit.**
 
 ```bash
-npx prettier --write src/components/ThemeSwitch.astro src/components/Header.astro src/styles/tokens.css src/scripts/theme.inline.js src/lib/i18n/site.ts src/lib/i18n/label-check.ts tests/e2e/theme.spec.ts
-git add src/components/ThemeSwitch.astro src/components/Header.astro src/styles/tokens.css src/scripts/theme.inline.js src/lib/i18n/site.ts src/lib/i18n/label-check.ts src/lib/i18n/.translations.json tests/e2e/theme.spec.ts
+npx prettier --write src/components/ThemeSwitch.astro src/components/Header.astro src/styles/tokens.css src/scripts/theme.inline.js src/lib/i18n/site.ts src/lib/i18n/label-check.ts tests/e2e/theme.spec.ts tests/e2e/header-room.spec.ts
+npx prettier --check .
+git add src/components/ThemeSwitch.astro src/components/Header.astro src/styles/tokens.css src/scripts/theme.inline.js src/lib/i18n/site.ts src/lib/i18n/label-check.ts tests/e2e/theme.spec.ts tests/e2e/header-room.spec.ts
 git commit -m "feat(header): the theme switch, a toggle beside the language switcher
 
 Refs #142"
@@ -1785,8 +1840,8 @@ Refs #142"
 ### Task 6: The choice persists, and the switch follows the device
 
 **Files:**
-- Modify: `src/scripts/theme.inline.js`
-- Test: `tests/e2e/theme.spec.ts`
+- Modify: `src/scripts/theme.inline.js`, `src/layouts/BaseLayout.astro`
+- Test: `tests/e2e/theme.spec.ts`, `tests/unit/isolated-context-tagging.test.ts`
 
 **Interfaces:**
 - Consumes: `toggle`, `expectTheme` (Tasks 4 and 5); `emulateTheme` (Task 4); `recordErrors` (`tests/e2e/recorders.ts`).
@@ -1973,7 +2028,57 @@ test.describe('Back (#142 §5 step 5, AC4)', () => {
 });
 ```
 
+
+- **The isolated-context guard learns its second cause, red first.** *into a new session* calls `browser.newContext()`, which the real device refuses (the guard's own header says so), so it carries `@requires-isolated-context`. But `isolated-context-tagging.test.ts` accepts that tag only under a `javaScriptEnabled: false` group, and reports this one as **stale**: review pass 1 measured the unit suite going red on it at Step 4. The guard gains the second cause, which it enforces in both directions. First, append these three cases to its self-test group, *analyze() -- the scanner proven on synthetic input*:
+
+```ts
+  it('flags an untagged test that opens its own browser context, which the real device refuses', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('a new session', async ({ browser }) => {",
+      '  const session = await browser.newContext();',
+      '  await session.close();',
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('synthetic.spec.ts:3');
+    expect(findings[0]).toContain('newContext()');
+    expect(findings[0]).toContain(REQUIRES_ISOLATED_CONTEXT_TAG);
+  });
+
+  it('accepts that test once tagged', () => {
+    expect(
+      scanned([
+        "import { test, expect } from './fixtures';",
+        '',
+        "test('a new session', { tag: '@requires-isolated-context' }, async ({ browser }) => {",
+        '  const session = await browser.newContext();',
+        '  await session.close();',
+        '});',
+        '',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('opens no context for a newContext() written only in a comment or a string', () => {
+    const findings = scanned([
+      "import { test, expect } from './fixtures';",
+      '',
+      "test('a note', { tag: '@requires-isolated-context' }, async ({ page }) => {",
+      '  // browser.newContext() is not called here',
+      "  await page.goto('/browser.newContext()');",
+      '});',
+      '',
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('stale');
+  });
+```
+
 - [ ] **Step 2: Run them and watch them fail.**
+  - Run: `npx vitest run tests/unit/isolated-context-tagging.test.ts`. Expected: 3 failed, 15 passed. The three are the corpus test (the new tag is stale), *flags an untagged test that opens its own browser context* and *accepts that test once tagged*. *opens no context for a newContext() written only in a comment or a string* passes by design: it guards the parser reading, and its red is mutation U16 in Task 12.
   - Run: `npx playwright test tests/e2e/theme.spec.ts`
   - Expected: nothing saves yet, so these are **red on every engine where they run**:
     - *across a reload and a second page*;
@@ -1984,7 +2089,7 @@ test.describe('Back (#142 §5 step 5, AC4)', () => {
     - *the pageshow handler*.
   - Also red: *without MediaQueryList.addEventListener*. Its reload shows dark, since nothing is saved yet. What it exists for, that nothing throws, is proven red by mutation S6 in Task 12.
   - **Green:** *storage refused* and *a change on the device changes nothing*. Each already holds for the Task 5 script. Their reds are mutations S2 and S9 in Task 12.
-  - **Skipped:** *a page restored from the back-forward cache*, wherever the engine did not restore the page. Record which engines ran it: that list goes in the PR body.
+  - **Skipped:** *a page restored from the back-forward cache*, wherever the engine did not restore the page. Where an engine does restore, it is **red** here instead, because the Task 5 script has no `pageshow` handler yet. Review pass 1 measured no engine restoring: it skipped on all five. Record which engines ran it, locally and in CI's shards: that list goes in the PR body.
 
 - [ ] **Step 3: Implement.** `src/scripts/theme.inline.js` becomes its final form:
 
@@ -2034,16 +2139,104 @@ test.describe('Back (#142 §5 step 5, AC4)', () => {
 
   The device listener is attached last, and only where it exists. An engine without `MediaQueryList.addEventListener` then still has its click and `pageshow` handlers, and throws nothing (Review Focus 3). The empty `catch` is the specified behaviour, not a silent failure. §5 says: if saving throws, the page still switches, and the choice is just not remembered. *storage refused* holds that behaviour.
 
+  The shipped file carries no comments, so that reason goes where the script's explanation lives. In `src/layouts/BaseLayout.astro`'s template comment, the last sentence, "The choice is one localStorage word, written only when the switch is pressed: no cookie, and nothing sent anywhere.", gains a second sentence straight after it: "Where storage is refused, the save is skipped in silence and the page still switches; the choice is simply not remembered (§5), which is what the script's one empty catch is for." Review pass 1 found the empty `catch` justified only in this plan.
+
+  **The guard's second cause.** In `tests/unit/isolated-context-tagging.test.ts`:
+  - In the header comment, the paragraph beginning *THE RULE.* has its fourth line, ` * covered test carries the tag; a tagged test nothing covers is stale. A`, replaced by four, so its opening reads:
+
+```ts
+ * THE RULE. A `test.use()` that sets `javaScriptEnabled: false` covers the
+ * tests Playwright applies it to: every test in its group, nested groups
+ * included, or every test in the file when it is called at file level. Each
+ * covered test carries the tag. So does a test whose own body calls
+ * `newContext()`, since that is the call the real device refuses (#142: a
+ * choice carried into a new session). A tagged test that is neither is
+ * stale. A
+```
+
+    The paragraph's next line, which that `A` runs into, is unchanged.
+  - Add, straight before `function staleTagMessage(`:
+
+```ts
+function newContextMessage(file: string, decl: Declaration): string {
+  return (
+    `${file}:${decl.line} -- test('${decl.title}') calls newContext(), and the real device ` +
+    'refuses a second browser context (see tests/e2e/fixtures.ts) -- tag it ' +
+    `\`${REQUIRES_ISOLATED_CONTEXT_TAG}\` so android-chrome excludes it by design instead of failing.`
+  );
+}
+
+```
+
+  - `staleTagMessage` becomes:
+
+```ts
+function staleTagMessage(file: string, decl: Declaration): string {
+  return (
+    `${file}:${decl.line} -- test('${decl.title}') is tagged \`${REQUIRES_ISOLATED_CONTEXT_TAG}\` ` +
+    'but no test.use({ javaScriptEnabled: false }) covers it and it calls no newContext() -- ' +
+    'stale tag, silently costing ' +
+    'real-device coverage for a test that no longer needs excluding. Remove the tag, or ' +
+    'restore the javaScriptEnabled: false use it is supposed to describe.'
+  );
+}
+
+```
+
+  - Add, straight before `/** Every group \`decl\` sits in, innermost first. */`:
+
+```ts
+/** Whether a test's own body calls `newContext()`: a call, read by the parser, so a comment or a string naming it opens nothing. */
+function opensAContext(decl: Declaration): boolean {
+  let opens = false;
+  // A block body, so `visit` returns nothing: `ts.forEachChild` stops at the
+  // first callback that returns something truthy (tests/unit/ast.ts).
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'newContext'
+    )
+      opens = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(decl.body);
+  return opens;
+}
+
+```
+
+  - In `analyze`, the three lines from `const tagged = …` to the stale branch become:
+
+```ts
+    const opens = opensAContext(decl);
+    const tagged = decl.tags.includes(REQUIRES_ISOLATED_CONTEXT_TAG);
+    if (covered && !tagged) findings.push(untaggedMessage(file, decl));
+    else if (opens && !tagged) findings.push(newContextMessage(file, decl));
+    else if (!covered && !opens && tagged)
+      findings.push(staleTagMessage(file, decl));
+```
+
+  - The corpus group and test are retitled, so they say what they now check:
+
+```ts
+describe('a real device has one browser context', () => {
+  it('every test run without JavaScript, or calling newContext(), is tagged @requires-isolated-context, and no tag is stale', () => {
+```
+
+  The match is by the parser, never by text: review pass 1's mutation M-c replaced it with `node.getText().includes('newContext(')`, and the corpus test went red on `real-device.spec.ts:40`, whose COMMENT names `playwright.request.newContext()`.
+
 - [ ] **Step 4: Run everything and watch it pass.**
   - Run: `npx playwright test tests/e2e/theme.spec.ts tests/e2e/theme-script.spec.ts`. Expected: all green, apart from the recorded skips. The inventory still matches, because it compares with the file as it now reads.
-  - Measure the shipped size with `wc -c src/scripts/theme.inline.js` and record it for the PR body. §5 asks for "a few hundred bytes".
-  - Then run `npm run test:unit`, `npm run typecheck` and `npx prettier --check .`.
+  - Measure the shipped size with `wc -c src/scripts/theme.inline.js` and `gzip -9 -c src/scripts/theme.inline.js | wc -c`. Expected: **1,295 bytes as written, 543 gzipped** (measured in review pass 1). §5 asks for "a few hundred bytes, because every page carries it". The script ships exactly as written (§5), so that holds for what each visit transfers: every page's HTML is served compressed. It does not hold for the bytes as written. Record both figures and that reading in the PR body, so the operator can disagree with it.
+  - Then run `npx vitest run tests/unit/isolated-context-tagging.test.ts` (18 passed), `npm run test:unit` and `npm run typecheck`. Formatting is checked in Step 5, after its `--write`.
 
 - [ ] **Step 5: Commit.**
 
 ```bash
-npx prettier --write src/scripts/theme.inline.js tests/e2e/theme.spec.ts
-git add src/scripts/theme.inline.js tests/e2e/theme.spec.ts
+npx prettier --write src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/e2e/theme.spec.ts tests/unit/isolated-context-tagging.test.ts
+npx prettier --check .
+git add src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/e2e/theme.spec.ts tests/unit/isolated-context-tagging.test.ts
 git commit -m "feat(theme): the choice persists, and the switch follows the device
 
 Refs #142"
@@ -2159,7 +2352,10 @@ const SCREEN_INK = { light: 'rgb(17, 24, 33)', dark: 'rgb(234, 242, 255)' } as c
   });
 ```
 
-- In *a disabled control never depends on its fill reaching paper*, everything after `await page.goto('/classroom-groups');` and the `resolve` helper goes inside `for (const theme of THEMES) {`, opened by `await emulateTheme(page, theme);`. The two messages gain `${theme}: ` at their start, and so does the shot's label.
+- In *a disabled control never depends on its fill reaching paper*, everything after `await page.goto('/classroom-groups');` and the `resolve` helper goes inside `for (const theme of THEMES) {`, opened by `await emulateTheme(page, theme);`. Inside the loop, every assertion names its theme, since a failure in a loop that does not say which run it came from cannot be read (review pass 1):
+  - `expect(onScreen).not.toBe('rgba(0, 0, 0, 0)');` becomes ``expect(onScreen, `${theme}: --disabled-fill on screen`).not.toBe('rgba(0, 0, 0, 0)');``;
+  - `expect(await resolve('--disabled-fill')).toBe('rgba(0, 0, 0, 0)');` becomes ``expect(await resolve('--disabled-fill'), `${theme}: --disabled-fill on paper`).toBe('rgba(0, 0, 0, 0)');``;
+  - the message `` `the screen disabled grey ${onScreen} reached the sheet` `` and the shot's label each gain `${theme}: ` at their start.
 - *the screen palette is not dragged down with the print one* becomes:
 
 ```ts
@@ -2332,6 +2528,7 @@ test('the screen palette is not dragged down with the print one', async ({
 
 ```bash
 npx prettier --write tests/e2e/palette-controls.spec.ts tests/e2e/print-legibility.spec.ts tests/e2e/thai-typography.spec.ts tests/e2e/classroom-groups.spec.ts tests/e2e/classroom-groups-roster.spec.ts tests/e2e/disabled-controls.spec.ts tests/e2e/locale-beta.spec.ts tests/e2e/homepage.spec.ts
+npx prettier --check .
 git add tests/e2e/palette-controls.spec.ts tests/e2e/print-legibility.spec.ts tests/e2e/thai-typography.spec.ts tests/e2e/classroom-groups.spec.ts tests/e2e/classroom-groups-roster.spec.ts tests/e2e/disabled-controls.spec.ts tests/e2e/locale-beta.spec.ts tests/e2e/homepage.spec.ts
 git commit -m "test(e2e): every palette-reading guard runs in both themes
 
@@ -2375,7 +2572,15 @@ In `chrome.spec.ts`, the test titled `'desktop: nav is keyboard-reachable in ord
 
 In *every header link can take focus, on every engine*, add `'header [data-theme-toggle]',` to the selector list, straight before `'header details.lang-switch > summary',`.
 
-In `skip-link.spec.ts`, *it is the FIRST thing a Tab reaches*: in the comment, "the wordmark, the hamburger, the language switcher and three nav links" becomes "the wordmark, the hamburger, the theme switch, the language switcher and three nav links". Append to the test:
+In `skip-link.spec.ts`, *it is the FIRST thing a Tab reaches*: the comment's last two lines, which break mid-phrase, so they cannot be matched as one string (review pass 1), become:
+
+```ts
+    // without it a keyboard user crosses the wordmark, the hamburger, the
+    // theme switch, the language switcher and three nav links before the
+    // first form field.
+```
+
+Append to the test:
 
 ```ts
     // ...and on through the header in the bar's own order (#142): every
@@ -2413,6 +2618,7 @@ In `skip-link.spec.ts`, *it is the FIRST thing a Tab reaches*: in the comment, "
 
 ```bash
 npx prettier --write tests/e2e/chrome.spec.ts tests/e2e/skip-link.spec.ts
+npx prettier --check .
 git add tests/e2e/chrome.spec.ts tests/e2e/skip-link.spec.ts
 git commit -m "test(e2e): the Tab-order walks expect the switch before the language switcher
 
@@ -2424,21 +2630,23 @@ Refs #142"
 ### Task 9: The deployed sites prove the switch, and the phones pin the theme
 
 **Files:**
-- Modify: `tests/dev/dev-sanity.spec.ts`, `tests/prod/prod-sanity.spec.ts`
+- Modify: `tests/themes.ts`, `tests/dev/dev-sanity.spec.ts`, `tests/prod/prod-sanity.spec.ts`
 - Modify: `tests/e2e/fixtures.ts`, `tests/device/ios/session.ts`, `tests/device/ios/journeys.journey.ts`
 
 **Interfaces:**
 - Consumes: `expectTheme` (Task 4); `themeColour` (Task 1).
-- Produces: nothing new.
+- Produces: `expectTheSwitchPersists` in `tests/themes.ts`, the deployed-site switch check.
 
-- [ ] **Step 1: The sanity suites.** In `tests/dev/dev-sanity.spec.ts` and in `tests/prod/prod-sanity.spec.ts`, add `import { expectTheme } from '../themes';` after the last import, and append:
+- [ ] **Step 1: The sanity suites.** Both suites run the same check, so its body has one home: two identical bodies in two files fail `duplication.test.ts` ("a function body has one home across files", measured at 1.000 in review pass 1). Append to `tests/themes.ts`:
 
 ```ts
-// The switch is a rendering fact, so the deployed site's browser run proves
-// it (#142 §6.2): it changes the page, and the choice survives a reload.
-test('the theme switch changes the page, and the choice survives a reload', async ({
-  page,
-}) => {
+
+/**
+ * The switch, proven on a deployed site (#142 §6.2): a press changes the page,
+ * and the choice survives a reload. dev-sanity and prod-sanity each run it
+ * against their own host, so it has one home here.
+ */
+export async function expectTheSwitchPersists(page: Page): Promise<void> {
   const toggle = page.locator('header [data-theme-toggle]');
   await page.goto('/');
   await expectTheme(page, 'dark');
@@ -2447,16 +2655,46 @@ test('the theme switch changes the page, and the choice survives a reload', asyn
   await page.reload();
   await expectTheme(page, 'light');
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+}
+```
+
+  Then, in `tests/dev/dev-sanity.spec.ts` and in `tests/prod/prod-sanity.spec.ts`, add `import { expectTheSwitchPersists } from '../themes';` after the last import, and append:
+
+```ts
+// The switch is a rendering fact, so the deployed site's browser run proves
+// it (#142 §6.2): it changes the page, and the choice survives a reload.
+test('the theme switch changes the page, and the choice survives a reload', async ({
+  page,
+}) => {
+  await expectTheSwitchPersists(page);
 });
 ```
 
-- [ ] **Step 2: Run both against a local build.** Neither suite runs on a pull request (#335), so a stale fact in one fails the deploy after the merge instead.
-  - Build as `deploy-dev.yml` builds: `PUBLIC_SHYTALK_URL` is set to dev ShyTalk, as the workflow sets it.
-  - Serve with `npx astro preview --port 4399`, then run:
-    - `WEB_BASE_URL=http://localhost:4399 npx playwright test -c playwright.dev.config.ts`
-    - `WEB_BASE_URL=http://localhost:4399 npx playwright test -c playwright.prod.config.ts`
-  - Expected: the new test passes in both. Dev-sanity's *robots.txt disallows all crawling* and *an unauthenticated request is challenged with 401* fail, as they always do on a local build: Cloudflare's `functions/_middleware.js` serves them, and `astro preview` never runs it. Any other red in either suite is a finding.
-  - Stop the preview with `npx astro preview stop`.
+- [ ] **Step 2: Run both against local builds, one per suite.** Neither suite runs on a pull request (#335), so a stale fact in one fails the deploy after the merge instead.
+  - **Stop every preview first:** `npx astro preview stop`, then `npx astro preview status` must say *No preview server is running*. Astro 7.3 daemonises `astro preview` when an agent runs it (`pipeline-wiring.test.ts`, the comment above *the e2e server is supervised*), and it allows **one** preview per project. With another already running, `--port 4399` prints *Preview server already running* and exits 0 having started nothing, and both suites then fail every test with `ERR_CONNECTION_REFUSED` (measured in review pass 1). Run by hand outside an agent, `npx astro preview` stays in the foreground instead: start it in the background there.
+  - **dev-sanity, against a dev build,** as `deploy-dev.yml` builds it:
+
+    ```bash
+    PUBLIC_SHYTALK_URL=https://dev.shytalk.shyden.co.uk npm run build
+    npx astro preview --port 4399
+    for i in $(seq 1 20); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4399/)" = 200 ] && break; sleep 1; done
+    WEB_BASE_URL=http://localhost:4399 npx playwright test -c playwright.dev.config.ts
+    npx astro preview stop
+    ```
+
+    Expected: 27 passed, 2 failed. The two are *robots.txt disallows all crawling* and *an unauthenticated request is challenged with 401*, which fail on every local build: Cloudflare's `functions/_middleware.js` serves them, and `astro preview` never runs it.
+  - **prod-sanity, against a production build.** A dev build fails prod-sanity's *the outbound ShyTalk link points at PROD ShyTalk* by construction, so build again without the variable:
+
+    ```bash
+    npm run build
+    npx astro preview --port 4399
+    for i in $(seq 1 20); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4399/)" = 200 ] && break; sleep 1; done
+    WEB_BASE_URL=http://localhost:4399 npx playwright test -c playwright.prod.config.ts --retries=0
+    npx astro preview stop
+    ```
+
+    Expected: 18 passed, 3 failed, until #338 lands. The three are *the homepage renders, and its stylesheet actually applied*, *the Glory Points calculator computes, not just loads* and *the outbound ShyTalk link points at PROD ShyTalk, never dev*. They are stale facts already on `develop`: the same three fail on a production build of `3640af2`, which review pass 1 ran as the control, and they are filed as #338.
+  - In both suites the new switch test passes. Any other red is a finding.
 
 - [ ] **Step 3: Android pins the theme per page.** In `tests/e2e/fixtures.ts`, the real device's `page` fixture:
   - its signature `page: async ({ context, baseURL }, use, testInfo) => {` becomes `page: async ({ context, baseURL, colorScheme }, use, testInfo) => {`;
@@ -2508,15 +2746,17 @@ test('the theme switch changes the page, and the choice survives a reload', asyn
 ```
 
 - [ ] **Step 5: Check what can be checked without the phones.**
+  - Run `npm run test:unit`. Expected: all green, `duplication` included (the switch check has one home).
   - Run `npm run typecheck`. Expected: 0/0/0, covering `fixtures.ts`, `session.ts` and the journeys.
-  - Run `npx playwright test -c playwright.device.config.ts --list`. Expected: it lists the suite, including `theme.spec.ts`'s tests without the two isolated-context and no-JavaScript ones, and exits 0.
+  - Run `npx playwright test -c playwright.device.config.ts --list`. Expected: exit 0 with no phones attached, listing 613 tests in 34 files (measured at this point in review pass 1). `theme.spec.ts` lists 22: none of its three `@requires-isolated-context` tests, the two without JavaScript and *into a new session*.
   - The gauntlet itself, `npm run test:devices`, needs the phones attached, so it is the operator's (§6.2 names it; #17's AC18 is the same kind of step). Record that in the PR body. Do not describe it as run.
 
 - [ ] **Step 6: Commit.**
 
 ```bash
-npx prettier --write tests/dev/dev-sanity.spec.ts tests/prod/prod-sanity.spec.ts tests/e2e/fixtures.ts tests/device/ios/session.ts tests/device/ios/journeys.journey.ts
-git add tests/dev/dev-sanity.spec.ts tests/prod/prod-sanity.spec.ts tests/e2e/fixtures.ts tests/device/ios/session.ts tests/device/ios/journeys.journey.ts
+npx prettier --write tests/themes.ts tests/dev/dev-sanity.spec.ts tests/prod/prod-sanity.spec.ts tests/e2e/fixtures.ts tests/device/ios/session.ts tests/device/ios/journeys.journey.ts
+npx prettier --check .
+git add tests/themes.ts tests/dev/dev-sanity.spec.ts tests/prod/prod-sanity.spec.ts tests/e2e/fixtures.ts tests/device/ios/session.ts tests/device/ios/journeys.journey.ts
 git commit -m "test: the deployed sites prove the switch, and the phones pin the theme
 
 Refs #142"
@@ -2553,6 +2793,11 @@ import { DEFAULT_LOCALE, LOCALES, localisePath } from '../../src/lib/i18n';
  */
 const WIDTHS = [320, 1280];
 
+// File level: `recorded` sets `video`, which Playwright refuses inside a
+// describe ("Cannot use({ video }) in a describe group, because it forces a
+// new worker"), and every test here acts, so all of them record.
+test.use(recorded);
+
 for (const theme of THEMES) {
   test.describe(`${theme} theme`, () => {
     test.use({ colorScheme: theme });
@@ -2578,8 +2823,6 @@ for (const theme of THEMES) {
     }
 
     test.describe('interactive states', () => {
-      test.use(recorded);
-
       test(
         'the header: the phone menu, the language list and the focused switch',
         { tag: '@emulated-viewport' },
@@ -2631,7 +2874,15 @@ for (const theme of THEMES) {
           await shoot(page, `${theme}: the roster`, page.locator('#cg-roster'));
 
           await page.evaluate(() => scrollTo(0, 0));
-          await expect(page.locator('p.actions')).toHaveCSS('position', 'sticky');
+          const bar = page.locator('p.actions');
+          await expect(bar).toHaveCSS('position', 'sticky');
+          // Docking is proved before the picture, as visual.spec proves it:
+          // sticky holds whether or not the bar has reached the fold.
+          const { bottom, fold } = await bar.evaluate((el) => ({
+            bottom: el.getBoundingClientRect().bottom,
+            fold: window.innerHeight,
+          }));
+          expect(bottom, 'the action bar rests on the fold').toBeCloseTo(fold, 0);
           await shoot(page, `${theme}: the action bar, docked`);
 
           await page.emulateMedia({ media: 'print' });
@@ -2652,6 +2903,7 @@ for (const theme of THEMES) {
 - [ ] **Step 2: Run it on every engine.**
   - Run: `npx playwright test tests/e2e/theme-gallery.spec.ts`
   - Expected: green on `chromium`, `firefox`, `webkit`, `mobile-chrome` and `mobile-safari`. That is 24 tests per engine: 2 themes × (2 widths × 5 locales + 2 states).
+  - Measured in review pass 1: 120 passed. Written with `test.use(recorded)` inside *interactive states*, the file failed to load at all, and it took every Playwright run that loads it down with it: the device `--list` read 0 tests. The docking assertion held in both themes on every engine (10 of 10).
   - A sideways scroll in light alone is a finding about the page. Fix it at its container, and re-run.
   - Then run `npm run test:unit`. Expected: all green, including `viewport-tagging`, `capture-after-assertion` and `evidence-recording`. Each resize sits in its tagged test's own body, and each `shoot` follows an `expect`.
 
@@ -2659,6 +2911,7 @@ for (const theme of THEMES) {
 
 ```bash
 npx prettier --write tests/e2e/theme-gallery.spec.ts
+npx prettier --check .
 git add tests/e2e/theme-gallery.spec.ts
 git commit -m "test(e2e): every page in both themes, in every locale, captured behind an assertion
 
@@ -2701,18 +2954,37 @@ for (const theme of THEMES) {
   - That last addition asserts the theme before any picture is taken. A light baseline captured on a dark page would otherwise be a picture of the wrong palette, and every later run would pass against it.
 
 - [ ] **Step 2: Capture, in the pinned container, with nothing else running.**
-  - Stop any preview, container or background job first.
+  - Stop your own previews and background jobs first (`npx astro preview stop`, and any `npm run preview` you started). Leave any container that is not yours running: the two `sonarqube-mcp` containers are the operator's. Their memory is why the durations are worth watching.
   - Run: `npm run test:visual:update`
   - Expected:
     - 24 passed;
     - `git status --short tests/e2e/__screenshots__` lists the 12 dark baselines as modified and 12 `-light-linux.png` files as new, and nothing else.
 
-- [ ] **Step 3: Review the dark diff by eye.** For each of the 12 modified files:
-  - Extract the old one with `git show HEAD:tests/e2e/__screenshots__/<file> > "$S/old-<file>"`, where `$S` is the scratchpad.
-  - Read the old and the new.
-  - Expected: the only change is in the header, where the switch sits before the language switcher and the header items it moves along with.
-  - Any other change is a finding. Aurora's values did not change, so nothing else may move. Stop and trace it before going on.
-  - Then read the 12 light files. Each must show Studio: a cool grey ground, white cards, the mark on its dark tile, and a moon in the switch.
+- [ ] **Step 3: Review the dark diff, by measurement and then by eye.**
+  - Extract the 12 old dark files: `mkdir -p "$S/old"`, then, for each modified file, `git show HEAD:tests/e2e/__screenshots__/<file> > "$S/old/<file>"`, where `$S` is the scratchpad.
+  - Measure where every changed pixel sits, with Playwright's own PNG reader (this Mac has no other). Write `$S/diffbox.cjs`:
+
+```js
+const { createRequire } = require('module');
+const req = createRequire('/Users/shyden/Developer/Repos/shyden.co.uk/package.json');
+const { PNG } = req('playwright-core/lib/utilsBundle');
+const fs = require('fs'); const path = require('path');
+const [oldDir, newDir] = process.argv.slice(2);
+for (const f of fs.readdirSync(oldDir).sort()) {
+  const a = PNG.sync.read(fs.readFileSync(path.join(oldDir, f))), b = PNG.sync.read(fs.readFileSync(path.join(newDir, f)));
+  if (a.width !== b.width || a.height !== b.height) { console.log(`${f}: SIZE ${a.width}x${a.height} -> ${b.width}x${b.height}`); continue; }
+  let n = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  for (let y = 0; y < a.height; y++) for (let x = 0; x < a.width; x++) {
+    const i = (y * a.width + x) * 4;
+    if (a.data[i] !== b.data[i] || a.data[i+1] !== b.data[i+1] || a.data[i+2] !== b.data[i+2] || a.data[i+3] !== b.data[i+3]) { n++; if (x<x0)x0=x; if (y<y0)y0=y; if (x>x1)x1=x; if (y>y1)y1=y; }
+  }
+  console.log(`${f}: ${a.width}x${a.height}, ${n} px differ` + (n ? `, box x ${x0}-${x1}, y ${y0}-${y1}` : ''));
+}
+```
+
+  - Run `node "$S/diffbox.cjs" "$S/old" tests/e2e/__screenshots__`. Expected, as measured in review pass 1: every file keeps its size, and every changed pixel sits in the header band, `y 23-44`, where the switch now sits before the language switcher. The one exception is single-level noise: the two roster views also differ by 5 pixels in total below the header, each by one channel level, which is anti-aliasing.
+  - Anything else is a finding. Aurora's values did not change, so nothing else may move. Stop and trace it before going on.
+  - Then read by eye one old and new pair, and one light file per view. Each light file must show Studio: a cool grey ground, white cards, the mark on its dark tile, and a moon in the switch.
 
 - [ ] **Step 4: Prove the light set compares, then watch it fail and pass (§6.5).**
   - Commit the baselines first: `git add tests/e2e/visual.spec.ts tests/e2e/__screenshots__ && git commit -m "test(visual): 24 baselines, each view in both themes" -m "Refs #142"`.
@@ -2739,17 +3011,33 @@ for (const theme of THEMES) {
   - Every edited file is restored from `HEAD` and checked. A created file is deleted.
   - A run with no verdict is BROKEN, never RED. A run whose total differs from its baseline's is also BROKEN.
   - A baseline is taken once per runner and configuration, and whatever fails in it, such as dev-sanity's two Cloudflare Functions tests, is subtracted from every mutation's run.
+  - Every row is exact strings, checked against the prettier-formatted files, and `--dry` checks every anchor's count without running anything. Review pass 1 ran `--dry` on a materialised tree, and all 43 rows matched.
+  - A row may also name output it `says` and output it must `never` say, read from the run's messages. U7 uses them to prove its failure is the shade-pool subset, not a flat pair.
+  - `sanity()` builds twice, dev for dev-sanity and production for prod-sanity, and `serve()` stops any preview first and waits for a 200, because a second `astro preview` is a silent no-op (Task 9 Step 2).
+  - Run it with no preview running: the browser runners start their own server on 4321.
 
 ```js
-// mutate142b.mjs: node .superpowers/sdd/2026-09-24-light-mode-2-studio/mutate142b.mjs [ID ...]
-// From the repo root, on a committed tree. One Playwright run at a time, at
-// the default worker count: never raise it (standing rule).
+// mutate142b.mjs: node .superpowers/sdd/2026-09-24-light-mode-2-studio/mutate142b.mjs [--dry] [ID ...]
+// From the repo root, on a committed tree, with NO preview server running
+// (`npx astro preview status`). One Playwright run at a time, at the default
+// worker count: never raise it (standing rule). --dry checks every anchor's
+// count and runs nothing.
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const DIR = '.superpowers/sdd/2026-09-24-light-mode-2-studio';
-const UNIT = ['wcag', 'palette', 'tokens', 'contrast', 'shytalk-brand', 'colour-literals', 'locale-switcher']
-  .map((name) => `tests/unit/${name}.test.ts`);
+const DRY = process.argv.includes('--dry');
+const IDS = process.argv.slice(2).filter((a) => a !== '--dry');
+const UNIT = [
+  'wcag',
+  'palette',
+  'tokens',
+  'contrast',
+  'shytalk-brand',
+  'colour-literals',
+  'locale-switcher',
+  'isolated-context-tagging',
+].map((name) => `tests/unit/${name}.test.ts`);
 
 function unit() {
   const r = spawnSync('npx', ['vitest', 'run', ...UNIT], { encoding: 'utf8' });
@@ -2759,6 +3047,7 @@ function unit() {
   return {
     total: Number(totals[3]),
     failing: [...out.matchAll(/^\s+× (.+?)(?: \d+ms)?$/gm)].map((m) => m[1]),
+    out,
   };
 }
 
@@ -2767,10 +3056,14 @@ function typecheck() {
   const out = `${r.stdout}\n${r.stderr}`;
   const errors = /^- (\d+) errors?$/m.exec(out);
   if (!errors) return { broken: 'no error count' };
-  return { total: 1, failing: Number(errors[1]) > 0 ? [`astro check: ${errors[1]} errors`] : [] };
+  return {
+    total: 1,
+    failing: Number(errors[1]) > 0 ? [`astro check: ${errors[1]} errors`] : [],
+    out,
+  };
 }
 
-/** One Playwright run; every unexpected result by project and title path, from its JSON report. */
+/** One Playwright run; every unexpected result by project and title path, and every error message, from its JSON report. */
 function playwright(args, env = {}) {
   const report = `${DIR}/report.json`;
   rmSync(report, { force: true });
@@ -2780,40 +3073,62 @@ function playwright(args, env = {}) {
   });
   if (!existsSync(report)) return { broken: `no report, exit ${r.status}: ${r.stderr.slice(-300)}` };
   const json = JSON.parse(readFileSync(report, 'utf8'));
-  if ((json.errors ?? []).length > 0) return { broken: json.errors.map((e) => e.message).join('; ').slice(0, 300) };
+  if ((json.errors ?? []).length > 0)
+    return { broken: json.errors.map((e) => e.message).join('; ').slice(0, 300) };
   const failing = [];
+  const messages = [];
   let total = 0;
   const walk = (suite, path) => {
     for (const spec of suite.specs ?? [])
       for (const t of spec.tests) {
         total += 1;
-        if (t.status === 'unexpected') failing.push(`${t.projectName} › ${[...path, spec.title].join(' › ')}`);
+        if (t.status !== 'unexpected') continue;
+        failing.push(`${t.projectName} › ${[...path, spec.title].join(' › ')}`);
+        for (const result of t.results) for (const e of result.errors ?? []) messages.push(e.message ?? '');
       }
     for (const child of suite.suites ?? []) walk(child, [...path, child.title]);
   };
   for (const suite of json.suites) walk(suite, []);
-  return { total, failing };
+  return { total, failing, out: messages.join('\n') };
 }
 
-const e2e = (files, projects) => () => playwright([...files, ...projects.map((p) => `--project=${p}`)]);
+const e2e = (files, projects) => () =>
+  playwright([...files, ...projects.map((p) => `--project=${p}`)]);
 
-/** The deployed-site suites against a local dev build, as Task 9 runs them. */
-function sanity() {
-  const build = spawnSync('npm', ['run', 'build'], {
-    encoding: 'utf8',
-    env: { ...process.env, PUBLIC_SHYTALK_URL: 'https://dev.shytalk.shyden.co.uk' },
-  });
-  if (build.status !== 0) return { broken: 'build failed' };
+/** Serve dist/ on 4399 and prove it answers. `npx astro preview` returns at once only because Astro 7.3 daemonises it under agent detection (pipeline-wiring.test.ts); it allows ONE preview per project, so a preview already running makes this a silent no-op (#142 pass 1, finding 30). */
+function serve() {
+  spawnSync('npx', ['astro', 'preview', 'stop']);
   spawnSync('npx', ['astro', 'preview', '--port', '4399'], { encoding: 'utf8' });
+  const up = spawnSync('curl', ['-s', '-o', '/dev/null', '--retry', '20', '--retry-connrefused', '--retry-delay', '1', '-w', '%{http_code}', 'http://localhost:4399/'], { encoding: 'utf8' });
+  return up.stdout.trim() === '200';
+}
+
+/** The deployed-site suites against local builds, as Task 9 runs them: a dev build for dev-sanity, a production build for prod-sanity. */
+function sanity() {
+  const suites = [
+    ['playwright.dev.config.ts', { PUBLIC_SHYTALK_URL: 'https://dev.shytalk.shyden.co.uk' }],
+    ['playwright.prod.config.ts', {}],
+  ];
+  const runs = [];
   try {
-    const env = { WEB_BASE_URL: 'http://localhost:4399' };
-    const dev = playwright(['-c', 'playwright.dev.config.ts'], env);
-    const prod = playwright(['-c', 'playwright.prod.config.ts'], env);
-    if (dev.broken || prod.broken) return { broken: dev.broken ?? prod.broken };
-    return { total: dev.total + prod.total, failing: [...dev.failing, ...prod.failing] };
+    for (const [config, buildEnv] of suites) {
+      const env = { ...process.env, ...buildEnv };
+      if (!('PUBLIC_SHYTALK_URL' in buildEnv)) delete env.PUBLIC_SHYTALK_URL;
+      if (spawnSync('npm', ['run', 'build'], { encoding: 'utf8', env }).status !== 0) return { broken: `build for ${config} failed` };
+      if (!serve()) return { broken: `no 200 on 4399 for ${config}` };
+      runs.push(playwright(['-c', config, '--retries=0'], { WEB_BASE_URL: 'http://localhost:4399' }));
+      spawnSync('npx', ['astro', 'preview', 'stop']);
+    }
   } finally {
     spawnSync('npx', ['astro', 'preview', 'stop']);
   }
+  const broken = runs.find((r) => r.broken);
+  if (broken) return { broken: broken.broken };
+  return {
+    total: runs.reduce((n, r) => n + r.total, 0),
+    failing: runs.flatMap((r) => r.failing),
+    out: runs.map((r) => r.out).join('\n'),
+  };
 }
 
 const RUNNERS = {
@@ -2822,6 +3137,7 @@ const RUNNERS = {
   sanity,
   theme: e2e(['tests/e2e/theme.spec.ts'], ['chromium']),
   walks: e2e(['tests/e2e/chrome.spec.ts', 'tests/e2e/skip-link.spec.ts'], ['chromium']),
+  room: e2e(['tests/e2e/header-room.spec.ts'], ['chromium']),
   script: e2e(['tests/e2e/theme-script.spec.ts'], ['content']),
   print: e2e(['tests/e2e/print-legibility.spec.ts'], ['chromium']),
   palette: e2e(['tests/e2e/palette-controls.spec.ts'], ['chromium']),
@@ -2829,18 +3145,116 @@ const RUNNERS = {
   gallery: e2e(['tests/e2e/theme-gallery.spec.ts'], ['chromium']),
 };
 
-// One entry per row of the table in Step 2:
-// { id, runner, edits: [{ file, anchor, to, count? }], fails: [title substrings], count }
-// or { id, runner, create: path, body, fails, count }. Each substring must
-// match a newly failing title, and newly failing titles must number `count`.
-const MUTATIONS = [/* the Step 2 table, row for row */];
+const TOKENS = 'src/styles/tokens.css';
+const SCRIPT = 'src/scripts/theme.inline.js';
+const SWITCH = 'src/components/ThemeSwitch.astro';
+const LAYOUT = 'src/layouts/BaseLayout.astro';
+const GUARD = 'tests/unit/isolated-context-tagging.test.ts';
+const SAVE = "    try {\n      localStorage.setItem('theme', theme);\n    } catch {}\n";
+const U8 = { file: TOKENS, anchor: '  --wordmark-tile: #0f0d15;', to: '  --wordmark-tile: #0f0d16;' };
+
+// Each row: { id, runner, edits: [{ file, anchor, to, count? }] | create + body, fails: [title
+// substrings], count, says?: [output substrings], never?: [output substrings] }. Each `fails`
+// substring must match a newly failing title, newly failing titles must number `count`, and the
+// run's output must hold every `says` and no `never`.
+const MUTATIONS = [
+  { id: 'U1', runner: 'unit', edits: [{ file: 'tests/wcag.ts', anchor: '  if (/^transparent$/i.test(text)) return { rgb: [0, 0, 0], alpha: 0 };\n', to: '' }],
+    fails: ['reads transparent as CSS defines it', 'writes a colour the way getComputedStyle reports it', 'dark: every declared pair clears'], count: 3 },
+  { id: 'U2', runner: 'unit', edits: [{ file: 'tests/palette.ts', anchor: 'cssRules(css).filter(({ declarations }) =>', to: 'cssRules(css).filter(({ chain, declarations }) => chain.at(-1) === ":root[data-theme=\'dark\']" &&' }],
+    fails: ['finds every dark block by its color-scheme', 'keeps every dark block screen-only, and has both states it needs', 'declares the same tokens', 'declares color-scheme only beside a palette'], count: 4 },
+  { id: 'U3', runner: 'unit', edits: [{ file: 'tests/palette.ts', anchor: "  if (theme === 'light') return root;", to: "  if (theme === 'light' || theme === 'dark') return root;" }],
+    fails: ['reads light from bare :root, and dark as', 'refuses a dark theme that no block declares', 'dark: pins the disabled fill', 'puts the ShyTalk mark on its own tile'], count: 4 },
+  { id: 'U4', runner: 'unit', edits: [{ file: TOKENS, anchor: '--danger: #ff6b5a;\n    --border: rgb(255 255 255 / 0.11);', to: '--danger: #ff6b5b;\n    --border: rgb(255 255 255 / 0.11);' }],
+    fails: ['declares the same tokens, with the same values, in every dark block'], count: 1 },
+  { id: 'U5', runner: 'unit', edits: [{ file: TOKENS, anchor: '    color-scheme: dark;\n', to: '    color-scheme: dark;\n    --orphan: 1px;\n', count: 2 }],
+    fails: ['defines no token only inside a dark block'], count: 1 },
+  { id: 'U6', runner: 'unit', edits: [{ file: TOKENS, anchor: '@media screen and (prefers-color-scheme: dark) {', to: '@media (prefers-color-scheme: dark) {' }],
+    fails: ['keeps every dark block screen-only'], count: 1 },
+  { id: 'U7', runner: 'unit', edits: [{ file: TOKENS, anchor: '  --ink-soft: #4d5866;', to: '  --ink-soft: #5a6573;' }],
+    fails: ['light: every declared pair clears'], count: 1,
+    says: ['--pool-top-right', '--pool-foot'], never: ['--ink-soft on --disabled-fill'] },
+  { id: 'U8', runner: 'unit', edits: [U8], fails: ['puts the ShyTalk mark on its own tile'], count: 1 },
+  { id: 'U9', runner: 'unit', edits: [{ file: TOKENS, anchor: 'None on paper. */\n    --wordmark-tile: transparent;', to: 'None on paper. */\n    --wordmark-tile: #0f0d15;' }],
+    fails: ['is spelled out nowhere else in the repo'], count: 1 },
+  { id: 'U10', runner: 'unit', edits: [{ file: TOKENS, anchor: 'html {\n  background: var(--bg);', to: 'html {\n  color-scheme: dark;\n  background: var(--bg);' }],
+    // html becomes a dark block by its color-scheme: dark, so the palette-only guard
+    // passes and two others catch it; U17 is the row that reaches that guard.
+    fails: ['keeps every dark block screen-only', 'declares the same tokens, with the same values, in every dark block'], count: 2 },
+  { id: 'U11', runner: 'unit', create: 'src/scripts/zz-probe.js', body: "export const probe = 'white';\n",
+    fails: ['writes no colour literal outside tokens.css but the allowed ones'], count: 1 },
+  { id: 'U12', runner: 'unit', edits: [{ file: 'tests/unit/colour-literals.test.ts', anchor: '/\\.(ts|js|mjs)$/.test(file)', to: '/\\.ts$/.test(file)' }],
+    fails: ['reads a script as code, never as CSS'], count: 1 },
+  { id: 'U13', runner: 'unit', edits: [{ file: 'src/components/LanguageSwitcher.astro', anchor: '</details>\n', to: "</details>\n<script>console.info('switcher');</script>\n" }],
+    fails: ['ships no JavaScript of its own'], count: 1 },
+  { id: 'U14', runner: 'unit', edits: [{ file: GUARD, anchor: '    else if (opens && !tagged) findings.push(newContextMessage(file, decl));\n', to: '' }],
+    fails: ['flags an untagged test that opens its own browser context'], count: 1 },
+  { id: 'U15', runner: 'unit', edits: [{ file: GUARD, anchor: '    else if (!covered && !opens && tagged)\n', to: '    else if (!covered && tagged)\n' }],
+    fails: ['calling newContext(), is tagged @requires-isolated-context, and no tag is stale', 'accepts that test once tagged'], count: 2 },
+  { id: 'U16', runner: 'unit', edits: [{ file: GUARD, anchor: "    if (\n      ts.isCallExpression(node) &&\n      ts.isPropertyAccessExpression(node.expression) &&\n      node.expression.name.text === 'newContext'\n    )\n", to: "    if (node.getText().includes('newContext('))\n" }],
+    fails: ['calling newContext(), is tagged @requires-isolated-context, and no tag is stale', 'opens no context for a newContext() written only in a comment or a string'], count: 2 },
+  { id: 'U17', runner: 'unit', edits: [{ file: TOKENS, anchor: 'html {\n  background: var(--bg);', to: 'html {\n  color-scheme: light;\n  background: var(--bg);' }],
+    fails: ['declares color-scheme only beside a palette'], count: 1 },
+  { id: 'T1', runner: 'typecheck', edits: [{ file: SCRIPT, anchor: 'const root = document.documentElement;', to: 'const root = document.documentElemnt;' }],
+    fails: ['astro check'], count: 1 },
+  { id: 'S1', runner: 'theme', edits: [{ file: SCRIPT, anchor: "  apply();\n  root.dataset.themeSwitch = '';", to: "  setTimeout(apply, 200);\n  root.dataset.themeSwitch = '';" }],
+    // press() runs at DOMContentLoaded, before the delayed apply(), so aria-pressed
+    // reads the device after a reload as well.
+    fails: ['the first frame that paints a ground paints the saved theme', 'across a reload and a second page'], count: 3 },
+  { id: 'S2', runner: 'theme', edits: [{ file: SCRIPT, anchor: SAVE, to: "    localStorage.setItem('theme', theme);\n" }],
+    fails: ['the switch still changes the page, nothing is saved, and nothing is logged'], count: 1 },
+  { id: 'S3', runner: 'theme', edits: [{ file: SCRIPT, anchor: SAVE, to: '' }],
+    fails: ['across a reload and a second page', 'into a new session', 'a press after a stale saved value', 'a double press', 'an engine without MediaQueryList.addEventListener'], count: 5 },
+  { id: 'S4', runner: 'theme', edits: [{ file: SCRIPT, anchor: "  addEventListener('pageshow', (event) => {\n    if (!event.persisted) return;\n    apply();\n    press();\n  });\n", to: '' }],
+    fails: ['the pageshow handler re-applies the saved choice'], count: 1 },
+  { id: 'S5', runner: 'theme', edits: [{ file: SCRIPT, anchor: "  os.addEventListener?.('change', press);\n", to: '' }],
+    fails: ['with no choice saved, the page and the switch follow it, live'], count: 1 },
+  { id: 'S6', runner: 'theme', edits: [{ file: SCRIPT, anchor: 'os.addEventListener?.(', to: 'os.addEventListener(' }],
+    fails: ['an engine without MediaQueryList.addEventListener'], count: 1 },
+  { id: 'S7', runner: 'theme', edits: [{ file: SCRIPT, anchor: "      return theme === 'light' || theme === 'dark' ? theme : null;", to: '      return theme;' }],
+    fails: ['is ignored, and the device setting applies', 'a press after a stale saved value'], count: 2 },
+  { id: 'S8', runner: 'sanity', edits: [{ file: SCRIPT, anchor: "document.addEventListener('click', (event) => {", to: "document.addEventListener('click-never', (event) => {" }],
+    fails: ['the theme switch changes the page, and the choice survives a reload'], count: 2 },
+  { id: 'S9', runner: 'theme', edits: [{ file: SCRIPT, anchor: "  os.addEventListener?.('change', press);", to: "  os.addEventListener?.('change', () => {\n    delete root.dataset.theme;\n    press();\n  });" }],
+    fails: ['with a choice saved, a change on the device changes nothing'], count: 1 },
+  { id: 'S10', runner: 'theme', edits: [{ file: TOKENS, anchor: '  --switch-display: none;', to: '  --switch-display: inline-flex;' }],
+    fails: ['the switch is absent, and the device setting applies', 'does not print'], count: 3 },
+  { id: 'S11', runner: 'theme', edits: [{ file: TOKENS, anchor: '  :root[data-theme-switch] {\n    --switch-display: inline-flex;\n  }\n}', to: '}\n:root[data-theme-switch] {\n  --switch-display: inline-flex;\n}' }],
+    fails: ['does not print'], count: 1 },
+  { id: 'S12', runner: 'theme', edits: [{ file: TOKENS, anchor: 'html {\n  background: var(--bg);', to: 'html {\n  transition: background-color 0.2s;\n  background: var(--bg);' }],
+    fails: ['switches instantly'], count: 1 },
+  { id: 'S13', runner: 'theme', edits: [{ file: SWITCH, anchor: '  aria-label={t.themeDarkMode}\n', to: '' }],
+    fails: ['a toggle button named in its own language'], count: 5 },
+  { id: 'S14', runner: 'theme', edits: [{ file: SWITCH, anchor: '<button\n  type="button"', to: '<span\n  role="button"\n  tabindex="0"' }, { file: SWITCH, anchor: '</button>', to: '</span>' }],
+    fails: ['Enter and Space each toggle it'], count: 1 },
+  { id: 'S15', runner: 'walks', edits: [{ file: SWITCH, anchor: '  data-theme-toggle\n', to: '  data-theme-toggle\n  tabindex="-1"\n' }],
+    fails: ['desktop: the header is keyboard-reachable in order', 'it is the FIRST thing a Tab reaches', 'every header link can take focus, on every engine'], count: 3 },
+  { id: 'S16', runner: 'theme', edits: [{ file: SWITCH, anchor: '<circle fill="currentColor"', to: '<circle fill="#eaf2ff"' }],
+    fails: ['under forced colours, its icon draws in the system text colour'], count: 1 },
+  { id: 'S17', runner: 'script', edits: [{ file: LAYOUT, anchor: '<script is:inline set:html={themeScript}></script>', to: '<script is:inline type="module" set:html={themeScript}></script>' }],
+    fails: ['runs it before the first paint'], count: 16 },
+  { id: 'S18', runner: 'script', edits: [{ file: LAYOUT, anchor: '    <script is:inline set:html={themeScript}></script>\n', to: '' }, { file: LAYOUT, anchor: '    <Footer lang={lang} />\n', to: '    <Footer lang={lang} />\n    <script is:inline set:html={themeScript}></script>\n' }],
+    fails: ['runs it before the first paint'], count: 16 },
+  { id: 'S19', runner: 'script', edits: [{ file: 'src/components/pages/HomePage.astro', anchor: '<section id="shytalk" class="wrap showcase">', to: '<script is:inline>document.documentElement.dataset.extra = \'\';</script>\n  <section id="shytalk" class="wrap showcase">' }],
+    fails: ['carries it exactly once, and nothing it did not carry before'], count: 5 },
+  { id: 'S20', runner: 'print', edits: [{ file: TOKENS, anchor: '@media screen and (prefers-color-scheme: dark) {', to: '@media (prefers-color-scheme: dark) {' }, { file: TOKENS, anchor: '@media screen {\n  /* The second copy', to: '@media all {\n  /* The second copy' }],
+    fails: ['every printed ink is readable on white paper, whatever the screen shows', 'a disabled control never depends on its fill reaching paper'], count: 4 },
+  { id: 'S21', runner: 'palette', edits: [{ file: 'tests/themes.ts', anchor: 'colorScheme: theme });', to: "colorScheme: theme === 'dark' ? 'light' : 'dark' });" }],
+    fails: ['every control it paints uses a palette colour, in both themes', 'the controls the browser draws use the brand accent'], count: 5 },
+  { id: 'S22', runner: 'home', edits: [U8], fails: ['the ShyTalk showcase carries the brand wordmark and links out'], count: 1 },
+  { id: 'S23', runner: 'home', edits: [{ file: TOKENS, anchor: 'None on paper. */\n    --wordmark-tile: transparent;\n', to: 'None on paper. */\n' }],
+    fails: ['the ShyTalk showcase carries the brand wordmark and links out'], count: 1 },
+  { id: 'S24', runner: 'gallery', edits: [{ file: 'tests/e2e/theme-gallery.spec.ts', anchor: 'test.use({ colorScheme: theme });', to: "test.use({ colorScheme: theme === 'dark' ? 'light' : 'dark' });" }],
+    fails: ['every page renders the theme, with no sideways scroll', 'the header: the phone menu', '/classroom-groups: results, the roster'], count: 24 },
+  { id: 'S25', runner: 'room', edits: [{ file: 'src/components/Header.astro', anchor: '      <ThemeSwitch lang={lang} />\n', to: '' }],
+    fails: ['no header item overlaps another, at any width'], count: 5, says: ['measured only ['] },
+];
 
 const restore = (file) => {
   spawnSync('git', ['checkout', 'HEAD', '--', file]);
   if (spawnSync('git', ['diff', '--quiet', 'HEAD', '--', file]).status !== 0) throw new Error(`NOT RESTORED: ${file}`);
 };
 
-if (spawnSync('git', ['diff', '--quiet', 'HEAD', '--', 'src', 'tests', 'playwright.config.ts']).status !== 0)
+if (!DRY && spawnSync('git', ['diff', '--quiet', 'HEAD', '--', 'src', 'tests', 'playwright.config.ts']).status !== 0)
   throw new Error('uncommitted changes: commit before mutating');
 
 const baselines = {};
@@ -2854,37 +3268,49 @@ const baseline = (runner) => {
   return baselines[runner];
 };
 
-for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.argv.includes(x.id))) {
+for (const m of MUTATIONS.filter((x) => IDS.length === 0 || IDS.includes(x.id))) {
+  // Anchors first, against the file as committed, before anything is written.
+  const counts = (m.edits ?? []).map(({ file, anchor, count = 1 }) => {
+    const found = readFileSync(file, 'utf8').split(anchor).length - 1;
+    return { file, found, count };
+  });
+  const wrong = counts.filter(({ found, count }) => found !== count);
+  if (wrong.length > 0) {
+    for (const w of wrong) console.log(`${m.id} ANCHOR IN ${w.file} MATCHED ${w.found} TIMES, WANTED ${w.count}: not run`);
+    continue;
+  }
+  if (DRY) {
+    console.log(`${m.id} anchors ok`);
+    continue;
+  }
   const base = baseline(m.runner);
-  let applied = true;
   if (m.create) writeFileSync(m.create, m.body);
   else
-    for (const { file, anchor, to, count = 1 } of m.edits) {
+    for (const { file, anchor, to } of m.edits) {
       const before = readFileSync(file, 'utf8');
-      const found = before.split(anchor).length - 1;
-      if (found !== count) {
-        console.log(`${m.id} ANCHOR IN ${file} MATCHED ${found} TIMES, WANTED ${count}: not run`);
-        applied = false;
-        break;
-      }
       writeFileSync(file, before.split(anchor).join(to));
       console.log(`${m.id} applied in ${file}: ${JSON.stringify(to).slice(0, 120)}`);
     }
-  const after = applied ? RUNNERS[m.runner]() : null;
-  if (m.create) rmSync(m.create);
-  else for (const { file } of m.edits) restore(file);
-  if (!applied) continue;
+  let after;
+  try {
+    after = RUNNERS[m.runner]();
+  } finally {
+    if (m.create) rmSync(m.create);
+    else for (const { file } of m.edits) restore(file);
+  }
   if (after.broken || after.total !== base.total) {
     console.log(`${m.id} BROKEN (${after.broken ?? `total ${after.total} vs ${base.total}`})`);
     continue;
   }
   const newly = after.failing.filter((t) => !base.failing.includes(t));
+  const said = (m.says ?? []).every((s) => after.out.includes(s)) && (m.never ?? []).every((s) => !after.out.includes(s));
   const ok =
     newly.length === m.count &&
     m.fails.every((s) => newly.some((t) => t.includes(s))) &&
-    newly.every((t) => m.fails.some((s) => t.includes(s)));
+    newly.every((t) => m.fails.some((s) => t.includes(s))) &&
+    said;
   console.log(`${m.id} ${newly.length === 0 ? 'GREEN (NOT CAUGHT)' : ok ? 'RED as predicted' : 'RED, NOT as predicted'}`);
-  if (!ok) console.log(`   newlyFailing=${JSON.stringify(newly)}`);
+  if (!ok) console.log(`   newlyFailing(${newly.length})=${JSON.stringify(newly)}${said ? '' : '  says/never NOT met'}`);
 }
 ```
 
@@ -2900,13 +3326,17 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 | U4 | `tokens.css`: in the second dark block, `--danger: #ff6b5a;\n    --border: rgb(255 255 255 / 0.11);` becomes `--danger: #ff6b5b;` followed by the same border | *declares the same tokens, with the same values, in every dark block* (1) | one token changed in only one dark block |
 | U5 | `tokens.css`: `    color-scheme: dark;\n` (count 2) becomes the same line followed by `    --orphan: 1px;\n` | *defines no token only inside a dark block* (1) | a token declared only inside a dark block |
 | U6 | `tokens.css`: `@media screen and (prefers-color-scheme: dark) {` becomes `@media (prefers-color-scheme: dark) {` | *keeps every dark block screen-only* (1) | the dark blocks' `@media screen` wrapper removed (unit half; S20 is the print half) |
-| U7 | `tokens.css`: `  --ink-soft: #4d5866;` becomes `  --ink-soft: #5f6a78;`, which is 4.85:1 flat on `--bg` and 5.13:1 under all four layers, but 4.11:1 over the two shade pools | *light: every declared pair clears*, whose message must name `[--pool-top-right, --pool-foot]` (1) | `--ink-soft` lightened so it fails over the shade pools alone |
+| U7 | `tokens.css`: `  --ink-soft: #4d5866;` becomes `  --ink-soft: #5a6573;`, which clears every flat pair (5.23:1 on `--bg`, 4.55:1 on `--disabled-fill`) and all four layers (5.52:1), but is 4.43:1 over the two shade pools alone | *light: every declared pair clears*, whose output must name `--pool-top-right` and `--pool-foot` and never `--ink-soft on --disabled-fill` (1). Review pass 1: the old `#5f6a78` also failed `--disabled-fill` (4.22:1), so it did not isolate the subset | `--ink-soft` lightened so it fails over the shade pools alone |
 | U8 | `tokens.css`: `  --wordmark-tile: #0f0d15;` becomes `  --wordmark-tile: #0f0d16;` | *puts the ShyTalk mark on its own tile* (1) | the light `--wordmark-tile` changed |
 | U9 | `tokens.css`: `None on paper. */\n    --wordmark-tile: transparent;` becomes the same with `#0f0d15` | *is spelled out nowhere else in the repo* (tokens.css spells the tile twice) (1) | — |
-| U10 | `tokens.css`: `html {\n  background: var(--bg);` becomes `html {\n  color-scheme: dark;\n  background: var(--bg);` | *declares color-scheme only beside a palette* (1) | — |
+| U10 | `tokens.css`: `html {\n  background: var(--bg);` becomes `html {\n  color-scheme: dark;\n  background: var(--bg);` | *keeps every dark block screen-only*; *declares the same tokens, with the same values, in every dark block* (2). `html` becomes a dark block by its own `color-scheme: dark`, so the palette-only guard passes here; U17 is the row that reaches it | — |
 | U11 | create `src/scripts/zz-probe.js` holding `export const probe = 'white';\n` | *writes no colour literal outside tokens.css but the allowed ones* (1) | `color: #fff` written into a component, here in the `.js` kind this PR opened |
 | U12 | `colour-literals.test.ts`: `/\.(ts\|js\|mjs)$/.test(file)` becomes `/\.ts$/.test(file)` | *reads a script as code, never as CSS* (1) | — |
 | U13 | `LanguageSwitcher.astro`: `</details>\n` becomes `</details>\n<script>console.info('switcher');</script>\n` | *ships no JavaScript of its own* (1) | — |
+| U14 | `isolated-context-tagging.test.ts`: `    else if (opens && !tagged) findings.push(newContextMessage(file, decl));\n` removed | *flags an untagged test that opens its own browser context* (1) | — (Task 6's second cause) |
+| U15 | `isolated-context-tagging.test.ts`: `    else if (!covered && !opens && tagged)\n` becomes `    else if (!covered && tagged)\n` | the corpus test, whose title ends *calling newContext(), is tagged @requires-isolated-context, and no tag is stale*; *accepts that test once tagged* (2) | — |
+| U16 | `isolated-context-tagging.test.ts`: the parser's match in `opensAContext` becomes `if (node.getText().includes('newContext('))` | the corpus test (`real-device.spec.ts:40`'s COMMENT names `request.newContext()`); *opens no context for a newContext() written only in a comment or a string* (2) | — |
+| U17 | `tokens.css`: `html {\n  background: var(--bg);` becomes `html {\n  color-scheme: light;\n  background: var(--bg);` | *declares color-scheme only beside a palette* (1) | — |
 
 **Types** (runner `typecheck`):
 
@@ -2918,14 +3348,14 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 
 | id | runner | mutation | must turn red (count) | §6.8 |
 | --- | --- | --- | --- | --- |
-| S1 | theme | `  apply();\n  root.dataset.themeSwitch = '';` becomes `  setTimeout(apply, 200);\n  root.dataset.themeSwitch = '';` | *the first frame that paints a ground paints the saved theme*, in both directions (2) | the stamp delayed by a `setTimeout` |
+| S1 | theme | `  apply();\n  root.dataset.themeSwitch = '';` becomes `  setTimeout(apply, 200);\n  root.dataset.themeSwitch = '';` | *the first frame that paints a ground paints the saved theme*, in both directions; *across a reload and a second page*, because `press()` runs at `DOMContentLoaded`, before the delayed `apply()`, so `aria-pressed` reads the device (3) | the stamp delayed by a `setTimeout` |
 | S2 | theme | the `try { … } catch {}` around `localStorage.setItem('theme', theme);` removed, the call kept | *the switch still changes the page, nothing is saved, and nothing is logged* (1) | the `try`/`catch` around the save removed |
 | S3 | theme | the same `try { … } catch {}` removed with its call | *across a reload and a second page*; *into a new session*; *a press after a stale saved value*; *a double press*; *an engine without MediaQueryList.addEventListener* (its reload) (5) | the save removed |
 | S4 | theme | the `pageshow` listener removed | *the pageshow handler re-applies the saved choice* (1). The real Back skips on `chromium`, as Task 6 recorded | the `pageshow` handler removed |
 | S5 | theme | `  os.addEventListener?.('change', press);\n` removed | *with no choice saved, the page and the switch follow it, live* (1) | the OS-change listener removed |
 | S6 | theme | `os.addEventListener?.(` becomes `os.addEventListener(` | *an engine without MediaQueryList.addEventListener* (1) | — |
 | S7 | theme | `      return theme === 'light' \|\| theme === 'dark' ? theme : null;` becomes `      return theme;` | *is ignored, and the device setting applies*; *a press after a stale saved value* (2) | — |
-| S8 | sanity | `document.addEventListener('click', (event) => {` becomes `document.addEventListener('click-never', (event) => {` | *the theme switch changes the page, and the choice survives a reload*, on dev and on prod (2) | the click delegation removed, with the sanity suites run against a local build |
+| S8 | sanity | `document.addEventListener('click', (event) => {` becomes `document.addEventListener('click-never', (event) => {` | *the theme switch changes the page, and the choice survives a reload*, on dev and on prod (2) | the click delegation removed, with the sanity suites run against local builds, dev and production |
 | S9 | theme | `  os.addEventListener?.('change', press);` becomes `  os.addEventListener?.('change', () => {\n    delete root.dataset.theme;\n    press();\n  });` | *with a choice saved, a change on the device changes nothing* (1) | — |
 | S10 | theme | `  --switch-display: none;` becomes `  --switch-display: inline-flex;` | *the switch is absent, and the device setting applies*, in both themes; *does not print* (3) | `--switch-display` shown on bare `:root` |
 | S11 | theme | the reveal rule moved out of `@media screen`: `  :root[data-theme-switch] {\n    --switch-display: inline-flex;\n  }\n}` becomes `}\n:root[data-theme-switch] {\n  --switch-display: inline-flex;\n}` | *does not print* (1) | the reveal rule taken out of `@media screen` |
@@ -2942,6 +3372,7 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 | S22 | home | = U8's change | *the ShyTalk showcase carries the brand wordmark and links out* (1) | the light `--wordmark-tile` changed (rendered half) |
 | S23 | home | `tokens.css`: `None on paper. */\n    --wordmark-tile: transparent;\n` becomes `None on paper. */\n` | *the ShyTalk showcase carries the brand wordmark and links out* (1) | — (AC14's "prints in ink") |
 | S24 | gallery | `theme-gallery.spec.ts`: `test.use({ colorScheme: theme });` becomes `test.use({ colorScheme: theme === 'dark' ? 'light' : 'dark' });` | all 24 gallery tests (24) | a per-theme run set to the other scheme, in the gallery |
+| S25 | room | `Header.astro`: `      <ThemeSwitch lang={lang} />\n` removed | the 5 *no header item overlaps another, at any width* tests, each saying *measured only [* (5) | — (Task 5: the row holds the real switch by name) |
 
   §6.8's one remaining row, a project's `colorScheme` removed or a config added without one, guards code this PR does not change. It was proven in #337 by mutations S1 to S4 there, and is not re-run.
 
@@ -2966,10 +3397,10 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
   command grep -rn -E "234, 242, 255|4, 7, 13|--bg|--ink|colorScheme|color-scheme|data-theme|aria-pressed|theme\.inline|Dark mode|zero JS|ships no JavaScript" tests/dev tests/prod tests/device
   ```
 
-  Expected hits, and only these:
-  - Task 9's own additions;
-  - `colorScheme: 'dark'` in the configs;
-  - Journey 10's `theme` exclusion.
+  Expected hits, and only these, as measured in review pass 1 on the materialised tree: the two lines of Task 9's ground check in `tests/device/ios/session.ts`, both `themeColour('dark', '--bg')`.
+  - The sanity suites' switch check lives in `tests/themes.ts`, and the configs' `colorScheme: 'dark'` at the repo root, so neither is under the three directories this searches.
+  - Journey 10's `theme` exclusion matches no pattern here.
+  - Review pass 1 also grepped these directories for the other facts this PR changes (a script on every page, the header's controls, the Tab order, `localStorage`). It found no stale fact. `real-device.spec.ts`'s storage probe reads its own key, and the device fixture clears storage between tests.
 
   Anything else is a stale fact in a suite no pull request runs (#335). Fix it before the push.
 
@@ -2983,14 +3414,16 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
     - the dark diff's review ("header only");
     - which engines ran the real Back test and which skipped it, with the reason;
     - the shipped script's size;
-    - the translator's drafts;
+    - the four label drafts, written directly, with the translator's dry-run counts that ruled it out;
     - every finding Task 7 or Task 10 fixed;
     - that `npm run test:devices` is the operator's, with the phones.
+    - the two local sanity runs (Task 9 Step 2), and that prod-sanity's three reds are #338's, which predate this PR.
   - Check it with `node scripts/closing-keywords.mjs <file> "this pull request body"`.
 
 - [ ] **Step 4: Wait for CI by name, on the head.**
   - Write `gh pr view <n> --json headRefOid --jq .headRefOid` to a file, and compare the run's SHA with it.
-  - All twelve required checks must be green on that head: `checks`, `closing-keywords`, `e2e shard 1 of 8` to `e2e shard 8 of 8`, `build-and-test` and `visual`.
+  - All twelve checks must be green, by name, on that head: `checks`, `closing-keywords`, `e2e shard 1 of 8` to `e2e shard 8 of 8`, `build-and-test` and `visual`.
+  - Branch protection requires only two of them. In review pass 1, the protection on `develop` read `{strict: true, contexts: [build-and-test, visual]}`. `build-and-test` stands for `checks` and the shards. `closing-keywords` is not required until #278, so a red there would not stop the merge, and this step is what does.
   - `back-translation` also runs, because `src/lib/i18n` changed. It is advisory: read its summary for `themeDarkMode`'s scores and record them. A red there means the review read nothing, which is a finding to report, not a gate.
 
 - [ ] **Step 5: Self-review, then merge.**
@@ -3007,12 +3440,12 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 
 - [ ] **Step 1: Capture the evidence at the merge commit.**
   - `git switch develop && git pull --ff-only`, then confirm `git rev-parse HEAD` is the merge commit.
-  - Run `EVIDENCE_DIR="$S/evidence142" npm run test:e2e -- tests/e2e/theme-gallery.spec.ts tests/e2e/theme.spec.ts tests/e2e/print-legibility.spec.ts tests/e2e/palette-controls.spec.ts --project=chromium`, where `$S` is the scratchpad. Expected: green, with the captures and `manifest.jsonl` in `$S/evidence142`, and `report.json` beside them.
+  - Run `EVIDENCE_DIR="$S/evidence142" npm run test:e2e -- tests/e2e/theme-gallery.spec.ts tests/e2e/theme.spec.ts tests/e2e/print-legibility.spec.ts tests/e2e/palette-controls.spec.ts --project=chromium --workers=2`, where `$S` is the scratchpad. `--workers=2`, never the default, because an evidence run records video for every test. At the default 3 workers one swapped and failed six tests that pass alone in 13.7s (memory: *an evidence capture swaps at default workers*, measured 2026-09-21). Expected: green, with the captures and `manifest.jsonl` in `$S/evidence142`, and `report.json` beside them.
 
 - [ ] **Step 2: Write the content file,** `$S/content142.json`, in the evidence builder's schema: `title`, `eyebrow`, `headline`, `lede`, `sections` (`{ heading, body }` each), `mutations` (`{ id, what, predicted, actual }` each, from `mut142b.log`), `signoffKey` and `notCovered`.
   - Headline: "Light mode: Studio beside Aurora". `signoffKey`: `ticket-142`.
   - Sections: the palette, the switch, what the pages show in each theme, print, and what was measured.
-  - `notCovered`: the real-device gauntlet, which is the operator's with the phones, and the real Back test on the two Chromium engines, which Playwright launches without the back-forward cache.
+  - `notCovered`: the real-device gauntlet, which is the operator's with the phones, and the real Back test wherever an engine did not restore the page (Playwright launches the two Chromium engines without the back-forward cache, and review pass 1 measured the other three not restoring either). The synthetic `pageshow` test is what proves the handler.
 
 - [ ] **Step 3: Build and publish.** This is the two-pass flow the builder documents (#268). Load the `artifact-capabilities` skill before passing any capability.
   1. `node scripts/build-evidence-page.mjs --plan --evidence "$S/evidence142" --out "$S/evidence142.html"` writes the upload list, `$S/evidence142.html.uploads.json`.
@@ -3035,4 +3468,29 @@ for (const m of MUTATIONS.filter((x) => process.argv.length === 2 || process.arg
 
 Each pass runs every mechanical check, then reads the whole plan (operator, 2026-09-24: _"review the plan on a /loop until there's no findings, then approve it"_). The loop ends on a pass that finds nothing.
 
-_No pass has run yet._
+**Pass 1, 2026-09-24 06:29Z to 2026-09-25 00:35Z, in two sessions. It found 32 problems, now fixed above.**
+
+- **What was read.** Session 1 read every line of the plan (1 to 3038) and the spec (433 lines) in one sitting. Session 2 re-read Tasks 5 to 14 and the header sections while materialising them. The mechanical half spans both sessions.
+- **The mechanical checks.** Every task was materialised on a local scratch branch, exactly as written, and run as its steps say:
+  - the unit baseline (99 files, 2408 tests) and every figure;
+  - each task's red and green counts, on the engines it names;
+  - Task 7's eight specs on five engines (1,145 passed);
+  - both sanity suites against local builds, with a production build of `develop` as the control;
+  - the device `--list`;
+  - Task 11's capture and control sequence, in the pinned container;
+  - the Task 12 harness: `--dry` on all 43 rows, then 22 rows run for real (U1 to U17, T1, S1, S15, S16 and S20). 19 were red as first predicted, U10 and S1 were corrected and re-run red, and U17 was added and ran red. The other 21 rows had their anchors checked only; the implementation runs them all.
+- **What it found** (numbered as in the review's working file):
+  - Wrong predictions or counts: 1 (Task 2 Step 3 is 5 red, not 9), 5 and 28 (the real Back test skips on all five engines here), 35 (U10 never reached its guard, so U17 was added), 36 (S1 catches 3).
+  - Anchors that could not match: 2, 4, 29 (text that breaks across lines, or matches three times).
+  - Steps in the wrong order: 3 and 12 (formatting checked before it was written).
+  - Code that fails as written:
+    - 13 (a spec records without acting);
+    - 24 (header-room's stand-in throws once the switch lands);
+    - 26 (the isolated-context guard called the new tag stale);
+    - 32 (a `test.use(recorded)` in a describe fails to load);
+    - 33 (two identical sanity bodies).
+  - Procedures that could not work: 9, 23 and 30 (one build for both sanity suites; a second `astro preview` is a silent no-op), 14 (the translator would send 95 strings, not one), 22 (evidence capture at default workers).
+  - Imprecise or unverifiable wording: 6, 7, 10, 11, 15, 16, 17, 18, 25, 27, 34.
+  - One pre-existing defect outside #142: prod-sanity's three stale facts on `develop` (31), filed as #338.
+- **Cleared by measurement, no change:** 19 (`command grep` handles `\s` and `\b` here), 21 (the device list exits 0 with no phones), 20 (resolved into 32). Finding 8 was withdrawn in session 1.
+- **Next:** pass 2 reruns every mechanical check on a fresh scratch branch, and reads the whole plan again.
