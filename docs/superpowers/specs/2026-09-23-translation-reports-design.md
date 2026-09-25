@@ -472,9 +472,8 @@ stub is a finding.
   health check, the dev submission and the prod health check. A pull request
   runs `tests/dev` and `tests/prod` against a preview of its own `dist/`
   (`sanity-on-build`), and a preview runs no Pages Function, so none of them
-  can pass there. Each carries
-  `tag: '@deployed-only'` and a `deployed-only` annotation giving that reason,
-  as `sanity-on-build.test.ts` requires.
+  can pass there. Each carries `tag: '@deployed-only'` and a `deployed-only`
+  annotation giving that reason, as `sanity-on-build.test.ts` requires.
 - **Visual:** the footer grows in beta-locale pages that have baselines, so
   those baselines are recaptured in the pinned container, reviewed old against
   new, then compared with nothing written.
@@ -665,3 +664,13 @@ builds.
    which reads as a stand-in database. It says what each path runs against
    now: checks 1–8 need no database, `failed` runs with the binding absent,
    and success is proved on a real local D1.
+
+**Pass 6 (2026-09-25, at pass 5's head): 1 finding, fixed.** The mechanical
+checks were re-run: seven absent paths, all of them files the spec creates;
+all six exports present; the counts unchanged. It read 3.2 and section 10,
+which pass 5 changed, and found the fault below. The whole document is left
+to pass 7.
+
+1. Pass 5's edit to the `@deployed-only` bullet left a broken wrap, the third
+   edit in this review to do so. Pass 7 therefore scans every paragraph for
+   a line under 50 characters that is followed by more prose.
