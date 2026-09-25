@@ -1,5 +1,6 @@
 ---
 import LanguageSwitcher from './LanguageSwitcher.astro';
+import ThemeSwitch from './ThemeSwitch.astro';
 import { localisePath, type Locale } from '../lib/i18n';
 import { getSiteStrings } from '../lib/i18n';
 
@@ -36,13 +37,19 @@ const links = [
         <span class="bars"></span>
       </summary>
     </details>
-    {/* The language switcher lives in the BAR, not in <nav>, for two reasons,
-        both learned from a failing test. <nav> means "the site's sections"
-        and is pinned to exactly those three links; a language control is a
-        different kind of thing. And on mobile <nav> collapses behind the
-        menu button, which would hide the switcher from exactly the visitors
-        most likely to want it. */}
-    <LanguageSwitcher lang={lang} pathname={Astro.url.pathname} />
+    {/* The theme switch and the language switcher are ONE item in the bar
+        (#142 §5). The bar spaces its items with `space-between`, so a fourth
+        separate item would float in the middle of the row on a wide screen
+        rather than sit beside the language switcher. Both live in the BAR,
+        not in <nav>, for two reasons, both learned from a failing test.
+        <nav> means "the site's sections" and is pinned to exactly those
+        three links; these controls are a different kind of thing. And on
+        mobile <nav> collapses behind the menu button, which would hide them
+        from exactly the visitors most likely to want them. */}
+    <div class="controls">
+      <ThemeSwitch lang={lang} />
+      <LanguageSwitcher lang={lang} pathname={Astro.url.pathname} />
+    </div>
     <nav id="primary-nav">
       {links.map((l) => (
         <a href={l.href}>{l.label}</a>
@@ -82,6 +89,11 @@ const links = [
     font-size: 1.25rem;
     color: var(--ink);
     text-decoration: none;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
   }
   /* Mobile disclosure toggle (the hamburger). */
   .menu > summary {

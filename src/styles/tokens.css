@@ -71,6 +71,15 @@
   --wordmark-tile: #0f0d15;
   --wordmark-pad: 0.12em 0.42em 0.18em;
 
+  /* The theme switch (ThemeSwitch.astro, #142 §4-5). Hidden until the theme
+     script has run and stamped data-theme-switch (the last rule of the
+     screen block below), so with JavaScript off no dead button is offered.
+     Its icon is chosen here, beside the palette it names: a moon while light
+     is showing, a sun while dark is. */
+  --switch-display: none;
+  --switch-moon: inline-block;
+  --switch-sun: none;
+
   --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
   --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
   --font-mono: 'Space Mono', ui-monospace, monospace;
@@ -176,6 +185,8 @@
        exactly where Aurora always had it. */
     --wordmark-tile: transparent;
     --wordmark-pad: 0;
+    --switch-moon: none;
+    --switch-sun: inline-block;
   }
 }
 
@@ -206,6 +217,16 @@
     --shaft: rgb(255 255 255 / 0.05);
     --wordmark-tile: transparent;
     --wordmark-pad: 0;
+    --switch-moon: none;
+    --switch-sun: inline-block;
+  }
+
+  /* The switch appears only once the theme script has run (#142 §4).
+     Screen-only, so it never prints; and here, in the one file that owns the
+     root, because a component's scoped selectors never test an attribute on
+     :root. */
+  :root[data-theme-switch] {
+    --switch-display: inline-flex;
   }
 }
 

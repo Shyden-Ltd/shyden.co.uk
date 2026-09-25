@@ -1,5 +1,6 @@
 (() => {
   const root = document.documentElement;
+  const os = matchMedia('(prefers-color-scheme: dark)');
   const saved = () => {
     try {
       const theme = localStorage.getItem('theme');
@@ -13,6 +14,18 @@
     if (theme) root.dataset.theme = theme;
     else delete root.dataset.theme;
   };
+  const showing = () => root.dataset.theme ?? (os.matches ? 'dark' : 'light');
+  const press = () => {
+    for (const toggle of document.querySelectorAll('[data-theme-toggle]'))
+      toggle.setAttribute('aria-pressed', String(showing() === 'dark'));
+  };
   apply();
   root.dataset.themeSwitch = '';
+  document.addEventListener('DOMContentLoaded', press);
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    if (!event.target.closest('[data-theme-toggle]')) return;
+    root.dataset.theme = showing() === 'dark' ? 'light' : 'dark';
+    press();
+  });
 })();
