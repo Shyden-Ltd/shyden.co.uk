@@ -212,9 +212,8 @@ is offered and what is accepted cannot drift apart. It must not import
 `back-translate.ts` or `translate.ts`, which are CLI-only (`cli-only.test.ts`
 walks the modules the site ships, and `functions/` is added to what it walks).
 If a leaf walker already exists in a site-safe module it is reused, and if the
-only one
-lives in a CLI-only module it moves to a shared site-safe module that both
-import (the "one home" rule).
+only one lives in a CLI-only module it moves to a shared site-safe module that
+both import (the "one home" rule).
 
 ## 5. Matching a quote
 
@@ -422,8 +421,12 @@ stub is a finding.
   whitespace only; emoji; control characters; a note of 1000 units that
   arrives as more because its line breaks are CRLF). The order of checks 5
   and 6: a filled honeypot with an unknown `page` answers `400`, never a
-  redirect. The handler is called directly with real `Request` objects; the D1
-  it is given is covered by the next bullet.
+  redirect. The handler is called directly with real `Request` objects and no
+  stand-in database. Checks 1–8 return before the database is touched, so they
+  need none. The `failed` path, and 6.3's logging, run with the `REPORTS`
+  binding absent, which is a real failure the health check also reports.
+  Check 9 succeeding, and the health check's `200`, are proved against a real
+  local D1 in the next bullet.
 - **Functions runtime (Playwright, new `playwright.functions.config.ts`):**
   the real Function on workerd through `wrangler pages dev`, with a local D1
   that has the real migration applied.
@@ -465,10 +468,11 @@ stub is a finding.
   the dev database only.
 - **Prod (`prod-sanity.spec.ts`):** the health check only. Nothing is ever
   written in production by automation.
-- **Both deployed-site tests are `@deployed-only`** (#335). A pull request
+- **All three deployed-site tests are `@deployed-only`** (#335): the dev
+  health check, the dev submission and the prod health check. A pull request
   runs `tests/dev` and `tests/prod` against a preview of its own `dist/`
-  (`sanity-on-build`), and a preview runs no Pages Function, so the health
-  check and the dev submission cannot pass there. Each carries
+  (`sanity-on-build`), and a preview runs no Pages Function, so none of them
+  can pass there. Each carries
   `tag: '@deployed-only'` and a `deployed-only` annotation giving that reason,
   as `sanity-on-build.test.ts` requires.
 - **Visual:** the footer grows in beta-locale pages that have baselines, so
@@ -650,3 +654,14 @@ links use `localisePath('/classroom-groups', lang)`, the form 6.1's redirect
 builds.
 
 1. A pass-3 edit left a 100-character line in 6.1.
+
+**Pass 5 (2026-09-25, a full read at pass 4's head): 3 findings, all fixed.**
+
+1. Pass 3 logged the 4.2 line wrap as fixed, and it was still broken. Its
+   fix had moved the break rather than removing it. It was checked by reading
+   the lines this time.
+2. Section 10 said "both deployed-site tests" where there are three.
+3. The unit bullet said "the D1 it is given is covered by the next bullet",
+   which reads as a stand-in database. It says what each path runs against
+   now: checks 1–8 need no database, `failed` runs with the binding absent,
+   and success is proved on a real local D1.
