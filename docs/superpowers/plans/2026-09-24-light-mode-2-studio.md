@@ -115,7 +115,7 @@
 | `tests/e2e/theme-gallery.spec.ts` (new) | Every built page in both themes at 320 and 1280px, and the interactive states: the evidence §6.7 asks for, each capture behind an assertion. |
 | `playwright.config.ts` | `theme-script.spec.ts` joins `CONTENT_ONLY_SPECS`. |
 | `tests/e2e/classroom-groups.spec.ts`, `tests/unit/locale-switcher.test.ts` | The two former zero-JS guards, rewritten. |
-| `README.md`, `.github/workflows/deploy-prod.yml`, `src/components/LanguageSwitcher.astro`, `tests/e2e/language-switcher.spec.ts`, `tests/e2e/recorders.ts`, `tests/unit/event-collectors.test.ts` | The "zero JS" promise, restated in words, brought up to date (Task 4). |
+| `README.md`, `.github/workflows/deploy-prod.yml`, `src/components/LanguageSwitcher.astro`, `tests/e2e/language-switcher.spec.ts`, `tests/e2e/recorders.ts`, `tests/unit/event-collectors.test.ts`, `tests/e2e/visual.spec.ts` (the `settle` comment) | The "zero JS" promise, restated in words, brought up to date (Task 4). |
 | `tests/unit/colour-literals.test.ts` | Widened to `.js` and `.mjs`. |
 | `tests/e2e/palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, `classroom-groups.spec.ts`, `classroom-groups-roster.spec.ts`, `disabled-controls.spec.ts`, `locale-beta.spec.ts`, `homepage.spec.ts` | The palette-reading guards, run in both themes. |
 | `tests/e2e/chrome.spec.ts`, `tests/e2e/skip-link.spec.ts` | The Tab-order walks meet the switch. |
@@ -955,7 +955,7 @@ Refs #142"
 **Files:**
 - Create: `src/scripts/theme.inline.js`, `tests/themes.ts`, `tests/e2e/theme-script.spec.ts`, `tests/e2e/theme.spec.ts`
 - Modify: `src/layouts/BaseLayout.astro`, `playwright.config.ts`, `tests/e2e/classroom-groups.spec.ts`, `tests/unit/locale-switcher.test.ts`, `tests/unit/colour-literals.test.ts`, `CLAUDE.md`
-- Modify (the same promise, restated): `README.md`, `.github/workflows/deploy-prod.yml`, `src/components/LanguageSwitcher.astro`, `tests/e2e/language-switcher.spec.ts`, `tests/e2e/recorders.ts`, `tests/unit/event-collectors.test.ts`
+- Modify (the same promise, restated): `README.md`, `.github/workflows/deploy-prod.yml`, `src/components/LanguageSwitcher.astro`, `tests/e2e/language-switcher.spec.ts`, `tests/e2e/recorders.ts`, `tests/unit/event-collectors.test.ts`, `tests/e2e/visual.spec.ts`
 
 **Interfaces:**
 - Consumes: `themeColour`, `THEMES`, `Theme` (Task 1).
@@ -1411,7 +1411,12 @@ with
 - **Every page ships one script, the inline theme script, and the homepage nothing else.** `src/scripts/theme.inline.js` is emitted by `BaseLayout.astro` inline and classic in `<head>`, ahead of every stylesheet, so a saved light or dark choice is on `<html>` before the first paint (#142). The homepage in all five locales and the 404 carry nothing else; `/glory-points` and `/classroom-groups` add their own, in all five locales. `tests/e2e/theme-script.spec.ts` pins that inventory on every built page, read from a real DOM.
 ```
 
-The same promise is restated in six more places, and each becomes false the moment the script ships (review pass 2 found them with `git grep -n -i -E 'zero (js|javascript)|no javascript|ships no'`; `404.astro`'s "needs no JavaScript" and `tokens.css`' "Zero JavaScript" about the atmosphere stay true). Nothing else checks the wording, so each is edited by hand, re-wrapping the comment it sits in:
+The same promise is restated in more places, and each becomes false the moment the script ships. Nothing checks the wording, so derive them rather than trusting this list: `git grep -n -i -E 'zero (js|javascript)|no javascript|ships no' -- ':!docs' ':!HANDOVER.md'` prints **20 lines at `3640af2`** (review pass 3). Every one is accounted for:
+- **5 are edited by this task's own steps above:** `CLAUDE.md:4`, the three in `classroom-groups.spec.ts` (the M-11 comment, the test's title and its message), and `locale-switcher.test.ts`' test title.
+- **8 are edited through the table below:** seven rows, one of which covers two files.
+- **7 stay, because they stay true:** `deploy-prod.yml`'s `classroom-groups ships no script` error message; `Marquee.astro`'s "No JavaScript: one CSS keyframe" (the marquee needs none); `csv.ts`' "ships no third-party runtime code" (the theme script is the site's own); `404.astro`'s "needs no JavaScript"; `tokens.css`' "Zero JavaScript" about the atmosphere; and `metadata.ts` and `locale-metadata.test.ts`, which match only because `ships no` is a prefix of "ships now".
+
+A line the command prints that is none of these is a finding: add it here before going on. Each row is edited by hand, re-wrapping the comment it sits in:
 
 | file | today | becomes |
 | --- | --- | --- |
@@ -1421,6 +1426,7 @@ The same promise is restated in six more places, and each becomes false the mome
 | the same comment, last paragraph | "so the page still ships no JavaScript" | "so the switcher still needs no JavaScript" |
 | `tests/e2e/language-switcher.spec.ts`, *opens and closes without JavaScript* | "A native <details>. The homepage ships zero JS, and a language switcher is exactly the control someone needs when something else has failed." | "A native <details>, with no script of its own: a language switcher is exactly the control someone needs when something else has failed." |
 | `tests/e2e/recorders.ts` and `tests/unit/event-collectors.test.ts`, each once | `` `the homepage still ships no JavaScript` `` | `` `the homepage still ships no JavaScript` (now `the homepage ships the theme script and nothing else`, #142) ``: the history stays, and the test can be found by the name it has |
+| `tests/e2e/visual.spec.ts`, the comment in `settle` | "On the homepage, which ships no JavaScript at all, it is already there and this returns immediately." | "On the homepage, whose one script is the theme script and rewrites nothing, it is already there and this returns immediately." (found in review pass 3) |
 
 - [ ] **Step 6: Run everything and watch it pass.**
   - Rerun both Step 4 commands. Expected: all green.
@@ -1433,9 +1439,9 @@ The same promise is restated in six more places, and each becomes false the mome
 - [ ] **Step 7: Commit.**
 
 ```bash
-npx prettier --write src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md README.md .github/workflows/deploy-prod.yml src/components/LanguageSwitcher.astro tests/e2e/language-switcher.spec.ts tests/e2e/recorders.ts tests/unit/event-collectors.test.ts
+npx prettier --write src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md README.md .github/workflows/deploy-prod.yml src/components/LanguageSwitcher.astro tests/e2e/language-switcher.spec.ts tests/e2e/recorders.ts tests/unit/event-collectors.test.ts tests/e2e/visual.spec.ts
 npx prettier --check .
-git add src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md README.md .github/workflows/deploy-prod.yml src/components/LanguageSwitcher.astro tests/e2e/language-switcher.spec.ts tests/e2e/recorders.ts tests/unit/event-collectors.test.ts
+git add src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md README.md .github/workflows/deploy-prod.yml src/components/LanguageSwitcher.astro tests/e2e/language-switcher.spec.ts tests/e2e/recorders.ts tests/unit/event-collectors.test.ts tests/e2e/visual.spec.ts
 git commit -m "feat(layout): one inline theme script in every head, pinned by inventory
 
 Refs #142"
@@ -2270,12 +2276,14 @@ Refs #142"
   - Run:
 
     ```bash
-    command grep -l -E "toHaveCSS\(\s*'(color|background-color|background|border-color|border-top-color|outline-color|accent-color|box-shadow|fill|stroke)'|\.(backgroundColor|borderColor|borderTopColor|outlineColor|accentColor)\b|style\.color\b|contrastRatio\(|getPropertyValue\('--" tests/e2e/*.spec.ts
+    command grep -l -z -E "toHaveCSS\(\s*'(color|background-color|background|border-color|border-top-color|outline-color|accent-color|box-shadow|fill|stroke)'|\.(backgroundColor|borderColor|borderTopColor|outlineColor|accentColor)\b|style\.color\b|contrastRatio\(|getPropertyValue\('--" tests/e2e/*.spec.ts
     ```
 
-  - Expected, at `3640af2` plus Tasks 1 to 6: `classroom-groups-roster`, `classroom-groups`, `disabled-controls`, `evidence-page`, `homepage`, `locale-beta`, `palette-controls` and `print-legibility`, each `.spec.ts`, plus `theme.spec.ts` from Tasks 4 to 6, which already sets its own themes.
-  - **Two differences from that list, both deliberate:**
+  - `-z` reads each file whole, so `\s*` crosses a line break: prettier wraps a long `toHaveCSS(` call with its property on the next line, and a line-by-line grep cannot see it (review pass 3: it missed `classroom-groups-print.spec.ts:443`).
+  - Expected, at `3640af2` plus Tasks 1 to 6: `classroom-groups-print`, `classroom-groups-roster`, `classroom-groups`, `disabled-controls`, `evidence-page`, `homepage`, `locale-beta`, `palette-controls` and `print-legibility`, each `.spec.ts`, plus `theme.spec.ts` from Tasks 4 to 6, which already sets its own themes.
+  - **Three differences from that list, all deliberate:**
     - `evidence-page.spec.ts` reads the colours of the evidence page the scripts build, not the site's, so it stays as it is.
+    - `classroom-groups-print.spec.ts` reads one colour, the printed row's transparent ground, and only under print media (its `sheet` helper emulates print before any assertion). Paper is white whatever the screen theme, and the dark blocks are screen-only, so a per-theme run would measure the same sheet twice; `print-legibility.spec.ts` is the guard that prints from each theme.
     - `thai-typography.spec.ts` reads no colour, but §6.2 names it, and a theme changes what it measures: the mark's tile padding sits in the `/th/` homepage's `h2`.
 
     Any other file the command prints is a finding: add it here before going on.
@@ -3010,6 +3018,7 @@ for (const f of fs.readdirSync(oldDir).sort()) {
 - [ ] **Step 4: Prove the light set compares, then watch it fail and pass (§6.5).**
   - Commit the baselines first: `git add tests/e2e/visual.spec.ts tests/e2e/__screenshots__ && git commit -m "test(visual): 24 baselines, each view in both themes" -m "Refs #142"`.
   - Run `npm run test:visual`, unchanged. Expected: 24 passed, and `git status --short tests/e2e/__screenshots__` prints nothing. It compared, and wrote nothing.
+  - **A stability timeout is not a comparison.** `Failed to take two consecutive stable screenshots` under `Timeout: 5000ms` means the capture never settled inside `toHaveScreenshot`'s five seconds. The long mobile homepages can miss that under the container's `linux/amd64` emulation, because their first full-page capture is known to differ from the second. Review pass 3 met it once in its three full runs, on the light mobile `home-id` view, and that view then passed twice when run alone. Keep the failing block's text, then re-run that view alone with `-g`. Green alone goes in the PR body as a flake, with its text. Red again is a finding. Never re-capture to make it pass. This holds for every visual run in this plan, Task 13's included, and `retries` is 0 there and in CI.
   - In `tokens.css`'s bare `:root`, change `--accent: #006652;` to `--accent: #0a66c2;`. Then run `npm run test:visual -- -g "light theme"`. Expected: red. Every light view whose picture shows the accent fails, and each diff image marks the accent's regions: links, kickers and the filled buttons.
   - Restore with `git checkout HEAD -- src/styles/tokens.css`, check that `git diff --quiet HEAD -- src/styles/tokens.css` exits 0, and run `npm run test:visual` again. Expected: 24 passed, and nothing written.
   - Record the red run's count and the regions its diffs named, for the PR body.
@@ -3034,6 +3043,7 @@ for (const f of fs.readdirSync(oldDir).sort()) {
   - A baseline is taken once per runner and configuration, and whatever fails in it, such as dev-sanity's two Cloudflare Functions tests, is subtracted from every mutation's run.
   - Every row is exact strings, checked against the prettier-formatted files, and `--dry` checks every anchor's count without running anything. Review pass 1 ran `--dry` on a materialised tree, and all 43 rows matched.
   - A row may also name output it `says` and output it must `never` say, read from the run's messages. U7 uses them to prove its failure is the shade-pool subset, not a flat pair.
+  - A row may name tests it `may` fail, when the mutation itself creates a race and the guard is not what decides it. They are allowed either way, never counted, and printed when they fail. S1 is the only such row (review pass 3).
   - `sanity()` builds twice, dev for dev-sanity and production for prod-sanity, and `serve()` stops any preview first and waits for a 200, because a second `astro preview` is a silent no-op (Task 9 Step 2).
   - Run it with no preview running: the browser runners start their own server on 4321.
 
@@ -3175,9 +3185,11 @@ const SAVE = "    try {\n      localStorage.setItem('theme', theme);\n    } catc
 const U8 = { file: TOKENS, anchor: '  --wordmark-tile: #0f0d15;', to: '  --wordmark-tile: #0f0d16;' };
 
 // Each row: { id, runner, edits: [{ file, anchor, to, count? }] | create + body, fails: [title
-// substrings], count, says?: [output substrings], never?: [output substrings] }. Each `fails`
-// substring must match a newly failing title, newly failing titles must number `count`, and the
-// run's output must hold every `says` and no `never`.
+// substrings], count, may?: [title substrings], says?: [output substrings], never?: [output
+// substrings] }. Each `fails` substring must match a newly failing title, newly failing titles
+// outside `may` must number `count`, and the run's output must hold every `says` and no `never`.
+// `may` names a test the mutation can fail by a race it creates, not by the guard: it is allowed
+// either way and never counted.
 const MUTATIONS = [
   { id: 'U1', runner: 'unit', edits: [{ file: 'tests/wcag.ts', anchor: '  if (/^transparent$/i.test(text)) return { rgb: [0, 0, 0], alpha: 0 };\n', to: '' }],
     fails: ['reads transparent as CSS defines it', 'writes a colour the way getComputedStyle reports it', 'dark: every declared pair clears'], count: 3 },
@@ -3219,8 +3231,11 @@ const MUTATIONS = [
     fails: ['astro check'], count: 1 },
   { id: 'S1', runner: 'theme', edits: [{ file: SCRIPT, anchor: "  apply();\n  root.dataset.themeSwitch = '';", to: "  setTimeout(apply, 200);\n  root.dataset.themeSwitch = '';" }],
     // press() runs at DOMContentLoaded, before the delayed apply(), so aria-pressed
-    // reads the device after a reload as well.
-    fails: ['the first frame that paints a ground paints the saved theme', 'across a reload and a second page'], count: 3 },
+    // reads the device after a reload as well. Under load the timer fires after the
+    // test's click, and apply() then deletes the stamp the click set where storage is
+    // refused: 1 run in 4 at the default workers, 0 in 5 at one (review pass 3).
+    fails: ['the first frame that paints a ground paints the saved theme', 'across a reload and a second page'], count: 3,
+    may: ['the switch still changes the page, nothing is saved, and nothing is logged'] },
   { id: 'S2', runner: 'theme', edits: [{ file: SCRIPT, anchor: SAVE, to: "    localStorage.setItem('theme', theme);\n" }],
     fails: ['the switch still changes the page, nothing is saved, and nothing is logged'], count: 1 },
   { id: 'S3', runner: 'theme', edits: [{ file: SCRIPT, anchor: SAVE, to: '' }],
@@ -3324,13 +3339,16 @@ for (const m of MUTATIONS.filter((x) => IDS.length === 0 || IDS.includes(x.id)))
     continue;
   }
   const newly = after.failing.filter((t) => !base.failing.includes(t));
+  const allowed = newly.filter((t) => (m.may ?? []).some((s) => t.includes(s)));
+  const counted = newly.filter((t) => !allowed.includes(t));
   const said = (m.says ?? []).every((s) => after.out.includes(s)) && (m.never ?? []).every((s) => !after.out.includes(s));
   const ok =
-    newly.length === m.count &&
-    m.fails.every((s) => newly.some((t) => t.includes(s))) &&
-    newly.every((t) => m.fails.some((s) => t.includes(s))) &&
+    counted.length === m.count &&
+    m.fails.every((s) => counted.some((t) => t.includes(s))) &&
+    counted.every((t) => m.fails.some((s) => t.includes(s))) &&
     said;
-  console.log(`${m.id} ${newly.length === 0 ? 'GREEN (NOT CAUGHT)' : ok ? 'RED as predicted' : 'RED, NOT as predicted'}`);
+  console.log(`${m.id} ${counted.length === 0 ? 'GREEN (NOT CAUGHT)' : ok ? 'RED as predicted' : 'RED, NOT as predicted'}` +
+    (allowed.length > 0 ? `, and the race it creates failed ${JSON.stringify(allowed)}` : ''));
   if (!ok) console.log(`   newlyFailing(${newly.length})=${JSON.stringify(newly)}${said ? '' : '  says/never NOT met'}`);
 }
 ```
@@ -3369,7 +3387,7 @@ for (const m of MUTATIONS.filter((x) => IDS.length === 0 || IDS.includes(x.id)))
 
 | id | runner | mutation | must turn red (count) | §6.8 |
 | --- | --- | --- | --- | --- |
-| S1 | theme | `  apply();\n  root.dataset.themeSwitch = '';` becomes `  setTimeout(apply, 200);\n  root.dataset.themeSwitch = '';` | *the first frame that paints a ground paints the saved theme*, in both directions; *across a reload and a second page*, because `press()` runs at `DOMContentLoaded`, before the delayed `apply()`, so `aria-pressed` reads the device (3) | the stamp delayed by a `setTimeout` |
+| S1 | theme | `  apply();\n  root.dataset.themeSwitch = '';` becomes `  setTimeout(apply, 200);\n  root.dataset.themeSwitch = '';` | *the first frame that paints a ground paints the saved theme*, in both directions; *across a reload and a second page*, because `press()` runs at `DOMContentLoaded`, before the delayed `apply()`, so `aria-pressed` reads the device (3). May also fail, uncounted: *storage refused*, when the timer fires after its click and `apply()` deletes the stamp (review pass 3: 1 run in 4) | the stamp delayed by a `setTimeout` |
 | S2 | theme | the `try { … } catch {}` around `localStorage.setItem('theme', theme);` removed, the call kept | *the switch still changes the page, nothing is saved, and nothing is logged* (1) | the `try`/`catch` around the save removed |
 | S3 | theme | the same `try { … } catch {}` removed with its call | *across a reload and a second page*; *into a new session*; *a press after a stale saved value*; *a double press*; *an engine without MediaQueryList.addEventListener* (its reload) (5) | the save removed |
 | S4 | theme | the `pageshow` listener removed | *the pageshow handler re-applies the saved choice* (1). The real Back skips on `chromium`, as Task 6 recorded | the `pageshow` handler removed |
@@ -3410,7 +3428,7 @@ for (const m of MUTATIONS.filter((x) => IDS.length === 0 || IDS.includes(x.id)))
   - `npm run typecheck`: 0/0/0.
   - `npx prettier --check .`: clean, `HANDOVER.md` included (the pre-push hook reads the working tree).
   - `npx playwright test tests/e2e/theme.spec.ts tests/e2e/theme-script.spec.ts tests/e2e/theme-gallery.spec.ts tests/e2e/header-room.spec.ts`: green on every engine, apart from the recorded skips.
-  - `npm run test:visual`: 24 passed, and nothing written.
+  - `npm run test:visual`: 24 passed, and nothing written. A stability timeout is handled as Task 11 Step 4 says.
 
 - [ ] **Step 2: Grep what runs only after the merge.** Look in `tests/dev`, `tests/prod` and `tests/device` for every fact this PR changed:
 
@@ -3532,3 +3550,18 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
   - **P2-6, a capture artefact a reviewer would read as a defect.** Every full-page light capture shows an edge at the viewport's height, because `body::before` is fixed. Task 11 Step 3 and Task 14 now say so, with the measurement.
   - Wording and order: P2-2 ("keeps it true" in the switch's comment, where `true` is also the attribute's value), P2-4 (Task 11's proof sat under "Nothing further to commit"), P2-5 (anti-aliasing noise stated as certain; pass 2 saw none), P2-7 (a list item's full stop).
 - **Next:** pass 3, from a fresh scratch branch at this commit. The loop ends on a pass that finds nothing.
+
+**Pass 3, 2026-09-25 01:47Z to 02:47Z, one session. It found 4 problems, now fixed above.**
+
+- **What was read.** Every line of the plan, 1 to 3534, in order, while materialising it; the spec's §10, AC1 to AC19, each mapped to the task that proves it.
+- **The mechanical checks,** on a fresh local scratch branch from `413d5ab`, every task materialised from the text as it then read:
+  - every red and green count matched: Task 1 (5 red; 2413), 2 (5; 2421), 3 (3; 2422), 4 (2 unit and 43 + 1 browser red, then 15, 48 and 1 green; 2424; prettier flagged exactly the four predicted files), 5 (82 red, 3 skipped, 15 passed; then 336 passed, 7 skipped), 6 (3 unit and 35 browser red; then 18 and 150 green; 2427), 7 (1,145 passed), 8 (91 passed, 4 skipped), 9 (dev 27/2, prod 18/3 with #338 still open; device `--list` 613 in 34 files, `theme.spec.ts` 22), 10 (120 passed), 11 (24 captured, 12 modified and 12 new; every dark change inside y 23-44; accent recoloured 12 red; scheme swapped 12 red on the theme assertion); `npm run typecheck` 0/0/0 after every task;
+  - every ratio in a `tokens.css` comment, recomputed with `worstContrast` to five places: all round to the stated figure;
+  - the script's size (1,295 and 543 bytes); Task 13's post-merge grep (the two `session.ts` lines); the CI job names and `develop`'s protection; the evidence builder's flags and content keys; the mutation tables against the harness rows (43 of 43 agree);
+  - the Task 12 harness, extracted from this plan and byte-identical to pass 2's: `--dry` 43 of 43, then all 43 rows run. 42 were red as predicted, S22 included.
+- **What it found:**
+  - **P3-1, a restated promise the sweep missed.** `visual.spec.ts`' `settle` comment says the homepage "ships no JavaScript at all". The plan's own derivation grep prints it, and 6 more hits the plan neither edited nor excused. Task 4 now gives the grep's count at `3640af2` (20) and a disposition for every line, and a seventh table row.
+  - **P3-2, a derivation that could not see wrapped calls.** Task 7's grep read line by line, so a `toHaveCSS(` with its property on the next line was invisible (`classroom-groups-print.spec.ts:443`). It now reads each file whole (`-z`), and the print spec is named as a deliberate difference: it reads colour only under print media.
+  - **P3-3, a known flake with no instruction.** One of three full visual runs failed on a stability timeout, on the light mobile `home-id` view, which passed twice when run alone. Task 11 Step 4 now says what that failure is and what to do, and Task 13 points to it.
+  - **P3-4, a mutation whose count was a race.** S1 caught a fourth test, *storage refused*, in 1 harness run in 4 (0 in 5 at one worker): under load the delayed `apply()` fires after the click and deletes its stamp. Harness rows gain `may`, allowed and uncounted but printed, and S1 names that test. The edited harness was re-extracted: `--dry` 43 of 43, S1 red as predicted, and a probe proved the new branch.
+- **Next:** pass 4, from a fresh scratch branch at this commit. The loop ends on a pass that finds nothing.
