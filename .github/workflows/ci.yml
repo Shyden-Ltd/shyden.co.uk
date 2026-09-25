@@ -51,8 +51,8 @@ concurrency:
 # settings rather than in source, and can be widened again by a change no
 # diff here would show. This workflow reads a checkout and runs a suite.
 #
-# `e2e`, `build-and-test` and `visual` inherit exactly this and need nothing
-# more. `checks` keeps its own block, because a job block REPLACES the
+# `e2e`, `sanity-on-build`, `build-and-test` and `visual` inherit exactly this
+# and need nothing more. `checks` keeps its own block, because a job block REPLACES the
 # inherited set rather than adding to it: dropping it would take `issues: read`
 # with it and blind the dependabot-label step (#299). Every artifact upload is
 # unaffected -- they authenticate with the runner's own runtime token, not this
@@ -183,12 +183,42 @@ jobs:
           # evidence path for a red run (#131).
           if-no-files-found: warn
 
+  # The deployed-site suites, against this pull request's own build (#335).
+  # tests/dev and tests/prod otherwise run only after a deploy, so a stale fact
+  # in either went green here and failed the deploy after the merge (#330, run
+  # 35948503612). `npm run test:sanity` builds this tree and previews it for
+  # each config in turn, and leaves out the tests tagged @deployed-only, which
+  # the deploy's own run still covers. It needs no credentials: nothing it
+  # reaches is behind the dev site's Basic auth.
+  sanity-on-build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Both sanity configs declare one project, chromium.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:sanity
+      - name: Keep the failing run's Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}-sanity-on-build
+          path: test-results/
+          retention-days: 14
+          # `warn`, never `ignore`, as for the shards above (#131).
+          if-no-files-found: warn
+
   # THE REQUIRED CONTEXT. Branch protection requires it by name and
   # scripts/deploy-gate.mjs deploys because it passed, so it must go on meaning
   # what it meant when it ran the suite itself: every step ran, and the whole
   # suite ran. It runs none of that now. It stands for the jobs that do.
   build-and-test:
-    needs: [checks, e2e]
+    needs: [checks, e2e, sanity-on-build]
     # NEVER skipped. A skipped required check is reported to branch protection
     # as passing, so an aggregate whose condition could turn false would read
     # green exactly when a shard failed or was skipped (#157). It runs always,

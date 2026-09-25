@@ -10,7 +10,6 @@ import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
 import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectTheSwitchPersists } from '../themes';
-import { deployedOnly } from '../sanity-on-build';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -102,9 +101,14 @@ test.describe('every locale the site claims to serve is deployed', () => {
 
 test(
   'robots.txt disallows all crawling on the dev site',
-  deployedOnly(
-    'functions/_middleware.js serves the dev robots.txt, and a preview of dist/ runs no Pages Function',
-  ),
+  {
+    tag: '@deployed-only',
+    annotation: {
+      type: 'deployed-only',
+      description:
+        'functions/_middleware.js serves the dev robots.txt, and a preview of dist/ runs no Pages Function',
+    },
+  },
   async ({ request }) => {
     // Served before the auth gate, so this holds with or without creds.
     const body = await (await request.get('/robots.txt')).text();
@@ -114,9 +118,14 @@ test(
 
 test(
   'an unauthenticated request is challenged with 401',
-  deployedOnly(
-    'the Basic-auth gate is functions/_middleware.js, and a preview of dist/ runs no Pages Function',
-  ),
+  {
+    tag: '@deployed-only',
+    annotation: {
+      type: 'deployed-only',
+      description:
+        'the Basic-auth gate is functions/_middleware.js, and a preview of dist/ runs no Pages Function',
+    },
+  },
   async () => {
     // Raw fetch — NOT a Playwright request context, which would inherit the
     // config's httpCredentials and silently authenticate (making this pass a

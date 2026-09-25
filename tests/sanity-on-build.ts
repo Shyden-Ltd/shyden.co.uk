@@ -1,4 +1,4 @@
-import type { PlaywrightTestConfig, TestDetails } from '@playwright/test';
+import type { PlaywrightTestConfig } from '@playwright/test';
 
 /**
  * The deployed-site suites, run against a pull request's own build (#335).
@@ -8,8 +8,17 @@ import type { PlaywrightTestConfig, TestDetails } from '@playwright/test';
  * verification failed. Both configs take their base URL from the
  * environment, and against a production build of this tree every test holds
  * except the few that need something `dist/` does not contain. This file is
- * the one home of the switch that points them at that build, and of the mark
- * those few tests carry.
+ * the one home of the switch that points them at that build.
+ *
+ * Those few are marked where they are written, as details in the literal form
+ * `tests/playwright-declarations.ts` can read, with the reason beside the tag:
+ *
+ *     test('...', {
+ *       tag: '@deployed-only',
+ *       annotation: { type: 'deployed-only', description: '<why>' },
+ *     }, async () => { ... });
+ *
+ * `tests/unit/sanity-on-build.test.ts` refuses the tag without a reason.
  *
  * `SANITY_ON_BUILD=1` is set by `npm run test:sanity`, which is what CI's
  * `sanity-on-build` job runs. Off, which is every deploy's run, nothing here
@@ -22,8 +31,6 @@ export interface OnBuild {
   grepInvert: RegExp;
   baseURL: string;
 }
-
-const DEPLOYED_ONLY = '@deployed-only';
 
 /**
  * With the switch on, the fragment that makes a sanity config build this
@@ -57,19 +64,7 @@ export function onBuild(
       env: buildEnv,
       reuseExistingServer: false,
     },
-    grepInvert: new RegExp(DEPLOYED_ONLY),
+    grepInvert: /@deployed-only/,
     baseURL,
-  };
-}
-
-/**
- * The details argument of a test that only the deployed site can answer.
- * It is left out of the on-build run, and `reason` travels with it into
- * every report, so the next reader learns why it did not run there.
- */
-export function deployedOnly(reason: string): TestDetails {
-  return {
-    tag: DEPLOYED_ONLY,
-    annotation: { type: 'deployed-only', description: reason },
   };
 }
