@@ -37,10 +37,12 @@ const DEPLOYED_ONLY = '@deployed-only';
  * for it: Playwright spreads `webServer.env` over `process.env`. A config
  * that must not build with a variable has to refuse it, not unset it.
  *
- * The lock is removed first because the two configs start their previews
- * one after the other, and a preview that finds the previous one's
- * `.astro/preview.json` starts nothing. `npm run preview` keeps the server
- * in the foreground, where Playwright owns it and stops it.
+ * `npm run preview` keeps the server in the foreground, where Playwright owns
+ * it and stops it. The lock it leaves in `.astro/preview.json` names a dead
+ * process by then, and Astro discards such a lock itself, so the second
+ * config's preview starts (measured: the run passes with a lock left behind).
+ * A lock naming a LIVE preview stops the run, which is the right answer: two
+ * previews of one project is what the lock exists to prevent.
  */
 export function onBuild(
   port: number,
@@ -50,7 +52,7 @@ export function onBuild(
   const baseURL = `http://localhost:${port}`;
   return {
     webServer: {
-      command: `rm -f .astro/preview.json && npm run build && npm run preview -- --port ${port}`,
+      command: `npm run build && npm run preview -- --port ${port}`,
       url: baseURL,
       env: buildEnv,
       reuseExistingServer: false,
