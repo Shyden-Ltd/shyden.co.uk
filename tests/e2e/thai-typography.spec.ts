@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { shoot } from './evidence';
 import { searched } from '../source-files';
+import { THEMES } from '../palette';
+import { emulateTheme } from '../themes';
 import { sitePaths } from '../site-pages';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 
@@ -59,70 +61,75 @@ test.describe('Thai typography', () => {
             response?.status(),
             `${route} at ${width}px: route did not serve`,
           ).toBe(200);
-          const { offenders, examined } = await page.evaluate(() => {
-            const THAI = /[฀-๿]/;
-            const context = document.createElement('canvas').getContext('2d')!;
-            const found: string[] = [];
-            let examined = 0;
+          for (const theme of THEMES) {
+            await emulateTheme(page, theme);
+            const { offenders, examined } = await page.evaluate(() => {
+              const THAI = /[฀-๿]/;
+              const context = document
+                .createElement('canvas')
+                .getContext('2d')!;
+              const found: string[] = [];
+              let examined = 0;
 
-            for (const el of document.querySelectorAll(
-              'h1,h2,h3,p,li,label,button,a,span,td,th,summary',
-            )) {
-              const text = (el.textContent ?? '').trim();
-              // Leaf nodes only: a parent's textContent concatenates its
-              // children and would be measured in the parent's font.
-              if (!THAI.test(text) || el.children.length > 0) continue;
-              examined += 1;
+              for (const el of document.querySelectorAll(
+                'h1,h2,h3,p,li,label,button,a,span,td,th,summary',
+              )) {
+                const text = (el.textContent ?? '').trim();
+                // Leaf nodes only: a parent's textContent concatenates its
+                // children and would be measured in the parent's font.
+                if (!THAI.test(text) || el.children.length > 0) continue;
+                examined += 1;
 
-              const style = getComputedStyle(el);
-              const fontSize = parseFloat(style.fontSize);
-              const lineHeight =
-                style.lineHeight === 'normal'
-                  ? fontSize * 1.2
-                  : parseFloat(style.lineHeight);
+                const style = getComputedStyle(el);
+                const fontSize = parseFloat(style.fontSize);
+                const lineHeight =
+                  style.lineHeight === 'normal'
+                    ? fontSize * 1.2
+                    : parseFloat(style.lineHeight);
 
-              context.font = `${style.fontStyle} ${style.fontWeight} ${fontSize}px ${style.fontFamily}`;
-              const metrics = context.measureText(text);
-              const ink =
-                metrics.actualBoundingBoxAscent +
-                metrics.actualBoundingBoxDescent;
+                context.font = `${style.fontStyle} ${style.fontWeight} ${fontSize}px ${style.fontFamily}`;
+                const metrics = context.measureText(text);
+                const ink =
+                  metrics.actualBoundingBoxAscent +
+                  metrics.actualBoundingBoxDescent;
 
-              if (ink > lineHeight)
-                found.push(
-                  `${el.tagName.toLowerCase()} ink ${ink.toFixed(1)}px > line ${lineHeight.toFixed(1)}px — "${text.slice(0, 24)}"`,
-                );
-            }
-            return { offenders: [...new Set(found)], examined };
-          });
+                if (ink > lineHeight)
+                  found.push(
+                    `${el.tagName.toLowerCase()} ink ${ink.toFixed(1)}px > line ${lineHeight.toFixed(1)}px — "${text.slice(0, 24)}"`,
+                  );
+              }
+              return { offenders: [...new Set(found)], examined };
+            });
 
-          // Anti-vacuity, and this file already knew to worry about it: its
-          // own opening test says these routes would 404 and "every
-          // measurement below would pass on an empty page". That covered
-          // Thai leaving LOCALES; it did not cover a route that 404s for any
-          // other reason, or a page not yet translated. Deriving the route
-          // list (#68) makes the second case reachable, so measure it.
-          expect(
-            examined,
-            `${route} at ${width}px: no Thai text was measured — the route is missing or untranslated`,
-          ).toBeGreaterThan(0);
+            // Anti-vacuity, and this file already knew to worry about it: its
+            // own opening test says these routes would 404 and "every
+            // measurement below would pass on an empty page". That covered
+            // Thai leaving LOCALES; it did not cover a route that 404s for any
+            // other reason, or a page not yet translated. Deriving the route
+            // list (#68) makes the second case reachable, so measure it.
+            expect(
+              examined,
+              `${route} at ${width}px, ${theme}: no Thai text was measured — the route is missing or untranslated`,
+            ).toBeGreaterThan(0);
 
-          expect(
-            searched(offenders, {
-              of: examined,
-              what: `Thai headings measured at ${route} ${width}px`,
-            }),
-            `${route} at ${width}px: Thai marks would collide with the line above`,
-          ).toEqual([]);
-          // Thai stacks up to two marks above the base glyph and one below, so
-          // the collision is visible in the image itself, not only the numbers.
-          // Clipped to the heading: that is where #22's measured line-height
-          // applies and where the collision appeared, and at full-page size a
-          // reader cannot judge a mark against the line above anyway.
-          await shoot(
-            page,
-            `${route} at ${width}px: ${examined} Thai runs clear of the line above`,
-            page.locator('h1').first(),
-          );
+            expect(
+              searched(offenders, {
+                of: examined,
+                what: `Thai headings measured at ${route} ${width}px, ${theme}`,
+              }),
+              `${route} at ${width}px, ${theme}: Thai marks would collide with the line above`,
+            ).toEqual([]);
+            // Thai stacks up to two marks above the base glyph and one below, so
+            // the collision is visible in the image itself, not only the numbers.
+            // Clipped to the heading: that is where #22's measured line-height
+            // applies and where the collision appeared, and at full-page size a
+            // reader cannot judge a mark against the line above anyway.
+            await shoot(
+              page,
+              `${route} at ${width}px, ${theme}: ${examined} Thai runs clear of the line above`,
+              page.locator('h1').first(),
+            );
+          }
         }
       },
     );

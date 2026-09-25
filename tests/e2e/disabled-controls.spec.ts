@@ -1,6 +1,8 @@
 import { type Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { searched } from '../source-files';
+import { THEMES } from '../palette';
+import { emulateTheme } from '../themes';
 import { MAX_ROSTER } from '../../src/lib/roster';
 import { addSeveral, openRoster, setSex } from './helpers';
 import { recorded } from './evidence';
@@ -439,9 +441,12 @@ test.describe('a disabled control affords that it is disabled', () => {
     await addSeveral(page, MAX_ROSTER - 1);
     await openEveryDisclosure(page);
 
-    const { reachable, fill, ink } = await affordances(page);
-    expectNoEntryCursor(reachable, 'at-limit');
-    expectDisabledPaint(reachable, fill, ink, 'at-limit');
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const { reachable, fill, ink } = await affordances(page);
+      expectNoEntryCursor(reachable, `at-limit, ${theme}`);
+      expectDisabledPaint(reachable, fill, ink, `at-limit, ${theme}`);
+    }
     expectAReasonWithoutHover(await reasons(page), 'at-limit');
   });
 
@@ -454,13 +459,19 @@ test.describe('a disabled control affords that it is disabled', () => {
     // that has never matched anything is itself vacuous (#118).
     await setSex(page, 0, 'M');
 
-    const { reachable, excluded, fill, ink } = await affordances(page);
-    searched(excluded, { of: excluded, what: 'disabled placeholder options' });
-    // Exactly one row, so exactly one placeholder — and nothing BUT an
-    // `<option>` may sit in the excluded set.
-    expect(excluded).toEqual(['option']);
-    expectNoEntryCursor(reachable, 'a sex chosen');
-    expectDisabledPaint(reachable, fill, ink, 'a sex chosen');
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const { reachable, excluded, fill, ink } = await affordances(page);
+      searched(excluded, {
+        of: excluded,
+        what: 'disabled placeholder options',
+      });
+      // Exactly one row, so exactly one placeholder — and nothing BUT an
+      // `<option>` may sit in the excluded set.
+      expect(excluded).toEqual(['option']);
+      expectNoEntryCursor(reachable, `a sex chosen, ${theme}`);
+      expectDisabledPaint(reachable, fill, ink, `a sex chosen, ${theme}`);
+    }
   });
 
   test('only checkbox, radio and file inputs are left to the UA to paint', async ({

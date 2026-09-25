@@ -11,7 +11,8 @@ import {
   localisePath,
 } from '../../src/lib/i18n';
 import { recorded, shoot } from './evidence';
-import { THEME_SCRIPT_SOURCE } from '../themes';
+import { THEMES } from '../palette';
+import { THEME_SCRIPT_SOURCE, emulateTheme } from '../themes';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import {
@@ -1514,10 +1515,13 @@ test.describe('out-of-date groups', () => {
     await shuffle(page);
     await page.getByLabel('Students in each group').fill('3');
     await expect(page.locator('#cg-results')).toHaveClass(/stale/);
-    const contrast = await contrastRatio(
-      page.locator('#cg-results .group').first(),
-    );
-    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const contrast = await contrastRatio(
+        page.locator('#cg-results .group').first(),
+      );
+      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   // #332. The notice paints its own cream ground (#fff6e3) but took its ink
@@ -1535,12 +1539,15 @@ test.describe('out-of-date groups', () => {
     await expect(sentence).toHaveText(
       'These groups are out of date — the group size changed.',
     );
-    expect(await contrastRatio(sentence)).toBeGreaterThanOrEqual(4.5);
-    await shoot(
-      page,
-      'the out-of-date sentence on its cream notice',
-      page.locator('#cg-stale'),
-    );
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      expect(await contrastRatio(sentence), theme).toBeGreaterThanOrEqual(4.5);
+      await shoot(
+        page,
+        `${theme}: the out-of-date sentence on its cream notice`,
+        page.locator('#cg-stale'),
+      );
+    }
   });
 
   // CLAUDE.md's binding rules apply to anything this task adds: no
@@ -2164,8 +2171,11 @@ test.describe('the no-scroll rule, measured', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
-    const contrast = await contrastRatio(page.locator('#cg-go'));
-    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      const contrast = await contrastRatio(page.locator('#cg-go'));
+      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   // M-11. The one test in this file that never touches /classroom-groups --
