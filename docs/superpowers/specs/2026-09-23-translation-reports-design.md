@@ -297,8 +297,8 @@ site's own links use. If the host adds a trailing-slash redirect, the fragment
 survives it, because a redirect whose `Location` has no fragment keeps the
 request's. The homepage test in section 10 lands on the fragment through
 `wrangler pages dev`, and the dev submission lands on it through Cloudflare.
-Nothing the visitor typed reaches a header. Check 5 cannot build a safe target, so it answers a plain
-`400`.
+Nothing the visitor typed reaches a header. Check 5 cannot build a safe
+target, so it answers a plain `400`.
 
 **JSON mode** (`Accept: application/json`, the tool-page script):
 `{"outcome":"sent"}` with `200` (the honeypot's decoy too); `not-found` `422`;
@@ -640,3 +640,13 @@ it): 8 findings, all fixed.**
    `theme-script.spec.ts` and `sanity-on-build.test.ts` do not exist yet. Both
    were re-checked on `origin/develop`, where they do. `develop` is merged into
    this branch before the plan is written.
+
+**Pass 4 (2026-09-25, a full read on this branch after `develop` was merged
+in, at f15e1f7): 1 finding, fixed.** Every path the spec names now exists here,
+except the seven files it creates. Every export it names exists; the check was
+run twice, because macOS `git grep -E` has no `\b` and the first run reported
+all six missing. The counts in section 4 re-measure the same. The site's own
+links use `localisePath('/classroom-groups', lang)`, the form 6.1's redirect
+builds.
+
+1. A pass-3 edit left a 100-character line in 6.1.
