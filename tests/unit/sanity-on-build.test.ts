@@ -74,6 +74,21 @@ function collect(
   for (const child of suite.suites ?? []) collect(config, child, here, into);
 }
 
+interface JsonListing {
+  config: { webServer: Listing['webServer'] };
+  suites: JsonSuite[];
+  errors: { message: string }[];
+}
+
+/** The JSON reporter's output, or `undefined` when there is none to read. */
+function parsed(stdout: string): JsonListing | undefined {
+  try {
+    return JSON.parse(stdout) as JsonListing;
+  } catch {
+    return undefined;
+  }
+}
+
 const listings = new Map<string, Listing>();
 
 /**
@@ -96,16 +111,22 @@ function listing(config: SanityConfig, onBuild: boolean): Listing {
     ['playwright', 'test', '-c', config, '--list', '--reporter=json'],
     { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
-  if (run.status !== 0)
+  // An empty selection exits 1 with "No tests found", and it is the likeliest
+  // way for this guard to fail: each testDir holds one spec file, so a file
+  // whose every test is tagged leaves nothing to list. Read as a listing of
+  // no tests, it reaches the coverage assertion below, which names the file.
+  // Any other error is thrown whole.
+  const json = parsed(run.stdout);
+  const emptySelection =
+    json !== undefined &&
+    json.errors.length > 0 &&
+    json.errors.every((e) => /^Error: No tests found\b/.test(e.message));
+  if (json === undefined || (run.status !== 0 && !emptySelection))
     throw new Error(
       `playwright --list -c ${config} (SANITY_ON_BUILD=${onBuild ? 1 : 0}) ` +
         `exited ${run.status}:\n${run.stderr}${run.stdout.slice(0, 2000)}`,
     );
 
-  const json = JSON.parse(run.stdout) as {
-    config: { webServer: Listing['webServer'] };
-    suites: JsonSuite[];
-  };
   const tests: ListedTest[] = [];
   for (const suite of json.suites) collect(config, suite, [], tests);
   const result = { webServer: json.config.webServer, tests };
