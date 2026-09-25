@@ -115,6 +115,7 @@
 | `tests/e2e/theme-gallery.spec.ts` (new) | Every built page in both themes at 320 and 1280px, and the interactive states: the evidence §6.7 asks for, each capture behind an assertion. |
 | `playwright.config.ts` | `theme-script.spec.ts` joins `CONTENT_ONLY_SPECS`. |
 | `tests/e2e/classroom-groups.spec.ts`, `tests/unit/locale-switcher.test.ts` | The two former zero-JS guards, rewritten. |
+| `README.md`, `.github/workflows/deploy-prod.yml`, `src/components/LanguageSwitcher.astro`, `tests/e2e/language-switcher.spec.ts`, `tests/e2e/recorders.ts`, `tests/unit/event-collectors.test.ts` | The "zero JS" promise, restated in words, brought up to date (Task 4). |
 | `tests/unit/colour-literals.test.ts` | Widened to `.js` and `.mjs`. |
 | `tests/e2e/palette-controls.spec.ts`, `print-legibility.spec.ts`, `thai-typography.spec.ts`, `classroom-groups.spec.ts`, `classroom-groups-roster.spec.ts`, `disabled-controls.spec.ts`, `locale-beta.spec.ts`, `homepage.spec.ts` | The palette-reading guards, run in both themes. |
 | `tests/e2e/chrome.spec.ts`, `tests/e2e/skip-link.spec.ts` | The Tab-order walks meet the switch. |
@@ -954,6 +955,7 @@ Refs #142"
 **Files:**
 - Create: `src/scripts/theme.inline.js`, `tests/themes.ts`, `tests/e2e/theme-script.spec.ts`, `tests/e2e/theme.spec.ts`
 - Modify: `src/layouts/BaseLayout.astro`, `playwright.config.ts`, `tests/e2e/classroom-groups.spec.ts`, `tests/unit/locale-switcher.test.ts`, `tests/unit/colour-literals.test.ts`, `CLAUDE.md`
+- Modify (the same promise, restated): `README.md`, `.github/workflows/deploy-prod.yml`, `src/components/LanguageSwitcher.astro`, `tests/e2e/language-switcher.spec.ts`, `tests/e2e/recorders.ts`, `tests/unit/event-collectors.test.ts`
 
 **Interfaces:**
 - Consumes: `themeColour`, `THEMES`, `Theme` (Task 1).
@@ -1409,6 +1411,17 @@ with
 - **Every page ships one script, the inline theme script, and the homepage nothing else.** `src/scripts/theme.inline.js` is emitted by `BaseLayout.astro` inline and classic in `<head>`, ahead of every stylesheet, so a saved light or dark choice is on `<html>` before the first paint (#142). The homepage in all five locales and the 404 carry nothing else; `/glory-points` and `/classroom-groups` add their own, in all five locales. `tests/e2e/theme-script.spec.ts` pins that inventory on every built page, read from a real DOM.
 ```
 
+The same promise is restated in six more places, and each becomes false the moment the script ships (review pass 2 found them with `git grep -n -i -E 'zero (js|javascript)|no javascript|ships no'`; `404.astro`'s "needs no JavaScript" and `tokens.css`' "Zero JavaScript" about the atmosphere stay true). Nothing else checks the wording, so each is edited by hand, re-wrapping the comment it sits in:
+
+| file | today | becomes |
+| --- | --- | --- |
+| `README.md` | "**The homepage ships zero JavaScript**, and `deploy-prod.yml` fails the release if that ever stops being true." | "**The homepage fetches no JavaScript**: its one script, the theme script, is inline (#142), and `deploy-prod.yml` fails the release if the homepage ever fetches one." |
+| `.github/workflows/deploy-prod.yml`, the prod smoke | the comment "The homepage still ships NO script — a promise this site makes and the kind of thing a bundler change breaks silently.", and the message `the homepage now ships JavaScript` | "The homepage still FETCHES no script: its one script, the theme script, is inline (#142), and a bundler change could add one silently.", and `the homepage now fetches JavaScript`. The check itself stays: its `grep` matches only `<script … src="….js">`, which the inline script is not. |
+| `src/components/LanguageSwitcher.astro`, doc comment | "Zero JavaScript. The homepage ships none, and a language switcher is exactly the control a visitor needs when something else has gone wrong" | "No JavaScript of its own. A language switcher is exactly the control a visitor needs when something else has gone wrong, the theme script included (#142)" |
+| the same comment, last paragraph | "so the page still ships no JavaScript" | "so the switcher still needs no JavaScript" |
+| `tests/e2e/language-switcher.spec.ts`, *opens and closes without JavaScript* | "A native <details>. The homepage ships zero JS, and a language switcher is exactly the control someone needs when something else has failed." | "A native <details>, with no script of its own: a language switcher is exactly the control someone needs when something else has failed." |
+| `tests/e2e/recorders.ts` and `tests/unit/event-collectors.test.ts`, each once | `` `the homepage still ships no JavaScript` `` | `` `the homepage still ships no JavaScript` (now `the homepage ships the theme script and nothing else`, #142) ``: the history stays, and the test can be found by the name it has |
+
 - [ ] **Step 6: Run everything and watch it pass.**
   - Rerun both Step 4 commands. Expected: all green.
     - `theme-script.spec.ts`: 33 of 33.
@@ -1420,9 +1433,9 @@ with
 - [ ] **Step 7: Commit.**
 
 ```bash
-npx prettier --write src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md
+npx prettier --write src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md README.md .github/workflows/deploy-prod.yml src/components/LanguageSwitcher.astro tests/e2e/language-switcher.spec.ts tests/e2e/recorders.ts tests/unit/event-collectors.test.ts
 npx prettier --check .
-git add src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md
+git add src/scripts/theme.inline.js src/layouts/BaseLayout.astro tests/themes.ts tests/e2e/theme-script.spec.ts tests/e2e/theme.spec.ts tests/e2e/classroom-groups.spec.ts tests/unit/locale-switcher.test.ts tests/unit/colour-literals.test.ts playwright.config.ts CLAUDE.md README.md .github/workflows/deploy-prod.yml src/components/LanguageSwitcher.astro tests/e2e/language-switcher.spec.ts tests/e2e/recorders.ts tests/unit/event-collectors.test.ts
 git commit -m "feat(layout): one inline theme script in every head, pinned by inventory
 
 Refs #142"
@@ -1691,7 +1704,7 @@ const t = getSiteStrings(lang);
   /* The theme switch (#142 §5): a toggle button whose name stays "Dark mode"
      while only its pressed state changes, the WAI-ARIA pattern. The server
      renders no aria-pressed; the theme script adds it once the page has
-     parsed and keeps it true, so the attribute exists only while something
+     parsed and keeps it accurate, so the attribute exists only while something
      maintains it. Hidden until that script has run (--switch-display in
      tokens.css): with JavaScript off, the device's own setting applies and no
      dead button is offered. The icons are decorative: a moon while light is
@@ -2496,19 +2509,22 @@ test('the screen palette is not dragged down with the print one', async ({
   });
 ```
 
-**`homepage.spec.ts`.** Import `THEMES` and `themeColour` from `'../palette'`, and `emulateTheme` from `'../themes'`. Append this block at the end of *the ShyTalk showcase carries the brand wordmark and links out*:
+**`homepage.spec.ts`.** Import `THEMES` from `'../palette'`, and `emulateTheme` from `'../themes'`. Append this block at the end of *the ShyTalk showcase carries the brand wordmark and links out*:
 
 ```ts
     // #142 §3.4, AC14: the mark keeps its own tones in both themes, sits on
     // its own tile in light and on nothing in dark, and prints in the
-    // page's own ink with no tile.
+    // page's own ink with no tile. The tile is pinned to SHYTALK_MARK, the
+    // brief, never read back from tokens.css: a value read from the file the
+    // page is built from moves with the page, and asserts nothing (S22).
+    const tile = {
+      light: asComputedRgb(SHYTALK_MARK.tile),
+      dark: 'rgba(0, 0, 0, 0)',
+    } as const;
     for (const theme of THEMES) {
       await emulateTheme(page, theme);
       await expect(wordmark, theme).toHaveCSS('color', asComputedRgb(SHYTALK_MARK.shy));
-      await expect(wordmark, theme).toHaveCSS(
-        'background-color',
-        themeColour(theme, '--wordmark-tile'),
-      );
+      await expect(wordmark, theme).toHaveCSS('background-color', tile[theme]);
     }
     await page.emulateMedia({ media: 'print' });
     const ink = await page
@@ -2523,6 +2539,7 @@ test('the screen palette is not dragged down with the print one', async ({
   - Expected: all green. These guards already hold in dark, and Studio's pairs all clear in the unit suite.
   - **A red in the light run is a finding about the page, never about the guard.** Read the failing assertion, then check the ground in a browser before believing it, since a composite can report a ground no page paints (standing rule). Fix the component by moving it onto tokens, and re-run. Record each such finding and its fix for the PR body.
   - Then run `npm run test:unit`, which holds the meta-guards on specs: `capture-after-assertion`, `event-collectors`, `absence-liveness`, `viewport-tagging` and `evidence-recording`. Expected: all green. Every `shoot` above comes after an `expect` in the same loop.
+  - Then run `npm run typecheck`. Expected: 0/0/0. Eight specs changed, and neither Playwright nor Vitest checks types (review pass 2).
 
 - [ ] **Step 4: Commit.**
 
@@ -2613,6 +2630,7 @@ Append to the test:
 - [ ] **Step 2: Run both specs and watch them pass.**
   - Run: `npx playwright test tests/e2e/chrome.spec.ts tests/e2e/skip-link.spec.ts`
   - Expected: all green. The walks skip on WebKit as before. Their reds are mutation S15 in Task 12, the switch taken out of the Tab order.
+  - Then run `npm run test:unit` and `npm run typecheck`. Expected: all green, and 0/0/0.
 
 - [ ] **Step 3: Commit.**
 
@@ -2906,6 +2924,7 @@ for (const theme of THEMES) {
   - Measured in review pass 1: 120 passed. Written with `test.use(recorded)` inside *interactive states*, the file failed to load at all, and it took every Playwright run that loads it down with it: the device `--list` read 0 tests. The docking assertion held in both themes on every engine (10 of 10).
   - A sideways scroll in light alone is a finding about the page. Fix it at its container, and re-run.
   - Then run `npm run test:unit`. Expected: all green, including `viewport-tagging`, `capture-after-assertion` and `evidence-recording`. Each resize sits in its tagged test's own body, and each `shoot` follows an `expect`.
+  - Then run `npm run typecheck`. Expected: 0/0/0.
 
 - [ ] **Step 3: Commit.**
 
@@ -2952,6 +2971,7 @@ for (const theme of THEMES) {
     - the three snapshot names `` `${name}-${label}.png` ``, `` `classroom-groups-roster-${label}.png` `` and `` `classroom-groups-docked-${label}.png` `` each gain `${suffix}` before `.png`;
     - each of the three tests calls `await expectTheme(page, theme);` straight after it navigates: after `page.goto`, or after `openRoster`.
   - That last addition asserts the theme before any picture is taken. A light baseline captured on a dark page would otherwise be a picture of the wrong palette, and every later run would pass against it.
+  - Run `npx prettier --write tests/e2e/visual.spec.ts`, then `npm run typecheck` (0/0/0) and `npm run test:unit`: `browser-matrix` and `pipeline-wiring` read `visual.spec.ts`, and must stay green.
 
 - [ ] **Step 2: Capture, in the pinned container, with nothing else running.**
   - Stop your own previews and background jobs first (`npx astro preview stop`, and any `npm run preview` you started). Leave any container that is not yours running: the two `sonarqube-mcp` containers are the operator's. Their memory is why the durations are worth watching.
@@ -2982,9 +3002,10 @@ for (const f of fs.readdirSync(oldDir).sort()) {
 }
 ```
 
-  - Run `node "$S/diffbox.cjs" "$S/old" tests/e2e/__screenshots__`. Expected, as measured in review pass 1: every file keeps its size, and every changed pixel sits in the header band, `y 23-44`, where the switch now sits before the language switcher. The one exception is single-level noise: the two roster views also differ by 5 pixels in total below the header, each by one channel level, which is anti-aliasing.
+  - Run `node "$S/diffbox.cjs" "$S/old" tests/e2e/__screenshots__`. Expected, as measured in review passes 1 and 2: every file keeps its size, and every changed pixel sits in the header band, `y 23-44`, where the switch now sits before the language switcher. Anti-aliasing noise may add a few pixels elsewhere, each off by one channel level: pass 1 saw 5 below the header in the two roster views, and pass 2 saw none. Noise is a handful of single-level pixels; anything more is not noise.
   - Anything else is a finding. Aurora's values did not change, so nothing else may move. Stop and trace it before going on.
   - Then read by eye one old and new pair, and one light file per view. Each light file must show Studio: a cool grey ground, white cards, the mark on its dark tile, and a moon in the switch.
+  - Every full-page light file also shows a faint horizontal edge at the viewport's height (900px on desktop). It is not a defect. `body::before` is `position: fixed; inset: 0`, so a full-page capture paints the atmosphere over the first viewport only, while a visitor always sees it cover the screen. The edge was always in the dark baselines too, and there it cannot be seen. Measured in review pass 2 at x = 60 on `home-en-desktop`: dark goes from `4,8,16` to `4,7,13` across y = 900, and light from `234,237,241` to `238,241,244`. Task 14 says so on the evidence page.
 
 - [ ] **Step 4: Prove the light set compares, then watch it fail and pass (§6.5).**
   - Commit the baselines first: `git add tests/e2e/visual.spec.ts tests/e2e/__screenshots__ && git commit -m "test(visual): 24 baselines, each view in both themes" -m "Refs #142"`.
@@ -2993,11 +3014,11 @@ for (const f of fs.readdirSync(oldDir).sort()) {
   - Restore with `git checkout HEAD -- src/styles/tokens.css`, check that `git diff --quiet HEAD -- src/styles/tokens.css` exits 0, and run `npm run test:visual` again. Expected: 24 passed, and nothing written.
   - Record the red run's count and the regions its diffs named, for the PR body.
 
-- [ ] **Step 5: Nothing further to commit** unless Step 3 found something. The baselines and the spec were committed in Step 4.
-
-  Then prove the theme assertion itself. In `visual.spec.ts`, change `test.use({ colorScheme: theme });` to `test.use({ colorScheme: theme === 'dark' ? 'light' : 'dark' });`, and run `npm run test:visual -- -g "light theme"`.
+- [ ] **Step 5: Prove the theme assertion itself.** In `visual.spec.ts`, change `test.use({ colorScheme: theme });` to `test.use({ colorScheme: theme === 'dark' ? 'light' : 'dark' });`, and run `npm run test:visual -- -g "light theme"`.
   - Expected: 12 red, each on *the page rendered the light theme*, before any picture is compared.
   - Restore with `git checkout HEAD -- tests/e2e/visual.spec.ts`, and confirm with `git diff --quiet HEAD -- tests/e2e/visual.spec.ts`.
+
+- [ ] **Step 6: Nothing further to commit** unless Step 3 found something. The baselines and the spec were committed in Step 4.
 
 ---
 
@@ -3416,7 +3437,7 @@ for (const m of MUTATIONS.filter((x) => IDS.length === 0 || IDS.includes(x.id)))
     - the shipped script's size;
     - the four label drafts, written directly, with the translator's dry-run counts that ruled it out;
     - every finding Task 7 or Task 10 fixed;
-    - that `npm run test:devices` is the operator's, with the phones.
+    - that `npm run test:devices` is the operator's, with the phones;
     - the two local sanity runs (Task 9 Step 2), and that prod-sanity's three reds are #338's, which predate this PR.
   - Check it with `node scripts/closing-keywords.mjs <file> "this pull request body"`.
 
@@ -3445,6 +3466,7 @@ for (const m of MUTATIONS.filter((x) => IDS.length === 0 || IDS.includes(x.id)))
 - [ ] **Step 2: Write the content file,** `$S/content142.json`, in the evidence builder's schema: `title`, `eyebrow`, `headline`, `lede`, `sections` (`{ heading, body }` each), `mutations` (`{ id, what, predicted, actual }` each, from `mut142b.log`), `signoffKey` and `notCovered`.
   - Headline: "Light mode: Studio beside Aurora". `signoffKey`: `ticket-142`.
   - Sections: the palette, the switch, what the pages show in each theme, print, and what was measured.
+  - The section on the pages says that every full-page capture shows a faint edge at the viewport's height, and why (Task 11 Step 3): in Studio it is visible, and a reviewer who is not told will read it as a defect of the page.
   - `notCovered`: the real-device gauntlet, which is the operator's with the phones, and the real Back test wherever an engine did not restore the page (Playwright launches the two Chromium engines without the back-forward cache, and review pass 1 measured the other three not restoring either). The synthetic `pageshow` test is what proves the handler.
 
 - [ ] **Step 3: Build and publish.** This is the two-pass flow the builder documents (#268). Load the `artifact-capabilities` skill before passing any capability.
@@ -3494,3 +3516,19 @@ Each pass runs every mechanical check, then reads the whole plan (operator, 2026
   - One pre-existing defect outside #142: prod-sanity's three stale facts on `develop` (31), filed as #338.
 - **Cleared by measurement, no change:** 19 (`command grep` handles `\s` and `\b` here), 21 (the device list exits 0 with no phones), 20 (resolved into 32). Finding 8 was withdrawn in session 1.
 - **Next:** pass 2 reruns every mechanical check on a fresh scratch branch, and reads the whole plan again.
+
+**Pass 2, 2026-09-25 00:40Z to 01:40Z, one session. It found 8 problems, now fixed above.**
+
+- **What was read.** Every line of the plan, 1 to 3496, in order, while materialising it; the spec's §10 against the plan, criterion by criterion.
+- **The mechanical checks,** on a fresh local scratch branch from `4c24484`, every task materialised from the text as it then read:
+  - every red and green count matched: Task 1 (5 red; 2413), 2 (5; 2421), 3 (3; 2422), 4 (2 unit and 43 + 1 browser red, then 48 + 1 green; 2424), 5 (82 red, 3 skipped, 15 passed; then 336 passed, 7 skipped), 6 (3 unit and 35 browser red; then 18 and 150 green; 2427), 7 (1,145 passed in 7.2 min), 8 (91 passed, 4 skipped), 9 (dev 27/2, prod 18/3 as the #338 control says; device `--list` 613 in 34 files, `theme.spec.ts` 22), 10 (120 passed), 11 (24 captured, 12 modified and 12 new; unchanged compare 24 with nothing written; accent recoloured 12 red; restored 24; scheme swapped 12 red on the theme assertion, no picture compared);
+  - every ratio quoted in a `tokens.css` comment, recomputed with `worstContrast`: all exact, and the mark's 15.02, 11.32, 1.28 and 1.70;
+  - the script's size, 1,295 and 543 bytes; Task 7's derivation grep (plus a wider `getComputedStyle` probe, which found only geometry reads outside the listed set); Task 13's post-merge grep; the evidence builder's flags and schema keys;
+  - the Task 12 harness, extracted from this plan and byte-identical to the working copy: `--dry` 43 of 43, then **all 43 rows run for real**. 42 were red as predicted.
+- **What it found:**
+  - **P2-8, a guard that could not fail.** S22 stayed GREEN: the homepage's rendered tile was compared with `themeColour(theme, '--wordmark-tile')`, read from `tokens.css`, the file the mutation edits, so both sides moved together. Task 7's homepage block now pins the tile to `SHYTALK_MARK.tile` (dark: `rgba(0, 0, 0, 0)`), and re-run, S22 and S23 are red and the spec passes 80 of 80 on five engines. Every other `themeColour` read in the tests says which theme rendered, not what its value is; the values are pinned by the contrast suite and the 24 baselines.
+  - **P2-1, a promise restated where no step reached it.** Six statements that the homepage ships no JavaScript (`README.md`, the prod smoke's comment and message, `LanguageSwitcher.astro` twice, `language-switcher.spec.ts`, and two comments naming the old test title) now have their replacements in Task 4. The prod smoke itself still passes: it greps for an external script.
+  - **P2-3, gates missing from four tasks.** Tasks 7, 8, 10 and 11 edited TypeScript without running `npm run typecheck`, and Task 11 without the unit suite that reads `visual.spec.ts`. All four were clean when run here.
+  - **P2-6, a capture artefact a reviewer would read as a defect.** Every full-page light capture shows an edge at the viewport's height, because `body::before` is fixed. Task 11 Step 3 and Task 14 now say so, with the measurement.
+  - Wording and order: P2-2 ("keeps it true" in the switch's comment, where `true` is also the attribute's value), P2-4 (Task 11's proof sat under "Nothing further to commit"), P2-5 (anti-aliasing noise stated as certain; pass 2 saw none), P2-7 (a list item's full stop).
+- **Next:** pass 3, from a fresh scratch branch at this commit. The loop ends on a pass that finds nothing.
