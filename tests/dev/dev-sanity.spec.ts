@@ -8,7 +8,7 @@ import {
 } from '../../src/lib/i18n/index';
 import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
-import { searched } from '../source-files';
+import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectTheSwitchPersists } from '../themes';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
@@ -117,52 +117,13 @@ test('an unauthenticated request is challenged with 401', async () => {
   expect(res.headers.get('www-authenticate')).toMatch(/^Basic realm=/);
 });
 
-const DEV_SHYTALK_HOST = 'dev.shytalk.shyden.co.uk';
-
 test('every outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-env leak)', async ({
   page,
 }) => {
   // The dev build injects PUBLIC_SHYTALK_URL=dev, so EVERY outbound ShyTalk
-  // link must resolve to the dev host.
-  //
-  // DERIVED, not pinned to a count. This read `toHaveCount(1)` on the dev URL,
-  // because when it was written the only outbound link sat on a work card. The
-  // Aurora merge added a hero call-to-action, the count became 2, and the guard
-  // reddened the dev deploy on a legitimate design change (run 34678649630).
-  //
-  // Worse than the false red: `toHaveCount(0)` on the PROD url — the assertion
-  // that actually protects against a cross-env leak — NEVER RAN. Playwright
-  // stops a test at its first failed expectation, so the guard failed on its
-  // liveness proxy while its real invariant went unmeasured. A count is a proxy
-  // for "the links are right"; asserting the hosts measures it directly, and
-  // cannot be broken by adding or removing a button.
-  await page.goto('/');
-
-  const hosts = await page
-    .locator('a[href*="shytalk.shyden.co.uk"]')
-    .evaluateAll((els) =>
-      els.map((el) => new URL((el as HTMLAnchorElement).href).host),
-    );
-
-  // `searched()` carries the LIVENESS CONTROL, and it is the repo's recognised
-  // idiom rather than a hand-rolled one (#118). The assertion is an ABSENCE, so
-  // a page carrying no outbound ShyTalk link would satisfy it having measured
-  // nothing. Putting the population inside the assertion makes that impossible,
-  // and `searched` counts its members by CONTENT, not by entries — an array of
-  // empty strings is not a population.
-  //
-  // A hand-written `expect(hosts.length).toBeGreaterThan(0)` above this was
-  // equivalent in spirit and INVISIBLE to `absence-liveness.test.ts`, which
-  // flagged this line. The fix is to adopt the idiom, never to widen the
-  // detector so one's own code slips past it.
-  const wrongHost = hosts.filter((host) => host !== DEV_SHYTALK_HOST);
-  expect(
-    searched(wrongHost, {
-      of: hosts,
-      what: 'outbound ShyTalk links on the dev homepage',
-    }),
-    `every outbound ShyTalk link on a dev build must point at ${DEV_SHYTALK_HOST}; found ${JSON.stringify(wrongHost)} across ${hosts.length} link(s)`,
-  ).toEqual([]);
+  // link must resolve to the dev host. The mirror of prod-sanity's check; the
+  // selection and the liveness control live in `tests/shytalk-links.ts`.
+  await expectHomepageShyTalkLinksAt(page, 'dev.shytalk.shyden.co.uk');
 });
 
 /**
