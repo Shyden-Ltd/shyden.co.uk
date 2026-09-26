@@ -53,7 +53,8 @@ renders its footer in English and so carries no form. That leaves one gap on
 purpose: the 404 shows its `notFound` copy in every language at once, so the
 translated `notFound` strings are the only visitor-facing copy with no report
 route. The page is served for any unknown path, so it has no locale to post.
-The gap is proposed as a follow-up ticket rather than solved here.
+The gap was left to a follow-up ticket, #350, and section 14 closes it: each
+translated block on the 404 carries its own form.
 
 ### 3.2 The form
 
@@ -682,3 +683,71 @@ forms. The wrap scan pass 6 called for ran and is live: it flagged two
 candidates, and both are deliberate (the line before `**Ticket:**`, and a list
 item that continues into a command). It read the whole document, sections 1
 to 13. **The spec is approved.**
+
+## 14. The 404's report route (#350)
+
+The 404 answers in every locale at once (`src/pages/404.astro`), and its
+footer is English, so until #350 its translated `notFound` blocks were the
+only visitor-facing copy nobody could report.
+
+### 14.1 One form per translated block
+
+- Every block renders `ReportForm.astro`, the same component the footer
+  renders. It is the one home of the form's markup and styles (4.2): the
+  footer and the 404 each pass a locale and a page id, and neither holds a copy.
+- **The component decides, through `isBetaLocale`.** The 404 renders it for
+  every block, the English one included, and it draws nothing in English. So
+  the English block has no form for the same reason every English page has
+  none, and no list of locales says so.
+- The block's form posts the **block's** locale, never one read from the URL,
+  which has none. Its `page` is `not-found`.
+- The form, its fields and its statuses carry `lang` set to the block's locale,
+  because the document's own `lang` is English.
+
+### 14.2 The page id and the keys
+
+- `not-found` joins the endpoint's page ids. `PAGE_IDS` is now every id the
+  endpoint accepts. `FOOTER_PAGE_IDS` holds the three pages whose footer
+  carries a form, and `pageIdFromPath` reads only those. The footer of the 404
+  is still English and still draws nothing.
+- **Its reportable strings are its `notFound` section in that locale, and
+  nothing else.** There is no chrome, because the 404's chrome is English.
+  `title` and `description` are left out as well: a document has one of each,
+  the default locale's, so no visitor sees them in another language.
+- The section is **owned** by the 404, so chrome derivation (section 4)
+  excludes it without a separate "never offered" list.
+
+### 14.3 Where a report returns
+
+- The 404's path names no locale, so `pagePath('not-found', locale)` is
+  `/404` for every locale. Measured on production on 2026-09-26: `/404` answers
+  200, `/404.html` redirects to it with a 308, and any other miss answers 404.
+- One path carries four forms, so their ids carry the locale.
+  `reportIdStem(page, locale)` is `report` on a page whose path names its
+  locale, and `report-<locale>` on the 404. That gives, for example,
+  `report-th-quote` and `report-th-sent`.
+- The endpoint's 303 goes to `pagePath(page, locale)` + `#` + the stem +
+  `-<outcome>`, so a Thai report lands on `/404#report-th-sent`. The footer's
+  ids and redirects keep their existing values.
+
+### 14.4 What stays the same
+
+- **No script.** The 404 keeps the inline theme script alone, as pinned by
+  `theme-script.spec.ts`. Its form is the homepage's plain POST, and its
+  statuses show through `:target`.
+- **Nothing new in the endpoint.** Checks 1-9 are unchanged, and `not-found`
+  is the only new value accepted.
+- **Guards that read built HTML now meet four forms on one page:**
+  - `copy-reaches-a-page.spec.ts` finds a type-ahead by its
+    `data-report-strings` attribute, and counts forms, not pages that have
+    one.
+  - The 404's own scan removes its type-aheads too. Without that, a block's
+    type-ahead would satisfy "the 404 speaks it" for a heading the block no
+    longer shows.
+  - `report-presence.spec.ts` asks whether a page's **footer** carries the
+    form, which is the claim it makes.
+- **Engines.** The Functions suite runs on the five engines the e2e suite
+  uses, from one shared list (`tests/engines.ts`).
+- **Visual.** The visual suite had no 404 capture, so #350 adds one (both
+  widths, both themes) rather than recapturing it. The footer's markup moves
+  into a component, and every existing baseline must compare unchanged.
