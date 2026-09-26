@@ -2350,7 +2350,8 @@ describe('wrangler comes from the lockfile (#97)', () => {
     // what the job runs, read from the parsed workflow.
     expect(jobNamed('ci.yml', 'functions').runs).toEqual([
       'npm ci',
-      'npx playwright install --with-deps chromium',
+      // Every engine: the suite posts the 404's forms from all five (#350).
+      'npx playwright install --with-deps',
       'npm run test:functions',
     ]);
   });

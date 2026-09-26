@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
-import { getSiteStrings, getStrings } from '../../src/lib/i18n';
+import {
+  LOCALES,
+  getSiteStrings,
+  getStrings,
+  isBetaLocale,
+} from '../../src/lib/i18n';
 import { pagePath } from '../../src/lib/report';
 import { expectReportsBound } from '../report-health';
 import { reportsWithNote } from './local.mjs';
@@ -60,6 +65,54 @@ test.describe('with JavaScript disabled', () => {
       await page.getByRole('button', { name: vi.send }).click();
       await expect(page).toHaveURL(/#report-not-found$/);
       await expect(page.locator('#report-not-found')).toBeVisible();
+      expect(reportsWithNote(note)).toEqual([]);
+    },
+  );
+
+  for (const locale of LOCALES.filter(isBetaLocale))
+    test(
+      `the 404's ${locale} block stores its own locale and notFound key`,
+      { tag: '@requires-isolated-context' },
+      async ({ page }) => {
+        const t = getSiteStrings(locale);
+        const note = noteFor(`404 ${locale}`);
+        const block = page.locator(`details[data-report][lang="${locale}"]`);
+        await page.goto('/404');
+        await block.locator('summary').click();
+        await block
+          .getByLabel(t.report.quoteLabel, { exact: true })
+          .fill(t.notFound.heading);
+        await block.getByLabel(t.report.noteLabel, { exact: true }).fill(note);
+        await block.getByRole('button', { name: t.report.send }).click();
+        await expect(page).toHaveURL(new RegExp(`/404#report-${locale}-sent$`));
+        await expect(page.locator(`#report-${locale}-sent`)).toBeVisible();
+        const rows = reportsWithNote(note);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          locale,
+          page: 'not-found',
+          quote: t.notFound.heading,
+          note,
+        });
+        expect(JSON.parse(rows[0].keys)).toEqual(['site.notFound.heading']);
+      },
+    );
+
+  test(
+    "another block's words are not found in this one, and nothing is stored",
+    { tag: '@requires-isolated-context' },
+    async ({ page }) => {
+      const note = noteFor('404 cross-block');
+      const block = page.locator('details[data-report][lang="vi"]');
+      await page.goto('/404');
+      await block.locator('summary').click();
+      await block
+        .getByLabel(vi.quoteLabel, { exact: true })
+        .fill(getSiteStrings('zh').notFound.heading);
+      await block.getByLabel(vi.noteLabel, { exact: true }).fill(note);
+      await block.getByRole('button', { name: vi.send }).click();
+      await expect(page).toHaveURL(/\/404#report-vi-not-found$/);
+      await expect(page.locator('#report-vi-not-found')).toBeVisible();
       expect(reportsWithNote(note)).toEqual([]);
     },
   );

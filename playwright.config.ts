@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { ENGINES } from './tests/engines';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 /**
@@ -117,14 +118,6 @@ export const VISUAL_MEASURE_PROJECT = {
   // `test-results/`, so the one upload keeps both.
   outputDir: 'test-results/visual-measure',
 };
-
-const ENGINES = [
-  { name: 'chromium', device: 'Desktop Chrome' },
-  { name: 'firefox', device: 'Desktop Firefox' },
-  { name: 'webkit', device: 'Desktop Safari' },
-  { name: 'mobile-chrome', device: 'Pixel 5' },
-  { name: 'mobile-safari', device: 'iPhone 13' },
-] as const;
 
 /** Whether `path` is `dir` itself or anywhere beneath it. */
 const isWithin = (dir: string, path: string): boolean => {
