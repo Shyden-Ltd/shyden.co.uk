@@ -688,7 +688,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
 
   const summary = () => readFileSync(join(dir, 'summary.md'), 'utf8');
   const report = () =>
-    JSON.parse(readFileSync(join(dir, 'report.json'), 'utf8')) as {
+    JSON.parse(readFileSync(join(dir, 'back-translation.json'), 'utf8')) as {
       comparisons: Comparison[];
     };
   const translateRequests = (engine: StandIn) =>
@@ -698,7 +698,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     const engine = await standIn({});
     const result = await run({
       BACK_TRANSLATE_URL: engine.url,
-      BACK_TRANSLATE_REPORT: join(dir, 'report.json'),
+      BACK_TRANSLATE_REPORT: join(dir, 'back-translation.json'),
     });
     expect(result.status, result.output).toBe(0);
     for (const locale of TRANSLATED) {
