@@ -858,7 +858,7 @@ describe.each(LOCALES)(
           },
           {
             timeout: 20_000,
-            describe: `25 students in fives to render as group cards (${locale}, mode: ${session.mode})`,
+            describe: `${shape.count} students in ${shape.size}s to render as group cards (${locale}, mode: ${session.mode})`,
           },
         );
         expect(
