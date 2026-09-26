@@ -3,9 +3,6 @@ import { test, expect } from './fixtures';
 import { searched } from '../source-files';
 import { sitePaths } from '../site-pages';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
-import { recorded } from './evidence';
-
-test.use(recorded);
 
 /**
  * iOS Safari zooms the whole page when a visitor focuses a text field whose
