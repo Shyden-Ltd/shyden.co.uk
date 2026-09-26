@@ -1512,11 +1512,15 @@ describe('check 7: lengths and content', () => {
   });
 
   it('refuses a control character other than TAB and LF, in any field', async () => {
-    for (const code of [0x00, 0x07, 0x0d, 0x1b, 0x7f, 0x85]) {
-      const ch = String.fromCharCode(code);
-      const response = await answer(post(valid({ note: `a${ch}b` })));
-      expect(response.headers.get('Location'), code.toString(16)).toBe('/vi/#report-rejected');
-    }
+    // The quote keeps its real match in front, so without check 7 it would be
+    // sent (a CR folds to a space) or not-found, and never rejected.
+    for (const name of ['quote', 'suggestion', 'note'])
+      for (const code of [0x00, 0x07, 0x0d, 0x1b, 0x7f, 0x85]) {
+        const ch = String.fromCharCode(code);
+        const value = name === 'quote' ? `${quote}${ch}` : `a${ch}b`;
+        const response = await answer(post(valid({ [name]: value })));
+        expect(response.headers.get('Location'), `${name} ${code.toString(16)}`).toBe('/vi/#report-rejected');
+      }
     const tabbed = await answer(post(valid({ note: 'a\tb\nc' })));
     expect(tabbed.headers.get('Location')).not.toBe('/vi/#report-rejected');
   });
@@ -1788,6 +1792,10 @@ git commit -m "feat(report): the endpoint's nine checks, the health check and a 
       `body.byteLength > MAX_BODY_BYTES` → RED on "stops reading": the status
       is still 413, and the pull count reads 65. (k) Delete `reportHealth`'s
       method line → RED on the health 405 test: it answers 503 and logs.
+      (l) Check the quote's length alone: replace `!within(quote, 1)` with
+      `!(quote.length >= 1 && quote.length <= MAX_FIELD_UNITS)` → RED on
+      "refuses a control character … in any field", naming `quote`, and on no
+      other test: the blank, zero-width and 1001-unit quotes are still refused.
 
 ---
 
@@ -3529,3 +3537,26 @@ The harness (`.superpowers/sdd/97-plan-review/`, gitignored):
   first, so a vitest run that wrote no report would have been scored from
   the stale file. It deletes the file before each run, and restores the
   mutated file in a `finally`.
+
+**Pass 6 (2026-09-26, `origin/develop` at 9782fa4, the branch level with it;
+the harness re-run on a fresh worktree, the path check, and a full read of
+every line): 1 finding, fixed.** On the assembled tree: `astro check` 0
+errors, 0 warnings, 0 hints; the unit suite 2,571 passed and 1 failed,
+`i18n.test.ts`, naming only the `report.*` placeholder drafts; the three e2e
+specs 56/56 on chromium; all 41 harnessed mutations RED where predicted (30
+unit, 11 browser). The path check: every path absent from `origin/develop`
+is created by a named task, is the spec, a conditional fallback's output, a
+build output, a throwaway, or not a path (an import specifier, `/vi/`,
+`linux/amd64`). No backslash-u escape. After the fix, the plan was
+re-extracted and re-assembled, and `astro check` (0/0/0), the unit suite
+(the same one failure) and all 31 unit mutations were run again, each AS
+PREDICTED.
+
+1. Task 6's `refuses a control character other than TAB and LF, in any
+   field` put the character in `note` alone, so check 7 could stop reading
+   the quote with nothing going red. It loops over `quote`, `suggestion` and
+   `note` now. The quote keeps its real match in front, so without check 7
+   it would be `sent` or `not-found`, never `rejected`. The new mutation (l)
+   checks the quote's length alone: 1 of 32 RED, `quote 0: expected
+   '/vi/#report-not-found' to be '/vi/#report-rejected'`. It is in the
+   harness, which now holds 42 mutations.
