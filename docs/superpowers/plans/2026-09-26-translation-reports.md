@@ -148,6 +148,7 @@ likely first. Each one has a test in the owning task.
 | `playwright.functions.config.ts` | the Functions-runtime project | 10 |
 | `tests/functions/local.mjs`, `serve.mjs`, `wrangler.toml` | local server, local D1, row reader | 10 |
 | `tests/functions/report.spec.ts` | real submissions on workerd | 10 |
+| `tests/report-health.ts` | `expectReportsBound`, the health assertion's one home | 10, 12 |
 | `.github/workflows/ci.yml` | `functions` job; `build-and-test` needs it | 10 |
 | `tests/e2e/report-completeness.spec.ts` | rendered-DOM completeness | 11 |
 | `tests/dev/dev-sanity.spec.ts`, `tests/prod/prod-sanity.spec.ts` | `@deployed-only` health and submission | 12 |
@@ -191,7 +192,7 @@ setup is done by the time the PR is ready.
 
 - [ ] **Step 1: Write the failing guard.** Append to
       `tests/unit/pipeline-wiring.test.ts`. `allWorkflows`, `DEPLOY_COMMAND`,
-      `nonEmpty`, `searched` and `readFileSync` are already in scope there.
+      `searched` and `readFileSync` are already in scope there.
 
 ```ts
 /**
@@ -228,17 +229,17 @@ describe('wrangler comes from the lockfile (#97)', () => {
   });
 
   it('every deploy runs the locked copy', () => {
-    const deploys = nonEmpty(
-      allWorkflows().flatMap(({ name, text }) =>
-        text
-          .split('\n')
-          .filter((line) => line.includes(DEPLOY_COMMAND))
-          .map((line) => `${name}: ${line.trim()}`),
-      ),
-      'wrangler deploy lines',
+    const deploys = allWorkflows().flatMap(({ name, text }) =>
+      text
+        .split('\n')
+        .filter((line) => line.includes(DEPLOY_COMMAND))
+        .map((line) => `${name}: ${line.trim()}`),
     );
     expect(
-      deploys.filter((line) => !line.includes(`npx ${DEPLOY_COMMAND}`)),
+      searched(
+        deploys.filter((line) => !line.includes(`npx ${DEPLOY_COMMAND}`)),
+        { of: deploys, what: 'wrangler deploy lines' },
+      ),
     ).toEqual([]);
   });
 });
@@ -292,7 +293,7 @@ spike: nothing from it is committed except the Measurements table below.
 
 **Files:**
 - Create (throwaway, deleted in Step 7): `functions/api/spike.js`,
-  `functions/api/spike-db.js`
+  `functions/api/spike-db.js`, `tests/unit/scratch-spike.test.ts`
 - Create: `tests/functions/wrangler.toml` (kept if Step 3 uses it; Task 10
   commits it)
 - Modify: this plan's "Measurements" table
@@ -351,9 +352,16 @@ npx wrangler pages dev dist --ip 127.0.0.1 --port 8799 \
       `pages dev` command with `run_in_background: true`.) Then
       `curl -s -u dev:functions-local http://127.0.0.1:8799/api/spike`.
       Record: did the bundle build (a `Compiled Worker successfully` line and
-      no error in the log)? Did the JSON come back? Compare every field with
-      the same expressions run in Node: `node -e` with the same code, importing
-      the `.ts` files directly (Node 24 strips types).
+      no error in the log)? Did the JSON come back? Compare every field but
+      `origin` with the same expressions run in Node, through a throwaway
+      `tests/unit/scratch-spike.test.ts`. It imports the same modules, computes
+      the same object, and writes it as JSON to `process.env.SPIKE_OUT`:
+      `SPIKE_OUT="$SCRATCH/node.json" npx vitest run tests/unit/scratch-spike.test.ts`.
+      Plain `node -e` cannot do this. Node 24 strips types but does not
+      resolve the extensionless specifiers these modules use (`from './en'`),
+      and it fails with `ERR_MODULE_NOT_FOUND` (measured in review pass 4).
+      The test writes a file because vitest swallows a passing test's console
+      output.
       **Assumption 1 holds** when the bundle builds and `site`, `toolKeys` and
       `parts` match Node. **Assumption 3 holds** when `segmenter`,
       `graphemes` (expect 2), `nfcLength` (expect 1) and `lower` match Node.
@@ -419,8 +427,8 @@ npx wrangler d1 execute reports-local --local --persist-to .wrangler/functions-s
       test runs on all five engines. Record "Task 8" here.
 
 - [ ] **Step 7: Clean up and record.** Stop `pages dev` (TaskStop), then
-      `rm functions/api/spike.js functions/api/spike-db.js` and
-      `rm -rf .wrangler/functions-spike`. Confirm `git status --short functions`
+      `rm functions/api/spike.js functions/api/spike-db.js tests/unit/scratch-spike.test.ts` and
+      `rm -rf .wrangler/functions-spike`. Confirm `git status --short functions tests/unit`
       prints nothing. Keep
       `tests/functions/wrangler.toml` only if Step 3 used it. Fill the table
       below with the measured values, not the expected ones, and commit only
@@ -535,9 +543,12 @@ git add src/lib/catalogue-leaves.ts tests/catalogue-leaves.ts tests/unit/one-hom
 git commit -m "refactor(i18n): the catalogue walk moves to a site-safe home (Refs #97)"
 ```
 
-- [ ] **Step 6: Mutate.** Paste a private copy of the walk (the
-      `gather` snippet from `one-home.test.ts`'s own "whatever it is called"
-      test) into a scratch file, `tests/unit/scratch-walker.test.ts`. Predict RED on
+- [ ] **Step 6: Mutate.** Paste a private copy of the walk into a scratch
+      file, `tests/unit/scratch-walker.test.ts`: the `gather` snippet from the
+      "catches a walker whatever it is called" test inside
+      `describe('walking a catalogue has exactly one home')`, exported. Two
+      tests carry that title, and the other one's `gather` walks directories,
+      which turns a different guard red. Predict RED on
       `is implemented only in src/lib/catalogue-leaves.ts`, run the whole file,
       and confirm. Delete the scratch file and confirm green.
 
@@ -755,7 +766,7 @@ import {
 import { isMessageTemplate } from '../../src/lib/i18n/message';
 import { catalogueLeaves } from '../../src/lib/catalogue-leaves';
 import { renderedOn } from '../../src/lib/i18n/label-check';
-import { nonEmpty } from '../source-files';
+import { nonEmpty, searched } from '../source-files';
 
 const ELLIPSIS = String.fromCharCode(0x2026);
 const keysOn = (page: PageId, locale: Locale) =>
@@ -850,7 +861,7 @@ describe('a page offers its own sections plus the chrome', () => {
         [...keysOn(page, 'vi')].some((key) => key === `site.${section}` || key.startsWith(`site.${section}.`)),
       );
       if (where === CHROME) expect(pages, section).toEqual([...PAGE_IDS]);
-      else if (where === 'the 404 page') expect(pages, section).toEqual([]);
+      else if (where === 'the 404 page') expect(searched(pages, { of: [...PAGE_IDS], what: 'pages' }), section).toEqual([]);
       else expect(pages.map((page) => pagePath(page, 'en')), section).toEqual([where]);
     }
   });
@@ -970,7 +981,7 @@ describe('matching a quote (spec 5)', () => {
     const clusters = [...new Intl.Segmenter('th', { granularity: 'grapheme' }).segment(th)].map((s) => s.segment);
     // A cluster of several code points that has a cluster after it.
     const at = nonEmpty(
-      clusters.map((c, i) => i).filter((i) => i < clusters.length - 1 && [...clusters[i]].length > 1),
+      [...clusters.keys()].filter((i) => i < clusters.length - 1 && [...clusters[i]].length > 1),
       'multi-code-point Thai clusters with a successor',
     )[0];
     expect(matchingKeys(clusters[at], 'home', 'th')).toEqual([]);
@@ -1293,8 +1304,9 @@ git commit -m "feat(report): the page table, reportable strings and quote matchi
       offered on every page → RED on "none of site.home" and on "agrees with
       label-check". (b) Accept any quote (`return reportableStrings(page, locale).map(({ key }) => key);`
       at the top of `matchingKeys`) → RED on "matches nothing" and on "spans a
-      slot". (c) In `matchesForm`'s rule-2 line, change `>= 2` to `>= 1` →
-      RED on "refuses one character". (d) Make `hasTwoCharacters`'s body
+      slot". (c) In `matchesForm`'s rule-2 line, delete
+      `hasTwoCharacters(needle, locale) && ` → RED on "refuses one character"
+      (one letter of `open` is inside a run). (d) Make `hasTwoCharacters`'s body
       `return text.length >= 2;` → RED on the Thai test (a three-unit
       cluster passes as two characters).
       (e) Set `wholeMessageAllowed` to `form.runs.length > 1` → RED on
@@ -1448,7 +1460,11 @@ describe('check 5 and the honeypot', () => {
     const response = await answer(post(valid({ website: 'http://spam.example' })), lines);
     expect(response.status).toBe(303);
     expect(response.headers.get('Location')).toBe('/vi/#report-sent');
-    expect(lines).toEqual([]);
+    // The same report without the honeypot reaches the missing database,
+    // which logs one line. One line in all, so the log was live and the
+    // honeypot request never tried to store.
+    await answer(post(valid()), lines);
+    expect(lines).toHaveLength(1);
   });
 });
 
@@ -1582,11 +1598,15 @@ describe('the health check', () => {
 
   it('refuses any method but GET with 405 and Allow, before touching the binding', async () => {
     const lines: string[] = [];
-    const response = await reportHealth(new Request(HEALTH, { method: 'POST' }), NO_DB, (line) => lines.push(line));
+    const log = (line: string) => lines.push(line);
+    const response = await reportHealth(new Request(HEALTH, { method: 'POST' }), NO_DB, log);
     expect(response.status).toBe(405);
     expect(response.headers.get('Allow')).toBe('GET');
     expect(response.headers.get('Cache-Control')).toBe('no-store');
-    expect(lines).toEqual([]);
+    // A GET with no binding logs why, so one line in all proves the log was
+    // live and the POST never reached the binding.
+    await reportHealth(new Request(HEALTH), NO_DB, log);
+    expect(lines).toHaveLength(1);
   });
 
   it('matches the migration column set exactly, in any order', () => {
@@ -1809,10 +1829,14 @@ describe('the migration', () => {
   });
 
   it('bounds every text column the way check 7 does', () => {
+    // Anchored to each column's own line, so no other text can satisfy them
+    // (`anchored-presence.test.ts`). The literal 1000 is tied to check 7 by
+    // the pin on MAX_FIELD_UNITS.
+    expect(MAX_FIELD_UNITS).toBe(1000);
     const text = sql();
-    expect(text).toContain(`CHECK (length(quote) BETWEEN 1 AND ${MAX_FIELD_UNITS})`);
-    expect(text).toContain(`CHECK (length(suggestion) <= ${MAX_FIELD_UNITS})`);
-    expect(text).toContain(`CHECK (length(note) <= ${MAX_FIELD_UNITS})`);
+    expect(text).toMatch(/^\s*quote\s+TEXT NOT NULL CHECK \(length\(quote\) BETWEEN 1 AND 1000\),\s*$/m);
+    expect(text).toMatch(/^\s*suggestion\s+TEXT NOT NULL DEFAULT '' CHECK \(length\(suggestion\) <= 1000\),\s*$/m);
+    expect(text).toMatch(/^\s*note\s+TEXT NOT NULL DEFAULT '' CHECK \(length\(note\) <= 1000\)\s*$/m);
   });
 });
 
@@ -2318,7 +2342,7 @@ git commit -m "feat(report): the footer's report form in every beta locale (Refs
 ```
 
 - [ ] **Step 7: Mutate, predicting first, whole spec file each time, on
-      chromium.** Rebuild after every source edit (the suite measures `dist/`),
+      chromium ((g) on `content`).** Rebuild after every source edit (the suite measures `dist/`),
       and restore with `git checkout -- src/components/Footer.astro`. (a) Drop
       the `isBetaLocale` gate (`const reportPage = pageIdFromPath(…)`) → RED on
       the presence walk, English pages. (b) Gate it to `lang === 'vi'` → RED
@@ -2331,12 +2355,27 @@ git commit -m "feat(report): the footer's report form in every beta locale (Refs
       `.report #report-quote { width: 400px; }`) → RED on the 320px tests.
       (f) Draw the fields' border in `var(--border)` → RED on "every field
       has a 3:1 boundary", naming `border-top-color`.
-      (g) Put the tool-page script in the footer (spec 10's wording):
-      `<script>import '../scripts/report-form.ts';</script>` at the end of
-      `Footer.astro`. This is valid once Task 9 has created the file, so run
-      (g) after Task 9 → `theme-script.spec.ts` RED on the homepage and the
-      404, which gain a module they did not carry. Confirm each RED names the
-      property you broke, then restore and confirm green.
+      (g) Put the tool-page script in the footer (spec 10's wording). Append
+      to `Footer.astro`, after `</style>`:
+
+```astro
+<script>
+  import { enhanceReportForm } from '../scripts/report-form';
+  const form = document.querySelector<HTMLFormElement>('[data-report-form]');
+  if (form) enhanceReportForm(form);
+</script>
+```
+
+      A bare `import '../scripts/report-form.ts'` is no mutation: the module
+      only exports functions, so the build drops it and emits no script at
+      all (measured in review pass 4, GREEN with no chunk in `dist/_astro`).
+      This is valid once Task 9 has created the file, so run (g) after Task 9,
+      on the `content` project, the only one that runs `theme-script.spec.ts`
+      (`--project=chromium` finds no tests there and exits 1):
+      `npx playwright test tests/e2e/theme-script.spec.ts --project=content`
+      → RED on all 16 pages the inventory checks, the homepage and the 404
+      among them, each gaining a module it did not carry. Confirm each RED
+      names the property you broke, then restore and confirm green.
 
 ---
 
@@ -2557,7 +2596,8 @@ git commit -m "feat(report): the tool pages submit the report in place (Refs #97
 **Files:**
 - Create: `playwright.functions.config.ts`
 - Create: `tests/functions/local.mjs`, `tests/functions/serve.mjs`,
-  `tests/functions/report.spec.ts`; keep or create `tests/functions/wrangler.toml` (Task 2)
+  `tests/functions/report.spec.ts`, `tests/report-health.ts`; keep or create
+  `tests/functions/wrangler.toml` (Task 2)
 - Modify: `package.json` (`test:functions`), `.github/workflows/ci.yml`
   (`functions` job, `build-and-test.needs`)
 - Modify: `tests/unit/pipeline-wiring.test.ts` (the job guard)
@@ -2618,6 +2658,25 @@ export function reportsWithNote(note) {
       read-only `node:sqlite` open of the one `.sqlite` file under
       `${PERSIST}/v3/d1/`, found by `readdirSync` and asserted to be exactly
       one file.
+
+      Then create `tests/report-health.ts`, the health assertion's one home.
+      This suite and the dev and prod sanity suites (Task 12) all call it,
+      and `duplication.test.ts` refuses three copies of the body:
+
+```ts
+import { expect, type APIRequestContext } from '@playwright/test';
+
+/**
+ * The report endpoint's health check answers ok (#97, spec 6.2): the REPORTS
+ * binding is present and its table has the migration's columns. The one home
+ * for the functions-runtime suite and the dev and prod sanity suites.
+ */
+export async function expectReportsBound(request: APIRequestContext): Promise<void> {
+  const response = await request.get('/api/report/health');
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toEqual({ ok: true });
+}
+```
 
 - [ ] **Step 2: The server.** Create `tests/functions/serve.mjs`:
 
@@ -2705,6 +2764,7 @@ import { randomUUID } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 import { getSiteStrings, getStrings } from '../../src/lib/i18n';
 import { pagePath } from '../../src/lib/report';
+import { expectReportsBound } from '../report-health';
 import { reportsWithNote } from './local.mjs';
 
 const vi = getSiteStrings('vi').report;
@@ -2718,15 +2778,16 @@ async function fillReport(page: Page, quote: string, note: string) {
 }
 
 test('the health check sees the binding and the migrated table', async ({ request }) => {
-  const response = await request.get('/api/report/health');
-  expect(response.status()).toBe(200);
-  expect(await response.json()).toEqual({ ok: true });
+  await expectReportsBound(request);
 });
 
 test.describe('with JavaScript disabled', () => {
   test.use({ javaScriptEnabled: false });
 
-  test('the homepage posts, lands on #report-sent, and the row is stored', async ({ page }) => {
+  // The tag is `isolated-context-tagging`'s rule for every spec directory:
+  // javaScriptEnabled is inert on the real-device harness. This suite never
+  // runs there, and the tag says so rather than leaving it to be noticed.
+  test('the homepage posts, lands on #report-sent, and the row is stored', { tag: '@requires-isolated-context' }, async ({ page }) => {
     const note = noteFor('homepage');
     await page.goto(pagePath('home', 'vi'));
     await fillReport(page, vi.open, note);
@@ -2739,7 +2800,7 @@ test.describe('with JavaScript disabled', () => {
     expect(JSON.parse(rows[0].keys)).toContain('site.report.open');
   });
 
-  test('a quote on no page lands on #report-not-found and stores nothing', async ({ page }) => {
+  test('a quote on no page lands on #report-not-found and stores nothing', { tag: '@requires-isolated-context' }, async ({ page }) => {
     const note = noteFor('not-found');
     await page.goto(pagePath('home', 'vi'));
     await fillReport(page, 'on no page at all, anywhere', note);
@@ -2819,10 +2880,14 @@ test.describe('on a tool page', () => {
 });
 ```
 
-      `tests/functions/` is a new spec directory. The guards that derive their
-      scope from `specDirs()` (`spec-dirs`, `event-collectors`) now read it;
-      `evidence-recording` reads `tests/e2e` only, so no recording is declared
-      here.
+      `tests/functions/` is a new spec directory, and every guard that derives
+      its scope from `specDirs()` now reads it. That includes each one built on
+      `expectNothingFound` (`viewport-tagging`, `capture-after-assertion`,
+      `isolated-context-tagging` among them), and it is why the two
+      JavaScript-disabled tests carry `@requires-isolated-context`.
+      `absence-liveness` and `duplication` read every `.ts` under `tests/`.
+      `evidence-recording` reads `tests/e2e` only, so no recording is
+      declared here.
 
 - [ ] **Step 5: The script, and run it red.** Add
       `"test:functions": "playwright test --config=playwright.functions.config.ts"`
@@ -2838,10 +2903,15 @@ test.describe('on a tool page', () => {
       Task 1 in `tests/unit/pipeline-wiring.test.ts`:
 
 ```ts
-  it('the functions-runtime suite runs in CI and build-and-test needs it', () => {
-    const functions = jobNamed('ci.yml', 'functions');
-    expect(workflowSteps('ci.yml')).toContain('npm run test:functions');
-    expect(jobNamed('ci.yml', 'build-and-test').needs).toContain(functions.id);
+  it('the functions job runs the functions-runtime suite', () => {
+    // That build-and-test needs the job is already derived by "stands for
+    // every other ci.yml job that is not required by name itself"; this pins
+    // what the job runs, read from the parsed workflow.
+    expect(jobNamed('ci.yml', 'functions').runs).toEqual([
+      'npm ci',
+      'npx playwright install --with-deps chromium',
+      'npm run test:functions',
+    ]);
   });
 ```
 
@@ -2885,7 +2955,7 @@ test.describe('on a tool page', () => {
 - [ ] **Step 7: Commit.**
 
 ```bash
-git add playwright.functions.config.ts tests/functions package.json .github/workflows/ci.yml tests/unit/pipeline-wiring.test.ts
+git add playwright.functions.config.ts tests/functions tests/report-health.ts package.json .github/workflows/ci.yml tests/unit/pipeline-wiring.test.ts
 git commit -m "test(report): real submissions on workerd, as a functions job build-and-test needs (Refs #97)"
 ```
 
@@ -2921,7 +2991,10 @@ git commit -m "test(report): real submissions on workerd, as a functions job bui
       green, because a status the script never showed falls back to
       `display: none`; say so when recording it.
       (i) Pipeline: remove `functions` from `build-and-test.needs` → RED on
-      the pipeline guard.
+      `pipeline-wiring`'s existing "stands for every other ci.yml job that is
+      not required by name itself". Then change the job's last step to
+      `npm run test:sanity` → RED on "the functions job runs the
+      functions-runtime suite".
 
 ---
 
@@ -2944,6 +3017,7 @@ import { catalogueLeaves } from '../../src/lib/catalogue-leaves';
 import { PREFIXED_LOCALES, getSiteStrings, rawCatalogue, type Locale } from '../../src/lib/i18n';
 import { PAGE_IDS, normalise, pagePath, reportOptions } from '../../src/lib/report';
 import { isMessageTemplate } from '../../src/lib/i18n/message';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 
 test.use(recorded);
 
@@ -2953,8 +3027,13 @@ test.use(recorded);
  * script has run: the tool strings arrive by script, so a static read of the
  * HTML would never find one and pass for nothing (spec review pass 3).
  * Compared by text, not key, because the same words can live under two keys
- * and the visitor picks words.
+ * and the visitor picks words. Text the page draws from somewhere other than
+ * a catalogue is left out, derived from its source: the language switcher's
+ * endonyms come from LOCALE_METADATA, and each locale's own also sits in the
+ * tool catalogue's `csvLanguageName`, so on a page without the tool it read
+ * as a tool string left unoffered (measured in review pass 4).
  */
+const NOT_CATALOGUE_COPY = Object.values(LOCALE_METADATA).map(({ nativeName }) => nativeName);
 function plainCatalogueTexts(locale: Locale): string[] {
   const english = new Map(catalogueLeaves(rawCatalogue('en')));
   const tool = catalogueLeaves(rawCatalogue(locale)).filter(([key, value]) => {
@@ -2981,7 +3060,8 @@ for (const locale of PREFIXED_LOCALES)
       });
       const onPage = new Set(rendered.map((text) => normalise(text, locale)));
       const offered = new Set(reportOptions(pageId, locale).map((option) => normalise(option, locale)));
-      const found = plainCatalogueTexts(locale).filter((text) => onPage.has(text));
+      const elsewhere = new Set(NOT_CATALOGUE_COPY.map((text) => normalise(text, locale)));
+      const found = plainCatalogueTexts(locale).filter((text) => onPage.has(text) && !elsewhere.has(text));
       const missing = found.filter((text) => !offered.has(text));
       expect(searched(missing, { of: found, what: 'catalogue strings rendered on the page' })).toEqual([]);
     });
@@ -2989,14 +3069,18 @@ for (const locale of PREFIXED_LOCALES)
 
 - [ ] **Step 2: Run it and watch it be live.**
       Run: `npm run build > /dev/null 2>&1; npx playwright test tests/e2e/report-completeness.spec.ts --project=chromium 2>&1 | tail -15` → all pass.
-      Then mutate: add `'glory'` to `NEVER_OFFERED` in `src/lib/report.ts`
-      and rebuild. Predict RED on every glory-points test, with `missing`
-      naming glory copy, and confirm. (Deleting a page's `siteSection` is no
-      mutation here: chrome is derived by exclusion, so the section would
-      become chrome and still be offered.) For classroom-groups, set its
-      `toolCatalogue: false` and predict RED with tool strings named (this
-      proves the script-injected strings are read). Restore and confirm green
-      on all five engines:
+      Then mutate: in `reportableStrings`, change the `sections` line to
+      `const sections = chromeSections();`, so no page offers its own
+      section. Predict RED on the four home and the four glory-points tests,
+      with `missing` naming home and glory copy, and classroom-groups green.
+      Confirm. Two obvious mutations cannot go red here. Deleting a page's
+      `siteSection` makes the section chrome, offered on every page, because
+      chrome is derived by exclusion. Adding `'glory'` to `NEVER_OFFERED`
+      changes nothing, because glory-points' own `siteSection` still offers
+      it (measured in review pass 4: 12 passed). For classroom-groups, set its
+      `toolCatalogue: false` and predict RED on its four tests, with tool
+      strings named, which proves the script-injected strings are read.
+      Restore and confirm green on all five engines:
       Run: `npx playwright test tests/e2e/report-completeness.spec.ts 2>&1 | tail -8`.
 
 - [ ] **Step 3: Commit.**
@@ -3013,43 +3097,58 @@ git commit -m "test(report): every catalogue string on a page is reportable ther
 **Files:**
 - Modify: `tests/dev/dev-sanity.spec.ts`, `tests/prod/prod-sanity.spec.ts`
 
-- [ ] **Step 1: Dev.** Append to `tests/dev/dev-sanity.spec.ts` (add
-      `getSiteStrings` to its imports):
+- [ ] **Step 1: Dev.** Append to `tests/dev/dev-sanity.spec.ts`. Add
+      `getSiteStrings` to its `../../src/lib/i18n/index` import (which already
+      brings `localisePath`), and add
+      `import { expectReportsBound } from '../report-health';`.
+      Each test's details are an object literal written in place:
+      `playwright-declarations.test.ts` refuses details it cannot read, and a
+      shared constant is one (measured in review pass 4). The path is derived,
+      because `route-coverage.test.ts` refuses a locale-prefixed literal in a
+      deploy gate:
 
 ```ts
-const PAGES_FUNCTION = {
-  tag: '@deployed-only',
-  annotation: {
-    type: 'deployed-only',
-    description: 'the report endpoint is a Pages Function with a D1 binding, and a preview of dist/ runs no Pages Function',
+test(
+  'the report endpoint is bound to its migrated database',
+  {
+    tag: '@deployed-only',
+    annotation: {
+      type: 'deployed-only',
+      description: 'the report endpoint is a Pages Function with a D1 binding, and a preview of dist/ runs no Pages Function',
+    },
   },
-};
+  async ({ request }) => {
+    await expectReportsBound(request);
+  },
+);
 
-test('the report endpoint is bound to its migrated database', PAGES_FUNCTION, async ({ request }) => {
-  const response = await request.get('/api/report/health');
-  expect(response.status()).toBe(200);
-  expect(await response.json()).toEqual({ ok: true });
-});
-
-test('a real report from the Vietnamese homepage reaches #report-sent', PAGES_FUNCTION, async ({ page }) => {
-  // Writes one row per dev deploy, in the dev database only. The runbook's
-  // "automated dev check" statement clears them (docs/runbooks/translation-reports.md).
-  const t = getSiteStrings('vi').report;
-  await page.goto('/vi/');
-  await page.locator('[data-report] summary').click();
-  await page.getByLabel(t.quoteLabel, { exact: true }).fill(t.open);
-  await page.getByLabel(t.noteLabel, { exact: true }).fill(`automated dev check ${process.env.GITHUB_SHA ?? 'local'}`);
-  await page.getByRole('button', { name: t.send }).click();
-  await expect(page).toHaveURL(/\/vi\/#report-sent$/);
-  await expect(page.locator('#report-sent')).toBeVisible();
-});
+test(
+  'a real report from the Vietnamese homepage reaches #report-sent',
+  {
+    tag: '@deployed-only',
+    annotation: {
+      type: 'deployed-only',
+      description: 'the report endpoint is a Pages Function with a D1 binding, and a preview of dist/ runs no Pages Function',
+    },
+  },
+  async ({ page }) => {
+    // Writes one row per dev deploy, in the dev database only. The runbook's
+    // "automated dev check" statement clears them (docs/runbooks/translation-reports.md).
+    const t = getSiteStrings('vi').report;
+    const home = localisePath('/', 'vi');
+    await page.goto(home);
+    await page.locator('[data-report] summary').click();
+    await page.getByLabel(t.quoteLabel, { exact: true }).fill(t.open);
+    await page.getByLabel(t.noteLabel, { exact: true }).fill(`automated dev check ${process.env.GITHUB_SHA ?? 'local'}`);
+    await page.getByRole('button', { name: t.send }).click();
+    await expect(page).toHaveURL((url) => url.pathname === home && url.hash === '#report-sent');
+    await expect(page.locator('#report-sent')).toBeVisible();
+  },
+);
 ```
 
-      `sanity-on-build.test.ts` reads each annotation per test. If it needs the
-      object literal inline rather than a shared constant (read its failure
-      message), inline it in both tests.
-
-- [ ] **Step 2: Prod.** Append to `tests/prod/prod-sanity.spec.ts`:
+- [ ] **Step 2: Prod.** Append to `tests/prod/prod-sanity.spec.ts`, and add
+      `import { expectReportsBound } from '../report-health';`:
 
 ```ts
 test(
@@ -3063,9 +3162,7 @@ test(
   },
   async ({ request }) => {
     // Health only: automation never writes to the production database.
-    const response = await request.get('/api/report/health');
-    expect(response.status()).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
+    await expectReportsBound(request);
   },
 );
 ```
@@ -3151,10 +3248,14 @@ checks: every path, export and command the plan names exists on
 `origin/develop` or is created by a named task; every interface a task
 consumes is produced by an earlier task with the same name and type; every
 spec section maps to a task; the plan's test code meets this repo's
-meta-guards (`evidence-recording`, `viewport-tagging`,
-`capture-after-assertion`, `absence-liveness`, `base-url-calls`,
-`sanity-on-build`, `pipeline-wiring`); and the file carries no backslash-u
-escape.
+meta-guards; and the file carries no backslash-u escape. From pass 4, the
+meta-guard check is RUN, not read. Every code block is materialised into a
+scratch worktree of `origin/develop`, each insertion asserting that its
+anchor matched once, and then `astro check`, the whole unit suite and the
+plan's e2e specs run there. The only failures allowed are those the harness's
+own English placeholder drafts cause (`i18n.test.ts`, naming `report.*` keys
+alone). Reading had cleared the seven guards passes 1-3 named, while running
+found six more that none of those passes had listed.
 
 **Pass 1 (2026-09-26, against `origin/develop` at 9782fa4, merged into this
 branch): 14 findings, all fixed.** Checked mechanically: `WorkflowJob.needs`
@@ -3298,3 +3399,66 @@ backslash-u escape.
    if the URL is rewritten.
 10. The endpoint test named its URL `URL_` to dodge the global `URL`. It is
     `ENDPOINT`.
+
+**Pass 4 (2026-09-26, `origin/develop` at 9782fa4, the branch level with it;
+a full read of every line, the path check, and for the first time the plan's
+code RUN): 14 findings, all fixed.** The path check: of 36 backticked paths
+absent from `origin/develop`, 30 are created by a named task, and the other
+six are the spec, the two conditional-fallback outputs, a build output, or a
+throwaway. Every code block was assembled into a scratch worktree, each
+insertion asserting that its anchor matched once. On that tree, after the
+fixes below: `astro check` 0 errors, 0 warnings, 0 hints (so `readCapped`'s
+narrowing in the `for` condition and the `as RequestInit` cast compile);
+the whole unit suite green except `i18n.test.ts`, which names only the
+harness's English placeholder drafts; the three e2e specs 56/56 on chromium;
+and 40 of the plan's mutations run, each RED where the plan predicts: Task 5's
+seven, Task 6's eleven, Task 7's three, Task 1's two, Task 3's and Task 4's,
+Task 8's seven, Task 9's four, both halves of Task 10's (i), and Task 11's
+two. Task 10's other eight need
+wrangler and Task 2's measurements, so Task 10 runs them. No backslash-u
+escape.
+
+1. Task 2 compared the spike with `node -e` importing the `.ts` modules.
+   Node 24 strips types but does not resolve their extensionless specifiers
+   (`ERR_MODULE_NOT_FOUND`, reproduced). The comparison is a throwaway vitest
+   file that writes JSON.
+2. Task 5's mutation (c) changed a `>= 2` that pass 3's `hasTwoCharacters`
+   had removed. It deletes the rule-2 guard now.
+3. Task 10's note named two guards as reading `tests/functions/`. Every
+   `specDirs()` guard does, and `absence-liveness` and `duplication` read all
+   of `tests/`.
+4. `absence-liveness` flagged four absence assertions. The deploy-line and
+   404-page ones go through `searched`. The two log collectors are proved
+   live in the same test: a request that must log follows, and one line in
+   all is asserted.
+5. `anchored-presence` flagged the migration's `toContain` checks, whose
+   hand-made SQL stripper it cannot see. They are anchored to each column's
+   line now, with the 1000 pinned through `MAX_FIELD_UNITS`.
+6. `anchored-presence` also flagged Task 10's `needs` assertion, which
+   repeated `pipeline-wiring`'s existing "stands for every other ci.yml job".
+   The new test pins the job's `runs` instead, and mutation (i) names the
+   existing test.
+7. `isolated-context-tagging` refused the two JavaScript-disabled runtime
+   tests untagged. They carry `@requires-isolated-context`.
+8. `duplication` found the dev and prod health bodies identical, and the
+   runtime suite had a third copy. `tests/report-health.ts`
+   (`expectReportsBound`) is their one home.
+9. `playwright-declarations` refused dev's shared `PAGES_FUNCTION` details.
+   Each test writes its details in place, and the "if it needs" hedge is gone.
+10. `route-coverage` refused dev's `'/vi/'`. It is `localisePath('/', 'vi')`,
+    and the URL check compares the path and hash.
+11. `astro check` reported an unused `c` in the Thai test (`- 1 hint`), which
+    fails the plan's own three-zeros gate. It walks `clusters.keys()`.
+12. Task 11's completeness test read the switcher's endonym (from
+    `LOCALE_METADATA`, and equal to the tool catalogue's own
+    `csvLanguageName`) as tool copy unoffered on home and glory-points: eight
+    false REDs on the first run. Text from `LOCALE_METADATA` is left out,
+    derived from its source.
+13. Task 11's mutation, adding `'glory'` to `NEVER_OFFERED`, is a no-op:
+    glory-points' own `siteSection` still offers it (12 passed). The mutation
+    drops every page's own section and turns eight tests RED.
+14. Task 8's mutation (g) was a bare side-effect import, which the build drops
+    (no chunk emitted, GREEN), run on chromium, where `theme-script.spec.ts`
+    has no tests. It adds the enhancement call and runs on `content`: RED on
+    all 16 pages. Task 3's mutation also named one of two tests sharing a
+    title; it names the catalogue one.
