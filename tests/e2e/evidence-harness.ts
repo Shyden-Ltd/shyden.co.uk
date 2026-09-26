@@ -78,7 +78,9 @@ export async function serveEvidencePage(
   html: string,
   files: Readonly<Record<string, ServedFile>> = {},
 ): Promise<void> {
-  await page.unroute(/^https:\/\/evidence\.test\//);
+  // No unroute first: Playwright runs the route registered LAST, so serving
+  // again answers with the new page. An unroute here changed nothing any
+  // test could observe (mutation N7, #205).
   await page.route(/^https:\/\/evidence\.test\//, async (route) => {
     const url = route.request().url();
     if (url === `${ORIGIN}/`)
