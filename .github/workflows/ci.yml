@@ -140,12 +140,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps
-      # BEFORE the suite, not left to the web server. The suite's collection
-      # reads the built site (copy-reaches-a-page.spec.ts walks `dist`), and
-      # the server builds for the run but never for the unfiltered `--list`
-      # each shard is held to. Without this, run 35829226473's shard 1 passed
-      # all 742 of its tests and then refused its own count.
-      - run: npm run build
+      # No build step, on purpose: the web server builds for the run, and the
+      # unfiltered `--list` each shard is held to runs first, on a tree with
+      # no `dist/`. That makes every shard prove collection needs no build
+      # (#351); `pipeline-wiring.test.ts` refuses a build here.
       # The total is the matrix's own size, never a number written beside it,
       # so the two cannot disagree. Each shard enumerates the WHOLE suite and
       # writes down what it ran (scripts/test-e2e.mjs), for build-and-test to
