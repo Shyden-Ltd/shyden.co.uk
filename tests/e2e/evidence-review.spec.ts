@@ -691,10 +691,24 @@ for (const { order, when } of WRITE_ORDERS) {
         },
       });
       await openItem(page, AT.firstFormChromium);
+      const before = (await counters(page)).writes;
       await control(page, 'Skip').click();
       await expectShowing(page, AT.firstFormWebkit);
       await control(page, 'Reject').click();
       await expectShowing(page, AT.firstResultChromium);
+      // Read here, before anything below approves the item again: a Skip that
+      // withdrew the approval would be repaired by the end of the test, and an
+      // assertion made only there could never see it. A decision is written
+      // in the click that makes it, so the count is settled by now; the Reject
+      // repeats the decision the item already carries and writes nothing too.
+      expect(
+        (await counters(page)).writes,
+        'neither the Skip nor the repeated Reject wrote',
+      ).toBe(before);
+      await expect(
+        figureOf(page, AT.firstFormChromium),
+        'Skip kept the approval it passed over',
+      ).toContainText('Approved');
       await control(page, 'Previous').click();
       await control(page, 'Previous').click();
       await expectShowing(page, AT.firstFormChromium);
