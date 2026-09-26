@@ -751,3 +751,207 @@ only visitor-facing copy nobody could report.
 - **Visual.** The visual suite had no 404 capture, so #350 adds one (both
   widths, both themes) rather than recapturing it. The footer's markup moves
   into a component, and every existing baseline must compare unchanged.
+
+## 15. The waiting-reports count (#349)
+
+A report waits in the production `reports` table until the operator deals with
+it, and until #349 nothing told him one had arrived. The channel is his
+decision, recorded on #349 (issuecomment-5847419391): **a daily comment on one
+issue**, carrying the count and nothing else.
+
+### 15.1 What he receives
+
+- One open issue, _Waiting translation reports_, assigned to the operator, so
+  every comment on it reaches him as a GitHub notification. It is created once,
+  by the plan, and its number is written into the workflow.
+- On a day the production count is above zero, one comment, either
+  `1 translation report is waiting.` or
+  `<n> translation reports are waiting.` Nothing else:
+  no quote, suggestion, note, locale, page or date, because the repository is
+  public and so is the issue.
+- On a day the count is zero, nothing is posted, and the run succeeds.
+- **At most one comment per UTC day.** Before posting, the job reads the
+  issue's comments and posts nothing if `github-actions[bot]` has already
+  posted a **count** that day. A re-run or a manual dispatch therefore cannot
+  post a second count. A failure notice (15.2) does not count, so a re-run
+  after a failed morning still reports.
+
+### 15.2 How the count is read
+
+- `SELECT count(*) FROM reports`, sent to the Cloudflare D1 query endpoint
+  (`POST /accounts/{account}/d1/database/{id}/query`). The endpoint accepts a
+  **D1 Read** token (the API reference lists `D1 Read` and `D1 Write` as
+  alternatives).
+- The database is found by name, **`shyden-reports`**, through the D1 list
+  endpoint (`GET /accounts/{account}/d1/database?name=shyden-reports`, which
+  also accepts `D1 Read`), with the same token. The API reference calls `name`
+  "a database name to search for" and does not say whether it matches exactly,
+  so the job does not trust it: it keeps only the database whose `name` equals
+  `shyden-reports`, fails unless there is exactly one, and takes that
+  database's `uuid` as the id. So `shyden-reports-dev`, where the dev sanity
+  suite writes rows by design, can never be the one counted.
+- The count is read from `result[0].results[0]["count(*)"]` and must be a
+  non-negative integer. **Anything else is a failure, never a zero:** a
+  network error, a non-2xx answer, `success: false`, a missing or non-integer
+  count, or a list that holds no `shyden-reports` or more than one.
+- A failure fails the job, and a final step (`if: failure()`) runs
+  `node scripts/waiting-reports.mjs report-failure`, which posts a fixed
+  sentence on the same issue that names no count:
+  `The waiting-reports count could not be read.` followed by the run's URL,
+  built from `GITHUB_SERVER_URL`, `GITHUB_REPOSITORY` and `GITHUB_RUN_ID`. A
+  job that keeps failing is therefore seen, instead of quietly ceasing to notify
+  anyone. That mode never reads the database.
+
+### 15.3 Where it runs, and what it can reach
+
+- `.github/workflows/waiting-reports.yml`: one job, `count`, on
+  `schedule: '17 1 * * *'` (01:17 UTC, 08:17 in WIB; off the hour, where
+  GitHub's scheduler queues most) and on `workflow_dispatch`.
+  `permissions: { contents: read, issues: write }` and nothing else, since
+  checkout needs the first and the comment the second.
+- The job names the environment **`reports-count`**, which holds the job's two
+  secrets: `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_D1_READ_TOKEN`. The token
+  carries one permission, `Account › D1 › Read`, on this account.
+  - The environment accepts `develop` alone, the branch scheduled runs use. A
+    dispatch from any other branch is refused before a secret is read (compare
+    #241).
+  - The token is new. The job never reads the repository's
+    `CLOUDFLARE_API_TOKEN`, which #241 is removing, and never reads the `prod`
+    environment's.
+- **No `npm ci`.** The job checks out, sets up Node from `.nvmrc`, and runs
+  `node scripts/waiting-reports.mjs`. The script uses Node's own `fetch`, and
+  imports only `src/lib/waiting-reports.ts`, which imports nothing from
+  `node_modules`. A job that holds a credential runs no third-party package
+  code.
+- **#241's guard learns the new act rather than excusing it.** The rule "a
+  Cloudflare secret is read only in the environment of the project its job
+  changes" gains a row: _reads the production reports count_, detected by the
+  job's steps running `scripts/waiting-reports.mjs`, requires `reports-count`.
+  Nothing else may read secrets in `reports-count`.
+- The job runs on a schedule, never on a pull request, so it cannot be a
+  required check. The rule that a `ci.yml` job is required or needed by
+  `build-and-test` does not reach it. Its code is held by the unit suite,
+  which `build-and-test` does need.
+
+### 15.4 One home, and the pieces
+
+- `src/lib/waiting-reports.ts` holds the pure logic: `COUNT_SQL`,
+  `REPORTS_DATABASE`, `databaseIdFrom(list)`, `countFrom(answer)`,
+  `noticeFor(count)`, `postedToday(comments, now)` and `FAILURE_NOTICE`.
+- `scripts/waiting-reports.mjs` wires them to `fetch`, in two modes: no
+  argument counts and maybe posts, and `report-failure` posts the failure
+  notice. The issue's number comes from `NOTICE_ISSUE`, set in the workflow.
+  **The count comes first:** GitHub is not touched until D1 has answered with a
+  count above zero, so a failure or a zero sends GitHub nothing. The script
+  prints the count alone to the log, which the issue names as safe even in a
+  public Actions log. It reads its endpoints from `CLOUDFLARE_API_BASE`
+  (default `https://api.cloudflare.com/client/v4`) and `GITHUB_API_URL` (set
+  by Actions), so the tests can point it at a local server.
+- The runbook gains a section: what the comment means, the token's one
+  permission, and how to rotate it.
+
+### 15.5 Tests
+
+- **Unit** (`tests/unit/waiting-reports.test.ts`):
+  - `COUNT_SQL` is exactly `SELECT count(*) FROM reports`, and
+    `REPORTS_DATABASE` is exactly `shyden-reports`.
+  - `databaseIdFrom` picks the exact name out of a list holding
+    `shyden-reports-dev` beside it, and throws on none or two.
+  - `countFrom` returns 0 and 3, and throws on each malformed answer in 15.2.
+  - `noticeFor` gives `null` at 0, the singular at 1 and the plural above.
+  - `FAILURE_NOTICE` is exactly `The waiting-reports count could not be read.`
+    and holds no digit, so no reading of it can pass for a count.
+  - `postedToday` compares UTC dates, and counts only count notices by
+    `github-actions[bot]`: a failure notice, or a count posted by anyone else,
+    does not count.
+- **The script, as a real process** (`tests/unit/waiting-reports-script.test.ts`):
+  it is spawned against a local HTTP server that answers in Cloudflare's and
+  GitHub's shapes, and the test reads the requests the server received.
+  Scenarios:
+  - 3 waiting posts one comment, `3 translation reports are waiting.`;
+  - 0 waiting exits 0 and sends no request to the GitHub side;
+  - a D1 port with nothing listening exits non-zero, sends no request to the
+    GitHub side, and prints nothing matching `0 translation report`;
+  - `success: false` exits non-zero;
+  - a bot comment from today means nothing is posted;
+  - a list holding only `shyden-reports-dev` exits non-zero and sends no query;
+  - `report-failure` posts the failure notice with the run's URL, and sends no
+    request to the Cloudflare side.
+- **Workflow** (`pipeline-wiring.test.ts`): the job names `reports-count`,
+  asks for `contents: read` and `issues: write` alone, runs no `npm ci`,
+  runs `report-failure` only under `if: failure()`, and the #241 row above
+  exists. Every new guard is mutation-verified in both directions.
+- **Real service, once the token exists:**
+  - A dispatch on `develop` prints the real count. It is compared with the
+    same `SELECT` sent through
+    `wrangler d1 execute shyden-reports --remote` while a wrangler login is
+    live. Without a login, the comparison is listed for the operator's
+    end-of-board read.
+  - The token's write is refused: `DELETE FROM reports WHERE 0` sent to
+    **`shyden-reports-dev`** returns an authorisation error. This statement
+    matches no rows even if it were allowed, and it is never sent to
+    production. **If it is not refused, AC4's premise is false:** the work
+    stops there and is put to the operator, and nothing merges.
+
+### 15.6 Operator actions
+
+The App cannot write secrets or environments, so the operator:
+
+1. creates a Cloudflare API token with `Account › D1 › Read` alone;
+2. creates the environment `reports-count` with deployment branch `develop`;
+3. adds `CLOUDFLARE_D1_READ_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to it.
+
+**These come before the workflow merges.** GitHub creates an environment the
+first time a job names one, and a created environment accepts every branch.
+If the workflow landed first, `reports-count` would exist without its `develop`
+policy. The plan asks for the three steps before the merge, and reads back the
+environment's branch policy and secret names. If the steps are late, the merge
+waits. A scheduled run with a missing secret fails and posts the failure
+sentence, which is 15.2's behaviour, but a daily failure is not a state to ship
+into.
+
+### 15.7 Review log
+
+- **Pass 1** (2026-09-26). Checked against the Cloudflare API reference, the
+  repository and its guards. Three findings, all fixed:
+  - the list endpoint's id field is `uuid`, and its `name` filter's matching
+    is undocumented, so 15.2 now says both;
+  - the singular notice was split across a line;
+  - 15.6 had the operator's steps after the merge, which would let GitHub
+    create `reports-count` with no branch policy.
+  - Confirmed, not changed: `changesProd` and the prod lock do not reach the
+    new workflow, since it neither deploys nor rolls back. Node reads
+    `.nvmrc`, and `node-contract.test.ts` requires that of every workflow.
+    `ci.yml`'s action SHAs are the ones to reuse.
+- **Pass 2** (2026-09-26). The whole section was re-read. Five findings, all
+  fixed:
+  - `postedToday` counted any bot comment, so a morning's failure notice would
+    have silenced a re-run's count. It now counts only count notices.
+  - `actions/checkout` needs `contents: read`.
+  - The failure notice moved into the script (`report-failure`), so it has one
+    home and a test that it never touches D1.
+  - "prints no `0`" was satisfiable only by luck, since a run URL can hold a 0.
+    It is now a phrase.
+  - `NOTICE_ISSUE` is named, and the schedule moved off the hour.
+- **Pass 3** (2026-09-26). The whole section was re-read. Four findings, all
+  fixed:
+  - "no request to the GitHub side" on an unreachable D1 held only if D1 is
+    read first, so 15.4 now fixes the order.
+  - The real-count check named no one to do the comparison, and no means.
+  - A token that is not refused its write had no stated consequence.
+  - One broken wrap. The log line (the count alone) is now stated.
+- **Pass 4** (2026-09-26). Mechanical checks were run: every name in 15.4
+  counted across the section, every path checked on disk, a placeholder scan,
+  and #349's six ACs mapped to 15.1-15.6. One finding: `FAILURE_NOTICE` had no
+  test. It now has one (15.5).
+- **Pass 5** (2026-09-26). The mechanical checks were run again, with the
+  code-span check rewritten to count backticks per item: the first version
+  matched every line holding a span and could flag nothing. The whole section
+  was re-read. One finding: 15.4 says a zero sends GitHub nothing, and the
+  zero scenario asserted only that nothing was posted, which a comments `GET`
+  would still pass. It now asserts that no request reaches GitHub.
+- **Pass 6** (2026-09-26). The mechanical checks were run again. The code-span
+  check was proved live against a copy with one span broken, which it flagged,
+  while the real section gave 0. Every 15.4 name was counted, and the whole
+  section was re-read. **No findings.** Section 15 is approved under the
+  operator's standing rule of 2026-09-24.
