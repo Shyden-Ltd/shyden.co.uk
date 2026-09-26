@@ -71,10 +71,14 @@ export interface NavigationRecord extends Navigation {
   readonly test: string;
 }
 
-/** What the reporter writes, and `scripts/test-e2e.mjs` reads back. */
+/**
+ * What the reporter writes, and `scripts/test-e2e.mjs` reads back. It holds no
+ * count of the tests that ran: the liveness verdict takes that from the json
+ * report, since a reporter that never ran would count zero and certify its own
+ * silence.
+ */
 export interface NavTimingReport {
   readonly navigations: NavigationRecord[];
-  readonly testsWithResults: number;
 }
 
 /**
@@ -111,7 +115,6 @@ export function collectNavigations(
 export default class NavTimingReporter implements Reporter {
   private readonly file: string | undefined;
   private readonly navigations: NavigationRecord[] = [];
-  private testsWithResults = 0;
 
   constructor() {
     // An environment variable rather than a reporter option, for the reason
@@ -123,7 +126,6 @@ export default class NavTimingReporter implements Reporter {
 
   onTestEnd(test: TestCase, result: TestResult): void {
     if (!this.file) return;
-    this.testsWithResults += 1;
     const project = projectNameOf(test);
     const file = relative(process.cwd(), test.location.file);
     const name = describePathOf(test);
@@ -138,7 +140,6 @@ export default class NavTimingReporter implements Reporter {
     if (!this.file) return;
     const report: NavTimingReport = {
       navigations: this.navigations,
-      testsWithResults: this.testsWithResults,
     };
     try {
       writeFileSync(this.file, JSON.stringify(report));
