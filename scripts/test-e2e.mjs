@@ -770,7 +770,7 @@ export function navTimingVerdict({ navigations, report }) {
   /** @param {[string, number][]} rows */
   const total = (rows) => rows.reduce((sum, [, n]) => sum + n, 0);
   const judged = tally(false);
-  const skipped = tally(true);
+  const excusedRows = tally(true);
   // No test that must navigate produced a result: a `--grep` that matched
   // nothing, a failure before any test ran, or a run of excused projects
   // only. There is no collector to prove alive.
@@ -779,8 +779,8 @@ export function navTimingVerdict({ navigations, report }) {
   /** @param {[string, number][]} rows */
   const named = (rows) =>
     rows.map(([project, n]) => `${project} ${n}`).join(', ');
-  const notCounted = total(skipped)
-    ? ` Not counted: ${total(skipped)} result(s) from ${skipped.map(([p]) => p).join(', ')}, ` +
+  const notCounted = total(excusedRows)
+    ? ` Not counted: ${total(excusedRows)} result(s) from ${excusedRows.map(([p]) => p).join(', ')}, ` +
       'which the config excuses from navigating (`metadata.requiresNavigation: false`).'
     : '';
   return {
