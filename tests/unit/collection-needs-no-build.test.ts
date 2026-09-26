@@ -178,8 +178,12 @@ function collectionReads(bound: Bound): string[] {
       .filter((call) =>
         call.arguments.some(
           (arg) =>
-            holdsBuiltPath(arg) ||
-            derivationOf(arg, bound).initializers.some(holdsBuiltPath),
+            // A function handed over is a body, judged where it runs, never
+            // a value this call reads -- the rule `holdsBuiltPath` keeps for
+            // functions nested deeper.
+            !ts.isFunctionLike(arg) &&
+            (holdsBuiltPath(arg) ||
+              derivationOf(arg, bound).initializers.some(holdsBuiltPath)),
         ),
       )
       .filter((call) => runsWhileCollecting(call, bound))
@@ -317,12 +321,21 @@ describe('what counts as reading the build while collecting', () => {
 
   it('a callback handed to a module-scope call runs with it, and is reported once, at the read', () => {
     // The outer call is handed a FUNCTION, not a path: what the callback does
-    // is judged where it does it, so one read is one finding.
+    // is judged where it does it, so one read is one finding -- even when the
+    // path reaches the read through a binding the callback declares.
     expect(
       readsIn({
-        [SPEC]: `${HEAD}const ALL = ['a'].map(() => filesUnder('dist', keep));`,
+        [SPEC]: `${HEAD}const ALL = ['a'].map(() => {\n  const p = 'dist/x.html';\n  return statSync(p);\n});`,
       }),
-    ).toEqual([`${SPEC}:2 filesUnder`]);
+    ).toEqual([`${SPEC}:4 statSync`]);
+  });
+
+  it('a function inside an argument is judged where it runs, not as part of the argument', () => {
+    expect(
+      readsIn({
+        [SPEC]: `${HEAD}register({ load: () => statSync('dist/x.html') });`,
+      }),
+    ).toEqual([`${SPEC}:2 statSync`]);
   });
 
   it('a helper that calls itself is judged, not followed forever', () => {
