@@ -75,7 +75,7 @@ const ENGLISH = 'en';
  * around it. Keyed by every locale, English included, so a locale added
  * without its tables fails to compile rather than going unread.
  */
-const CATALOGUES: Record<Locale, { strings: unknown; site: unknown }> = {
+export const CATALOGUES: Record<Locale, { strings: unknown; site: unknown }> = {
   en: { strings: en, site: siteEn },
   id: { strings: id, site: siteId },
   zh: { strings: zh, site: siteZh },

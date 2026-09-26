@@ -24,6 +24,7 @@ const CLI_ONLY = [
   'src/lib/i18n/back-translate.ts',
   'src/lib/i18n/label-check.ts',
   'src/lib/i18n/feature-terms.ts',
+  'src/lib/report-review.ts',
 ];
 
 const CODE = /\.(ts|mts|js|mjs|astro)$/;

@@ -456,6 +456,21 @@ describe('the runbook', () => {
   const runbook = () =>
     readFileSync('docs/runbooks/translation-reports.md', 'utf8');
 
+  it('starts a review with the script, before any DELETE (#348 AC7)', () => {
+    const lines = runbook().split('\n');
+    const script = lines.findIndex((line) =>
+      /^(BACK_TRANSLATE_URL=\S+ )?npm run reports:review shyden-reports(-dev)?$/.test(
+        line,
+      ),
+    );
+    const firstDelete = lines.findIndex((line) =>
+      /^DELETE FROM reports\b/.test(line),
+    );
+    expect(script, 'an npm run reports:review line').toBeGreaterThanOrEqual(0);
+    expect(firstDelete, 'a DELETE line').toBeGreaterThanOrEqual(0);
+    expect(script).toBeLessThan(firstDelete);
+  });
+
   it('lists every stored column, and holds both deletes (AC7)', () => {
     const text = runbook();
     const select = /^SELECT (.+)$/m.exec(text)?.[1];

@@ -20,6 +20,7 @@ on:
       - 'src/lib/i18n/**'
       - 'src/lib/csv-locale.ts'
       - 'scripts/i18n-back-translate.mjs'
+      - 'scripts/back-translate-client.mjs'
       - 'docker/libretranslate/**'
       - '.github/workflows/back-translation.yml'
   workflow_dispatch:

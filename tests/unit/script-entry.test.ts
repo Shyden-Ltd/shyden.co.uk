@@ -573,6 +573,13 @@ const PROBES: Readonly<Record<string, Probe>> = {
   },
   // With no engine it could read nothing back, so it refuses before any
   // request (#95) -- and a skipped `main()` would exit 0 in silence.
+  // Without a database to read it has nothing to review, so it refuses with
+  // the usage before it reaches for wrangler or the network (#348).
+  'reports-review.mjs': {
+    args: [],
+    status: 2,
+    says: 'usage: npm run reports:review <shyden-reports-dev|shyden-reports>',
+  },
   'i18n-back-translate.mjs': {
     args: [],
     env: { BACK_TRANSLATE_URL: undefined },
