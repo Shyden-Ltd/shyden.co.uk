@@ -1597,29 +1597,36 @@ describe('build-and-test stands for the whole suite, run as shards (#163)', () =
     expect(strategy?.['fail-fast']).toBe(false);
   });
 
-  // The suite's COLLECTION reads the built site: copy-reaches-a-page.spec.ts
-  // walks `dist` at module scope, so an unfiltered `playwright test --list`
-  // ENOENTs without it. The web server builds, but only for the run, never
-  // for the listing. Measured on run 35829226473: shard 1 of 4 passed all 742
-  // of its tests and then refused its own count, because the shard job had
-  // dropped the build step the single job used to run first (#163).
-  it('every job running the e2e suite builds the site before it', () => {
+  // The listing each shard is held to runs on a tree with NO build, so CI
+  // proves on every pull request that collecting the suite never needs one.
+  //
+  // This rule used to point the other way. copy-reaches-a-page.spec.ts walked
+  // `dist` at module scope, so `playwright test --list` ENOENTed without a
+  // build, and run 35829226473's shard 1 passed all 742 of its tests and then
+  // refused its own count (#163). The shards were made to build first -- which
+  // hid the defect in CI and left it for every fresh checkout to meet (#351).
+  // The read now happens in the test that needs it, the web server builds for
+  // the run as it always did, and `collection-needs-no-build.test.ts` finds a
+  // read of `dist/` anywhere the suite is collected. A build step here would
+  // pay for a second build and blind the one cold listing CI performs.
+  it('no job running the e2e suite builds the site before it', () => {
     const suites = workflowGraphs().flatMap(({ name, jobs }) =>
       jobs
         .filter((job) => job.runs.some(runsTheE2eSuite))
         .map((job) => ({ name, job })),
     );
-    const unbuilt = suites
-      .filter(({ job }) => {
-        const build = job.runs.indexOf('npm run build');
-        return build === -1 || build > job.runs.findIndex(runsTheE2eSuite);
-      })
+    const prebuilt = suites
+      .filter(({ job }) =>
+        job.runs
+          .slice(0, job.runs.findIndex(runsTheE2eSuite))
+          .some((script) => /(?<![\w:-])npm run build(?![\w:-])/.test(script)),
+      )
       .map(
         ({ name, job }) =>
-          `${name}: ${job.id} runs the e2e suite without building first`,
+          `${name}: ${job.id} builds before the e2e suite, so its listing never runs cold`,
       );
     expect(
-      searched(unbuilt, { of: suites, what: 'jobs running npm run test:e2e' }),
+      searched(prebuilt, { of: suites, what: 'jobs running npm run test:e2e' }),
     ).toEqual([]);
   });
 
