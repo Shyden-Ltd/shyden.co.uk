@@ -26,8 +26,9 @@ import {
   type Catalogues,
   type ReportRow,
 } from '../../src/lib/report-review';
-import { readBack } from '../../scripts/back-translate-client.mjs';
+import { call, readBack } from '../../scripts/back-translate-client.mjs';
 import { backTranslations } from '../../scripts/reports-review.mjs';
+import { searched } from '../source-files';
 import { codeWithoutComments } from './source-text';
 
 const ESC = String.fromCharCode(92);
@@ -400,6 +401,17 @@ describe('the engine client has one home (AC4)', () => {
   });
   afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
+  /**
+   * Send a sentinel, and split what the stand-in recorded into the requests
+   * made before it and the whole record. The sentinel proves the stand-in is
+   * recording, so "none before it" means none were made (#118).
+   */
+  const sentinelSent = async () => {
+    await call(`${url}/languages`);
+    expect(requests.at(-1)?.path).toBe('/languages');
+    return { before: requests.slice(0, -1), all: [...requests] };
+  };
+
   it('reads texts back in batches of 25, in order', async () => {
     requests.length = 0;
     const texts = Array.from({ length: 30 }, (_, index) => `t${index}`);
@@ -466,7 +478,13 @@ describe('the engine client has one home (AC4)', () => {
         { kind: 'no-engine' },
         { kind: 'no-engine' },
       ]);
-      expect(requests).toEqual([]);
+      const recorded = await sentinelSent();
+      expect(
+        searched(recorded.before, {
+          of: recorded.all,
+          what: 'requests the engine stand-in recorded, the sentinel included',
+        }),
+      ).toEqual([]);
     });
 
     it('reports an engine it cannot reach in every report that needed it', async () => {
@@ -492,7 +510,13 @@ describe('the engine client has one home (AC4)', () => {
         BACK_TRANSLATE_URL: url,
       });
       expect(results).toEqual([{ kind: 'not-needed' }]);
-      expect(requests).toEqual([]);
+      const recorded = await sentinelSent();
+      expect(
+        searched(recorded.before, {
+          of: recorded.all,
+          what: 'requests the engine stand-in recorded, the sentinel included',
+        }),
+      ).toEqual([]);
     });
   });
 
