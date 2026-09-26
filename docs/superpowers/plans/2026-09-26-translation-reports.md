@@ -2,7 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** DRAFT, under review (section "Review log" at the end).
+**Status:** APPROVED 2026-09-26, self-approved after review pass 7 found
+nothing (operator rule of 2026-09-24; section "Review log" at the end).
 
 **Goal:** A visitor on any beta-locale page can report a specific bad
 translation from the footer, and the report lands in a D1 table the operator
@@ -3560,3 +3561,21 @@ PREDICTED.
    checks the quote's length alone: 1 of 32 RED, `quote 0: expected
    '/vi/#report-not-found' to be '/vi/#report-rejected'`. It is in the
    harness, which now holds 42 mutations.
+
+**Pass 7 (2026-09-26, `origin/develop` at 9782fa4, the branch level with it;
+the harness re-run on a fresh worktree from the branch head, the path check,
+and a full read of every line): no findings. The plan is APPROVED.** On the
+assembled tree: `astro check` 0 errors, 0 warnings, 0 hints; the unit suite
+2,571 passed and 1 failed, `i18n.test.ts`, naming only the twelve `report.*`
+placeholder drafts; the three e2e specs 56/56 on chromium. All 42 harnessed
+mutations ran, each RED where predicted: 31 unit (31 "applied" lines beside
+31 verdicts, so none was a no-op) and 11 browser, whose per-spec totals held
+steady across mutations (29 presence, 15 form, 12 completeness, 33 on
+`content`), so no test dropped out. The path check listed the same 43 paths
+absent from `origin/develop`, each created by a named task, the spec, a
+conditional fallback's output, a build output, a throwaway, or not a path.
+The cited line ranges (`deploy-dev.yml:130-136`, `deploy-prod.yml:70-76`,
+`one-home.test.ts:219-286`, `label-check.ts:142-152`,
+`tests/workflow-jobs.ts:18`) were re-read and still hold. No backslash-u
+escape. Task 10's (a)-(h) remain for Task 10 itself, since they need
+wrangler and Task 2's measurements.
