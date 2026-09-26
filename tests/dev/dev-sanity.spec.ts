@@ -5,7 +5,9 @@ import {
   localisePath,
   getStrings,
   isBetaLocale,
+  getSiteStrings,
 } from '../../src/lib/i18n/index';
+import { expectReportsBound } from '../report-health';
 import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
 import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
@@ -230,3 +232,47 @@ test('the theme switch changes the page, and the choice survives a reload', asyn
 }) => {
   await expectTheSwitchPersists(page);
 });
+
+test(
+  'the report endpoint is bound to its migrated database',
+  {
+    tag: '@deployed-only',
+    annotation: {
+      type: 'deployed-only',
+      description:
+        'the report endpoint is a Pages Function with a D1 binding, and a preview of dist/ runs no Pages Function',
+    },
+  },
+  async ({ request }) => {
+    await expectReportsBound(request);
+  },
+);
+
+test(
+  'a real report from the Vietnamese homepage reaches #report-sent',
+  {
+    tag: '@deployed-only',
+    annotation: {
+      type: 'deployed-only',
+      description:
+        'the report endpoint is a Pages Function with a D1 binding, and a preview of dist/ runs no Pages Function',
+    },
+  },
+  async ({ page }) => {
+    // Writes one row per dev deploy, in the dev database only. The runbook's
+    // "automated dev check" statement clears them (docs/runbooks/translation-reports.md).
+    const t = getSiteStrings('vi').report;
+    const home = localisePath('/', 'vi');
+    await page.goto(home);
+    await page.locator('[data-report] summary').click();
+    await page.getByLabel(t.quoteLabel, { exact: true }).fill(t.open);
+    await page
+      .getByLabel(t.noteLabel, { exact: true })
+      .fill(`automated dev check ${process.env.GITHUB_SHA ?? 'local'}`);
+    await page.getByRole('button', { name: t.send }).click();
+    await expect(page).toHaveURL(
+      (url) => url.pathname === home && url.hash === '#report-sent',
+    );
+    await expect(page.locator('#report-sent')).toBeVisible();
+  },
+);

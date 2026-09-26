@@ -4,6 +4,7 @@ import { deployedRoutes } from '../site-pages';
 import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectNoHorizontalScroll } from '../viewport';
 import { expectTheSwitchPersists } from '../themes';
+import { expectReportsBound } from '../report-health';
 
 /**
  * Every route the site serves, derived. #49.
@@ -164,3 +165,19 @@ test('the theme switch changes the page, and the choice survives a reload', asyn
 }) => {
   await expectTheSwitchPersists(page);
 });
+
+test(
+  'the report endpoint is bound to its migrated database',
+  {
+    tag: '@deployed-only',
+    annotation: {
+      type: 'deployed-only',
+      description:
+        'the report endpoint is a Pages Function with a D1 binding, and a preview of dist/ runs no Pages Function',
+    },
+  },
+  async ({ request }) => {
+    // Health only: automation never writes to the production database.
+    await expectReportsBound(request);
+  },
+);
