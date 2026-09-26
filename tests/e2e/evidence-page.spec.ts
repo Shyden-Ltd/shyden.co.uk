@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { Locator, Page, TestInfo } from '@playwright/test';
 import { evidencePageOf } from '../evidence-fixture';
 import {
@@ -7,9 +6,19 @@ import {
   type DbStandInOptions,
   type StandInWindow,
   type StoredBody,
-  type WriteOrder,
 } from './db-stand-in';
-import { test as base, expect } from './fixtures';
+import {
+  counters,
+  evidenceTest as test,
+  itemsOf,
+  journeySection,
+  ORIGIN,
+  serveEvidencePage,
+  storeKeyOf,
+  THIS_RUN,
+  WRITE_ORDERS as ORDERS,
+} from './evidence-harness';
+import { expect } from './fixtures';
 import { contrastRatio } from './helpers';
 import { recordErrors } from './recorders';
 import { recorded, shoot } from './evidence';
@@ -44,7 +53,6 @@ const TITLES = [
 const SIGNOFF_KEY = 'ticket-172-fixture';
 /** Where a published page keeps its sign-off, as `signoff/ticket-136` does. */
 const DOC = `signoff/${SIGNOFF_KEY}`;
-const ORIGIN = 'https://evidence.test';
 
 /** The page exactly as the builder renders it for a ticket with these journeys. */
 const pageOf = (titles: readonly string[]): string =>
@@ -83,57 +91,7 @@ const signedOff = (titles: readonly string[]): Record<string, StoredBody> => ({
   },
 });
 
-/**
- * Every test also fails if the page script throws. In strict mode a write
- * into a frozen snapshot is a TypeError, so this names that mistake outright.
- */
-const test = base.extend<{ pageErrors: void }>({
-  pageErrors: [
-    async ({ page }, use) => {
-      const errors = recordErrors(page);
-      await use();
-      await errors.expectNoUncaught(
-        'the evidence page script threw while it was driven',
-      );
-    },
-    { auto: true },
-  ],
-});
-
 test.use(recorded);
-
-/**
- * Serves the page as the builder rendered it, and nothing from any other host.
- * Called again, it republishes to the same address, as a rebuilt evidence
- * page is: the store, kept per test, carries over.
- */
-async function serveEvidencePage(page: Page, html = HTML): Promise<void> {
-  await page.unroute(/^https:\/\/evidence\.test\//);
-  await page.route(/^https:\/\/evidence\.test\//, (route) =>
-    route.request().url() === `${ORIGIN}/`
-      ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: html })
-      : route.fulfill({ status: 204 }),
-  );
-  // The builder links Google Fonts. Nothing in this suite reaches a third party.
-  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) =>
-    route.fulfill({ contentType: 'text/css', body: '' }),
-  );
-}
-
-/** This run, as the stand-in's store keys name it: new in every run. */
-const THIS_RUN = randomUUID();
-
-/**
- * Where a test keeps its stand-in store during the run named by `run`, and
- * the prefix its earlier runs used. A real phone keeps one Chrome profile
- * from run to run, so a key that is unique only per test hands each test the
- * store its previous run left (#229). The prefix stops at the repeat: a retry
- * replaces its failed attempt's store, and another repeat's is left alone.
- */
-const storeKeyOf = (testInfo: TestInfo, run: string = THIS_RUN) => {
-  const supersedes = `evidence-db:${testInfo.testId}:${testInfo.repeatEachIndex}:`;
-  return { storeKey: `${supersedes}${testInfo.retry}:${run}`, supersedes };
-};
 
 async function openEvidencePage(
   page: Page,
@@ -179,16 +137,6 @@ async function republish(page: Page, html: string): Promise<void> {
     .toBeGreaterThan(0);
 }
 
-const counters = (page: Page) =>
-  page.evaluate(() => {
-    const standIn = (window as StandInWindow).__dbStandIn;
-    return {
-      writes: standIn.writes(),
-      inflight: standIn.inflight(),
-      deliveries: standIn.deliveries(),
-    };
-  });
-
 /** The journeys the store holds as ticked, as sorted ids. */
 const storedTicks = (page: Page) =>
   page.evaluate((doc) => {
@@ -198,11 +146,6 @@ const storedTicks = (page: Page) =>
       .filter((id) => journeys[id] === true)
       .sort();
   }, DOC);
-
-const journeySection = (page: Page, title: string) =>
-  page.locator('section.journey').filter({
-    has: page.getByRole('heading', { level: 3, name: title, exact: true }),
-  });
 
 const tickBox = (page: Page, title: string) =>
   journeySection(page, title).getByRole('checkbox');
@@ -248,17 +191,6 @@ const toggleTogether = (page: Page, titles: readonly string[]) =>
       label.click();
     }
   }, titles);
-
-const ORDERS: ReadonlyArray<{ order: WriteOrder; when: string }> = [
-  {
-    order: 'resolve-then-confirm',
-    when: 'a write resolves before its confirmed snapshot arrives',
-  },
-  {
-    order: 'confirm-then-resolve',
-    when: 'a confirmed snapshot arrives before its write resolves',
-  },
-];
 
 for (const { order, when } of ORDERS) {
   test.describe(`evidence page sign-off ticks, when ${when}`, () => {
@@ -853,7 +785,7 @@ test.describe('evidence page sign-off, whatever the write order', () => {
     page,
   }) => {
     // Opened outside claude.ai, the page finds no `window.claude` at all.
-    await serveEvidencePage(page);
+    await serveEvidencePage(page, HTML);
     await page.goto(`${ORIGIN}/`);
     await expect(page.locator('#state')).toHaveText(
       /^Ticks are local to this view\b/,
@@ -1004,6 +936,21 @@ const coveredBy = (html: string): string[] =>
     .map(({ id }) => id)
     .sort();
 
+/**
+ * Every capture on these pages approved, as a reviewer who had looked at each
+ * would leave them. Signing off with any capture undecided asks first (#205),
+ * and these tests are about what a verdict covers, not about that question.
+ */
+const everyCaptureApproved = (...pages: string[]): Record<string, StoredBody> =>
+  Object.fromEntries(
+    pages.flatMap((html) =>
+      itemsOf(html).map((item) => [
+        `${DOC}/items/${item.key}`,
+        { decision: 'approved', note: '', at: '2026-09-23T00:00:00.000Z' },
+      ]),
+    ),
+  );
+
 /** The sign-off section: progress, the notice, the verdict buttons and the note. */
 const signOff = (page: Page) => page.locator('#signoff');
 
@@ -1057,7 +1004,10 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
   test('approved, then rebuilt with a journey added: the approval is out of date and names it, and one press approves again', async ({
     page,
   }, testInfo) => {
-    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: everyCaptureApproved(HTML, HTML_WITH_ADDED),
+    });
     await writtenAfter(page, () => approveButton(page).click(), 'the approval');
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'true');
     expect(
@@ -1110,7 +1060,10 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
   test('an unchanged rebuild keeps the approval', async ({
     page,
   }, testInfo) => {
-    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: everyCaptureApproved(HTML),
+    });
     await writtenAfter(page, () => approveButton(page).click(), 'the approval');
     await republish(page, pageOf(TITLES));
     await expectCurrent(page, approveButton(page));
@@ -1233,7 +1186,10 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
   test('pressing a given verdict again withdraws it, and it then covers nothing', async ({
     page,
   }, testInfo) => {
-    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: everyCaptureApproved(HTML),
+    });
     await writtenAfter(page, () => approveButton(page).click(), 'the approval');
     expect(await storedVerdict(page), 'given, it covers the page').toEqual({
       verdict: 'approved',
@@ -1352,6 +1308,9 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     await toggle(page, ADDED);
     await expect(tickBox(page, ADDED)).toBeChecked();
     await approveButton(page).click();
+    // Nothing can be seeded without storage, so the captures are undecided in
+    // this view and signing off asks first (#205).
+    await page.getByRole('button', { name: 'Sign off anyway' }).click();
     await expectCurrent(page, approveButton(page));
     await expect(
       page.locator('#state'),
@@ -1388,7 +1347,7 @@ test.describe('the stand-in store, on a phone that keeps one profile from run to
     const errors = recordErrors(page);
     await openEvidencePage(page, testInfo, {
       order: 'resolve-then-confirm',
-      ...storeKeyOf(testInfo, run),
+      ...storeKeyOf(testInfo, { run }),
     });
     return errors;
   };
@@ -1439,7 +1398,7 @@ test.describe('the stand-in store, on a phone that keeps one profile from run to
     const errors = await openAsRun(page, testInfo, THIS_RUN);
     const { testId, repeatEachIndex, retry } = testInfo;
     const planted = {
-      earlierRun: storeKeyOf(testInfo, 'an-earlier-run').storeKey,
+      earlierRun: storeKeyOf(testInfo, { run: 'an-earlier-run' }).storeKey,
       beforeRunsWereNamed: `evidence-db:${testId}:${repeatEachIndex}:${retry}`,
       anotherRepeat: `evidence-db:${testId}:${repeatEachIndex + 1}:0:another-run`,
       anotherTest: 'evidence-db:another-test:0:0:another-run',

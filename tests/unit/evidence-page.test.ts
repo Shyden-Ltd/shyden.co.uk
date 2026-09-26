@@ -139,6 +139,13 @@ const SHOTS = new Map(
   MANIFEST.map((m) => [m.file, `data:image/png;base64,AAAA${m.file}`]),
 );
 
+/**
+ * A whole SHA-256, for fixtures that assert about the PAGE rather than about
+ * review keys: the builder refuses a recording it has no digest for, and these
+ * journeys are here to prove engines, stats and src paths.
+ */
+const A_DIGEST = 'a'.repeat(64);
+
 const build = (over = {}) =>
   renderEvidencePage({
     manifest: MANIFEST,
@@ -379,7 +386,16 @@ describe('a missing recording says WHICH kind of missing it is (#214)', () => {
       ]),
       manifest: [],
       shots: new Map(),
-      videos: new Map([['a-journey|chromium', 'evidence/a-chromium.webm']]),
+      videos: new Map([
+        [
+          'a-journey|chromium',
+          {
+            src: blobPath('a-journey|chromium'),
+            sha256: A_DIGEST,
+            ext: 'webm',
+          },
+        ],
+      ]),
     });
 
     expect(html, 'the opted-in spec lost its webkit recording').toContain(
@@ -432,7 +448,12 @@ describe('a journey whose engine recorded nothing says so on the page', () => {
     // for SIZE any more: recordings travel beside the page, and one the disk
     // does not have is refused outright, below.
     const html = build({
-      videos: new Map([['a-journey|chromium', 'data:video/webm;base64,AAAA']]),
+      videos: new Map([
+        [
+          'a-journey|chromium',
+          { src: 'data:video/webm;base64,AAAA', sha256: A_DIGEST, ext: 'webm' },
+        ],
+      ]),
     });
     expect(html).toContain('Journey recordings (1 of 2 engines embedded)');
     // The default report carries no video attachment, so nothing asked to be
@@ -463,7 +484,14 @@ describe('the recording policy is read per block, not per file (#292)', () => {
       shots: new Map(),
       videos: new Map([
         // Keyed by the journey's SLUG, as `slugOf` builds it, not its title.
-        ['a-block-that-acts-it-shuffles|chromium', 'evidence/acts.webm'],
+        [
+          'a-block-that-acts-it-shuffles|chromium',
+          {
+            src: blobPath('a-block-that-acts-it-shuffles|chromium'),
+            sha256: A_DIGEST,
+            ext: 'webm',
+          },
+        ],
       ]),
     });
 
@@ -1181,7 +1209,32 @@ describe('the build says what the publish has to grant', () => {
     // Asserted against the rendered output, NOT the generator's source: the
     // note itself spells use('db'), so a source-text check would be satisfied
     // by the very sentence it is supposed to be corroborating.
-    expect(build(), 'the page no longer reaches for db').toContain("use('db')");
+    // Spelled as one literal this covered `db` ALONE, and stayed green when the
+    // note grew to three capabilities (#205): a guard whose comment promises a
+    // seam while its assertion pins one side of it. The set now comes OUT of
+    // the note, so a capability declared there and never reached for goes red
+    // with no list for anyone to remember to extend.
+    //
+    // A page reaches for a runtime capability through `use('<name>')`, except
+    // `assets`: the upload pass is what writes the asset store (#268), and the
+    // page's part is pointing a recording at `/_blob/`.
+    const declared = [...PUBLISH_NOTE.matchAll(/"([a-z]+)":/g)].map(
+      (m) => m[1],
+    );
+    const reachedBy = (name: string) =>
+      name === 'assets' ? 'src="/_blob/' : `use('${name}')`;
+    const key = 'a-journey|chromium';
+    const html = build({
+      videos: new Map([
+        [key, { src: blobPath(key), sha256: A_DIGEST, ext: 'webm' }],
+      ]),
+    });
+    const unreached = declared.filter(
+      (name) => !html.includes(reachedBy(name)),
+    );
+    expect(
+      searched(unreached, { of: declared, what: 'declared capabilities' }),
+    ).toEqual([]);
   });
 
   it('names the capability the recordings need, and what it costs', () => {
@@ -1478,7 +1531,11 @@ describe('a page too large to publish is refused, not trimmed', () => {
 describe('the page references its recordings by a path the artifact serves', () => {
   it('emits only media references the artifact serves', () => {
     const key = 'a-journey|chromium';
-    const html = build({ videos: new Map([[key, blobPath(key)]]) });
+    const html = build({
+      videos: new Map([
+        [key, { src: blobPath(key), sha256: A_DIGEST, ext: 'webm' }],
+      ]),
+    });
     const srcs = [...html.matchAll(/src="([^"]*)"/g)].map((m) => m[1]);
 
     const unservable = srcs.filter(
@@ -1552,7 +1609,7 @@ describe('a journey that captured nothing is still on the page', () => {
     const videos = new Map(
       [`${SLUG}|chromium`, 'a-journey|chromium'].map((key) => [
         key,
-        blobPath(key),
+        { src: blobPath(key), sha256: A_DIGEST, ext: 'webm' },
       ]),
     );
     const html = build({ report: reportNamingAnUncapturedJourney, videos });
