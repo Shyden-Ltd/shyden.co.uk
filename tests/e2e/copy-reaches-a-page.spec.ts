@@ -35,23 +35,6 @@ import { stringLeaves } from '../catalogue-leaves';
  */
 
 /**
- * Every built page, and the locales the bilingual 404 answers in.
- *
- * The corpus is the WHOLE of `dist/`, not one locale's directory. That was the
- * first version and it was wrong: `src/pages/404.astro` is deliberately
- * bilingual -- Cloudflare Pages serves that one file for ANY unknown path, so
- * answering in both languages is the only thing correct regardless of how the
- * host resolves a miss. Grouping by directory filed `dist/404.html` under
- * English alone, so the Indonesian copy inside it was invisible while checking
- * `id`, and the guard invented a defect that did not exist.
- *
- * The claim being tested is "every string reaches A PAGE". Scoping the search
- * per directory quietly tested something narrower and stricter than that.
- */
-const BUILT_PAGES = filesUnder('dist', (path) => /\.html$/.test(path));
-const RAW_PAGES = BUILT_PAGES.map((path) => readFileSync(path, 'utf8'));
-
-/**
  * The report form's type-ahead (#97) lists every string its page offers as an
  * `<option value>`, so on a beta page it would satisfy this scan for every
  * string whether or not the page shows it, and the scan would find nothing
@@ -62,33 +45,14 @@ const RAW_PAGES = BUILT_PAGES.map((path) => readFileSync(path, 'utf8'));
  */
 const REPORT_TYPE_AHEAD =
   /<datalist id="report-strings"[^>]*>[\s\S]*?<\/datalist>/g;
-const PAGES_WITH_FORM = RAW_PAGES.filter((html) =>
-  html.includes('data-report-form'),
-).length;
-const TYPE_AHEADS_REMOVED = RAW_PAGES.reduce(
-  (count, html) => count + (html.match(REPORT_TYPE_AHEAD)?.length ?? 0),
-  0,
-);
 
 /**
- * Rendered text of every built page, entity-decoded and whitespace-flattened.
+ * Entity-decoded and whitespace-flattened.
  *
  * Both normalisations are load-bearing. An apostrophe is served as `&#39;`, so
  * "what you're building" never matches the source string raw; and HTML wraps
  * freely, so a sentence can be split across lines between any two words.
  */
-const RENDERED = RAW_PAGES.map((html) => html.replace(REPORT_TYPE_AHEAD, ''))
-  .join('\n')
-  .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
-  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
-  .replace(/&quot;/g, '"')
-  .replace(/&apos;/g, "'")
-  .replace(/&nbsp;/g, ' ')
-  .replace(/&amp;/g, '&')
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/\s+/g, ' ');
-
 const decode = (text: string) =>
   text
     .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
@@ -103,7 +67,61 @@ const decode = (text: string) =>
     .replace(/&gt;/g, '>')
     .replace(/\s+/g, ' ');
 
-const RENDERED_404 = () => decode(readFileSync('dist/404.html', 'utf8'));
+interface Corpus {
+  /** How many built pages were read. */
+  pages: number;
+  /** How many of them carry the report form. */
+  withForm: number;
+  /** How many type-aheads were taken out of the scan. */
+  typeAheadsRemoved: number;
+  /** Rendered text of every built page, type-aheads removed, decoded. */
+  rendered: string;
+}
+
+let corpus: Corpus | undefined;
+
+/**
+ * The whole of `dist/`, read when a test first asks and kept for the rest.
+ *
+ * Not one locale's directory: that was the first version and it was wrong. `src/pages/404.astro` is deliberately bilingual --
+ * Cloudflare Pages serves that one file for ANY unknown path, so answering in
+ * both languages is the only thing correct regardless of how the host
+ * resolves a miss. Grouping by directory filed `dist/404.html` under English
+ * alone, so the Indonesian copy inside it was invisible while checking `id`,
+ * and the guard invented a defect that did not exist. The claim being tested
+ * is "every string reaches A PAGE"; scoping the search per directory quietly
+ * tested something narrower and stricter than that.
+ *
+ * Never at module scope (#351). Playwright evaluates this file while it
+ * COLLECTS, and `scripts/test-e2e.mjs` lists the suite before its web server
+ * has built anything, so a module-scope walk made listing the suite depend on
+ * a build already being there: on a fresh checkout every filtered run passed
+ * its tests and then exited 1 on `ENOENT: scandir 'dist'`.
+ * `tests/unit/collection-needs-no-build.test.ts` holds every spec to that.
+ * Kept once read because five locale tests share one corpus.
+ */
+const builtCorpus = (): Corpus => {
+  if (corpus) return corpus;
+  const raw = filesUnder('dist', (path) => /\.html$/.test(path)).map((path) =>
+    readFileSync(path, 'utf8'),
+  );
+  corpus = {
+    pages: raw.length,
+    withForm: raw.filter((html) => html.includes('data-report-form')).length,
+    typeAheadsRemoved: raw.reduce(
+      (count, html) => count + (html.match(REPORT_TYPE_AHEAD)?.length ?? 0),
+      0,
+    ),
+    rendered: decode(
+      raw.map((html) => html.replace(REPORT_TYPE_AHEAD, '')).join('\n'),
+    ),
+  };
+  return corpus;
+};
+
+const PAGE_404 = 'dist/404.html';
+
+const RENDERED_404 = () => decode(readFileSync(PAGE_404, 'utf8'));
 
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -202,8 +220,6 @@ const ALLOWED = new Map<string, string>(
  * this page is the only place that can be fixed.
  */
 test.describe('the 404 answers in every locale', () => {
-  const page404 = 'dist/404.html';
-
   for (const locale of LOCALES) {
     test(`${locale}: the 404 speaks it`, () => {
       const t = getSiteStrings(locale).notFound;
@@ -215,7 +231,7 @@ test.describe('the 404 answers in every locale', () => {
       ] as const)
         expect(
           served.includes(flat(value)),
-          `${page404} does not carry notFound.${key} in ${locale}`,
+          `${PAGE_404} does not carry notFound.${key} in ${locale}`,
         ).toBe(true);
     });
   }
@@ -230,7 +246,7 @@ test.describe('the 404 answers in every locale', () => {
     // `<a hreflang="zh" lang="zh">` for every alternative, so every locale's
     // lang attribute is already present on every page. It was satisfied by the
     // navigation while the thing it names was missing.
-    const raw = readFileSync(page404, 'utf8');
+    const raw = readFileSync(PAGE_404, 'utf8');
     for (const locale of PREFIXED_LOCALES)
       expect(
         new RegExp(`<h2[^>]*lang="${locale}"`).test(raw),
@@ -242,18 +258,18 @@ test.describe('the 404 answers in every locale', () => {
 test.describe('every site string reaches a built page', () => {
   for (const locale of LOCALES) {
     test(`${locale}: no defined copy renders nowhere`, () => {
+      const { pages, withForm, typeAheadsRemoved, rendered } = builtCorpus();
       expect(
-        BUILT_PAGES.length,
+        pages,
         'no built pages — the scan below would pass vacuously',
       ).toBeGreaterThan(0);
       expect(
-        TYPE_AHEADS_REMOVED,
+        typeAheadsRemoved,
         'every page with a report form had its type-ahead taken out of the scan',
-      ).toBe(PAGES_WITH_FORM);
-      expect(
-        PAGES_WITH_FORM,
-        'no built page carries a report form',
-      ).toBeGreaterThan(0);
+      ).toBe(withForm);
+      expect(withForm, 'no built page carries a report form').toBeGreaterThan(
+        0,
+      );
 
       const missing: string[] = [];
       const wronglyAllowed: string[] = [];
@@ -267,7 +283,7 @@ test.describe('every site string reaches a built page', () => {
         if (!needle) continue;
         const key = `${locale}:${path}`;
         seen.add(key);
-        const present = RENDERED.includes(needle);
+        const present = rendered.includes(needle);
         if (ALLOWED.has(key)) {
           if (present) wronglyAllowed.push(key);
         } else if (!present) {
