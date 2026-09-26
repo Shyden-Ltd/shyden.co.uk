@@ -165,6 +165,24 @@ describe('the content-only project', () => {
     expect(runners.map((p) => p.name)).toEqual(['content']);
   });
 
+  it('is the one project excused from proving the navigation collector alive (#355)', () => {
+    // `scripts/test-e2e.mjs` reads this mark back out of the json report and
+    // leaves the project out of the count its liveness verdict judges. Marking
+    // a rendering engine would let a dead collector pass on that engine's run,
+    // so the marked set must be exactly the set that runs content-only specs.
+    const runners = resolvedProjects(config, 'playwright.config.ts')
+      .filter((p) =>
+        CONTENT_ONLY_SPECS.some((spec) => claims(p, join(E2E, spec))),
+      )
+      .map((p) => p.name);
+    const excused = (config.projects ?? [])
+      .filter((p) => p.metadata?.requiresNavigation === false)
+      .map((p) => p.name);
+
+    expect(runners).toHaveLength(1);
+    expect(excused).toEqual(runners);
+  });
+
   it('leaves every rendering engine still covering the rest of the suite', () => {
     const engines = (config.projects ?? [])
       .map((p) => p.name)
