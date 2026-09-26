@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   MAX_BODY_BYTES,
   MAX_FIELD_UNITS,
@@ -8,6 +9,7 @@ import {
   schemaMatches,
 } from '../../src/lib/report';
 import { getSiteStrings } from '../../src/lib/i18n';
+import { codeWithoutComments } from './source-text';
 
 /**
  * Real `Request` objects, no stand-in database (spec 10). Checks 1–8 return
@@ -394,5 +396,57 @@ describe('the health check', () => {
     expect(schemaMatches(REPORT_COLUMNS.slice(1))).toBe(false);
     expect(schemaMatches([...REPORT_COLUMNS, 'status'])).toBe(false);
     expect(schemaMatches([])).toBe(false);
+  });
+});
+
+describe('the migration', () => {
+  // SQL line comments stripped: the migration's own column notes must not satisfy this.
+  const sql = () =>
+    readFileSync('migrations/0001_reports.sql', 'utf8')
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
+
+  it('creates exactly the columns the endpoint writes and the health check expects', () => {
+    const body = /CREATE TABLE reports \(([\s\S]*)\);/.exec(sql())?.[1];
+    expect(body, 'a CREATE TABLE reports statement').toBeDefined();
+    const columns = body!
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/)[0]);
+    expect(columns).toEqual([...REPORT_COLUMNS]);
+  });
+
+  it('bounds every text column the way check 7 does', () => {
+    // Anchored to each column's own line, so no other text can satisfy them
+    // (`anchored-presence.test.ts`). The literal 1000 is tied to check 7 by
+    // the pin on MAX_FIELD_UNITS.
+    expect(MAX_FIELD_UNITS).toBe(1000);
+    const text = sql();
+    expect(text).toMatch(
+      /^\s*quote\s+TEXT NOT NULL CHECK \(length\(quote\) BETWEEN 1 AND 1000\),\s*$/m,
+    );
+    expect(text).toMatch(
+      /^\s*suggestion\s+TEXT NOT NULL DEFAULT '' CHECK \(length\(suggestion\) <= 1000\),\s*$/m,
+    );
+    expect(text).toMatch(
+      /^\s*note\s+TEXT NOT NULL DEFAULT '' CHECK \(length\(note\) <= 1000\)\s*$/m,
+    );
+  });
+});
+
+describe('the Pages Functions are plumbing only', () => {
+  it.each([
+    ['functions/api/report/index.js', 'handleReport'],
+    ['functions/api/report/health.js', 'reportHealth'],
+  ])('%s hands the request to %s', (file, handler) => {
+    const code = codeWithoutComments(file, readFileSync(file, 'utf8'));
+    expect(code).toMatch(
+      new RegExp(
+        `import \\{ ${handler} \\} from '\\.\\./\\.\\./\\.\\./src/lib/report'`,
+      ),
+    );
+    expect(code).toMatch(/^export const onRequest/m);
   });
 });

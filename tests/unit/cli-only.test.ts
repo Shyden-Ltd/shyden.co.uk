@@ -68,6 +68,15 @@ describe('a CLI-only module stays out of everything the site ships', () => {
     );
   });
 
+  it('walks the Pages Functions too', () => {
+    // #97 put site code behind a Function. functions/ was already in the
+    // walk; this proves the new one is reached, not merely listed.
+    expect(shipped()).toContain('functions/api/report/index.js');
+    expect(importsOf('functions/api/report/index.js').map(stem)).toContain(
+      'src/lib/report',
+    );
+  });
+
   it('is imported by nothing the site ships', () => {
     const forbidden = new Set(CLI_ONLY.map(stem));
     const offenders = shipped().flatMap((file) =>
