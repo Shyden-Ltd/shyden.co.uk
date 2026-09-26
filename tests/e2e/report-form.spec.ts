@@ -2,7 +2,11 @@ import { test, expect } from './fixtures';
 import { recorded } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { contrastRatio } from './helpers';
-import { PREFIXED_LOCALES, getSiteStrings } from '../../src/lib/i18n';
+import {
+  PREFIXED_LOCALES,
+  getSiteStrings,
+  getStrings,
+} from '../../src/lib/i18n';
 import { PAGE_IDS, pagePath } from '../../src/lib/report';
 
 test.use(recorded);
@@ -122,3 +126,42 @@ for (const locale of PREFIXED_LOCALES)
         );
       },
     );
+
+test('/vi/classroom-groups submits in place: failed shows, takes focus, and the roster survives', async ({
+  page,
+}) => {
+  const tool = getStrings('vi');
+  const t = getSiteStrings('vi').report;
+  await page.goto(pagePath('classroom-groups', 'vi'));
+  await page.locator('#cg-students-toggle').click();
+  await page.getByRole('button', { name: tool.rosterAddStudent }).click();
+  await page
+    .locator('.cg-student')
+    .first()
+    .getByLabel(tool.rosterColName)
+    .fill('Lan');
+  await page.evaluate(
+    () => ((window as unknown as { unreloaded: boolean }).unreloaded = true),
+  );
+
+  await page.locator('[data-report] summary').click();
+  await page.getByLabel(t.quoteLabel, { exact: true }).fill(t.open);
+  await page.getByRole('button', { name: t.send }).click();
+
+  const failed = page.locator('#report-failed');
+  await expect(failed).toBeVisible();
+  await expect(failed).toHaveText(t.failed);
+  await expect(failed).toBeFocused();
+  await expect(page.locator('#report-sent')).toBeHidden();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { unreloaded?: boolean }).unreloaded,
+    ),
+  ).toBe(true);
+  await expect(
+    page.locator('.cg-student').first().getByLabel(tool.rosterColName),
+  ).toHaveValue('Lan');
+  await expect(page.getByLabel(t.quoteLabel, { exact: true })).toHaveValue(
+    t.open,
+  );
+});

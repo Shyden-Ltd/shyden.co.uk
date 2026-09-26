@@ -1,5 +1,6 @@
 import { calculateGlory, formatNumber, ERRORS } from '../lib/gloryPoints';
 import { getSiteStrings, isLocale, DEFAULT_LOCALE } from '../lib/i18n';
+import { enhanceReportForm } from './report-form';
 
 // The calculator's own error copy is asserted verbatim by its unit tests, so
 // gloryPoints.ts stays English and untouched. Mapping BY THE EXPORTED ERRORS
@@ -54,3 +55,8 @@ input?.addEventListener('keydown', (e) => {
     run();
   }
 });
+
+// The footer's report form exists only in beta locales (#97).
+const reportForm =
+  document.querySelector<HTMLFormElement>('[data-report-form]');
+if (reportForm) enhanceReportForm(reportForm);

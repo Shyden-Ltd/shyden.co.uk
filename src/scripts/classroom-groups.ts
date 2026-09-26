@@ -94,6 +94,7 @@ import land2AssetUrl from '../assets/sfx/land-2.m4a';
 import land3AssetUrl from '../assets/sfx/land-3.m4a';
 import land4AssetUrl from '../assets/sfx/land-4.m4a';
 import doneAssetUrl from '../assets/sfx/done.m4a';
+import { enhanceReportForm } from './report-form';
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T | null;
@@ -2361,3 +2362,8 @@ if (form) {
     }
   });
 }
+
+// The footer's report form exists only in beta locales (#97).
+const reportForm =
+  document.querySelector<HTMLFormElement>('[data-report-form]');
+if (reportForm) enhanceReportForm(reportForm);
