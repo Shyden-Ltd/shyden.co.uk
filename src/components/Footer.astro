@@ -191,6 +191,9 @@ const reportStatuses: ReadonlyArray<[Outcome, string]> = [
     min-height: 44px;
     padding: 0.5rem;
     font: inherit;
+    /* After the shorthand, which inherits the footer's 0.9rem: iOS Safari
+       zooms the whole page when a field under 16px is focused (#352). */
+    font-size: 1rem;
     color: var(--ink);
     background: var(--bg);
     /* --border-strong, never --border: a control's only boundary must reach
