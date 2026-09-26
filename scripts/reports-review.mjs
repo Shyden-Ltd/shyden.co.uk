@@ -40,11 +40,13 @@ import {
  * report it belongs to; it never stops the others from printing.
  *
  * @param {readonly import('../src/lib/report-review.ts').ReportRow[]} rows
+ * @param {Readonly<Record<string, string | undefined>>} env where
+ *   `BACK_TRANSLATE_URL` and `BACK_TRANSLATE_API_KEY` are read
  * @returns {Promise<import('../src/lib/report-review.ts').BackTranslation[]>}
  */
-async function backTranslations(rows) {
+export async function backTranslations(rows, env) {
   const wanted = rows.some(needsBackTranslation);
-  if (!wanted || (process.env.BACK_TRANSLATE_URL ?? '') === '')
+  if (!wanted || (env.BACK_TRANSLATE_URL ?? '') === '')
     return rows.map((row) =>
       needsBackTranslation(row)
         ? { kind: 'no-engine' }
@@ -53,7 +55,7 @@ async function backTranslations(rows) {
   /** @type {{ url: string, apiKey?: string, offered: import('../src/lib/i18n/back-translate.ts').EngineLanguage[] } | { reason: string }} */
   let engine;
   try {
-    const { url, apiKey } = engineConfig(process.env);
+    const { url, apiKey } = engineConfig(env);
     engine = {
       url,
       apiKey,
@@ -105,7 +107,7 @@ async function main() {
     console.log(`No reports are waiting in ${database}.`);
     return;
   }
-  const translations = await backTranslations(rows);
+  const translations = await backTranslations(rows, process.env);
   console.log(
     rows
       .map((row, index) => reviewBlock(row, CATALOGUES, translations[index]))

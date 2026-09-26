@@ -27,9 +27,16 @@ import {
   type ReportRow,
 } from '../../src/lib/report-review';
 import { readBack } from '../../scripts/back-translate-client.mjs';
+import { backTranslations } from '../../scripts/reports-review.mjs';
 import { codeWithoutComments } from './source-text';
 
 const ESC = String.fromCharCode(92);
+/** LibreTranslate's `GET /languages`, for the locales these tests send. */
+const LANGUAGES = [
+  { code: 'en', targets: ['vi', 'th'] },
+  { code: 'vi', targets: ['en'] },
+  { code: 'th', targets: ['en'] },
+];
 const BELL = String.fromCharCode(7);
 const RLO = String.fromCharCode(0x202e);
 
@@ -365,6 +372,12 @@ describe('the engine client has one home (AC4)', () => {
       let raw = '';
       request.on('data', (chunk) => (raw += chunk));
       request.on('end', () => {
+        if (request.method === 'GET' && request.url === '/languages') {
+          requests.push({ path: request.url, body: {} });
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end(JSON.stringify(LANGUAGES));
+          return;
+        }
         const body = JSON.parse(raw) as { q: string[] };
         requests.push({ path: request.url ?? '', body });
         if (body.q.includes('refuse me')) {
@@ -409,6 +422,78 @@ describe('the engine client has one home (AC4)', () => {
     await expect(readBack(url, undefined, 'vi', ['refuse me'])).rejects.toThrow(
       /answered 400: unsupported text/,
     );
+  });
+
+  describe('the script asks the engine only where it can say something', () => {
+    const rows = () => [
+      row({ id: 'empty', suggestion: '' }),
+      row({ id: 'english', locale: 'en', suggestion: 'Report it' }),
+      row({ id: 'vi', suggestion: 'Báo cáo' }),
+      row({ id: 'refused', suggestion: 'refuse me' }),
+      row({ id: 'zh', locale: 'zh', suggestion: '报告' }),
+    ];
+
+    it('reads each suggestion back, and keeps a failure with its report', async () => {
+      requests.length = 0;
+      expect(
+        await backTranslations(rows(), { BACK_TRANSLATE_URL: `${url}/` }),
+      ).toEqual([
+        { kind: 'not-needed' },
+        { kind: 'not-needed' },
+        { kind: 'made', text: 'EN(Báo cáo)' },
+        {
+          kind: 'failed',
+          reason: expect.stringMatching(/answered 400: unsupported text/),
+        },
+        {
+          kind: 'failed',
+          reason: expect.stringMatching(/cannot read zh into English/),
+        },
+      ]);
+      expect(requests.map(({ path, body }) => [path, body.q])).toEqual([
+        ['/languages', undefined],
+        ['/translate', ['Báo cáo']],
+        ['/translate', ['refuse me']],
+      ]);
+    });
+
+    it('makes none, and says so per report, without BACK_TRANSLATE_URL', async () => {
+      requests.length = 0;
+      expect(await backTranslations(rows(), {})).toEqual([
+        { kind: 'not-needed' },
+        { kind: 'not-needed' },
+        { kind: 'no-engine' },
+        { kind: 'no-engine' },
+        { kind: 'no-engine' },
+      ]);
+      expect(requests).toEqual([]);
+    });
+
+    it('reports an engine it cannot reach in every report that needed it', async () => {
+      const results = await backTranslations(rows(), {
+        BACK_TRANSLATE_URL: 'localhost:5000',
+      });
+      expect(results.map(({ kind }) => kind)).toEqual([
+        'not-needed',
+        'not-needed',
+        'failed',
+        'failed',
+        'failed',
+      ]);
+      expect(results[2]).toEqual({
+        kind: 'failed',
+        reason: expect.stringMatching(/^BACK_TRANSLATE_URL must be/),
+      });
+    });
+
+    it('never calls the engine when no report needs it', async () => {
+      requests.length = 0;
+      const results = await backTranslations([row({ suggestion: '' })], {
+        BACK_TRANSLATE_URL: url,
+      });
+      expect(results).toEqual([{ kind: 'not-needed' }]);
+      expect(requests).toEqual([]);
+    });
   });
 
   it('is what i18n-back-translate.mjs uses, not a copy', () => {
