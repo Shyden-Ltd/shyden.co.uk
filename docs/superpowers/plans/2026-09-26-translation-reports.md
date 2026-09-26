@@ -444,12 +444,26 @@ git commit -m "docs(plan): measure #97's six assumptions (Refs #97)"
 
 | # | Assumption | Result, measured | Path taken |
 | --- | --- | --- | --- |
-| 1 | bundler follows imports into `src/lib/*.ts`, no Node APIs | | primary / build-step module fallback |
-| 2 | local D1 bound and migrated with no root config | | shared store / `node:sqlite` fallback |
-| 3 | `Intl.Segmenter`, `normalize` same in workerd as Node 24 | | graphemes / code points |
+| 1 | bundler follows imports into `src/lib/*.ts`, no Node APIs | holds: `Compiled Worker successfully`, no error; `site`, `toolKeys` (151), `parts` (1) equal Node's | primary |
+| 2 | local D1 bound and migrated with no root config | holds: `d1 execute --config tests/functions/wrangler.toml` and `pages dev --d1 REPORTS=<id>` share one sqlite file under `v3/d1/`; the running server listed all eight columns, hot-reloading a new Function without a restart | shared store |
+| 3 | `Intl.Segmenter`, `normalize` same in workerd as Node 24 | holds: `segmenter` function, `graphemes` 2, `nfcLength` 1, `lower` `i`, all equal Node's; `origin` reads `http://127.0.0.1:8799` | graphemes |
 | 4 | `:target` and fragment focus in five engines | measured in Task 8 | per engine |
-| 5 | D1 accepts the `CHECK`s and `pragma_table_info` | | primary / no-CHECK + `sqlite_schema` |
-| 6 | `pages dev` applies `dist/_headers` | | primary / unit pin fallback |
+| 5 | D1 accepts the `CHECK`s and `pragma_table_info` | holds: both exit 0, pragma returns the eight names, and an empty `quote` is refused with `CHECK constraint failed: length(quote) BETWEEN 1 AND 1000` | primary |
+| 6 | `pages dev` applies `dist/_headers` | holds: `referrer-policy: strict-origin-when-cross-origin` on `/vi/` | primary |
+
+Step 4: a row inserted with `d1 execute --local` while `pages dev` held the
+database read back with `--json --command "SELECT …"` (exit 0), so Task 10's
+row reader can use `wrangler d1 execute`.
+
+Also measured: `pages dev` loads `.env.local` unasked ("Using secrets defined
+in .env.local"), which put the operator's `DEEPL_API_KEY` into the local
+worker's `env`. The Functions never read it, and CI has no `.env.local`, but
+Task 10's local server should not hand a secret to code under test: it passes
+`--env-file` pointing at a file of its own (`pages dev --help` lists the
+flag), so only the bindings it names reach the worker. Whether naming a file
+replaces the default load, rather than adding to it, is not yet measured: Task
+10 reads the startup banner's binding table and confirms `DEEPL_API_KEY` is
+absent.
 
 **If assumption 1 fails:** add a Task 5a before Task 7. A script
 (`scripts/report-table.mjs`, run by `npm run build` before `astro build`)
