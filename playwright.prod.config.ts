@@ -1,7 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import { onBuild } from './tests/sanity-on-build';
 
 // Post-deploy PROD config: runs tests/prod/*.spec.ts against the REAL deployed
-// production site (no local webServer), mirroring playwright.dev.config.ts.
+// production site (no local webServer unless SANITY_ON_BUILD, below), mirroring
+// playwright.dev.config.ts.
 //
 // This exists because production was verified by `curl` — status codes and
 // grepping fetched HTML. That is a text assertion, and this repo has already
@@ -20,7 +22,21 @@ import { defineConfig, devices } from '@playwright/test';
 // auth. Verifying the alias therefore meant `prod-verified` attested that a
 // password-locked staging URL rendered, and said nothing about whether
 // shyden.co.uk resolved, presented a valid certificate, or routed here at all.
-const password = process.env.PROD_BASIC_AUTH_PASSWORD;
+//
+// It sends no credential: the apex is not behind Basic auth. The release used to
+// hand this config the DEV password for a prod run, which prod must never hold
+// (#241).
+//
+// With SANITY_ON_BUILD=1 it measures this tree's own production build instead
+// (#335). A build inherits the whole environment, and a config cannot unset a
+// variable for it, so a PUBLIC_SHYTALK_URL left in the shell would build the
+// DEV ShyTalk links into what this run calls production. It is refused.
+const build = onBuild(4399, {});
+if (build && process.env.PUBLIC_SHYTALK_URL !== undefined)
+  throw new Error(
+    `SANITY_ON_BUILD: PUBLIC_SHYTALK_URL is set (${process.env.PUBLIC_SHYTALK_URL}), ` +
+      'so this build would not be production. Unset it and run again.',
+  );
 
 export default defineConfig({
   testDir: './tests/prod',
@@ -28,10 +44,12 @@ export default defineConfig({
   // not hang the release either.
   retries: 1,
   timeout: 30_000,
+  webServer: build?.webServer,
+  grepInvert: build?.grepInvert,
   use: {
-    baseURL: process.env.WEB_BASE_URL ?? 'https://shyden.co.uk',
-    // Username half is ignored by the gate; only the password matters.
-    httpCredentials: password ? { username: 'prod', password } : undefined,
+    baseURL:
+      build?.baseURL ?? process.env.WEB_BASE_URL ?? 'https://shyden.co.uk',
+    colorScheme: 'dark',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

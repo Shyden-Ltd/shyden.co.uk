@@ -162,6 +162,11 @@ function startsRegex(tail: string): boolean {
  * is the same bug wearing the opposite coat — so this scans rather than
  * matches. Quotes, template literals, escapes and regex literals (`startsRegex`,
  * above) are tracked; that is the whole of the grammar this needs.
+ *
+ * A block comment goes WITH the line breaks inside it, so after one, a line
+ * counted in this output is not the file's line (#218: `dev-sanity.spec.ts`
+ * line 79 was reported as line 48). A guard that reports lines reads the
+ * parse tree, or `blankCommentLines` below, which keeps every line in place.
  */
 export function withoutTsComments(source: string): string {
   let out = '';
@@ -285,7 +290,32 @@ export function blankCommentLines(text: string): string {
  * private copies are how that rule came to exist.
  */
 export function withoutCssComments(source: string): string {
-  let out = '';
+  return scanCss(source).code;
+}
+
+/**
+ * Every comment `withoutCssComments` removes from `source`, in the order it
+ * meets them.
+ *
+ * A guard asking "did a comment survive this read?" has to name the span it
+ * is hunting, and naming comment syntax outside this file is exactly what
+ * `one-home.test.ts` refuses (#203). So the scanner that removes them hands
+ * them back, and no caller has to spell the delimiters to find one.
+ */
+export function cssComments(source: string): string[] {
+  return scanCss(source).comments;
+}
+
+/**
+ * One quote-aware pass over CSS, producing the code and the comments together.
+ *
+ * Together rather than twice: two passes are two scanners, and a second one
+ * written to find what the first removed is the seventh private copy this
+ * file exists to prevent.
+ */
+function scanCss(source: string): { code: string; comments: string[] } {
+  let code = '';
+  const comments: string[] = [];
   let i = 0;
   let quote: string | null = null;
 
@@ -293,9 +323,9 @@ export function withoutCssComments(source: string): string {
     const ch = source[i];
 
     if (quote !== null) {
-      out += ch;
+      code += ch;
       if (ch === '\\') {
-        out += source[i + 1] ?? '';
+        code += source[i + 1] ?? '';
         i += 2;
         continue;
       }
@@ -306,22 +336,24 @@ export function withoutCssComments(source: string): string {
 
     if (ch === "'" || ch === '"') {
       quote = ch;
-      out += ch;
+      code += ch;
       i += 1;
       continue;
     }
 
     if (ch === '/' && source[i + 1] === '*') {
       const end = source.indexOf('*/', i + 2);
-      i = end === -1 ? source.length : end + 2;
+      const stop = end === -1 ? source.length : end + 2;
+      comments.push(source.slice(i, stop));
+      i = stop;
       continue;
     }
 
-    out += ch;
+    code += ch;
     i += 1;
   }
 
-  return out;
+  return { code, comments };
 }
 
 /**
@@ -348,8 +380,67 @@ const FENCE = /^---[ \t]*$/gm;
 /** A `<script>` element, as its opening tag and then its body. */
 const SCRIPT = /(<script\b[^>]*>)([\s\S]*?)<\/script\s*>/g;
 
+/** A `<style>` element, as its opening tag and then its body. */
+const STYLE = /(<style\b[^>]*>)([\s\S]*?)<\/style\s*>/g;
+
+/** A span of a file, from its start offset up to but not including its end. */
+type Region = readonly [start: number, end: number];
+
 /** `text` with every character but CR and LF turned to a space. */
 const blanked = (text: string): string => text.replace(/[^\r\n]/g, ' ');
+
+/**
+ * An `.astro` file made ready for a tag search: its frontmatter's region, when
+ * it has one, and its markup, which is the whole file with that frontmatter
+ * and every markup comment blanked.
+ *
+ * Both are blanked before any tag is looked for, because either can name one:
+ * `ClassroomGroupsPage.astro` explains in an `<!-- … -->` why its first script
+ * must be `is:inline`, and says "every plain `<script>`" while doing it. A tag
+ * search over the raw markup opens an element body in that prose and runs it
+ * on into the real element below (#175).
+ */
+function astroParts(text: string): { frontmatter?: Region; markup: string } {
+  const [open, close] = [...text.matchAll(FENCE)];
+  const hasFrontmatter = open?.index === 0 && close !== undefined;
+  const markupStart = hasFrontmatter ? close.index + close[0].length : 0;
+  const markup =
+    blanked(text.slice(0, markupStart)) +
+    text.slice(markupStart).replace(MARKUP_COMMENT, blanked);
+  return hasFrontmatter
+    ? { frontmatter: [open[0].length, close.index], markup }
+    : { markup };
+}
+
+/**
+ * The body of each `element` in `markup` whose opening tag `keep` accepts, as
+ * a region of the file.
+ */
+const bodies = (
+  markup: string,
+  element: RegExp,
+  keep: (tag: string) => boolean = () => true,
+): Region[] =>
+  [...markup.matchAll(element)]
+    .filter((match) => keep(match[1]))
+    .map((match) => {
+      const start = match.index + match[1].length;
+      return [start, start + match[2].length] as const;
+    });
+
+/** The whole of `text` with everything outside `region` blanked. */
+const viewOf = (text: string, [start, end]: Region): string =>
+  blanked(text.slice(0, start)) +
+  text.slice(start, end) +
+  blanked(text.slice(end));
+
+/** `text` with every one of `regions` blanked, offsets and lines intact. */
+const withRegionsBlanked = (text: string, regions: readonly Region[]): string =>
+  regions.reduce(
+    (out, [start, end]) =>
+      out.slice(0, start) + blanked(out.slice(start, end)) + out.slice(end),
+    text,
+  );
 
 /**
  * The code an `.astro` file holds — its frontmatter, then each `<script>`
@@ -360,34 +451,159 @@ const blanked = (text: string): string => text.replace(/[^\r\n]/g, ' ');
  * that position or line in the file itself. No caller carries an offset it
  * could get wrong.
  *
- * Markup comments are blanked before any tag is looked for, because a comment
- * can name one: `ClassroomGroupsPage.astro` explains in an `<!-- … -->` why
- * its first script must be `is:inline`, and says "every plain `<script>`"
- * while doing it. A tag search over the raw markup opens a script body in
- * that prose and runs it on into the real script below (#175).
- *
  * Case-sensitive on purpose: to Astro, `<Script>` is a component. Residual,
  * named rather than chased: a `>` inside a script tag's attribute value ends
  * the tag early, and `<script>` spelled inside a markup expression reads as
  * a tag.
  */
 export function astroCodeViews(text: string): string[] {
-  const regions: Array<readonly [start: number, end: number]> = [];
-  const [open, close] = [...text.matchAll(FENCE)];
-  const hasFrontmatter = open?.index === 0 && close !== undefined;
-  if (hasFrontmatter) regions.push([open[0].length, close.index]);
-  const markupStart = hasFrontmatter ? close.index + close[0].length : 0;
-  const markup =
-    blanked(text.slice(0, markupStart)) +
-    text.slice(markupStart).replace(MARKUP_COMMENT, blanked);
-  for (const script of markup.matchAll(SCRIPT)) {
-    const start = script.index + script[1].length;
-    regions.push([start, start + script[2].length]);
-  }
-  return regions.map(
-    ([start, end]) =>
-      blanked(text.slice(0, start)) +
-      text.slice(start, end) +
-      blanked(text.slice(end)),
+  const { frontmatter } = astroParts(text);
+  const head = frontmatter === undefined ? [] : [viewOf(text, frontmatter)];
+  return [...head, ...astroScriptViews(text)];
+}
+
+/**
+ * The frontmatter of an `.astro` file as a view, or the whole file blanked
+ * when it has none.
+ *
+ * The first of `astroCodeViews`, taken on its own: a guard reading a
+ * component's props must not read its scripts (#331), and "the first view"
+ * cannot be trusted to be the frontmatter, because in a file without one it is
+ * the first script. Blank rather than absent, so a parser handed it reads an
+ * empty program and no caller has a missing case to forget.
+ */
+export function astroFrontmatterView(text: string): string {
+  const { frontmatter } = astroParts(text);
+  return frontmatter === undefined ? blanked(text) : viewOf(text, frontmatter);
+}
+
+/**
+ * Each `<script>` body in an `.astro` file, as a view: the rest of
+ * `astroCodeViews`, for a guard that must read a page's scripts and never its
+ * frontmatter (#331).
+ */
+export function astroScriptViews(text: string): string[] {
+  return bodies(astroParts(text).markup, SCRIPT).map((region) =>
+    viewOf(text, region),
   );
 }
+
+/**
+ * The CSS an `.astro` file holds — each `<style>` body — as one view per
+ * element, in the same shape as `astroCodeViews` and for the same reason
+ * (#200).
+ *
+ * Residuals, named rather than chased: `<style>` spelled inside a script body
+ * reads as a tag, and a `style` attribute is not read at all. Neither occurs
+ * under `src/` as this is written.
+ */
+export function astroStyleViews(text: string): string[] {
+  return bodies(astroParts(text).markup, STYLE).map((region) =>
+    viewOf(text, region),
+  );
+}
+
+/**
+ * A `<style>` tag Astro leaves unscoped: `is:global` opts out of scoping, and
+ * `is:inline` out of processing altogether.
+ */
+const UNSCOPED = /\bis:(?:global|inline)\b/;
+
+/**
+ * The CSS Astro scopes to an `.astro` file's own elements, comment-free: each
+ * `<style>` body whose tag carries neither `is:global` nor `is:inline` (#331).
+ *
+ * A rule here reaches only the elements the component builds, because Astro
+ * stamps its `data-astro-cid-*` onto those elements and onto every selector.
+ * It lives here rather than beside its guard for the reason `stylesheetCss`
+ * gives: the stripper has no caller outside this file.
+ */
+export const astroScopedCss = (text: string): string[] =>
+  bodies(astroParts(text).markup, STYLE, (tag) => !UNSCOPED.test(tag)).map(
+    (region) => withoutCssComments(viewOf(text, region)),
+  );
+
+/**
+ * An `.astro` file's template, the markup its elements are written in, with
+ * the frontmatter, every script and style body, and every comment removed
+ * (#331).
+ *
+ * What a guard reads to learn which classes a component's own elements can
+ * carry: a class spelled in a script body belongs to whatever that script
+ * builds, and one spelled in a comment belongs to nothing. Not a view, since
+ * the comments are removed rather than blanked, so a caller can ask what the
+ * template holds but not where.
+ *
+ * Residual, named rather than chased: `withoutAstroComments`'s own, a
+ * trailing comment after an unbalanced apostrophe in template text.
+ */
+export const astroTemplate = (text: string): string => {
+  const { markup } = astroParts(text);
+  return withoutAstroComments(
+    withRegionsBlanked(markup, [
+      ...bodies(markup, SCRIPT),
+      ...bodies(markup, STYLE),
+    ]),
+  );
+};
+
+/**
+ * The CSS a file holds: a `.css` file whole, an `.astro` file's `<style>`
+ * bodies as one view each.
+ *
+ * The distinction is the whole of #203. `withoutCssComments` tracks quotes,
+ * so over a WHOLE `.astro` file the first apostrophe in frontmatter or
+ * template text ("don't") opens a string it never sees closed, and every
+ * comment below that point is copied out as if it were live CSS. Eight of
+ * the 141 comments in `src/` survived that read.
+ */
+export const stylesheetsIn = (file: string, text: string): string[] =>
+  file.endsWith('.astro') ? astroStyleViews(text) : [text];
+
+/**
+ * The CSS a file holds, comment-free: what a stylesheet guard should scan.
+ *
+ * Callers take this rather than `withoutCssComments` so that reading an
+ * `.astro` file the wrong way is not something a call site can express —
+ * `one-home.test.ts` asserts the stripper itself has no caller outside this
+ * file, which a guard passing a whole `.astro` file would break.
+ */
+export const stylesheetCss = (file: string, text: string): string[] =>
+  stylesheetsIn(file, text).map(withoutCssComments);
+
+/**
+ * The non-CSS text of an `.astro` file: the whole file with every `<style>`
+ * body blanked, offsets and lines intact.
+ *
+ * The complement of `astroStyleViews`, and the other half of reading an
+ * `.astro` file safely: a scanner that must see the WHOLE file still must
+ * not read a `<style>` body as if it were TypeScript.
+ */
+export const withoutAstroStyles = (text: string): string =>
+  withRegionsBlanked(text, bodies(astroParts(text).markup, STYLE));
+
+/**
+ * An `.astro` file's frontmatter, template and scripts, with every `<style>`
+ * blanked and every comment stripped: the half of `codeWithoutComments` that
+ * is not CSS, for a guard that reads the CSS itself by rule.
+ */
+export const astroCode = (text: string): string =>
+  withoutAstroComments(withoutAstroStyles(text));
+
+/**
+ * A source file's code with its comments stripped, chosen by extension: what
+ * a guard searching a file for a spelling should scan.
+ *
+ * `.astro` is three languages in one file, so it is read in two halves — its
+ * CSS through `astroStyleViews`, its remainder through `withoutAstroComments`
+ * — and the halves are joined for a caller that searches. Joining rather than
+ * interleaving is safe because every caller asks whether a spelling appears
+ * anywhere in the file, never where.
+ */
+export const codeWithoutComments = (file: string, text: string): string => {
+  if (file.endsWith('.css')) return withoutCssComments(text);
+  if (!file.endsWith('.astro')) {
+    return withoutTsComments(withoutCssComments(text));
+  }
+  return [astroCode(text), ...stylesheetCss(file, text)].join('\n');
+};

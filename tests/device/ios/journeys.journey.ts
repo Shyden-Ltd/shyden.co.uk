@@ -646,9 +646,12 @@ describe.each(LOCALES)(
         values,
         `the student count never reaches storage (${locale})`,
       ).not.toContain(probeCount);
+      // `theme` is the harness's own stamp (navigateToPath pins the palette,
+      // #142), not a key this page writes.
+      const written = Object.keys(stored).filter((key) => key !== 'theme');
       expect(
-        Object.keys(stored).every((k) => k.startsWith('cg-')),
-        `every key this page writes starts "cg-" (${locale}): ${JSON.stringify(Object.keys(stored))}`,
+        written.every((k) => k.startsWith('cg-')),
+        `every key this page writes starts "cg-" (${locale}): ${JSON.stringify(written)}`,
       ).toBe(true);
     });
 
@@ -751,12 +754,17 @@ describe.each(LOCALES)(
       for (const id of primaryControlIds) {
         const el = await session.driver.findElement(`#${id}`);
         const rect = await el.rect();
+        // Rounded for the reason tests/viewport.ts's `rectAtLeast44`
+        // rounds: a box declared at 44px can read back as 43.9999. It is
+        // asserted here rather than through that one home because this
+        // corpus runs under vitest and that module's `expect` is
+        // Playwright's, so it cannot be imported from here.
         expect(
-          rect.width,
+          Math.round(rect.width),
           `#${id} width, locale ${locale}`,
         ).toBeGreaterThanOrEqual(44);
         expect(
-          rect.height,
+          Math.round(rect.height),
           `#${id} height, locale ${locale}`,
         ).toBeGreaterThanOrEqual(44);
       }

@@ -67,6 +67,9 @@ export const EVIDENCE_JPEG_QUALITY = (() => {
  * real phone over WebDriver, so they cannot import it at all. Two slug
  * implementations would be two schemes the day one of them changed, and the
  * page would show a picture nobody could trace back to a run.
+ *
+ * @param {string} s
+ * @returns {string}
  */
 export const slug = (s) =>
   s

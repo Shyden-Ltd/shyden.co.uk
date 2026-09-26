@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
-import { withoutCssComments, withoutTsComments } from './source-text';
+import { codeWithoutComments } from './source-text';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 
 /**
@@ -25,6 +25,16 @@ const HOME = 'src/lib/shytalk-brand.ts';
 const PIN = 'tests/unit/shytalk-brand.test.ts';
 const ALLOWED = new Set([HOME, PIN]);
 const SCAN = ['src', 'tests'];
+
+/**
+ * One narrower exemption (#142 §3.4). The mark's tile is also a THEME token:
+ * the theme, not the component, decides whether the mark sits on it, so
+ * tokens.css declares `--wordmark-tile` with the tile's hex on bare `:root`.
+ * That file may spell the tile and nothing else of the mark, and only once;
+ * tests/unit/tokens.test.ts holds the value equal to SHYTALK_MARK.tile.
+ */
+const TOKEN_HOME = 'src/styles/tokens.css';
+const TOKEN_FORM = SHYTALK_MARK.tile.toLowerCase();
 
 /**
  * Every way a brand colour can be written: the hex, and the bare CHANNEL
@@ -76,11 +86,11 @@ describe("ShyTalk's brand mark has one home", () => {
     expect(spellings().some((s) => s.startsWith('rgb('))).toBe(false);
   });
 
-  it('exempts exactly two files, and both exist', () => {
+  it('exempts exactly two files and one token, and each file exists', () => {
     // An exemption naming a path that does not exist exempts nothing and
     // reads identically to one that works.
     const files = scannedFiles();
-    for (const allowed of ALLOWED) {
+    for (const allowed of [...ALLOWED, TOKEN_HOME]) {
       expect(files, `${allowed} is not in the scanned set`).toContain(allowed);
     }
     expect(ALLOWED.size).toBe(2);
@@ -96,13 +106,19 @@ describe("ShyTalk's brand mark has one home", () => {
       // Comments stripped: a comment NAMING the colour is documentation, and
       // a guard tripped by its own explanation is noise. The assertion is
       // about what the code spells out.
-      const code = file.endsWith('.css')
-        ? withoutCssComments(raw)
-        : withoutTsComments(withoutCssComments(raw));
+      const code = codeWithoutComments(file, raw);
       const lower = code.toLowerCase();
-      return forms
-        .filter((form) => lower.includes(form.toLowerCase()))
-        .map((form) => `${file} spells out ${form}`);
+      const exempt = file === TOKEN_HOME ? [TOKEN_FORM] : [];
+      const repeated = exempt.filter((form) => lower.split(form).length > 2);
+      return [
+        ...forms
+          .filter(
+            (form) =>
+              lower.includes(form.toLowerCase()) && !exempt.includes(form),
+          )
+          .map((form) => `${file} spells out ${form}`),
+        ...repeated.map((form) => `${file} spells out ${form} more than once`),
+      ];
     });
 
     expect(

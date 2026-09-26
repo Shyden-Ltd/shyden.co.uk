@@ -1,6 +1,8 @@
 import { test, expect } from './fixtures';
-import { shoot } from './evidence';
-import type { Locator } from '@playwright/test';
+import { recorded, shoot } from './evidence';
+import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+
+test.use(recorded);
 
 test.describe('header + footer', () => {
   test(
@@ -141,7 +143,7 @@ test.describe('header + footer', () => {
   // control can take focus and none is removed from the tab order — is
   // asserted separately, on every engine.
   test(
-    'desktop: nav is keyboard-reachable in order (WCAG 2.1.1)',
+    'desktop: the header is keyboard-reachable in order (WCAG 2.1.1)',
     { tag: '@emulated-viewport' },
     async ({ page, browserName }) => {
       test.skip(
@@ -157,7 +159,16 @@ test.describe('header + footer', () => {
       // how many Tab presses that gap costs, and an explicit focus() fixes the
       // starting point on all of them. Tab then advances in DOM order, so this
       // asserts OUR running order.
-      await page.locator('header details.lang-switch > summary').focus();
+      const languages = page.locator('header details.lang-switch > summary');
+      await languages.focus();
+      // The theme switch sits immediately before the language switcher
+      // (#142 §5). Reached by Shift+Tab, never focused directly, so a switch
+      // taken out of the Tab order (tabindex="-1") is stepped over and this
+      // fails where a direct focus() would still succeed.
+      await page.keyboard.press('Shift+Tab');
+      await expect(page.locator('header [data-theme-toggle]')).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(languages).toBeFocused();
 
       for (const label of ['ShyTalk', 'Tools', 'Contact']) {
         await page.keyboard.press('Tab');
@@ -181,6 +192,7 @@ test.describe('header + footer', () => {
       await page.goto('/');
       for (const sel of [
         'header .wordmark',
+        'header [data-theme-toggle]',
         'header details.lang-switch > summary',
         'header nav a:nth-of-type(1)',
         'header nav a:nth-of-type(2)',
@@ -219,15 +231,6 @@ test.describe('header + footer', () => {
 });
 
 test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
-  const atLeast44 = async (locator: Locator) => {
-    const box = await locator.boundingBox();
-    expect(box).not.toBeNull();
-    // Round to the nearest device pixel: engines can report a sub-pixel value
-    // like 43.9999 for a declared `min-height: 44px` (fixed-point layout math).
-    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
-    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
-  };
-
   test(
     'mobile: wordmark, menu button, nav links and footer email are ≥44px',
     { tag: '@emulated-viewport' },
@@ -289,12 +292,7 @@ test.describe('mobile layout: no horizontal overflow', () => {
       await page.setViewportSize({ width: 320, height: 800 });
       await page.goto('/');
       await page.locator('header details.menu > summary').click();
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth,
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
+      await expectNoHorizontalScroll(page);
     },
   );
 });

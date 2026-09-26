@@ -41,7 +41,7 @@ export const sitePaths = (): string[] =>
  * Deliberately a lookup rather than three literals inside each gate. The dev
  * and prod sanity suites carried byte-identical hand-written tables, so
  * `sitePaths()` grew to four and both gates went on testing three: the new
- * page was fetched by `release-prod.yml`'s curl smoke and **never rendered in
+ * page was fetched by `deploy-prod.yml`'s curl smoke and **never rendered in
  * a browser** by the suites that exist because curl is not enough. Measured
  * with a probe page: `--list` reported `Total: 28 tests` before and after.
  *

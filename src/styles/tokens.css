@@ -1,68 +1,84 @@
 /* src/styles/tokens.css — design tokens (see spec §4).
-   Aurora (#17): the approved dark identity. Every value below is derived
-   against the ground it sits on and ASSERTED in tests/unit/contrast.test.ts —
-   a comment claiming a ratio is not a control, which is how a 1.17:1 control
-   boundary shipped to production (#133). */
+   Two identities share one set of token NAMES (#142). Studio, the light one,
+   is defined on bare :root. Aurora (#17), the dark one, redefines the same
+   tokens, and only the tokens, in the two screen-only blocks below it. Every
+   value is derived against the ground it sits on and ASSERTED, in both
+   themes, in tests/unit/contrast.test.ts — a comment claiming a ratio is not
+   a control, which is how a 1.17:1 control boundary shipped to production
+   (#133). */
 @import '@fontsource-variable/bricolage-grotesque';
 @import '@fontsource-variable/instrument-sans';
 @import '@fontsource/space-mono/400.css';
 @import '@fontsource/space-mono/700.css';
 
+/* Studio: depth, not colour. A cool grey ground, pure white cards that sit
+   forward of it, window light at the top left and cool shade falling off to
+   the right and below. Its one colour is the brand green; everything else it
+   paints is light and shade. `color-scheme` travels with the palette, so the
+   browser draws its own controls for the ground they sit on. */
 :root {
-  /* Ground and ink. --surface is only 1.04:1 against --bg, so a card is
-     identified by its EDGE, not by its fill — which is why the border tokens
-     below carry more weight on this palette than they did on the light one. */
-  --bg: #04070d;
-  --surface: #070d16;
-  --ink: #eaf2ff;
-  --ink-soft: #8fa6c6;
+  color-scheme: light;
 
-  /* Brand. --on-accent is the ink for anything sitting ON mint: white scores
-     1.39:1 there, so a filled button labelled #fff would be unreadable. */
-  --accent: #38f5c8;
-  --accent-ink: #7fffe0;
-  --on-accent: #04140f;
-  --violet: #7a5cff;
-  --deep: #184a6e;
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --ink: #111821;
+  --ink-soft: #4d5866;
 
-  /* #c0392b was tuned for a near-white page and scores 3.71:1 on this ground —
-     below the 4.5:1 body floor. The artifact never specified an error colour;
-     the roles a design does not mention are the ones with nobody checking. */
-  --danger: #ff6b5a;
+  /* A control that cannot be used right now (#250): an opaque fill, so the
+     label's ratio is fixed and checkable. --ink-soft on it is 5.55:1. */
+  --disabled-fill: #dde2e8;
 
-  /* Borders, composited: alphas are judged OVER their ground, never raw.
-     --border at .11 is 1.27:1 and is decorative only. Aurora's own --line-2
-     at .18 was 1.61:1.
+  --accent: #006652;
+  --accent-ink: #004d3e;
+  --on-accent: #ffffff;
+  --danger: #b42318;
 
-     Control boundaries need 3:1 (WCAG 1.4.11). White reached that at alpha
-     .35 while the page ground was FLAT — 3.10:1 on --bg, 3.17:1 on --surface.
-     The atmosphere lightens the ground beneath a control, and at .35 the
-     boundary drops to 2.95:1 there: a 1.4.11 failure introduced by a change
-     three declarations away that touched no border at all. At .40 it is
-     3.39:1 over the atmosphere, 3.73:1 on --bg, 3.79:1 on --surface. */
-  --border: rgb(255 255 255 / 0.11);
-  --border-strong: rgb(255 255 255 / 0.4);
-  --glass: rgb(255 255 255 / 0.055);
-  --glass-2: rgb(255 255 255 / 0.09);
+  /* The ink at low alpha, judged OVER its ground. --border is decorative
+     only. --border-strong draws every control boundary (WCAG 1.4.11): 3.63:1
+     over the atmosphere at its worst subset, 3.83:1 on --bg and 3.97:1 on
+     --surface. */
+  --border: rgb(17 24 33 / 0.1);
+  --border-strong: rgb(17 24 33 / 0.55);
+  /* A faint ink tint, not white: white glass on a white card has no fill.
+     The work-card badge's accent text reads 6.27:1 on it. */
+  --glass: rgb(17 24 33 / 0.05);
 
-  /* The mint bloom behind the marquee band. Decorative: it is a shadow, so
-     nothing is ever read against it and 1.4.11 does not reach it. */
-  --accent-glow: rgb(56 245 200 / 0.3);
+  /* A glow reads as light only against darkness. On this ground the band's
+     clipped glow painted a flat grey box, so there is none (#142 §3.3). */
+  --accent-glow: transparent;
+  /* Shadows in the ink's own hue, softer than Aurora's black. Nothing is read
+     against them. */
+  --dock-shadow: rgb(17 24 33 / 0.14);
+  --lift-shadow: rgb(17 24 33 / 0.18);
 
-  /* The Aurora atmosphere: three radial stops and a white shaft, painted on
-     body::before. Text IS read over these, so the alphas are not a taste
-     decision — they were chosen by compositing all four onto --bg at once
-     (the worst case; the real stops sit apart) and measuring every text
-     token against that composite. The pairs are asserted in
-     tests/unit/contrast.test.ts.
+  /* The atmosphere, painted on body::before: window light at the top left,
+     cool shade at the top right and at the foot, and a bright shaft. Here
+     the light layers brighten the ground under dark ink while the shade
+     darkens it, so every layer at once is NOT the worst case: the two shade
+     pools alone are, and --accent over them, 5.19:1, is Studio's tightest
+     text pair. contrast.test.ts scores every subset, in both themes. */
+  --pool-top-left: rgb(255 255 255 / 0.7);
+  --pool-top-right: rgb(60 80 110 / 0.045);
+  --pool-foot: rgb(30 45 65 / 0.055);
+  --shaft: rgb(255 255 255 / 0.35);
 
-     The knife edge is --ink-soft. At mint .10 / violet .14 / deep .18 with
-     the shaft it scores 4.48:1 — a FAILURE by 0.02, and one that no layer
-     shows on its own. These values leave it at 5.11:1. */
-  --aurora-mint: rgb(56 245 200 / 0.08);
-  --aurora-violet: rgb(122 92 255 / 0.1);
-  --aurora-deep: rgb(24 74 110 / 0.14);
-  --aurora-shaft: rgb(255 255 255 / 0.05);
+  /* The ShyTalk mark's tile (HomePage.astro, #142 §3.4). The mark's two
+     tones were made for a dark ground and measure 1.28:1 and 1.70:1 on
+     white, so in light it sits on ShyTalk's own tile colour, like a logo
+     badge: 15.02:1 and 11.32:1. The same value as SHYTALK_MARK.tile, held
+     equal by tests/unit/tokens.test.ts, because the colour now lives in two
+     files. */
+  --wordmark-tile: #0f0d15;
+  --wordmark-pad: 0.12em 0.42em 0.18em;
+
+  /* The theme switch (ThemeSwitch.astro, #142 §4-5). Hidden until the theme
+     script has run and stamped data-theme-switch (the last rule of the
+     screen block below), so with JavaScript off no dead button is offered.
+     Its icon is chosen here, beside the palette it names: a moon while light
+     is showing, a sun while dark is. */
+  --switch-display: none;
+  --switch-moon: inline-block;
+  --switch-sun: none;
 
   --font-head: 'Bricolage Grotesque Variable', system-ui, sans-serif;
   --font-body: 'Instrument Sans Variable', system-ui, sans-serif;
@@ -73,19 +89,160 @@
   --maxw: 1120px;
 }
 
+/* Aurora (#17), the dark identity, exactly as it shipped: the same tokens,
+   redefined. Written TWICE (#142 §4). The unstamped state needs the media
+   query, so a visitor with no saved choice follows the device, live, with no
+   script involved. The stamped state must not have it, so a saved `dark`
+   wins on a light device; and `:not([data-theme='light'])` lets a saved
+   `light` win on a dark one.
+
+   Both copies are screen-only, and that is load-bearing for print. Their
+   selectors outrank the print block's bare :root, so on paper they would put
+   Aurora's near-white ink on white paper: the blank sheet of 2026-09-11.
+   tests/unit/tokens.test.ts finds every block that declares
+   `color-scheme: dark`, keeps each screen-only, and proves them identical. */
+@media screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    /* Ground and ink. --surface is only 1.04:1 against --bg, so a card is
+       identified by its EDGE, not by its fill — which is why the border
+       tokens below carry more weight here than on a light palette. */
+    --bg: #04070d;
+    --surface: #070d16;
+    --ink: #eaf2ff;
+    --ink-soft: #8fa6c6;
+
+    /* A control that cannot be used right now (#250). An opaque FILL, never
+       the `opacity: 0.6` this replaced: opacity composites the whole
+       subtree, control AND label, with whatever happens to be behind it, so
+       the label's ratio depends on the page atmosphere at that spot --
+       measured at roughly 2.67:1 for --ink-soft, well under AA, in
+       ClassroomGroupsPage.astro's own note. Opaque, the ratio is fixed and
+       checkable: --ink-soft on this is 5.19:1, and --ink 11.46:1. 1.51:1
+       against --surface and 1.56:1 against --bg, so the control still reads
+       as a control on the card; WCAG 1.4.11 exempts an inactive component
+       from the 3:1 boundary, and the reason paragraph beside it is what
+       carries the state without colour (AC6). */
+    --disabled-fill: #2a323f;
+
+    /* Brand. --on-accent is the ink for anything sitting ON mint: white
+       scores 1.39:1 there, so a filled button labelled #fff would be
+       unreadable. */
+    --accent: #38f5c8;
+    --accent-ink: #7fffe0;
+    --on-accent: #04140f;
+
+    /* #c0392b was tuned for a near-white page and scores 3.71:1 on this
+       ground — below the 4.5:1 body floor. The artifact never specified an
+       error colour; the roles a design does not mention are the ones with
+       nobody checking. */
+    --danger: #ff6b5a;
+
+    /* Borders, composited: alphas are judged OVER their ground, never raw.
+       --border at .11 is 1.27:1 and is decorative only. Aurora's own
+       --line-2 at .18 was 1.61:1.
+
+       Control boundaries need 3:1 (WCAG 1.4.11). White reached that at alpha
+       .35 while the page ground was FLAT — 3.10:1 on --bg, 3.17:1 on
+       --surface. The atmosphere lightens the ground beneath a control, and
+       at .35 the boundary drops to 2.96:1 there: a 1.4.11 failure introduced
+       by a change three declarations away that touched no border at all. At
+       .40 it is 3.44:1 over the atmosphere at its worst subset, 3.72:1 on
+       --bg and 3.79:1 on --surface. */
+    --border: rgb(255 255 255 / 0.11);
+    --border-strong: rgb(255 255 255 / 0.4);
+    --glass: rgb(255 255 255 / 0.055);
+
+    /* The mint bloom behind the marquee band. Decorative: it is a shadow, so
+       nothing is ever read against it and 1.4.11 does not reach it. */
+    --accent-glow: rgb(56 245 200 / 0.3);
+
+    /* The shadow the pinned action row on /classroom-groups casts UP over
+       whatever scrolls beneath it (#188). Decorative: it separates a docked
+       bar from the content passing under it, and nothing is read against it
+       by design, because scroll-padding keeps a focused field clear of the
+       row. */
+    --dock-shadow: rgb(0 0 0 / 0.55);
+
+    /* The phone mockup's shadow (PhoneFrame.astro). Decorative, like the dock
+       shadow above: nothing is read against it. This is the value the frame
+       hard-coded before it became a token (#142). */
+    --lift-shadow: rgb(0 0 0 / 0.55);
+
+    /* The atmosphere: mint at the top left, violet at the top right, deep
+       blue at the foot, and a faint white shaft. Every layer lightens a
+       near-black ground under light ink, so here the worst subset IS every
+       layer at once: --ink-soft reads 5.22:1 over it, the knife edge. The
+       hand-written stack this replaced put the shaft on top, where the
+       browser never paints it, and read 5.05:1. */
+    --pool-top-left: rgb(56 245 200 / 0.08);
+    --pool-top-right: rgb(122 92 255 / 0.1);
+    --pool-foot: rgb(24 74 110 / 0.14);
+    --shaft: rgb(255 255 255 / 0.05);
+
+    /* No tile: the mark was made for this ground, and zero padding keeps it
+       exactly where Aurora always had it. */
+    --wordmark-tile: transparent;
+    --wordmark-pad: 0;
+    --switch-moon: none;
+    --switch-sun: inline-block;
+  }
+}
+
+@media screen {
+  /* The second copy: a saved `dark` choice, whatever the device prefers.
+     Every declaration mirrors the block above, whose comments give the
+     reasons; tokens.test.ts keeps the two identical. */
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --bg: #04070d;
+    --surface: #070d16;
+    --ink: #eaf2ff;
+    --ink-soft: #8fa6c6;
+    --disabled-fill: #2a323f;
+    --accent: #38f5c8;
+    --accent-ink: #7fffe0;
+    --on-accent: #04140f;
+    --danger: #ff6b5a;
+    --border: rgb(255 255 255 / 0.11);
+    --border-strong: rgb(255 255 255 / 0.4);
+    --glass: rgb(255 255 255 / 0.055);
+    --accent-glow: rgb(56 245 200 / 0.3);
+    --dock-shadow: rgb(0 0 0 / 0.55);
+    --lift-shadow: rgb(0 0 0 / 0.55);
+    --pool-top-left: rgb(56 245 200 / 0.08);
+    --pool-top-right: rgb(122 92 255 / 0.1);
+    --pool-foot: rgb(24 74 110 / 0.14);
+    --shaft: rgb(255 255 255 / 0.05);
+    --wordmark-tile: transparent;
+    --wordmark-pad: 0;
+    --switch-moon: none;
+    --switch-sun: inline-block;
+  }
+
+  /* The switch appears only once the theme script has run (#142 §4).
+     Screen-only, so it never prints; and here, in the one file that owns the
+     root, because a component's scoped selectors never test an attribute on
+     :root. */
+  :root[data-theme-switch] {
+    --switch-display: inline-flex;
+  }
+}
+
 *,
 *::before,
 *::after {
   box-sizing: border-box;
 }
 html {
-  color-scheme: dark;
   background: var(--bg);
   /* Checkboxes and radios are drawn by the browser, and `auto` means it picks
      its own blue — measured as the selected state on /classroom-groups, the
-     one brand colour on the page that was not ours. `color-scheme: dark`
-     fixes their GROUND but says nothing about the fill. The UA derives the
-     tick's own colour from this, so it stays legible on mint. */
+     one brand colour on the page that was not ours. `color-scheme`, declared
+     with each palette above, fixes their GROUND but says nothing about the
+     fill. The UA derives the tick's own colour from this, so it stays legible
+     on the accent. */
   accent-color: var(--accent);
 }
 body {
@@ -95,12 +252,15 @@ body {
   line-height: 1.6;
   -webkit-text-size-adjust: 100%;
 }
-/* One fixed layer behind everything. Fixed, not absolute: the aurora is the
-   light in the room rather than part of the document, so it does not scroll
-   away and it paints exactly once however long the page is.
+/* One fixed layer behind everything. Fixed, not absolute: the atmosphere is
+   the light in the room rather than part of the document, so it does not
+   scroll away and it paints exactly once however long the page is.
 
    The ground sits on `html`, not `body`: at z-index -1 this layer would
    otherwise paint BEHIND the body's own background and never be seen.
+
+   The same layer paints both themes (#142); only its tokens change, so the
+   geometry #141 measured the paint cost of stands.
 
    Zero JavaScript, and `prefers-reduced-motion` needs no rule here because
    nothing moves — it is a still gradient, not an animation. */
@@ -113,25 +273,16 @@ body::before {
   background:
     radial-gradient(
       60rem 40rem at 12% -8%,
-      var(--aurora-mint),
+      var(--pool-top-left),
       transparent 70%
     ),
     radial-gradient(
       52rem 36rem at 88% 2%,
-      var(--aurora-violet),
+      var(--pool-top-right),
       transparent 70%
     ),
-    radial-gradient(
-      72rem 46rem at 50% 108%,
-      var(--aurora-deep),
-      transparent 70%
-    ),
-    linear-gradient(
-      100deg,
-      transparent 30%,
-      var(--aurora-shaft) 50%,
-      transparent 70%
-    );
+    radial-gradient(72rem 46rem at 50% 108%, var(--pool-foot), transparent 70%),
+    linear-gradient(100deg, transparent 30%, var(--shaft) 50%, transparent 70%);
 }
 h1,
 h2,
@@ -176,6 +327,54 @@ a:hover {
 :focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* A disabled control looks and behaves disabled, SITE-WIDE and in one place
+   (#250 AC3). This replaced three per-component `opacity: 0.6; cursor:
+   default` rules -- `.actions button:disabled`, `.cg-add-student:disabled`
+   and `.cg-add-several:disabled` -- which is exactly the shape AC3 rules out:
+   a control added next year inherits none of a list, and nine of the eleven
+   controls that could be disabled had no treatment at all.
+
+   Measured, and the reason the premise this ticket was written on is gone:
+   a disabled control DOES receive hover on all five engines (hitRelation
+   self, mouseover true, 11/11; CI run 35523913132). So the cursor hangs off
+   the control itself and needs no wrapper.
+
+   `!important` is load-bearing, exactly as the print block below already
+   documents: Astro scopes a component's rules with a `[data-astro-cid-*]`
+   attribute, so `.actions button` there is (0,2,1) and outranks a bare
+   `button:disabled` here at (0,1,1). Without it this rule loses to the very
+   declarations it exists to replace -- measured, not assumed. It also
+   enforces AC3's "never a list of per-component overrides": a component
+   cannot quietly invent a second disabled look. */
+:disabled {
+  cursor: not-allowed !important;
+}
+/* Checkbox, radio and file inputs are left out: the UA draws those, their
+   background is legitimately transparent and `accent-color` governs them --
+   the same carve-out palette-controls.spec.ts makes, asserted by
+   disabled-controls.spec.ts so it cannot quietly grow. */
+button:disabled,
+select:disabled,
+textarea:disabled,
+input:not([type='checkbox']):not([type='radio']):not([type='file']):disabled {
+  background: var(--disabled-fill) !important;
+  color: var(--ink-soft) !important;
+  /* `-webkit-text-fill-color` wins over `color` where both are set. That
+     half is MEASURED (#250 M15: moving this line's value alone repainted the
+     label on Chromium while `color` stayed at --ink-soft).
+
+     The line is kept for real iOS Safari, which is widely reported to paint a
+     disabled input's label with its own text-fill that `color` cannot reach.
+     That half is NOT measured here and this suite cannot check it: deleting
+     this declaration changes nothing on Playwright's WebKit (#250 M14, the
+     absence confirmed in the built CSS), so that build carries no such UA
+     rule and no emulated engine can show this line doing work. The
+     real-device gauntlet -- `npm run test:devices`, real iOS Safari over
+     WebDriver -- is the only instrument in this repo that could. */
+  -webkit-text-fill-color: var(--ink-soft);
+  opacity: 1 !important;
 }
 img {
   max-width: 100%;
@@ -251,16 +450,27 @@ main:focus {
     --border: #b4b4b4;
     --border-strong: #6b6b6b;
 
+    /* Transparent on paper, never grey. A fill only reaches the sheet if the
+       reader has turned "Background graphics" ON, which browsers leave OFF,
+       so a disabled control whose legibility depended on its fill would print
+       as text on white with no boundary -- AC5. The border below is what
+       identifies it instead, and --ink-soft is #333 here, 12.63:1. */
+    --disabled-fill: transparent;
+
     /* Atmosphere and glass are screen-only. Browsers drop background images
        by default anyway, but `default` is a setting a user can change, and
        a page that depends on a default is not a page that decided. */
     --glass: transparent;
-    --glass-2: transparent;
     --accent-glow: transparent;
-    --aurora-mint: transparent;
-    --aurora-violet: transparent;
-    --aurora-deep: transparent;
-    --aurora-shaft: transparent;
+    --pool-top-left: transparent;
+    --pool-top-right: transparent;
+    --pool-foot: transparent;
+    --shaft: transparent;
+
+    /* The mark prints in ink (HomePage.astro), so a tile would print as a
+       dark slab around dark text, if it printed at all. None on paper. */
+    --wordmark-tile: transparent;
+    --wordmark-pad: 0;
   }
   html {
     background: #fff;

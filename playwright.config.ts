@@ -4,28 +4,42 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 /**
  * Specs that assert HTTP responses and DOM text, and never render.
  *
- * A sitemap's URLs, a canonical tag, whether two words come out touching:
+ * A sitemap's URLs, a canonical tag, a locale's copy reaching its page:
  * `textContent` is spec-defined, so these bytes do not vary by engine. Running
  * them on all five projects cost four extra runs each and returned nothing the
  * first run had not already proven.
  *
  * The boundary is mechanical, not editorial -- a spec is content-only exactly
- * when it never drives the viewport -- so it is enforced rather than trusted:
- * tests/unit/browser-matrix.test.ts fails if anything listed here calls
- * `setViewportSize` or carries `@emulated-viewport`, if a name here stops
+ * when it neither drives the viewport nor reads layout -- so it is enforced
+ * rather than trusted: tests/unit/browser-matrix.test.ts fails if anything
+ * listed here does either (`tests/unit/engine-dependence.ts` names what counts
+ * and reads it from the parse tree, never from comments), if a name here stops
  * matching a real file, or if any engine project stops ignoring these.
  *
  * `site-meta.spec.ts` is deliberately NOT here. It mixes three content
  * assertions with a parameterised 404 layout test that does resize, and the
  * layout half has to keep running everywhere.
+ *
+ * `rendered-text.spec.ts` is not here either (#198). Whether two words come out
+ * touching is a question about where the browser put them, and the answer
+ * depends on width: below 720px the nav is hidden and the header's last text
+ * box is a different one. Listed here, it ran at 1280px only, and a real phone
+ * was the first place it ever failed. A spec can read layout without resizing,
+ * which is why the boundary asks about reading as well as driving.
+ *
+ * The skip link's WCAG 2.4.1 tests left `head-and-sitemap.spec.ts` for
+ * `skip-link.spec.ts` for the same reason (#198). They read layout
+ * (`toBeInViewport`) and ask which engine they are on (`browserName`), and
+ * while listed here they ran on one engine, though their comment promised
+ * WebKit.
  */
 export const CONTENT_ONLY_SPECS = [
   'head-and-sitemap.spec.ts',
   'seo.spec.ts',
   'baseurl-guard.spec.ts',
-  'rendered-text.spec.ts',
   'locale-parity.spec.ts',
   'copy-reaches-a-page.spec.ts',
+  'theme-script.spec.ts',
 ];
 
 const contentOnly = new RegExp(
@@ -69,6 +83,41 @@ export const VISUAL_PROJECT = {
   testMatch: visualOnly,
 };
 
+/**
+ * The MEASURING twin of `VISUAL_PROJECT` (#224).
+ *
+ * Same spec and the same committed baselines -- `snapshotPathTemplate` carries
+ * no `{projectName}`, so this resolves the very files the gating project
+ * compares -- but at ZERO per-pixel tolerance.
+ *
+ * `threshold: 0.1` permits a YIQ distance of about 352 per pixel before that
+ * pixel COUNTS as differing, so a difference nobody is looking at (a font
+ * rasterised on another architecture, a baseline captured before a CSS change)
+ * is scored identical and never reaches `maxDiffPixelRatio`, which is already
+ * 0. It does not eat a pixel budget; it moves the reference point a later
+ * regression is measured from. At `threshold: 0` each of those differences is
+ * reported with its own numbers instead, which is the measurement.
+ *
+ * Declared only under `VISUAL_MEASURE=1`, exactly as `visual` is declared only
+ * under `VISUAL=1`, so an ordinary run keeps precisely the projects it had. A
+ * wrong environment variable here can only make a comparison STRICTER, never
+ * weaker: it cannot turn a real difference into a pass. It never gates -- the
+ * job that runs it tolerates the failure and reports the numbers.
+ */
+export const VISUAL_MEASURE_PROJECT = {
+  name: 'visual-measure',
+  use: { ...devices['Desktop Chrome'] },
+  testMatch: visualOnly,
+  expect: { toHaveScreenshot: { threshold: 0 } },
+  // A folder of its own, never the gate's (#311). Playwright deletes the
+  // outputDir of every project a run selects as that run starts, and CI
+  // measures straight after the gate -- after a red one above all. Sharing
+  // the gate's folder, the measurement deleted the comparison's expected,
+  // actual and diff images before the job could upload them. Still under
+  // `test-results/`, so the one upload keeps both.
+  outputDir: 'test-results/visual-measure',
+};
+
 const ENGINES = [
   { name: 'chromium', device: 'Desktop Chrome' },
   { name: 'firefox', device: 'Desktop Firefox' },
@@ -97,7 +146,7 @@ const isWithin = (dir: string, path: string): boolean => {
  *
  * Resolved against the working directory, as `tests/e2e/evidence.ts` and
  * `scripts/test-e2e.mjs` resolve `EVIDENCE_DIR`, so all three name one place.
- * An ordinary run keeps the default because `ci.yml` and `release-dev.yml`
+ * An ordinary run keeps the default because `ci.yml` and `deploy-dev.yml`
  * upload `test-results/` when a job fails.
  */
 const evidenceOutputDir = (
@@ -118,8 +167,20 @@ const evidenceOutputDir = (
 export default defineConfig({
   testDir: './tests/e2e',
   // An evidence run keeps its recordings inside EVIDENCE_DIR; an ordinary run
-  // stays on the default `test-results/`. See `evidenceOutputDir` above.
-  outputDir: evidenceOutputDir(process.env.EVIDENCE_DIR),
+  // writes to a folder OF ITS OWN. See `evidenceOutputDir` above.
+  //
+  // `test-results/desktop`, not `test-results/`, because Playwright wipes its
+  // entire outputDir at the start of every invocation, unconditionally and
+  // not scoped to its own artifacts -- and `npm run test:devices` launches
+  // this config and `playwright.device.config.ts` CONCURRENTLY against this
+  // same checkout (#230). Sharing one folder meant a worker stopping in one
+  // group deleted the artifacts folder a live worker in the other was still
+  // writing into: reproduced in isolation, three `mobile-chrome` failures on
+  // the 2026-09-18 run, all `ENOENT ... .playwright-artifacts-N/traces/...`.
+  // The folder is named by WORKER INDEX alone, so two processes numbering
+  // their workers independently collide by construction.
+  outputDir:
+    evidenceOutputDir(process.env.EVIDENCE_DIR) ?? 'test-results/desktop',
   fullyParallel: true,
   // Measure the bytes that ship, not the ones the dev server improvises.
   // `astro dev` renders on request and skips build-time steps — compressHTML,
@@ -215,6 +276,8 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://localhost:4321',
+    // #142: the palette every existing test was written against. A light-theme run declares light itself.
+    colorScheme: 'dark',
     // #44. A test that times out inside `page.goto` leaves ONE LINE of text
     // behind, and the run is gone: `retries` is 0 and nothing is kept. Two
     // occurrences have now been reasoned about from a stack trace and a
@@ -257,12 +320,20 @@ export default defineConfig({
     // costs nothing on a green run.
     trace: 'retain-on-failure',
 
-    // A video per journey is a standing requirement of the evidence page
-    // (operator, 2026-08-22), and is worth nothing on a normal run: recording
-    // ~2200 tests is minutes of wall clock and gigabytes of disk. Gated on the
-    // same switch tests/e2e/evidence.ts uses, so an evidence run is exactly
-    // `EVIDENCE_DIR=<dir> npm run test:e2e -- <spec>` and needs no second flag
-    // anybody could forget. It leaves in `<dir>` everything the page is built
+    // NOT recorded here, and the literal `'off'` is the safety property: a
+    // spec ASKS to be recorded by declaring `test.use(recorded)`, and
+    // `recorded` (tests/e2e/evidence.ts) is the one home that switch lives in.
+    // A new static spec is therefore covered the day it is written, with
+    // nobody remembering to exclude it -- the opposite default would need an
+    // exclusion list, which is the shape that missed `#cg-io-toggle`.
+    //
+    // This read `process.env.EVIDENCE_DIR ? 'on' : 'off'`: one global switch,
+    // so an evidence run recorded EVERY test. Operator, 2026-09-18:
+    // "recordings are pointless and useless on static content." Measured on
+    // #205's preview -- 100 recordings beside 155 screenshots, so 100 of the
+    // 255 entries a publish may carry went on pages where nothing moves.
+    //
+    // An evidence run still leaves in `<dir>` everything the page is built
     // from: the captures and `manifest.jsonl` (tests/e2e/evidence.ts),
     // `report.json` (`reportLocation` in scripts/test-e2e.mjs) and the
     // recordings, under `<dir>/test-results/` (`evidenceOutputDir` above).
@@ -270,7 +341,7 @@ export default defineConfig({
     // directory that was deleted, then the recordings stayed in the root
     // `test-results/`, which the next run of any kind clears (#165). Both are
     // pinned by the seam guards in `tests/unit/evidence-page.test.ts`.
-    video: process.env.EVIDENCE_DIR ? 'on' : 'off',
+    video: 'off',
   },
   projects: [
     // Bytes and DOM text are identical on every engine, so running these five
@@ -290,5 +361,6 @@ export default defineConfig({
       testIgnore: [contentOnly, visualOnly],
     })),
     ...(process.env.VISUAL === '1' ? [VISUAL_PROJECT] : []),
+    ...(process.env.VISUAL_MEASURE === '1' ? [VISUAL_MEASURE_PROJECT] : []),
   ],
 });

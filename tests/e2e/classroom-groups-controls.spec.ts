@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { makeGroups } from '../make-groups';
 import { recordErrors } from './recorders';
 import { sampledPaths } from './locale-sampling';
 import { searched } from '../source-files';
@@ -9,6 +10,14 @@ import {
   giveEveryoneASex,
   rosterOf,
 } from './helpers';
+import { recorded } from './evidence';
+import {
+  horizontalOverflow,
+  expectNoHorizontalScroll,
+  rectAtLeast44,
+} from '../viewport';
+
+test.use(recorded);
 
 /**
  * The controls the review found reachable from the page and asserted by
@@ -19,27 +28,6 @@ import {
  * horizontal scroll, touch targets, console errors — which this page, the
  * only one that ships a script and about ten controls, did not.
  */
-
-const makeGroups = async (
-  page: import('@playwright/test').Page,
-  count: string,
-  size: string,
-) => {
-  await page.fill('#cg-count', count);
-  await page.fill('#cg-size', size);
-  // Stage 2, Task 7 folded Sound & animation into the tool's fourth
-  // collapsible section -- #cg-speed now lives in #cg-sound-body, which
-  // starts collapsed, so it has to be open before `selectOption` can act on
-  // it (same reasoning as the leftovers radios inside #cg-grouping-body,
-  // Stage 2 Task 4). Idempotent: this helper can run more than once per
-  // test, and a second click would close what the first one opened.
-  const soundBody = page.locator('#cg-sound-body');
-  if (await soundBody.isHidden()) {
-    await page.locator('#cg-sound-toggle').click();
-  }
-  await page.selectOption('#cg-speed', 'skip');
-  await page.click('#cg-go');
-};
 
 test.describe('the controls that had no tests', () => {
   // Stage 3, Task 8 (design spec section 5) removed the theme picker and
@@ -360,12 +348,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         async ({ page }) => {
           await page.setViewportSize({ width, height: 900 });
           await page.goto(path);
-          const overflow = await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-          );
-          expect(overflow).toBeLessThanOrEqual(0);
+          await expectNoHorizontalScroll(page);
         },
       );
     }
@@ -397,12 +380,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await page.locator('#cg-grouping-toggle').click();
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -420,12 +398,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await page.locator('#cg-sound-toggle').click();
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -443,12 +416,7 @@ test.describe('classroom groups — mobile-first layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/classroom-groups');
         await makeGroups(page, '120', '4');
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }
@@ -588,11 +556,7 @@ test.describe('classroom groups — mobile-first layout', () => {
           for (const id of ids) {
             await page.goto(path);
             await page.locator(`#${id}`).click();
-            const overflow = await page.evaluate(
-              () =>
-                document.documentElement.scrollWidth -
-                document.documentElement.clientWidth,
-            );
+            const overflow = await horizontalOverflow(page);
             if (overflow > 0)
               failures.push(
                 `${path} @${width}px with #${id} open: ${overflow}px`,
@@ -601,11 +565,7 @@ test.describe('classroom groups — mobile-first layout', () => {
           // …and every section open at once, which no earlier test did.
           await page.goto(path);
           for (const id of ids) await page.locator(`#${id}`).click();
-          const all = await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-          );
+          const all = await horizontalOverflow(page);
           if (all > 0)
             failures.push(`${path} @${width}px with ALL open: ${all}px`);
           expect(
@@ -1283,13 +1243,19 @@ test.describe('Grouping options', () => {
 
       const body = page.locator('#cg-grouping-body');
       await page.locator('#cg-grouping-toggle').click();
-      const heights = await body
+      const labels = await body
         .locator('#cg-sex-mix, #cg-sex-separate')
         .evaluateAll((els) =>
-          els.map((el) => el.closest('label')!.getBoundingClientRect().height),
+          els.map((el) => {
+            const { width, height } = el
+              .closest('label')!
+              .getBoundingClientRect();
+            return { id: el.id, width, height };
+          }),
         );
-      expect(heights).toHaveLength(2);
-      expect(heights.every((h) => h >= 44)).toBe(true);
+      expect(labels).toHaveLength(2);
+      for (const { id, width, height } of labels)
+        rectAtLeast44({ width, height }, `${id} (label)`);
     },
   );
 
@@ -1760,12 +1726,19 @@ test.describe('classroom groups — what a teacher actually sees', () => {
     await page.goto('/classroom-groups');
     const count = page.locator('#cg-count');
     await count.focus();
-    await expect(count).toHaveValue('30');
+    // The starting value is READ, not named. This test is about a wheel
+    // leaving it alone; what the page starts at has its own home in "the
+    // class size starts at 30", and a second copy of that number here is one
+    // more place for it to drift out of step with the markup (#193). The
+    // emptiness check keeps the invariance from holding trivially over a
+    // value that was never read.
+    const before = await count.inputValue();
+    expect(before).not.toBe('');
     await count.hover();
     await page.mouse.wheel(0, 240);
-    await expect(count).toHaveValue('30');
+    await expect(count).toHaveValue(before);
     await page.mouse.wheel(0, -240);
-    await expect(count).toHaveValue('30');
+    await expect(count).toHaveValue(before);
   });
 });
 
@@ -1873,4 +1846,65 @@ test.describe('the five the operator asked for', () => {
       await expect(page.getByLabel(label)).toBeVisible();
     }
   });
+});
+
+/**
+ * #249 put a word where an em dash used to be. `Together` is materially wider
+ * than `—`, and the automatic minimum of a grid item reads its MIN-CONTENT
+ * size, which `max-width` does not change -- the exact mechanism that once
+ * pinned this page's track to 378px and produced 74px of horizontal scroll at
+ * 320px from a single native file input nobody had added to a list.
+ *
+ * The containment guard above runs four rows, which is enough to catch a
+ * control that spills its card. It is not enough to catch a full register: a
+ * long roster adds a vertical scrollbar, and the width that steals is only
+ * ever felt at the narrow end. So this runs the tightest viewport against a
+ * roster of thirty, the size the tool is actually used at.
+ */
+test.describe('a full roster at the narrow end', () => {
+  for (const path of sampledPaths('/classroom-groups')) {
+    test(
+      `${path}: thirty rows produce no horizontal scroll at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await openRoster(page, path);
+        await addSeveral(page, 29);
+        await expect(page.locator('.cg-student')).toHaveCount(30);
+
+        await expectNoHorizontalScroll(page, 'document scrolls sideways');
+
+        // Page-level scrollWidth is not containment: content can overflow a
+        // CARD by 34.5px and produce zero document scroll, which is how the
+        // Remove button once shipped hanging outside its border at every
+        // laptop width. The offending element's own container is the subject.
+        const worst = await page.evaluate(() => {
+          const card = document.getElementById('cg-students')!;
+          const box = card.getBoundingClientRect();
+          const style = getComputedStyle(card);
+          const inner =
+            box.right -
+            parseFloat(style.paddingRight) -
+            parseFloat(style.borderRightWidth);
+          let over = 0;
+          let who = '';
+          for (const el of card.querySelectorAll('*')) {
+            // `display: none` on an ANCESTOR leaves a descendant's own
+            // computed display untouched, so a per-element check reports
+            // hidden content as rendered. Rects are the only honest filter.
+            if (el.getClientRects().length === 0) continue;
+            const spill = el.getBoundingClientRect().right - inner;
+            if (spill > over) {
+              over = spill;
+              who = el.className || el.tagName;
+            }
+          }
+          return { over: Math.round(over * 10) / 10, who };
+        });
+        expect(worst.over, `${worst.who} escapes the card`).toBeLessThanOrEqual(
+          0.5,
+        );
+      },
+    );
+  }
 });

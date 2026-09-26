@@ -34,7 +34,6 @@
  * the rest of the run rather than spamming a failure on every subsequent
  * test.
  */
-import { appendFileSync, writeFileSync } from 'node:fs';
 import type {
   FullResult,
   Reporter,
@@ -43,71 +42,14 @@ import type {
   TestResult,
 } from '@playwright/test/reporter';
 import { projectNameOf } from './test-identity';
-
-type DashboardStatus = 'passed' | 'failed' | 'skipped';
-
-/**
- * `result.status` distinguishes `timedOut`/`interrupted` from a plain
- * `failed` -- real, useful distinctions for a human reading Playwright's
- * own output, but the dashboard's contract (task brief step 1) is a flat
- * passed/failed/skipped, matching `summarizePlaywrightGroup` in
- * `scripts/test-devices.mjs`, which already folds every non-zero, non-skip
- * outcome into one "failed" bucket for its own counts. A skipped test is
- * never counted as passed here, in either direction -- the project has
- * shipped that confusion before.
- */
-function toDashboardStatus(status: TestResult['status']): DashboardStatus {
-  if (status === 'passed') return 'passed';
-  if (status === 'skipped') return 'skipped';
-  return 'failed'; // 'failed' | 'timedOut' | 'interrupted'
-}
+import { DashboardLog, toDashboardStatus } from './dashboard-jsonl';
 
 export default class JsonlReporter implements Reporter {
-  private readonly file: string | undefined;
-  private readonly group: string;
-  private writeFailed = false;
-
-  constructor() {
-    this.file = process.env.DASHBOARD_JSONL_FILE;
-    this.group = process.env.DASHBOARD_GROUP || 'unknown-group';
-  }
-
-  private append(event: Record<string, unknown>): void {
-    if (!this.file || this.writeFailed) return;
-    try {
-      appendFileSync(
-        this.file,
-        JSON.stringify({ group: this.group, ...event }) + '\n',
-      );
-    } catch (error) {
-      this.writeFailed = true;
-      // eslint-disable-next-line no-console -- deliberate, one-time, visible failure notice; see module doc
-      console.error(
-        `[jsonl-reporter] failed to write to ${this.file} -- the live dashboard will stop updating for ` +
-          `the "${this.group}" group, but the test run itself is unaffected: ${(error as Error).message}`,
-      );
-    }
-  }
+  private readonly log = new DashboardLog('jsonl-reporter');
 
   onBegin(_config: unknown, suite: Suite): void {
-    if (!this.file) return;
-    try {
-      // Fresh file per invocation -- an old run's lines must never bleed
-      // into this run's dashboard the way an append-only file would if
-      // never reset. Truncate-or-create, same "this run overwrites, never
-      // accumulates across invocations" contract PLAYWRIGHT_JSON_OUTPUT_NAME
-      // already gives the `json` reporter's own output file.
-      writeFileSync(this.file, '');
-    } catch (error) {
-      this.writeFailed = true;
-      // eslint-disable-next-line no-console -- deliberate, one-time, visible failure notice; see module doc
-      console.error(
-        `[jsonl-reporter] failed to create/truncate ${this.file} -- the live dashboard will not see the ` +
-          `"${this.group}" group this run, but the test run itself is unaffected: ${(error as Error).message}`,
-      );
-      return;
-    }
-    this.append({
+    if (!this.log.start()) return;
+    this.log.append({
       event: 'begin',
       total: suite.allTests().length,
       at: Date.now(),
@@ -115,7 +57,7 @@ export default class JsonlReporter implements Reporter {
   }
 
   onTestBegin(test: TestCase): void {
-    this.append({
+    this.log.append({
       event: 'test-start',
       id: test.id,
       title: test.title,
@@ -125,7 +67,7 @@ export default class JsonlReporter implements Reporter {
   }
 
   onTestEnd(test: TestCase, result: TestResult): void {
-    this.append({
+    this.log.append({
       event: 'test',
       id: test.id,
       title: test.title,
@@ -137,7 +79,7 @@ export default class JsonlReporter implements Reporter {
   }
 
   onEnd(_result: FullResult): void {
-    this.append({ event: 'end', at: Date.now() });
+    this.log.append({ event: 'end', at: Date.now() });
   }
 
   printsToStdio(): boolean {

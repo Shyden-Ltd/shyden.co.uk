@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { withoutYamlComments, withoutYamlQuotes } from './source-text';
-import { nonEmpty, searched } from '../source-files';
+import { filesUnder, nonEmpty, searched } from '../source-files';
 import { parseCleanYaml } from '../workflow-jobs';
 
 /**
@@ -226,6 +226,65 @@ describe('Dependabot keeps the pins from rotting', () => {
 });
 
 /**
+ * A container image CI runs is pinned, and something keeps it current. #95.
+ *
+ * The back-translation engine is the first image CI runs that no npm version
+ * moves (the visual job's Playwright image follows the installed Playwright).
+ * Its pin lives in a Dockerfile, not in the workflow, because Dependabot reads
+ * no image out of a workflow file: a digest written there is exactly the pin
+ * nobody bumps. Both halves are derived from disk, so a Dockerfile added
+ * anywhere is held to them the day it appears.
+ */
+describe('a container image CI runs is pinned, and watched', () => {
+  const dockerfiles = () =>
+    filesUnder('.', (path) => basename(path) === 'Dockerfile');
+  /** Comment lines start with `#`, so an anchored FROM never reads one. */
+  const fromLines = () =>
+    dockerfiles().flatMap((file) =>
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .map((text, i) => ({ where: `${file}:${i + 1}`, text: text.trim() }))
+        .filter(({ text }) => /^FROM\s/i.test(text)),
+    );
+
+  it('builds every Dockerfile FROM a digest, beside the version it names', () => {
+    const loose = fromLines()
+      .filter(
+        ({ text }) =>
+          !/^FROM\s+\S+:[^\s:@/]+@sha256:[0-9a-f]{64}(\s+AS\s+\S+)?$/i.test(
+            text,
+          ),
+      )
+      .map(({ where, text }) => `${where} ${text}`);
+
+    expect(
+      searched(loose, { of: fromLines(), what: 'FROM lines' }),
+      'a tag can be repointed under us, and a bare digest is unreviewable',
+    ).toEqual([]);
+  });
+
+  it('has Dependabot watching every directory that holds a Dockerfile', () => {
+    const config = parseCleanYaml(dependabot(), DEPENDABOT) as {
+      updates?: { 'package-ecosystem'?: string; directory?: string }[];
+    };
+    const watched = new Set(
+      (config.updates ?? [])
+        .filter((entry) => entry['package-ecosystem'] === 'docker')
+        .map((entry) => (entry.directory ?? '').replace(/(.)\/+$/, '$1')),
+    );
+    const unwatched = dockerfiles()
+      .map((file) => dirname(file))
+      .map((dir) => (dir === '.' ? '/' : `/${dir}`))
+      .filter((dir) => !watched.has(dir));
+
+    expect(
+      searched(unwatched, { of: dockerfiles(), what: 'Dockerfiles' }),
+      'a digest nobody bumps rots',
+    ).toEqual([]);
+  });
+});
+
+/**
  * The majors a peer range admits, for a range written as `^X.Y.Z` terms
  * joined by `||`. Every term is read before any answer is given, and a term
  * in any other form throws: a range this cannot read is a question for a
@@ -328,5 +387,70 @@ describe('admittedMajors reads a caret peer range, and refuses any other', () =>
     ]) {
       expect(() => admittedMajors(range), `"${range}"`).toThrow(/cannot read/);
     }
+  });
+});
+
+/** The version `package.json` itself declares for one of its devDependencies. */
+const declaredDevVersion = (name: string): string => {
+  const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as {
+    devDependencies?: Record<string, string>;
+  };
+  const declared = manifest.devDependencies?.[name];
+  if (declared === undefined)
+    throw new Error(
+      `package.json declares no devDependency ${name}: judge the hold again (#296)`,
+    );
+  return declared;
+};
+
+/**
+ * prettier-plugin-astro is held at 1.0.0, and this hold lifts itself.
+ *
+ * Measured 2026-09-22 on Dependabot's group PR (#265). 1.0.1 re-indents the
+ * continuation lines of every multi-line CSS block comment inside an `.astro`
+ * `<style>` block by two spaces — and does it AGAIN on the next run. One
+ * comment line went 7 -> 9 -> 11 -> 13 -> 15 -> 17 leading spaces over five
+ * `--write` passes, with `--check` still calling the file dirty. The
+ * transform has no fixed point, so no commit can satisfy `npm run format`
+ * while 1.0.1 is installed. Isolated against a 2x2 matrix: prettier 3.9.8
+ * with the plugin at 1.0.0 is clean, and the plugin at 1.0.1 is dirty under
+ * both 3.9.6 and 3.9.8. Six of this repo's twenty `.astro` files are hit.
+ *
+ * Reported and fixed upstream before we met it:
+ * withastro/prettier-plugin-astro#487, opened 2026-09-18 and closed as
+ * completed on 2026-09-21. The fix is unreleased -- 1.0.1 (2026-09-17) is
+ * still npm's latest as of 2026-09-22 -- so 1.0.2 is the release expected to
+ * lift the hold, and the rule below is written to let it through.
+ *
+ * This is NOT the #178 case, which accepted this plugin's 1.0.0 reformat of
+ * eleven files and proved every page still said the same thing. That was
+ * right because 1.0.0 has a fixed point: format once, commit, done. Committing
+ * a pass of 1.0.1 buys nothing — the next `--write` moves it again.
+ *
+ * #177 ties its hold to a test that fails when the reason expires. This one
+ * needs no such test because the rule names a SINGLE version: 1.0.2 is not
+ * ignored, so Dependabot opens a PR for it on its own schedule and the format
+ * gate judges it. That is why the first test asserts the narrow shape rather
+ * than mere presence — a blanket ignore would freeze the plugin at 1.0.0
+ * forever, and nothing would ever come back to ask.
+ */
+describe('prettier-plugin-astro is held at 1.0.0 until a release settles', () => {
+  it('ignores 1.0.1 alone, so 1.0.2 still arrives to be judged', () => {
+    expect(
+      npmIgnoresFor('prettier-plugin-astro'),
+      'without this rule every group PR carries 1.0.1 again, and `npm run format` has no formatting it can accept (#296)',
+    ).toEqual([
+      {
+        'dependency-name': 'prettier-plugin-astro',
+        versions: ['1.0.1'],
+      },
+    ]);
+  });
+
+  it('pins the exact version, so a plain `npm install` cannot take 1.0.1', () => {
+    expect(
+      declaredDevVersion('prettier-plugin-astro'),
+      'the lockfile governs `npm ci` alone: under `^1.0.0` a developer running `npm install` resolves to 1.0.1 and six .astro files go dirty with no PR to explain it (#296)',
+    ).toBe('1.0.0');
   });
 });

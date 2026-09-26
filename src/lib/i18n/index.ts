@@ -13,10 +13,16 @@ import {
 } from './site';
 import {
   ERROR_CODES,
+  MAX_STUDENTS,
   type GroupingError,
   WARNING_CODES,
   type GroupingWarning,
 } from '../grouping';
+// TYPE-ONLY, deliberately: this module is imported by roster.ts (for
+// `Strings`), and numberSets.ts imports roster.ts for `LETTERS`, so a VALUE
+// import here would close a runtime cycle. A type import is erased at build
+// time and closes nothing.
+import type { NumberSetsProblem } from '../numberSets';
 import { DEFAULT_LOCALE, LOCALES, type Locale } from './locales';
 import { LOCALE_METADATA } from './metadata';
 import { compileCatalogue } from './message';
@@ -93,6 +99,14 @@ export const getStrings = (locale: unknown): Strings => {
   }
   return strings;
 };
+
+/**
+ * A locale's tool catalogue as written, every message still a template.
+ * `getStrings` compiles each message into a function (#136), so a walk over
+ * its result never sees one: 139 keys against 197. The translation-report
+ * table (#97) walks this instead.
+ */
+export const rawCatalogue = (locale: Locale): Catalogue => CATALOGUES[locale];
 
 /**
  * Site copy by locale — header, footer, homepage, 404, Glory Points.
@@ -391,6 +405,55 @@ export function resultsHeadingText(
   return className.trim() === ''
     ? strings.resultsHeading
     : strings.resultsHeadingNamed({ className });
+}
+
+/**
+ * A refused number field (#188), as a sentence in the page's language.
+ *
+ * The ONE place a `NumberSetsProblem` kind becomes copy, for the reason
+ * `renderError` above and `resultsHeadingText` below both give: two call
+ * sites deciding "which sentence do I show" is how two sentences for one
+ * fact drift apart.
+ *
+ * `count` is what `#cg-count` currently holds, which the parser was given
+ * and which two of the sentences name. It is NOT read from the problem:
+ * `numberSets.ts` stays pure of the page, and a problem carries only the
+ * offending text.
+ *
+ * `max` comes from `MAX_STUDENTS` here rather than from the caller, so the
+ * ceiling a teacher is told about is necessarily the one the parser
+ * enforced -- a caller passing its own number could tell them a limit that
+ * is not the real one.
+ *
+ * No `default` branch on purpose. The switch is exhaustive over
+ * `NumberSetsProblemKind`, so adding a kind without a sentence for it fails
+ * the build -- which a `default` that threw at runtime would hide until a
+ * teacher hit it.
+ */
+export function renderNumbersProblem(
+  problem: NumberSetsProblem,
+  count: number,
+  strings: Strings,
+): string {
+  switch (problem.kind) {
+    case 'notAWholeNumber':
+      return strings.numbersNotWholeMessage({ text: problem.text, count });
+    case 'aboveCount':
+      return strings.numbersAboveCountMessage({ text: problem.text, count });
+    case 'aboveMaximum':
+      return strings.numbersAboveMaximumMessage({
+        text: problem.text,
+        max: MAX_STUDENTS,
+      });
+    case 'duplicate':
+      return strings.numbersDuplicateMessage({ text: problem.text });
+    case 'lonelySet':
+      return strings.numbersLonelySetMessage({ text: problem.text });
+    case 'tooManySets':
+      return strings.numbersTooManySetsMessage({ text: problem.text });
+    case 'noCount':
+      return strings.numbersNoCountMessage;
+  }
 }
 
 export type { Strings };

@@ -1,7 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
-import { withoutCssComments } from './source-text';
+import { stylesheetCss } from './source-text';
+import { contrast, parseColour } from '../wcag';
+import {
+  ATMOSPHERE,
+  THEMES,
+  TOKENS_FILE,
+  atmosphereLayers,
+  flatten,
+  themeTokens,
+  tokensCss,
+  worstContrast,
+  type Theme,
+} from '../palette';
+import { SHYTALK_MARK } from '../../src/lib/shytalk-brand';
 
 /**
  * WCAG AA contrast, COMPUTED from the tokens rather than promised in a comment.
@@ -15,61 +28,7 @@ import { withoutCssComments } from './source-text';
  * because the baseline had always been wrong (#133).
  */
 
-const TOKENS_FILE = 'src/styles/tokens.css';
 const SRC = 'src';
-
-type RGB = readonly [number, number, number];
-type RGBA = { rgb: RGB; alpha: number };
-
-/** One sRGB channel, linearised per WCAG 2.x relative luminance. */
-const channel = (value: number): number => {
-  const c = value / 255;
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-};
-
-const luminance = ([r, g, b]: RGB): number =>
-  0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-
-const contrast = (a: RGB, b: RGB): number => {
-  const [la, lb] = [luminance(a), luminance(b)];
-  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
-  return (hi + 0.05) / (lo + 0.05);
-};
-
-/**
- * A CSS colour as this repo writes them: `#abc`, `#aabbcc`, or the space-
- * separated form `rgb(255 255 255 / 0.35)`.
- *
- * Aurora's borders and glass surfaces are ALPHAS, not hex (#17). A guard that
- * read only hex would silently classify every one of them as "not a colour"
- * and drop it from the pair check AND from the exhaustiveness check — green,
- * while blind to exactly the tokens that design leans on hardest.
- */
-const parseColour = (value: string): RGBA | null => {
-  const text = value.trim();
-
-  const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (hex !== null) {
-    const h = hex[1];
-    const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
-    const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
-    return { rgb: [r, g, b], alpha: 1 };
-  }
-
-  const fn = text.match(
-    /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[/,]\s*([\d.]+)(%?)\s*)?\)$/i,
-  );
-  if (fn === null) return null;
-
-  const [r, g, b] = [fn[1], fn[2], fn[3]].map(Number);
-  const alpha =
-    fn[4] === undefined
-      ? 1
-      : fn[5] === '%'
-        ? Number(fn[4]) / 100
-        : Number(fn[4]);
-  return { rgb: [r, g, b], alpha };
-};
 
 const isColour = (value: string): boolean => parseColour(value) !== null;
 
@@ -81,69 +40,11 @@ const ratioOf = (a: string, b: string): number => {
   return contrast(x.rgb, y.rgb);
 };
 
-/** Source-over compositing, which is what a browser does with an alpha. */
-const over = (fg: RGBA, ground: RGB): RGB =>
-  [0, 1, 2].map((i) =>
-    Math.round(fg.alpha * fg.rgb[i] + (1 - fg.alpha) * ground[i]),
-  ) as unknown as RGB;
-
-/**
- * The `:root` custom properties, read with CSS comments stripped.
- *
- * Stripped because this file's own documentation names token values, and a
- * guard satisfied by the prose explaining it is the defect this suite exists
- * to catch — five have shipped in this repo (#23, #21, #35, #49, #129).
- */
-const tokens = (): Map<string, string> => {
-  const css = withoutCssComments(readFileSync(TOKENS_FILE, 'utf8'));
-  const root = css.match(/:root\s*\{([\s\S]*?)\}/);
-  if (root === null) throw new Error(`no :root block in ${TOKENS_FILE}`);
-
-  const found = new Map<string, string>();
-  for (const [, name, value] of root[1].matchAll(
-    /(--[\w-]+)\s*:\s*([^;]+);/g,
-  )) {
-    found.set(name, value.trim());
-  }
-  return found;
-};
-
-const colourTokens = (): [string, string][] =>
+const colourTokens = (theme: Theme): [string, string][] =>
   nonEmpty(
-    [...tokens()].filter(([, value]) => isColour(value)),
-    `colour tokens in ${TOKENS_FILE}`,
+    [...themeTokens(tokensCss(), theme)].filter(([, value]) => isColour(value)),
+    `${theme} colour tokens in ${TOKENS_FILE}`,
   );
-
-/**
- * Flatten a layer stack, written TOP-FIRST, onto its opaque base.
- *
- * `['--border-strong', '--bg']` is the border as the eye actually receives it.
- * Comparing the declared `rgb(255 255 255 / .35)` against `--bg` directly
- * scores 21:1 — the ratio of pure white to near-black, a colour that is never
- * drawn anywhere. An alpha judged un-composited is a guard measuring a pixel
- * that does not exist, and it fails OPEN.
- */
-const flatten = (
-  layers: readonly string[],
-  from: Map<string, string>,
-): RGB | string => {
-  const parsed: RGBA[] = [];
-  for (const layer of layers) {
-    const value = layer.startsWith('--') ? from.get(layer) : layer;
-    if (value === undefined) return `${layer} is not defined in ${TOKENS_FILE}`;
-    const colour = parseColour(value);
-    if (colour === null) return `${layer} is not a readable colour: ${value}`;
-    parsed.push(colour);
-  }
-
-  const base = parsed[parsed.length - 1];
-  if (base.alpha !== 1)
-    return `the base of [${layers.join(', ')}] is translucent — nothing is behind it`;
-
-  return parsed
-    .slice(0, -1)
-    .reduceRight<RGB>((ground, layer) => over(layer, ground), base.rgb);
-};
 
 /** 4.5 for body copy, 3 for large text and for anything identifying a control. */
 const LEVELS = { body: 4.5, large: 3, ui: 3 } as const;
@@ -157,23 +58,6 @@ type Pair = {
 };
 
 /**
- * The atmosphere as a layer stack, TOP-FIRST.
- *
- * Every stop composited at once is the WORST case, not the real one: the
- * three radials are positioned apart, so no pixel receives all of them. A
- * guard that measured the real overlap would need a browser and would answer
- * a question about one viewport width; this answers it for all of them, and
- * errs towards refusing a palette that would in fact have passed.
- */
-const ATMOSPHERE = [
-  '--aurora-shaft',
-  '--aurora-mint',
-  '--aurora-violet',
-  '--aurora-deep',
-  '--bg',
-] as const;
-
-/**
  * Which colour sits on which, and at what level.
  *
  * Hand-written deliberately: WHICH pairs the design puts together is a design
@@ -182,8 +66,8 @@ const ATMOSPHERE = [
  * appear here or in `DECORATIVE`, so a new token cannot be added unclassified.
  *
  * The page atmosphere is judged here as well, not left to a later pass: a
- * pair drawn over it names `ATMOSPHERE`, above, as its ground rather than the
- * flat `--bg`.
+ * pair drawn over it names the `ATMOSPHERE` placeholder from `../palette` in
+ * its stack rather than the flat `--bg`.
  */
 const PAIRS: Pair[] = [
   {
@@ -199,12 +83,6 @@ const PAIRS: Pair[] = [
     where: 'body copy on a card',
   },
   {
-    fg: ['--ink'],
-    bg: ['--glass', '--bg'],
-    level: 'body',
-    where: 'a tool-card heading on the glass panel',
-  },
-  {
     fg: ['--ink-soft'],
     bg: ['--bg'],
     level: 'body',
@@ -215,18 +93,6 @@ const PAIRS: Pair[] = [
     bg: ['--surface'],
     level: 'body',
     where: 'secondary copy on a card',
-  },
-  {
-    fg: ['--ink-soft'],
-    bg: ['--glass', '--bg'],
-    level: 'body',
-    where: 'tool-card body copy on the glass panel',
-  },
-  {
-    fg: ['--ink-soft'],
-    bg: ['--glass-2', '--bg'],
-    level: 'body',
-    where: 'tool-card body copy, panel hovered',
   },
   {
     fg: ['--accent'],
@@ -243,9 +109,10 @@ const PAIRS: Pair[] = [
   },
   {
     fg: ['--accent'],
-    bg: ['--glass', '--bg'],
+    bg: ['--glass', '--surface'],
     level: 'body',
-    where: 'the tool-card open link on the glass panel',
+    where:
+      'the work-card badge: accent text on its glass fill, inside a card whose own background is the opaque --surface (WorkCard.astro). --glass is drawn nowhere else, and never under --ink or --ink-soft',
   },
   {
     fg: ['--accent-ink'],
@@ -285,26 +152,33 @@ const PAIRS: Pair[] = [
   },
   {
     fg: ['--ink'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
-    where: 'body copy over the brightest possible point of the atmosphere',
+    where: 'body copy over the atmosphere, at its worst subset of layers',
   },
   {
     fg: ['--ink-soft'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
     where:
-      'secondary copy over the atmosphere — the knife edge. At mint .10 / violet .14 / deep .18 this scored 4.48:1, a failure by 0.02 that no single layer shows',
+      'secondary copy over the atmosphere, the lowest-scoring text pair drawn over it',
   },
   {
     fg: ['--accent'],
-    bg: ATMOSPHERE,
+    bg: [ATMOSPHERE, '--bg'],
     level: 'body',
     where: 'link text and section kickers over the atmosphere',
   },
   {
-    fg: ['--border-strong', ...ATMOSPHERE],
-    bg: ATMOSPHERE,
+    fg: ['--accent-ink'],
+    bg: [ATMOSPHERE, '--bg'],
+    level: 'body',
+    where:
+      'link hover (a:hover in tokens.css), drawn wherever a link sits, so over the atmosphere too',
+  },
+  {
+    fg: ['--border-strong', ATMOSPHERE, '--bg'],
+    bg: [ATMOSPHERE, '--bg'],
     level: 'ui',
     where: 'control boundaries over the atmosphere (WCAG 1.4.11)',
   },
@@ -320,6 +194,27 @@ const PAIRS: Pair[] = [
     level: 'ui',
     where: 'control boundaries on a card (WCAG 1.4.11)',
   },
+  {
+    fg: ['--ink-soft'],
+    bg: ['--disabled-fill'],
+    level: 'body',
+    where:
+      'the label of a disabled control on its own fill (#250). PAIRS and not DECORATIVE: the fill sits directly behind text the teacher reads, the reasoning that puts every ground a text colour sits on into a pair. The stack is one layer because the fill is OPAQUE, and that is the point of the token -- `opacity: 0.6` composited the label with whatever was behind it and dropped this same ink to roughly 2.67:1, so the ratio a guard could compute was not the ratio the user received',
+  },
+  {
+    fg: [SHYTALK_MARK.shy],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Shy" (HomePage.astro, 2.6rem bold): on its own tile in light, and over the atmosphere in dark, where the tile is transparent (#142 §3.4)',
+  },
+  {
+    fg: [SHYTALK_MARK.talk],
+    bg: ['--wordmark-tile', ATMOSPHERE, '--bg'],
+    level: 'large',
+    where:
+      'the ShyTalk mark\'s "Talk", on the same ground as "Shy" in each theme (#142 §3.4)',
+  },
 ];
 
 /**
@@ -332,18 +227,36 @@ const PAIRS: Pair[] = [
 const DECORATIVE: Record<string, string> = {
   '--border':
     'decorative separators only — card outlines, header and footer rules, table rules. Every control boundary uses --border-strong.',
-  '--deep':
-    'a gradient stop in the page atmosphere, never drawn as text or a control edge. It IS a fill behind text — the earlier note here said otherwise — so it is measured as a layer in ATMOSPHERE rather than trusted as decorative.',
-  '--violet':
-    'a gradient stop in the page atmosphere. It was specified as the section kicker colour; measured, it scores 4.61:1 flat and 2.91:1 over the atmosphere, so it cannot carry small text. Kickers use --accent.',
   '--accent-glow':
     'the mint bloom behind the marquee band. A box-shadow: nothing is ever read against it, and 1.4.11 reaches only what identifies a control.',
+  '--dock-shadow':
+    'the shadow the pinned action row on /classroom-groups casts up over what scrolls beneath it (#188). Nothing is read against it by design: scroll-padding keeps a focused field clear of the row, and 1.4.11 reaches only what identifies a control.',
+  '--lift-shadow':
+    "the phone mockup's shadow (PhoneFrame.astro). A box-shadow: nothing is read against it, and 1.4.11 reaches only what identifies a control.",
+};
+
+/**
+ * The disabled fill in each theme, pinned against the brief (#250, #142
+ * §3.1): the level every derived guard around it is unable to assert.
+ */
+const DISABLED_FILL: Record<Theme, string> = {
+  light: '#dde2e8',
+  dark: '#2a323f',
 };
 
 const pairName = (p: Pair) =>
   `${p.fg.join(' over ')} on ${p.bg.join(' over ')} (${p.where})`;
 
 describe('the palette meets WCAG AA by computation, not by comment', () => {
+  it('reads the atmosphere from body::before, top-first, named by position', () => {
+    expect(atmosphereLayers(tokensCss())).toEqual([
+      '--pool-top-left',
+      '--pool-top-right',
+      '--pool-foot',
+      '--shaft',
+    ]);
+  });
+
   /**
    * The ratio function pinned against WCAG's OWN published boundary.
    *
@@ -386,37 +299,94 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
     );
   });
 
-  it('every declared pair clears its required ratio', () => {
-    const from = tokens();
-    const failures = PAIRS.flatMap((pair) => {
-      const fg = flatten(pair.fg, from);
-      const bg = flatten(pair.bg, from);
-      if (typeof fg === 'string') return [`${pairName(pair)} — ${fg}`];
-      if (typeof bg === 'string') return [`${pairName(pair)} — ${bg}`];
+  for (const theme of THEMES) {
+    it(`${theme}: every declared pair clears its required ratio, over the worst subset of the atmosphere`, () => {
+      const css = tokensCss();
+      const from = themeTokens(css, theme);
+      const layers = atmosphereLayers(css);
+      const failures = PAIRS.flatMap((pair) => {
+        const scored = worstContrast(pair.fg, pair.bg, layers, from);
+        if (typeof scored === 'string')
+          return [`${pairName(pair)} — ${scored}`];
+        const need = LEVELS[pair.level];
+        return scored.ratio >= need
+          ? []
+          : [
+              `${pairName(pair)} — ${scored.ratio.toFixed(2)}:1 over ` +
+                `[${scored.subset.join(', ') || 'no layer'}], needs ${need}:1`,
+            ];
+      });
 
-      const ratio = contrast(fg, bg);
-      const need = LEVELS[pair.level];
-      return ratio >= need
-        ? []
-        : [`${pairName(pair)} — ${ratio.toFixed(2)}:1, needs ${need}:1`];
+      expect(
+        searched(failures, { of: PAIRS, what: `${theme} colour pairs` }),
+      ).toEqual([]);
     });
+  }
 
-    expect(
-      searched(failures, { of: PAIRS, what: 'declared colour pairs' }),
-    ).toEqual([]);
-  });
+  /**
+   * The disabled fill's LEVEL, pinned to a literal — the half every guard
+   * around it is structurally unable to assert.
+   *
+   * `every declared pair clears its required ratio` computes `--ink-soft` on
+   * `--disabled-fill`, and `a disabled control is filled, not dimmed`
+   * (disabled-controls.spec.ts) reads `--disabled-fill` off `:root` at
+   * runtime and compares the control's own background to it. Both sides of
+   * both move with the token, so both hold at ANY level (#117). Measured:
+   * set Aurora's fill to its `--surface`, `#070d16` and the label still scores
+   * 7.5:1 and the control's background still equals the token — every guard
+   * green, and a teacher sees no control at all. A level is pinned against
+   * the brief, separately from anything derived from it.
+   */
+  for (const theme of THEMES) {
+    it(`${theme}: pins the disabled fill, and keeps it off every ground it is drawn on`, () => {
+      const from = themeTokens(tokensCss(), theme);
+      expect(from.get('--disabled-fill')).toBe(DISABLED_FILL[theme]);
 
-  it('every colour token is classified — paired or explicitly decorative', () => {
-    const paired = new Set(PAIRS.flatMap((p) => [...p.fg, ...p.bg]));
-    const all = colourTokens();
-    const unclassified = all
-      .map(([name]) => name)
-      .filter((name) => !paired.has(name) && !(name in DECORATIVE));
+      /* The class the literal cannot state, and the reason it is not simply a
+       second literal: the grounds are DERIVED. `Pair.bg` is a stack written
+       top-first ENDING IN AN OPAQUE BASE, so its last layer is a ground by
+       construction, and a ground added or renamed next year is covered the
+       day it appears. Compared as parsed colour, so `#070d16` and
+       `rgb(7 13 22)` are one finding rather than two spellings. */
+      const fill = parseColour(from.get('--disabled-fill') ?? '');
+      if (fill === null) throw new Error('--disabled-fill is not a colour');
 
-    expect(searched(unclassified, { of: all, what: 'colour tokens' })).toEqual(
-      [],
-    );
-  });
+      const grounds = [
+        ...new Set(PAIRS.map((pair) => pair.bg[pair.bg.length - 1])),
+      ].filter((name) => name !== '--disabled-fill');
+      const collisions = grounds.filter((name) => {
+        const ground = parseColour(from.get(name) ?? '');
+        return (
+          ground !== null &&
+          ground.alpha === fill.alpha &&
+          ground.rgb.every((channel, i) => channel === fill.rgb[i])
+        );
+      });
+
+      expect(
+        searched(collisions, { of: grounds, what: 'opaque grounds' }),
+      ).toEqual([]);
+    });
+  }
+
+  for (const theme of THEMES) {
+    it(`${theme}: every colour token is classified — paired or explicitly decorative`, () => {
+      const layers = atmosphereLayers(tokensCss());
+      const paired = new Set(
+        PAIRS.flatMap((p) => [...p.fg, ...p.bg]).flatMap((layer) =>
+          layer === ATMOSPHERE ? layers : [layer],
+        ),
+      );
+      const all = colourTokens(theme);
+      const unclassified = all
+        .map(([name]) => name)
+        .filter((name) => !paired.has(name) && !(name in DECORATIVE));
+
+      expect(
+        searched(unclassified, { of: all, what: 'colour tokens' }),
+      ).toEqual([]);
+    });
+  }
 });
 
 /**
@@ -427,35 +397,53 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
  * would be recorded under its final line, which still classifies uniquely and
  * still fails loudly if it is not classified at all.
  */
-type BorderUsage = { file: string; selector: string; declaration: string };
+type Declaration = { file: string; selector: string; declaration: string };
 
-const borderUsages = (): BorderUsage[] => {
+const declarationsMatching = (
+  matches: (declaration: string) => boolean,
+): Declaration[] => {
   const files = nonEmpty(
     filesUnder(SRC, (path) => path.endsWith('.astro') || path.endsWith('.css')),
     `.astro and .css files under ${SRC}/`,
   );
 
-  return files.flatMap((file) => {
-    const lines = withoutCssComments(readFileSync(file, 'utf8')).split('\n');
-    let selector = '(none)';
-    const found: BorderUsage[] = [];
+  return files.flatMap((file) =>
+    // One sheet at a time, so a selector cannot be carried from one `<style>`
+    // into the next, and so no line outside a `<style>` can become one.
+    stylesheetCss(file, readFileSync(file, 'utf8')).flatMap((css) => {
+      let selector = '(none)';
+      const found: Declaration[] = [];
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.endsWith('{') && !trimmed.startsWith('@')) {
-        selector = trimmed.slice(0, -1).trim();
+      for (const line of css.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.endsWith('{') && !trimmed.startsWith('@')) {
+          selector = trimmed.slice(0, -1).trim();
+        }
+        if (matches(trimmed)) {
+          found.push({
+            file: file.replace(/^src\//, ''),
+            selector,
+            declaration: trimmed,
+          });
+        }
       }
-      if (trimmed.includes('var(--border)')) {
-        found.push({
-          file: file.replace(/^src\//, ''),
-          selector,
-          declaration: trimmed,
-        });
-      }
-    }
-    return found;
-  });
+      return found;
+    }),
+  );
 };
+
+const borderUsages = (): Declaration[] =>
+  declarationsMatching((declaration) => declaration.includes('var(--border)'));
+
+/**
+ * Every `file :: selector` the source declares anything under.
+ *
+ * A declaration line rather than a selector line, because a selector with no
+ * declarations under it styles nothing and is not a place a control can be
+ * drawn.
+ */
+const declaredSelectors = (): string[] =>
+  declarationsMatching((declaration) => declaration.includes(':')).map(key);
 
 const key = (u: { file: string; selector: string }) =>
   `${u.file} :: ${u.selector}`;
@@ -494,6 +482,7 @@ const DECORATIVE_SELECTORS = [
   'components/pages/ClassroomGroupsPage.astro :: .cg-print-panel',
   'components/pages/ClassroomGroupsPage.astro :: .cg-print-panel fieldset',
   'components/pages/ClassroomGroupsPage.astro :: .tool-section',
+  'components/pages/ClassroomGroupsPage.astro :: .actions',
   'pages/404.astro :: hr',
 ];
 
@@ -520,6 +509,95 @@ describe('a control is never identified by the decorative border alone', () => {
       searched(unclassified, {
         of: usages,
         what: 'var(--border) usages in src/',
+      }),
+    ).toEqual([]);
+  });
+
+  /**
+   * Both lists above are hand-written, and an entry the reader cannot find
+   * classifies nothing while reading exactly like one that works — the shape
+   * `shytalk-brand.test.ts` guards with "an exemption naming a path that does
+   * not exist exempts nothing".
+   *
+   * It is not hypothetical here. Until #203 this file read an `.astro` file's
+   * CSS with a whole-file strip, and `Header.astro`'s frontmatter carries the
+   * prose "on /id/* pages" — which a CSS scanner reads as a comment OPENER,
+   * deleting everything up to the next close 92 lines later. So
+   * `Header.astro :: header` sat in DECORATIVE_SELECTORS for a usage neither
+   * assertion above could reach, and both were green over it.
+   *
+   * The two lists make DIFFERENT claims, so they need different controls. A
+   * decorative entry says a `var(--border)` usage exists and is decorative. A
+   * control entry says a selector exists that must NOT use one — so its own
+   * liveness is the selector, and asserting it against the usages would ask
+   * every control to break the rule it is listed for.
+   */
+  it('calls a border decorative only where the reader finds one', () => {
+    const usages = borderUsages();
+    const present = new Set(usages.map(key));
+    const stale = DECORATIVE_SELECTORS.filter(
+      (selector) => !present.has(selector),
+    );
+
+    expect(
+      searched(stale, { of: usages, what: 'var(--border) usages in src/' }),
+    ).toEqual([]);
+  });
+
+  it('names a control only where the reader finds that selector', () => {
+    const selectors = declaredSelectors();
+    const declared = new Set(selectors);
+    const stale = CONTROL_SELECTORS.filter(
+      (selector) => !declared.has(selector),
+    );
+
+    expect(
+      searched(stale, { of: selectors, what: 'declared selectors in src/' }),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * AC3's second clause (#250), which was held up by a comment until now.
+ *
+ * `tokens.css` states that its site-wide rule "enforces AC3's 'never a list of
+ * per-component overrides': a component cannot quietly invent a second
+ * disabled look" — and nothing tested that claim. `!important` only wins
+ * against a component rule that is not itself `!important`, so the
+ * enforcement was a convention rather than a control, and a comment is not an
+ * implementation.
+ */
+describe('one disabled look, defined in one place', () => {
+  /** What paints a control. `color-scheme` is not one of these. */
+  const PAINT =
+    /^(background(-color|-image)?|color|cursor|opacity|-webkit-text-fill-color)\s*:/;
+
+  /**
+   * A selector's SUBJECT is its last compound, and it is what decides here.
+   *
+   * `.switch input:disabled + span` paints the switch TRACK — a sibling the
+   * site-wide rule cannot reach, because that rule matches the input while
+   * the visible switch is the span. Its subject carries no `:disabled`, so it
+   * is not a second look. A rule whose own subject IS the disabled control is.
+   */
+  const subjectIsDisabled = (selector: string): boolean =>
+    selector.split(',').some((part) => /:disabled$/.test(part.trim()));
+
+  it('no component paints a disabled control for itself', () => {
+    const painted = declarationsMatching((declaration) =>
+      PAINT.test(declaration),
+    ).filter((usage) => subjectIsDisabled(usage.selector));
+    const elsewhere = painted.filter(
+      (usage) => usage.file !== 'styles/tokens.css',
+    );
+
+    // The population includes tokens.css's own rules, so it is live by
+    // construction — and deleting the site-wide treatment empties it, which
+    // `searched` refuses rather than reporting as a clean bill of health.
+    expect(
+      searched(elsewhere, {
+        of: painted.map((usage) => `${usage.file} :: ${usage.selector}`),
+        what: 'paint declarations on a :disabled subject',
       }),
     ).toEqual([]);
   });

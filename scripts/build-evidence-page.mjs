@@ -30,7 +30,11 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
+import { signOffOf, standingOf } from './evidence-signoff.mjs';
 
+/**
+ * @param {unknown} s
+ */
 const esc = (s) =>
   String(s)
     .replace(/&/g, '&amp;')
@@ -38,23 +42,68 @@ const esc = (s) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-/** Every spec result in the report, flattened. */
+/**
+ * Every spec result in the report, flattened, each carrying its FULL title
+ * path -- the describes and the test, exactly as `tests/e2e/evidence.ts`'s
+ * `shoot` writes one (`info.titlePath.slice(1).join(' > ')`, the file dropped).
+ *
+ * This used to emit `spec.title`, the leaf alone, and discard the describe
+ * titles sitting right there in the suite nesting. Everything downstream then
+ * keyed a journey by that leaf, so **two tests sharing a leaf title in
+ * different describes were one journey**: their captures pooled into a single
+ * strip and the per-engine results took whichever spec matched first. Measured
+ * on a 7-spec run -- 275 distinct leaf titles, 5 used twice, every pair an
+ * English block and its Indonesian counterpart -- a page would have shown one
+ * journey wearing two languages' evidence, and nothing about it would have
+ * looked wrong (#263). The published-path map was the only thing that noticed,
+ * because it alone demanded a unique path, and it refused the whole build. That
+ * map is gone since #268 -- an asset is keyed by the raw key, which is unique by
+ * construction -- so this rule is the only thing standing between a page and
+ * that collision now.
+ *
+ * The file-level suite's own title is NOT included: `shoot` drops it, and the
+ * two formats have to agree by construction rather than by a heuristic that
+ * repairs one into the other.
+ *
+ * @param {any} report
+ */
 const flattenReport = (report) => {
+  /** @type {{ title: string, block: string, project: string, status: string, duration: number, file: string, video: string | undefined }[]} */
   const out = [];
-  const walk = (suite) => {
-    for (const child of suite.suites || []) walk(child);
+  /**
+   * @param {any} suite
+   * @param {string[]} ancestors
+   * @param {string} file The spec file this suite came from. Only the top-level
+   *   (file) suite carries one, so it is threaded down to the describes.
+   */
+  const walk = (suite, ancestors, file) => {
+    for (const child of suite.suites || [])
+      walk(child, child.title ? [...ancestors, child.title] : ancestors, file);
     for (const spec of suite.specs || [])
       for (const t of spec.tests)
         for (const r of t.results)
           out.push({
-            title: spec.title,
+            title: [...ancestors, spec.title].filter(Boolean).join(' > '),
+            // The describes this journey sits in, joined the same way the
+            // title is. Taken from the ancestors ARRAY rather than by
+            // splitting the joined title, because a test whose own title
+            // contains ` > ` would otherwise be read as a block boundary
+            // that does not exist.
+            block: ancestors.filter(Boolean).join(' > '),
             project: t.projectName,
             status: r.status,
             duration: r.duration,
-            video: (r.attachments || []).find((a) => a.name === 'video')?.path,
+            // The spec FILE a journey came from. Since #214 a recording is
+            // opt-in per spec, so "no recording" means one of two different
+            // things and the page must not spell them the same way.
+            file: spec.file ?? file,
+            video: (r.attachments || []).find(
+              (/** @type {{ name: string }} */ a) => a.name === 'video',
+            )?.path,
           });
   };
-  for (const suite of report.suites || []) walk(suite);
+  // Each top-level entry is a FILE; its children are the describes.
+  for (const suite of report.suites || []) walk(suite, [], suite.file);
   return out;
 };
 
@@ -67,13 +116,19 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
  * Never `Date.parse` alone: it reads "0" as midnight on 1 January 2000 and
  * "2026" as that year's first instant, so a mangled start time would date an
  * earlier run's rows as this run's.
+ *
+ * @param {unknown} value
  */
 const instantOf = (value) =>
   typeof value === 'string' && ISO_INSTANT.test(value)
     ? Date.parse(value)
     : Number.NaN;
 
-/** `webkit 15, firefox 2`: rows counted by engine, in first-seen order. */
+/**
+ *  `webkit 15, firefox 2`: rows counted by engine, in first-seen order.
+ *
+ * @param {any[]} rows
+ */
 const byEngine = (rows) => {
   const counts = new Map();
   for (const row of rows)
@@ -97,6 +152,9 @@ const byEngine = (rows) => {
  * so it is an earlier run's by definition. What cannot be dated is refused
  * rather than guessed at: a report with no readable start, a stamp that is not
  * an instant, and a manifest in which nothing is the run's own.
+ *
+ * @param {any[]} manifest
+ * @param {any} report
  */
 export const capturesOfThisRun = (manifest, report) => {
   const startTime = report.stats?.startTime;
@@ -108,6 +166,7 @@ export const capturesOfThisRun = (manifest, report) => {
         "an earlier run's. Refusing to guess.",
     );
 
+  /** @type {any[]} */
   const current = [];
   const earlier = [];
   for (const row of manifest) {
@@ -142,6 +201,8 @@ export const capturesOfThisRun = (manifest, report) => {
  * What the build line adds about an earlier run: how many rows were set aside,
  * and from which engines. Without it, a page built from part of a directory
  * reads exactly like one built from all of it.
+ *
+ * @param {any} earlier
  */
 export const earlierLine = (earlier) =>
   earlier.length
@@ -149,6 +210,9 @@ export const earlierLine = (earlier) =>
       byEngine(earlier)
     : '';
 
+/**
+ * @param {string} s
+ */
 const slugOf = (s) =>
   String(s)
     .replace(/[^a-z0-9]+/gi, '-')
@@ -165,6 +229,8 @@ const slugOf = (s) =>
  * journey read "0 of 5 engines embedded", indistinguishable from a budget
  * decision (#165). A result with NO recording attached is not a loss -- an
  * ordinary run records nothing.
+ *
+ * @param {any} report
  */
 export const videoCandidates = (report) => {
   const candidates = [];
@@ -206,74 +272,170 @@ export const videoCandidates = (report) => {
  * is a removal rule that stops matching, which looks exactly like a capture with
  * nothing to remove.
  */
-export const PUBLISHED_PREFIX = 'evidence/';
+export /**
+ * Where an EARLIER capture published its recordings as supporting files.
+ *
+ * Nothing writes this prefix any more -- recordings went to the asset store in
+ * #268 -- but `reconcileFiles` still has to REMOVE what earlier captures left
+ * under it. A path left out of a redeploy's map is kept, not removed, so
+ * dropping this constant with the route that wrote it would strand every
+ * recording ever published this way against the 255-entry ceiling.
+ */
+const PUBLISHED_PREFIX = 'evidence/';
+
+/** Where the artifact serves a stored asset, in every view (#268). */
+const BLOB_PREFIX = '/_blob/';
 
 /**
- * Where one recording is published, from the `journey|engine` key it is held
- * under.
+ * A byte count in megabytes, as every ceiling in this file reports one. One
+ * home: it was declared inside `assertPublishLimits`, and the asset ceilings
+ * below report the same way (#80).
  *
- * One home, because two callers need the same answer: the files map a publish
- * carries, and the `src` the page points at. Spelled twice, the day one moved
- * the page would reference a path nothing published -- a broken `src` on a
- * journey that then reads as never recorded.
- *
- * @param {string} key
+ * @param {number} n
  * @returns {string}
  */
-export const publishedVideoPath = (key) => {
-  const [journey, project] = key.split('|');
-  return `${PUBLISHED_PREFIX}${journey}-${slugOf(project)}.webm`;
-};
+const mb = (n) => `${(n / 1048576).toFixed(2)}MB`;
 
 /**
- * Every recording as a supporting file: published path -> the file on disk.
+ * What one artifact's ASSET STORE holds, measured against the real runtime on
+ * 2026-09-22 with the prediction recorded first (#268).
  *
- * The page carries media as base64 `data:` URIs at 4/3 of the bytes, all of it
- * inside the 16 MB one page is allowed, so scope and video completeness compete
- * for the same budget -- and the loser is silent (#146, again at a different
- * scope in #189). A supporting file is fetched separately and charged against
- * other ceilings: 15 MB per binary, 64 MB and 255 entries per publish.
+ * The store reports its own limits: `25 files, 2350 of 1073741824 bytes used
+ * (limit 5000 files)`. Set against a publish's 255 entries and 64 MB, this is
+ * not a tighter budget to economise against -- it is a different one, with
+ * roughly nineteen times the entries. Six specs produce 199 recordings and
+ * seven produce 280, so #263's AC6 could not be met on published files at all.
  *
- * Which media moves is forced by the entry ceiling rather than chosen: full
- * scope is 175 shots + 120 recordings + the page = 296 entries, over the 255 a
- * publish allows. The recordings move because they are the larger bytes and the
- * ones being dropped; the shots stay inline.
+ * Literals, deliberately. A value derived from the code it guards moves with
+ * the code and asserts nothing about the platform (#117); these are pinned
+ * against the measurement and `tests/unit/evidence-page.test.ts` pins them
+ * again, so a platform change is a red test rather than a refused publish.
+ */
+export const ASSET_MAX_FILES = 5000;
+export const ASSET_MAX_BYTES = 1073741824;
+export const ASSET_MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Every recording to upload: the journey it belongs to -> the file on disk.
  *
- * The path is RELATIVE with no leading slash -- an artifact does not serve a
- * root-relative path, and the failure is a broken `src` on a journey that then
- * reads as never recorded.
+ * ONE COLLISION CLASS IS RETIRED AND ONE IS NOT, and the difference is worth
+ * stating because the first draft of this function got it wrong.
  *
- * Two recordings landing on one path is a THROW. Slugging joins on the same
- * separator the key does, so a journey ending where an engine begins collides:
- * `a-b|c` and `a|b-c` both publish as `a-b-c.webm`. Keeping the last silently
- * would file one journey's recording under another journey's claim, which is the
- * stale-video hazard this ticket exists to remove, arriving from the other end.
+ * Retired: the published path slugged the key into a FILENAME and joined
+ * journey and engine on the separator the key itself uses, so `a-b|c` and
+ * `a|b-c` both became `a-b-c.webm`. Nothing is slugged here, so two distinct
+ * keys cannot meet.
  *
- * Accumulated in a Map, not an object literal: `'constructor' in {}` is true, so
- * a journey slugged to a prototype member would report a collision that is not
- * there.
+ * NOT retired: the key is `slugOf(title)|project` and `videoCandidates`
+ * returns an ARRAY, so two journeys whose titles slug the same way -- `a
+ * journey` and `a-journey` -- arrive as two candidates under ONE key. A Map
+ * would keep the last in silence, filing one journey's recording under
+ * another's claim, which is the hazard this whole file exists to remove. It is
+ * more likely since #263 made a key the full title path, describes included.
+ * So the refusal moved here rather than being deleted with the path that used
+ * to carry it.
+ *
+ * Accumulated in a Map, not an object literal: `'constructor' in {}` is true,
+ * so a journey slugged to a prototype member would report a collision that is
+ * not there.
  *
  * @param {{ key: string, abs: string }[]} candidates
  * @returns {Record<string, string>}
  */
-export const videoFiles = (candidates) => {
-  const files = new Map();
+export const assetUploads = (candidates) => {
+  const uploads = new Map();
   const collisions = [];
   for (const { key, abs } of candidates) {
-    const path = publishedVideoPath(key);
-    const taken = files.get(path);
-    if (taken === undefined) files.set(path, abs);
-    else collisions.push(`${path}: ${taken} and ${abs}`);
+    const taken = uploads.get(key);
+    if (taken === undefined) uploads.set(key, abs);
+    else collisions.push(`${key}: ${taken} and ${abs}`);
   }
   if (collisions.length)
     throw new Error(
-      `build-evidence-page: ${collisions.length} published path(s) claimed by ` +
+      `build-evidence-page: ${collisions.length} journey key(s) claimed by ` +
         `more than one recording:\n  ${collisions.join('\n  ')}\n` +
-        "Refusing to publish a recording under another journey's claim: the " +
-        'page would pair a current assertion with the wrong recording, and ' +
-        'nothing about it would look wrong.',
+        'Two journeys whose titles slug the same way share a key, and keeping ' +
+        "the last would pair one journey's assertion with another journey's " +
+        'recording. Nothing about that page would look wrong.',
     );
-  return Object.fromEntries(files);
+  return Object.fromEntries(uploads);
+};
+
+/**
+ * The `src` the page points at for each journey, from the map the upload
+ * answered with.
+ *
+ * Checked in BOTH directions, because each failure is silent in its own way. A
+ * planned recording missing from the map renders a journey with no source,
+ * which reads exactly like one that was never recorded. An entry in the map
+ * that no recording asked for is a stale map from an earlier run, and pairing
+ * a current journey with an older recording is the hazard this file exists to
+ * prevent -- nothing about the page would look wrong.
+ *
+ * @param {{ uploaded: Record<string, string>, candidates: { key: string, abs: string }[] }} input
+ * @returns {Map<string, string>}
+ */
+export const assetVideoPaths = ({ uploaded, candidates }) => {
+  const wanted = new Set(candidates.map(({ key }) => key));
+  const missing = candidates.filter(({ key }) => !Object.hasOwn(uploaded, key));
+  if (missing.length)
+    throw new Error(
+      `build-evidence-page: ${missing.length} recording(s) were planned but ` +
+        `never uploaded:\n  ${missing.map(({ key }) => key).join('\n  ')}\n` +
+        'A journey with no source reads as one that was never recorded. Run ' +
+        'the upload again, or rebuild the plan.',
+    );
+  const extra = Object.keys(uploaded).filter((key) => !wanted.has(key));
+  if (extra.length)
+    throw new Error(
+      `build-evidence-page: ${extra.length} uploaded asset(s) belong to no ` +
+        `recording in this run:\n  ${extra.join('\n  ')}\n` +
+        "That is a map from an earlier run. Pairing this run's journeys " +
+        "with an earlier run's recordings would look entirely normal.",
+    );
+  for (const [key, path] of Object.entries(uploaded))
+    if (!path.startsWith(BLOB_PREFIX))
+      throw new Error(
+        `build-evidence-page: ${key} resolves to ${path}, which is not a ` +
+          `${BLOB_PREFIX} path. An asset is served at ${BLOB_PREFIX}<id> in ` +
+          'every view; anything else is a link off the artifact.',
+      );
+  return new Map(candidates.map(({ key }) => [key, uploaded[key]]));
+};
+
+/**
+ * A run whose recordings the asset store could not hold is refused before
+ * anything is uploaded, rather than part-way through the eleventh call.
+ *
+ * @param {{ uploads: Record<string, string>, sizeOf: (source: string) => number }} input
+ * @returns {void}
+ */
+export const assertAssetLimits = ({ uploads, sizeOf }) => {
+  const sources = Object.values(uploads);
+  const over = [];
+  if (sources.length > ASSET_MAX_FILES)
+    over.push(
+      `${sources.length} assets, over the ${ASSET_MAX_FILES} one artifact holds`,
+    );
+  const sized = sources.map(
+    (/** @type {string} */ source) =>
+      /** @type {[string, number]} */ ([source, sizeOf(source)]),
+  );
+  for (const [source, bytes] of sized)
+    if (bytes > ASSET_MAX_FILE_BYTES)
+      over.push(
+        `${source} at ${mb(bytes)}, over the ${mb(ASSET_MAX_FILE_BYTES)} one asset allows`,
+      );
+  const total = sized.reduce((n, [, bytes]) => n + bytes, 0);
+  if (total > ASSET_MAX_BYTES)
+    over.push(
+      `${mb(total)} in total, over the ${mb(ASSET_MAX_BYTES)} one artifact holds`,
+    );
+  if (over.length)
+    throw new Error(
+      `build-evidence-page: the upload would carry ${over.join('; and ')}. ` +
+        'Refusing to start an upload the store would reject part-way.',
+    );
 };
 
 /**
@@ -302,7 +464,7 @@ export const reconcileFiles = ({ desired, published }) => {
   const files = { ...desired };
   for (const path of published)
     if (path.startsWith(PUBLISHED_PREFIX) && !Object.hasOwn(desired, path))
-      files[path] = null;
+      /** @type {Record<string, string | null>} */ (files)[path] = null;
   return files;
 };
 
@@ -347,7 +509,7 @@ export const assertPublishLimits = ({ files, sizeOf }) => {
     else bytes += sizeOf(source);
   }
   const carried = entries.length - removals;
-  const mb = (n) => `${(n / 1048576).toFixed(2)}MB`;
+  /** @param {number} n */
 
   const over = [];
   if (entries.length > PUBLISH_MAX_FILES)
@@ -395,6 +557,8 @@ export const assertPageFits = (bytes) => {
 
 /**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
+ *
+ * @param {{ manifest: any[], report: any, content: any, shots: Map<string, any>, dims?: Map<string, any>, videos?: Map<string, string> }} input
  */
 export const renderEvidencePage = ({
   manifest,
@@ -406,8 +570,54 @@ export const renderEvidencePage = ({
 }) => {
   const specs = flattenReport(report);
 
+  // A journey with no recording is either a spec that never ASKED for one --
+  // the default since #214 -- or a recording that went astray (#165). Those
+  // are different facts: the first is the policy working, the second is
+  // evidence missing, and a page that spells both "not embedded" tells the
+  // operator nothing about which he is looking at.
+  //
+  // Derived from the report itself rather than from the spec sources or a
+  // list: a BLOCK RECORDS when any result of its own carries a video. There
+  // is no second statement of the policy that could drift from the first.
+  //
+  // The BLOCK, not the file (#292). A spec opts in as a whole -- one
+  // `test.use(recorded)` at the top -- so a file-keyed policy answers for
+  // every journey in it, and a block that renders nothing (reading bytes out
+  // of `dist/`, never navigating) came back as a recording that went astray:
+  // #165's wording on #214's fact, which is the very confusion #214 exists to
+  // stop. Operator decision 2026-09-22: derive the finer key from the report,
+  // rather than state the policy a second time in an annotation.
+  //
+  // Keyed by file AND block, because two files may name a block alike.
+  const blockKey = (/** @type {{ file: string, block: string }} */ s) =>
+    `${s.file}\u0000${s.block}`;
+  const recordingBlocks = new Set(
+    specs.filter((s) => s.video).map((s) => blockKey(s)),
+  );
+  const specEntryOf = new Map(specs.map((s) => [s.title, s]));
+  /** @param {string} title */
+  const noRecordingNote = (title) => {
+    // `order` is built from the manifest AND the report, so a title the report
+    // never mentioned carries no spec file and there is no recording policy to
+    // read. Answering "not recorded by policy" there asserts a policy this page
+    // never saw: the defect #214 exists to stop, one level further in, a third
+    // fact wearing the second's words.
+    //
+    // `has`, not `get() === undefined`: a journey the report DOES carry whose
+    // entry has no file is still a spec that did not ask to be recorded, and
+    // the two cases are only distinguishable through the key.
+    if (!specEntryOf.has(title)) return 'no test result';
+    const entry = specEntryOf.get(title);
+    return entry !== undefined &&
+      entry.file !== undefined &&
+      recordingBlocks.has(blockKey(entry))
+      ? 'recording missing'
+      : 'not recorded by policy';
+  };
+
   // Derived, in first-seen order, so the page reflects the run rather than a
   // list somebody kept in step by hand.
+  /** @type {string[]} */
   const engines = [];
   for (const s of specs)
     if (!engines.includes(s.project)) engines.push(s.project);
@@ -419,21 +629,26 @@ export const renderEvidencePage = ({
   //
   // Derived from the manifest ALONE, this list omitted any test that asserted
   // without calling `shoot()` -- while `video` is `on` for the whole run
-  // whenever `EVIDENCE_DIR` is set, so that test IS recorded and `videoFiles`
-  // publishes its recording regardless. Full scope measured 120 recordings
+  // whenever `EVIDENCE_DIR` is set, so that test IS recorded and the upload
+  // stores its recording regardless. Full scope measured 120 recordings
   // published and 100 referenced: 20 files served to a page that named their
   // journeys nowhere, and four journeys that ran on five engines -- `no console
   // errors on load` among them -- absent from the coverage an operator signs
   // off. The dead entries are the smaller half; a page quietly narrower than
   // its run is the failure.
+  // Both sides now spell a journey the same way, so neither is repaired into
+  // the other. The `slice(1)` that used to strip a describe off the manifest
+  // title, and the `endsWith(' > ' + short)` that matched it back, were what
+  // made a duplicate leaf ambiguous -- a suffix match cannot tell two
+  // describes apart (#263).
+  /** @type {string[]} */
   const order = [];
-  for (const m of manifest) {
-    const short = m.title.split(' > ').slice(1).join(' > ') || m.title;
-    if (!order.includes(short)) order.push(short);
-  }
+  for (const m of manifest) if (!order.includes(m.title)) order.push(m.title);
   for (const s of specs) if (!order.includes(s.title)) order.push(s.title);
 
-  const missing = manifest.filter((m) => !shots.has(m.file));
+  const missing = manifest.filter(
+    (/** @type {{ file: string }} */ m) => !shots.has(m.file),
+  );
   if (missing.length)
     throw new Error(
       `build-evidence-page: missing image data for ${missing.length} captured ` +
@@ -441,28 +656,36 @@ export const renderEvidencePage = ({
         'claims evidence it does not carry.',
     );
 
-  const journeys = order.map((short) => {
+  const journeys = order.map((title) => {
     const rows = manifest.filter(
-      (m) => m.title === short || m.title.endsWith(` > ${short}`),
+      (/** @type {{ title: string }} */ m) => m.title === title,
     );
-    const orders = [...new Set(rows.map((r) => r.order))].sort((a, b) => a - b);
+    const orders = [
+      ...new Set(rows.map((/** @type {{ order: number }} */ r) => r.order)),
+    ].sort((/** @type {number} */ a, /** @type {number} */ b) => a - b);
     return {
-      id: slugOf(short),
-      title: short,
+      id: slugOf(title),
+      title,
       assertions: orders.map((n) => ({
         order: n,
-        label: rows.find((r) => r.order === n)?.label ?? '',
+        label:
+          rows.find((/** @type {{ order: number }} */ r) => r.order === n)
+            ?.label ?? '',
         shots: engines.map((e) =>
-          rows.find((r) => r.project === e && r.order === n),
+          rows.find(
+            (/** @type {{ project: string, order: number }} */ r) =>
+              r.project === e && r.order === n,
+          ),
         ),
       })),
       results: engines.map((e) =>
-        specs.find((s) => s.project === e && s.title === short),
+        specs.find((s) => s.project === e && s.title === title),
       ),
     };
   });
 
   const stats = report.stats || {};
+  /** @param {{ status?: string } | undefined} r */
   const dot = (r) =>
     `<span class="dot ${r?.status === 'passed' ? 'ok' : 'bad'}" title="${esc(r?.status ?? 'not run')}"></span>`;
 
@@ -508,7 +731,7 @@ export const renderEvidencePage = ({
         .map((e) =>
           videos.has(`${j.id}|${e}`)
             ? `<figure><video controls preload="none" src="${videos.get(`${j.id}|${e}`)}"></video><figcaption class="mono">${esc(e)}</figcaption></figure>`
-            : `<figure class="absent"><div class="novid mono">not embedded</div><figcaption class="mono">${esc(e)}</figcaption></figure>`,
+            : `<figure class="absent"><div class="novid mono">${esc(noRecordingNote(j.title))}</div><figcaption class="mono">${esc(e)}</figcaption></figure>`,
         )
         .join('')}
     </div>
@@ -518,14 +741,20 @@ export const renderEvidencePage = ({
     .join('');
 
   const idsHtml = (content.ids || [])
-    .map((i) => `<span><b>${esc(i.label)}</b> ${esc(i.value)}</span>`)
+    .map(
+      (/** @type {{ label: string, value: string }} */ i) =>
+        `<span><b>${esc(i.label)}</b> ${esc(i.value)}</span>`,
+    )
     .join('');
   const sectionsHtml = (content.sections || [])
-    .map((s) => `<h2>${esc(s.heading)}</h2>\n<p class="sub">${s.body}</p>`)
+    .map(
+      (/** @type {{ heading: string, body: string }} */ s) =>
+        `<h2>${esc(s.heading)}</h2>\n<p class="sub">${s.body}</p>`,
+    )
     .join('\n');
   const mutationsHtml = (content.mutations || [])
     .map(
-      (m) =>
+      (/** @type {Record<string, string>} */ m) =>
         `<tr><td>${esc(m.id)}</td><td>${m.what}</td><td class="pred">${esc(m.predicted)}</td><td class="act">${esc(m.actual)}</td></tr>`,
     )
     .join('');
@@ -639,6 +868,12 @@ button:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
 button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent)}
 button[aria-pressed="true"]{color:var(--on-accent)}
 textarea{width:100%;max-width:100%;font:inherit;font-size:.92rem;padding:11px;border:1px solid var(--rule);border-radius:6px;background:var(--ground);color:var(--ink);min-height:88px;resize:vertical}
+.standing:not(:empty){border:2px solid var(--alert);background:var(--raise);padding:12px 14px;margin:16px 0}
+.standing p{margin:0 0 6px}
+.standing p:last-child{margin-bottom:0}
+.standing strong{color:var(--alert)}
+.standing a{color:var(--accent-ink)}
+.standing code{font-family:var(--mono);font-size:.9em}
 .state{font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);margin-top:12px}
 .state.saved{color:var(--accent-ink)}
 
@@ -694,6 +929,7 @@ ${journeyHtml}
   <h2 style="margin-top:0">Sign-off</h2>
   <p class="count" id="progress">0 of ${journeys.length} journeys reviewed</p>
   <p class="sub">Nothing merges on green CI alone. This ticket progresses only on your explicit decision below.</p>
+  <div class="standing" id="standing" role="status"></div>
   <div class="choices">
     <button type="button" id="btn-approve" aria-pressed="false">Signed off &mdash; may merge to develop</button>
     <button type="button" id="btn-more" aria-pressed="false">More tests needed</button>
@@ -710,6 +946,11 @@ ${journeyHtml}
 <script>
 (function () {
   'use strict';
+  // The stored sign-off's shape, and where its verdict stands against this
+  // page's journeys, embedded by their own source text: the unit tests and the
+  // pre-merge check run these same functions (evidence-signoff.mjs, #197).
+  ${signOffOf.toString()}
+  ${standingOf.toString()}
   var JOURNEYS = ${JSON.stringify(journeys.map((j) => j.id))};
   var DOC = 'signoff/' + ${JSON.stringify(content.signoffKey ?? 'ticket')};
   var JOURNEY_KEY = 'journey:';
@@ -721,10 +962,10 @@ ${journeyHtml}
   // The stored sign-off as this view last received it, always as the page's
   // OWN copy: the runtime delivers snapshots frozen, and a page that keeps one
   // as its state drops every later edit without an error (#172).
-  var server = copyOf(undefined);
-  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict'
-  // and 'note'. The page shows the server copy with these laid over it, so no
-  // snapshot, early or late, can repaint an edit away.
+  var server = signOffOf(undefined);
+  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict',
+  // 'verdictCovers' and 'note'. The page shows the server copy with these laid
+  // over it, so no snapshot, early or late, can repaint an edit away.
   var pending = Object.create(null);
   var db = null, storageAbsent = false, loaded = false, saveTimer = null;
   var stateEl = document.getElementById('state');
@@ -732,24 +973,14 @@ ${journeyHtml}
   var noteEl = document.getElementById('note');
   var approve = document.getElementById('btn-approve');
   var more = document.getElementById('btn-more');
+  var standingEl = document.getElementById('standing');
+  // What the out-of-date notice last said. It is a live region, so it is
+  // rebuilt only when that changes: a rebuild on every tick would be
+  // announced again on every tick.
+  var shownStanding = '';
   function say(m, ok) { stateEl.textContent = m; stateEl.className = 'state' + (ok ? ' saved' : ''); }
   function codeOf(e) { return e && typeof e.code === 'string' ? e.code : 'unknown'; }
   function hasPending() { return Object.keys(pending).length > 0; }
-  // Keeps only the shape this page writes. The store is shared by every
-  // viewer, so what it delivers is untrusted input.
-  function copyOf(body) {
-    var source = body && typeof body === 'object' ? body : {};
-    var stored = source.journeys && typeof source.journeys === 'object' ? source.journeys : {};
-    var journeys = {};
-    Object.keys(stored).forEach(function (id) {
-      if (typeof stored[id] === 'boolean') journeys[id] = stored[id];
-    });
-    return {
-      journeys: journeys,
-      verdict: source.verdict === 'approved' || source.verdict === 'more' ? source.verdict : null,
-      note: typeof source.note === 'string' ? source.note : ''
-    };
-  }
   function overlay(target, edits) {
     Object.keys(edits).forEach(function (key) {
       if (key.indexOf(JOURNEY_KEY) === 0) target.journeys[key.slice(JOURNEY_KEY.length)] = edits[key];
@@ -757,9 +988,63 @@ ${journeyHtml}
     });
     return target;
   }
-  function view() { return overlay(copyOf(server), pending); }
+  function view() { return overlay(signOffOf(server), pending); }
+  function paragraph(parts) {
+    var p = document.createElement('p');
+    parts.forEach(function (part) {
+      p.appendChild(typeof part === 'string' ? document.createTextNode(part) : part);
+    });
+    standingEl.appendChild(p);
+  }
+  function listed(nodes) {
+    var parts = [];
+    nodes.forEach(function (node, at) {
+      if (at > 0) parts.push(', ');
+      parts.push(node);
+    });
+    return parts;
+  }
+  function linkTo(id) {
+    var link = document.createElement('a');
+    var section = document.getElementById('j-' + id);
+    var heading = section ? section.querySelector('h3') : null;
+    link.href = '#j-' + id;
+    link.textContent = heading ? heading.textContent : id;
+    return link;
+  }
+  // A removed journey is named by the id the shared store holds, so it is
+  // written as text and never parsed as markup.
+  function idOf(id) {
+    var code = document.createElement('code');
+    code.textContent = id;
+    return code;
+  }
+  function showStanding(standing) {
+    var said = JSON.stringify(standing);
+    if (said === shownStanding) return;
+    shownStanding = said;
+    while (standingEl.firstChild) standingEl.removeChild(standingEl.firstChild);
+    if (!standing.stale) return;
+    var signedOff = standing.verdict === 'approved';
+    var lead = document.createElement('strong');
+    lead.textContent = signedOff ? 'Your sign-off is out of date.' : 'Your decision is out of date.';
+    var onPage = JOURNEYS.length === 1 ? 'the 1 journey' : 'the ' + JOURNEYS.length + ' journeys';
+    if (standing.unrecorded) {
+      paragraph([lead, ' It was saved before ' + (signedOff ? 'sign-offs' : 'decisions') +
+        ' recorded the journeys they cover, so it cannot be matched to ' + onPage + ' on this page.']);
+    } else {
+      paragraph([lead, signedOff ? ' You signed off before this page changed.' : ' You asked for more tests before this page changed.']);
+      if (standing.added.length > 0) paragraph(['Added since: '].concat(listed(standing.added.map(linkTo)), ['.']));
+      if (standing.removed.length > 0) paragraph(['No longer on the page: '].concat(listed(standing.removed.map(idOf)), ['.']));
+    }
+    paragraph([
+      (standing.unrecorded ? 'Review them, then ' : 'Review what changed, then ') +
+        (signedOff ? 'press “' + approve.textContent + '” again.' : 'decide again.')
+    ]);
+  }
   function paint() {
     var shown = view(), done = 0;
+    var standing = standingOf(shown, JOURNEYS);
     JOURNEYS.forEach(function (id) {
       var box = document.getElementById('chk-' + id);
       if (!box) return;
@@ -770,8 +1055,10 @@ ${journeyHtml}
       if (on) done++;
     });
     progressEl.textContent = done + ' of ' + JOURNEYS.length + ' journeys reviewed';
-    approve.setAttribute('aria-pressed', String(shown.verdict === 'approved'));
-    more.setAttribute('aria-pressed', String(shown.verdict === 'more'));
+    // A verdict shows as given only while it covers exactly these journeys.
+    approve.setAttribute('aria-pressed', String(standing.verdict === 'approved' && !standing.stale));
+    more.setAttribute('aria-pressed', String(standing.verdict === 'more' && !standing.stale));
+    showStanding(standing);
     if (document.activeElement !== noteEl) noteEl.value = shown.note;
   }
   function schedule() {
@@ -779,8 +1066,8 @@ ${journeyHtml}
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 400);
   }
-  function change(key, value) {
-    pending[key] = value;
+  function change(edits) {
+    Object.keys(edits).forEach(function (key) { pending[key] = edits[key]; });
     paint();
     if (storageAbsent) { say(NOT_SAVED, false); return; }
     // set() replaces the whole document, so nothing is written before the
@@ -807,7 +1094,7 @@ ${journeyHtml}
     });
   }
   function receive(snap) {
-    server = copyOf(snap.data());
+    server = signOffOf(snap.data());
     if (!loaded) {
       loaded = true;
       if (hasPending()) schedule();
@@ -819,12 +1106,25 @@ ${journeyHtml}
     storageAbsent = true;
     say(LOCAL, false);
   }
+  // Giving a verdict records the journeys it is given on (#197), and pressing
+  // the one already given, while it still covers this page, withdraws it.
+  // Nothing else writes that list, so a tick or a note on an out-of-date page
+  // cannot renew an approval.
+  function decide(verdict) {
+    var standing = standingOf(view(), JOURNEYS);
+    var withdraw = standing.verdict === verdict && !standing.stale;
+    change({ verdict: withdraw ? null : verdict, verdictCovers: withdraw ? null : JOURNEYS.slice() });
+  }
   document.querySelectorAll('input[data-journey]').forEach(function (box) {
-    box.addEventListener('change', function () { change(JOURNEY_KEY + box.dataset.journey, box.checked); });
+    box.addEventListener('change', function () {
+      var edit = {};
+      edit[JOURNEY_KEY + box.dataset.journey] = box.checked;
+      change(edit);
+    });
   });
-  approve.addEventListener('click', function () { change('verdict', view().verdict === 'approved' ? null : 'approved'); });
-  more.addEventListener('click', function () { change('verdict', view().verdict === 'more' ? null : 'more'); });
-  noteEl.addEventListener('input', function () { change('note', noteEl.value); });
+  approve.addEventListener('click', function () { decide('approved'); });
+  more.addEventListener('click', function () { decide('more'); });
+  noteEl.addEventListener('input', function () { change({ note: noteEl.value }); });
   var lb = document.getElementById('lb'), lbImg = document.getElementById('lb-img'), lbCap = document.getElementById('lb-cap');
   document.addEventListener('click', function (e) {
     var img = e.target.closest ? e.target.closest('.shot img') : null;
@@ -854,6 +1154,34 @@ ${journeyHtml}
 };
 
 /**
+ * The journey ids a rendered page declares, in page order, read from the one
+ * line of its script that declares them (`var JOURNEYS = [...]`, above). The
+ * pre-merge check reads the page as PUBLISHED, so it learns the journeys from
+ * the page itself and never from a rebuild that may differ from it (#197).
+ *
+ * @param {string} html
+ * @returns {string[]}
+ */
+export const journeysOfPage = (html) => {
+  const lists = [...html.matchAll(/\bvar JOURNEYS = (\[[^\]\n]*\]);/g)];
+  if (lists.length !== 1)
+    throw new Error(
+      `journeysOfPage: the page declares ${lists.length} journey lists, ` +
+        'where an evidence page declares exactly one',
+    );
+  /** @type {unknown} */
+  const ids = JSON.parse(lists[0]?.[1] ?? '');
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string'))
+    throw new Error('journeysOfPage: the journey list is not a list of ids');
+  // The builder refuses a run that captured nothing, so every evidence page
+  // declares a journey. Read as a page, an empty list would let an approval
+  // that covers nothing cover all of it and read as signed off.
+  if (ids.length === 0)
+    throw new Error('journeysOfPage: the page declares no journeys');
+  return ids;
+};
+
+/**
  * What the publish has to grant, said out loud at build time.
  *
  * The page writes the ticks and the verdict through `claude.use('db')`, which
@@ -867,11 +1195,20 @@ ${journeyHtml}
  * enforce it. Printing it is what stops the next person having to remember.
  */
 export const PUBLISH_NOTE =
-  'publish with capabilities {"db": {}}, AND the files map written beside ' +
-  "this page — without the capability claude.use('db') resolves null, the " +
-  'page says "ticks are local to this view", and the sign-off is recorded ' +
-  'NOWHERE; without the files the page references recordings nothing ' +
-  'uploaded, and a journey with a broken src reads as one never recorded.';
+  'publish with capabilities {"db": {}, "assets": {}} — without db ' +
+  "claude.use('db') resolves null, the page says \"ticks are local to this " +
+  'view", and the sign-off is recorded NOWHERE; without assets the upload is ' +
+  'refused and every journey references a recording nothing stored, which ' +
+  'reads as one never recorded. A page declaring assets is ' +
+  'organization-internal and can never be made public (operator decision, ' +
+  '2026-09-22, #268).';
+
+/** What the upload pass has to do, said out loud by `--plan`. */
+export const UPLOAD_NOTE =
+  'upload each of these to the artifact with asset: true (25 per call), then ' +
+  'write {"<key>": "/_blob/<id>"} and pass it as --assets. The key is the ' +
+  'journey and engine, not the filename: matching on filenames is how a ' +
+  "current journey gets paired with an earlier run's recording.";
 
 /**
  * What a capture actually is, read from its own first bytes.
@@ -881,6 +1218,9 @@ export const PUBLISH_NOTE =
  * like a page of captures that failed. An unrecognised format is a THROW for
  * the same reason a manifest entry with no image is -- silence here is
  * indistinguishable from evidence.
+ *
+ * @param {Buffer} bytes a node Buffer: `readUInt16BE` and friends are
+ *   Buffer methods, not Uint8Array ones, and this reads image headers.
  */
 export const mediaType = (bytes) => {
   if (
@@ -907,7 +1247,11 @@ const STANDALONE = new Set([
   0x01, 0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7,
 ]);
 
-/** SOFn, excluding DHT (C4), JPG (C8) and DAC (CC), which share the range. */
+/**
+ *  SOFn, excluding DHT (C4), JPG (C8) and DAC (CC), which share the range.
+ *
+ * @param {number} marker
+ */
 const isFrameHeader = (marker) =>
   marker >= 0xc0 &&
   marker <= 0xcf &&
@@ -930,6 +1274,8 @@ const isFrameHeader = (marker) =>
  * the width, 20-23 the height, all big-endian. JPEG does NOT -- it is a stream
  * of marker segments, so the frame header sits behind whatever EXIF, ICC or
  * restart-interval segments the encoder emitted and has to be walked to.
+ *
+ * @param {Buffer} bytes
  */
 export const imageSize = (bytes) => {
   if (bytes.length >= 24 && bytes.readUInt32BE(12) === 0x49484452)
@@ -958,6 +1304,10 @@ export const imageSize = (bytes) => {
   return null;
 };
 
+/**
+ * @param {string} name
+ * @param {string} [fallback]
+ */
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : fallback;
@@ -970,9 +1320,22 @@ const main = () => {
   // The paths the artifact already serves, saved from a file listing. Absent on
   // a first publish; without it nothing can be removed, only added.
   const publishedPath = arg('published');
-  if (!dir || !contentPath || !out) {
+  // Two passes, because an asset id is minted by the upload and cannot be
+  // known before it (#268). `--plan` writes what to upload; the upload answers
+  // with a `/_blob/<id>` for each; `--assets` builds the page from that map.
+  const planning = process.argv.includes('--plan');
+  const assetsPath = arg('assets');
+  if (!dir || !out || (!planning && !contentPath)) {
     console.error(
-      'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--published <listing.json>]',
+      'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--published <listing.json>] [--assets <map.json>]\n' +
+        '       build-evidence-page.mjs --plan --evidence <dir> --out <file.html>',
+    );
+    process.exit(2);
+  }
+  if (planning && assetsPath) {
+    console.error(
+      'build-evidence-page: --plan writes the upload list; --assets reads the ' +
+        'answer to it. Passing both asks for one pass to be two.',
     );
     process.exit(2);
   }
@@ -988,9 +1351,40 @@ const main = () => {
       .map((l) => JSON.parse(l)),
     report,
   );
-  const content = JSON.parse(readFileSync(contentPath, 'utf8'));
   // Before any capture is encoded: a missing recording refuses the whole page.
   const candidates = videoCandidates(report);
+
+  // Recordings live in the artifact's ASSET STORE, which holds 5000 files and
+  // 1 GiB against a publish's 255 entries and 64 MB (#268, measured). The
+  // publish itself therefore carries no recording at all -- only the removal
+  // of any an earlier capture published as supporting files, which a redeploy
+  // would otherwise keep.
+  const uploads = assetUploads(candidates);
+  if (planning) {
+    assertAssetLimits({ uploads, sizeOf: (source) => statSync(source).size });
+    const planOut = `${out}.uploads.json`;
+    writeFileSync(planOut, `${JSON.stringify(uploads, null, 2)}\n`, 'utf8');
+    console.log(
+      `planned ${Object.keys(uploads).length} recording(s) to upload (${planOut})`,
+    );
+    console.log(UPLOAD_NOTE);
+    return;
+  }
+  if (!assetsPath && candidates.length > 0)
+    throw new Error(
+      `build-evidence-page: ${candidates.length} recording(s) have to reach ` +
+        'the asset store before the page can reference them, and no --assets ' +
+        'map was given. Run --plan first, upload what it lists, then pass the ' +
+        'map back. Refusing to build a page whose every journey would read as ' +
+        'never recorded.',
+    );
+  // Only now: `--plan` needs no content, and reading it would refuse a plan
+  // over an argument the plan does not use.
+  if (!contentPath) {
+    console.error('build-evidence-page: --content is required unless --plan');
+    process.exit(2);
+  }
+  const content = JSON.parse(readFileSync(contentPath, 'utf8'));
 
   // Read ONCE: the same buffer answers what the file is, how big it renders
   // and what goes in the src.
@@ -999,7 +1393,16 @@ const main = () => {
   );
   const dims = new Map(
     [...bytes]
-      .map(([file, b]) => [file, imageSize(b)])
+      // The pair is spelled out: `.map` otherwise answers `any[]`, and a Map
+      // constructor wants `[key, value]` tuples, not arrays that happen to
+      // hold two things.
+      .map(
+        (/** @type {[string, Buffer]} */ [file, b]) =>
+          /** @type {[string, ReturnType<typeof imageSize>]} */ ([
+            file,
+            imageSize(b),
+          ]),
+      )
       .filter(([, size]) => size),
   );
   const shots = new Map(
@@ -1013,15 +1416,16 @@ const main = () => {
   // Nothing is selected and nothing is dropped: every recording the report
   // names is published, or the build has already refused above.
   const files = reconcileFiles({
-    desired: videoFiles(candidates),
+    desired: {},
     published: publishedPath
       ? JSON.parse(readFileSync(publishedPath, 'utf8'))
       : [],
   });
   assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
-  const videos = new Map(
-    candidates.map((c) => [c.key, publishedVideoPath(c.key)]),
-  );
+  const videos = assetVideoPaths({
+    uploaded: assetsPath ? JSON.parse(readFileSync(assetsPath, 'utf8')) : {},
+    candidates,
+  });
 
   const html = renderEvidencePage({
     manifest,
@@ -1049,4 +1453,8 @@ const main = () => {
   console.log(PUBLISH_NOTE);
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// Only when run, never when imported: the tests import the functions above.
+// Node answers "was I run directly?" itself. Comparing `import.meta.url` with
+// the raw path skipped the build, in silence, from any checkout whose path held
+// a space (#221, `tests/unit/script-entry.test.ts`).
+if (import.meta.main) main();

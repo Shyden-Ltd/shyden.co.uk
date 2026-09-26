@@ -390,9 +390,21 @@ export function parseRoster(
     };
   }
 
-  /** Column index by our own key, via the locale's header word. */
-  const indexOf = (column: CsvColumn): number =>
-    header.indexOf(table.columns[column].toLowerCase());
+  /**
+   * Column index by our own key, via the locale's header word -- then via
+   * any word this locale used to write, so a file exported before a header
+   * was corrected still reads (#252). Current word wins, always.
+   */
+  const indexOf = (column: CsvColumn): number => {
+    for (const word of [
+      table.columns[column],
+      ...(table.supersededColumns?.[column] ?? []),
+    ]) {
+      const found = header.indexOf(word.toLowerCase());
+      if (found !== -1) return found;
+    }
+    return -1;
+  };
 
   const numberAt = indexOf('number');
   if (numberAt === -1) {
@@ -564,8 +576,13 @@ export function detectLocale(text: string): Locale | null {
 
   const score = (locale: Locale): number => {
     const table = CSV_LOCALES[locale];
+    // Superseded words count too: a file is no less Indonesian for having
+    // been exported before one of its headers was corrected.
     const words = new Set(
-      Object.values(table.columns).map((w) => w.toLowerCase()),
+      [
+        ...Object.values(table.columns),
+        ...Object.values(table.supersededColumns ?? {}).flat(),
+      ].map((w) => w.toLowerCase()),
     );
     const fromHeader = (header ?? []).filter((h) => words.has(h)).length;
     const fromComment = comments.some((c) =>

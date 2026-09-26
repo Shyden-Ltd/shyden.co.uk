@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { expectNoHorizontalScroll } from '../viewport';
 test('custom 404 renders branded not-found copy', async ({ page }) => {
   const res = await page.goto('/no-such-page-xyz');
   expect(res?.status()).toBe(404);
@@ -40,12 +41,7 @@ test.describe('404 page — mobile-first layout', () => {
       async ({ page }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/no-such-page-xyz');
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }

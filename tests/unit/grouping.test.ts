@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { searched } from '../source-files';
 import {
+  anonymousStudent,
   buildGroups,
   ERROR_CODES,
   WARNING_CODES,
@@ -75,6 +76,12 @@ describe('the module surface', () => {
         'ERROR_CODES',
         'MAX_STUDENTS',
         'WARNING_CODES',
+        // The blank record, reached by `roster-ui.ts` (a teacher adding a
+        // row), `numberSets.ts` (the number-set builder) and the test
+        // factory. It was a private `anonymous` here and an exported
+        // `anonymousStudent` in roster-ui.ts, character-identical, until
+        // #277 — a second definition of what an empty field means.
+        'anonymousStudent',
         'buildGroups',
         // Exported ONLY so 'weaveBySex never drops a block, whatever `sex`
         // holds' below can call it directly. `buildGroups`'s own public
@@ -331,16 +338,40 @@ describe('buildGroups — students with and without names', () => {
     ]);
   });
 
-  it('a bare count produces a fully-defaulted record, matching the factory field-for-field', () => {
-    // anonymous() here and student() in factories.ts are two independent
-    // definitions of "a student with nothing set". A per-field assertion
-    // only guards fields both sides remember to check; a whole-object
-    // comparison also catches a field added to (or dropped from) one side
-    // and not the other, which per-field checks cannot. Fix round 1, F-2.
+  it('a bare count produces a fully-defaulted record, field for field', () => {
+    // A LITERAL, not a comparison against `student()` in factories.ts.
+    //
+    // This assertion used to compare the two, because they were independent
+    // definitions of "a student with nothing set" and a whole-object
+    // comparison catches a field one side gains and the other misses (Fix
+    // round 1, F-2). #277 gave the blank record one home —
+    // `anonymousStudent` below — which both now build on, and a value
+    // compared against the thing it is computed from is green at any value
+    // (#117). The independence that made the old form work is gone, so the
+    // pin has to come from outside the code: these six fields, spelled out,
+    // are what a record with no teacher behind it means.
     const { groups } = ok(
       base({ students: 1, mode: { kind: 'perGroup', size: 1 } }),
     );
-    expect(groups.flat()[0]).toEqual(student({ number: 1 }));
+    expect(groups.flat()[0]).toEqual({
+      number: 1,
+      name: null,
+      sex: null,
+      absent: false,
+      together: null,
+      apart: null,
+    });
+  });
+
+  it('builds that record through the one home every other caller uses', () => {
+    // The seam the literal above protects: `roster-ui.ts`, `numberSets.ts`
+    // and the test factory all reach this constructor, so a seventh field
+    // added to `Student` is defaulted once and the typechecker names the one
+    // place that has to decide what it defaults to.
+    const { groups } = ok(
+      base({ students: 1, mode: { kind: 'perGroup', size: 1 } }),
+    );
+    expect(groups.flat()[0]).toEqual(anonymousStudent(1));
   });
 
   it('keeps every student, including two who share a name, because identity is the number', () => {

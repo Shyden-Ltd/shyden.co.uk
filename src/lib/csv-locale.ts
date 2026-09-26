@@ -63,6 +63,20 @@ export interface CsvLocale {
   classComment: string;
   /** Header word per column, in write order. */
   columns: Record<CsvColumn, string>;
+  /**
+   * Header words this locale USED to write, still accepted on import.
+   *
+   * A header word here is a PARSING TOKEN, not display copy: `parseRoster`
+   * finds a column by it, and `at()` returns '' for a column it cannot find
+   * -- silently, with no problem reported. So correcting a word without
+   * keeping the old one readable would make every file a teacher had
+   * already downloaded import with that column blank and no error shown.
+   *
+   * Declared beside the current word rather than special-cased in the
+   * parser, so the parser stays a loop over a list and the history of a
+   * column lives with the column.
+   */
+  supersededColumns?: Partial<Record<CsvColumn, readonly string[]>>;
   /** The two sex tokens. Blank always means unset, in both languages. */
   sex: { M: string; F: string };
   /** Absent is `absentYes`; present is blank OR `absentNo`. */
@@ -157,13 +171,16 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     // reviewer may prefer native tokens; both places change together.
     sex: { M: 'M', F: 'F' },
     columns: {
-      number: '数字',
-      name: '名称',
-      sex: '性',
+      number: '编号',
+      name: '姓名',
+      sex: '性别',
       absent: '缺席',
       together: '一起',
       apart: '分开',
     },
+    // Written as these headers until #252 (name, sex) and #319 (number,
+    // which read as "numeral") corrected them.
+    supersededColumns: { number: ['数字'], name: ['名称'], sex: ['性'] },
     absentYes: '是',
     absentNo: '不',
     groupColumn: '组',
@@ -182,11 +199,13 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     columns: {
       number: 'số',
       name: 'tên',
-      sex: 'tình dục',
+      sex: 'giới tính',
       absent: 'vắng mặt',
       together: 'cùng nhau',
-      apart: 'riêng biệt',
+      apart: 'tách biệt',
     },
+    // Written as the sex header until #252 corrected it.
+    supersededColumns: { sex: ['tình dục'], apart: ['riêng biệt'] },
     absentYes: 'đúng vậy',
     absentNo: 'không',
     groupColumn: 'nhóm',
@@ -203,13 +222,16 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     // reviewer may prefer native tokens; both places change together.
     sex: { M: 'M', F: 'F' },
     columns: {
-      number: 'ตัวเลข',
+      number: 'หมายเลข',
       name: 'ชื่อ',
       sex: 'เพศ',
       absent: 'ไม่มา',
       together: 'ด้วยกัน',
       apart: 'แยกกัน',
     },
+    // Written as the number header until #319 corrected it: ตัวเลข is a
+    // numeral, หมายเลข a student's number.
+    supersededColumns: { number: ['ตัวเลข'] },
     absentYes: 'ใช่',
     absentNo: 'ไม่',
     groupColumn: 'กลุ่ม',

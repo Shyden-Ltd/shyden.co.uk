@@ -1,8 +1,13 @@
 import { test, expect } from './fixtures';
-import { shoot } from './evidence';
+import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { expectNoHorizontalScroll } from '../viewport';
+import { THEMES } from '../palette';
+import { emulateTheme } from '../themes';
+
+test.use(recorded);
 
 // Unset in test builds, so the page falls back to the production host. The
 // dev deploy sets PUBLIC_SHYTALK_URL and is covered by the deploy-gate specs.
@@ -113,6 +118,32 @@ test.describe('homepage content', () => {
       page,
       'the ShyTalk showcase and its two-tone wordmark',
       showcase,
+    );
+    // #142 §3.4, AC14: the mark keeps its own tones in both themes, sits on
+    // its own tile in light and on nothing in dark, and prints in the
+    // page's own ink with no tile. The tile is pinned to SHYTALK_MARK, the
+    // brief, never read back from tokens.css: a value read from the file the
+    // page is built from moves with the page, and asserts nothing (S22).
+    const tile = {
+      light: asComputedRgb(SHYTALK_MARK.tile),
+      dark: 'rgba(0, 0, 0, 0)',
+    } as const;
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
+      await expect(wordmark, theme).toHaveCSS(
+        'color',
+        asComputedRgb(SHYTALK_MARK.shy),
+      );
+      await expect(wordmark, theme).toHaveCSS('background-color', tile[theme]);
+    }
+    await page.emulateMedia({ media: 'print' });
+    const ink = await page
+      .locator('body')
+      .evaluate((body) => getComputedStyle(body).color);
+    await expect(wordmark, 'on paper').toHaveCSS('color', ink);
+    await expect(wordmark, 'on paper').toHaveCSS(
+      'background-color',
+      'rgba(0, 0, 0, 0)',
     );
   });
 
@@ -248,12 +279,7 @@ test.describe('mobile-first layout', () => {
       async ({ page }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/');
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        const overflow = await expectNoHorizontalScroll(page);
         // This is the guard the marquee tripped: a rotated-and-scaled element
         // is not clipped by an ancestor's `overflow`, so it pushed 10px of
         // sideways scroll at every width. 1217 unit tests could not see it.

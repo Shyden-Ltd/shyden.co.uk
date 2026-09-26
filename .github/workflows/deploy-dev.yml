@@ -1,4 +1,4 @@
-name: Release — dev (deploy + verify, gates the merge)
+name: Deploy to dev (deploy + verify, gates promotion to main)
 # THE PROMOTION GATE. Fires on every push to `develop`. Proves the merged tree
 # is the tree that passed on its PR (a dispatched branch runs the full suite
 # instead), deploys to dev, then VERIFIES the deployed dev site and posts a
@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-dev-shyden
+  group: deploy-dev-shyden
   cancel-in-progress: false
 
 permissions:
@@ -53,7 +53,7 @@ jobs:
   gate:
     name: Gate — this tree already passed on its PR
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -77,48 +77,26 @@ jobs:
   # arbitrary branch has no second parent and no PR checks — nothing for the
   # gate above to verify. That path therefore still runs everything. Dropping
   # it would quietly remove a documented capability rather than speed it up.
+  #
+  # It CALLS ci.yml rather than keeping a copy of its steps (#163). A push
+  # deploys because ci.yml's build-and-test passed on the tree, so a dispatched
+  # branch must be judged by that same suite; a copy was held equal to it by a
+  # test until the suite was split into shards, when a copy became three jobs
+  # that could each drift. Called, it is the same file: the same checks, the
+  # same shards, and build-and-test's verdict over them.
+  #
+  # No `runs-on` and no `timeout-minutes`: GitHub refuses both on a calling
+  # job, and every job it calls carries its own. A called workflow's token can
+  # only be narrowed, so this job grants what ci.yml's jobs ask for -- `issues:
+  # read` for the dependabot-label check -- and
+  # tests/unit/pipeline-wiring.test.ts fails if they part.
   test:
     name: Comprehensive web tests
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
-    # 45, not 25. MEASURED 2026-09-12: `npm run test:e2e` alone took 26m13s on
-    # the tree that became c100e59, so the old 25-minute budget cancelled this
-    # job at 24m02s and SKIPPED both the deploy and the verify. A cancelled run
-    # posts no red gate, so it read as "nothing happened" while `develop` moved
-    # and dev stayed on the previous commit. `ci.yml` then ran the same suite
-    # with no budget at all, which is why the merge gate never saw it coming;
-    # it now carries this same budget (#157). Guarded by
-    # tests/unit/pipeline-wiring.test.ts, which fails if any job running the
-    # suite carries a different one.
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run format
-      - run: npm run build
-      - run: npm run typecheck
-      - run: npm run test:unit
-      - run: npx playwright install --with-deps
-      - run: npm run test:e2e
-      # Only when something failed, and only then. `actions/upload-artifact`
-      # is first-party -- the same `actions` org as checkout and setup-node
-      # above -- so this adds no new trust boundary, and it is SHA-pinned with
-      # its version comment like every other action here.
-      - name: Keep the failing run's Playwright traces
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}
-          path: test-results/
-          retention-days: 14
-          # `warn`, never `ignore`: `ignore` is the one value that lets this
-          # step go GREEN having preserved nothing, and this step IS the
-          # evidence path for a red run (#131).
-          if-no-files-found: warn
+    permissions:
+      contents: read
+      issues: read
+    uses: ./.github/workflows/ci.yml
 
   # ---- Dev deploy --------------------------------------------------------
   deploy-dev:
@@ -133,7 +111,7 @@ jobs:
     if: >-
       !failure() && !cancelled() &&
       (needs.gate.result == 'success' || needs.test.result == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: dev
@@ -153,9 +131,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          npm install -g wrangler@4
-          wrangler pages deploy dist --project-name shyden-site-dev --branch main
+        run: npx wrangler pages deploy dist --project-name shyden-site-dev --branch main
 
   # ---- Verify the DEPLOYED dev site, then post dev-verified --------------
   # This job is the point of the whole file. Before it existed, "deployed to
@@ -176,8 +152,15 @@ jobs:
     # because a plain scalar starting with `!` is a YAML tag (#157).
     if: >-
       !cancelled() && needs.deploy-dev.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
+    # It reads DEV_BASIC_AUTH_PASSWORD, so it names the environment holding it.
+    # A job naming none reads repository secrets, and those reach a workflow on
+    # any branch (#241). The url repeats deploy-dev's, because the environment
+    # links to its latest deployment, and that is this job's.
+    environment:
+      name: dev
+      url: https://dev.shyden.co.uk
     permissions:
       contents: read
       statuses: write

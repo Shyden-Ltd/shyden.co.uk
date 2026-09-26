@@ -10,6 +10,7 @@
  * the means of producing it.
  */
 import {
+  anonymousStudent,
   buildGroups,
   type Student,
   type Mode,
@@ -29,8 +30,8 @@ import {
 } from '../lib/roster';
 import {
   renderRoster,
-  anonymousStudent,
   type RosterHandlers,
+  type PrintColumn,
 } from './roster-ui';
 import {
   envelopeTotalS,
@@ -61,11 +62,18 @@ import {
   isLocale,
   renderError,
   renderWarning,
+  renderNumbersProblem,
   groupName,
   resultsHeadingText,
   type Locale,
   type Strings,
 } from '../lib/i18n';
+import {
+  parseNumberSets,
+  studentsForInput,
+  type NumberFields,
+  type NumberSetsProblem,
+} from '../lib/numberSets';
 import { sexWhy, sexWhyReturning } from '../lib/sexOptions';
 import { renderIo } from './io-ui';
 import { renderPrintPanel } from './print-ui';
@@ -86,6 +94,7 @@ import land2AssetUrl from '../assets/sfx/land-2.m4a';
 import land3AssetUrl from '../assets/sfx/land-3.m4a';
 import land4AssetUrl from '../assets/sfx/land-4.m4a';
 import doneAssetUrl from '../assets/sfx/done.m4a';
+import { enhanceReportForm } from './report-form';
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T | null;
@@ -353,6 +362,10 @@ if (form) {
   const errorBox = $<HTMLParagraphElement>('cg-error')!;
   const results = $<HTMLElement>('cg-results')!;
   const resultsHeadingEl = $<HTMLHeadingElement>('cg-results-h')!;
+  // #188, AC13. Says how many were actually grouped when that differs from
+  // the number typed, so a teacher never has to notice a missing pupil by
+  // counting the cards.
+  const groupedNoteEl = $<HTMLParagraphElement>('cg-grouped-note')!;
   const classInput = $<HTMLInputElement>('cg-class')!;
   const summary = $<HTMLParagraphElement>('cg-summary')!;
   // Stage 3, Task 9. The <ul> a successful shuffle's own `warnings` render
@@ -705,6 +718,137 @@ if (form) {
   const countInput = $<HTMLInputElement>('cg-count')!;
   const countHelpEl = $<HTMLParagraphElement>('cg-count-help')!;
   const countLockedEl = $<HTMLParagraphElement>('cg-count-locked')!;
+
+  // #188. The three number fields, cached the same way `countInput` above
+  // is, and for the same reason: each is read AND written on every pass.
+  const absentInput = $<HTMLInputElement>('cg-numbers-absent')!;
+  const togetherInput = $<HTMLInputElement>('cg-numbers-together')!;
+  const apartInput = $<HTMLInputElement>('cg-numbers-apart')!;
+  const numbersLockedEl = $<HTMLParagraphElement>('cg-numbers-locked')!;
+  const numbersProblemEl = $<HTMLParagraphElement>('cg-numbers-problem')!;
+  // Which help paragraph describes which field is read from the MARKUP's own
+  // `aria-describedby`, not from a second list here. A list would be a
+  // second place the pairing is written, and the two would drift the first
+  // time an id changed.
+  const numberFields = [absentInput, togetherInput, apartInput].map((input) => {
+    const helpId = input.getAttribute('aria-describedby')!;
+    return { input, helpId, help: $<HTMLParagraphElement>(helpId)! };
+  });
+
+  /**
+   * The three fields, parsed against whatever `#cg-count` holds right now.
+   *
+   * The FIRST problem wins, absent then together then apart, matching the
+   * order they appear on the page -- `updateRosterValidation` renders
+   * `problems[0]` for the identical reason: a teacher fixes one thing, then
+   * is told the next, rather than being handed a list to triage.
+   */
+  const readNumberFields = (): {
+    fields: NumberFields;
+    problem: NumberSetsProblem | null;
+  } => {
+    const count = readCount();
+    const absent = parseNumberSets(absentInput.value, {
+      count,
+      kind: 'absent',
+    });
+    const together = parseNumberSets(togetherInput.value, {
+      count,
+      kind: 'pairing',
+    });
+    const apart = parseNumberSets(apartInput.value, { count, kind: 'pairing' });
+    return {
+      fields: {
+        absent: absent.sets,
+        together: together.sets,
+        apart: apart.sets,
+      },
+      problem: absent.problem ?? together.problem ?? apart.problem,
+    };
+  };
+
+  /**
+   * The ONE writer of `goButton.disabled`, reading BOTH things that can
+   * stand between a teacher and a shuffle.
+   *
+   * Two writers would be rivals: whichever ran last would win, so a clean
+   * number field could silently clear a roster problem that still stands.
+   * `updateRosterValidation` therefore hands the decision here rather than
+   * setting the property itself.
+   */
+  const updateGoButton = () => {
+    // Copied, not passed straight through: `getRoster()` hands back a
+    // `readonly Student[]` and `rosterProblems` takes a mutable one, which
+    // is the same reason `updateRosterValidation` below spreads it too.
+    const rosterStops = rosterProblems([...getRoster()], t).length > 0;
+    const numbersStop = readNumberFields().problem !== null;
+    goButton.disabled = rosterStops || numbersStop;
+    // ...and the ONE writer of the reason too, for the reason it is the one
+    // writer of `disabled`: two writers would be rivals, and a button that
+    // says nothing about why it will not move is #250's whole subject. The
+    // ids name the very paragraphs `updateRosterValidation` and
+    // `updateNumbersValidation` fill, so the text a screen reader is handed
+    // and the text on the page are the same node (AC10), and the description
+    // names only the problems that are actually standing right now.
+    const describedBy = [
+      rosterStops ? 'cg-roster-problem' : null,
+      numbersStop ? 'cg-numbers-problem' : null,
+    ].filter((id) => id !== null);
+    if (describedBy.length > 0) {
+      goButton.setAttribute('aria-describedby', describedBy.join(' '));
+    } else {
+      goButton.removeAttribute('aria-describedby');
+    }
+  };
+
+  /**
+   * Hide/show the region, THEN write into it -- the same ordering
+   * `updateRosterValidation` keeps, so a live region is never announced as
+   * already-populated.
+   */
+  const updateNumbersValidation = () => {
+    const { problem } = readNumberFields();
+    if (problem === null) {
+      numbersProblemEl.hidden = true;
+      numbersProblemEl.textContent = '';
+    } else {
+      numbersProblemEl.hidden = false;
+      const message = renderNumbersProblem(problem, readCount(), t);
+      if (numbersProblemEl.textContent !== message) {
+        numbersProblemEl.textContent = message;
+      }
+    }
+    updateGoButton();
+  };
+
+  /**
+   * AC14. The list and these fields are never both in charge, exactly as
+   * the list and `#cg-count` are never both in charge -- `studentsBoxLocked`
+   * is the same single fact behind both, which is why this asks it rather
+   * than deciding for itself.
+   *
+   * A locked field cannot be edited, so a refusal it was showing is about
+   * text nobody can change any more: it is cleared, leaving the roster's own
+   * problems as the only thing that can hold the button.
+   */
+  const updateNumberFields = () => {
+    const locked = studentsBoxLocked(getRoster());
+    for (const field of numberFields) {
+      field.input.disabled = locked;
+      field.input.setAttribute(
+        'aria-describedby',
+        locked ? 'cg-numbers-locked' : field.helpId,
+      );
+      field.help.hidden = locked;
+    }
+    numbersLockedEl.hidden = !locked;
+    if (locked) {
+      numbersProblemEl.hidden = true;
+      numbersProblemEl.textContent = '';
+    }
+    updateGoButton();
+  };
+
   const updateStudentsBox = () => {
     if (studentsBoxLocked(getRoster())) {
       // "Reports the list" -- overwritten to the roster's own length on
@@ -788,22 +932,30 @@ if (form) {
       const student = current[i];
       if (!student) return;
       row.dataset.absent = String(student.absent);
-      const values = row.querySelectorAll<HTMLElement>('.cg-print-value');
-      const texts = [
-        String(student.number),
-        student.name ?? '',
-        student.sex === 'M'
-          ? t.rosterSexMale
-          : student.sex === 'F'
-            ? t.rosterSexFemale
-            : t.rosterUnset,
-        student.absent ? '\u2611' : '\u2610',
-        student.together ?? t.rosterUnset,
-        student.apart ?? t.rosterUnset,
-      ];
-      values.forEach((el, j) => {
-        if (texts[j] !== undefined && el.textContent !== texts[j]) {
-          el.textContent = texts[j];
+      // Keyed by COLUMN, never by position. The row is built Absent-first
+      // and these values are written number-first, so the positional mapping
+      // this replaced put every value one cell early -- see `PrintColumn`'s
+      // own comment in roster-ui.ts for what that printed (#253). A mirror
+      // carries the column it belongs to, so reordering the table can no
+      // longer re-point them without anyone noticing.
+      const texts: Record<PrintColumn, string> = {
+        number: String(student.number),
+        name: student.name ?? '',
+        sex:
+          student.sex === 'M'
+            ? t.rosterSexMale
+            : student.sex === 'F'
+              ? t.rosterSexFemale
+              : t.rosterUnset,
+        absent: student.absent ? '\u2611' : '\u2610',
+        together: student.together ?? t.rosterUnset,
+        apart: student.apart ?? t.rosterUnset,
+      };
+      row.querySelectorAll<HTMLElement>('.cg-print-value').forEach((el) => {
+        const column = el.dataset.col as PrintColumn | undefined;
+        const text = column === undefined ? undefined : texts[column];
+        if (text !== undefined && el.textContent !== text) {
+          el.textContent = text;
         }
       });
     });
@@ -864,6 +1016,7 @@ if (form) {
     updateIoHeader();
     updateStudentsHeader();
     updateStudentsBox();
+    updateNumberFields();
     updateSexSwitches(previous);
     relabelResults();
     refreshPrintMirrors();
@@ -872,6 +1025,7 @@ if (form) {
   updateIoHeader();
   updateStudentsHeader();
   updateStudentsBox();
+  updateNumberFields();
   // The initial call passes the CURRENT roster as its own "previous": on
   // first paint nothing has changed yet, and `sexWhyReturning` comparing a
   // roster against itself finds nobody who came back, which is the truth.
@@ -970,6 +1124,11 @@ if (form) {
   form.addEventListener('input', () => {
     finishDealNow();
     updateStaleness();
+    // #188, AC12. This listener is delegated across the WHOLE form, so it
+    // fires for `#cg-count` as well as for the three number fields:
+    // lowering the count below a number already typed re-validates the
+    // moment it happens, rather than waiting to fail at "Make groups".
+    updateNumbersValidation();
   });
 
   // ── student roster (Student details' table) ─────────────────────────────
@@ -1091,7 +1250,9 @@ if (form) {
       }
     }
 
-    goButton.disabled = problems.length > 0;
+    // Handed to the ONE writer rather than set here -- see `updateGoButton`'s
+    // own doc comment for why two writers of this property would be rivals.
+    updateGoButton();
   };
 
   /** The one place a per-field roster edit becomes real. `setRoster`'s own
@@ -2028,14 +2189,26 @@ if (form) {
     const mode = readMode();
 
     const count = readCount();
+    // The roster takes over the moment it is non-empty; `count` is the
+    // fallback for the case where a teacher never opens Student details at
+    // all. `roster` here is the SAME module-scope array getRoster/setRoster
+    // manage -- see their own doc comment above -- so this can never read a
+    // different roster than the one a later stage's table renders or exports.
+    //
+    // #188. A roster still wins outright. Otherwise the three number fields
+    // decide, and `studentsForInput` hands back the bare `count` while all
+    // three are empty (AC7), so a teacher who never touches them takes
+    // exactly the path they always did.
+    //
+    // Held in a const rather than built inline, because AC13's note below has
+    // to compare what went IN against what came out. Re-reading the fields
+    // down there could disagree with what was actually grouped.
+    const students =
+      roster.length > 0
+        ? roster
+        : studentsForInput(count, readNumberFields().fields);
     const outcome = buildGroups({
-      // The roster takes over the moment it is non-empty; `count` is the
-      // fallback for the (still common, this stage) case where a teacher
-      // never opens Student details at all. `roster` here is the SAME
-      // module-scope array getRoster/setRoster manage -- see their own
-      // doc comment above -- so this can never read a different roster
-      // than the one a later stage's table renders or exports.
-      students: roster.length > 0 ? roster : count,
+      students,
       mode,
       leftovers: readLeftovers(),
       sexMode: readSexMode(), // live as of Stage 3, Task 9 -- see that function
@@ -2134,6 +2307,38 @@ if (form) {
       warningsList.appendChild(li);
     }
 
+    // #188, AC13. How many were actually grouped, shown only when that
+    // differs from how many went in -- "a teacher must never be left to
+    // notice a missing pupil by counting".
+    //
+    // DERIVED by subtracting what came out from what went in, rather than
+    // re-reading the three number fields: one rule then covers a roster with
+    // absences ticked in Student details exactly as well as typed numbers,
+    // and it cannot disagree with what was really grouped.
+    //
+    // Cleared, then hidden or shown, then written -- the same three steps in
+    // the same order the warnings above take, and for the same reason: a
+    // `role="status"` region only announces a mutation to something already
+    // in the accessibility tree.
+    const placed = groups.flat();
+    const placedNumbers = new Set(placed.map((s) => s.number));
+    const typed = typeof students === 'number' ? students : students.length;
+    const missing =
+      typeof students === 'number'
+        ? []
+        : students
+            .map((s) => s.number)
+            .filter((number) => !placedNumbers.has(number));
+    groupedNoteEl.textContent = '';
+    groupedNoteEl.hidden = missing.length === 0;
+    if (missing.length > 0) {
+      groupedNoteEl.textContent = t.groupedNote({
+        grouped: placed.length,
+        typed,
+        absent: missing,
+      });
+    }
+
     goButton.textContent = t.again;
     // A fresh shuffle is, by definition, made from exactly what the form
     // says right now -- comparing that against itself returns null, which
@@ -2157,3 +2362,8 @@ if (form) {
     }
   });
 }
+
+// The footer's report form exists only in beta locales (#97).
+const reportForm =
+  document.querySelector<HTMLFormElement>('[data-report-form]');
+if (reportForm) enhanceReportForm(reportForm);

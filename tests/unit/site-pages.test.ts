@@ -44,7 +44,7 @@ describe('the deployed-route table is derived, not written out (#89)', () => {
     // The guard that makes a new page loud instead of silent. Both deploy
     // gates hand-wrote the same three pages -- byte-identical blocks in
     // dev-sanity.spec.ts and prod-sanity.spec.ts -- so a fourth page was
-    // smoked by curl in release-prod.yml and never rendered in a browser by
+    // smoked by curl in deploy-prod.yml and never rendered in a browser by
     // either gate. Measured: `--list` reported 28 tests before and after.
     expect(Object.keys(HEADING_FOR).sort()).toEqual([...sitePaths()].sort());
   });

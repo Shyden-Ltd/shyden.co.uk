@@ -5,7 +5,7 @@ import { REQUIRED_CHECKS, decideDeploy } from '../../scripts/deploy-gate.mjs';
  * The dev deploy may skip re-running the suite ONLY when the bytes it is about
  * to publish are provably the bytes that passed.
  *
- * `release-dev.yml` used to re-run the entire merge gate on every push to
+ * `deploy-dev.yml` used to re-run the entire merge gate on every push to
  * `develop` — the same seven steps `ci.yml` runs, ~26 minutes, on a tree that
  * had already passed them. That duplicate was also the ONLY place the suite ran
  * under a `timeout-minutes`, which is how run 34676066071 was cancelled at
