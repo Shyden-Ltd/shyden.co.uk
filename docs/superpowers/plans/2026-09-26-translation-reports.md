@@ -615,7 +615,9 @@ describe('the report copy is the approved English (#97)', () => {
       with straight ASCII apostrophes as in the test.
 
 - [ ] **Step 4: Draft id, zh, vi and th.** `SiteStrings` is derived from
-      `siteEn`, so `npm run typecheck` now fails on four missing sections. Add a
+      `siteEn`, so `npm run typecheck` now fails on four missing sections, and
+      on `label-check.ts`'s `SITE_PAGES`, a `Record<keyof SiteStrings, string>`
+      with no `report` key (Step 5 maps it). Add a
       `report` section to each, machine-drafted like the rest of the file (no
       native speaker is available, operator 2026-09-20). Each draft follows
       its locale's existing house wording: read that locale's `footer`,
@@ -1911,7 +1913,10 @@ export const onRequest = ({ request, env }) => reportHealth(request, env);
       If Task 2 took assumption 1's fallback, the imports read the generated
       table module instead (Task 5a).
 
-- [ ] **Step 5: The runbook.** Create `docs/runbooks/translation-reports.md`:
+- [ ] **Step 5: The runbook.** Create `docs/runbooks/translation-reports.md`.
+      Spec section 7 writes the delete as `WHERE id = ?`, but the D1 console
+      binds no parameters, so a runbook statement run as written would fail.
+      The runbook spells out the id to replace:
 
 ````markdown
 # Translation reports — runbook (#97)
@@ -1926,7 +1931,8 @@ Run these in the Cloudflare dashboard's D1 console.
 ```sql
 SELECT id, received_at, locale, page, quote, keys, suggestion, note
   FROM reports ORDER BY received_at;
-DELETE FROM reports WHERE id = ?;   -- once the report has been dealt with
+-- once a report has been dealt with, with <id> replaced by its id from the SELECT
+DELETE FROM reports WHERE id = '<id>';
 -- dev database only: the rows the dev sanity suite writes, one per dev deploy
 DELETE FROM reports WHERE note LIKE 'automated dev check %';
 ```
@@ -3180,8 +3186,11 @@ git commit -m "test(report): the deployed health checks and one real dev submiss
 ```
 
 - [ ] **Step 5: Mutate.** Delete the `annotation` from the prod test → predict
-      RED on `sanity-on-build.test.ts`'s "must carry a deployed-only
-      annotation". Restore.
+      RED on `sanity-on-build.test.ts`'s `tests tagged @deployed-only each
+      says, where it is written, why only the deployed site can answer it`,
+      with the message "a @deployed-only test must carry a deployed-only
+      annotation with a reason", and the file's other five tests green
+      (measured in review pass 5). Restore.
 
 ---
 
@@ -3229,6 +3238,15 @@ git commit -m "test(visual): home-id baselines carry the report disclosure (Refs
       body says `Refs #97` and never puts a closing keyword beside the number.
 - [ ] **Step 5: Wait for CI in the background**, then read every job by name
       on the head SHA, read from `gh pr view --json headRefOid` into a file.
+      The PR touches `src/lib/i18n/`, so `back-translation.yml`'s
+      `back-translation review` runs too. It fails only when the engine errors
+      or nothing was read back (`livenessProblems`), never on a score, so its
+      green says nothing about the Task 4
+      drafts. Download its artifact
+      (`gh run download <run id> -n back-translation`), read every `report.*`
+      row, and redraft any whose back-translation names a different thing.
+      Its score cannot judge a short label (`Tình dục` scored 100); those are
+      `label-check`'s, in Task 4 Step 6.
 - [ ] **Step 6: The merge waits on the operator's Cloudflare setup** (steps
       1–2). Once he confirms, merge with a merge commit, watch the dev deploy,
       read `dev-verified` off the commit and each job by name, close #97 with
@@ -3462,3 +3480,52 @@ escape.
     has no tests. It adds the enhancement call and runs on `content`: RED on
     all 16 pages. Task 3's mutation also named one of two tests sharing a
     title; it names the catalogue one.
+
+**Pass 5 (2026-09-26, `origin/develop` at 9782fa4, the branch level with it;
+the harness re-run on a fresh worktree, the path check, and a full read of
+every line): 5 findings, all fixed, and 3 harness defects.** On the
+assembled tree: `astro check` 0 errors, 0 warnings, 0 hints; the unit suite
+2,571 passed and 1 failed, `i18n.test.ts`, naming only the twelve `report.*`
+placeholder drafts; the three e2e specs 56/56 on chromium. All 41 mutations
+the harness now holds ran, each RED where the plan predicts: Task 1's two,
+Task 3's, Task 4's, Task 5's seven, Task 6's eleven, Task 7's three, Task
+8's seven, Task 9's four, both halves of Task 10's (i), Task 11's two and
+Task 12's. 11a turned 8 tests RED with classroom-groups' 4 green, and 11b
+turned exactly those 4 RED. Task 10's other eight still need wrangler and
+Task 2's measurements. The path check: every path absent from
+`origin/develop` is created by a named task, is the spec, a conditional
+fallback's output, a build output, a throwaway, or not a path (`/vi/`,
+`linux/amd64`). No backslash-u escape. After the fixes, re-extracting the
+plan's 52 blocks showed only the runbook's changed, and assembly does not
+read it, so the run above stands for the fixed plan.
+
+1. Task 4 Step 4 predicted `astro check` failing on four missing sections.
+   It fails on a fifth, `label-check.ts`'s `SITE_PAGES`, a
+   `Record<keyof SiteStrings, string>` that Step 5 maps.
+2. Nothing read the back-translation of the Task 4 drafts. The PR runs
+   `back-translation review`, which fails only when the engine errors or
+   reads nothing back, never on a score. Task 14 Step 5 now downloads its
+   report and reads every `report.*` row.
+3. The runbook's `DELETE FROM reports WHERE id = ?;`, copied from spec 7,
+   cannot run in the D1 console, which binds no parameters. It names the
+   `'<id>'` to replace.
+4. Pass 4's log counted 40 mutations run and 8 deferred, and Task 12's
+   annotation mutation was in neither count. It had never run. It runs now,
+   RED as predicted.
+5. That mutation's prediction quoted the assertion's message as if it were a
+   test title. It names the test,
+   `tests tagged @deployed-only each says, where it is written, why only
+   the deployed site can answer it`, and gives the message beside it.
+
+The harness (`.superpowers/sdd/97-plan-review/`, gitignored):
+- Mutation 4's anchor matched five times, because the English placeholders
+  copy `siteEn` into every locale, so it never applied. It now edits the
+  occurrence inside `siteEn` and asserts it lies there.
+- Four of pass 4's mutations had been run by hand and were never added to the
+  harness: Task 3's, Task 9's (d) and Task 11's two. They are in it now, with
+  Task 12's. Task 9 (d) listed eight unrendered keys, `report.quoteLabel`
+  and `report.honeypotLabel` among them.
+- `mutate.py` read `mut-<id>.json` without deleting the previous run's copy
+  first, so a vitest run that wrote no report would have been scored from
+  the stale file. It deletes the file before each run, and restores the
+  mutated file in a `finally`.
