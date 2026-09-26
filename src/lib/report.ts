@@ -13,6 +13,8 @@ import { catalogueLeaves } from './catalogue-leaves';
 import {
   DEFAULT_LOCALE,
   getSiteStrings,
+  isBetaLocale,
+  isLocale,
   localisePath,
   rawCatalogue,
   type Locale,
@@ -299,4 +301,218 @@ export function matchingKeys(
       forms.some((form) => matchesForm(needle, form, locale)),
     )
     .map(({ key }) => key);
+}
+
+export const MAX_FIELD_UNITS = 1000;
+export const MAX_BODY_BYTES = 65536;
+/** The `reports` table's columns, as `migrations/0001_reports.sql` creates them. */
+export const REPORT_COLUMNS = [
+  'id',
+  'received_at',
+  'locale',
+  'page',
+  'quote',
+  'keys',
+  'suggestion',
+  'note',
+] as const;
+
+export type Outcome = 'sent' | 'not-found' | 'rejected' | 'failed';
+
+/** The slice of D1's prepared statement this module uses. */
+export interface ReportsStatement {
+  bind(...values: unknown[]): ReportsStatement;
+  run(): Promise<unknown>;
+  all<T>(): Promise<{ results: T[] }>;
+}
+
+/** The slice of a D1 binding this module uses. */
+export interface ReportsDatabase {
+  prepare(query: string): ReportsStatement;
+}
+
+/** The Pages Functions' `env`: absent `REPORTS` is a real failure, reported as such. */
+export interface ReportEnv {
+  readonly REPORTS?: ReportsDatabase;
+}
+
+const JSON_STATUS: Record<Outcome, number> = {
+  sent: 200,
+  'not-found': 422,
+  rejected: 400,
+  failed: 503,
+};
+/** `_headers` does not apply to Function responses, so every answer sets its own (spec 6.1). */
+const ALWAYS = {
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+} as const;
+const FORM_TYPE = 'application/x-www-form-urlencoded';
+const INSERT = `INSERT INTO reports (${REPORT_COLUMNS.join(', ')}) VALUES (${REPORT_COLUMNS.map((_, at) => `?${at + 1}`).join(', ')})`;
+const HEALTH_QUERY = "SELECT name FROM pragma_table_info('reports')";
+
+const plain = (status: number, extra: Record<string, string> = {}): Response =>
+  new Response(null, { status, headers: { ...ALWAYS, ...extra } });
+
+const json = (body: unknown, status: number): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...ALWAYS, 'Content-Type': 'application/json; charset=utf-8' },
+  });
+
+const wantsJson = (request: Request): boolean =>
+  (request.headers.get('Accept') ?? '').includes('application/json');
+
+/** Redirect mode's target is built from checked values only: nothing the visitor typed reaches a header. */
+const outcome = (
+  result: Outcome,
+  request: Request,
+  locale: Locale,
+  page: PageId,
+): Response =>
+  wantsJson(request)
+    ? json({ outcome: result }, JSON_STATUS[result])
+    : plain(303, { Location: `${pagePath(page, locale)}#report-${result}` });
+
+/** Below U+0020 except TAB and LF, or U+007F–U+009F: nothing a browser form sends. */
+const hasControlCharacter = (text: string): boolean =>
+  [...text].some((ch) => {
+    const point = ch.codePointAt(0)!;
+    return (
+      (point < 0x20 && point !== 0x09 && point !== 0x0a) ||
+      (point >= 0x7f && point <= 0x9f)
+    );
+  });
+
+const within = (text: string, min: number): boolean =>
+  text.length >= min &&
+  text.length <= MAX_FIELD_UNITS &&
+  !hasControlCharacter(text);
+
+/** A textarea's maxlength counts a line break as one unit; submission sends CRLF (spec 6.1). */
+const field = (fields: URLSearchParams, name: string): string =>
+  (fields.get(name) ?? '').replace(/\r\n/g, '\n');
+
+const describeError = (error: unknown): string =>
+  error instanceof Error
+    ? `${error.name}: ${error.message}`
+    : 'NonError: a value that is not an Error was thrown';
+
+/**
+ * The body, or null once it passes `cap` bytes. A chunked body declares no
+ * Content-Length, so `arrayBuffer()` would hold all of it (up to the
+ * platform's 100 MB) before check 4 could refuse it.
+ */
+async function readCapped(
+  request: Request,
+  cap: number,
+): Promise<Uint8Array | null> {
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    size += read.value.byteLength;
+    if (size > cap) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(read.value);
+  }
+  const body = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return body;
+}
+
+export async function handleReport(
+  request: Request,
+  env: ReportEnv,
+  log: (line: string) => void = console.error,
+): Promise<Response> {
+  if (request.method !== 'POST') return plain(405, { Allow: 'POST' });
+  const origin = request.headers.get('Origin');
+  if (origin === null || origin !== new URL(request.url).origin)
+    return plain(403);
+  const type = (request.headers.get('Content-Type') ?? '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
+  if (type !== FORM_TYPE) return plain(415);
+  if (Number(request.headers.get('Content-Length') ?? 0) > MAX_BODY_BYTES)
+    return plain(413);
+  const body = await readCapped(request, MAX_BODY_BYTES);
+  if (body === null) return plain(413);
+
+  const fields = new URLSearchParams(new TextDecoder().decode(body));
+  const locale = fields.get('locale');
+  const page = fields.get('page');
+  if (!isLocale(locale) || !isBetaLocale(locale) || !isPageId(page))
+    return wantsJson(request) ? json({ outcome: 'rejected' }, 400) : plain(400);
+
+  if (field(fields, 'website') !== '')
+    return outcome('sent', request, locale, page);
+
+  const quote = field(fields, 'quote');
+  const suggestion = field(fields, 'suggestion');
+  const note = field(fields, 'note');
+  if (
+    !within(quote, 1) ||
+    normalise(quote, locale) === '' ||
+    !within(suggestion, 0) ||
+    !within(note, 0)
+  )
+    return outcome('rejected', request, locale, page);
+
+  const keys = matchingKeys(quote, page, locale);
+  if (keys.length === 0) return outcome('not-found', request, locale, page);
+
+  try {
+    if (!env.REPORTS) throw new Error('the REPORTS binding is missing');
+    await env.REPORTS.prepare(INSERT)
+      .bind(
+        crypto.randomUUID(),
+        new Date().toISOString(),
+        locale,
+        page,
+        quote,
+        JSON.stringify(keys),
+        suggestion,
+        note,
+      )
+      .run();
+  } catch (error) {
+    log(`report failed: ${describeError(error)}`);
+    return outcome('failed', request, locale, page);
+  }
+  return outcome('sent', request, locale, page);
+}
+
+export const schemaMatches = (columns: readonly string[]): boolean =>
+  columns.length === REPORT_COLUMNS.length &&
+  REPORT_COLUMNS.every((column) => columns.includes(column));
+
+/** Proves the binding and the migration without writing a row, and returns no counts or content (spec 6.2). */
+export async function reportHealth(
+  request: Request,
+  env: ReportEnv,
+  log: (line: string) => void = console.error,
+): Promise<Response> {
+  if (request.method !== 'GET') return plain(405, { Allow: 'GET' });
+  let ok = false;
+  try {
+    if (!env.REPORTS) throw new Error('the REPORTS binding is missing');
+    const { results } = await env.REPORTS.prepare(HEALTH_QUERY).all<{
+      name: string;
+    }>();
+    ok = schemaMatches(results.map(({ name }) => name));
+    if (!ok)
+      log('report health: the reports table does not match the migration');
+  } catch (error) {
+    log(`report health: ${describeError(error)}`);
+  }
+  return json({ ok }, ok ? 200 : 503);
 }
