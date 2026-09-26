@@ -5,7 +5,20 @@ Reports from the footer form land in the D1 table `reports`: database
 project as `REPORTS`. A row exists only while its report is pending. Dealing
 with a report deletes it; nothing is kept "just in case".
 
-Run these in the Cloudflare dashboard's D1 console.
+**A review starts with the script** (#348). It reads the table and changes
+nothing, and prints each report beside the English its text was translated
+from and what its suggestion says in English:
+
+```sh
+BACK_TRANSLATE_URL=http://localhost:5000 npm run reports:review shyden-reports
+```
+
+Name `shyden-reports-dev` for dev. The engine is the LibreTranslate container
+whose `docker run` line heads `scripts/i18n-back-translate.mjs`. Without
+`BACK_TRANSLATE_URL` the script prints everything else, and each report says
+no back-translation was made.
+
+Then, in the Cloudflare dashboard's D1 console:
 
 ```sql
 SELECT id, received_at, locale, page, quote, keys, suggestion, note

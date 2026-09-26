@@ -36,43 +36,11 @@ import {
   engineConfig,
   engineLanguages,
   engineSource,
-  libreTranslateBody,
   livenessProblems,
   reviewMarkdown,
   sendable,
-  translatedTexts,
 } from '../src/lib/i18n/back-translate.ts';
-
-/** Texts per request: small enough that one slow batch is not the whole run. */
-const BATCH = 25;
-
-/**
- * One request, its JSON answer, and the engine's own words when it refuses.
- *
- * @param {string} url
- * @param {RequestInit} [init]
- * @returns {Promise<unknown>}
- */
-async function call(url, init = {}) {
-  const response = await fetch(url, init);
-  const text = await response.text();
-  let body;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = undefined;
-  }
-  if (!response.ok) {
-    const reason =
-      body && typeof body.error === 'string' ? body.error : text.slice(0, 200);
-    throw new Error(
-      `${init.method ?? 'GET'} ${url} answered ${response.status}: ${reason}`,
-    );
-  }
-  if (body === undefined)
-    throw new Error(`${init.method ?? 'GET'} ${url} answered with no JSON`);
-  return body;
-}
+import { call, readBack } from './back-translate-client.mjs';
 
 async function main() {
   // Everything it reads is an environment variable, so an argument is a
@@ -102,19 +70,10 @@ async function main() {
     const distinct = [
       ...new Set(units.map(({ translation }) => sendable(translation))),
     ].filter((text) => text !== '');
+    const read = await readBack(url, apiKey, source, distinct);
     /** @type {Map<string, string>} */
     const back = new Map([['', '']]);
-    for (let at = 0; at < distinct.length; at += BATCH) {
-      const texts = distinct.slice(at, at + BATCH);
-      const answer = await call(`${url}/translate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(libreTranslateBody(texts, source, apiKey)),
-      });
-      translatedTexts(answer, texts.length).forEach((text, index) =>
-        back.set(texts[index], text),
-      );
-    }
+    distinct.forEach((text, index) => back.set(text, read[index]));
     for (const unit of units) {
       const backTranslation = back.get(sendable(unit.translation));
       // Every distinct translation was sent and every answer checked for
