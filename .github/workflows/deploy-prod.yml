@@ -71,9 +71,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          npm install -g wrangler@4
-          wrangler pages deploy dist --project-name shyden-site --branch main
+        run: npx wrangler pages deploy dist --project-name shyden-site --branch main
 
   # ---- Post-prod smoke + prod-verified -----------------------------------
   # Smokes the PUBLIC production domain — the host real visitors get.

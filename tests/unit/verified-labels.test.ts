@@ -400,7 +400,10 @@ describe('the copy the operator read and approved', () => {
 const AWAITING_READ: Record<Locale, readonly string[]> = {
   en: [],
   id: [],
-  zh: [],
+  // #97's report form gave `Contact` its first zh witness: the note hint's
+  // "contact details" is 联系方式, where the nav link says 联系我们 ("contact
+  // us"), the usual wording for that link. Flagged, not pinned, until read.
+  zh: ['site.nav.contact'],
   vi: [],
   th: [],
 };

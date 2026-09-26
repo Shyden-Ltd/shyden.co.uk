@@ -1,0 +1,31 @@
+import { defineConfig, devices } from '@playwright/test';
+import { BASE_URL, PASSWORD } from './tests/functions/local.mjs';
+
+/**
+ * The Functions-runtime suite (#97, spec 10): real submissions to the real
+ * Pages Functions on workerd, through `wrangler pages dev`. One worker,
+ * because every test shares one server and one local database.
+ */
+export default defineConfig({
+  testDir: './tests/functions',
+  workers: 1,
+  forbidOnly: !!process.env.CI,
+  webServer: {
+    command: 'node tests/functions/serve.mjs',
+    // webServer takes no credentials, and the dev gate answers 401 without
+    // them, which Playwright counts as up. So readiness only means "serving";
+    // the health test, first in the file with one worker, is what proves the
+    // binding and the migration.
+    url: `${BASE_URL}/`,
+    // Never reuse: a server left running would hold an older build, and a
+    // mutation would then be tested against code it never reached.
+    reuseExistingServer: false,
+    timeout: 240_000,
+  },
+  use: {
+    baseURL: BASE_URL,
+    colorScheme: 'dark',
+    httpCredentials: { username: 'dev', password: PASSWORD, send: 'always' },
+  },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+});

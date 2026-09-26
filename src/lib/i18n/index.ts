@@ -101,6 +101,14 @@ export const getStrings = (locale: unknown): Strings => {
 };
 
 /**
+ * A locale's tool catalogue as written, every message still a template.
+ * `getStrings` compiles each message into a function (#136), so a walk over
+ * its result never sees one: 139 keys against 197. The translation-report
+ * table (#97) walks this instead.
+ */
+export const rawCatalogue = (locale: Locale): Catalogue => CATALOGUES[locale];
+
+/**
  * Site copy by locale — header, footer, homepage, 404, Glory Points.
  *
  * Here rather than in `site.ts` since #22: the lookup needs `isLocale` and

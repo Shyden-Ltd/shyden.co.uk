@@ -13,6 +13,7 @@
     "typecheck": "astro check",
     "test:unit": "vitest run",
     "test:e2e": "node scripts/test-e2e.mjs",
+    "test:functions": "playwright test --config=playwright.functions.config.ts",
     "test:sanity": "SANITY_ON_BUILD=1 playwright test -c playwright.dev.config.ts && SANITY_ON_BUILD=1 playwright test -c playwright.prod.config.ts",
     "test:visual": "node scripts/visual.mjs",
     "test:visual:update": "node scripts/visual.mjs --update",
@@ -40,10 +41,12 @@
     "prettier-plugin-astro": "1.0.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1",
+    "wrangler": "4.141.0",
     "yaml": "^2.9.1"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
-    "fsevents@2.3.3": true
+    "fsevents@2.3.3": true,
+    "workerd@1.20260925.1": true
   }
 }

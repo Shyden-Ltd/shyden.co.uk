@@ -2288,3 +2288,63 @@ describe('the back-translation review', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * wrangler comes from the lockfile (#97, spec section 9).
+ *
+ * Both deploy workflows ran `npm install -g wrangler@4`, so any 4.x could
+ * arrive at deploy time and bundle the Pages Functions differently from the
+ * last deploy of the same commit. The locked copy is what the tests ran, and
+ * Dependabot's npm ecosystem moves it as a reviewable diff.
+ */
+describe('wrangler comes from the lockfile (#97)', () => {
+  it('is an exact-pinned devDependency', () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(pkg.devDependencies.wrangler).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('no workflow installs it globally', () => {
+    const workflows = allWorkflows();
+    const globalInstalls = workflows
+      .filter(({ text }) =>
+        /\bnpm\s+(?:install|i)\b[^\n]*(?:\s-g\b|\s--global\b)[^\n]*\bwrangler\b/.test(
+          text,
+        ),
+      )
+      .map(({ name }) => name);
+    expect(
+      searched(globalInstalls, {
+        of: workflows.map(({ text }) => text),
+        what: 'workflow texts',
+      }),
+    ).toEqual([]);
+  });
+
+  it('every deploy runs the locked copy', () => {
+    const deploys = allWorkflows().flatMap(({ name, text }) =>
+      text
+        .split('\n')
+        .filter((line) => line.includes(DEPLOY_COMMAND))
+        .map((line) => `${name}: ${line.trim()}`),
+    );
+    expect(
+      searched(
+        deploys.filter((line) => !line.includes(`npx ${DEPLOY_COMMAND}`)),
+        { of: deploys, what: 'wrangler deploy lines' },
+      ),
+    ).toEqual([]);
+  });
+
+  it('the functions job runs the functions-runtime suite', () => {
+    // That build-and-test needs the job is already derived by "stands for
+    // every other ci.yml job that is not required by name itself"; this pins
+    // what the job runs, read from the parsed workflow.
+    expect(jobNamed('ci.yml', 'functions').runs).toEqual([
+      'npm ci',
+      'npx playwright install --with-deps chromium',
+      'npm run test:functions',
+    ]);
+  });
+});

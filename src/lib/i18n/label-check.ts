@@ -146,6 +146,7 @@ const SITE_PAGES: Record<keyof SiteStrings, string> = {
   skipToContent: CHROME,
   footer: CHROME,
   language: CHROME,
+  report: CHROME,
   home: '/',
   glory: '/glory-points',
   notFound: 'the 404 page',
