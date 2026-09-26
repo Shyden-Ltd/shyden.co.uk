@@ -94,3 +94,28 @@ for (const locale of PREFIXED_LOCALES)
         await expect(page.locator(`#report-${other}`)).toBeHidden();
       }
     });
+
+test('the disclosure sits right after the BETA notice, and asks for nothing personal', async ({
+  page,
+}) => {
+  for (const locale of PREFIXED_LOCALES) {
+    await page.goto(pagePath('home', locale));
+    // AC2: beside the BETA notice, not merely somewhere in the footer.
+    await expect(
+      page.locator('[data-beta-notice] + details[data-report]'),
+    ).toHaveCount(1);
+    // AC6: no contact fields. Exactly the fields spec 3.2 names, so a field
+    // added later has to be argued for here.
+    const named = await page
+      .locator('[data-report-form] [name]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('name')));
+    expect(named, locale).toEqual([
+      'locale',
+      'page',
+      'quote',
+      'suggestion',
+      'note',
+      'website',
+    ]);
+  }
+});

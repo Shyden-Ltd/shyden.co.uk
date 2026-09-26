@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { recorded } from './evidence';
+import { recordRequests, urlMatching } from './recorders';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { contrastRatio } from './helpers';
 import {
@@ -163,5 +164,26 @@ test('/vi/classroom-groups submits in place: failed shows, takes focus, and the 
   ).toHaveValue('Lan');
   await expect(page.getByLabel(t.quoteLabel, { exact: true })).toHaveValue(
     t.open,
+  );
+});
+
+test('/vi/classroom-groups: sending a report makes no request off the site (AC11)', async ({
+  page,
+}) => {
+  const seen = recordRequests(page);
+  const t = getSiteStrings('vi').report;
+  await page.goto(pagePath('classroom-groups', 'vi'));
+  await page.locator('[data-report] summary').click();
+  await page.getByLabel(t.quoteLabel, { exact: true }).fill(t.open);
+  await page.getByRole('button', { name: t.send }).click();
+  await expect(page.locator('#report-failed')).toBeVisible();
+  // Liveness by content: the report itself is among the requests seen.
+  await expect
+    .poll(() => seen.matching(urlMatching(/\/api\/report$/)).length)
+    .toBe(1);
+  const origin = new URL(page.url()).origin;
+  seen.expectNone(
+    (request) => new URL(request.url).origin !== origin,
+    'AC11: a request left the site',
   );
 });

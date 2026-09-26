@@ -450,3 +450,26 @@ describe('the Pages Functions are plumbing only', () => {
     expect(code).toMatch(/^export const onRequest/m);
   });
 });
+
+describe('the runbook', () => {
+  // Anchored to whole lines, so the block's own `--` notes cannot satisfy them.
+  const runbook = () =>
+    readFileSync('docs/runbooks/translation-reports.md', 'utf8');
+
+  it('lists every stored column, and holds both deletes (AC7)', () => {
+    const text = runbook();
+    expect(text).toMatch(
+      new RegExp(`^SELECT ${REPORT_COLUMNS.join(', ')}$`, 'm'),
+    );
+    expect(text).toMatch(/^DELETE FROM reports WHERE id = '<id>';$/m);
+    expect(text).toMatch(
+      /^DELETE FROM reports WHERE note LIKE 'automated dev check %';$/m,
+    );
+  });
+
+  it('documents the WAF rate limit for the operator (AC5)', () => {
+    expect(runbook()).toMatch(
+      /^.*`\/api\/report`.*more than 2 requests in 10 s.*Block for 10 s\.$/m,
+    );
+  });
+});

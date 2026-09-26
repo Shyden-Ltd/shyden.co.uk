@@ -23,3 +23,14 @@ carries the note.
 `GET /api/report/health` answers `200 {"ok":true}` when the binding and the
 table's columns match `migrations/0001_reports.sql`, and `503` otherwise. The
 dev and prod sanity suites call it after every deploy.
+
+## The rate limit (operator, before the production release)
+
+The endpoint validates every report, but only Cloudflare can count requests
+per visitor. In the dashboard, Security → WAF → Rate limiting rules:
+
+- When `http.request.uri.path` equals `/api/report`, counted per IP, more than 2 requests in 10 s → Block for 10 s.
+
+Then confirm which Workers plan the account is on. On Free, D1's daily limits
+answer with errors, which the endpoint reports as `failed`. On Paid, usage
+beyond the included amount is billed, and this rule is the only cap on cost.
