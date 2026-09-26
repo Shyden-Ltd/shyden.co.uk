@@ -111,8 +111,10 @@ likely first. Each one has a test in the owning task.
    the forms, so the kind of quotation mark never decides a match. Task 5's
    normalise test.
 5. **A second submission on a tool page after a first outcome.** Exactly one
-   status is visible, and it is the new one. Task 10,
-   `a later outcome replaces the earlier one`.
+   status is visible, and it is the new one, including when the first
+   arrived by the plain POST's fragment (a click before the script loaded).
+   Task 10, `a later outcome replaces the earlier one` and
+   `an outcome in place supersedes the one a fragment shows`.
 
 ---
 
@@ -210,7 +212,7 @@ describe('wrangler comes from the lockfile (#97)', () => {
 
   it('no workflow installs it globally', () => {
     const workflows = allWorkflows();
-    const global = workflows
+    const globalInstalls = workflows
       .filter(({ text }) =>
         /\bnpm\s+(?:install|i)\b[^\n]*(?:\s-g\b|\s--global\b)[^\n]*\bwrangler\b/.test(
           text,
@@ -218,7 +220,7 @@ describe('wrangler comes from the lockfile (#97)', () => {
       )
       .map(({ name }) => name);
     expect(
-      searched(global, {
+      searched(globalInstalls, {
         of: workflows.map(({ text }) => text),
         what: 'workflow texts',
       }),
@@ -245,7 +247,7 @@ describe('wrangler comes from the lockfile (#97)', () => {
 - [ ] **Step 2: Run it red.**
       Run: `npx vitest run tests/unit/pipeline-wiring.test.ts`
       Expected: FAIL, three tests. `devDependencies.wrangler` is `undefined`;
-      `global` lists `deploy-dev.yml` and `deploy-prod.yml`; the deploy lines
+      `globalInstalls` lists `deploy-dev.yml` and `deploy-prod.yml`; the deploy lines
       read `wrangler pages deploy …` with no `npx`.
 
 - [ ] **Step 3: Install and pin.** Take the version from the last line of
@@ -307,7 +309,7 @@ spike: nothing from it is committed except the Measurements table below.
 import { getSiteStrings, getStrings } from '../../src/lib/i18n/index';
 import { parseMessage } from '../../src/lib/i18n/message';
 
-export const onRequest = () => {
+export const onRequest = ({ request }) => {
   const thai = String.fromCharCode(0x0e17, 0x0e35, 0x0e48);
   const decomposed = String.fromCharCode(0x65, 0x0301);
   const graphemes =
@@ -326,6 +328,7 @@ export const onRequest = () => {
     graphemes,
     nfcLength: decomposed.normalize('NFC').length,
     lower: 'I'.toLocaleLowerCase('vi'),
+    origin: new URL(request.url).origin,
   });
 };
 ```
@@ -354,6 +357,11 @@ npx wrangler pages dev dist --ip 127.0.0.1 --port 8799 \
       **Assumption 1 holds** when the bundle builds and `site`, `toolKeys` and
       `parts` match Node. **Assumption 3 holds** when `segmenter`,
       `graphemes` (expect 2), `nfcLength` (expect 1) and `lower` match Node.
+      Also record `origin`. Check 2 compares a POST's `Origin` header with
+      the origin of `request.url`, and a browser on this server sends
+      `http://127.0.0.1:8799`. If `origin` reads anything else, `pages dev`
+      rewrites the request URL, and every Task 10 submission would get a 403.
+      Stop there, and review check 2's comparison with the plan before Task 6.
 
 - [ ] **Step 3: Apply the migration to that local D1 without a root config**
       (assumptions 2 and 5). Write the spec 7 migration to
@@ -511,8 +519,10 @@ the test tree re-exports it.
 export { catalogueLeaves, stringLeaves } from '../src/lib/catalogue-leaves';
 ```
 
-- [ ] **Step 4: Run green, then the whole unit suite** (eleven files import
-      the walk).
+- [ ] **Step 4: Run green, then the whole unit suite.** Ten files import
+      the walk through the re-export: eight unit tests, `tests/workflow-jobs.ts`,
+      and `tests/e2e/copy-reaches-a-page.spec.ts`. The unit suite never loads
+      that last one, so the typecheck is what proves its import still resolves.
       Run: `npx vitest run tests/unit/one-home.test.ts tests/unit/catalogue-leaves.test.ts` → PASS.
       Run: `npm run test:unit 2>&1 | tail -6` → all pass.
       Run: `npm run typecheck 2>&1 | command grep -E "(error|warning|hint)s?"` → exactly three
@@ -1182,10 +1192,25 @@ export function normalise(text: string, locale: Locale): string {
   return folded.replace(/\s+/gu, ' ').trim().toLocaleLowerCase(locale);
 }
 
-/** Graphemes where the runtime segments them, code points otherwise (spec 11, assumption 3). */
-function lengthOf(text: string, locale: Locale): number {
-  if (typeof Intl.Segmenter !== 'function') return [...text].length;
-  return [...new Intl.Segmenter(locale, { granularity: 'grapheme' }).segment(text)].length;
+const segmenters = new Map<Locale, Intl.Segmenter>();
+
+/**
+ * Whether `text` holds at least two characters: graphemes where the runtime
+ * segments them, code points otherwise (spec 11, assumption 3). It stops at
+ * the second, because the endpoint asks this once per form (about 200 on
+ * classroom-groups) of a quote of up to 1000 units, on workerd's CPU budget.
+ */
+function hasTwoCharacters(text: string, locale: Locale): boolean {
+  let units: Iterator<unknown>;
+  if (typeof Intl.Segmenter === 'function') {
+    let segmenter = segmenters.get(locale);
+    if (!segmenter) {
+      segmenter = new Intl.Segmenter(locale, { granularity: 'grapheme' });
+      segmenters.set(locale, segmenter);
+    }
+    units = segmenter.segment(text)[Symbol.iterator]();
+  } else units = text[Symbol.iterator]();
+  return !units.next().done && !units.next().done;
 }
 
 /** Rule 3 as an anchored literal scan: each slot a non-empty wildcard, no backtracking. */
@@ -1210,9 +1235,9 @@ function wholeMessage(quote: string, runs: readonly string[]): boolean {
 export function matchesForm(needle: string, form: ReportForm, locale: Locale): boolean {
   if (needle === '') return false;
   if (needle === form.display) return true;
-  if (lengthOf(needle, locale) >= 2 && form.runs.some((run) => run.includes(needle))) return true;
+  if (hasTwoCharacters(needle, locale) && form.runs.some((run) => run.includes(needle))) return true;
   // Clarification 6: a form with under 2 characters of fixed wording would match anything.
-  const wholeMessageAllowed = form.runs.length > 1 && lengthOf(form.runs.join(''), locale) >= 2;
+  const wholeMessageAllowed = form.runs.length > 1 && hasTwoCharacters(form.runs.join(''), locale);
   return wholeMessageAllowed && wholeMessage(needle, form.runs);
 }
 
@@ -1244,8 +1269,9 @@ export function matchingKeys(quote: string, page: PageId, locale: Locale): strin
 }
 ```
 
-      If Task 2 recorded that workerd has no `Intl.Segmenter`, `lengthOf`
-      already falls back to code points; nothing else changes.
+      If Task 2 recorded that workerd has no `Intl.Segmenter`,
+      `hasTwoCharacters` already falls back to code points; nothing else
+      changes.
 
 - [ ] **Step 5: Run green, then everything.**
       Run: `npx vitest run tests/unit/report.test.ts` → PASS.
@@ -1268,9 +1294,9 @@ git commit -m "feat(report): the page table, reportable strings and quote matchi
       label-check". (b) Accept any quote (`return reportableStrings(page, locale).map(({ key }) => key);`
       at the top of `matchingKeys`) → RED on "matches nothing" and on "spans a
       slot". (c) In `matchesForm`'s rule-2 line, change `>= 2` to `>= 1` →
-      RED on "refuses one character". (d) Make `lengthOf`'s body
-      `return text.length;` → RED on the Thai test (a two-unit cluster passes
-      as two).
+      RED on "refuses one character". (d) Make `hasTwoCharacters`'s body
+      `return text.length >= 2;` → RED on the Thai test (a three-unit
+      cluster passes as two characters).
       (e) Set `wholeMessageAllowed` to `form.runs.length > 1` → RED on
       "rule 3 needs two characters of fixed wording". (f) In `wholeMessage`,
       search from `at` instead of `at + 1` → RED on `'ab1c'` (an empty
@@ -1297,7 +1323,7 @@ git commit -m "feat(report): the page table, reportable strings and quote matchi
   - `interface ReportsDatabase { prepare(query: string): ReportsStatement }`
   - `interface ReportEnv { readonly REPORTS?: ReportsDatabase }`
   - `handleReport(request: Request, env: ReportEnv, log?: (line: string) => void): Promise<Response>`
-  - `reportHealth(env: ReportEnv, log?: (line: string) => void): Promise<Response>`
+  - `reportHealth(request: Request, env: ReportEnv, log?: (line: string) => void): Promise<Response>`
   - `schemaMatches(columns: readonly string[]): boolean`
 
 - [ ] **Step 1: Stubs.** Append the constants, the types and three throwing
@@ -1326,7 +1352,8 @@ import { getSiteStrings } from '../../src/lib/i18n';
  * reports. Check 9 succeeding is proved on a real local D1 (Task 10).
  */
 const ORIGIN = 'https://dev.shyden.co.uk';
-const URL_ = `${ORIGIN}/api/report`;
+const ENDPOINT = `${ORIGIN}/api/report`;
+const HEALTH = `${ORIGIN}/api/report/health`;
 const FORM = 'application/x-www-form-urlencoded';
 const quote = getSiteStrings('vi').report.open;
 const NO_DB = {};
@@ -1336,7 +1363,7 @@ const valid = (extra: Fields = {}): Fields => ({ locale: 'vi', page: 'home', quo
 
 function post(fields: Fields | string, init: { headers?: Record<string, string>; json?: boolean; method?: string } = {}) {
   const body = typeof fields === 'string' ? fields : new URLSearchParams(fields).toString();
-  return new Request(URL_, {
+  return new Request(ENDPOINT, {
     method: init.method ?? 'POST',
     headers: { Origin: ORIGIN, 'Content-Type': FORM, ...(init.json ? { Accept: 'application/json' } : {}), ...init.headers },
     body: init.method && init.method !== 'POST' ? undefined : body,
@@ -1348,7 +1375,7 @@ const outcomeOf = async (response: Response) => ((await response.json()) as { ou
 
 describe('checks 1-4: the request itself', () => {
   it('1: refuses any method but POST with 405 and Allow', async () => {
-    const response = await answer(new Request(URL_, { method: 'GET', headers: { Origin: ORIGIN } }));
+    const response = await answer(new Request(ENDPOINT, { method: 'GET', headers: { Origin: ORIGIN } }));
     expect(response.status).toBe(405);
     expect(response.headers.get('Allow')).toBe('POST');
   });
@@ -1357,7 +1384,7 @@ describe('checks 1-4: the request itself', () => {
     for (const origin of [undefined, 'https://evil.example', 'null']) {
       const headers: Record<string, string> = { 'Content-Type': FORM };
       if (origin) headers.Origin = origin;
-      const response = await answer(new Request(URL_, { method: 'POST', headers, body: new URLSearchParams(valid()).toString() }));
+      const response = await answer(new Request(ENDPOINT, { method: 'POST', headers, body: new URLSearchParams(valid()).toString() }));
       expect(response.status, String(origin)).toBe(403);
     }
   });
@@ -1374,6 +1401,30 @@ describe('checks 1-4: the request itself', () => {
     expect(new TextEncoder().encode(exact).byteLength).toBe(MAX_BODY_BYTES);
     expect((await answer(post(exact))).status).not.toBe(413);
     expect((await answer(post(exact + 'a'))).status).toBe(413);
+  });
+
+  it('4: stops reading a body that declares no length once it passes 64 KiB', async () => {
+    // A chunked body carries no Content-Length, so only the read itself can
+    // enforce the cap. This one holds 1 MiB; buffering it all would pull 64
+    // chunks, and stopping at the cap pulls about five.
+    const chunk = new TextEncoder().encode('a'.repeat(16 * 1024));
+    let pulled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 64) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const request = new Request(ENDPOINT, {
+      method: 'POST',
+      headers: { Origin: ORIGIN, 'Content-Type': FORM },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(request.headers.get('Content-Length')).toBeNull();
+    expect((await answer(request)).status).toBe(413);
+    expect(pulled).toBeLessThan(10);
   });
 });
 
@@ -1504,7 +1555,7 @@ describe('JSON mode', () => {
 describe('every response', () => {
   it('carries no-store and nosniff', async () => {
     const requests = [
-      new Request(URL_, { method: 'GET' }),
+      new Request(ENDPOINT, { method: 'GET' }),
       post(valid(), { headers: { Origin: 'https://evil.example' } }),
       post(valid({ page: 'admin' })),
       post(valid()),
@@ -1521,11 +1572,21 @@ describe('every response', () => {
 describe('the health check', () => {
   it('answers 503 ok:false with no binding, and logs why', async () => {
     const lines: string[] = [];
-    const response = await reportHealth(NO_DB, (line) => lines.push(line));
+    const response = await reportHealth(new Request(HEALTH), NO_DB, (line) => lines.push(line));
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ ok: false });
     expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(lines).toHaveLength(1);
+  });
+
+  it('refuses any method but GET with 405 and Allow, before touching the binding', async () => {
+    const lines: string[] = [];
+    const response = await reportHealth(new Request(HEALTH, { method: 'POST' }), NO_DB, (line) => lines.push(line));
+    expect(response.status).toBe(405);
+    expect(response.headers.get('Allow')).toBe('GET');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(lines).toEqual([]);
   });
 
   it('matches the migration column set exactly, in any order', () => {
@@ -1541,8 +1602,9 @@ describe('the health check', () => {
 - [ ] **Step 3: Run red.**
       Run: `npx vitest run tests/unit/report-endpoint.test.ts 2>&1 | tail -40`
       Expected: every test FAILS with `not implemented`, except the
-      `REPORT_COLUMNS` literal. That one fails on `schemaMatches`. Any PASS is
-      a finding.
+      `REPORT_COLUMNS` literal. That one fails on `schemaMatches`. The
+      streamed check-4 test fails on the stub's throw, before its pull count
+      is read. Any PASS is a finding.
 
 - [ ] **Step 4: Implement.** Replace the three stubs:
 
@@ -1584,6 +1646,33 @@ const field = (fields: URLSearchParams, name: string): string => (fields.get(nam
 const describeError = (error: unknown): string =>
   error instanceof Error ? `${error.name}: ${error.message}` : 'NonError: a value that is not an Error was thrown';
 
+/**
+ * The body, or null once it passes `cap` bytes. A chunked body declares no
+ * Content-Length, so `arrayBuffer()` would hold all of it (up to the
+ * platform's 100 MB) before check 4 could refuse it.
+ */
+async function readCapped(request: Request, cap: number): Promise<Uint8Array | null> {
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    size += read.value.byteLength;
+    if (size > cap) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(read.value);
+  }
+  const body = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return body;
+}
+
 export async function handleReport(request: Request, env: ReportEnv, log: (line: string) => void = console.error): Promise<Response> {
   if (request.method !== 'POST') return plain(405, { Allow: 'POST' });
   const origin = request.headers.get('Origin');
@@ -1591,8 +1680,8 @@ export async function handleReport(request: Request, env: ReportEnv, log: (line:
   const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
   if (type !== FORM_TYPE) return plain(415);
   if (Number(request.headers.get('Content-Length') ?? 0) > MAX_BODY_BYTES) return plain(413);
-  const body = await request.arrayBuffer();
-  if (body.byteLength > MAX_BODY_BYTES) return plain(413);
+  const body = await readCapped(request, MAX_BODY_BYTES);
+  if (body === null) return plain(413);
 
   const fields = new URLSearchParams(new TextDecoder().decode(body));
   const locale = fields.get('locale');
@@ -1627,7 +1716,8 @@ export const schemaMatches = (columns: readonly string[]): boolean =>
   columns.length === REPORT_COLUMNS.length && REPORT_COLUMNS.every((column) => columns.includes(column));
 
 /** Proves the binding and the migration without writing a row, and returns no counts or content (spec 6.2). */
-export async function reportHealth(env: ReportEnv, log: (line: string) => void = console.error): Promise<Response> {
+export async function reportHealth(request: Request, env: ReportEnv, log: (line: string) => void = console.error): Promise<Response> {
+  if (request.method !== 'GET') return plain(405, { Allow: 'GET' });
   let ok = false;
   try {
     if (!env.REPORTS) throw new Error('the REPORTS binding is missing');
@@ -1671,6 +1761,11 @@ git commit -m "feat(report): the endpoint's nine checks, the health check and a 
       `rejected` condition → RED on the CRLF test (1008 raw units). Dropping
       the fold altogether is not this mutation: the CR it leaves is a control
       character, so check 7 would refuse the note for a different reason.
+      (j) Buffer the whole body: replace the `readCapped` call with
+      `new Uint8Array(await request.arrayBuffer())` and its `null` test with
+      `body.byteLength > MAX_BODY_BYTES` → RED on "stops reading": the status
+      is still 413, and the pull count reads 65. (k) Delete `reportHealth`'s
+      method line → RED on the health 405 test: it answers 503 and logs.
 
 ---
 
@@ -1779,18 +1874,14 @@ export const onRequest = ({ request, env }) => handleReport(request, env);
  * GET /api/report/health — proves the REPORTS binding and the migration
  * without writing a row (#97, spec 6.2). 200 {"ok":true} or 503 {"ok":false}.
  *
- * Behind the dev Basic Auth gate like every other path; a no-op gate on prod.
+ * Plumbing only, like `index.js`: the handler answers any other method with
+ * 405 itself, where a unit test can see it. Behind the dev Basic Auth gate
+ * like every other path; a no-op gate on prod.
  */
 import { reportHealth } from '../../../src/lib/report';
 
 /** @param {{ request: Request, env: import('../../../src/lib/report').ReportEnv }} context */
-export const onRequest = ({ request, env }) =>
-  request.method === 'GET'
-    ? reportHealth(env)
-    : new Response(null, {
-        status: 405,
-        headers: { Allow: 'GET', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
-      });
+export const onRequest = ({ request, env }) => reportHealth(request, env);
 ```
 
       If Task 2 took assumption 1's fallback, the imports read the generated
@@ -1862,7 +1953,8 @@ git commit -m "feat(report): the reports migration, the two Functions and the ru
   `page`, `quote`, `suggestion`, `note` and `website`, one
   `button[type="submit"]`, and four `p.report-status[data-report-status="<outcome>"]`
   with ids `report-sent`, `report-not-found`, `report-rejected` and
-  `report-failed`, where a shown one carries `data-shown`.
+  `report-failed`. The script sets `data-report-state` on each: `shown` on
+  the one it shows, `superseded` on the rest.
 
 - [ ] **Step 1: Failing presence tests.** Create `tests/e2e/report-presence.spec.ts`:
 
@@ -1877,16 +1969,19 @@ import { PAGE_IDS, pagePath, reportOptions, type Outcome } from '../../src/lib/r
  * The report form's presence and contents, read from what was built (#97,
  * spec 3.2 and 10). Derived from dist/, so a page added later is judged the
  * day it is built, and English is covered by the same walk that covers the
- * beta locales.
+ * beta locales. Read inside the test, never at module scope: Playwright loads
+ * this file before its web server rebuilds dist/, so a module-scope read
+ * would judge the previous build, and a mutation would never reach it.
  */
-const BUILT = filesUnder('dist', (path) => /\.html$/.test(path)).map((file) => ({
-  file,
-  html: readFileSync(file, 'utf8'),
-}));
+const built = () =>
+  filesUnder('dist', (path) => /\.html$/.test(path)).map((file) => ({
+    file,
+    html: readFileSync(file, 'utf8'),
+  }));
 const langOf = (html: string) => /<html[^>]*\slang="([^"]+)"/.exec(html)?.[1];
 
 test('a built page with a footer carries the form exactly when its locale is beta', () => {
-  const footed = BUILT.filter(({ html }) => html.includes('<footer'));
+  const footed = built().filter(({ html }) => html.includes('<footer'));
   const findings = footed.flatMap(({ file, html }) => {
     const lang = langOf(html);
     const want = isLocale(lang) && isBetaLocale(lang);
@@ -1974,7 +2069,7 @@ test('the disclosure opens from the keyboard and walks its fields in order', asy
   await expect(page.getByLabel(t.noteLabel, { exact: true })).toHaveValue('');
 });
 
-test('every control is at least 44px and every text meets AA', async ({ page }) => {
+test('every control is at least 44px, every text meets AA, every field has a 3:1 boundary', async ({ page }) => {
   await page.goto(pagePath('glory-points', 'th'));
   const t = getSiteStrings('th').report;
   await page.locator('[data-report] summary').click();
@@ -1995,6 +2090,19 @@ test('every control is at least 44px and every text meets AA', async ({ page }) 
     page.getByRole('button', { name: t.send }),
   ])
     expect(await contrastRatio(text)).toBeGreaterThanOrEqual(4.5);
+  // WCAG 1.4.11: each field's boundary is --border-strong, the token
+  // contrast.test.ts scores at 3:1. #133 shipped --border (1.17:1) on every
+  // control. Resolved by the browser, so both sides are computed rgb.
+  const strong = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.style.color = 'var(--border-strong)';
+    document.body.append(probe);
+    const value = getComputedStyle(probe).color;
+    probe.remove();
+    return value;
+  });
+  for (const label of [t.quoteLabel, t.suggestionLabel, t.noteLabel])
+    await expect(page.getByLabel(label, { exact: true })).toHaveCSS('border-top-color', strong);
 });
 
 for (const locale of PREFIXED_LOCALES)
@@ -2123,7 +2231,9 @@ const reportStatuses: ReadonlyArray<[Outcome, string]> = [
     font: inherit;
     color: var(--ink);
     background: var(--bg);
-    border: 1px solid var(--border);
+    /* --border-strong, never --border: a control's only boundary must reach
+       3:1 (WCAG 1.4.11), and --border is decorative (#133). */
+    border: 1px solid var(--border-strong);
     border-radius: 6px;
   }
   .report textarea {
@@ -2159,8 +2269,15 @@ const reportStatuses: ReadonlyArray<[Outcome, string]> = [
     color: var(--ink);
   }
   .report-status:target,
-  .report-status[data-shown] {
+  .report-status[data-report-state='shown'] {
     display: block;
+  }
+  /* A tool page reached by the plain POST's 303 (a click before its script
+     loaded) keeps that status as its :target. The script supersedes it when
+     it shows a newer one, so exactly one is ever visible. Last, so it wins
+     over :target at equal specificity. */
+  .report-status[data-report-state='superseded'] {
+    display: none;
   }
   @media print {
     .report,
@@ -2212,10 +2329,12 @@ git commit -m "feat(report): the footer's report form in every beta locale (Refs
       reach 44px). (e)
       `#report-quote` gets `width: 400px` (append
       `.report #report-quote { width: 400px; }`) → RED on the 320px tests.
-      (f) Put the tool-page script in the footer (spec 10's wording):
+      (f) Draw the fields' border in `var(--border)` → RED on "every field
+      has a 3:1 boundary", naming `border-top-color`.
+      (g) Put the tool-page script in the footer (spec 10's wording):
       `<script>import '../scripts/report-form.ts';</script>` at the end of
       `Footer.astro`. This is valid once Task 9 has created the file, so run
-      (f) after Task 9 → `theme-script.spec.ts` RED on the homepage and the
+      (g) after Task 9 → `theme-script.spec.ts` RED on the homepage and the
       404, which gain a module they did not carry. Confirm each RED names the
       property you broke, then restore and confirm green.
 
@@ -2310,7 +2429,9 @@ export function showStatus(root: ParentNode, outcome: Outcome): HTMLElement | nu
   let shown: HTMLElement | null = null;
   for (const status of root.querySelectorAll<HTMLElement>('[data-report-status]')) {
     const match = status.dataset.reportStatus === outcome;
-    status.toggleAttribute('data-shown', match);
+    // 'superseded' outranks :target, which a URL fragment may still hold
+    // (Footer.astro's CSS), so exactly one status is visible.
+    status.dataset.reportState = match ? 'shown' : 'superseded';
     if (match) shown = status;
   }
   shown?.focus();
@@ -2681,6 +2802,20 @@ test.describe('on a tool page', () => {
     await expect(page.locator('#report-not-found')).toBeHidden();
     await expect(page.locator('.report-status:visible')).toHaveCount(1);
   });
+
+  test('an outcome in place supersedes the one a fragment shows', async ({ page }) => {
+    // A click before the script loads posts the plain form and lands here
+    // with a fragment; the next report is sent in place.
+    const note = noteFor('fragment');
+    await page.goto(`${pagePath('classroom-groups', 'vi')}#report-not-found`);
+    await expect(page.locator('#report-not-found')).toBeVisible();
+    await fillReport(page, vi.open, note);
+    await page.getByRole('button', { name: vi.send }).click();
+    await expect(page.locator('#report-sent')).toBeVisible();
+    await expect(page.locator('#report-not-found')).toBeHidden();
+    await expect(page.locator('.report-status:visible')).toHaveCount(1);
+    expect(reportsWithNote(note)).toHaveLength(1);
+  });
 });
 ```
 
@@ -2696,7 +2831,7 @@ test.describe('on a tool page', () => {
       The Function under test already exists (Task 7), so these tests cannot
       be seen red against a stub. Each one is seen red by its own mutation in
       Step 8 instead, one per test. Run them green now:
-      Run: `npm run test:functions 2>&1 | tail -20` → 7 passed. Read the
+      Run: `npm run test:functions 2>&1 | tail -20` → 8 passed. Read the
       total: a run that lists fewer tests dropped some.
 
 - [ ] **Step 6: The CI job, guarded first.** Append to the `describe` from
@@ -2776,10 +2911,16 @@ git commit -m "test(report): real submissions on workerd, as a functions job bui
       green, the post-`sent` reset (which empties a required field) is also
       blocking the second submission. Say so in the PR body, and keep the test
       as the guard of the behaviour a visitor sees.
-      (g) Replace: in `showStatus`, change `toggleAttribute('data-shown', match)`
-      to `if (match) status.setAttribute('data-shown', '')` → RED on "a later
-      outcome replaces the earlier one".
-      (h) Pipeline: remove `functions` from `build-and-test.needs` → RED on
+      (g) Replace: in `showStatus`, mark only the match
+      (`if (match) status.dataset.reportState = 'shown';`) → RED on "a later
+      outcome replaces the earlier one" and on "supersedes the one a
+      fragment shows".
+      (h) Fragment: in `Footer.astro`, delete the
+      `[data-report-state='superseded']` rule → RED on "supersedes the one a
+      fragment shows" only: two statuses are visible. The other test stays
+      green, because a status the script never showed falls back to
+      `display: none`; say so when recording it.
+      (i) Pipeline: remove `functions` from `build-and-test.needs` → RED on
       the pipeline guard.
 
 ---
@@ -3106,3 +3247,54 @@ selects), and `evidence-recording`'s scope (`tests/e2e` only).
     review had already checked.
 22. Task 10 said `evidence-recording` reads `tests/functions/`. It reads
     `tests/e2e` only.
+
+**Pass 3 (2026-09-26, `origin/develop` at 9782fa4, the branch level with it;
+a full read of every line plus the mechanical checks): 10 findings, all
+fixed.** The path check: of 48 distinct backticked paths, every one absent
+from `origin/develop` is created by a named task, is the spec, is a
+conditional fallback's output (`scripts/report-table.mjs`,
+`functions/_generated/report-table.js`), a build output (`dist/_headers`,
+from `public/_headers`) or a throwaway (`functions/api/spike-db.js`,
+`tests/unit/scratch-walker.test.ts`). Also checked against the tree: every
+name Tasks 1-12 import (`allWorkflows`, `DEPLOY_COMMAND`, `jobNamed`,
+`workflowSteps`, `SCANNED`, `definesACatalogueWalker`, `renderedOn`,
+`CATALOGUES`, `isMessageTemplate`, `MessagePart`, `localisePath`'s prefix
+handling, `codeWithoutComments`, `shipped`/`importsOf`/`stem`, `atLeast44`,
+`expectNoHorizontalScroll`, `contrastRatio`, `recorded`), the workflow line
+ranges, `ci.yml`'s pinned SHAs and job shape, the roster selectors, the
+sanity-on-build failure text, and the four `home-id` baselines. No
+backslash-u escape.
+
+1. Task 1 named a variable `global`, shadowing Node's global object. It is
+   `globalInstalls`.
+2. Task 3 said eleven files import the walk. Ten do, one of them an e2e spec
+   the unit suite never loads, so the step now says the typecheck is what
+   proves that import.
+3. `lengthOf` built a new `Intl.Segmenter` and segmented the whole quote once
+   per form, about 200 times for a 1000-unit quote on every classroom-groups
+   request, on workerd's CPU budget. `hasTwoCharacters` caches one segmenter
+   per locale and stops at the second grapheme. Mutation (d) follows it.
+4. `handleReport` called `arrayBuffer()` before check 4, so a chunked body
+   with no `Content-Length` was held whole (up to 100 MB) before the 413.
+   `readCapped` stops at the cap; a streamed-body test counts the pulls, and
+   mutation (j) sees it red.
+5. `health.js` answered 405 itself, logic in a "plumbing only" file that no
+   unit test reached. `reportHealth` takes the request and answers 405, with
+   a test and mutation (k).
+6. `report-presence.spec.ts` read `dist/` at module scope. Playwright loads
+   the file before its web server rebuilds, so the walk judged the previous
+   build and a mutation could not reach it. It reads inside the test.
+7. The fields' border was `--border`, which `tokens.css` calls decorative
+   and which #133 found at 1.17:1 on every control. It is `--border-strong`
+   (WCAG 1.4.11), asserted in computed rgb, with mutation (f) in Task 8.
+8. A tool page reached by the plain POST's 303 keeps that status as its
+   `:target`, so a later in-place outcome showed two statuses. One state
+   attribute (`data-report-state`, `shown` or `superseded`) replaces
+   `data-shown`, with a new functions test and mutations (g) and (h). A
+   second attribute beside `data-shown` was rejected: it would have left
+   `data-shown`'s removal unobservable.
+9. Task 2's spike never measured the origin of `request.url` under `pages
+   dev`, which check 2 compares with. It records it, and stops before Task 6
+   if the URL is rewritten.
+10. The endpoint test named its URL `URL_` to dodge the global `URL`. It is
+    `ENDPOINT`.
