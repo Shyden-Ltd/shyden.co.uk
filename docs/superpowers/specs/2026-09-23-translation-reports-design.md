@@ -701,8 +701,8 @@ only visitor-facing copy nobody could report.
   none, and no list of locales says so.
 - The block's form posts the **block's** locale, never one read from the URL,
   which has none. Its `page` is `not-found`.
-- The form, its fields and its statuses carry `lang` set to the block's locale,
-  because the document's own `lang` is English.
+- The disclosure and each status carry `lang` set to the block's locale, and
+  the fields inherit it, because the document's own `lang` is English.
 
 ### 14.2 The page id and the keys
 

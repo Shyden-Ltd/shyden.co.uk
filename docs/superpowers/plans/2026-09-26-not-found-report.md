@@ -41,7 +41,7 @@
 
 - [ ] **Step 1: Write the failing unit tests**
 
-In `tests/unit/report.test.ts`, add `FOOTER_PAGE_IDS` and `reportIdStem` to the import from `../../src/lib/report`. Replace the first test of `describe('the page table')` with:
+In `tests/unit/report.test.ts`, add `FOOTER_PAGE_IDS` and `reportIdStem` to the import from `../../src/lib/report`, and `LOCALES` and `isBetaLocale` to the import from `../../src/lib/i18n`. The locales are derived, never listed (Global Constraints). Replace the first test of `describe('the page table')` with:
 
 ```ts
   it('knows the three pages with a footer, and the 404 besides', () => {
@@ -90,7 +90,7 @@ Replace `no page offers the 404 copy` with:
       ).toEqual([]);
   });
 
-  it.each(['id', 'zh', 'vi', 'th'] as const)(
+  it.each(LOCALES.filter(isBetaLocale))(
     'the 404 offers the notFound copy its %s block shows, and nothing else',
     (locale) => {
       // No chrome (the 404's is English) and no title or description (a
@@ -107,6 +107,18 @@ Replace `no page offers the 404 copy` with:
 ```
 
 In `every page carries every chrome entry…`, change `for (const page of PAGE_IDS)` to `for (const page of FOOTER_PAGE_IDS)`.
+
+In `agrees with label-check about which site sections are chrome`, the 404 now offers `notFound`. label-check calls that section "the 404 page", so the agreement becomes positive. Replace its first two branches with:
+
+```ts
+      if (where === CHROME)
+        expect(pages, section).toEqual([...FOOTER_PAGE_IDS]);
+      else if (where === 'the 404 page')
+        expect(pages, section).toEqual(['not-found']);
+      else
+```
+
+`searched` is then unused in this file, so the import becomes `import { nonEmpty } from '../source-files';`.
 
 In `tests/unit/report-endpoint.test.ts`, add inside `describe('check 5 and the honeypot')`:
 
@@ -133,7 +145,8 @@ In `tests/unit/report-endpoint.test.ts`, add inside `describe('check 5 and the h
 - [ ] **Step 2: Run them red**
 
 Run: `npx vitest run tests/unit/report.test.ts tests/unit/report-endpoint.test.ts`
-Expected: FAIL. `FOOTER_PAGE_IDS` and `reportIdStem` are not exported, so each new test fails on its own assertion (`undefined` is not a function, or the wrong `toEqual`). Before running, give `reportIdStem` a stub body that throws `not implemented`. Any of the new tests that passes against the stub is a finding.
+Before running, add stubs to `report.ts` so the file compiles and each test fails on its own assertion: `export const FOOTER_PAGE_IDS = PAGE_IDS;`, and an `export const reportIdStem` whose body throws `not implemented`.
+Expected: 9 FAIL: the two endpoint tests, the page-table test, the path test, the stem test and the four `the 404 offers…` tests. The renamed `no footer page offers the 404 copy` passes, because its behaviour already holds. Any other test that passes against the stubs is a finding.
 
 - [ ] **Step 3: Implement in `src/lib/report.ts`**
 
@@ -272,7 +285,7 @@ Then check the rename is complete. `grep -n "PAGE_IDS" tests/e2e/report-*.spec.t
 
 - [ ] **Step 5: Run green**
 
-Run: `npx vitest run tests/unit/report.test.ts tests/unit/report-endpoint.test.ts tests/unit/report-review.test.ts && npm run typecheck`
+Run `npx prettier --write` on every file this task touched first: the code blocks here are not wrapped to prettier's width. Then run: `npx vitest run tests/unit/report.test.ts tests/unit/report-endpoint.test.ts tests/unit/report-review.test.ts && npm run typecheck`
 Expected: PASS. `astro check` reports 0 errors, 0 warnings and 0 hints, in three summary lines.
 
 - [ ] **Step 6: Commit**
@@ -297,6 +310,7 @@ git commit -m "The report page table knows the 404: one path, a stem per locale,
 - [ ] **Step 1: Write the failing e2e spec `tests/e2e/not-found-report.spec.ts`**
 
 ```ts
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { recorded } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
@@ -324,7 +338,7 @@ test.use(recorded);
 
 const NOT_FOUND = pagePath('not-found', DEFAULT_LOCALE);
 const BETA = LOCALES.filter(isBetaLocale);
-const block = (page: import('@playwright/test').Page, locale: string) =>
+const block = (page: Page, locale: string) =>
   page.locator(`details[data-report][lang="${locale}"]`);
 
 test('every beta block carries one form posting its own locale, and English none', async ({
@@ -372,6 +386,9 @@ test('a block walks its own fields from the keyboard, each labelled and describe
   browserName,
 }) => {
   await page.goto(NOT_FOUND);
+  // The last block: were the ids shared, each label would name the FIRST
+  // element with its id, so the first block would pass by accident and the
+  // last cannot.
   const locale = BETA[BETA.length - 1];
   const t = getSiteStrings(locale).report;
   const details = block(page, locale);
@@ -406,6 +423,7 @@ for (const locale of BETA)
     await expect(shown).toHaveText(getSiteStrings(locale).report.sent);
     await expect(shown).toHaveAttribute('lang', locale);
     await expect(shown).toBeFocused();
+    expect(await contrastRatio(shown)).toBeGreaterThanOrEqual(4.5);
     const statuses = page.locator('[data-report-status]');
     await expect(statuses).toHaveCount(BETA.length * 4);
     await expect(page.locator('[data-report-status]:visible')).toHaveCount(1);
@@ -431,9 +449,16 @@ for (const theme of THEMES)
           details.getByRole('button', { name: t.send }),
         ])
           await atLeast44(target);
+        // On the 404 the form sits on the page's ground, not the footer's,
+        // so its label and hints are measured here too (#97 measured them in
+        // the footer).
+        const stem = reportIdStem('not-found', locale);
         for (const text of [
           details.locator('summary'),
           details.locator('form > p').first(),
+          details.locator(`label[for="${stem}-quote"]`),
+          details.locator(`#${stem}-quote-hint`),
+          details.locator(`#${stem}-note-hint`),
           details.getByRole('button', { name: t.send }),
         ])
           expect(await contrastRatio(text), locale).toBeGreaterThanOrEqual(4.5);
@@ -461,7 +486,7 @@ test('no form reaches paper', async ({ page }) => {
 - [ ] **Step 2: Run it red**
 
 Run: `npx playwright test tests/e2e/not-found-report.spec.ts --project=chromium`
-Expected: FAIL. `toHaveCount(4)` receives 0 on the first test, and each later test fails on its own locator.
+Expected: 10 FAIL and 1 PASS. The first test's `toHaveCount(4)` receives 0, and each later test fails on its own locator. The PASS is `each block offers what it shows`, which checks Task 1's keys against copy the 404 already renders. That is legitimate, and M13 is the mutation that reaches it.
 
 - [ ] **Step 3: Create `src/components/ReportForm.astro`**
 
@@ -484,8 +509,8 @@ import {
  * spec 14). It decides whether to draw itself, through `isBetaLocale`, so
  * English never shows it and no caller keeps a list of locales.
  *
- * `lang` is on every element it draws, because on the 404 the document's own
- * `lang` is English. The status paragraphs sit outside the `<details>`,
+ * The disclosure and each status carry `lang` (the fields inherit it),
+ * because on the 404 the document's own `lang` is English. The status paragraphs sit outside the `<details>`,
  * because a closed one renders nothing and a status must show either way.
  */
 interface Props {
@@ -666,15 +691,17 @@ git commit -m "Every translated 404 block carries the report form, one component
 **Files:**
 - Create: `tests/engines.ts`
 - Modify: `playwright.config.ts`, `playwright.functions.config.ts`, `.github/workflows/ci.yml` (the functions job's browser install)
-- Test: `tests/functions/report.spec.ts`
+- Test: `tests/functions/report.spec.ts`, `tests/unit/pipeline-wiring.test.ts` (it pins the functions job's steps)
 
 **Interfaces:**
 - Produces: `ENGINES` (`readonly { name: string; device: string }[]`), exported from `tests/engines.ts`.
 
 - [ ] **Step 1: Write the failing Functions tests** (append inside `describe('with JavaScript disabled')`)
 
+Add `LOCALES` and `isBetaLocale` to the file's import from `../../src/lib/i18n`.
+
 ```ts
-  for (const locale of ['id', 'zh', 'vi', 'th'] as const)
+  for (const locale of LOCALES.filter(isBetaLocale))
     test(
       `the 404's ${locale} block stores its own locale and notFound key`,
       { tag: '@requires-isolated-context' },
@@ -725,10 +752,10 @@ git commit -m "Every translated 404 block carries the report form, one component
   );
 ```
 
-- [ ] **Step 2: Run red on the Task 1 base** (or with the 404's forms reverted)
+- [ ] **Step 2: Run red with the 404's forms taken out**
 
-Run: `npm run test:functions`
-Expected: the five new tests FAIL, because the block has no `details` and the `summary` click times out. The existing tests pass.
+Commit first. Then put back the Task 1 version of the page with `git show HEAD~2:src/pages/404.astro > src/pages/404.astro`, and run `npx playwright test --config=playwright.functions.config.ts --project=chromium`. Restore the page with `git checkout -- src/pages/404.astro`.
+Expected: 5 FAIL (the four blocks and the cross-block test), because no `details` exists and the `summary` click times out. The 8 existing tests pass.
 
 - [ ] **Step 3: One engine list, and five engines for the Functions suite**
 
@@ -748,7 +775,7 @@ export const ENGINES = [
 ] as const;
 ```
 
-In `playwright.config.ts`, delete the local `ENGINES` and add `import { ENGINES } from './tests/engines';`. In `playwright.functions.config.ts`, add the same import and set:
+In `playwright.config.ts`, delete the local `ENGINES` and add `import { ENGINES } from './tests/engines';` below the `@playwright/test` import. In `playwright.functions.config.ts`, add the same import and set:
 
 ```ts
   projects: ENGINES.map(({ name, device }) => ({
@@ -759,7 +786,7 @@ In `playwright.config.ts`, delete the local `ENGINES` and add `import { ENGINES 
 
 Also append to its doc comment: `Every engine the e2e suite renders on (#350): a form posted by a real browser is the claim, and each engine posts it its own way.`
 
-In `.github/workflows/ci.yml`, the functions job: change `npx playwright install --with-deps chromium` to `npx playwright install --with-deps`.
+In `.github/workflows/ci.yml`, the functions job: change `npx playwright install --with-deps chromium` to `npx playwright install --with-deps`. The same line is pinned in `tests/unit/pipeline-wiring.test.ts` (`the functions job runs the functions-runtime suite`). Change it there, with the comment `// Every engine: the suite posts the 404's forms from all five (#350).` above it.
 
 - [ ] **Step 4: Run green**
 
@@ -769,7 +796,7 @@ Expected: PASS on all five projects, with the total equal to five times the per-
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/engines.ts playwright.config.ts playwright.functions.config.ts .github/workflows/ci.yml tests/functions/report.spec.ts
+git add tests/engines.ts playwright.config.ts playwright.functions.config.ts .github/workflows/ci.yml tests/functions/report.spec.ts tests/unit/pipeline-wiring.test.ts
 git commit -m "Every 404 block's report is stored with its own locale, on five engines (Refs #350)"
 ```
 
@@ -808,11 +835,12 @@ Each mutation is applied with its anchor count asserted and its diff printed, ru
 | M6  | `ReportForm.astro`: `isBetaLocale(lang) &&` becomes `true &&`                                     | `not-found-report.spec.ts`, `report-presence.spec.ts`         | RED: English block has a form; English footers have one |
 | M7  | `copy-reaches…`: the type-ahead regex back to `id="report-strings"`                               | `copy-reaches-a-page.spec.ts`                                | RED: removed (3 × 4 locales) ≠ forms (+ 4 on the 404)    |
 | M8  | `404.astro`: each block's `<h2>` renders `{copy.body}`, with the type-ahead strip left in place   | `copy-reaches-a-page.spec.ts`                                | RED: "the 404 speaks it" misses the heading             |
-| M8b | M8, and `RENDERED_404` without the strip                                                          | same                                                         | GREEN: the datalist satisfies it. This shows why the strip exists |
+| M8b | M8, and `RENDERED_404` without the strip                                                          | same                                                         | "the 404 speaks it" GREEN: the datalist satisfies it, which is why the strip exists. The corpus scan stays RED |
 | M9  | `report-presence`: `footerOf(html)` becomes `html`                                                | `report-presence.spec.ts`                                    | RED: the 404 (lang=en) carries forms                    |
 | M10 | `ReportForm.astro`: hidden `page` becomes `home`                                                  | functions                                                    | RED: `not-found` expected in the row; the quote is not found |
 | M11 | `ReportForm.astro`: delete `@media print` rule                                                    | `not-found-report.spec.ts`                                   | RED: "no form reaches paper"                            |
 | M12 | `ReportForm.astro`: drop `lang={lang}` from the statuses                                          | `not-found-report.spec.ts`                                   | RED: the status test's `lang` assertion                 |
+| M13 | `report.ts`: `unshown` also lists `site.notFound.heading`                                         | unit + `not-found-report.spec.ts`                            | RED: the 404 keys test; "each block offers what it shows" |
 
 Record each run's observed verdict and failing test names under the table. A GREEN where RED was predicted goes through the three-causes check before it is believed.
 
@@ -824,3 +852,68 @@ Record each run's observed verdict and failing test names under the table. A GRE
 - Commit, push, and open the PR into `develop` with `Refs #350`. Check the body with `node scripts/closing-keywords.mjs`.
 
 ## Review log
+
+**Pass 1 (2026-09-26, run in a scratch worktree off `develop` at 24798a5): 6 findings, all fixed above.**
+
+The plan's code blocks were assembled into `../shyden-350-review` and run: tests against throwing stubs, then the implementation, `astro check`, the whole unit suite, the touched e2e specs on chromium, webkit and content, the Functions suite on five engines, and all 14 mutations.
+
+1. `agrees with label-check about which site sections are chrome` went red, and no task mentioned it. The 404 now offers `notFound`, so the test was flipped to say "the 404 alone" (Task 1, Step 1).
+2. That flip left `searched` unused in `report.test.ts`, which is an `astro check` hint. It is dropped from the import.
+3. `each block offers what it shows` passed before the form existed. It checks Task 1's keys against copy the 404 already renders, so the pass is legitimate, but no mutation reached it. M13 was added, and it goes red.
+4. Task 2's red prediction said every test would fail. It is now 10 FAIL and 1 PASS, with the reason given.
+5. The code blocks are not wrapped to prettier's width, and Step 5 never said to format them. A `prettier --write` step was added.
+6. M8b predicted a whole-file GREEN, and the run was RED. The strip's own test, "the 404 speaks it", did go GREEN, as predicted. The RED came from a second, independent guard: the corpus scan cannot find the heading anywhere either. The row now predicts at the level of the test.
+
+Results with the plan's code, which are the targets for execution:
+- Unit: 2665/2665. `astro check`: 0 errors, 0 warnings and 0 hints.
+- e2e: 182/182 on chromium, webkit and content.
+- Functions: 65/65, which is 13 tests on 5 engines in 1.5 min. The new tests were 5/5 red with the 404's forms reverted.
+- Prettier: clean.
+
+Mutations, every one RED as predicted (harness `mut350.py`, tree clean after each):
+- M1 (4 unit), M2 (3 unit, then 7 e2e), M3 (4), M4 (6), M5 (10 e2e), M6 (7 e2e).
+- M6 again against `report-presence.spec.ts` alone, because the harness prints only four failing names: 1 failed, on the footer-presence test.
+- M7: 5 failed, the corpus liveness check in every locale.
+- M8: 8 failed (4 "speaks it" and 4 corpus).
+- M8b: 4 failed, corpus only. "Speaks it" is green.
+- M9: 1. M10: 5 in Functions. M11: 1. M12: 4. M13: 5 unit, then 1 e2e (`each block offers what it shows`).
+
+The dev, prod and device suites mention only the footer's `#report-sent`, and the footer's stem does not change.
+
+
+**Pass 2 (2026-09-26): 5 findings, all fixed above.**
+
+This pass re-ran the mechanical check: every line of the 20 code blocks exists verbatim in the tree that ran, apart from 9 prettier rewraps and the one style-move note. It re-read the whole document and ran Task 4's visual steps.
+
+1. Task 1, Step 2 said that `FOOTER_PAGE_IDS` was "not exported" and then stubbed only `reportIdStem`. Pass 1 stubbed both and measured 9 failures. The step now says exactly that.
+2. The component's doc comment, and spec 14.1, claimed that `lang` sits on every element. It sits on the disclosure and the statuses, and the fields inherit it. Both now say so.
+3. The new unit test and the Functions tests listed `['id', 'zh', 'vi', 'th']`, the enumeration the Global Constraints forbid. Both now use `LOCALES.filter(isBetaLocale)`.
+4. Task 3's red step ran the whole Functions suite, which would predict 25 failures on five engines. It now names the commands, runs chromium, and expects 5.
+5. `pipeline-wiring.test.ts` pins the functions job's `npx playwright install --with-deps chromium`. Task 3 changed the job and never named the pin. Pass 1 missed it because it did not run the unit suite after Task 3. Task 3 now changes the pin and lists the file.
+
+Visual, in the pinned container: `--grep not-found` wrote exactly the four new baselines. Viewed: each beta block shows a closed disclosure in its own language, and the English block shows none. The full comparison then passed 28 of 28 with nothing written, so the footer's pixels are unchanged.
+
+Environment, not the plan: the scratch worktree's `node_modules` was a symlink, and the container's Linux `npm ci` replaced it (memory `a-symlinked-node-modules-meets-the-visual-container`). The execution runs in the main checkout, where `node_modules` is a real directory.
+
+**Pass 3 (2026-09-26): 3 findings, all fixed above.**
+
+This pass ran the mechanical check again: every line of the 20 blocks is present, apart from the same rewraps, and every anchor the prose names is in the tree. It re-read the whole document and executed everything:
+- Unit: 2665/2665. `astro check`: 0/0/0. Prettier: clean.
+- e2e: the six touched specs on all six projects, 389/389.
+- Functions: five engines, 65/65.
+- All 14 mutations: RED, with the same counts as pass 1. The tree was clean after the run.
+
+Every result matched. The findings came from reading the new spec:
+1. The contrast test measured the summary, the intro and the button, and not the label, the hints or the status. On the 404 the form sits on the page's ground, not the footer's, so #97's footer measurements do not cover it. The test now measures all of them, and the status test measures the shown status.
+2. An inline `import('@playwright/test').Page` type is now a top-level `import type`.
+3. The keyboard test takes the last block with no reason given. The comment now gives it: were the ids shared, each label would name the first element with its id.
+
+**Pass 4 (2026-09-26): 0 findings.**
+
+This pass ran the mechanical check (every block present, the same rewraps, no placeholder, and every stale phrase only inside this log), re-read the whole document, and executed everything:
+- Unit: 2665/2665. `astro check`: 0/0/0. Prettier: clean.
+- e2e: 389/389 on all six projects.
+- Functions: 65/65 on five engines.
+- All 14 mutations: RED, with pass 1's counts. The tree was clean after the run.
+
+**The plan is approved (self-approved after a clean pass, operator rule of 2026-09-24).**
