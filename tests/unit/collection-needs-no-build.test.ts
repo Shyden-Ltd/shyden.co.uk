@@ -307,6 +307,24 @@ describe('what counts as reading the build while collecting', () => {
     ).toEqual([]);
   });
 
+  it('a callback handed to a module-scope call runs with it, and is reported once, at the read', () => {
+    // The outer call is handed a FUNCTION, not a path: what the callback does
+    // is judged where it does it, so one read is one finding.
+    expect(
+      readsIn({
+        [SPEC]: `${HEAD}const ALL = ['a'].map(() => filesUnder('dist', keep));`,
+      }),
+    ).toEqual([`${SPEC}:2 filesUnder`]);
+  });
+
+  it('a helper that calls itself is judged, not followed forever', () => {
+    expect(
+      readsIn({
+        [SPEC]: `${HEAD}function walk(n) { return n ? walk(n - 1) : statSync('dist'); }\ntest('t', () => { walk(2); });`,
+      }),
+    ).toEqual([]);
+  });
+
   it('a title that starts with dist/ is a title, not a path', () => {
     expect(
       readsIn({
