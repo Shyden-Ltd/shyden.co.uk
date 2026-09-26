@@ -80,5 +80,31 @@ the test can fail.
 
 ## Review log
 
-- **Pass 1 (2026-09-26):** assembled in the branch and run — see the section
-  below once executed.
+Each pass ran, not read: typecheck (`astro check`), the whole unit suite,
+prettier, and the mutation table through a harness that asserts each anchor
+matched once, prints the diff size, runs the whole test file and reads the
+totals line.
+
+- **Pass 1 — four findings.** (1) `pipeline-wiring.test.ts` went red: the
+  back-translation workflow's `paths:` filter did not list the new client, so
+  a change to it would not start the review; added. (2) A missing-key test
+  asserted `not.toContain('English')`, which the `in English` line always
+  satisfies; now it matches the English and locale lines by their shape. (3)
+  The script's own engine decisions (unset URL, bad URL, nothing needing a
+  read) had no test, so a mutation there would stay green; `backTranslations`
+  is exported and tested against the same local HTTP stand-in (M17, M18,
+  M20). (4) M13 as first written deleted the script line instead of moving
+  it; M13b moves it below the deletes and is red on the ordering assertion.
+- **Pass 2 — one finding.** `absence-liveness.test.ts` flagged the two "no
+  request was made" assertions: an empty collector passes them whether or
+  not the stand-in records. Now a sentinel request follows each step, and
+  `searched()` sits inside the assertion (M20 red on the absence, M21 red on
+  the sentinel). Process slip in this pass: M21 mutated the test file while
+  that edit was uncommitted, and `git checkout --` restored HEAD. The edit
+  was re-applied and committed, and the harness now refuses any target with
+  uncommitted work (positive control: it refused a dirtied script).
+- **Pass 3 — no findings.** Unit 2658/2658, typecheck 0 errors / 0 warnings
+  / 0 hints, prettier clean. M1–M21 plus M13b: 22 of 22 red as predicted,
+  denominators steady (43, 104, 35). A real run against
+  `shyden-reports-dev` printed its 5 waiting rows, exit 0; a third database
+  name exited 2 with the usage. **Approved.**
