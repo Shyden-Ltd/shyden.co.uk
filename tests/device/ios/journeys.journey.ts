@@ -60,6 +60,10 @@ import {
   type Locale,
 } from '../../../src/lib/i18n';
 import { MAX_STUDENTS } from '../../../src/lib/grouping';
+import { FLOOR_PX } from '../../../src/scripts/projector';
+import { measureBoardScript, type BoardGeometry } from '../../board-geometry';
+import { searched } from '../../source-files';
+import { shootDevice } from './evidence';
 import { startIosSession, type DeviceSession } from './session';
 import { waitFor } from './webdriver';
 
@@ -765,5 +769,250 @@ describe.each(LOCALES)(
         ).toBeGreaterThanOrEqual(44);
       }
     });
+
+    /**
+     * #189 AC11: the reported case, on the phone it was reported on -- and a
+     * second shape, because the reported one cannot fail.
+     *
+     * The bug was a group card clipped by the projector board when five groups
+     * wrapped onto a second row. The desktop suite covers it, but it has to
+     * STUB the refused fullscreen grant (`Element.prototype.requestFullscreen`
+     * replaced by a rejecting stub in `classroom-groups-projector.spec.ts`),
+     * because Chromium headless is the only way it can reach that path. iOS
+     * Safari refuses natively -- so this is the same layer, reached honestly,
+     * and it is the reason an emulator is not a substitute.
+     *
+     * The measurement is NOT written here: it is `measureBoard`, the one the
+     * desktop leg runs, sent down the wire as text. A second measurement over
+     * here would be the one place the two legs could quietly disagree, in the
+     * leg nobody watches.
+     *
+     * WHY TWO SHAPES. Mutation D1 restored the original defect and this journey
+     * stayed GREEN on the reported shape -- with the built bundle proving the
+     * mutation reached the page (`removeProperty` 2->3, `style.fontSize` 3->2),
+     * so not a dead mutation. The reason is the defect's signature: a FALSE
+     * FIT. It measures at the root's 16px, concludes the sheet fits, and
+     * returns `scrolls false`. At 25 pupils in fives the sheet is 1618px in a
+     * 683px stage and fits at NO font, so shrink-to-fit engages either way and
+     * lands on the readable floor. The bug had nowhere to show itself.
+     *
+     * So the shapes were MEASURED on the phone rather than guessed. At 8 pupils
+     * in pairs: `available` 683, the sheet 683 at 16px (a fit -- and that exact
+     * equality is #189's second defect visible in raw data, since `scrollHeight`
+     * on a clipping box can never fall below `clientHeight`) and 1167px at
+     * 40px. That is the false-fit condition, with 484px of overflow to show it
+     * in. Nine of ten measured shapes qualified; the reported one did not.
+     *
+     * A guard nobody has watched fail is not a guard, so the reported case
+     * proves the fix on the shape it was reported on, and this one proves the
+     * journey can still catch the defect that caused it.
+     */
+    const BOARD_SHAPES = [
+      { count: '25', size: '5', groups: 5, what: 'the reported case' },
+      { count: '8', size: '2', groups: 4, what: 'the false-fit shape' },
+    ] as const;
+
+    for (const shape of BOARD_SHAPES) {
+      test(`Journey 14 -- iOS-only, ${shape.what}: ${shape.count} pupils in ${shape.size}s on the projector board, with the fullscreen grant refused by the phone itself`, async () => {
+        logMode(`Journey 14 (${locale}, ${shape.count}/${shape.size})`);
+        await session.navigateToPath(path);
+
+        const title = `Journey 14 -- ${shape.what}, ${shape.count} in ${shape.size}s, refused grant (${locale})`;
+        const project = 'ios-safari-real-device';
+
+        const count = await session.driver.findElement('#cg-count');
+        await session.interaction.click(count);
+        await session.interaction.clear(count);
+        await session.interaction.type(count, shape.count);
+
+        const size = await session.driver.findElement('#cg-size');
+        await session.interaction.click(size);
+        await session.interaction.clear(size);
+        await session.interaction.type(size, shape.size);
+
+        // `#cg-speed` is a <select>, and `Interaction` deliberately offers only
+        // click/type/clear -- so this one control goes through the driver. Two
+        // things make that safe rather than a shortcut: the value is READ BACK
+        // (a set that silently did nothing would leave the shuffle animating
+        // while the layout below was measured mid-flight), and JavaScript needs
+        // no visibility, so the phone skips expanding the sound section that the
+        // desktop leg has to open first.
+        const speed = await session.driver.executeScript<string>(
+          `var s = document.getElementById('cg-speed');
+         s.value = 'skip';
+         s.dispatchEvent(new Event('change', { bubbles: true }));
+         return s.value;`,
+        );
+        expect(speed, `the shuffle animation was skipped (${locale})`).toBe(
+          'skip',
+        );
+
+        const go = await session.driver.findElement('#cg-go');
+        await session.interaction.click(go);
+
+        const cards = await waitFor(
+          async () => {
+            const found =
+              await session.driver.findElements('#cg-tables .group');
+            return found.length > 0 ? found : undefined;
+          },
+          {
+            timeout: 20_000,
+            describe: `${shape.count} students in ${shape.size}s to render as group cards (${locale}, mode: ${session.mode})`,
+          },
+        );
+        expect(
+          cards.length,
+          `${shape.count} students in ${shape.size}s is ${shape.groups} groups (${locale})`,
+        ).toBe(shape.groups);
+
+        const openButton = await waitFor(
+          async () => {
+            const [button] =
+              await session.driver.findElements('#cg-board-open');
+            if (!button) return undefined;
+            return (await button.property('hidden')) === false
+              ? button
+              : undefined;
+          },
+          {
+            timeout: 20_000,
+            describe: `the Full screen button to be offered once there are results (${locale})`,
+          },
+        );
+        await session.interaction.click(openButton);
+
+        // The overlay MOVES `#cg-results` rather than re-rendering it, so group
+        // cards inside the stage are proof the move happened, not merely that
+        // the button was pressed.
+        await waitFor(
+          async () => {
+            const found = await session.driver.findElements(
+              '#cg-board-stage .group',
+            );
+            return found.length > 0 ? found : undefined;
+          },
+          {
+            timeout: 20_000,
+            describe: `the board to take the results into its stage (${locale})`,
+          },
+        );
+
+        /**
+         * The positive control, and the reason this journey is worth a phone.
+         *
+         * `projector.ts` calls `requestFullscreen?.()` and swallows the
+         * rejection on purpose -- the overlay is showing either way -- so a
+         * board that opened proves nothing about WHICH path opened it. Without
+         * this, a phone that silently granted fullscreen would run every
+         * assertion below against the granted layout and report AC11 met.
+         *
+         * `apiOffered` is reported rather than asserted: if iOS ever stops
+         * exposing the method at all, "not in fullscreen" would still be true
+         * for a different reason, and the failure message should say so instead
+         * of a later reader assuming a refusal that never happened.
+         */
+        const grant = await session.driver.executeScript<{
+          apiOffered: boolean;
+          inFullscreen: boolean;
+          boardShown: boolean;
+        }>(
+          `var board = document.getElementById('cg-board');
+         return {
+           apiOffered: typeof Element.prototype.requestFullscreen === 'function',
+           inFullscreen: document.fullscreenElement != null,
+           boardShown: !!board && board.hidden === false,
+         };`,
+        );
+
+        expect(
+          grant.boardShown,
+          `the board is showing on a real iPhone (${locale}); fullscreen API ` +
+            `offered: ${grant.apiOffered}`,
+        ).toBe(true);
+        expect(
+          grant.inFullscreen,
+          `this is the REFUSED-grant path, refused by the phone rather than by ` +
+            `a stub (${locale}); fullscreen API offered: ${grant.apiOffered}`,
+        ).toBe(false);
+        await shootDevice(session.driver, {
+          project,
+          title,
+          label: `the board open on a refused grant -- API offered: ${grant.apiOffered}`,
+        });
+
+        const seen =
+          await session.driver.executeScript<BoardGeometry>(
+            measureBoardScript(),
+          );
+        const where =
+          `${seen.rows} row(s) at ${seen.font}: a ${seen.scrollHeight}px sheet ` +
+          `in a ${seen.clientHeight}px stage with overflow-y: ${seen.overflowY}`;
+
+        // The measurement itself, reported -- Journey 12's precedent, for the
+        // same reason: a number only a real phone can produce is the point of
+        // running on one, and `--reporter=verbose` (package.json's own test:ios
+        // script) is what puts it in the run's own output rather than nowhere.
+        // Read it against FLOOR_PX: a board sitting AT the floor has shrunk as
+        // far as it may before scrolling becomes the honest answer.
+        // eslint-disable-next-line no-console -- see the comment immediately above
+        console.log(
+          `  [Journey 14 board, locale ${locale}] ${where}; cards=${seen.cards.length} ` +
+            `unreachable=${seen.unreachable.length} scrollable=${seen.scrollable} ` +
+            `floor=${FLOOR_PX}px`,
+        );
+
+        // THE INVARIANT, first -- an assertion ordered after a brittle proxy is
+        // only ever evaluated while the proxy holds (#156). The question that
+        // matters is whether a teacher can see every name.
+        expect(
+          searched(seen.unreachable, {
+            of: seen.cards,
+            what: `group cards on the real-device board (${locale})`,
+          }),
+          where,
+        ).toEqual([]);
+        await shootDevice(session.driver, {
+          project,
+          title,
+          label: `nothing out of reach -- ${seen.rows} row(s) at ${seen.font}`,
+        });
+
+        // ...and the property behind it: either the sheet fits, or the stage
+        // genuinely scrolls. Never how many things there are.
+        expect(
+          seen.scrollHeight <= seen.clientHeight || seen.scrollable,
+          `${where} -- content nobody can reach (${locale})`,
+        ).toBe(true);
+
+        // ...and the converse, which is what makes the verdict honest rather
+        // than merely safe: a board that offers a scrollbar it does not need
+        // would keep every assertion above green.
+        if (seen.scrollHeight <= seen.clientHeight) {
+          expect(
+            seen.scrollable,
+            `${where} -- the sheet fits, so the stage must not scroll (${locale})`,
+          ).toBe(false);
+        }
+
+        // ...and the assertion the desktop mutation sweep was missing: a board
+        // may scroll ONLY once it has come down to the readable floor. Anything
+        // above the floor that still does not fit had somewhere left to go.
+        if (seen.scrollHeight > seen.clientHeight) {
+          expect(
+            parseFloat(seen.font),
+            `${where} -- scrolling at ${seen.font}, above the ${FLOOR_PX}px ` +
+              `floor (${locale}): it had further to shrink before scrolling was ` +
+              'the honest answer',
+          ).toBeLessThanOrEqual(FLOOR_PX + 1);
+        }
+
+        await shootDevice(session.driver, {
+          project,
+          title,
+          label: `${shape.what} confirmed -- ${seen.rows} row(s), ${seen.cards.length} cards at ${seen.font}`,
+        });
+      });
+    }
   },
 );

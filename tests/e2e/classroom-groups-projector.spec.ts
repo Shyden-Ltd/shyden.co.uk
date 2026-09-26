@@ -10,6 +10,7 @@ import {
 } from './helpers';
 import { searched } from '../source-files';
 import { FLOOR_PX } from '../../src/scripts/projector';
+import { measureBoard } from '../board-geometry';
 import { recorded, shoot } from './evidence';
 
 test.use(recorded);
@@ -693,51 +694,7 @@ const boardOf = async (
  * content that is outside the box AND cannot be scrolled to.
  */
 const boardGeometry = async (page: import('@playwright/test').Page) =>
-  page.evaluate(() => {
-    const stage = document.getElementById('cg-board-stage')!;
-    const cs = getComputedStyle(stage);
-    const box = stage.getBoundingClientRect();
-    const scrollable = /auto|scroll|overlay/.test(cs.overflowY);
-    const groups = Array.from(stage.querySelectorAll<HTMLElement>('.group'));
-
-    const targets: { label: string; el: Element }[] = [];
-    groups.forEach((group, i) => {
-      targets.push({ label: `group ${i + 1}`, el: group });
-      Array.from(group.querySelectorAll('.who')).forEach((who) => {
-        targets.push({
-          label: `"${(who.textContent || '').trim()}" in group ${i + 1}`,
-          el: who,
-        });
-      });
-    });
-
-    // Half a pixel of tolerance: a fractional layout box is not a clipped
-    // name, and an exact comparison would red on sub-pixel rounding alone.
-    const escapes = (el: Element) => {
-      const r = el.getBoundingClientRect();
-      return r.bottom > box.bottom + 0.5 || r.top < box.top - 0.5;
-    };
-
-    return {
-      unreachable: scrollable
-        ? []
-        : targets
-            .filter((t) => t.el.getClientRects().length > 0 && escapes(t.el))
-            .map((t) => t.label),
-      // The population, by CONTENT: a card's own text, so an emptied board is
-      // not mistaken for a board that was searched. Counting entries is not
-      // counting content (#112).
-      cards: groups.map((g) => (g.textContent || '').trim()),
-      rows: new Set(
-        groups.map((g) => Math.round(g.getBoundingClientRect().top)),
-      ).size,
-      scrollable,
-      scrollHeight: stage.scrollHeight,
-      clientHeight: stage.clientHeight,
-      font: cs.fontSize,
-      overflowY: cs.overflowY,
-    };
-  });
+  page.evaluate(measureBoard);
 
 /**
  * THE INVARIANT. Asserted FIRST, and derived rather than proxied.

@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { withoutMarkupComments, withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
 import { reportLocation } from '../../scripts/test-e2e.mjs';
@@ -18,8 +19,9 @@ import {
   EVIDENCE_JPEG_QUALITY,
   EVIDENCE_MANIFEST,
   EVIDENCE_REPORT,
+  manifestRow,
 } from '../../scripts/evidence-files.mjs';
-import { captureOptions, manifestRow } from '../e2e/evidence';
+import { captureOptions } from '../e2e/evidence';
 import { scriptCheckout, type ScriptCheckout } from './script-checkout';
 import {
   assertPageFits,
@@ -1132,10 +1134,22 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
   it('has no consumer spelling an evidence filename for itself', () => {
     // Derived from the filesystem, not from a list: the sweep that missed five
     // survivors (#65) was driven by the file list in its own ticket.
+    //
+    // `tests/e2e` was itself one of those lists. #189 added a second capture
+    // leg under `tests/device` -- the iOS journeys write the same manifest
+    // through the same contract, because `shoot` is Playwright-only and they
+    // run under Vitest against a real phone -- and this guard could not see it.
+    // The population is now every test file, so a leg that lands somewhere new
+    // is covered the day it appears rather than the day someone remembers.
+    //
+    // This file exempts itself for the same reason the contract module does:
+    // the literal pin above spells both names ON PURPOSE, and a guard that
+    // flagged its own pin would be teaching the next author to delete it.
+    const self = relative(process.cwd(), fileURLToPath(import.meta.url));
     const consumers = [
       ...filesUnder('scripts', (p) => p.endsWith('.mjs')),
-      ...tsFilesUnder('tests/e2e'),
-    ].filter((p) => !p.endsWith(CONTRACT_MODULE));
+      ...tsFilesUnder('tests'),
+    ].filter((p) => !p.endsWith(CONTRACT_MODULE) && p !== self);
 
     const respellings = consumers.filter((path) => {
       const code = withoutTsComments(readFileSync(path, 'utf8'));

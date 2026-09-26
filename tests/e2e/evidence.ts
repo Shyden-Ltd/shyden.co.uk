@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import {
   EVIDENCE_JPEG_QUALITY,
   EVIDENCE_MANIFEST,
+  manifestRow,
+  slug,
 } from '../../scripts/evidence-files.mjs';
 
 /**
@@ -31,14 +33,6 @@ import {
  */
 
 const DIR = process.env.EVIDENCE_DIR;
-
-/** Filesystem-safe, still readable in a directory listing. */
-const slug = (s: string) =>
-  s
-    .replace(/[^a-z0-9]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80)
-    .toLowerCase();
 
 const counters = new Map<string, number>();
 
@@ -81,32 +75,6 @@ export const shoot = async (
     'utf8',
   );
 };
-
-/** What one assertion shot records about itself. */
-type Capture = {
-  project: string;
-  title: string;
-  order: number;
-  label: string;
-  file: string;
-};
-
-/**
- * One manifest line: a capture, stamped with the instant it was written.
- *
- * The manifest is appended to and never cleared, so a second run into the same
- * evidence directory left the first run's rows -- and their pictures -- on a
- * page built from the second run's report (#171). The stamp is how
- * `scripts/build-evidence-page.mjs` tells them apart: a run's rows are the ones
- * stamped once its report's `stats.startTime` had passed.
- *
- * PURE, with the clock as an argument, so `tests/unit/evidence-page.test.ts`
- * feeds the builder rows this function wrote rather than a copy of their shape.
- */
-export const manifestRow = (capture: Capture, now: Date) => ({
-  ...capture,
-  at: now.toISOString(),
-});
 
 /**
  * How every assertion shot is taken.
