@@ -458,9 +458,9 @@ describe('the runbook', () => {
 
   it('lists every stored column, and holds both deletes (AC7)', () => {
     const text = runbook();
-    expect(text).toMatch(
-      new RegExp(`^SELECT ${REPORT_COLUMNS.join(', ')}$`, 'm'),
-    );
+    const select = /^SELECT (.+)$/m.exec(text)?.[1];
+    expect(select, 'a SELECT line in the runbook').toBeDefined();
+    expect(select!.split(', ')).toEqual([...REPORT_COLUMNS]);
     expect(text).toMatch(/^DELETE FROM reports WHERE id = '<id>';$/m);
     expect(text).toMatch(
       /^DELETE FROM reports WHERE note LIKE 'automated dev check %';$/m,
