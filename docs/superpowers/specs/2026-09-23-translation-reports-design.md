@@ -955,3 +955,10 @@ into.
   while the real section gave 0. Every 15.4 name was counted, and the whole
   section was re-read. **No findings.** Section 15 is approved under the
   operator's standing rule of 2026-09-24.
+- **The plan** (2026-09-26,
+  `docs/superpowers/plans/2026-09-26-waiting-reports-count.md`). Writing and
+  running the code refined this section in seven places, listed under the
+  plan's _Refinements over the spec_. Three change behaviour: the comments
+  list asks only for today's comments (`since=`), every request gives up
+  after 30 s so the failure notice still runs, and runs are queued one at a
+  time so two cannot both post. The notice issue is #360.
