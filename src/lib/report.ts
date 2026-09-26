@@ -26,7 +26,19 @@ import {
   type MessagePart,
 } from './i18n/message';
 
-export const PAGE_IDS = ['home', 'glory-points', 'classroom-groups'] as const;
+/** The pages whose footer carries the form: one form, the locale in the path. */
+export const FOOTER_PAGE_IDS = [
+  'home',
+  'glory-points',
+  'classroom-groups',
+] as const;
+export type FooterPageId = (typeof FOOTER_PAGE_IDS)[number];
+
+/**
+ * Every value the endpoint's `page` field accepts. `not-found` is the 404
+ * (#350, spec 14): one path for every locale, one form per translated block.
+ */
+export const PAGE_IDS = [...FOOTER_PAGE_IDS, 'not-found'] as const;
 export type PageId = (typeof PAGE_IDS)[number];
 
 export interface ReportForm {
@@ -47,42 +59,82 @@ const ELLIPSIS = String.fromCharCode(0x2026);
 const SLOT = String.fromCodePoint(0xe000);
 
 interface PageEntry {
+  /** The path in the default locale. */
   readonly route: string;
+  /**
+   * Whether the path names its locale. The 404's does not, so it answers on
+   * one path in every locale and carries one form per locale (spec 14.3).
+   */
+  readonly localised: boolean;
   /** The site-catalogue section only this page reads. */
   readonly siteSection?: keyof SiteStrings;
   /** Whether the page reads the raw tool catalogue (`getStrings`). */
   readonly toolCatalogue: boolean;
+  /** Whether the page's chrome speaks the report's locale. The 404's is English. */
+  readonly chrome: boolean;
+  /** Keys of `siteSection` the page never shows in a report's locale. */
+  readonly unshown?: ReadonlySet<string>;
 }
 
-/** Spec section 4's table. The facts: HomePage reads `.home`, GloryPointsPage `.glory`, ClassroomGroupsPage `getStrings`. */
+/** Spec section 4's table and section 14. The facts: HomePage reads `.home`, GloryPointsPage `.glory`, ClassroomGroupsPage `getStrings`, 404.astro `.notFound`. */
 const PAGES: Record<PageId, PageEntry> = {
-  home: { route: '/', siteSection: 'home', toolCatalogue: false },
+  home: {
+    route: '/',
+    localised: true,
+    siteSection: 'home',
+    toolCatalogue: false,
+    chrome: true,
+  },
   'glory-points': {
     route: '/glory-points',
+    localised: true,
     siteSection: 'glory',
     toolCatalogue: false,
+    chrome: true,
   },
-  'classroom-groups': { route: '/classroom-groups', toolCatalogue: true },
+  'classroom-groups': {
+    route: '/classroom-groups',
+    localised: true,
+    toolCatalogue: true,
+    chrome: true,
+  },
+  'not-found': {
+    route: '/404',
+    localised: false,
+    siteSection: 'notFound',
+    toolCatalogue: false,
+    chrome: false,
+    // A document has one <title> and one description: the default locale's.
+    unshown: new Set(['site.notFound.title', 'site.notFound.description']),
+  },
 };
-
-/** Only the English-footed 404 renders this, so no form offers it (spec 3.1). */
-const NEVER_OFFERED: ReadonlySet<string> = new Set(['notFound']);
 
 export const isPageId = (value: unknown): value is PageId =>
   typeof value === 'string' && (PAGE_IDS as readonly string[]).includes(value);
 
-export function pageIdFromPath(pathname: string): PageId | null {
+/** A footer page only: the 404's footer is English and carries no form. */
+export function pageIdFromPath(pathname: string): FooterPageId | null {
   const route =
     localisePath(pathname, DEFAULT_LOCALE).replace(/\/+$/, '') || '/';
-  return PAGE_IDS.find((page) => PAGES[page].route === route) ?? null;
+  return FOOTER_PAGE_IDS.find((page) => PAGES[page].route === route) ?? null;
 }
 
 export const pagePath = (page: PageId, locale: Locale): string =>
-  localisePath(PAGES[page].route, locale);
+  PAGES[page].localised
+    ? localisePath(PAGES[page].route, locale)
+    : PAGES[page].route;
+
+/**
+ * The stem of every id a form draws (`<stem>-quote`, `<stem>-sent`). A page
+ * whose path names its locale has one form, and keeps `report`. The 404
+ * carries one per locale on one path, so each carries its locale (spec 14.3).
+ */
+export const reportIdStem = (page: PageId, locale: Locale): string =>
+  PAGES[page].localised ? 'report' : `report-${locale}`;
 
 /** Chrome: every top-level site entry no single page owns, derived so a new one is offered the day it is added. */
 function chromeSections(): string[] {
-  const owned = new Set<string>(NEVER_OFFERED);
+  const owned = new Set<string>();
   for (const page of PAGE_IDS) {
     const section = PAGES[page].siteSection;
     if (section) owned.add(section);
@@ -161,13 +213,14 @@ export function reportableStrings(
   const cacheKey = `${page}:${locale}`;
   let table = tables.get(cacheKey);
   if (!table) {
-    const { siteSection, toolCatalogue } = PAGES[page];
-    const sections = siteSection
-      ? [siteSection, ...chromeSections()]
-      : chromeSections();
+    const { siteSection, toolCatalogue, chrome, unshown } = PAGES[page];
+    const sections = [
+      ...(siteSection ? [siteSection] : []),
+      ...(chrome ? chromeSections() : []),
+    ];
     table = [
       ...(toolCatalogue ? toolStrings(locale) : []),
-      ...siteStrings(locale, sections),
+      ...siteStrings(locale, sections).filter(({ key }) => !unshown?.has(key)),
     ];
     tables.set(cacheKey, table);
   }
@@ -372,7 +425,9 @@ const outcome = (
 ): Response =>
   wantsJson(request)
     ? json({ outcome: result }, JSON_STATUS[result])
-    : plain(303, { Location: `${pagePath(page, locale)}#report-${result}` });
+    : plain(303, {
+        Location: `${pagePath(page, locale)}#${reportIdStem(page, locale)}-${result}`,
+      });
 
 /** Below U+0020 except TAB and LF, or U+007F–U+009F: nothing a browser form sends. */
 const hasControlCharacter = (text: string): boolean =>

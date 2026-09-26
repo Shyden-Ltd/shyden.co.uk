@@ -46,6 +46,7 @@ const PAGES = [
   { name: 'home-id', path: '/id/' },
   { name: 'glory-points', path: '/glory-points' },
   { name: 'classroom-groups', path: '/classroom-groups' },
+  { name: 'not-found', path: '/404' },
 ] as const;
 
 const WIDTHS = [

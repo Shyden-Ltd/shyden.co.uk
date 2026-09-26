@@ -49,7 +49,7 @@ export function showStatus(
   )) {
     const match = status.dataset.reportStatus === outcome;
     // 'superseded' outranks :target, which a URL fragment may still hold
-    // (Footer.astro's CSS), so exactly one status is visible.
+    // (ReportForm.astro's CSS), so exactly one status is visible.
     status.dataset.reportState = match ? 'shown' : 'superseded';
     if (match) shown = status;
   }

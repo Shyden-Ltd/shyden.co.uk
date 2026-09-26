@@ -8,7 +8,7 @@ import {
   isLocale,
 } from '../../src/lib/i18n';
 import {
-  PAGE_IDS,
+  FOOTER_PAGE_IDS,
   pagePath,
   reportOptions,
   type Outcome,
@@ -27,6 +27,9 @@ const built = () =>
     file,
     html: readFileSync(file, 'utf8'),
   }));
+/** The footer's markup: the 404 carries forms in its body, never its footer. */
+const footerOf = (html: string) =>
+  /<footer\b[\s\S]*?<\/footer>/.exec(html)?.[0] ?? '';
 const langOf = (html: string) => /<html[^>]*\slang="([^"]+)"/.exec(html)?.[1];
 
 test('a built page with a footer carries the form exactly when its locale is beta', () => {
@@ -34,7 +37,7 @@ test('a built page with a footer carries the form exactly when its locale is bet
   const findings = footed.flatMap(({ file, html }) => {
     const lang = langOf(html);
     const want = isLocale(lang) && isBetaLocale(lang);
-    const has = html.includes('data-report-form');
+    const has = footerOf(html).includes('data-report-form');
     return has === want ? [] : [`${file}: lang=${lang} form=${has}`];
   });
   expect(
@@ -44,18 +47,19 @@ test('a built page with a footer carries the form exactly when its locale is bet
     }),
   ).toEqual([]);
   expect(
-    footed.filter(({ html }) => html.includes('data-report-form')).length,
+    footed.filter(({ html }) => footerOf(html).includes('data-report-form'))
+      .length,
   ).toBeGreaterThan(0);
 });
 
 for (const locale of PREFIXED_LOCALES)
-  for (const page of PAGE_IDS)
+  for (const page of FOOTER_PAGE_IDS)
     test(`${pagePath(page, locale)}: the type-ahead offers exactly this page's strings`, async ({
       page: tab,
     }) => {
       await tab.goto(pagePath(page, locale));
       const offered = await tab
-        .locator('#report-strings option')
+        .locator('footer [data-report-strings] option')
         .evaluateAll((options) =>
           options.map((option) => (option as HTMLOptionElement).value),
         );

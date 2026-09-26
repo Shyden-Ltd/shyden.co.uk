@@ -1,10 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 import { BASE_URL, PASSWORD } from './tests/functions/local.mjs';
+import { ENGINES } from './tests/engines';
 
 /**
  * The Functions-runtime suite (#97, spec 10): real submissions to the real
  * Pages Functions on workerd, through `wrangler pages dev`. One worker,
- * because every test shares one server and one local database.
+ * because every test shares one server and one local database. Every engine
+ * the e2e suite renders on (#350): a form posted by a real browser is the
+ * claim, and each engine posts it its own way.
  */
 export default defineConfig({
   testDir: './tests/functions',
@@ -27,5 +30,8 @@ export default defineConfig({
     colorScheme: 'dark',
     httpCredentials: { username: 'dev', password: PASSWORD, send: 'always' },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: ENGINES.map(({ name, device }) => ({
+    name,
+    use: { ...devices[device] },
+  })),
 });

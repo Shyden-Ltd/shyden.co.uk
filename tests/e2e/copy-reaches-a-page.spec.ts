@@ -44,7 +44,9 @@ import { stringLeaves } from '../catalogue-leaves';
  * the scan lenient again.
  */
 const REPORT_TYPE_AHEAD =
-  /<datalist id="report-strings"[^>]*>[\s\S]*?<\/datalist>/g;
+  /<datalist\b[^>]*\bdata-report-strings\b[^>]*>[\s\S]*?<\/datalist>/g;
+/** A report form's opening tag: the 404 carries one per translated block. */
+const REPORT_FORM = /<form\b[^>]*\bdata-report-form\b/g;
 
 /**
  * Entity-decoded and whitespace-flattened.
@@ -70,8 +72,8 @@ const decode = (text: string) =>
 interface Corpus {
   /** How many built pages were read. */
   pages: number;
-  /** How many of them carry the report form. */
-  withForm: number;
+  /** How many report forms the built pages carry. */
+  forms: number;
   /** How many type-aheads were taken out of the scan. */
   typeAheadsRemoved: number;
   /** Rendered text of every built page, type-aheads removed, decoded. */
@@ -107,7 +109,10 @@ const builtCorpus = (): Corpus => {
   );
   corpus = {
     pages: raw.length,
-    withForm: raw.filter((html) => html.includes('data-report-form')).length,
+    forms: raw.reduce(
+      (count, html) => count + (html.match(REPORT_FORM)?.length ?? 0),
+      0,
+    ),
     typeAheadsRemoved: raw.reduce(
       (count, html) => count + (html.match(REPORT_TYPE_AHEAD)?.length ?? 0),
       0,
@@ -121,7 +126,13 @@ const builtCorpus = (): Corpus => {
 
 const PAGE_404 = 'dist/404.html';
 
-const RENDERED_404 = () => decode(readFileSync(PAGE_404, 'utf8'));
+/**
+ * The 404's own text, type-aheads removed: each translated block carries a
+ * form (#350) whose type-ahead lists that block's copy, and would otherwise
+ * find a heading the block had stopped showing.
+ */
+const RENDERED_404 = () =>
+  decode(readFileSync(PAGE_404, 'utf8').replace(REPORT_TYPE_AHEAD, ''));
 
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -258,18 +269,16 @@ test.describe('the 404 answers in every locale', () => {
 test.describe('every site string reaches a built page', () => {
   for (const locale of LOCALES) {
     test(`${locale}: no defined copy renders nowhere`, () => {
-      const { pages, withForm, typeAheadsRemoved, rendered } = builtCorpus();
+      const { pages, forms, typeAheadsRemoved, rendered } = builtCorpus();
       expect(
         pages,
         'no built pages — the scan below would pass vacuously',
       ).toBeGreaterThan(0);
       expect(
         typeAheadsRemoved,
-        'every page with a report form had its type-ahead taken out of the scan',
-      ).toBe(withForm);
-      expect(withForm, 'no built page carries a report form').toBeGreaterThan(
-        0,
-      );
+        'every report form had its type-ahead taken out of the scan',
+      ).toBe(forms);
+      expect(forms, 'no built page carries a report form').toBeGreaterThan(0);
 
       const missing: string[] = [];
       const wronglyAllowed: string[] = [];

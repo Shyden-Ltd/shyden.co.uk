@@ -8,7 +8,7 @@ import {
   getSiteStrings,
   getStrings,
 } from '../../src/lib/i18n';
-import { PAGE_IDS, pagePath } from '../../src/lib/report';
+import { FOOTER_PAGE_IDS, pagePath } from '../../src/lib/report';
 
 test.use(recorded);
 
@@ -93,7 +93,7 @@ test('every control is at least 44px, every text meets AA, every field has a 3:1
 });
 
 for (const locale of PREFIXED_LOCALES)
-  for (const pageId of PAGE_IDS)
+  for (const pageId of FOOTER_PAGE_IDS)
     test(
       `${pagePath(pageId, locale)}: no sideways scroll at 320px with the form open`,
       { tag: '@emulated-viewport' },

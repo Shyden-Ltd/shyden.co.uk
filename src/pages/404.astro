@@ -6,6 +6,7 @@ import {
   getSiteStrings,
   localisePath,
 } from '../lib/i18n';
+import ReportForm from '../components/ReportForm.astro';
 
 /**
  * MULTILINGUAL on purpose, and it is the only page that is.
@@ -28,6 +29,10 @@ import {
  * `title` and `description` come from the default locale because a document
  * has one of each. That is why the guard excuses those two keys, and only
  * those two, for the other languages.
+ *
+ * Each block carries the report form (#350, spec 14) in its own language,
+ * posting its own locale, because the path names none. ReportForm draws
+ * nothing in English, so the default block has none, as on every English page.
  */
 const primary = getSiteStrings(DEFAULT_LOCALE).notFound;
 const others = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).map(
@@ -51,6 +56,7 @@ const others = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).map(
     <p>
       {primary.body} <a href="/">{primary.backHome}</a>.
     </p>
+    <ReportForm lang={DEFAULT_LOCALE} page="not-found" />
 
     {others.map(({ locale, copy, home }) => (
       <Fragment>
@@ -63,6 +69,7 @@ const others = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).map(
           </a>
           .
         </p>
+        <ReportForm lang={locale} page="not-found" />
       </Fragment>
     ))}
   </section>

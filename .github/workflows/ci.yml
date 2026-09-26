@@ -225,7 +225,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps
       - run: npm run test:functions
       - name: Keep the failing run's Playwright traces
         if: failure()

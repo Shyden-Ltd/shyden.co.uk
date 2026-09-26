@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FOOTER_PAGE_IDS,
   PAGE_IDS,
   isPageId,
   matchesForm,
@@ -8,19 +9,22 @@ import {
   pageIdFromPath,
   pagePath,
   reportOptions,
+  reportIdStem,
   reportableStrings,
   type PageId,
 } from '../../src/lib/report';
 import {
+  LOCALES,
   PREFIXED_LOCALES,
   getSiteStrings,
+  isBetaLocale,
   rawCatalogue,
   type Locale,
 } from '../../src/lib/i18n';
 import { isMessageTemplate } from '../../src/lib/i18n/message';
 import { catalogueLeaves } from '../../src/lib/catalogue-leaves';
 import { renderedOn } from '../../src/lib/i18n/label-check';
-import { nonEmpty, searched } from '../source-files';
+import { nonEmpty } from '../source-files';
 
 const ELLIPSIS = String.fromCharCode(0x2026);
 const keysOn = (page: PageId, locale: Locale) =>
@@ -34,9 +38,20 @@ const siteLeafKeys = (locale: Locale, section: string) =>
     .map(([key]) => key);
 
 describe('the page table', () => {
-  it('knows the three pages with a footer and nothing else', () => {
-    expect(PAGE_IDS).toEqual(['home', 'glory-points', 'classroom-groups']);
+  it('knows the three pages with a footer, and the 404 besides', () => {
+    expect(FOOTER_PAGE_IDS).toEqual([
+      'home',
+      'glory-points',
+      'classroom-groups',
+    ]);
+    expect(PAGE_IDS).toEqual([
+      'home',
+      'glory-points',
+      'classroom-groups',
+      'not-found',
+    ]);
     expect(isPageId('home')).toBe(true);
+    expect(isPageId('not-found')).toBe(true);
     expect(isPageId('404')).toBe(false);
     expect(isPageId(undefined)).toBe(false);
   });
@@ -61,6 +76,16 @@ describe('the page table', () => {
     expect(pagePath('home', 'vi')).toBe('/vi/');
     expect(pagePath('classroom-groups', 'vi')).toBe('/vi/classroom-groups');
     expect(pagePath('glory-points', 'th')).toBe('/th/glory-points');
+    // The 404 is one file for every locale (spec 14.3).
+    expect(pagePath('not-found', 'vi')).toBe('/404');
+    expect(pagePath('not-found', 'th')).toBe('/404');
+  });
+
+  it('gives the 404 one id stem per locale, and every other page one', () => {
+    expect(reportIdStem('home', 'vi')).toBe('report');
+    expect(reportIdStem('classroom-groups', 'th')).toBe('report');
+    expect(reportIdStem('not-found', 'vi')).toBe('report-vi');
+    expect(reportIdStem('not-found', 'zh')).toBe('report-zh');
   });
 });
 
@@ -106,14 +131,29 @@ describe('a page offers its own sections plus the chrome', () => {
     },
   );
 
-  it('no page offers the 404 copy', () => {
-    for (const page of PAGE_IDS)
+  it('no footer page offers the 404 copy', () => {
+    for (const page of FOOTER_PAGE_IDS)
       expect(
         [...keysOn(page, 'vi')].filter((key) =>
           key.startsWith('site.notFound.'),
         ),
       ).toEqual([]);
   });
+
+  it.each(LOCALES.filter(isBetaLocale))(
+    'the 404 offers the notFound copy its %s block shows, and nothing else',
+    (locale) => {
+      // No chrome (the 404's is English) and no title or description (a
+      // document has one of each, the default locale's): spec 14.2.
+      expect(keysOn('not-found', locale)).toEqual(
+        new Set([
+          'site.notFound.heading',
+          'site.notFound.body',
+          'site.notFound.backHome',
+        ]),
+      );
+    },
+  );
 
   it('every page carries every chrome entry, bare strings and the report section included', () => {
     const chrome = Object.keys(getSiteStrings('vi')).filter(
@@ -129,7 +169,7 @@ describe('a page offers its own sections plus the chrome', () => {
         'skipToContent',
       ]),
     );
-    for (const page of PAGE_IDS)
+    for (const page of FOOTER_PAGE_IDS)
       for (const section of chrome)
         for (const key of siteLeafKeys('vi', section))
           expect(keysOn(page, 'vi'), `${page} ${key}`).toContain(key);
@@ -149,12 +189,10 @@ describe('a page offers its own sections plus the chrome', () => {
             key === `site.${section}` || key.startsWith(`site.${section}.`),
         ),
       );
-      if (where === CHROME) expect(pages, section).toEqual([...PAGE_IDS]);
+      if (where === CHROME)
+        expect(pages, section).toEqual([...FOOTER_PAGE_IDS]);
       else if (where === 'the 404 page')
-        expect(
-          searched(pages, { of: [...PAGE_IDS], what: 'pages' }),
-          section,
-        ).toEqual([]);
+        expect(pages, section).toEqual(['not-found']);
       else
         expect(
           pages.map((page) => pagePath(page, 'en')),
