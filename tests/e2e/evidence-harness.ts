@@ -133,3 +133,5 @@ export const storeKeyOf = (
   const supersedes = `${kind}:${testInfo.testId}:${testInfo.repeatEachIndex}:`;
   return { storeKey: `${supersedes}${testInfo.retry}:${run}`, supersedes };
 };
+
+export { itemsOf, type ReviewItem } from '../review-data';

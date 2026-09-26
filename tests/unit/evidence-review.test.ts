@@ -3,9 +3,9 @@ import {
   itemKey,
   PUBLISH_NOTE,
   renderEvidencePage,
-  REVIEW_DATA_ID,
   sha256Of,
 } from '../../scripts/build-evidence-page.mjs';
+import { itemsOf, reviewOf, type ReviewItem } from '../review-data';
 import { searched } from '../source-files';
 
 /**
@@ -133,31 +133,6 @@ const build = (over: Record<string, unknown> = {}) =>
     videos: VIDEOS,
     ...over,
   });
-
-interface ReviewItem {
-  key: string;
-  kind: 'screenshot' | 'recording';
-  journey: string;
-  journeyTitle: string;
-  assertion: number | null;
-  label: string;
-  engine: string;
-  filename: string;
-  src?: string;
-}
-
-/** The review data exactly as the rendered page hands it to its own script. */
-const reviewOf = (
-  html: string,
-): { signoffKey: string; items: ReviewItem[] } => {
-  const open = `<script type="application/json" id="${REVIEW_DATA_ID}">`;
-  const start = html.indexOf(open);
-  if (start < 0) throw new Error('the page carries no review data block');
-  const end = html.indexOf('</script>', start);
-  return JSON.parse(html.slice(start + open.length, end));
-};
-
-const itemsOf = (html: string) => reviewOf(html).items;
 
 /** An item named the way a reader would name it: journey, assertion or rec, engine. */
 const named = (item: ReviewItem) =>

@@ -10,6 +10,7 @@ import {
 import {
   counters,
   evidenceTest as test,
+  itemsOf,
   journeySection,
   ORIGIN,
   serveEvidencePage,
@@ -935,6 +936,21 @@ const coveredBy = (html: string): string[] =>
     .map(({ id }) => id)
     .sort();
 
+/**
+ * Every capture on these pages approved, as a reviewer who had looked at each
+ * would leave them. Signing off with any capture undecided asks first (#205),
+ * and these tests are about what a verdict covers, not about that question.
+ */
+const everyCaptureApproved = (...pages: string[]): Record<string, StoredBody> =>
+  Object.fromEntries(
+    pages.flatMap((html) =>
+      itemsOf(html).map((item) => [
+        `${DOC}/items/${item.key}`,
+        { decision: 'approved', note: '', at: '2026-09-23T00:00:00.000Z' },
+      ]),
+    ),
+  );
+
 /** The sign-off section: progress, the notice, the verdict buttons and the note. */
 const signOff = (page: Page) => page.locator('#signoff');
 
@@ -988,7 +1004,10 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
   test('approved, then rebuilt with a journey added: the approval is out of date and names it, and one press approves again', async ({
     page,
   }, testInfo) => {
-    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: everyCaptureApproved(HTML, HTML_WITH_ADDED),
+    });
     await writtenAfter(page, () => approveButton(page).click(), 'the approval');
     await expect(approveButton(page)).toHaveAttribute('aria-pressed', 'true');
     expect(
@@ -1041,7 +1060,10 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
   test('an unchanged rebuild keeps the approval', async ({
     page,
   }, testInfo) => {
-    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: everyCaptureApproved(HTML),
+    });
     await writtenAfter(page, () => approveButton(page).click(), 'the approval');
     await republish(page, pageOf(TITLES));
     await expectCurrent(page, approveButton(page));
@@ -1164,7 +1186,10 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
   test('pressing a given verdict again withdraws it, and it then covers nothing', async ({
     page,
   }, testInfo) => {
-    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      seed: everyCaptureApproved(HTML),
+    });
     await writtenAfter(page, () => approveButton(page).click(), 'the approval');
     expect(await storedVerdict(page), 'given, it covers the page').toEqual({
       verdict: 'approved',
@@ -1283,6 +1308,9 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
     await toggle(page, ADDED);
     await expect(tickBox(page, ADDED)).toBeChecked();
     await approveButton(page).click();
+    // Nothing can be seeded without storage, so the captures are undecided in
+    // this view and signing off asks first (#205).
+    await page.getByRole('button', { name: 'Sign off anyway' }).click();
     await expectCurrent(page, approveButton(page));
     await expect(
       page.locator('#state'),

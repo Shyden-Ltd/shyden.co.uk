@@ -3,7 +3,6 @@ import type { Locator, Page, TestInfo } from '@playwright/test';
 import {
   journeysOfPage,
   renderEvidencePage,
-  REVIEW_DATA_ID,
   sha256Of,
 } from '../../scripts/build-evidence-page.mjs';
 import {
@@ -20,12 +19,14 @@ import {
 import {
   counters,
   evidenceTest as test,
+  itemsOf,
   journeySection,
   ORIGIN,
   PIXEL,
   serveEvidencePage,
   storeKeyOf,
   WRITE_ORDERS,
+  type ReviewItem,
   type ServedFile,
 } from './evidence-harness';
 import { recorded } from './evidence';
@@ -76,6 +77,12 @@ const BROKEN_SHOT = `data:image/png;base64,${Buffer.from('not a picture').toStri
 
 const slug = (title: string) => title.replace(/ /g, '-');
 
+/** A journey's title on the page: its full title path, the file dropped. */
+const titled = (title: string) => `evidence review > ${title}`;
+
+/** A journey's id on the page: its full title path, slugged. */
+const journeyId = (title: string) => `evidence-review-${slug(title)}`;
+
 const CAPTURES = [
   { journey: FIRST, order: 1, label: 'the form is empty', engine: 'chromium' },
   { journey: FIRST, order: 1, label: 'the form is empty', engine: 'webkit' },
@@ -111,13 +118,21 @@ const render = ({ brokenShot = false } = {}): string =>
       },
       suites: [
         {
-          specs: [FIRST, SECOND].map((title) => ({
-            title,
-            tests: ENGINES.map((projectName) => ({
-              projectName,
-              results: [{ status: 'passed', duration: 100, attachments: [] }],
-            })),
-          })),
+          file: 'evidence-review.spec.ts',
+          suites: [
+            {
+              title: 'evidence review',
+              specs: [FIRST, SECOND].map((title) => ({
+                title,
+                tests: ENGINES.map((projectName) => ({
+                  projectName,
+                  results: [
+                    { status: 'passed', duration: 100, attachments: [] },
+                  ],
+                })),
+              })),
+            },
+          ],
         },
       ],
     },
@@ -136,7 +151,7 @@ const render = ({ brokenShot = false } = {}): string =>
     ),
     videos: new Map(
       RECORDED.map(([journey, engine]) => {
-        const key = `${slug(journey)}|${engine}`;
+        const key = `${journeyId(journey)}|${engine}`;
         return [
           key,
           { src: blobOf(key), sha256: sha256Of(RECORDING), ext: 'webm' },
@@ -146,28 +161,6 @@ const render = ({ brokenShot = false } = {}): string =>
   });
 
 const HTML = render();
-
-interface ReviewItem {
-  key: string;
-  kind: 'screenshot' | 'recording';
-  journey: string;
-  journeyTitle: string;
-  assertion: number | null;
-  label: string;
-  engine: string;
-  filename: string;
-  src?: string;
-}
-
-/** The items as a rendered page hands them to its own script. */
-const itemsOf = (html: string): ReviewItem[] => {
-  const open = `<script type="application/json" id="${REVIEW_DATA_ID}">`;
-  const start = html.indexOf(open);
-  const end = html.indexOf('</script>', start);
-  return start < 0
-    ? []
-    : JSON.parse(html.slice(start + open.length, end)).items;
-};
 
 const ITEMS: ReviewItem[] = itemsOf(HTML);
 
@@ -377,7 +370,9 @@ test.describe('evidence review: opening the viewer', () => {
     await openItem(page, AT.firstResultWebkit);
 
     await expectShowing(page, AT.firstResultWebkit);
-    await expect(viewer(page).locator('#viewer-journey')).toHaveText(FIRST);
+    await expect(viewer(page).locator('#viewer-journey')).toHaveText(
+      titled(FIRST),
+    );
     await expect(viewer(page).locator('#viewer-title')).toHaveText(
       'Assertion 2: the result shows',
     );
@@ -825,7 +820,7 @@ for (const { order, when } of WRITE_ORDERS) {
     }, testInfo) => {
       await openReviewPage(page, testInfo, { order });
       const tick = (title: string) =>
-        journeySection(page, title).getByRole('checkbox');
+        journeySection(page, titled(title)).getByRole('checkbox');
       const storedTick = async (title: string) =>
         ((await storedSignoff(page))?.journeys as Record<string, boolean>)?.[
           itemAt(
@@ -841,7 +836,10 @@ for (const { order, when } of WRITE_ORDERS) {
       await expect(tick(SECOND)).toBeChecked();
       await expect.poll(() => storedTick(SECOND)).toBe(true);
 
-      await journeySection(page, FIRST).locator('label').first().click();
+      await journeySection(page, titled(FIRST))
+        .locator('label')
+        .first()
+        .click();
       await expect(tick(FIRST)).toBeChecked();
       await openItem(page, AT.firstFormChromium);
       await approveWhenLoaded(page);
@@ -1034,11 +1032,11 @@ test.describe('evidence review: the summary after the last item', () => {
     const listed = summary.getByRole('listitem');
     await expect(listed).toHaveCount(2);
     await expect(listed.nth(0)).toContainText(
-      'Rejected: the first journey, assertion 1, webkit',
+      `Rejected: ${titled(FIRST)}, assertion 1, webkit`,
     );
     await expect(listed.nth(0)).toContainText('the label overlaps');
     await expect(listed.nth(1)).toContainText(
-      'Approved: the first journey, assertion 2, chromium',
+      `Approved: ${titled(FIRST)}, assertion 2, chromium`,
     );
 
     await listed.nth(0).getByRole('button').click();
@@ -1364,6 +1362,11 @@ test.describe('evidence review: the page around the viewer', () => {
     await expect
       .poll(async () => (await storedSignoff(page))?.verdict)
       .toBe('approved');
+    // What the pre-merge check reads (#197): an approval that does not name
+    // the journeys it covers is out of date the moment it is stored.
+    expect((await storedSignoff(page))?.verdictCovers).toEqual(
+      journeysOfPage(HTML),
+    );
     await expect(outstanding).toBeHidden();
   });
 
@@ -1413,7 +1416,7 @@ test.describe('evidence review: downloads', () => {
       .poll(() => capabilityControl(page).saves())
       .toEqual([
         {
-          filename: `${SIGNOFF_KEY}-the-first-journey-2-webkit.png`,
+          filename: `${SIGNOFF_KEY}-${journeyId(FIRST)}-2-webkit.png`,
           size: Buffer.from(PIXEL.split(',')[1], 'base64').length,
           sha256: sha256Of(Buffer.from(PIXEL.split(',')[1], 'base64')),
           outcome: 'saved',
@@ -1431,7 +1434,7 @@ test.describe('evidence review: downloads', () => {
       .poll(() => capabilityControl(page).saves())
       .toEqual([
         {
-          filename: `${SIGNOFF_KEY}-the-second-journey-rec-chromium.webm`,
+          filename: `${SIGNOFF_KEY}-${journeyId(SECOND)}-rec-chromium.webm`,
           size: RECORDING.length,
           sha256: sha256Of(RECORDING),
           outcome: 'saved',
