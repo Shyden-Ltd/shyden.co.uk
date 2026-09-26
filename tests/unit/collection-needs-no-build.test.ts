@@ -147,7 +147,6 @@ const runsWhileCollecting = (
   seen: Set<ts.Node> = new Set(),
 ): boolean => {
   for (let n = node.parent; n; n = n.parent) {
-    if (ts.isSourceFile(n)) return true;
     if (!isFunctionBody(n)) continue;
     if (isDeferredBody(n)) return false;
     const decl = namedDeclaration(n);
@@ -160,6 +159,7 @@ const runsWhileCollecting = (
       runsWhileCollecting(use, bound, seen),
     );
   }
+  // Out of the file without meeting a function that defers it: module scope.
   return true;
 };
 
@@ -207,6 +207,14 @@ describe('what counts as reading the build while collecting', () => {
     expect(
       readsIn({ [SPEC]: `${HEAD}const PAGES = filesUnder('dist', keep);` }),
     ).toEqual([`${SPEC}:2 filesUnder`]);
+  });
+
+  it('a ./dist path is the same path, and a name that merely starts with dist is not', () => {
+    expect(
+      readsIn({
+        [SPEC]: `${HEAD}const RAW = readFileSync('./dist/404.html');\nconst NOTES = readFileSync('distance.txt');`,
+      }),
+    ).toEqual([`${SPEC}:2 readFileSync`]);
   });
 
   it('the same walk inside a test body is not', () => {
