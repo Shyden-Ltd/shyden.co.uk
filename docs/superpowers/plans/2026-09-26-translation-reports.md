@@ -458,12 +458,10 @@ row reader can use `wrangler d1 execute`.
 Also measured: `pages dev` loads `.env.local` unasked ("Using secrets defined
 in .env.local"), which put the operator's `DEEPL_API_KEY` into the local
 worker's `env`. The Functions never read it, and CI has no `.env.local`, but
-Task 10's local server should not hand a secret to code under test: it passes
-`--env-file` pointing at a file of its own (`pages dev --help` lists the
-flag), so only the bindings it names reach the worker. Whether naming a file
-replaces the default load, rather than adding to it, is not yet measured: Task
-10 reads the startup banner's binding table and confirms `DEEPL_API_KEY` is
-absent.
+the local server should not hand a secret to code under test. Task 10
+measured that naming an `--env-file` does not stop the load (the banner still
+listed `DEEPL_API_KEY`), and that `CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false`
+does (the banner lists `DEV_PASSWORD` alone), so `serve.mjs` sets that.
 
 **If assumption 1 fails:** add a Task 5a before Task 7. A script
 (`scripts/report-table.mjs`, run by `npm run build` before `astro build`)
