@@ -220,7 +220,7 @@ describe('what counts as reading the build while collecting', () => {
   it('nor inside a hook, which also runs only when tests do', () => {
     expect(
       readsIn({
-        [SPEC]: `${HEAD}test.beforeAll(() => { readdirSync('dist'); });`,
+        [SPEC]: `${HEAD}test.beforeAll(() => { statSync('dist'); });`,
       }),
     ).toEqual([]);
   });
@@ -244,9 +244,9 @@ describe('what counts as reading the build while collecting', () => {
   it('a path constant read at module scope is a read, at the read', () => {
     expect(
       readsIn({
-        [SPEC]: `${HEAD}const DIR = 'dist';\nconst PAGES = readdirSync(DIR);`,
+        [SPEC]: `${HEAD}const DIR = 'dist';\nconst PAGES = statSync(DIR);`,
       }),
-    ).toEqual([`${SPEC}:3 readdirSync`]);
+    ).toEqual([`${SPEC}:3 statSync`]);
   });
 
   it('composing a path reads nothing', () => {
