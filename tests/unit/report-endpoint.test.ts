@@ -150,6 +150,24 @@ describe('checks 1-4: the request itself', () => {
 });
 
 describe('check 5 and the honeypot', () => {
+  it('5: accepts the 404 as not-found and answers on /404 with the block stem', async () => {
+    const heading = getSiteStrings('th').notFound.heading;
+    const response = await answer(
+      post(valid({ locale: 'th', page: 'not-found', quote: heading })),
+    );
+    // No database: the quote matched, so it reached the insert and failed.
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('/404#report-th-failed');
+  });
+
+  it('8: the 404 matches only its own block, never the footer chrome', async () => {
+    const footer = getSiteStrings('vi').report.open;
+    const response = await answer(
+      post(valid({ page: 'not-found', quote: footer })),
+    );
+    expect(response.headers.get('Location')).toBe('/404#report-vi-not-found');
+  });
+
   it('5: refuses English, an unknown locale and an unknown page with a plain 400', async () => {
     for (const fields of [
       valid({ locale: 'en' }),
