@@ -1,5 +1,8 @@
 import { test, expect } from './fixtures';
 import { shoot } from './evidence';
+import { searched } from '../source-files';
+import { THEMES } from '../palette';
+import { emulateTheme } from '../themes';
 
 /**
  * Every control's colour comes from the palette, not from the browser.
@@ -42,95 +45,120 @@ type Reading = {
 };
 
 for (const path of PAGES) {
-  test(`${path}: every control it paints uses a palette colour`, async ({
+  test(`${path}: every control it paints uses a palette colour, in both themes`, async ({
     page,
   }) => {
     await page.goto(path);
+    for (const theme of THEMES) {
+      await emulateTheme(page, theme);
 
-    const { allowed, readings } = await page.evaluate((selector) => {
-      // Resolve a declared value the way the renderer does, so the comparison
-      // cannot disagree with what is actually on screen.
-      const probe = document.createElement('span');
-      probe.style.display = 'none';
-      document.body.append(probe);
-      const computed = (value: string): string => {
-        probe.style.color = '';
-        probe.style.color = value;
-        return getComputedStyle(probe).color;
-      };
+      const { allowed, readings } = await page.evaluate((selector) => {
+        // Resolve a declared value the way the renderer does, so the comparison
+        // cannot disagree with what is actually on screen.
+        const probe = document.createElement('span');
+        probe.style.display = 'none';
+        document.body.append(probe);
+        const computed = (value: string): string => {
+          probe.style.color = '';
+          probe.style.color = value;
+          return getComputedStyle(probe).color;
+        };
 
-      const root = getComputedStyle(document.documentElement);
-      const names = Array.from(document.styleSheets)
-        .flatMap((sheet) => {
-          try {
-            return Array.from(sheet.cssRules);
-          } catch {
-            return []; // a cross-origin sheet; none of ours are
-          }
-        })
-        .flatMap((rule) =>
-          rule instanceof CSSStyleRule ? Array.from(rule.style) : [],
-        )
-        .filter((property) => property.startsWith('--'));
+        const root = getComputedStyle(document.documentElement);
+        const names = Array.from(document.styleSheets)
+          .flatMap((sheet) => {
+            try {
+              return Array.from(sheet.cssRules);
+            } catch {
+              return []; // a cross-origin sheet; none of ours are
+            }
+          })
+          .flatMap((rule) =>
+            rule instanceof CSSStyleRule ? Array.from(rule.style) : [],
+          )
+          .filter((property) => property.startsWith('--'));
 
-      const palette = new Set<string>(['rgba(0, 0, 0, 0)']);
-      for (const name of new Set(names)) {
-        const value = root.getPropertyValue(name).trim();
-        if (value) palette.add(computed(value));
+        const palette = new Set<string>(['rgba(0, 0, 0, 0)']);
+        for (const name of new Set(names)) {
+          const value = root.getPropertyValue(name).trim();
+          if (value) palette.add(computed(value));
+        }
+        probe.remove();
+
+        return {
+          allowed: [...palette],
+          readings: [...document.querySelectorAll(selector)].map((el) => {
+            const style = getComputedStyle(el);
+            return {
+              what: `${el.tagName.toLowerCase()}#${el.id || '(no id)'}`,
+              background: style.backgroundColor,
+              color: style.color,
+            };
+          }),
+        };
+      }, PAINTED);
+
+      // Liveness. A page with no controls would pass the loop below having
+      // measured nothing, and three of these four pages carry controls.
+      if (path === '/') {
+        // #185 AC3, decided explicitly. The right answer here IS none, so
+        // `searched` cannot wrap it: there is no population to count. What has
+        // to be proved instead is that the measurement HAPPENED -- a 404, a
+        // page that never rendered, or a script that threw would all produce
+        // this same empty list, and each would read as "the homepage paints no
+        // form controls".
+        //
+        // `allowed` is built by the SAME `page.evaluate` call, from the custom
+        // properties `:root` actually serves, so a non-empty palette is proof
+        // that the page loaded and the script ran to completion. The
+        // SELECTOR's own liveness is carried by the sibling paths in this very
+        // loop, which assert `readings.length > 0` against the same constant --
+        // a typo there fails three of the four cases, not none of them.
+        expect(
+          allowed.length,
+          'the homepage served no palette, so nothing was measured at all',
+        ).toBeGreaterThan(0);
+        expect(readings, 'the homepage paints no form controls').toHaveLength(
+          0,
+        );
+        continue;
       }
-      probe.remove();
+      expect(
+        readings.length,
+        `${path} rendered no controls — the selector or the page changed`,
+      ).toBeGreaterThan(0);
 
-      return {
-        allowed: [...palette],
-        readings: [...document.querySelectorAll(selector)].map((el) => {
-          const style = getComputedStyle(el);
-          return {
-            what: `${el.tagName.toLowerCase()}#${el.id || '(no id)'}`,
-            background: style.backgroundColor,
-            color: style.color,
-          };
+      const offPalette = (readings as Reading[])
+        .flatMap((r) => [
+          { ...r, role: 'background', value: r.background },
+          { ...r, role: 'color', value: r.color },
+        ])
+        .filter((r) => !allowed.includes(r.value))
+        .map((r) => `${r.what} ${r.role}=${r.value}`);
+
+      expect(
+        searched(offPalette, {
+          of: readings.length,
+          what: `controls measured on ${path}`,
         }),
-      };
-    }, PAINTED);
-
-    // Liveness. A page with no controls would pass the loop below having
-    // measured nothing, and three of these four pages carry controls.
-    if (path === '/') {
-      expect(readings, 'the homepage paints no form controls').toHaveLength(0);
-      return;
+        `${theme}: off-palette control colours on ${path}; the palette resolved to ${allowed.length} values`,
+      ).toEqual([]);
+      // The defect this documents was a UA default passing for styled: an input
+      // with a border and no background drew rgb(59 59 59) on a dark card.
+      // Clipped to the control, not the page. `shoot`'s own note says an
+      // operator scanning for one control should not hunt for it in a shot of
+      // the whole page -- and on Aurora's gradients a full viewport PNG is
+      // ~700KB, because a gradient does not compress the way a flat ground does.
+      await shoot(
+        page,
+        `${path}, ${theme}: all ${readings.length} controls drawn from the palette's ${allowed.length} values`,
+        page.locator(PAINTED).first(),
+      );
     }
-    expect(
-      readings.length,
-      `${path} rendered no controls — the selector or the page changed`,
-    ).toBeGreaterThan(0);
-
-    const offPalette = (readings as Reading[])
-      .flatMap((r) => [
-        { ...r, role: 'background', value: r.background },
-        { ...r, role: 'color', value: r.color },
-      ])
-      .filter((r) => !allowed.includes(r.value))
-      .map((r) => `${r.what} ${r.role}=${r.value}`);
-
-    expect(
-      offPalette,
-      `off-palette control colours on ${path}; the palette resolved to ${allowed.length} values`,
-    ).toEqual([]);
-    // The defect this documents was a UA default passing for styled: an input
-    // with a border and no background drew rgb(59 59 59) on a dark card.
-    // Clipped to the control, not the page. `shoot`'s own note says an
-    // operator scanning for one control should not hunt for it in a shot of
-    // the whole page -- and on Aurora's gradients a full viewport PNG is
-    // ~700KB, because a gradient does not compress the way a flat ground does.
-    await shoot(
-      page,
-      `${path}: all ${readings.length} controls drawn from the palette's ${allowed.length} values`,
-      page.locator(PAINTED).first(),
-    );
   });
 }
 
-test('the controls the browser draws use the brand accent', async ({
+test('the controls the browser draws use the brand accent, in both themes', async ({
   page,
 }) => {
   await page.goto('/classroom-groups');
@@ -140,32 +168,35 @@ test('the controls the browser draws use the brand accent', async ({
   // because that is the form tests/unit/event-collectors.test.ts recognises,
   // and a proof a guard cannot see is not a proof.
   await expect(boxes.first()).toBeVisible();
+  for (const theme of THEMES) {
+    await emulateTheme(page, theme);
 
-  const accent = await page.evaluate(() =>
-    getComputedStyle(document.documentElement)
-      .getPropertyValue('--accent')
-      .trim(),
-  );
-  const resolved = await page.evaluate((value) => {
-    const probe = document.createElement('span');
-    probe.style.color = value;
-    document.body.append(probe);
-    const rgb = getComputedStyle(probe).color;
-    probe.remove();
-    return rgb;
-  }, accent);
+    const accent = await page.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--accent')
+        .trim(),
+    );
+    const resolved = await page.evaluate((value) => {
+      const probe = document.createElement('span');
+      probe.style.color = value;
+      document.body.append(probe);
+      const rgb = getComputedStyle(probe).color;
+      probe.remove();
+      return rgb;
+    }, accent);
 
-  // Inline, not hoisted: `event-collectors.test.ts` matches this exact shape
-  // when scanning for locator loops that were never proved non-empty, and a
-  // hoisted list drops out of that scan without anything going red.
-  for (const box of await boxes.all()) {
-    await expect(box).toHaveCSS('accent-color', resolved);
+    // Inline, not hoisted: `event-collectors.test.ts` matches this exact shape
+    // when scanning for locator loops that were never proved non-empty, and a
+    // hoisted list drops out of that scan without anything going red.
+    for (const box of await boxes.all()) {
+      await expect(box).toHaveCSS('accent-color', resolved);
+    }
+    // `accent-color: auto` drew the selected radio in the browser's blue. The
+    // clipped shot is of the control itself, so the brand mint is visible.
+    await shoot(
+      page,
+      `${theme}: all ${await boxes.count()} browser-drawn controls use --accent ${resolved}`,
+      boxes.first(),
+    );
   }
-  // `accent-color: auto` drew the selected radio in the browser's blue. The
-  // clipped shot is of the control itself, so the brand mint is visible.
-  await shoot(
-    page,
-    `all ${await boxes.count()} browser-drawn controls use --accent ${resolved}`,
-    boxes.first(),
-  );
 });

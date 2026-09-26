@@ -51,6 +51,7 @@
  *    always runs, via `finally` and a signal handler -- see `cleanup()`.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import { die, messageOf } from './errors.mjs';
 import {
   closeSync,
   existsSync,
@@ -71,6 +72,19 @@ const IOS_SESSION_MARKER_FILE = path.join(
   TEST_RESULTS_DIR,
   'ios-session-marker.json',
 );
+
+/**
+ * Each group's machine-readable report, named once.
+ *
+ * Spelled in two places while #230 was being written -- where the group
+ * writes it, and where the run clears it -- which is the duplication #227
+ * had just finished removing from this very file.
+ */
+export const REPORT_FILES = {
+  desktop: path.join(TEST_RESULTS_DIR, 'desktop-report.json'),
+  android: path.join(TEST_RESULTS_DIR, 'android-report.json'),
+  ios: path.join(TEST_RESULTS_DIR, 'ios-report.json'),
+};
 
 // ── the live dashboard (task 6) ─────────────────────────────────────────
 //
@@ -112,6 +126,25 @@ const DASHBOARD_PORT = 4322;
 const DASHBOARD_STATE_DIR = path.join(ROOT, 'dashboard-state');
 const DASHBOARD_GROUPS_FILE = path.join(DASHBOARD_STATE_DIR, 'groups.json');
 const DASHBOARD_FINAL_FILE = path.join(DASHBOARD_STATE_DIR, 'final.json');
+
+/**
+ * Everything a run clears before it starts, named once and exported so a test
+ * can assert what is in it.
+ *
+ * The three reports are here because `test-results/` stopped being anybody's
+ * `outputDir` in #230, so nothing wipes it any more. A group that died before
+ * writing its report would otherwise leave the PREVIOUS run's report to be
+ * read as this run's, and a stale green is worse than a missing file. Proved
+ * necessary by mutation: with the reports removed from this list, the whole
+ * unit suite stayed green, so the property had no guard at all until one was
+ * written against this constant.
+ */
+export const RUN_START_CLEARED = [
+  DASHBOARD_GROUPS_FILE,
+  DASHBOARD_FINAL_FILE,
+  IOS_MODE_FILE,
+  ...Object.values(REPORT_FILES),
+];
 const DASHBOARD_LOG_FILE = path.join(DASHBOARD_STATE_DIR, 'dashboard.log');
 const DASHBOARD_JSONL_FILE = {
   desktop: path.join(DASHBOARD_STATE_DIR, 'desktop.jsonl'),
@@ -129,8 +162,17 @@ const REPORT_DIR = {
 
 // ── small generic helpers ──────────────────────────────────────────────
 
-/** Polls `predicate` until truthy, or throws naming what was awaited. Never a sleep-and-hope: the condition itself decides, the timeout is only a safety net against a hung device or process. */
-async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
+/**
+ *  Polls `predicate` until truthy, or throws naming what was awaited. Never a sleep-and-hope: the condition itself decides, the timeout is only a safety net against a hung device or process.
+ *
+ * @param {() => unknown} predicate its RESULT is read for truthiness, so a
+ *   predicate answering a `Response` or `undefined` is as valid as a boolean.
+ * @param {{ timeoutMs: number, describe: string, intervalMs?: number }} options
+ */
+export async function waitUntil(
+  predicate,
+  { timeoutMs, describe, intervalMs = 250 },
+) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const result = await predicate();
@@ -144,11 +186,23 @@ async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
   }
 }
 
-/** Splits a child's stdout/stderr into lines and forwards each, tagged, to this process's own streams -- live, not batched at the end, so a human watching a multi-minute group still sees progress. */
+/**
+ *  Splits a child's stdout/stderr into lines and forwards each, tagged, to this process's own streams -- live, not batched at the end, so a human watching a multi-minute group still sees progress.
+ *
+ * @param {string} tag
+ * @param {import('node:child_process').ChildProcess} child
+ */
 function tagOutput(tag, child) {
+  /**
+   * @param {import('node:stream').Readable | null} stream
+   * @param {NodeJS.WriteStream} out
+   */
   const forward = (stream, out) => {
+    // `stdout`/`stderr` are nullable on a ChildProcess: a stdio slot the
+    // spawn did not create is simply absent, and nothing here creates one.
+    if (!stream) return;
     let buffer = '';
-    stream.on('data', (data) => {
+    stream.on('data', (/** @type {Buffer | string} */ data) => {
       buffer += data.toString('utf8');
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
@@ -162,7 +216,14 @@ function tagOutput(tag, child) {
   forward(child.stderr, process.stderr);
 }
 
-/** Spawns without a shell (array-form argv, never a pipe) and returns the live child immediately -- for long-running processes (the preview server) the caller needs a handle to, not a settled result. */
+/**
+ *  Spawns without a shell (array-form argv, never a pipe) and returns the live child immediately -- for long-running processes (the preview server) the caller needs a handle to, not a settled result.
+ *
+ * @param {string} tag
+ * @param {string} command
+ * @param {readonly string[]} args
+ * @param {{ env?: NodeJS.ProcessEnv, cwd?: string }} [options]
+ */
 function spawnTagged(tag, command, args, { env, cwd = ROOT } = {}) {
   const child = spawn(command, args, {
     cwd,
@@ -173,50 +234,74 @@ function spawnTagged(tag, command, args, { env, cwd = ROOT } = {}) {
   return child;
 }
 
-/** Resolves with the exit code read DIRECTLY off this exact child's own `close` event -- never scraped from stdout, never inferred from a pipe's own status. */
+/**
+ *  Resolves with the exit code read DIRECTLY off this exact child's own `close` event -- never scraped from stdout, never inferred from a pipe's own status.
+ *
+ * @param {import('node:child_process').ChildProcess} child
+ * @param {string} command
+ * @param {readonly string[]} args
+ */
 function waitForClose(child, command, args) {
   return new Promise((resolve, reject) => {
-    child.once('error', (err) =>
+    child.once('error', (/** @type {unknown} */ err) =>
       reject(
         new Error(
-          `failed to start \`${command} ${args.join(' ')}\`: ${err.message}`,
+          `failed to start \`${command} ${args.join(' ')}\`: ${messageOf(err)}`,
           {
             cause: err,
           },
         ),
       ),
     );
-    child.once('close', (code, signal) => resolve({ code, signal }));
+    child.once(
+      'close',
+      (
+        /** @type {number | null} */ code,
+        /** @type {NodeJS.Signals | null} */ signal,
+      ) => resolve({ code, signal }),
+    );
   });
 }
 
-/** spawnTagged + waitForClose, for one-shot commands this script needs the real outcome of before moving on. */
+/**
+ *  spawnTagged + waitForClose, for one-shot commands this script needs the real outcome of before moving on.
+ *
+ * @param {string} tag
+ * @param {string} command
+ * @param {readonly string[]} args
+ * @param {{ env?: NodeJS.ProcessEnv, cwd?: string }} [opts]
+ */
 async function runTagged(tag, command, args, opts) {
   const child = spawnTagged(tag, command, args, opts);
   return waitForClose(child, command, args);
 }
 
+/**
+ * @param {string} file
+ * @param {string} description
+ */
 function readJson(file, description) {
   let raw;
   try {
     raw = readFileSync(file, 'utf8');
   } catch (error) {
     throw new Error(
-      `expected to read ${description} at ${path.relative(ROOT, file)}: ${error.message}`,
+      `expected to read ${description} at ${path.relative(ROOT, file)}: ${messageOf(error)}`,
     );
   }
   try {
     return JSON.parse(raw);
   } catch (error) {
     throw new Error(
-      `expected ${description} at ${path.relative(ROOT, file)} to be valid JSON: ${error.message}`,
+      `expected ${description} at ${path.relative(ROOT, file)} to be valid JSON: ${messageOf(error)}`,
     );
   }
 }
 
 // ── port ownership: kill by port, never by process-name pattern ────────
 
-function pidsListeningOnPort(port) {
+/** @param {number} port */
+export function pidsListeningOnPort(port) {
   try {
     const out = execFileSync(
       'lsof',
@@ -233,7 +318,10 @@ function pidsListeningOnPort(port) {
     // that is "port is free", not a real error. Anything else (lsof
     // missing, a permissions problem) is a genuine failure and must not be
     // swallowed into a false "free".
-    if (error.status === 1 && !error.stdout) return [];
+    const spawned = /** @type {{ status?: unknown, stdout?: unknown }} */ (
+      error
+    );
+    if (spawned.status === 1 && !spawned.stdout) return [];
     throw error;
   }
 }
@@ -245,8 +333,10 @@ function pidsListeningOnPort(port) {
  * been burned by exactly that pattern before). SIGTERM first, escalating
  * to SIGKILL only if the port is still occupied after a grace period.
  * Idempotent: does nothing, successfully, if the port is already free.
+ *
+ *  @param {number} port
  */
-async function killByPort(port) {
+export async function killByPort(port) {
   let pids = pidsListeningOnPort(port);
   if (pids.length === 0) return;
   for (const pid of pids) {
@@ -277,6 +367,10 @@ async function killByPort(port) {
   }
 }
 
+/**
+ * @param {string} url
+ * @param {{ timeoutMs: number, describe: string }} options
+ */
 async function waitForHttpOk(url, { timeoutMs, describe }) {
   return waitUntil(
     async () => {
@@ -300,13 +394,19 @@ async function waitForHttpOk(url, { timeoutMs, describe }) {
  * read step to race against.
  */
 const dashboardGroupsState = {};
+/**
+ * @param {string} name
+ * @param {string} reason
+ */
 function writeDashboardNotRun(name, reason) {
-  dashboardGroupsState[name] = { notRun: { reason } };
+  /** @type {Record<string, unknown>} */ (dashboardGroupsState)[name] = {
+    notRun: { reason },
+  };
   try {
     writeFileSync(DASHBOARD_GROUPS_FILE, JSON.stringify(dashboardGroupsState));
   } catch (error) {
     process.stderr.write(
-      `warning: failed to write the dashboard's not-run marker for "${name}": ${error.message} -- the ` +
+      `warning: failed to write the dashboard's not-run marker for "${name}": ${messageOf(error)} -- the ` +
         'dashboard (if running) may not show this group as NOT RUN; the test run itself is unaffected.\n',
     );
   }
@@ -319,13 +419,15 @@ function writeDashboardNotRun(name, reason) {
  * discipline as writeDashboardNotRun: this is reporting about a run that
  * has (in the success path) already fully completed, so a failure here
  * must never be allowed to look like a test failure.
+ *
+ *  @param {Record<string, unknown>} payload
  */
 function writeDashboardFinal(payload) {
   try {
     writeFileSync(DASHBOARD_FINAL_FILE, JSON.stringify(payload));
   } catch (error) {
     process.stderr.write(
-      `warning: failed to write the dashboard's final-state artifact: ${error.message} -- the dashboard ` +
+      `warning: failed to write the dashboard's final-state artifact: ${messageOf(error)} -- the dashboard ` +
         '(if running) may keep showing live-tallied counts instead of the authoritative result; the ' +
         'terminal summary below (and the exit code) are unaffected.\n',
     );
@@ -355,7 +457,7 @@ async function startDashboard() {
   } catch (error) {
     process.stderr.write(
       `==> Dashboard failed to start (could not open ${path.relative(ROOT, DASHBOARD_LOG_FILE)}): ` +
-        `${error.message} -- continuing WITHOUT the live dashboard; the run itself is unaffected.\n`,
+        `${messageOf(error)} -- continuing WITHOUT the live dashboard; the run itself is unaffected.\n`,
     );
     return;
   }
@@ -373,9 +475,10 @@ async function startDashboard() {
   }
   child.unref(); // must not keep this process's event loop alive, and must not die when this process exits
 
+  /** @type {{ message: string } | null} */
   let exitedEarly = null;
   child.once('error', (err) => {
-    exitedEarly = { message: `failed to start: ${err.message}` };
+    exitedEarly = { message: `failed to start: ${messageOf(err)}` };
   });
   child.once('exit', (code, signal) => {
     if (!exitedEarly)
@@ -387,7 +490,7 @@ async function startDashboard() {
   try {
     await waitUntil(
       async () => {
-        if (exitedEarly) throw new Error(exitedEarly.message);
+        if (exitedEarly) throw new Error(messageOf(exitedEarly));
         try {
           const response = await fetch(`http://localhost:${DASHBOARD_PORT}/`);
           return response.ok ? true : undefined;
@@ -402,7 +505,7 @@ async function startDashboard() {
     );
   } catch (error) {
     process.stderr.write(
-      `==> Dashboard failed to start: ${error.message} -- continuing WITHOUT the live dashboard; the ` +
+      `==> Dashboard failed to start: ${messageOf(error)} -- continuing WITHOUT the live dashboard; the ` +
         `run itself is unaffected. See ${path.relative(ROOT, DASHBOARD_LOG_FILE)} for details.\n`,
     );
     return;
@@ -440,7 +543,7 @@ function isAndroidPresent() {
   } catch (error) {
     return {
       present: false,
-      reason: `\`adb devices\` failed to run: ${error.message}`,
+      reason: `\`adb devices\` failed to run: ${messageOf(error)}`,
     };
   }
   const devices = raw
@@ -515,18 +618,26 @@ function findIosDeviceOrThrow() {
   }
 
   const physicalIphones = parsed.result.devices.filter(
-    (d) =>
+    (
+      /** @type {{ hardwareProperties: { udid: string, reality: string, deviceType: string } }} */ d,
+    ) =>
       d.hardwareProperties.reality === 'physical' &&
       d.hardwareProperties.deviceType === 'iPhone',
   );
 
   const override = process.env.IOS_UDID;
   const candidates = override
-    ? physicalIphones.filter((d) => d.hardwareProperties.udid === override)
+    ? physicalIphones.filter(
+        (/** @type {{ hardwareProperties: { udid: string } }} */ d) =>
+          d.hardwareProperties.udid === override,
+      )
     : physicalIphones;
 
   if (candidates.length === 0) {
-    const seen = physicalIphones.map((d) => d.hardwareProperties.udid);
+    const seen = physicalIphones.map(
+      (/** @type {{ hardwareProperties: { udid: string } }} */ d) =>
+        d.hardwareProperties.udid,
+    );
     throw new Error(
       override
         ? `expected \`xcrun devicectl list devices\` to include a physical iPhone with udid ${override} ` +
@@ -538,7 +649,7 @@ function findIosDeviceOrThrow() {
   if (candidates.length > 1) {
     throw new Error(
       `expected exactly one physical iPhone to target -- found ${candidates.length}: ` +
-        `${JSON.stringify(candidates.map((d) => d.hardwareProperties.udid))}. Set IOS_UDID to disambiguate.`,
+        `${JSON.stringify(candidates.map((/** @type {{ hardwareProperties: { udid: string } }} */ d) => d.hardwareProperties.udid))}. Set IOS_UDID to disambiguate.`,
     );
   }
 
@@ -554,14 +665,22 @@ function isIosPresent() {
       name: device.deviceProperties.name,
     };
   } catch (error) {
-    return { present: false, reason: error.message };
+    return { present: false, reason: messageOf(error) };
   }
 }
 
 // ── one-off discovery: how many tests does grepInvert exclude by design? ──
 
 /**
- * `android-chrome`'s `grepInvert: /@emulated-viewport|@requires-isolated-context/`
+ * The `--grep` pattern that SELECTS what `android-chrome`'s `grepInvert` excludes. Declared
+ * once and used for the listing and both messages; tests/unit/excluded-by-design.test.ts holds
+ * it to the config's `grepInvert`, character for character. It was once two hand-typed copies,
+ * and this one missed `@requires-download-bytes` for as long as that tag existed (#308).
+ */
+const EXCLUDED_BY_DESIGN_GREP = '@emulated-viewport|@requires-isolated-context';
+
+/**
+ * `android-chrome`'s `grepInvert`
  * (playwright.device.config.ts) excludes tagged tests before Playwright's own JSON
  * reporter ever sees them -- they are not "skipped", they are never collected, so the
  * real run's own report has no number for them at all. This asks separately, freshly,
@@ -600,14 +719,14 @@ async function countExcludedByDesign() {
       '--config=playwright.config.ts',
       '--project=chromium',
       '--list',
-      '--grep=@emulated-viewport|@requires-isolated-context',
+      `--grep=${EXCLUDED_BY_DESIGN_GREP}`,
       '--reporter=json',
     ],
     { env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile } },
   );
   if (code !== 0) {
     throw new Error(
-      'expected `playwright test --list --grep=@emulated-viewport|@requires-isolated-context` to exit 0 ' +
+      `expected \`playwright test --list --grep=${EXCLUDED_BY_DESIGN_GREP}\` to exit 0 ` +
         `(it only lists tests, never runs them) -- got code ${code}. Cannot compute the Android group's ` +
         'skipped-by-design count.',
     );
@@ -618,6 +737,12 @@ async function countExcludedByDesign() {
 
 // ── the three groups ────────────────────────────────────────────────────
 
+/**
+ * @param {string} name
+ * @param {number | null} code
+ * @param {string} reportFile
+ * @param {number} durationMs
+ */
 function summarizePlaywrightGroup(
   name,
   code,
@@ -658,7 +783,7 @@ function summarizePlaywrightGroup(
 
 async function runDesktopGroup() {
   const name = 'desktop';
-  const reportFile = path.join(TEST_RESULTS_DIR, 'desktop-report.json');
+  const reportFile = REPORT_FILES.desktop;
   const startedAt = Date.now();
   const { code } = await runTagged(
     name,
@@ -708,6 +833,11 @@ async function runDesktopGroup() {
   );
 }
 
+/**
+ * @param {number} excludedByDesign a COUNT, from `countExcludedByDesign()`,
+ *   passed on as `extraSkipped` (which defaults to 0). Annotating it as a
+ *   list from the name alone was wrong; the call site settled it.
+ */
 async function runAndroidGroup(excludedByDesign) {
   const name = 'android';
   const startedAt = Date.now();
@@ -716,7 +846,7 @@ async function runAndroidGroup(excludedByDesign) {
     process.stdout.write(
       `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
     );
-    writeDashboardNotRun(name, presence.reason);
+    writeDashboardNotRun(name, presence.reason ?? 'no reason given');
     return {
       name,
       status: 'not-run',
@@ -728,7 +858,7 @@ async function runAndroidGroup(excludedByDesign) {
     };
   }
 
-  const reportFile = path.join(TEST_RESULTS_DIR, 'android-report.json');
+  const reportFile = REPORT_FILES.android;
   const { code } = await runTagged(
     name,
     'npx',
@@ -771,7 +901,7 @@ async function runIosGroup() {
     process.stdout.write(
       `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
     );
-    writeDashboardNotRun(name, presence.reason);
+    writeDashboardNotRun(name, presence.reason ?? 'no reason given');
     return {
       name,
       status: 'not-run',
@@ -790,7 +920,7 @@ async function runIosGroup() {
   // leftover mode from an earlier run.
   if (existsSync(IOS_MODE_FILE)) unlinkSync(IOS_MODE_FILE);
 
-  const reportFile = path.join(TEST_RESULTS_DIR, 'ios-report.json');
+  const reportFile = REPORT_FILES.ios;
   const { code } = await runTagged(
     name,
     'npx',
@@ -897,7 +1027,7 @@ async function cleanupAdbTunnels() {
       // there is nothing to remove. Anything else is logged, not thrown:
       // cleanup must not itself abort the rest of cleanup.
       process.stderr.write(
-        `cleanup: \`adb ${args.join(' ')}\` failed (continuing): ${error.message}\n`,
+        `cleanup: \`adb ${args.join(' ')}\` failed (continuing): ${messageOf(error)}\n`,
       );
     }
   }
@@ -922,7 +1052,7 @@ async function cleanupLeakedIosSession() {
     marker = readJson(IOS_SESSION_MARKER_FILE, 'the leaked iOS session marker');
   } catch (error) {
     process.stderr.write(
-      `cleanup: could not read the iOS session marker: ${error.message}\n`,
+      `cleanup: could not read the iOS session marker: ${messageOf(error)}\n`,
     );
     return;
   }
@@ -937,12 +1067,12 @@ async function cleanupLeakedIosSession() {
   } catch (error) {
     process.stderr.write(
       `cleanup: DELETE on the leaked WebDriver session failed (continuing to free its port anyway): ` +
-        `${error.message}\n`,
+        `${messageOf(error)}\n`,
     );
   }
   await killByPort(port).catch((error) =>
     process.stderr.write(
-      `cleanup: failed to free safaridriver's port ${port}: ${error.message}\n`,
+      `cleanup: failed to free safaridriver's port ${port}: ${messageOf(error)}\n`,
     ),
   );
   try {
@@ -954,10 +1084,15 @@ async function cleanupLeakedIosSession() {
 
 // ── reporting ────────────────────────────────────────────────────────────
 
+/** @param {unknown} value */
 function cell(value) {
   return value === null || value === undefined ? '-' : String(value);
 }
 
+/**
+ * @param {any[]} groups
+ * @param {number} totalDurationMs
+ */
 function printSummaryTable(groups, totalDurationMs) {
   const headers = [
     'Group',
@@ -967,7 +1102,7 @@ function printSummaryTable(groups, totalDurationMs) {
     'Not-run',
     'Duration',
   ];
-  const rows = groups.map((g) => [
+  const rows = groups.map((/** @type {Record<string, any>} */ g) => [
     g.name,
     g.status === 'not-run' ? '-' : cell(g.passed),
     g.status === 'not-run' ? '-' : cell(g.failed),
@@ -976,8 +1111,9 @@ function printSummaryTable(groups, totalDurationMs) {
     `${(g.durationMs / 1000).toFixed(1)}s`,
   ]);
   const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => r[i].length)),
+    Math.max(h.length, ...rows.map((/** @type {string[]} */ r) => r[i].length)),
   );
+  /** @param {string[]} cells */
   const renderRow = (cells) =>
     cells.map((c, i) => c.padEnd(widths[i])).join('  ');
 
@@ -988,7 +1124,10 @@ function printSummaryTable(groups, totalDurationMs) {
     `\nTotal wall-clock: ${(totalDurationMs / 1000).toFixed(1)}s\n`,
   );
 
-  const notes = groups.filter((g) => g.reason || g.modeNote);
+  const notes = groups.filter(
+    (/** @type {{ reason?: string, modeNote?: string }} */ g) =>
+      g.reason || g.modeNote,
+  );
   if (notes.length > 0) {
     process.stdout.write('\nNotes:\n');
     for (const g of notes) {
@@ -1001,6 +1140,7 @@ function printSummaryTable(groups, totalDurationMs) {
 
 // ── main ─────────────────────────────────────────────────────────────────
 
+/** @type {import('node:child_process').ChildProcess | null} */
 let previewChild = null;
 let cleanedUp = false;
 
@@ -1011,7 +1151,7 @@ async function cleanup() {
     process.stdout.write('==> Stopping the shared preview server...\n');
     await killByPort(PORT).catch((error) =>
       process.stderr.write(
-        `cleanup: failed to free port ${PORT}: ${error.message}\n`,
+        `cleanup: failed to free port ${PORT}: ${messageOf(error)}\n`,
       ),
     );
   }
@@ -1019,23 +1159,48 @@ async function cleanup() {
   await cleanupLeakedIosSession();
 }
 
-// Ctrl+C (or a CI-style SIGTERM) must not skip cleanup -- a leaked iOS
-// session locks the phone out of every later run, which is worse than
-// letting the interrupted run's own results go unreported. The default
-// Node behaviour for these signals is to exit immediately without running
-// pending `finally` blocks, so this is not redundant with the try/finally
-// in `main()` below -- it is the path that catches what that one cannot.
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, async () => {
-    process.stdout.write(
-      `\n==> Received ${signal}, cleaning up before exit...\n`,
-    );
-    await cleanup();
-    process.exit(130);
-  });
+/**
+ * Ctrl+C (or a CI-style SIGTERM) must not skip cleanup -- a leaked iOS
+ * session locks the phone out of every later run, which is worse than
+ * letting the interrupted run's own results go unreported. The default
+ * Node behaviour for these signals is to exit immediately without running
+ * pending `finally` blocks, so this is not redundant with the try/finally
+ * in `main()` below -- it is the path that catches what that one cannot.
+ *
+ * INSTALLED BY `main()`, never as the file loads (#276). Registering a
+ * handler is SILENT, so the import guard #227 added -- which asserts that
+ * importing this module prints nothing -- could not see it: an import left
+ * two handlers behind, and a SIGTERM to whatever process had done the
+ * importing then ran `adb` cleanup from it. Measured: a unit-suite run
+ * printed this script's own "Received SIGTERM, cleaning up before exit"
+ * and two `adb` failures.
+ *
+ * @returns {void}
+ */
+function cleanUpOnSignal() {
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, async () => {
+      process.stdout.write(
+        `\n==> Received ${signal}, cleaning up before exit...\n`,
+      );
+      await cleanup();
+      process.exit(130);
+    });
+  }
 }
 
 async function main() {
+  // This script takes no arguments, so one is a mistake -- and refusing it is
+  // the cheapest proof that `main()` ran when the file is executed directly
+  // (#227). A skipped entry point exits 0 in silence.
+  const unexpected = process.argv.slice(2);
+  if (unexpected.length > 0)
+    die(
+      `test-devices.mjs takes no arguments, received: ${unexpected.join(' ')}`,
+    );
+
+  cleanUpOnSignal();
+
   mkdirSync(TEST_RESULTS_DIR, { recursive: true });
   mkdirSync(DASHBOARD_STATE_DIR, { recursive: true });
 
@@ -1065,15 +1230,19 @@ async function main() {
   // attributing a mode to a run before that run's own canary has decided
   // it. Cleared here, before the dashboard starts, so a pending iOS card
   // never carries a mode banner that isn't this run's own.
-  for (const file of [
-    DASHBOARD_GROUPS_FILE,
-    DASHBOARD_FINAL_FILE,
-    IOS_MODE_FILE,
-  ]) {
+  //
+  // The three per-group reports join that list since #230. They used to be
+  // removed by accident: `test-results/` was Playwright's own outputDir, and
+  // every invocation wiped it whole. Each group now writes to a folder of its
+  // own, so `test-results/` is no longer wiped by anything -- which is the
+  // point, and which would otherwise mean a group that DIED before writing
+  // its report left the previous run's report in place to be read as this
+  // run's. A stale green is worse than a missing file.
+  for (const file of RUN_START_CLEARED) {
     if (existsSync(file)) unlinkSync(file);
   }
   for (const key of Object.keys(dashboardGroupsState))
-    delete dashboardGroupsState[key];
+    delete (/** @type {Record<string, unknown>} */ (dashboardGroupsState)[key]);
 
   const startedAt = Date.now();
 
@@ -1149,8 +1318,8 @@ async function main() {
     );
     const excludedByDesign = await countExcludedByDesign();
     process.stdout.write(
-      `==> ${excludedByDesign} test(s) excluded by design (@emulated-viewport or ` +
-        '@requires-isolated-context) for the Android group.\n',
+      `==> ${excludedByDesign} test(s) excluded by design ` +
+        `(${EXCLUDED_BY_DESIGN_GREP.split('|').join(' or ')}) for the Android group.\n`,
     );
 
     process.stdout.write(
@@ -1177,11 +1346,11 @@ async function main() {
     const anyBad = groups.some((g) => g.status !== 'passed');
     process.exitCode = anyBad ? 1 : 0;
   } catch (fatal) {
-    process.stderr.write(`\nABORTED: ${fatal.message}\n\n`);
+    process.stderr.write(`\nABORTED: ${messageOf(fatal)}\n\n`);
     process.exitCode = 1;
-    writeDashboardFinal({ aborted: fatal.message, groups: null });
+    writeDashboardFinal({ aborted: messageOf(fatal), groups: null });
     await cleanup();
   }
 }
 
-await main();
+if (import.meta.main) await main();

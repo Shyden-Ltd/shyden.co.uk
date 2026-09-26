@@ -1,14 +1,19 @@
-import type { Student } from '../../src/lib/grouping';
+import { anonymousStudent, type Student } from '../../src/lib/grouping';
 
-/** A record with the boring fields filled in, so tests state only what they mean. */
+/**
+ * A record with the boring fields filled in, so tests state only what they
+ * mean.
+ *
+ * The defaults come from production's own blank record rather than a fifth
+ * copy of them (#277). A test factory that defaults a field differently from
+ * the page is a fixture that cannot disagree with the contract in the one
+ * direction that matters: it would describe a student the tool never builds.
+ * The literal pin lives in `grouping.test.ts`, outside both.
+ */
 export const student = (
   over: Partial<Student> & { number: number },
 ): Student => ({
-  name: null,
-  sex: null,
-  absent: false,
-  together: null,
-  apart: null,
+  ...anonymousStudent(over.number),
   ...over,
 });
 

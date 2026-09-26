@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   itemKey,
   PUBLISH_NOTE,
-  publishedVideoPath,
   renderEvidencePage,
   REVIEW_DATA_ID,
   sha256Of,
@@ -29,11 +28,25 @@ const FIRST = 'the first journey';
 const SECOND = 'the second journey';
 const SIGNOFF_KEY = 'ticket-205';
 
+/**
+ * Where the asset store would serve a recording. A real id is assigned by the
+ * upload and opaque, so a test fabricates a stable one from the key: the SHAPE
+ * (`/_blob/` and 32 hex digits) is what the page has to handle.
+ */
+const blobOf = (key: string) =>
+  `/_blob/${sha256Of(Buffer.from(key)).slice(0, 32)}`;
+
 const slug = (title: string) => title.replace(/ /g, '-');
+
+/** A journey's id on the page: its full title path, slugged. */
+const journeyId = (title: string) => `evidence-review-${slug(title)}`;
+
+/** A journey's title on the page: its full title path, the file dropped. */
+const titled = (title: string) => `evidence review > ${title}`;
 
 const row = (project: string, title: string, order: number, label: string) => ({
   project,
-  title: `evidence review > ${title}`,
+  title: titled(title),
   order,
   label,
   file: `${project}/${slug(title)}-${order}.png`,
@@ -69,7 +82,16 @@ const REPORT = {
     flaky: 0,
     skipped: 0,
   },
-  suites: [{ specs: [spec(FIRST), spec(SECOND)] }],
+  // A file suite holding one describe, as Playwright reports a spec: the
+  // journey is keyed by its full title path, the file dropped (#189).
+  suites: [
+    {
+      file: 'evidence-review.spec.ts',
+      suites: [
+        { title: 'evidence review', specs: [spec(FIRST), spec(SECOND)] },
+      ],
+    },
+  ],
 };
 
 const dataUri = (bytes: Buffer, type = 'image/png') =>
@@ -82,12 +104,13 @@ const SHOTS = new Map(
 );
 
 const recording = (journey: string, engine: string, bytes = 'take one') => {
-  const key = `${slug(journey)}|${engine}`;
+  const key = `${journeyId(journey)}|${engine}`;
   return [
     key,
     {
-      src: publishedVideoPath(key),
+      src: blobOf(key),
       sha256: sha256Of(Buffer.from(`${key} ${bytes}`)),
+      ext: 'webm',
     },
   ] as const;
 };
@@ -126,7 +149,7 @@ interface ReviewItem {
 /** The review data exactly as the rendered page hands it to its own script. */
 const reviewOf = (
   html: string,
-): { signoffKey: string; journeys: string[]; items: ReviewItem[] } => {
+): { signoffKey: string; items: ReviewItem[] } => {
   const open = `<script type="application/json" id="${REVIEW_DATA_ID}">`;
   const start = html.indexOf(open);
   if (start < 0) throw new Error('the page carries no review data block');
@@ -143,14 +166,14 @@ const named = (item: ReviewItem) =>
 describe('the review items are every capture on the page, in page order', () => {
   it('lists each journey’s screenshots by assertion then engine, then that journey’s recordings', () => {
     expect(itemsOf(build()).map(named)).toEqual([
-      `${FIRST} 1 chromium`,
-      `${FIRST} 1 webkit`,
-      `${FIRST} 2 chromium`,
-      `${FIRST} 2 webkit`,
-      `${FIRST} rec chromium`,
-      `${FIRST} rec webkit`,
-      `${SECOND} 1 chromium`,
-      `${SECOND} rec webkit`,
+      `${titled(FIRST)} 1 chromium`,
+      `${titled(FIRST)} 1 webkit`,
+      `${titled(FIRST)} 2 chromium`,
+      `${titled(FIRST)} 2 webkit`,
+      `${titled(FIRST)} rec chromium`,
+      `${titled(FIRST)} rec webkit`,
+      `${titled(SECOND)} 1 chromium`,
+      `${titled(SECOND)} rec webkit`,
     ]);
   });
 
@@ -159,28 +182,28 @@ describe('the review items are every capture on the page, in page order', () => 
     // Control: the page really does render both placeholders, so their absence
     // from the items below is a decision and not an accident of the fixture.
     expect(html).toContain('not captured');
-    expect(html).toContain('not embedded');
+    expect(html).toContain('not recorded by policy');
     const items = itemsOf(html).map(named);
-    expect(items).not.toContain(`${SECOND} 1 webkit`);
-    expect(items).not.toContain(`${SECOND} rec chromium`);
+    expect(items).not.toContain(`${titled(SECOND)} 1 webkit`);
+    expect(items).not.toContain(`${titled(SECOND)} rec chromium`);
   });
 
   it('describes each item the way the viewer shows it', () => {
     const [first, , , , firstRecording] = itemsOf(build());
     expect(first).toMatchObject({
       kind: 'screenshot',
-      journeyTitle: FIRST,
+      journeyTitle: titled(FIRST),
       assertion: 1,
       label: 'the form is empty',
       engine: 'chromium',
     });
     expect(firstRecording).toMatchObject({
       kind: 'recording',
-      journeyTitle: FIRST,
+      journeyTitle: titled(FIRST),
       assertion: null,
       label: 'Recording',
       engine: 'chromium',
-      src: publishedVideoPath(`${slug(FIRST)}|chromium`),
+      src: blobOf(`${journeyId(FIRST)}|chromium`),
     });
   });
 
@@ -262,7 +285,7 @@ describe('an item key names its journey, assertion, engine and bytes', () => {
     const changed = after
       .filter((item, index) => item.key !== before[index].key)
       .map(named);
-    expect(changed).toEqual([`${FIRST} 1 chromium`]);
+    expect(changed).toEqual([`${titled(FIRST)} 1 chromium`]);
   });
 
   it('gives a re-recorded recording a new key, and leaves every other key alone', () => {
@@ -275,7 +298,7 @@ describe('an item key names its journey, assertion, engine and bytes', () => {
     const changed = after
       .filter((item, index) => item.key !== before[index].key)
       .map(named);
-    expect(changed).toEqual([`${FIRST} rec webkit`]);
+    expect(changed).toEqual([`${titled(FIRST)} rec webkit`]);
   });
 
   it('refuses a recording it has no digest for', () => {
@@ -321,7 +344,15 @@ describe('an item key names its journey, assertion, engine and bytes', () => {
     expect(() =>
       build({
         manifest,
-        report: { ...REPORT, suites: [{ specs: [spec(long)] }] },
+        report: {
+          ...REPORT,
+          suites: [
+            {
+              file: 'evidence-review.spec.ts',
+              suites: [{ title: 'evidence review', specs: [spec(long)] }],
+            },
+          ],
+        },
         videos: new Map(),
       }),
     ).toThrow(/200 bytes/);
@@ -338,7 +369,7 @@ describe('every item downloads under a name that says what it is', () => {
   it('names a screenshot by sign-off, journey, assertion and engine', () => {
     const [first] = itemsOf(build());
     expect(first.filename).toBe(
-      `${SIGNOFF_KEY}-the-first-journey-1-chromium.png`,
+      `${SIGNOFF_KEY}-${journeyId(FIRST)}-1-chromium.png`,
     );
   });
 
@@ -347,9 +378,9 @@ describe('every item downloads under a name that says what it is', () => {
       (item) => item.kind === 'recording',
     );
     expect(recordings.map((item) => item.filename)).toEqual([
-      `${SIGNOFF_KEY}-the-first-journey-rec-chromium.webm`,
-      `${SIGNOFF_KEY}-the-first-journey-rec-webkit.webm`,
-      `${SIGNOFF_KEY}-the-second-journey-rec-webkit.webm`,
+      `${SIGNOFF_KEY}-${journeyId(FIRST)}-rec-chromium.webm`,
+      `${SIGNOFF_KEY}-${journeyId(FIRST)}-rec-webkit.webm`,
+      `${SIGNOFF_KEY}-${journeyId(SECOND)}-rec-webkit.webm`,
     ]);
   });
 
@@ -362,7 +393,7 @@ describe('every item downloads under a name that says what it is', () => {
     );
     const [first] = itemsOf(build({ shots: jpeg }));
     expect(first.filename).toBe(
-      `${SIGNOFF_KEY}-the-first-journey-1-chromium.jpg`,
+      `${SIGNOFF_KEY}-${journeyId(FIRST)}-1-chromium.jpg`,
     );
   });
 });
@@ -370,7 +401,7 @@ describe('every item downloads under a name that says what it is', () => {
 describe('the build says how the review is granted and read back', () => {
   it('names the full declaration the page needs', () => {
     expect(PUBLISH_NOTE).toContain(
-      '{"db": {}, "downloads": true, "comments": {}}',
+      '{"db": {}, "assets": {}, "downloads": true, "comments": {}}',
     );
   });
 

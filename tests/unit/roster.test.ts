@@ -29,6 +29,7 @@ const id = getStrings('id');
 describe('the module surface', () => {
   it('exports nothing that nothing uses', () => {
     expect(Object.keys(roster).sort()).toEqual([
+      'LETTERS',
       'MAX_ROSTER',
       'availableLetters',
       'nextNumber',

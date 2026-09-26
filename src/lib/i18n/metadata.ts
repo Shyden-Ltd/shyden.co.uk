@@ -35,6 +35,13 @@ export interface LocaleMetadata {
    * is only a visual anchor, because a flag is a country and not a language.
    */
   readonly nativeName: string;
+  /**
+   * What the switcher shows in place of the native name below 720px, where
+   * the menu button appears (#329). "Bahasa Indonesia" made the header row
+   * 14px wider than a 320px screen. The codes are the operator's
+   * (2026-09-23). 中文 and ไทย are already short, so they are their own codes.
+   */
+  readonly shortName: string;
   readonly flag: FlagCode;
   /** `<meta property="og:locale">`, in language_TERRITORY form. */
   readonly ogLocale: string;
@@ -45,6 +52,7 @@ export interface LocaleMetadata {
 export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
   en: {
     nativeName: 'English',
+    shortName: 'EN',
     // GB rather than US: Shyden Ltd is registered in England & Wales and the
     // site is shyden.co.uk. The copy is British English throughout.
     flag: 'gb',
@@ -53,12 +61,14 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
   },
   id: {
     nativeName: 'Bahasa Indonesia',
+    shortName: 'ID',
     flag: 'id',
     ogLocale: 'id_ID',
     numberLocale: 'id-ID',
   },
   zh: {
     nativeName: '中文',
+    shortName: '中文',
     // Simplified Chinese, so the PRC flag. Operator decision, #21, 2026-09-09.
     flag: 'cn',
     ogLocale: 'zh_CN',
@@ -66,12 +76,14 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
   },
   vi: {
     nativeName: 'Tiếng Việt',
+    shortName: 'VI',
     flag: 'vn',
     ogLocale: 'vi_VN',
     numberLocale: 'vi-VN',
   },
   th: {
     nativeName: 'ไทย',
+    shortName: 'ไทย',
     flag: 'th',
     ogLocale: 'th_TH',
     numberLocale: 'th-TH',

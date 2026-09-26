@@ -49,6 +49,26 @@ import { stringLeaves } from '../catalogue-leaves';
  * per directory quietly tested something narrower and stricter than that.
  */
 const BUILT_PAGES = filesUnder('dist', (path) => /\.html$/.test(path));
+const RAW_PAGES = BUILT_PAGES.map((path) => readFileSync(path, 'utf8'));
+
+/**
+ * The report form's type-ahead (#97) lists every string its page offers as an
+ * `<option value>`, so on a beta page it would satisfy this scan for every
+ * string whether or not the page shows it, and the scan would find nothing
+ * dead in four of the five languages. Copy counts as rendered only outside
+ * it. The liveness check is in the test: every page carrying the form must
+ * have had its type-ahead taken out, or a renamed datalist would quietly make
+ * the scan lenient again.
+ */
+const REPORT_TYPE_AHEAD =
+  /<datalist id="report-strings"[^>]*>[\s\S]*?<\/datalist>/g;
+const PAGES_WITH_FORM = RAW_PAGES.filter((html) =>
+  html.includes('data-report-form'),
+).length;
+const TYPE_AHEADS_REMOVED = RAW_PAGES.reduce(
+  (count, html) => count + (html.match(REPORT_TYPE_AHEAD)?.length ?? 0),
+  0,
+);
 
 /**
  * Rendered text of every built page, entity-decoded and whitespace-flattened.
@@ -57,7 +77,7 @@ const BUILT_PAGES = filesUnder('dist', (path) => /\.html$/.test(path));
  * "what you're building" never matches the source string raw; and HTML wraps
  * freely, so a sentence can be split across lines between any two words.
  */
-const RENDERED = BUILT_PAGES.map((path) => readFileSync(path, 'utf8'))
+const RENDERED = RAW_PAGES.map((html) => html.replace(REPORT_TYPE_AHEAD, ''))
   .join('\n')
   .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
   .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
@@ -133,6 +153,17 @@ const ABSENCE_RULES: ReadonlyArray<{
       'heading/body/link entries are GONE from this list is #104 shipping -- ' +
       'the reverse-check below failed them the moment the 404 started ' +
       'answering in all five, which is what forced their removal.',
+  },
+  {
+    locales: [DEFAULT_LOCALE],
+    paths: Object.keys(getSiteStrings(DEFAULT_LOCALE).report).map(
+      (key) => `report.${key}`,
+    ),
+    why:
+      'The translation-report form (#97) renders on the four beta locales ' +
+      'only (spec 3.1): English is the verified locale, so its pages offer ' +
+      'no form and none of this copy. The beta locales render all of it, ' +
+      'outside the type-ahead.',
   },
   {
     locales: [DEFAULT_LOCALE],
@@ -214,6 +245,14 @@ test.describe('every site string reaches a built page', () => {
       expect(
         BUILT_PAGES.length,
         'no built pages — the scan below would pass vacuously',
+      ).toBeGreaterThan(0);
+      expect(
+        TYPE_AHEADS_REMOVED,
+        'every page with a report form had its type-ahead taken out of the scan',
+      ).toBe(PAGES_WITH_FORM);
+      expect(
+        PAGES_WITH_FORM,
+        'no built page carries a report form',
       ).toBeGreaterThan(0);
 
       const missing: string[] = [];

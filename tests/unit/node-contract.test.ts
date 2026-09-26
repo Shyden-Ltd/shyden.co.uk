@@ -51,24 +51,32 @@ const packageJson = (): Record<string, unknown> =>
   JSON.parse(readFileSync('package.json', 'utf8'));
 
 /**
- * The FLOOR major expressed by `engines.node`.
+ * The FLOOR expressed by `engines.node`, as `[major, minor, patch]`.
  *
  * Deliberately tolerant of how the range is written (`>=24`, `>= 24.0.0`,
  * `^24.0.0`) but strict that a floor exists at all: a range with no lower
- * bound states no contract and must not pass.
+ * bound states no contract and must not pass. A part the range leaves out
+ * reads as 0, the way npm reads `>=24`.
  */
-const enginesFloorMajor = (): number => {
+const enginesFloor = (): [number, number, number] => {
   const engines = packageJson().engines as { node?: string } | undefined;
   const range = engines?.node;
   if (typeof range !== 'string') {
     throw new Error('package.json has no engines.node');
   }
-  const floor = range.match(/(?:>=|\^|~)?\s*(\d+)/);
+  const floor = range.match(/(?:>=|\^|~)?\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
   if (!floor) {
     throw new Error(`engines.node states no floor: ${JSON.stringify(range)}`);
   }
-  return Number(floor[1]);
+  return [Number(floor[1]), Number(floor[2] ?? 0), Number(floor[3] ?? 0)];
 };
+
+/** The floor's major, which `.nvmrc` has to agree with. */
+const enginesFloorMajor = (): number => enginesFloor()[0];
+
+/** Negative, zero or positive as version `a` is below, at or above `b`. */
+const compareVersions = (a: readonly number[], b: readonly number[]): number =>
+  a.map((part, i) => part - b[i]).find((difference) => difference !== 0) ?? 0;
 
 /** `.npmrc` parsed as key=value, comments and blank lines discarded. */
 const npmrc = (): Map<string, string> => {
@@ -112,6 +120,18 @@ describe('the Node version contract is stated once and agreed everywhere', () =>
   it('keeps engines.node and .nvmrc on the same major, in both directions', () => {
     // One assertion, two failure modes: bumping either file alone breaks it.
     expect(enginesFloorMajor()).toBe(nvmrcMajor());
+  });
+
+  it('names a floor that ships import.meta.main, which every entry script relies on (#221)', () => {
+    // From Node's changelog, not from memory: v24.2.0 (2025-06-09) lists
+    // "import.meta.main is now available", commit adef9af3ae, nodejs/node#57804.
+    // Below it the expression is `undefined`, so every script that asks it
+    // would skip `main()` and exit 0 without a word (`script-entry.test.ts`).
+    const floor = enginesFloor();
+    expect(
+      compareVersions(floor, [24, 2, 0]),
+      `engines.node floor ${floor.join('.')}`,
+    ).toBeGreaterThanOrEqual(0);
   });
 
   it('reads Node from .nvmrc in every workflow that sets Node up', () => {

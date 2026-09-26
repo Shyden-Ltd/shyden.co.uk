@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 /**
  * May this commit be deployed to dev without re-running the whole suite?
  *
- * `release-dev.yml` used to re-run the entire merge gate on every push to
+ * `deploy-dev.yml` used to re-run the entire merge gate on every push to
  * `develop`: the same seven steps `ci.yml` runs, ~26 minutes, against a tree
  * that had already passed them. That duplicate was also the ONLY place the
  * suite ran under a `timeout-minutes`, which is how run 34676066071 was
@@ -42,6 +42,7 @@ import { execFileSync } from 'node:child_process';
  */
 export const REQUIRED_CHECKS = ['build-and-test', 'visual'];
 
+/** @param {unknown} sha */
 const short = (sha) => String(sha ?? '').slice(0, 7);
 
 /**
@@ -50,6 +51,8 @@ const short = (sha) => String(sha ?? '').slice(0, 7);
  * A run still going has no `completedAt` and is by definition not superseded,
  * so it sorts LAST and therefore decides — matching branch protection, where a
  * pending required check does not satisfy the rule.
+ *
+ *  @param {{ completedAt?: string | null } | undefined} run
  */
 const finishedAt = (run) =>
   run?.completedAt ? Date.parse(run.completedAt) : Number.POSITIVE_INFINITY;
@@ -148,8 +151,14 @@ export const decideDeploy = ({
   };
 };
 
+/** @param {...string} args */
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 
+/**
+ * @param {string} repo
+ * @param {string} sha
+ * @param {string} token
+ */
 const checkRunsFor = async (repo, sha, token) => {
   const res = await fetch(
     `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100`,
@@ -163,7 +172,10 @@ const checkRunsFor = async (repo, sha, token) => {
   );
   if (!res.ok)
     throw new Error(`check-runs for ${short(sha)}: HTTP ${res.status}`);
-  const body = await res.json();
+  const body =
+    /** @type {{ check_runs?: { name: string, status: string, conclusion: string | null, completed_at: string | null }[] }} */ (
+      await res.json()
+    );
   return (body.check_runs ?? []).map((run) => ({
     name: run.name,
     conclusion: run.conclusion,
@@ -203,4 +215,8 @@ const main = async () => {
   if (!deploy) process.exit(1);
 };
 
-if (process.argv[1]?.endsWith('deploy-gate.mjs')) await main();
+// Only when run, never when imported: `tests/unit/deploy-gate.test.ts` imports
+// `decideDeploy`. Matching the entry file's name would run `main()` for any
+// entry file whose name ended the same way (#221,
+// `tests/unit/script-entry.test.ts`).
+if (import.meta.main) await main();

@@ -29,6 +29,9 @@ import {
   basicAuthChallenge,
 } from './_lib/lockdown.js';
 
+/**
+ * @param {{ request: Request, env: Record<string, string | undefined>, next: () => Promise<Response> }} context
+ */
 export const onRequest = async ({ request, env, next }) => {
   const url = new URL(request.url);
   const hostname = url.hostname;

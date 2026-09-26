@@ -1,0 +1,99 @@
+name: PR body
+# The medium `.githooks/commit-msg` cannot reach.
+#
+# `gh pr create` runs no git hook, and a pull request body is what closed #89:
+# "I will close #89 by hand once both are in" is not a negation, so the guard
+# written after the FIRST accident matched nothing at all. The rule itself
+# lives in `scripts/closing-keywords.mjs`; this workflow is the only place
+# every author's body passes through -- and the only layer `--no-verify`
+# cannot skip, which is why it reads the commit messages too.
+#
+# `edited` IS THE POINT. The default trigger set is opened, synchronize and
+# reopened, so a body edited after a green run would never be re-checked --
+# and editing the description to add a note is exactly how both accidents were
+# written. Declaring `types:` REPLACES the defaults rather than adding to
+# them, so all four are named: dropping `synchronize` would silently stop
+# checking a body on every later push.
+#
+# SEPARATE FROM ci.yml, deliberately. Adding `edited` there would re-run a
+# ~36-minute suite for a typo in a description, and with `strict: true` making
+# merges serial that cost lands on every other open PR. This runs in seconds.
+#
+# NOT A GATE UNTIL IT IS REQUIRED. A job that can go red while the merge
+# proceeds is decoration (#33). This becomes blocking when `closing-keywords`
+# is added to `required_status_checks.contexts` on develop and main -- a
+# repository-administration change, which the App holds read-only, so it is
+# the operator's. The order is forced: merge first, then require, or every PR
+# hangs waiting for a check its base cannot produce.
+#
+# THAT NAME, EXACTLY. A check run is named after the job's `name:`, falling
+# back to the job id when it declares none, as this job does. There is no
+# `workflow / job` prefix on an ordinary job -- that spelling belongs to
+# required workflows and reusable calls, and this comment asked for it until
+# #284. Requiring a name nothing reports is not a weak gate: it hangs every
+# pull request on a check its base cannot produce, and only an administrator
+# can undo it. Pinned by pipeline-wiring.test.ts, which derives both sides.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+# Read-only, and nothing else. The job reads no secret and writes nothing.
+permissions:
+  contents: read
+
+# One run per pull request, matching ci.yml. Every workflow in the repository
+# shares one namespace of concurrency groups, so the key names this workflow
+# as well as the pull request.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  closing-keywords:
+    runs-on: ubuntu-26.04
+    # Seconds of work. A budget so a hung job cannot burn the runner's
+    # 360-minute default; pinned by tests/unit/pipeline-wiring.test.ts.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's own commits, not just its tip: the messages are
+          # read below, and a shallow clone has none of them.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: A pull request body must not close an issue by accident
+        # Through the ENVIRONMENT, never expanded into the script. A body is
+        # written by whoever opened the pull request, including on a fork;
+        # `${{ ... }}` is substituted before the shell parses the line, so a
+        # body containing a backtick or `$(...)` would execute on the runner.
+        # Here it is only ever data. Pinned by closing-keywords.test.ts.
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printenv PR_BODY > "${RUNNER_TEMP}/pr-body.txt" || true
+          node scripts/closing-keywords.mjs "${RUNNER_TEMP}/pr-body.txt" "this pull request body"
+      - name: No commit message in it may close an issue by accident either
+        # THE OTHER MEDIUM A MERGE ACTS ON. A closing keyword in a commit
+        # message closes the issue the moment the commit lands on the default
+        # branch -- that is how the FIRST accident happened, in 983fb7e.
+        # `.githooks/commit-msg` catches those, and `git commit --no-verify`
+        # skips it; `.githooks/pre-push` advertises that escape in its own
+        # failure message. This is the layer nobody can bypass, so it reads
+        # both media through the same rule.
+        #
+        # `origin/<base>..HEAD` is exactly the set a merge would add, so a
+        # commit already on the base cannot redden an innocent pull request.
+        # `--no-merges` drops the synthetic merge commit a pull_request
+        # checkout puts at HEAD.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git log --no-merges --format=%B "origin/${BASE_REF}..HEAD" > "${RUNNER_TEMP}/commits.txt"
+          # An empty range would pass this check for free, and would look
+          # exactly like a clean pull request. An open one always adds at
+          # least one commit, so nothing here is the range being wrong.
+          test -s "${RUNNER_TEMP}/commits.txt" ||
+            { echo 'no commit messages in the range: the range is wrong, not the pull request clean'; exit 1; }
+          node scripts/closing-keywords.mjs "${RUNNER_TEMP}/commits.txt" "a commit message in this pull request"

@@ -134,10 +134,44 @@ export interface WaitForOptions {
   readonly timeout?: number;
   readonly interval?: number;
   readonly describe: string;
+  /**
+   * Whether an error the predicate threw is worth another poll. Omitted,
+   * every thrown error is. An error this rejects ends the wait at once and
+   * is rethrown as-is: the caller already knows no later poll can succeed.
+   */
+  readonly retryable?: (error: unknown) => boolean;
 }
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
 const DEFAULT_WAIT_INTERVAL_MS = 200;
+
+const UNSETTLED = Symbol('unsettled');
+
+/**
+ * `promise`'s value, or `UNSETTLED` if `deadline` passes first. A request
+ * nobody answers never settles, and awaiting it outright would carry the
+ * wait past any deadline.
+ */
+async function settledBy<T>(
+  promise: Promise<T>,
+  deadline: number,
+): Promise<T | typeof UNSETTLED> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<typeof UNSETTLED>((resolve) => {
+    // A poll can start after the deadline, since the pause between polls is
+    // not cut short at it. Node would clamp the negative delay to 1 ms anyway,
+    // and warn on every run (#327); clamping here keeps the same timing.
+    timer = setTimeout(
+      () => resolve(UNSETTLED),
+      Math.max(0, deadline - Date.now()),
+    );
+  });
+  try {
+    return await Promise.race([promise, expiry]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Polls `predicate` until it returns a truthy value, or throws naming what
@@ -146,13 +180,18 @@ const DEFAULT_WAIT_INTERVAL_MS = 200;
  * This is NOT the bare `sleep(500)` this project's standards forbid: the
  * pass/fail verdict is decided entirely by the observed condition, never by
  * how much time has elapsed -- `timeout` is a safety net against a hung
- * device or session, not the thing that decides success. The delay between
+ * device or session, not the thing that decides success. A poll still
+ * pending at the deadline is abandoned, so a request that is never answered
+ * cannot hold the wait past it (#309). The delay between
  * polls below is the cadence of a condition-based wait (the same shape
  * `expect.poll` uses internally), not a substitute for checking one.
  *
  * A thrown predicate (e.g. a transient fetch failure) is caught and
  * recorded rather than aborting the wait -- callers do not need their own
- * try/catch just to poll for an element that has not appeared yet.
+ * try/catch just to poll for an element that has not appeared yet. A caller
+ * that knows a failure is terminal says so with `retryable`, and that
+ * failure ends the wait at once instead of being retried until the timeout:
+ * a `safaridriver` that has already exited will never answer (#309).
  */
 export async function waitFor<T>(
   predicate: () => Promise<T | undefined | null | false | 0 | ''>,
@@ -160,24 +199,26 @@ export async function waitFor<T>(
 ): Promise<T> {
   const timeout = options.timeout ?? DEFAULT_WAIT_TIMEOUT_MS;
   const interval = options.interval ?? DEFAULT_WAIT_INTERVAL_MS;
+  const retryable = options.retryable ?? (() => true);
   const deadline = Date.now() + timeout;
-  let lastValue: unknown;
-  let lastError: unknown;
 
   for (;;) {
+    let observed: string;
     try {
-      const result = await predicate();
-      lastError = undefined;
-      lastValue = result;
-      if (result) return result;
+      const result = await settledBy(predicate(), deadline);
+      if (result === UNSETTLED) {
+        observed = 'a poll that had not settled when the time ran out';
+      } else if (result) {
+        return result;
+      } else {
+        observed = `resolved to ${JSON.stringify(result)}`;
+      }
     } catch (error) {
-      lastError = error;
+      if (!retryable(error)) throw error;
+      observed = `threw ${error instanceof Error ? error.message : String(error)}`;
     }
 
     if (Date.now() >= deadline) {
-      const observed = lastError
-        ? `threw ${lastError instanceof Error ? lastError.message : String(lastError)}`
-        : `resolved to ${JSON.stringify(lastValue)}`;
       throw new Error(
         `Timed out after ${timeout}ms waiting for: ${options.describe}. Last observed: ${observed}`,
       );
@@ -227,6 +268,24 @@ export class WebDriver {
       serverUrl,
       sessionId,
       capabilities as Record<string, unknown>,
+    );
+  }
+
+  /**
+   * W3C `GET /status`: whether the server is ready to create a session. A
+   * refused connection throws, which a caller polling a server that is still
+   * starting reads as "not yet".
+   *
+   * Measured response shape: `{"value":{"message":"","ready":true}}` -- no
+   * `build`/`os` sub-objects the generic W3C spec allows for, so this reads
+   * only the field safaridriver actually sends that the answer depends on.
+   */
+  static async isReady(serverUrl: string): Promise<boolean> {
+    const value = await wireRequest('GET', `${serverUrl}/status`);
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      (value as { ready?: unknown }).ready === true
     );
   }
 

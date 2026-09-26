@@ -1,18 +1,23 @@
 import { test, expect } from './fixtures';
 import { recordErrors } from './recorders';
+import { atLeast44 } from '../viewport';
 import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import {
   buildRoster,
-  rosterOf,
-  upload,
-  downloadText,
-  downloadName,
-  todayISO,
   buildRosterAtPath,
+  downloadName,
+  downloadText,
+  expectNothingStored,
   giveEveryoneASex,
   handoverTo,
+  rosterOf,
+  todayISO,
+  upload,
 } from './helpers';
+import { recorded } from './evidence';
+
+test.use(recorded);
 
 /**
  * Stage 4, Task 5. The Import/export section, driven through the page.
@@ -190,57 +195,47 @@ test.describe('Import / export', () => {
     ).toBeVisible();
   });
 
-  test(
-    'the template is the roster once there is one',
-    { tag: '@requires-download-bytes' },
-    async ({ page }) => {
-      await buildRoster(page, [
-        ['F', 'Ana'],
-        ['M', 'Budi'],
-      ]);
-      await openIo(page);
-      const text = await downloadText(page, 'Download template');
-      expect(text).toContain('1,Ana,F,,,');
-      expect(text).toContain('2,Budi,M,,,');
-      // and it is a real roster, not the example rows
-      expect(text).not.toContain('# 1,Ana');
-    },
-  );
+  test('the template is the roster once there is one', async ({ page }) => {
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await openIo(page);
+    const text = await downloadText(page, 'Download template');
+    expect(text).toContain('1,Ana,F,,,');
+    expect(text).toContain('2,Budi,M,,,');
+    // and it is a real roster, not the example rows
+    expect(text).not.toContain('# 1,Ana');
+  });
 
-  test(
-    'the template with no roster is example COMMENT rows only',
-    { tag: '@requires-download-bytes' },
-    async ({ page }) => {
-      await page.goto('/classroom-groups');
-      await openIo(page);
-      const text = await downloadText(page, 'Download template');
-      expect(text).toContain('# 1,Ana,F,,A,');
-      // Every line that is not the header is a comment, so importing it
-      // unedited adds nobody. The header is found by its own content rather
-      // than by position, because the `# Class:` prompt line comes first.
-      const body = text
-        .split('\n')
-        .filter((l) => l.trim() !== '')
-        .filter((l) => l !== 'number,name,sex,absent,together,apart');
-      expect(body.every((l) => l.startsWith('#'))).toBe(true);
-    },
-  );
+  test('the template with no roster is example COMMENT rows only', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await openIo(page);
+    const text = await downloadText(page, 'Download template');
+    expect(text).toContain('# 1,Ana,F,,A,');
+    // Every line that is not the header is a comment, so importing it
+    // unedited adds nobody. The header is found by its own content rather
+    // than by position, because the `# Class:` prompt line comes first.
+    const body = text
+      .split('\n')
+      .filter((l) => l.trim() !== '')
+      .filter((l) => l !== 'number,name,sex,absent,together,apart');
+    expect(body.every((l) => l.startsWith('#'))).toBe(true);
+  });
 
-  test(
-    'the exported class list is the roster on screen',
-    { tag: '@requires-download-bytes' },
-    async ({ page }) => {
-      await buildRoster(page, [
-        ['F', 'Ana'],
-        ['M', 'Budi'],
-      ]);
-      await openIo(page);
-      const text = await downloadText(page, 'Export class list');
-      expect(text).toBe(
-        'number,name,sex,absent,together,apart\n1,Ana,F,,,\n2,Budi,M,,,\n',
-      );
-    },
-  );
+  test('the exported class list is the roster on screen', async ({ page }) => {
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await openIo(page);
+    const text = await downloadText(page, 'Export class list');
+    expect(text).toBe(
+      'number,name,sex,absent,together,apart\n1,Ana,F,,,\n2,Budi,M,,,\n',
+    );
+  });
 
   test('the filename carries the class and the date', async ({ page }) => {
     await rosterOf(page, 2);
@@ -306,22 +301,18 @@ test.describe('Import / export', () => {
     );
   });
 
-  test(
-    'the exported groups file is one row per student',
-    { tag: '@requires-download-bytes' },
-    async ({ page }) => {
-      await rosterOf(page, 4);
-      await page.getByLabel('Students in each group').fill('2');
-      await giveEveryoneASex(page);
-      await page.getByRole('button', { name: 'Make Groups' }).click();
-      await openIo(page);
-      const text = await downloadText(page, 'Export groups');
-      const lines = text.split('\n').filter(Boolean);
-      expect(lines[0]).toBe(`# Groups made ${todayISO()}`);
-      expect(lines[1]).toBe('group,number,name');
-      expect(lines).toHaveLength(6); // comment + header + 4 students
-    },
-  );
+  test('the exported groups file is one row per student', async ({ page }) => {
+    await rosterOf(page, 4);
+    await page.getByLabel('Students in each group').fill('2');
+    await giveEveryoneASex(page);
+    await page.getByRole('button', { name: 'Make Groups' }).click();
+    await openIo(page);
+    const text = await downloadText(page, 'Export groups');
+    const lines = text.split('\n').filter(Boolean);
+    expect(lines[0]).toBe(`# Groups made ${todayISO()}`);
+    expect(lines[1]).toBe('group,number,name');
+    expect(lines).toHaveLength(6); // comment + header + 4 students
+  });
 
   test('exporting clears the unsaved-changes warning', async ({ page }) => {
     // The other half of stage 3's `dirty` rule: setRoster(next, { saved: true }).
@@ -369,26 +360,24 @@ test.describe('Import / export', () => {
   // bytes back, and get the same roster. The unit suite proves
   // serialise/parse agree; this proves the PAGE hands them the same roster
   // it is showing.
-  test(
-    'a roster survives a round trip through export and import',
-    { tag: '@requires-download-bytes' },
-    async ({ page }) => {
-      await buildRoster(page, [
-        ['F', 'Ana'],
-        ['M', 'Budi'],
-        [null, 'Wong, Mei'],
-      ]);
-      await openIo(page);
-      const text = await downloadText(page, 'Export class list');
-      await page.reload();
-      await openIo(page);
-      await upload(page, 'again.csv', text);
-      await expect(page.locator('.cg-student')).toHaveCount(3);
-      await expect(
-        page.locator('.cg-student').nth(2).getByLabel('Name'),
-      ).toHaveValue('Wong, Mei');
-    },
-  );
+  test('a roster survives a round trip through export and import', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+      [null, 'Wong, Mei'],
+    ]);
+    await openIo(page);
+    const text = await downloadText(page, 'Export class list');
+    await page.reload();
+    await openIo(page);
+    await upload(page, 'again.csv', text);
+    await expect(page.locator('.cg-student')).toHaveCount(3);
+    await expect(
+      page.locator('.cg-student').nth(2).getByLabel('Name'),
+    ).toHaveValue('Wong, Mei');
+  });
 
   test('no console errors while importing and exporting', async ({ page }) => {
     const reported = recordErrors(page);
@@ -413,27 +402,23 @@ test.describe('Import / export — Indonesian', () => {
     await expect(page.getByText('Impor daftar kelas')).toBeVisible();
   });
 
-  test(
-    'an Indonesian page exports an Indonesian file',
-    { tag: '@requires-download-bytes' },
-    async ({ page }) => {
-      await buildRoster(
-        page,
-        [
-          ['F', 'Ana'],
-          ['M', 'Budi'],
-        ],
-        '/id/classroom-groups',
-      );
-      await page.locator('#cg-io-toggle').click();
-      const text = await downloadText(page, 'Ekspor daftar kelas');
-      expect(text).toBe(
-        'nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah\n' +
-          '1,Ana,P,,,\n' +
-          '2,Budi,L,,,\n',
-      );
-    },
-  );
+  test('an Indonesian page exports an Indonesian file', async ({ page }) => {
+    await buildRoster(
+      page,
+      [
+        ['F', 'Ana'],
+        ['M', 'Budi'],
+      ],
+      '/id/classroom-groups',
+    );
+    await page.locator('#cg-io-toggle').click();
+    const text = await downloadText(page, 'Ekspor daftar kelas');
+    expect(text).toBe(
+      'nomor,nama,jenis kelamin,tidak hadir,bersama,terpisah\n' +
+        '1,Ana,P,,,\n' +
+        '2,Budi,L,,,\n',
+    );
+  });
 
   test('a successful Indonesian import says so in Indonesian', async ({
     page,
@@ -572,17 +557,8 @@ test.describe('exporting in both languages', () => {
     await newPage.waitForLoadState();
     await newPage.locator('#cg-students-toggle').click();
     await expect(newPage.locator('.cg-student')).toHaveCount(1);
-    for (const p of [page, newPage]) {
-      const seen = await p.evaluate(() =>
-        [
-          JSON.stringify({ ...localStorage }),
-          JSON.stringify({ ...sessionStorage }),
-          location.href,
-          document.cookie,
-        ].join(' '),
-      );
-      expect(seen).not.toContain('Ana');
-    }
+    for (const p of [page, newPage])
+      await expectNothingStored(p, 'after the handover', 'Ana');
   });
 
   test('the source keeps the roster until the new tab acknowledges', async ({
@@ -792,7 +768,7 @@ test.describe('the handover destination is chosen, not assumed', () => {
     await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
     await openIo(page);
     const summary = page.locator('#cg-io-both-toggle');
-    expect((await summary.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    await atLeast44(summary, '#cg-io-both-toggle');
     await summary.click();
     const choices = page.locator('.cg-io-both-target');
     // `.all()` resolves to [] when nothing matches -- it neither waits nor
@@ -804,7 +780,7 @@ test.describe('the handover destination is chosen, not assumed', () => {
     // change.
     await expect(choices).toHaveCount(otherLocales('en').length);
     for (const choice of await choices.all()) {
-      expect((await choice.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+      await atLeast44(choice);
     }
   });
 

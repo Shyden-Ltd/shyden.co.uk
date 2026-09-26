@@ -1,5 +1,6 @@
 import type { Strings } from '../lib/i18n';
 import { fitScale, fontThatFits } from '../lib/fit';
+import { button } from './dom';
 
 /**
  * The projector view: the groups on the wall, for the class to read.
@@ -101,14 +102,8 @@ export function renderProjector(
   stage.id = 'cg-board-stage';
   board.appendChild(stage);
 
-  const shuffle = doc.createElement('button');
-  shuffle.type = 'button';
-  shuffle.className = 'cg-board-shuffle';
-  shuffle.textContent = t.boardShuffle;
-  const exit = doc.createElement('button');
-  exit.type = 'button';
-  exit.className = 'cg-board-exit';
-  exit.textContent = t.boardExit;
+  const shuffle = button(t.boardShuffle, 'cg-board-shuffle', doc);
+  const exit = button(t.boardExit, 'cg-board-exit', doc);
   bar.append(shuffle, exit);
 
   /**
@@ -442,12 +437,12 @@ export function renderProjector(
     }
   });
 
-  // Leaving fullscreen by the browser's own means (F11, the Esc the API
-  // itself consumes) must close the board too, or the overlay is left
-  // covering a page nobody asked it to cover.
   // Leaving fullscreen by the browser's own means (F11, the Escape the API
   // itself consumes) must close the board too, or the overlay is left
-  // covering a page nobody asked it to cover.
+  // covering a page nobody asked it to cover. A browser can also end a
+  // fullscreen it granted without anyone asking -- measured on macOS WebKit
+  // under load (#344) -- and closing is right then as well: the page cannot
+  // tell that exit from a teacher's Escape.
   //
   // `inFullscreen` is what makes this safe. The event also fires for the
   // EXIT that tidies up a grant landing late from a previous showing, and

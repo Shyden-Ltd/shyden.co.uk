@@ -36,7 +36,8 @@
  * startup, which frees this server's port the same way the shared preview
  * server's port is freed -- by port, never by process-name pattern.
  */
-import { execFileSync } from 'node:child_process';
+import { die, stackOf } from './errors.mjs';
+import { killByPort } from './test-devices.mjs';
 import {
   closeSync,
   existsSync,
@@ -99,89 +100,37 @@ const REPORT_INDEX = {
   // to "each Playwright HTML report".
 };
 
-// ── port ownership: kill by port, never by process-name pattern ────────
-//
-// A deliberate, self-contained DUPLICATE of `pidsListeningOnPort`/
-// `killByPort`/`waitUntil` in scripts/test-devices.mjs, not an import from
-// it -- that file has no exports (it is a top-level script that calls
-// `await main()` as a side effect of being loaded at all; importing it
-// would run the entire test harness). Same trade-off already made, and
-// already accepted, for `isAndroidPresent`/`findIosDeviceOrThrow` in that
-// same file (see its own module doc): a small, clearly cross-referenced
-// duplication beats coupling two processes that must not share a module
-// graph. If `lsof`'s output shape ever changes, both copies need updating
-// together.
-async function waitUntil(predicate, { timeoutMs, describe, intervalMs = 250 }) {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const result = await predicate();
-    if (result) return result;
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `Timed out after ${timeoutMs}ms waiting for: ${describe}`,
-      );
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-}
-
-function pidsListeningOnPort(port) {
-  try {
-    const out = execFileSync(
-      'lsof',
-      ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
-      { encoding: 'utf8' },
-    );
-    return out
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map(Number);
-  } catch (error) {
-    if (error.status === 1 && !error.stdout) return []; // lsof's "nothing matched" shape
-    throw error;
-  }
-}
-
-/**
- * Whatever is listening on `port` is, by construction, either nothing or a
- * previous run's own dashboard server -- nothing else in this project or a
- * typical dev machine has a reason to be on 4322. SIGTERM first, SIGKILL
- * only if it is still there after a grace period. Idempotent.
- */
-async function killByPort(port) {
-  let pids = pidsListeningOnPort(port);
-  if (pids.length === 0) return;
-  for (const pid of pids) {
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch {
-      // Already gone between the lsof snapshot and this kill -- fine.
-    }
-  }
-  try {
-    await waitUntil(() => pidsListeningOnPort(port).length === 0, {
-      timeoutMs: 5_000,
-      describe: `port ${port} to become free after SIGTERM`,
-    });
-  } catch {
-    pids = pidsListeningOnPort(port);
-    for (const pid of pids) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // Already gone -- fine.
-      }
-    }
-    await waitUntil(() => pidsListeningOnPort(port).length === 0, {
-      timeoutMs: 5_000,
-      describe: `port ${port} to become free after SIGKILL`,
-    });
-  }
-}
-
 // ── live state, built from the jsonl tail + the small JSON artifacts ───
 
+/**
+ * @typedef {{ id: string, title: string, project: string, at: string }} RunningTest
+ * @typedef {{ title: string, project: string, at: string }} Failure
+ */
+
+/**
+ * One group's live state.
+ *
+ * Declared rather than inferred: every field below starts `null` or `[]`, so
+ * TypeScript reads the INITIAL value as the type -- `report` became `null`,
+ * and the line that later assigns it a `file://` URL was an error. The same
+ * shape that made `parents = []` mean `never[]` in #157.
+ *
+ * @returns {{
+ *   expected: boolean,
+ *   notRun: { reason: string } | null,
+ *   total: number | null,
+ *   passed: number,
+ *   failed: number,
+ *   skipped: number,
+ *   running: RunningTest[],
+ *   failures: Failure[],
+ *   beganAt: string | null,
+ *   endedAt: string | null,
+ *   final: Record<string, unknown> | null,
+ *   report: string | null,
+ *   mode: Record<string, unknown> | null,
+ * }}
+ */
 function freshGroup() {
   return {
     expected: true,
@@ -218,6 +167,10 @@ const tail = Object.fromEntries(
   GROUP_NAMES.map((name) => [name, { offset: 0, partial: '' }]),
 );
 
+/**
+ * @param {ReturnType<typeof freshGroup>} group
+ * @param {{ id: string, title: string, project: string, at: string } & Record<string, any>} ev
+ */
 function applyEvent(group, ev) {
   switch (ev.event) {
     case 'begin':
@@ -256,6 +209,7 @@ function applyEvent(group, ev) {
   }
 }
 
+/** @param {string} name */
 function tailOneFile(name) {
   const file = JSONL_FILE[name];
   const t = tail[name];
@@ -304,6 +258,7 @@ function tailOneFile(name) {
   return changed;
 }
 
+/** @param {string} file */
 function readJsonIfPresent(file) {
   if (!existsSync(file)) return null;
   try {
@@ -370,9 +325,7 @@ function tick() {
     // fs error) and keep serving whatever it already knows -- this process
     // going quiet on one file must never mean the whole dashboard dies.
     // eslint-disable-next-line no-console
-    console.error(
-      `[dashboard] tick failed (continuing): ${error.stack || error.message}`,
-    );
+    console.error(`[dashboard] tick failed (continuing): ${stackOf(error)}`);
   } finally {
     setTimeout(tick, POLL_MS);
   }
@@ -603,6 +556,10 @@ const PAGE = `<!doctype html>
 
 // ── the server ───────────────────────────────────────────────────────
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
 function handleRequest(req, res) {
   const pathname = (req.url || '/').split('?')[0];
 
@@ -630,6 +587,11 @@ function handleRequest(req, res) {
 }
 
 async function main() {
+  // Takes no arguments; refusing one proves `main()` ran (#227).
+  const unexpected = process.argv.slice(2);
+  if (unexpected.length > 0)
+    die(`dashboard.mjs takes no arguments, received: ${unexpected.join(' ')}`);
+
   await killByPort(PORT); // whatever's there is, by construction, a previous run's own stale dashboard -- see module doc
 
   const server = http.createServer((req, res) => {
@@ -641,7 +603,7 @@ async function main() {
       // later tick regardless of one bad request.
       // eslint-disable-next-line no-console
       console.error(
-        `[dashboard] request handler failed (continuing): ${error.stack || error.message}`,
+        `[dashboard] request handler failed (continuing): ${stackOf(error)}`,
       );
       try {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
@@ -654,7 +616,7 @@ async function main() {
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(PORT, '0.0.0.0', () => resolve());
+    server.listen(PORT, '0.0.0.0', () => resolve(undefined));
   });
 
   // eslint-disable-next-line no-console
@@ -692,4 +654,4 @@ async function main() {
   }
 }
 
-await main();
+if (import.meta.main) await main();

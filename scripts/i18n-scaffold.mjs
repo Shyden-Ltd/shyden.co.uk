@@ -25,7 +25,8 @@
  * machine-seeded catalogue carried them in English.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { argv, exit } from 'node:process';
+import { die, messageOf } from './errors.mjs';
+import { argv } from 'node:process';
 
 import { isMessageTemplate } from '../src/lib/i18n/message.ts';
 import {
@@ -36,46 +37,37 @@ import { en } from '../src/lib/i18n/en.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
 
-const die = (message) => {
-  console.error(`✗ ${message}`);
-  exit(1);
-};
-
-const args = argv.slice(2);
-const force = args.includes('--force');
-const target = args.find((a) => !a.startsWith('--'));
-if (!target) die('name a locale: npm run i18n:scaffold -- zh');
-
-if (!existsSync(CACHE))
-  die(`${CACHE} does not exist — run i18n:translate first`);
-const cache = JSON.parse(readFileSync(CACHE, 'utf8'));
-const known = cache[target];
-if (!known) die(`no cached translations for "${target}" — run i18n:translate`);
-
-const out = `src/lib/i18n/${target}.ts`;
-if (existsSync(out) && !force)
-  die(
-    `${out} already exists. It is a review surface — re-rendering would ` +
-      'discard any correction made to it. Pass --force only if nothing in ' +
-      'it has been reviewed yet.',
-  );
+/**
+ * One locale's rendering context: which locale, the drafts cached for it, and
+ * the plural forms it has. Bound once and threaded through `render`, because
+ * `render` recurses and reading these off module scope is what made this file
+ * do its work as it loaded (#276).
+ *
+ * @typedef {object} Locale
+ * @property {string} target
+ * @property {Record<string, string>} known
+ * @property {readonly Intl.LDMLPluralRule[]} pluralForms
+ */
 
 /**
- * The plural forms the target language has, from CLDR through Intl. Every
- * language drafted so far has "other" alone, and `assembleMessage` refuses a
- * message with a plural for one that has more.
+ *  A key that needs quoting in an object literal (`'class-list'`).
+ *
+ *  @param {string} key
  */
-const PLURAL_FORMS = new Intl.PluralRules(target).resolvedOptions()
-  .pluralCategories;
-
-/** A key that needs quoting in an object literal (`'class-list'`). */
 const plainKey = (key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key);
 
 /**
  * The TypeScript source for one value. `path` is carried so a refusal names
  * the key it happened at.
+ *
+ * @param {unknown} value
+ * @param {string} path
+ * @param {number} indent
+ * @param {Locale} locale the target, its drafts and its plural forms
+ * @returns {string} declared, because this recurses: without a return type
+ *   TypeScript cannot infer one from a function that calls itself.
  */
-function render(value, path, indent) {
+function render(value, path, indent, locale) {
   const pad = '  '.repeat(indent);
   const inner = '  '.repeat(indent + 1);
 
@@ -83,43 +75,52 @@ function render(value, path, indent) {
     die(`${path} is a function. A catalogue holds copy and templates (#136).`);
 
   if (Array.isArray(value)) {
-    const items = value.map((v, i) => render(v, `${path}[${i}]`, indent + 1));
-    return `[\n${items.map((s) => inner + s).join(',\n')},\n${pad}]`;
+    const items = value.map(
+      (/** @type {unknown} */ v, /** @type {number} */ i) =>
+        render(v, `${path}[${i}]`, indent + 1, locale),
+    );
+    return `[\n${items.map((/** @type {string} */ s) => inner + s).join(',\n')},\n${pad}]`;
   }
 
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value).map(([key, v]) => {
-      const name = plainKey(key) ? key : JSON.stringify(key);
-      // No leading dot at the root, or a key comes out as `..errors.X`.
-      const child = plainKey(key)
-        ? path
-          ? `${path}.${key}`
-          : key
-        : `${path}[${JSON.stringify(key)}]`;
-      return `${inner}${name}: ${render(v, child, indent + 1)}`;
-    });
+    const entries = Object.entries(value).map(
+      /** @returns {string} */ ([key, v]) => {
+        const name = plainKey(key) ? key : JSON.stringify(key);
+        // No leading dot at the root, or a key comes out as `..errors.X`.
+        const child = plainKey(key)
+          ? path
+            ? `${path}.${key}`
+            : key
+          : `${path}[${JSON.stringify(key)}]`;
+        return `${inner}${name}: ${render(v, child, indent + 1, locale)}`;
+      },
+    );
     return `{\n${entries.join(',\n')},\n${pad}}`;
   }
 
   if (typeof value === 'string' && isMessageTemplate(value)) {
     try {
       return JSON.stringify(
-        assembleMessage(value, (sentence) => known[sentence], PLURAL_FORMS),
+        assembleMessage(
+          value,
+          (sentence) => locale.known[sentence],
+          locale.pluralForms,
+        ),
       );
     } catch (error) {
       die(
-        `${path}: ${error.message} — "npm run i18n:translate -- ${target} ` +
+        `${path}: ${messageOf(error)} — "npm run i18n:translate -- ${locale.target} ` +
           '--send" drafts any sentence that is missing',
       );
     }
   }
 
   if (needsTranslation(value)) {
-    const translated = known[value];
+    const translated = locale.known[value];
     if (translated === undefined)
       die(
         `no translation cached for ${path}: ${JSON.stringify(value)} — ` +
-          `run "npm run i18n:translate -- ${target} --send" first`,
+          `run "npm run i18n:translate -- ${locale.target} --send" first`,
       );
     return JSON.stringify(translated);
   }
@@ -129,8 +130,9 @@ function render(value, path, indent) {
   return JSON.stringify(value);
 }
 
-const body = render(en, '', 0);
-const header = `import type { Catalogue } from './en';
+const headerFor = (
+  /** @type {string} */ target,
+) => `import type { Catalogue } from './en';
 
 /**
  * ${target} — generated by \`scripts/i18n-scaffold.mjs\` from en.ts and the DeepL
@@ -147,5 +149,52 @@ const header = `import type { Catalogue } from './en';
  */
 export const ${target}: Catalogue = `;
 
-writeFileSync(out, `${header}${body};\n`);
-console.log(`✓ ${out}`);
+/**
+ * Render the catalogue for the locale named on the command line.
+ *
+ * EVERY EFFECT IS IN HERE, reached only under `import.meta.main` (#276).
+ * Until then all of it ran at module scope, so importing this file read the
+ * cache, wrote a catalogue over a reviewed one, and could exit the importing
+ * process through `die`.
+ *
+ * @returns {void}
+ */
+export function main() {
+  const args = argv.slice(2);
+  const force = args.includes('--force');
+  const target = args.find((a) => !a.startsWith('--'));
+  if (!target) die('name a locale: npm run i18n:scaffold -- zh');
+
+  if (!existsSync(CACHE))
+    die(`${CACHE} does not exist — run i18n:translate first`);
+  const cache = JSON.parse(readFileSync(CACHE, 'utf8'));
+  const known = cache[target];
+  if (!known)
+    die(`no cached translations for "${target}" — run i18n:translate`);
+
+  const out = `src/lib/i18n/${target}.ts`;
+  if (existsSync(out) && !force)
+    die(
+      `${out} already exists. It is a review surface — re-rendering would ` +
+        'discard any correction made to it. Pass --force only if nothing in ' +
+        'it has been reviewed yet.',
+    );
+
+  /**
+   * The plural forms the target language has, from CLDR through Intl. Every
+   * language drafted so far has "other" alone, and `assembleMessage` refuses a
+   * message with a plural for one that has more.
+   */
+  const PLURAL_FORMS = new Intl.PluralRules(target).resolvedOptions()
+    .pluralCategories;
+
+  const body = render(en, '', 0, {
+    target,
+    known,
+    pluralForms: PLURAL_FORMS,
+  });
+  writeFileSync(out, `${headerFor(target)}${body};\n`);
+  console.log(`✓ ${out}`);
+}
+
+if (import.meta.main) main();

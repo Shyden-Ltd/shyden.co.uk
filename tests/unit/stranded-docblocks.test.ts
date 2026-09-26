@@ -1,11 +1,15 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { commentsIn, parseSource } from './ast';
 import { astroCodeViews } from './source-text';
-import { filesUnder, searched } from '../source-files';
+import {
+  filesUnder,
+  ignoredByGit,
+  searched,
+  trackedFiles,
+} from '../source-files';
 
 /**
  * A docblock documents the declaration directly below it, so a docblock
@@ -24,28 +28,6 @@ import { filesUnder, searched } from '../source-files';
 /** The files that hold code here; an `.astro` file is read by its regions. */
 const SOURCE = /\.(ts|tsx|mjs|js|astro)$/;
 
-/**
- * Of `paths`, the ones git ignores, by git's own rules.
- *
- * The walk reads the filesystem, which also holds `dist/` and the test
- * reports: files nobody here wrote, on one machine and not the next. Asking
- * git keeps `.gitignore` the one statement of what is tracked, where a list
- * of directories copied here would drift from it. `git check-ignore` exits 1
- * when it ignores nothing, which is an ordinary answer, so the status is read
- * rather than thrown on.
- */
-function ignoredByGit(paths: readonly string[]): Set<string> {
-  const run = spawnSync('git', ['check-ignore', '--stdin'], {
-    input: paths.join('\n'),
-    encoding: 'utf8',
-  });
-  if (run.status !== 0 && run.status !== 1)
-    throw new Error(
-      `git check-ignore failed (${run.status}): ${run.error ?? run.stderr}`,
-    );
-  return new Set(run.stdout.split('\n').filter((line) => line !== ''));
-}
-
 /** Every source file on disk that git does not ignore, from the one walk. */
 function scannedSource(): string[] {
   const candidates = filesUnder('.', (path) => SOURCE.test(path));
@@ -61,14 +43,7 @@ function scannedSource(): string[] {
  * one would otherwise go unread without a word.
  */
 function trackedSource(): string[] {
-  const run = spawnSync('git', ['ls-files', '-z'], { encoding: 'utf8' });
-  if (run.status !== 0)
-    throw new Error(
-      `git ls-files failed (${run.status}): ${run.error ?? run.stderr}`,
-    );
-  return run.stdout
-    .split('\0')
-    .filter((path) => SOURCE.test(path) && existsSync(path));
+  return trackedFiles((path) => SOURCE.test(path));
 }
 
 interface DocblockScan {

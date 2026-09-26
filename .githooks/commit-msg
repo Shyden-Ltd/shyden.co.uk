@@ -1,13 +1,19 @@
 #!/bin/sh
 #
-# Rejects a commit message that puts a closing keyword next to an issue
-# number inside a NEGATION.
+# Refuses a commit message that puts a closing keyword next to an issue
+# number, in ANY form.
 #
-# GitHub's closing-keyword parser has no concept of negation: it scans for
-# `close #<n>` and finds `CLOSE #44` inside `DOES NOT CLOSE #44`. Commit
-# 983fb7e said exactly that, in capitals, and closed the issue the sentence
-# was written to keep open (#77). The issue then sat closed for a day while
-# every handover recorded it as deliberately open.
+# The rule itself lives in `scripts/closing-keywords.mjs`, not here. It has
+# two media to cover -- a commit message and a pull request body -- and a
+# pattern copied into both drifts. The copy that drifts is the one nobody
+# watched fail (#227, #278).
+#
+# This hook is the WIRING: it hands git's message file to that rule and lets
+# its exit status fail the commit. The refusal an author reads comes from
+# there, because that is the only place the rule is taught.
+#
+# The script is resolved from this file's own directory rather than from the
+# working directory, so the hook does not depend on where git ran it.
 #
 # Installed by `scripts/install-hooks.mjs` via `prepare`, which points
 # core.hooksPath at this directory. See #35.
@@ -22,16 +28,6 @@ message_file="${1:-}"
 [ -n "$message_file" ] || fail 'no message file given (git passes it as $1)'
 [ -r "$message_file" ] || fail "cannot read $message_file"
 
-offender=$(grep -inE \
-  '(not|never|without)[[:space:]]+(clos|fix|resolv)[a-z]*[[:space:]]+#[0-9]+' \
-  "$message_file" | head -1)
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || fail 'cannot locate the hook directory'
 
-if [ -n "$offender" ]; then
-  fail "a negated closing keyword still closes the issue on GitHub.
-
-  $offender
-
-GitHub matches \`close #<n>\` inside \`DOES NOT CLOSE #<n>\` and closes it
-anyway. Write \`Refs #<n>\` and say the caveat without the words close, fix
-or resolve immediately before the number."
-fi
+exec node "${here}/../scripts/closing-keywords.mjs" "$message_file" "this commit message"

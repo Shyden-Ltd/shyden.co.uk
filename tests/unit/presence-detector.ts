@@ -8,8 +8,22 @@ import { derivationOf, where, type Bound, type Closure } from './ast';
  * ever ran over was the real suite, where the answer happened to be zero.
  */
 
-/** JSON carries no comments, so parsed data cannot be satisfied by one. */
-const PARSED = new Set(['parse', 'JSON']);
+/**
+ * `JSON.parse(...)`. JSON carries no comments, so nothing a comment in the
+ * read says survives into what the parse returns, and a read that reaches a
+ * subject only through one cannot be satisfied by a comment.
+ *
+ * The call, never a name (#225). The detector once exempted any subject whose
+ * derivation mentioned `JSON` or `parse` anywhere, so a helper's
+ * `JSON.stringify` exempted the raw read beside it. `JSON.stringify` and a
+ * local `parse` helper hand text back as text, and a Markdown parser keeps
+ * every `<!-- comment -->`.
+ */
+const isJsonParse = (call: ts.CallExpression): boolean =>
+  ts.isPropertyAccessExpression(call.expression) &&
+  ts.isIdentifier(call.expression.expression) &&
+  call.expression.expression.text === 'JSON' &&
+  call.expression.name.text === 'parse';
 
 export interface PresenceClosures {
   /** Reaches a read of file CONTENT; only those assertions are scanned. */
@@ -79,8 +93,9 @@ function isAnchored(literal: ts.RegularExpressionLiteral): boolean {
 
 /**
  * Every `toContain`/`toMatch` in a test file whose subject reads source
- * content, and the ones among them that a comment could satisfy: neither
- * stripped, nor comment-derived, nor matched by an anchored regex.
+ * content by a path no `JSON.parse` stands on, and the ones among them that a
+ * comment could satisfy: neither stripped, nor comment-derived, nor matched
+ * by an anchored regex.
  */
 export function scanPresence(
   bound: Bound,
@@ -103,11 +118,20 @@ export function scanPresence(
             ? expectCall.arguments[0]
             : undefined;
           if (subject) {
-            const { names } = derivationOf(subject, bound);
+            // What the subject is made of, with every JSON.parse(...) a wall
+            // the walk does not cross: a read behind one reaches the subject
+            // as data, and a stripper behind one vouches for nothing outside.
+            const { names, opaque } = derivationOf(subject, bound, {
+              stopAt: isJsonParse,
+            });
             const reaches = (closure: Closure) =>
               names.some((n) => closure.reaches(file, n));
-            const parsed = names.some((n) => PARSED.has(n));
-            if (reaches(readers) && !parsed) {
+            // The call graph is asked about a read only for the names the
+            // walk could not see into. The graph knows that `readJson` calls
+            // `readFileSync`; only the helper's body, which the walk has
+            // already followed, shows that the read ends in a parse.
+            const readsRaw = opaque.some((n) => readers.reaches(file, n));
+            if (readsRaw) {
               scanned += 1;
               const arg = node.arguments[0];
               const anchored =

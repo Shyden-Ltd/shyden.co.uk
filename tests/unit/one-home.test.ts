@@ -217,7 +217,8 @@ describe('walking a directory tree has exactly one home', () => {
 });
 
 /**
- * Walking a copy table lives in one place too: `tests/catalogue-leaves.ts`.
+ * Walking a copy table lives in one place too: `src/lib/catalogue-leaves.ts`,
+ * which `tests/catalogue-leaves.ts` re-exports.
  *
  * The directory walk above got its home after nine private copies. Catalogue
  * walks reached seven before anyone counted -- three in `i18n.test.ts`, one
@@ -240,6 +241,8 @@ describe('walking a directory tree has exactly one home', () => {
  * themselves -- the harness's `collect`, the scaffold's `render`,
  * `untranslatedKeys` -- because shipped code cannot import the test tree, and
  * a guard importing the shipped walk would depend on the thing it checks.
+ * The walk itself now ships (#97); its behaviour is pinned by
+ * `catalogue-leaves.test.ts`, which the move does not change.
  */
 const TAKES_A_TABLE_APART = new Set([
   'Object.entries',
@@ -276,13 +279,20 @@ export function definesACatalogueWalker(source: string): boolean {
 }
 
 describe('walking a catalogue has exactly one home', () => {
-  it('is implemented only in catalogue-leaves.ts', () => {
-    const testTree = SCANNED.filter((path) => path.startsWith('tests/'));
+  it('is implemented only in src/lib/catalogue-leaves.ts', () => {
+    // The walk moved out of the test tree for #97, because the Pages Function
+    // that validates a report needs it and shipped code cannot import tests/.
+    // The rule still scans the test tree; it adds the one home in src/.
+    const HOME = 'src/lib/catalogue-leaves.ts';
+    const scanned = [
+      ...SCANNED.filter((path) => path.startsWith('tests/')),
+      HOME,
+    ];
     expect(
-      testTree.filter((path) =>
+      scanned.filter((path) =>
         definesACatalogueWalker(readFileSync(path, 'utf8')),
       ),
-    ).toEqual(['tests/catalogue-leaves.ts']);
+    ).toEqual([HOME]);
   });
 
   it('catches a walker whatever it is called', () => {

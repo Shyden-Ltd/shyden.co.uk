@@ -1,4 +1,5 @@
-import { readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -106,6 +107,32 @@ export const specFilesUnder = (dir: string): string[] =>
   filesUnder(dir, (path) => path.endsWith('.spec.ts'));
 
 /**
+ * Of `paths`, the ones git ignores, by git's own rules.
+ *
+ * The walk reads the filesystem, which also holds `dist/` and the test
+ * reports: files nobody here wrote, on one machine and not the next. Asking
+ * git keeps `.gitignore` the one statement of what is tracked, where a list
+ * of directories copied into a guard would drift from it. `git check-ignore`
+ * exits 1 when it ignores nothing, which is an ordinary answer, so the status
+ * is read rather than thrown on.
+ *
+ * Git does not report a TRACKED path as ignored, whatever the rules say. A
+ * guard asking whether a rule would swallow a file must ask about a path git
+ * does not track, or the answer is "no" for a reason unrelated to the rule.
+ */
+export function ignoredByGit(paths: readonly string[]): Set<string> {
+  const run = spawnSync('git', ['check-ignore', '--stdin'], {
+    input: paths.join('\n'),
+    encoding: 'utf8',
+  });
+  if (run.status !== 0 && run.status !== 1)
+    throw new Error(
+      `git check-ignore failed (${run.status}): ${run.error ?? run.stderr}`,
+    );
+  return new Set(run.stdout.split('\n').filter((line) => line !== ''));
+}
+
+/**
  * True for a population member that carries something to find.
  *
  * #112's guard counted six entries and stayed green with all six Thai
@@ -156,4 +183,29 @@ export function searched<T>(
         'content: six blank headers are six entries (#118, #112).',
     );
   return findings;
+}
+
+/**
+ * Every path git tracks that the working tree still holds, filtered by `keep`.
+ *
+ * A control on the walk above, not a second source for it: `filesUnder` skips
+ * dot-directories by design, so `.github/` — every workflow in the repository
+ * — is invisible to it, and a guard reading the pipeline's own text has to
+ * see those files. `git ls-files` is the only list that cannot disagree with
+ * what is committed.
+ *
+ * `-z` because a path may hold any byte but NUL, and `existsSync` because a
+ * file deleted in the working tree is tracked until the deletion is staged.
+ */
+export function trackedFiles(keep: (path: string) => boolean): string[] {
+  const run = spawnSync('git', ['ls-files', '-z'], { encoding: 'utf8' });
+  if (run.status !== 0)
+    throw new Error(
+      `git ls-files failed (${run.status}): ${run.error ?? run.stderr}`,
+    );
+  const paths = run.stdout
+    .split('\0')
+    .filter((path) => keep(path) && existsSync(path))
+    .sort();
+  return nonEmpty(paths, 'tracked files');
 }

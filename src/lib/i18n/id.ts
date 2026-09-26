@@ -63,6 +63,37 @@ export const id: Catalogue = {
   studentsLockedReason:
     'Ditentukan oleh daftar Anda. Tambah atau hapus siswa di Detail siswa untuk mengubahnya.',
 
+  // #188. Tiga kolom nomor di samping kotak jumlah siswa. Terjemahan
+  // implementer sendiri -- PERMUKAAN TINJAUAN, sama seperti catatan lain di
+  // berkas ini. Label pendek (tiga kata atau kurang) perlu ditinjau penutur
+  // asli secara terpisah dari kalimat panjang.
+  absentNumbersLabel: 'Nomor yang tidak hadir',
+  keepTogetherLabel: 'Selalu bersama',
+  keepApartLabel: 'Jangan bersama',
+  absentNumbersHelp:
+    'Nomor absen siswa yang tidak hadir, dipisahkan dengan koma.',
+  pairNumbersHelp:
+    'Koma menggabungkan satu pasangan; titik koma memulai pasangan baru — 3,9; 14,15.',
+  numbersLockedReason:
+    'Ditentukan oleh daftar Anda. Tandai ketidakhadiran dan pasangan di Detail siswa untuk mengubahnya.',
+  numbersNotWholeMessage:
+    '"{text}" bukan bilangan bulat. Ketik nomor absen dari 1 sampai {count}.',
+  numbersAboveCountMessage:
+    'Tidak ada nomor {text}. Anda memiliki {count} siswa.',
+  numbersAboveMaximumMessage:
+    'Tidak ada nomor {text}. Halaman ini menampung hingga {max} siswa.',
+  numbersDuplicateMessage:
+    'Nomor {text} tercantum dua kali. Setiap nomor hanya boleh ada di satu tempat.',
+  numbersLonelySetMessage:
+    'Satu pasangan membutuhkan setidaknya dua nomor, dan {text} sendirian.',
+  numbersTooManySetsMessage:
+    'Pasangannya lebih banyak daripada yang dapat ditampung halaman ini. {text} melebihi batas.',
+  numbersNoCountMessage: 'Isi jumlah siswa terlebih dahulu.',
+  // Tanpa bentuk jamak: bahasa Indonesia hanya punya kategori `other`, sama
+  // seperti `rosterGapWarning` di bawah yang memakai {missing} langsung.
+  groupedNote:
+    '{grouped} dari {typed} siswa dikelompokkan — nomor {absent} tidak hadir.',
+
   modeLabel: 'Bagi berdasarkan',
   modePerGroup: 'Siswa per kelompok',
   modeGroupCount: 'Jumlah kelompok',
@@ -339,7 +370,7 @@ export const id: Catalogue = {
     // pemicunya (daftar kosong, atau semua siswa ditandai absen), bukan
     // hanya yang pertama.
     NO_STUDENTS:
-      'Tambahkan siswa, atau pastikan setidaknya satu di antaranya tidak ditandai absen.',
+      'Tambahkan siswa, atau pastikan tidak semuanya ditandai tidak hadir.',
     TOO_MANY_STUDENTS:
       'Jumlah siswa itu melebihi batas alat ini. Paling banyak {max}.',
     DUPLICATE_NUMBER:

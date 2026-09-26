@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   astroCodeViews,
+  astroFrontmatterView,
+  astroScopedCss,
+  astroScriptViews,
+  astroStyleViews,
+  astroTemplate,
   blankCommentLines,
+  codeWithoutComments,
+  cssComments,
   isCommentLine,
+  stylesheetCss,
+  stylesheetsIn,
+  withoutAstroStyles,
+  withoutCssComments,
   withoutYamlComments,
   withoutYamlQuotes,
   withoutCommentLines,
@@ -306,5 +317,312 @@ describe('astroCodeViews reads only the code an .astro file holds', () => {
 
   it('finds no code in a file with no frontmatter and no script', () => {
     expect(astroCodeViews('<p>only markup</p>')).toEqual([]);
+  });
+});
+
+describe('astroStyleViews reads only the CSS an .astro file holds', () => {
+  /**
+   * The same view shape as `astroCodeViews`, so a caller reading CSS reports
+   * the file's own positions exactly as a caller reading code does (#200).
+   */
+  it('reads each style body as a view of its own, whatever its attributes', () => {
+    const page = [
+      '---',
+      "const title = 'x';",
+      '---',
+      '<p>two</p>',
+      '<style>',
+      '  .a { color: red; }',
+      '</style>',
+      '<style is:global>.b { margin: 0; }</style>',
+    ].join('\n');
+    const views = astroStyleViews(page);
+    expect(views.map((view) => view.length)).toEqual([
+      page.length,
+      page.length,
+    ]);
+    expect(views.map((view) => view.trim())).toEqual([
+      '.a { color: red; }',
+      '.b { margin: 0; }',
+    ]);
+  });
+
+  it('never opens a style inside a markup comment that names one', () => {
+    const page = [
+      '<!-- every <style> here is scoped to this component -->',
+      '<style>',
+      '  .a { color: red; }',
+      '</style>',
+    ].join('\n');
+    expect(astroStyleViews(page).map((view) => view.trim())).toEqual([
+      '.a { color: red; }',
+    ]);
+  });
+
+  it('never opens a style inside frontmatter that names one', () => {
+    const page = [
+      '---',
+      '// the <style> below hides the headings',
+      '---',
+      '<style>.a { color: red; }</style>',
+    ].join('\n');
+    expect(astroStyleViews(page).map((view) => view.trim())).toEqual([
+      '.a { color: red; }',
+    ]);
+  });
+
+  it('finds no CSS in a file with no style', () => {
+    expect(astroStyleViews('---\nconst a = 1;\n---\n<p>b</p>')).toEqual([]);
+  });
+});
+
+describe('astroFrontmatterView and astroScriptViews read what astroCodeViews joins', () => {
+  /**
+   * A guard that must tell a component's props from its scripts needs the two
+   * apart (#331): a prop named `lang` is not a class a script could add.
+   */
+  const page = [
+    '---',
+    "const a = 'fm';",
+    '---',
+    '<p>two</p>',
+    '<script>',
+    "  go('sc');",
+    '</script>',
+    '<script is:inline>stop();</script>',
+  ].join('\n');
+
+  it('reads the frontmatter alone, as a view of the whole file', () => {
+    const view = astroFrontmatterView(page);
+    expect(view.length).toBe(page.length);
+    expect(view.trim()).toBe("const a = 'fm';");
+  });
+
+  it('reads a file with no frontmatter as blank, never as an error', () => {
+    const markupOnly = '<p>only markup</p>';
+    expect(astroFrontmatterView(markupOnly)).toBe(
+      ' '.repeat(markupOnly.length),
+    );
+  });
+
+  it('reads each script body, and never the frontmatter', () => {
+    expect(astroScriptViews(page).map((view) => view.trim())).toEqual([
+      "go('sc');",
+      'stop();',
+    ]);
+  });
+});
+
+describe('astroScopedCss reads only the CSS Astro scopes', () => {
+  /**
+   * Astro stamps its scope onto a plain `<style>` alone: `is:global` opts out
+   * of scoping, and `is:inline` out of processing altogether (#331).
+   */
+  it('reads a plain style, and neither an is:global nor an is:inline one', () => {
+    const page = [
+      '<p>x</p>',
+      '<style>.scoped { color: red; }</style>',
+      '<style is:global>.global { margin: 0; }</style>',
+      '<style is:inline>.inline { margin: 0; }</style>',
+    ].join('\n');
+    expect(astroScopedCss(page).map((css) => css.trim())).toEqual([
+      '.scoped { color: red; }',
+    ]);
+  });
+
+  it('scopes a style whatever its other attributes', () => {
+    const page =
+      '<style define:vars={{ hue }}>.tinted { color: var(--hue); }</style>';
+    expect(astroScopedCss(page).map((css) => css.trim())).toEqual([
+      '.tinted { color: var(--hue); }',
+    ]);
+  });
+
+  it('strips the comments, so a class a comment names is not a selector', () => {
+    const page = '<style>/* .ghost is gone */ .kept { color: red; }</style>';
+    expect(astroScopedCss(page).map((css) => css.trim())).toEqual([
+      '.kept { color: red; }',
+    ]);
+  });
+});
+
+describe('astroTemplate reads the markup a page is written in', () => {
+  it('drops the frontmatter, every script and style body, and every comment', () => {
+    const page = [
+      '---',
+      'const a = \'<b class="fm">\';',
+      '---',
+      '<!-- <b class="markup-comment"> -->',
+      '{/* <b class="expression-comment"> */}',
+      '<p class="kept">text</p>',
+      '<script>const markup = \'<b class="sc">\';</script>',
+      '<style>.st { content: \'class="st"\'; }</style>',
+    ].join('\n');
+    expect(astroTemplate(page).match(/class="[^"]*"/g)).toEqual([
+      'class="kept"',
+    ]);
+  });
+});
+
+/**
+ * The CSS stripper, which until #203 had no test of its own — the suite that
+ * proves the strippers work proved every dialect but this one, and the defect
+ * #203 records lived in its callers for as long.
+ */
+describe('withoutCssComments', () => {
+  it('removes a block comment and keeps the declarations around it', () => {
+    expect(withoutCssComments('a{b:c} /* gone */ d{e:f}')).toBe(
+      'a{b:c}  d{e:f}',
+    );
+  });
+
+  it('keeps comment syntax that sits inside a string', () => {
+    const css = "a { content: '/* not a comment */'; }";
+    expect(withoutCssComments(css)).toBe(css);
+  });
+
+  it('keeps an escaped quote from ending the string it is in', () => {
+    const css = "a { content: '\\'/* still a string */'; }";
+    expect(withoutCssComments(css)).toBe(css);
+  });
+
+  it('runs an unterminated comment to the end, rather than copying it out', () => {
+    expect(withoutCssComments('a{b:c} /* never closed')).toBe('a{b:c} ');
+  });
+});
+
+describe('cssComments', () => {
+  it('hands back every comment the strip removes, in order', () => {
+    expect(cssComments('/* one */ a{b:c} /* two */')).toEqual([
+      '/* one */',
+      '/* two */',
+    ]);
+  });
+
+  it('hands back the unterminated one it ran to the end', () => {
+    expect(cssComments('a{b:c} /* never closed')).toEqual(['/* never closed']);
+  });
+
+  it('finds none where comment syntax is quoted', () => {
+    expect(cssComments("a { content: '/* not a comment */'; }")).toEqual([]);
+  });
+
+  it('and the code it keeps is the code the stripper keeps', () => {
+    // The two are one scan, and this is what says so: a second scanner
+    // written to find what the first removed is the copy this file prevents.
+    const css = "/* a */ x{y:'/* b */'} /* c */";
+    expect(
+      cssComments(css).reduce(
+        (rest, comment) => rest.replace(comment, ''),
+        css,
+      ),
+    ).toBe(withoutCssComments(css));
+  });
+});
+
+/**
+ * Reading an `.astro` file's CSS as CSS (#203).
+ *
+ * The apostrophe is the whole defect: over a WHOLE `.astro` file it opens a
+ * string `withoutCssComments` never sees closed, and every comment below it
+ * is copied out as if it were live CSS.
+ */
+const PAGE_WITH_APOSTROPHE = [
+  '---',
+  "const label = 'x';",
+  '---',
+  "<p>don't</p>",
+  '<style>',
+  '  /* the ink */',
+  '  a { color: red; }',
+  '</style>',
+].join('\n');
+
+describe('stylesheetsIn and stylesheetCss', () => {
+  it('reads a .css file as one whole sheet', () => {
+    expect(stylesheetsIn('t.css', 'a{b:c}')).toEqual(['a{b:c}']);
+  });
+
+  it('reads an .astro file as one sheet per style element', () => {
+    const page = '<style>a{b:c}</style><p>x</p><style>d{e:f}</style>';
+    expect(stylesheetsIn('p.astro', page).map((s) => s.trim())).toEqual([
+      'a{b:c}',
+      'd{e:f}',
+    ]);
+  });
+
+  it('strips a style comment that a whole-file read leaves standing', () => {
+    expect(withoutCssComments(PAGE_WITH_APOSTROPHE)).toContain('the ink');
+    expect(
+      stylesheetCss('p.astro', PAGE_WITH_APOSTROPHE).join('\n'),
+    ).not.toContain('the ink');
+  });
+
+  it('keeps every line, so a sheet is read at the file\u2019s own line numbers', () => {
+    const [sheet] = stylesheetCss('p.astro', PAGE_WITH_APOSTROPHE);
+    expect(sheet?.split('\n')).toHaveLength(
+      PAGE_WITH_APOSTROPHE.split('\n').length,
+    );
+    expect(sheet?.split('\n')[6]?.trim()).toBe('a { color: red; }');
+  });
+});
+
+describe('withoutAstroStyles', () => {
+  it('blanks a style body and leaves the rest of the file alone', () => {
+    const out = withoutAstroStyles(PAGE_WITH_APOSTROPHE);
+    expect(out).toHaveLength(PAGE_WITH_APOSTROPHE.length);
+    expect(out).toContain("don't");
+    expect(out).not.toContain('the ink');
+    expect(out).not.toContain('color: red');
+  });
+
+  it('leaves a file with no style element untouched', () => {
+    const page = '---\nconst a = 1;\n---\n<p>b</p>';
+    expect(withoutAstroStyles(page)).toBe(page);
+  });
+});
+
+describe('codeWithoutComments', () => {
+  it('reads a .css file as CSS', () => {
+    expect(codeWithoutComments('t.css', '/* x */ a{b:c}').trim()).toBe(
+      'a{b:c}',
+    );
+  });
+
+  it('reads a .ts file as TypeScript', () => {
+    expect(codeWithoutComments('t.ts', 'const a = 1; // x').trim()).toBe(
+      'const a = 1;',
+    );
+  });
+
+  it('reads an .astro file in both halves, so neither kind of comment survives', () => {
+    const page = [
+      '---',
+      '// a frontmatter note',
+      "const label = 'x';",
+      '---',
+      '<!-- a markup note -->',
+      "<p>don't</p>",
+      '<style>',
+      '  /* a style note */',
+      '  a { color: red; }',
+      '</style>',
+    ].join('\n');
+    const code = codeWithoutComments('p.astro', page);
+
+    expect(code).not.toContain('a frontmatter note');
+    expect(code).not.toContain('a markup note');
+    expect(code).not.toContain('a style note');
+    // ...and the code of all three halves is still there to be searched.
+    expect(code).toContain("const label = 'x'");
+    expect(code).toContain("don't");
+    expect(code).toContain('color: red');
+  });
+
+  it('still sees a value spelled in markup, which no style view carries', () => {
+    // Not a real brand colour: `shytalk-brand.test.ts` searches every file
+    // under `tests/` for one, and caught this fixture when it was.
+    const page = '<p style="color: #123456">x</p>';
+    expect(codeWithoutComments('p.astro', page)).toContain('#123456');
   });
 });

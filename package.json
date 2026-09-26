@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=24.2.0"
   },
   "scripts": {
     "dev": "ASTRO_DEV_BACKGROUND=1 astro dev",
@@ -13,11 +13,14 @@
     "typecheck": "astro check",
     "test:unit": "vitest run",
     "test:e2e": "node scripts/test-e2e.mjs",
+    "test:functions": "playwright test --config=playwright.functions.config.ts",
+    "test:sanity": "SANITY_ON_BUILD=1 playwright test -c playwright.dev.config.ts && SANITY_ON_BUILD=1 playwright test -c playwright.prod.config.ts",
     "test:visual": "node scripts/visual.mjs",
     "test:visual:update": "node scripts/visual.mjs --update",
     "test:ios": "vitest run --config vitest.ios.config.ts --reporter=verbose",
     "test:devices": "node scripts/test-devices.mjs",
     "i18n:translate": "node scripts/i18n-translate.mjs",
+    "i18n:back-translate": "node scripts/i18n-back-translate.mjs",
     "dashboard": "node scripts/dashboard.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "format": "prettier --check .",
@@ -29,19 +32,21 @@
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource-variable/instrument-sans": "^5.3.0",
     "@fontsource/space-mono": "^5.3.0",
-    "astro": "^7.3.2"
+    "astro": "^7.3.3"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "@playwright/test": "^1.63.0",
-    "prettier": "^3.9.6",
-    "prettier-plugin-astro": "^1.0.0",
+    "prettier": "^3.9.8",
+    "prettier-plugin-astro": "1.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.1",
+    "wrangler": "4.141.0",
     "yaml": "^2.9.1"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
-    "fsevents@2.3.3": true
+    "fsevents@2.3.3": true,
+    "workerd@1.20260925.1": true
   }
 }

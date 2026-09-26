@@ -1,5 +1,8 @@
 import { test, expect } from './fixtures';
-import type { Locator } from '@playwright/test';
+import { recorded } from './evidence';
+import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+
+test.use(recorded);
 test.describe('glory points calculator', () => {
   test('computes the exact breakdown for 1000', async ({ page }) => {
     await page.goto('/glory-points');
@@ -126,15 +129,6 @@ test.describe('glory points — explains what it does and how to use it', () => 
 });
 
 test.describe('glory points — touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
-  const atLeast44 = async (locator: Locator) => {
-    const box = await locator.boundingBox();
-    expect(box).not.toBeNull();
-    // Round to the nearest device pixel: engines can report a sub-pixel value
-    // like 43.9999 for a declared `min-height: 44px` (fixed-point layout math).
-    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(44);
-    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(44);
-  };
-
   test(
     'mobile: attribution link, input and submit button are ≥44px',
     { tag: '@emulated-viewport' },
@@ -156,12 +150,7 @@ test.describe('glory points — mobile-first layout', () => {
       async ({ page }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/glory-points');
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
+        await expectNoHorizontalScroll(page);
       },
     );
   }

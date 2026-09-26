@@ -1,11 +1,109 @@
-(function () {
+/**
+ * @typedef {import('./evidence-signoff.mjs').SignOff} SignOff
+ * @typedef {import('./evidence-signoff.mjs').Standing} Standing
+ * @typedef {import('./evidence-signoff.mjs').Verdict} Verdict
+ */
+
+/**
+ * One capture the viewer steps through, as the builder hands it over.
+ *
+ * @typedef {object} Item
+ * @property {string} key
+ * @property {'screenshot' | 'recording'} kind
+ * @property {string} journey
+ * @property {string} journeyTitle
+ * @property {number | null} assertion
+ * @property {string} label
+ * @property {string} engine
+ * @property {string} filename
+ * @property {string} [src] where a recording is served; a screenshot is read
+ *   from the page itself
+ */
+
+/**
+ * @typedef {'approved' | 'rejected' | null} Decision
+ * @typedef {{ decision: Decision, note: string }} ItemState
+ */
+
+/**
+ * Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict',
+ * 'verdictCovers' and 'note'.
+ *
+ * @typedef {Record<string, boolean | string | string[] | null>} Edits
+ */
+
+/**
+ * The parts of the artifact runtime this page uses (runtime 0.2.52: db.d.ts,
+ * downloads.d.ts, comments.d.ts).
+ *
+ * @typedef {{ data(): unknown }} DocSnapshot
+ * @typedef {{ docs: { id: string, data(): unknown }[] }} CollectionSnapshot
+ * @typedef {{
+ *   get(): Promise<DocSnapshot>,
+ *   set(body: object): Promise<unknown>,
+ *   onSnapshot(next: (snap: DocSnapshot) => void, error: (e: unknown) => void): unknown,
+ * }} DocRef
+ * @typedef {{
+ *   doc(id: string): DocRef,
+ *   get(): Promise<CollectionSnapshot>,
+ *   onSnapshot(next: (snap: CollectionSnapshot) => void, error: (e: unknown) => void): unknown,
+ * }} CollectionRef
+ * @typedef {{ doc(path: string): DocRef, collection(path: string): CollectionRef }} Db
+ * @typedef {{ save(file: { filename: string, data: Blob }): Promise<unknown> }} Downloads
+ * @typedef {{
+ *   anchorFor(element: Element): Promise<unknown>,
+ *   sendToClaude(comment: { anchor: unknown, text: string }): Promise<unknown>,
+ *   canSendToClaude(): Promise<string>,
+ * }} Comments
+ * @typedef {((name: 'db') => Promise<Db | null>)
+ *   & ((name: 'downloads') => Promise<Downloads | null>)
+ *   & ((name: 'comments') => Promise<Comments | null>)} Use
+ */
+
+/**
+ * The evidence page's own script. The builder embeds this function by its
+ * source text and calls it with the sign-off helpers the unit tests and the
+ * pre-merge check run (`evidence-signoff.mjs`, #197), so the page and those
+ * checks cannot hold two versions of what a sign-off is.
+ *
+ * @param {{
+ *   journeys: string[],
+ *   doc: string,
+ *   signOffOf: typeof import('./evidence-signoff.mjs').signOffOf,
+ *   standingOf: typeof import('./evidence-signoff.mjs').standingOf,
+ * }} env
+ */
+export function reviewPage(env) {
   'use strict';
-  // Read from the block the page carries rather than interpolated into
-  // this text: one source for the journeys, the sign-off key and the
-  // review items, so a figure and the item keyed to it cannot disagree.
-  var DATA = JSON.parse(document.getElementById('evidence-review').textContent);
-  var JOURNEYS = DATA.journeys;
-  var DOC = 'signoff/' + DATA.signoffKey;
+  var signOffOf = env.signOffOf;
+  var standingOf = env.standingOf;
+  /**
+   * An element the builder always renders, as the type the page uses it as.
+   * One that is missing or of another kind fails here, naming its id, rather
+   * than as a TypeError at the first click that reaches it.
+   *
+   * @template {Element} T
+   * @param {string} id
+   * @param {{ new (): T, prototype: T }} type
+   * @returns {T}
+   */
+  function byId(id, type) {
+    var found = document.getElementById(id);
+    if (!(found instanceof type))
+      throw new Error(
+        'evidence page: #' + id + ' is missing or not a ' + type.name,
+      );
+    return found;
+  }
+  // The review items, read from the block the page carries rather than
+  // interpolated into this text, so a figure and the item keyed to it cannot
+  // disagree.
+  /** @type {{ signoffKey: string, items: Item[] }} */
+  var DATA = JSON.parse(
+    byId('evidence-review', HTMLScriptElement).textContent || '',
+  );
+  var JOURNEYS = env.journeys;
+  var DOC = env.doc;
   var JOURNEY_KEY = 'journey:';
   var READY = 'Ready. Your ticks and decision are saved as you make them.';
   var SAVED = 'Saved. Your decision persists on this page.';
@@ -17,68 +115,167 @@
   // The stored sign-off as this view last received it, always as the page's
   // OWN copy: the runtime delivers snapshots frozen, and a page that keeps one
   // as its state drops every later edit without an error (#172).
-  var server = copyOf(undefined);
-  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict'
-  // and 'note'. The page shows the server copy with these laid over it, so no
-  // snapshot, early or late, can repaint an edit away.
+  var server = signOffOf(undefined);
+  // Edits no completed write has carried yet, keyed 'journey:<id>', 'verdict',
+  // 'verdictCovers' and 'note'. The page shows the server copy with these laid
+  // over it, so no snapshot, early or late, can repaint an edit away.
+  /** @type {Edits} */
   var pending = Object.create(null);
-  var db = null,
-    storageAbsent = false,
-    loaded = false,
-    saveTimer = null;
-  var stateEl = document.getElementById('state');
-  var progressEl = document.getElementById('progress');
-  var noteEl = document.getElementById('note');
-  var approve = document.getElementById('btn-approve');
-  var more = document.getElementById('btn-more');
+  /** @type {Db | null} */
+  var db = null;
+  var storageAbsent = false,
+    loaded = false;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  var saveTimer = null;
+  var stateEl = byId('state', HTMLElement);
+  var progressEl = byId('progress', HTMLElement);
+  var noteEl = byId('note', HTMLTextAreaElement);
+  var approve = byId('btn-approve', HTMLButtonElement);
+  var more = byId('btn-more', HTMLButtonElement);
+  var standingEl = byId('standing', HTMLElement);
+  // What the out-of-date notice last said. It is a live region, so it is
+  // rebuilt only when that changes: a rebuild on every tick would be
+  // announced again on every tick.
+  var shownStanding = '';
+  /**
+   * @param {string} m
+   * @param {boolean} ok
+   */
   function say(m, ok) {
     stateEl.textContent = m;
     stateEl.className = 'state' + (ok ? ' saved' : '');
   }
+  /** @param {unknown} e */
   function codeOf(e) {
-    return e && typeof e.code === 'string' ? e.code : 'unknown';
+    var code = e && typeof e === 'object' && 'code' in e ? e.code : undefined;
+    return typeof code === 'string' ? code : 'unknown';
   }
   function hasPending() {
     return Object.keys(pending).length > 0;
   }
-  // Keeps only the shape this page writes. The store is shared by every
-  // viewer, so what it delivers is untrusted input.
-  function copyOf(body) {
-    var source = body && typeof body === 'object' ? body : {};
-    var stored =
-      source.journeys && typeof source.journeys === 'object'
-        ? source.journeys
-        : {};
-    var journeys = {};
-    Object.keys(stored).forEach(function (id) {
-      if (typeof stored[id] === 'boolean') journeys[id] = stored[id];
-    });
-    return {
-      journeys: journeys,
-      verdict:
-        source.verdict === 'approved' || source.verdict === 'more'
-          ? source.verdict
-          : null,
-      note: typeof source.note === 'string' ? source.note : '',
-    };
-  }
+  /**
+   * @param {SignOff} target
+   * @param {Edits} edits
+   * @returns {SignOff}
+   */
   function overlay(target, edits) {
     Object.keys(edits).forEach(function (key) {
+      var value = edits[key];
       if (key.indexOf(JOURNEY_KEY) === 0)
-        target.journeys[key.slice(JOURNEY_KEY.length)] = edits[key];
-      else target[key] = edits[key];
+        target.journeys[key.slice(JOURNEY_KEY.length)] = value === true;
+      else if (key === 'verdict')
+        target.verdict =
+          value === 'approved' || value === 'more' ? value : null;
+      else if (key === 'verdictCovers')
+        target.verdictCovers = Array.isArray(value) ? value : null;
+      else if (key === 'note')
+        target.note = typeof value === 'string' ? value : '';
     });
     return target;
   }
   function view() {
-    return overlay(copyOf(server), pending);
+    return overlay(signOffOf(server), pending);
+  }
+  /** @param {(string | Node)[]} parts */
+  function paragraph(parts) {
+    var p = document.createElement('p');
+    parts.forEach(function (part) {
+      p.appendChild(
+        typeof part === 'string' ? document.createTextNode(part) : part,
+      );
+    });
+    standingEl.appendChild(p);
+  }
+  /**
+   * A sentence naming `nodes` between `before` and `after`, comma-separated.
+   *
+   * @param {string} before
+   * @param {Node[]} nodes
+   * @param {string} after
+   * @returns {(string | Node)[]}
+   */
+  function listed(before, nodes, after) {
+    /** @type {(string | Node)[]} */
+    var parts = [before];
+    nodes.forEach(function (node, at) {
+      if (at > 0) parts.push(', ');
+      parts.push(node);
+    });
+    parts.push(after);
+    return parts;
+  }
+  /** @param {string} id */
+  function linkTo(id) {
+    var link = document.createElement('a');
+    var section = document.getElementById('j-' + id);
+    var heading = section ? section.querySelector('h3') : null;
+    link.href = '#j-' + id;
+    link.textContent = heading ? heading.textContent : id;
+    return link;
+  }
+  // A removed journey is named by the id the shared store holds, so it is
+  // written as text and never parsed as markup.
+  /** @param {string} id */
+  function idOf(id) {
+    var code = document.createElement('code');
+    code.textContent = id;
+    return code;
+  }
+  /** @param {Standing} standing */
+  function showStanding(standing) {
+    var said = JSON.stringify(standing);
+    if (said === shownStanding) return;
+    shownStanding = said;
+    while (standingEl.firstChild) standingEl.removeChild(standingEl.firstChild);
+    if (!standing.stale) return;
+    var signedOff = standing.verdict === 'approved';
+    var lead = document.createElement('strong');
+    lead.textContent = signedOff
+      ? 'Your sign-off is out of date.'
+      : 'Your decision is out of date.';
+    var onPage =
+      JOURNEYS.length === 1
+        ? 'the 1 journey'
+        : 'the ' + JOURNEYS.length + ' journeys';
+    if (standing.unrecorded) {
+      paragraph([
+        lead,
+        ' It was saved before ' +
+          (signedOff ? 'sign-offs' : 'decisions') +
+          ' recorded the journeys they cover, so it cannot be matched to ' +
+          onPage +
+          ' on this page.',
+      ]);
+    } else {
+      paragraph([
+        lead,
+        signedOff
+          ? ' You signed off before this page changed.'
+          : ' You asked for more tests before this page changed.',
+      ]);
+      if (standing.added.length > 0)
+        paragraph(listed('Added since: ', standing.added.map(linkTo), '.'));
+      if (standing.removed.length > 0)
+        paragraph(
+          listed('No longer on the page: ', standing.removed.map(idOf), '.'),
+        );
+    }
+    paragraph([
+      (standing.unrecorded
+        ? 'Review them, then '
+        : 'Review what changed, then ') +
+        (signedOff
+          ? 'press “' + approve.textContent + '” again.'
+          : 'decide again.'),
+    ]);
   }
   function paint() {
     var shown = view(),
       done = 0;
+    var standing = standingOf(shown, JOURNEYS);
     JOURNEYS.forEach(function (id) {
       var box = document.getElementById('chk-' + id);
-      if (!box) return;
+      if (!(box instanceof HTMLInputElement)) return;
       var on = shown.journeys[id] === true;
       box.checked = on;
       var sec = document.getElementById('j-' + id);
@@ -87,17 +284,28 @@
     });
     progressEl.textContent =
       done + ' of ' + JOURNEYS.length + ' journeys reviewed';
-    approve.setAttribute('aria-pressed', String(shown.verdict === 'approved'));
-    more.setAttribute('aria-pressed', String(shown.verdict === 'more'));
+    // A verdict shows as given only while it covers exactly these journeys.
+    approve.setAttribute(
+      'aria-pressed',
+      String(standing.verdict === 'approved' && !standing.stale),
+    );
+    more.setAttribute(
+      'aria-pressed',
+      String(standing.verdict === 'more' && !standing.stale),
+    );
+    showStanding(standing);
     if (document.activeElement !== noteEl) noteEl.value = shown.note;
   }
   function schedule() {
     say('Saving\u2026', false);
-    clearTimeout(saveTimer);
+    clearTimeout(saveTimer ?? undefined);
     saveTimer = setTimeout(save, 400);
   }
-  function change(key, value) {
-    pending[key] = value;
+  /** @param {Edits} edits */
+  function change(edits) {
+    Object.keys(edits).forEach(function (key) {
+      pending[key] = edits[key];
+    });
     paint();
     if (storageAbsent) {
       say(NOT_SAVED, false);
@@ -114,9 +322,11 @@
   function save() {
     saveTimer = null;
     var carried = Object.assign(Object.create(null), pending);
-    var body = view();
-    body.updatedAt = new Date().toISOString();
-    db.doc(DOC)
+    var body = Object.assign(view(), { updatedAt: new Date().toISOString() });
+    // A save is scheduled only once the stored sign-off has loaded, and it
+    // loads only through a store this page was handed.
+    /** @type {Db} */ (db)
+      .doc(DOC)
       .set(body)
       .then(
         function () {
@@ -134,8 +344,9 @@
         },
       );
   }
+  /** @param {DocSnapshot} snap */
   function receive(snap) {
-    server = copyOf(snap.data());
+    server = signOffOf(snap.data());
     if (!loaded) {
       loaded = true;
       if (hasPending()) schedule();
@@ -148,29 +359,54 @@
     say(LOCAL, false);
     sayViewer(LOCAL_DECISIONS);
   }
-  document.querySelectorAll('input[data-journey]').forEach(function (box) {
+  /** @type {NodeListOf<HTMLInputElement>} */ (
+    document.querySelectorAll('input[data-journey]')
+  ).forEach(function (box) {
     box.addEventListener('change', function () {
-      change(JOURNEY_KEY + box.dataset.journey, box.checked);
+      /** @type {Edits} */
+      var edit = {};
+      edit[JOURNEY_KEY + box.dataset.journey] = box.checked;
+      change(edit);
     });
   });
+  // Giving a verdict records the journeys it is given on (#197), and pressing
+  // the one already given, while it still covers this page, withdraws it.
+  // Nothing else writes that list, so a tick or a note on an out-of-date page
+  // cannot renew an approval.
+  /** @param {Verdict} verdict */
+  function withdraws(verdict) {
+    var standing = standingOf(view(), JOURNEYS);
+    return standing.verdict === verdict && !standing.stale;
+  }
+  /** @param {Verdict} verdict */
+  function giveVerdict(verdict) {
+    var withdraw = withdraws(verdict);
+    change({
+      verdict: withdraw ? null : verdict,
+      verdictCovers: withdraw ? null : JOURNEYS.slice(),
+    });
+  }
   approve.addEventListener('click', function () {
-    var next = view().verdict === 'approved' ? null : 'approved';
     // Signing off speaks for every capture on the page, so a page with
     // captures still outstanding asks once before it records one. Nothing is
     // changed and nothing is written until "Sign off anyway".
-    if (next === 'approved' && !signOffAnyway && outstandingIndexes().length) {
+    if (
+      !withdraws('approved') &&
+      !signOffAnyway &&
+      outstandingIndexes().length
+    ) {
       outstandingTextEl.textContent = outstandingSentence();
       outstandingEl.hidden = false;
       return;
     }
     outstandingEl.hidden = true;
-    change('verdict', next);
+    giveVerdict('approved');
   });
   more.addEventListener('click', function () {
-    change('verdict', view().verdict === 'more' ? null : 'more');
+    giveVerdict('more');
   });
   noteEl.addEventListener('input', function () {
-    change('note', noteEl.value);
+    change({ note: noteEl.value });
   });
   // ------------------------------------------------------------------
   // The review viewer (#205). The page used to open a screenshot in a
@@ -190,6 +426,7 @@
   var SEND_MAX_BYTES = 4096;
   var LOCAL_DECISIONS =
     'Decisions are local to this view: storage is not available here.';
+  /** @type {Record<string, string>} */
   var CANNOT_SEND = {
     no_session: 'no Claude session is watching this page',
     writers_only: 'only editors of this page can send to Claude',
@@ -198,6 +435,7 @@
   // One `d` per state, set on the badge's single <path>: three states share
   // one element, so the badge's own word stays the only text in it and a
   // test reading it back cannot pick up an icon's title by accident.
+  /** @type {Record<string, string>} */
   var BADGE_ICON = {
     Approved: 'M6.2 11.3 3.5 8.6l-1 1.1 3.7 3.7 7.3-7.4-1-1z',
     Rejected:
@@ -205,69 +443,82 @@
     Note: 'M2 12.1V14h1.9l7-7-1.9-1.9zM13.8 5.5a.6.6 0 0 0 0-.8l-1.5-1.5a.6.6 0 0 0-.8 0l-1 1 2.3 2.3z',
   };
 
-  var dialog = document.getElementById('viewer');
-  var viewerItem = document.getElementById('viewer-item');
-  var viewerSummary = document.getElementById('viewer-summary');
-  var stage = document.getElementById('viewer-stage');
-  var shotEl = document.getElementById('viewer-image');
+  var dialog = byId('viewer', HTMLDialogElement);
+  var viewerItem = byId('viewer-item', HTMLElement);
+  var viewerSummary = byId('viewer-summary', HTMLElement);
+  var stage = byId('viewer-stage', HTMLElement);
+  var shotEl = byId('viewer-image', HTMLImageElement);
   // Deliberately id-less: a screen reader and a Tab walk both report the
   // element that HOSTS a focused shadow control, and the browser's own media
   // controls are several tab stops inside this one element. Left nameless it
   // reads as what it is -- the recording -- rather than as a control of ours.
-  var videoEl = document.querySelector('#viewer-stage video');
-  var waitEl = document.getElementById('viewer-wait');
-  var positionEl = document.getElementById('viewer-position');
-  var journeyEl = document.getElementById('viewer-journey');
-  var engineEl = document.getElementById('viewer-engine');
-  var titleEl = document.getElementById('viewer-title');
-  var decisionEl = document.getElementById('viewer-decision');
-  var viewerStateEl = document.getElementById('viewer-status');
-  var announceEl = document.getElementById('viewer-announce');
-  var noteBox = document.getElementById('viewer-note');
-  var noteCountEl = document.getElementById('viewer-note-count');
-  var summaryCountsEl = document.getElementById('viewer-summary-counts');
-  var summaryListEl = document.getElementById('viewer-summary-list');
-  var approveBtn = document.getElementById('viewer-approve');
-  var rejectBtn = document.getElementById('viewer-reject');
-  var skipBtn = document.getElementById('viewer-skip');
-  var previousBtn = document.getElementById('viewer-previous');
-  var downloadBtn = document.getElementById('viewer-download');
-  var undecidedBtn = document.getElementById('viewer-undecided');
-  var goSignoffBtn = document.getElementById('viewer-go-signoff');
-  var closeBtn = document.getElementById('viewer-close');
+  var videoEl = /** @type {HTMLVideoElement} */ (stage.querySelector('video'));
+  var waitEl = byId('viewer-wait', HTMLElement);
+  var positionEl = byId('viewer-position', HTMLElement);
+  var journeyEl = byId('viewer-journey', HTMLElement);
+  var engineEl = byId('viewer-engine', HTMLElement);
+  var titleEl = byId('viewer-title', HTMLElement);
+  var decisionEl = byId('viewer-decision', HTMLElement);
+  var viewerStateEl = byId('viewer-status', HTMLElement);
+  var announceEl = byId('viewer-announce', HTMLElement);
+  var noteBox = byId('viewer-note', HTMLTextAreaElement);
+  var noteCountEl = byId('viewer-note-count', HTMLElement);
+  var summaryCountsEl = byId('viewer-summary-counts', HTMLElement);
+  var summaryListEl = byId('viewer-summary-list', HTMLElement);
+  var approveBtn = byId('viewer-approve', HTMLButtonElement);
+  var rejectBtn = byId('viewer-reject', HTMLButtonElement);
+  var skipBtn = byId('viewer-skip', HTMLButtonElement);
+  var previousBtn = byId('viewer-previous', HTMLButtonElement);
+  var downloadBtn = byId('viewer-download', HTMLButtonElement);
+  var undecidedBtn = byId('viewer-undecided', HTMLButtonElement);
+  var goSignoffBtn = byId('viewer-go-signoff', HTMLButtonElement);
+  var closeBtn = byId('viewer-close', HTMLButtonElement);
   var sendButtons = [
-    document.getElementById('btn-send'),
-    document.getElementById('viewer-send'),
+    byId('btn-send', HTMLButtonElement),
+    byId('viewer-send', HTMLButtonElement),
   ];
-  var sendStateEl = document.getElementById('send-state');
-  var itemsProgressEl = document.getElementById('items-progress');
-  var reviewProgressEl = document.getElementById('review-progress');
-  var outstandingEl = document.getElementById('outstanding');
-  var outstandingTextEl = document.getElementById('outstanding-text');
-  var signoffEl = document.getElementById('signoff');
+  var sendStateEl = byId('send-state', HTMLElement);
+  var itemsProgressEl = byId('items-progress', HTMLElement);
+  var reviewProgressEl = byId('review-progress', HTMLElement);
+  var outstandingEl = byId('outstanding', HTMLElement);
+  var outstandingTextEl = byId('outstanding-text', HTMLElement);
+  var signoffEl = byId('signoff', HTMLElement);
 
   // Every stored item as this view last received it, always as this page's
   // OWN object: the runtime delivers snapshots frozen (#172).
+  /** @type {Record<string, ItemState>} */
   var itemsServer = Object.create(null);
   // Decisions and notes no completed write has carried yet, keyed by item.
+  /** @type {Record<string, Partial<ItemState>>} */
   var itemsPending = Object.create(null);
-  var itemsCol = null,
-    itemsLoaded = false,
-    noteTimer = null,
-    noteKey = null,
-    downloads = null,
-    comments = null,
-    signOffAnyway = false,
-    swipeFrom = null,
-    returnTo = null;
+  /** @type {CollectionRef | null} */
+  var itemsCol = null;
+  var itemsLoaded = false,
+    signOffAnyway = false;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  var noteTimer = null;
+  /** @type {string | null} */
+  var noteKey = null;
+  /** @type {Downloads | null} */
+  var downloads = null;
+  /** @type {Comments | null} */
+  var comments = null;
+  /** @type {{ x: number, y: number } | null} */
+  var swipeFrom = null;
+  /** @type {HTMLElement | null} */
+  var returnTo = null;
   // Writes are serialised per item: one in flight, and at most one waiting.
+  /** @type {Record<string, boolean>} */
   var inFlight = Object.create(null);
+  /** @type {Record<string, boolean>} */
   var dirty = Object.create(null);
   // The items this walk steps through, as positions in ITEMS, and where in
   // that walk we are. `walk.length` is the summary after the last one.
+  /** @type {number[]} */
   var walk = [];
   var at = 0;
 
+  /** @type {Record<string, number>} */
   var byKey = Object.create(null);
   ITEMS.forEach(function (item, index) {
     byKey[item.key] = index;
@@ -278,9 +529,11 @@
       return index;
     });
   }
+  /** @param {number} n */
   function grouped(n) {
     return String(n).replace(/\B(?=(\d{3})+$)/g, ',');
   }
+  /** @param {Item} item */
   function describe(item) {
     return (
       item.journeyTitle +
@@ -292,6 +545,7 @@
       item.engine
     );
   }
+  /** @param {Decision} decision */
   function decisionWord(decision) {
     return decision === 'approved'
       ? 'Approved'
@@ -299,12 +553,15 @@
         ? 'Rejected'
         : 'Not decided';
   }
+  /** @param {string} key */
   function figureOf(key) {
     return document.querySelector('[data-item="' + key + '"]');
   }
+  /** @param {string} message */
   function sayViewer(message) {
     viewerStateEl.textContent = message;
   }
+  /** @param {string} message */
   function saySend(message) {
     sendStateEl.textContent = message;
   }
@@ -317,28 +574,47 @@
    * shared by every viewer, so a stored item is untrusted input: a body that
    * is not this shape is ignored ENTIRELY and never written back, rather than
    * repaired into a decision nobody made.
+   *
+   * @param {unknown} body
+   * @returns {ItemState | null}
    */
   function itemCopyOf(body) {
     if (!body || typeof body !== 'object') return null;
-    var decision = body.decision;
+    var source = /** @type {Record<string, unknown>} */ (body);
+    var decision = source.decision;
     if (decision !== 'approved' && decision !== 'rejected' && decision !== null)
       return null;
-    if (typeof body.note !== 'string' || body.note.length > NOTE_MAX)
-      return null;
-    if (typeof body.at !== 'string') return null;
-    return { decision: decision, note: body.note };
+    var note = source.note;
+    if (typeof note !== 'string' || note.length > NOTE_MAX) return null;
+    if (typeof source.at !== 'string') return null;
+    return { decision: decision, note: note };
   }
 
-  /** What the page shows for an item: the store with this view's edits over it. */
+  /**
+   * What the page shows for an item: the store with this view's edits over it.
+   *
+   * @param {string} key
+   * @returns {ItemState}
+   */
   function itemView(key) {
     var stored = itemsServer[key];
     var edits = itemsPending[key] || {};
     return {
       decision:
-        'decision' in edits ? edits.decision : stored ? stored.decision : null,
-      note: 'note' in edits ? edits.note : stored ? stored.note : '',
+        edits.decision !== undefined
+          ? edits.decision
+          : stored
+            ? stored.decision
+            : null,
+      note: edits.note !== undefined ? edits.note : stored ? stored.note : '',
     };
   }
+  /**
+   * @template {keyof ItemState} F
+   * @param {string} key
+   * @param {F} field
+   * @param {ItemState[F]} value
+   */
   function setPending(key, field, value) {
     var edits = itemsPending[key] || (itemsPending[key] = {});
     edits[field] = value;
@@ -368,6 +644,7 @@
     };
   }
   function undecidedIndexes() {
+    /** @type {number[]} */
     var list = [];
     ITEMS.forEach(function (item, index) {
       if (itemView(item.key).decision === null) list.push(index);
@@ -376,6 +653,7 @@
   }
   /** Everything not approved: a rejection is outstanding as much as a gap is. */
   function outstandingIndexes() {
+    /** @type {number[]} */
     var list = [];
     ITEMS.forEach(function (item, index) {
       if (itemView(item.key).decision !== 'approved') list.push(index);
@@ -394,6 +672,7 @@
     );
   }
 
+  /** @param {string} key */
   function writeItem(key) {
     var edits = itemsPending[key];
     if (!edits || Object.keys(edits).length === 0) return;
@@ -406,8 +685,7 @@
       return;
     }
     var carried = Object.assign({}, edits);
-    var body = itemView(key);
-    body.at = new Date().toISOString();
+    var body = Object.assign(itemView(key), { at: new Date().toISOString() });
     inFlight[key] = true;
     itemsCol
       .doc(key)
@@ -424,9 +702,11 @@
           mine.note = body.note;
           var left = itemsPending[key];
           if (left) {
-            Object.keys(carried).forEach(function (field) {
-              if (left[field] === carried[field]) delete left[field];
-            });
+            /** @type {(keyof ItemState)[]} */ (Object.keys(carried)).forEach(
+              function (field) {
+                if (left[field] === carried[field]) delete left[field];
+              },
+            );
             if (Object.keys(left).length === 0) delete itemsPending[key];
           }
           inFlight[key] = false;
@@ -443,6 +723,7 @@
       );
   }
 
+  /** @param {string} key */
   function scheduleNote(key) {
     flushNotes(key);
     noteKey = key;
@@ -456,6 +737,8 @@
    * Sends a note still waiting on its debounce, unless it belongs to
    * `except` -- whose caller is about to write it beside a decision, so that
    * the two reach the store as one document rather than as two writes.
+   *
+   * @param {string | null} except
    */
   function flushNotes(except) {
     if (noteTimer === null) return;
@@ -472,6 +755,8 @@
    * operator set by hand. Written only when it differs from the tick already
    * on the page, so stepping through a journey does not write the sign-off
    * once per capture.
+   *
+   * @param {string} journeyId
    */
   function rollUp(journeyId) {
     var decisions = ITEMS.filter(function (item) {
@@ -488,14 +773,19 @@
     });
     if (!allApproved && !anyRejected) return;
     if ((view().journeys[journeyId] === true) === allApproved) return;
-    change(JOURNEY_KEY + journeyId, allApproved);
+    /** @type {Edits} */
+    var edit = {};
+    edit[JOURNEY_KEY + journeyId] = allApproved;
+    change(edit);
   }
 
   function paintBadges() {
     ITEMS.forEach(function (item) {
       var figure = figureOf(item.key);
       var badge = figure ? figure.querySelector('.badge') : null;
-      if (!badge) return;
+      var text = badge ? badge.querySelector('.badge-text') : null;
+      var icon = badge ? badge.querySelector('path') : null;
+      if (!(badge instanceof HTMLElement) || !text || !icon) return;
       var shown = itemView(item.key);
       var state =
         shown.decision === 'approved'
@@ -508,8 +798,8 @@
       badge.hidden = state === '';
       if (state === '') return;
       badge.className = 'badge ' + state.toLowerCase();
-      badge.querySelector('.badge-text').textContent = state;
-      badge.querySelector('path').setAttribute('d', BADGE_ICON[state]);
+      text.textContent = state;
+      icon.setAttribute('d', BADGE_ICON[state] || '');
     });
   }
   function paintReview() {
@@ -517,10 +807,12 @@
     var sentence = countsOf().sentence;
     itemsProgressEl.textContent = sentence;
     reviewProgressEl.textContent = sentence;
-    if (dialog.open && currentItem()) paintDecision();
+    var item = currentItem();
+    if (dialog.open && item) paintDecision(item);
   }
-  function paintDecision() {
-    var shown = itemView(currentItem().key);
+  /** @param {Item} item */
+  function paintDecision(item) {
+    var shown = itemView(item.key);
     decisionEl.textContent = decisionWord(shown.decision);
     if (document.activeElement !== noteBox) noteBox.value = shown.note;
     paintNoteCount();
@@ -595,8 +887,9 @@
       shotEl.hidden = true;
       shotEl.removeAttribute('src');
       videoEl.hidden = false;
-      if (videoEl.getAttribute('src') !== item.src) {
-        videoEl.setAttribute('src', item.src);
+      var src = item.src || '';
+      if (videoEl.getAttribute('src') !== src) {
+        videoEl.setAttribute('src', src);
         videoEl.load();
       }
     } else {
@@ -614,7 +907,7 @@
       shotEl.src = onPage ? onPage.src : '';
       shotEl.alt = onPage ? onPage.alt : '';
     }
-    paintDecision();
+    paintDecision(item);
     refreshReady();
     keepFocusInside();
   }
@@ -648,6 +941,11 @@
     undecidedBtn.textContent = 'Review the ' + counts.undecided + ' undecided';
   }
 
+  /**
+   * @param {number[]} indexes
+   * @param {number} start
+   * @param {HTMLElement | null} openedBy
+   */
   function openViewer(indexes, start, openedBy) {
     if (indexes.length === 0) return;
     walk = indexes;
@@ -657,6 +955,7 @@
     if (!dialog.open) dialog.showModal();
     show();
   }
+  /** @param {number} step */
   function move(step) {
     if (!dialog.open) return;
     var next = at + step;
@@ -666,6 +965,7 @@
     at = next;
     show();
   }
+  /** @param {string} word */
   function announce(word) {
     var item = currentItem();
     announceEl.textContent = item
@@ -681,7 +981,11 @@
       : word + '. Review summary.';
   }
 
-  /** `decision` is null for Skip, which stores nothing and withdraws nothing. */
+  /**
+   * `decision` is null for Skip, which stores nothing and withdraws nothing.
+   *
+   * @param {Decision} decision
+   */
   function decide(decision) {
     var item = currentItem();
     if (!item) return;
@@ -706,7 +1010,9 @@
 
   function download() {
     var item = currentItem();
-    if (!downloads || !item) return;
+    const saver = downloads;
+    if (!saver || !item) return;
+    var filename = item.filename;
     var figure = item.kind === 'recording' ? null : figureOf(item.key);
     var onPage = figure ? figure.querySelector('img') : null;
     var source =
@@ -717,7 +1023,7 @@
         return response.blob();
       })
       .then(function (blob) {
-        return downloads.save({ filename: item.filename, data: blob });
+        return saver.save({ filename: filename, data: blob });
       })
       .then(null, function (e) {
         // Someone who declined their own download already knows they did;
@@ -734,17 +1040,23 @@
    * silent cut would report a clean review of a page full of rejections.
    */
   function reviewText() {
-    var shown = view();
+    // A verdict given before the page changed no longer speaks for it (#197),
+    // so the session is told which kind it is reading.
+    var standing = standingOf(view(), JOURNEYS);
     var head = [
       'Evidence review for ' + DOC,
       'Sign-off: ' +
-        (shown.verdict === 'approved'
+        (standing.verdict === 'approved'
           ? 'approved'
-          : shown.verdict === 'more'
+          : standing.verdict === 'more'
             ? 'more tests needed'
-            : 'not decided'),
+            : 'not decided') +
+        (standing.stale
+          ? ' (out of date: given before this page changed)'
+          : ''),
       'Items: ' + countsOf().sentence,
     ].join('\n');
+    /** @type {string[]} */
     var entries = [];
     ITEMS.forEach(function (item) {
       var state = itemView(item.key);
@@ -763,6 +1075,10 @@
           (note === '' ? '' : ': ' + note),
       );
     });
+    /**
+     * @param {string[]} taken
+     * @param {number} leftOut
+     */
     var assemble = function (taken, leftOut) {
       return (
         head +
@@ -776,6 +1092,7 @@
           : '')
       );
     };
+    /** @type {string[]} */
     var taken = [];
     for (var i = 0; i < entries.length; i++) {
       var attempt = taken.concat([entries[i]]);
@@ -787,12 +1104,13 @@
   }
 
   function sendReview() {
-    if (!comments) return;
+    const sender = comments;
+    if (!sender) return;
     var text = reviewText();
-    comments
+    sender
       .anchorFor(signoffEl)
       .then(function (anchor) {
-        return comments.sendToClaude({ anchor: anchor, text: text });
+        return sender.sendToClaude({ anchor: anchor, text: text });
       })
       .then(
         function () {
@@ -815,10 +1133,11 @@
   function cannotSend() {
     markCannotSend('off');
   }
+  /** @param {string} state */
   function markCannotSend(state) {
     comments = null;
     sendButtons.forEach(function (button) {
-      if (button) button.remove();
+      button.remove();
     });
     saySend(
       'Cannot send: ' +
@@ -827,7 +1146,9 @@
     );
   }
 
+  /** @param {CollectionSnapshot} snap */
   function receiveItems(snap) {
+    /** @type {Record<string, ItemState>} */
     var next = Object.create(null);
     snap.docs.forEach(function (doc) {
       var body = itemCopyOf(doc.data());
@@ -844,48 +1165,46 @@
   }
 
   document.addEventListener('click', function (e) {
-    var opener = e.target.closest ? e.target.closest('button.open') : null;
-    if (!opener) return;
+    var target = e.target;
+    var opener =
+      target instanceof Element ? target.closest('button.open') : null;
+    if (!(opener instanceof HTMLElement)) return;
     var figure = opener.closest('[data-item]');
-    var key = figure ? figure.getAttribute('data-item') : '';
+    var key = (figure && figure.getAttribute('data-item')) || '';
     if (!(key in byKey)) return;
     openViewer(everyIndex(), byKey[key], opener);
   });
-  document
-    .getElementById('btn-review-start')
-    .addEventListener('click', function (e) {
+  byId('btn-review-start', HTMLButtonElement).addEventListener(
+    'click',
+    function () {
       var undecided = undecidedIndexes();
-      openViewer(
-        everyIndex(),
-        undecided.length ? undecided[0] : 0,
-        e.currentTarget,
-      );
-    });
-  document
-    .getElementById('btn-review-signoff')
-    .addEventListener('click', function (e) {
+      openViewer(everyIndex(), undecided.length ? undecided[0] : 0, this);
+    },
+  );
+  byId('btn-review-signoff', HTMLButtonElement).addEventListener(
+    'click',
+    function () {
       var undecided = undecidedIndexes();
-      openViewer(
-        everyIndex(),
-        undecided.length ? undecided[0] : 0,
-        e.currentTarget,
-      );
-    });
-  document
-    .getElementById('btn-review-outstanding')
-    .addEventListener('click', function (e) {
+      openViewer(everyIndex(), undecided.length ? undecided[0] : 0, this);
+    },
+  );
+  byId('btn-review-outstanding', HTMLButtonElement).addEventListener(
+    'click',
+    function () {
       var list = outstandingIndexes();
-      openViewer(list, list[0], e.currentTarget);
-    });
-  document
-    .getElementById('btn-signoff-anyway')
-    .addEventListener('click', function () {
+      openViewer(list, list[0], this);
+    },
+  );
+  byId('btn-signoff-anyway', HTMLButtonElement).addEventListener(
+    'click',
+    function () {
       signOffAnyway = true;
       outstandingEl.hidden = true;
-      change('verdict', 'approved');
-    });
+      change({ verdict: 'approved', verdictCovers: JOURNEYS.slice() });
+    },
+  );
   sendButtons.forEach(function (button) {
-    if (button) button.addEventListener('click', sendReview);
+    button.addEventListener('click', sendReview);
   });
 
   approveBtn.addEventListener('click', function () {
@@ -964,7 +1283,8 @@
     // A swipe is a touch gesture; a mouse drag across the picture is not
     // one, and a drag that starts on the recording belongs to its controls.
     if (e.pointerType !== 'touch') return;
-    if (e.target.closest && e.target.closest('video')) return;
+    var target = e.target;
+    if (target instanceof Element && target.closest('video')) return;
     swipeFrom = { x: e.clientX, y: e.clientY };
   });
   stage.addEventListener('pointerup', function (e) {
@@ -983,7 +1303,13 @@
 
   paint();
   paintReview();
-  if (!window.claude || typeof window.claude.use !== 'function') {
+  // The runtime a published artifact injects; absent anywhere else.
+  var claude = /** @type {{ claude?: { use?: Use } }} */ (
+    /** @type {unknown} */ (window)
+  ).claude;
+  // Bound, because the runtime's `use` is a method of the object it hangs on.
+  var use = claude && claude.use ? claude.use.bind(claude) : null;
+  if (typeof use !== 'function') {
     markStorageAbsent();
     markCannotSend('off');
     downloadBtn.remove();
@@ -992,7 +1318,7 @@
   // Handing the operator the capture it is showing. Without the grant the
   // button is REMOVED rather than left to fail: a control that cannot work
   // is worse than no control at all.
-  window.claude.use('downloads').then(
+  use('downloads').then(
     function (handle) {
       downloads = handle || null;
       if (!downloads) downloadBtn.remove();
@@ -1004,7 +1330,7 @@
   // Sending the review back to a session. `canSendToClaude` is asked before
   // the button is offered, so the page says why it cannot send rather than
   // failing at the press.
-  window.claude.use('comments').then(function (handle) {
+  use('comments').then(function (handle) {
     if (!handle) {
       markCannotSend('off');
       return;
@@ -1014,7 +1340,7 @@
       else markCannotSend(state);
     }, cannotSend);
   }, cannotSend);
-  window.claude.use('db').then(function (handle) {
+  use('db').then(function (handle) {
     if (!handle) {
       markStorageAbsent();
       return;
@@ -1061,4 +1387,4 @@
         );
     });
   }, markStorageAbsent);
-})();
+}

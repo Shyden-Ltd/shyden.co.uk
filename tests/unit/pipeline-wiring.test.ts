@@ -1,18 +1,53 @@
 import { describe, it, expect } from 'vitest';
 import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { withoutCommentLines, withoutTsComments } from './source-text';
-import { nonEmpty, searched } from '../source-files';
-import { VISUAL_PROJECT } from '../../playwright.config';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, normalize, resolve, sep } from 'node:path';
+import {
+  codeWithoutComments,
+  withoutCommentLines,
+  withoutTsComments,
+} from './source-text';
+import { nonEmpty, searched, trackedFiles } from '../source-files';
+import type { Project } from '@playwright/test';
+import playwrightConfig, {
+  VISUAL_MEASURE_PROJECT,
+  VISUAL_PROJECT,
+} from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
+  inheritedPermissionsFindings,
   jobsDownstreamOfAConditionalJob,
+  parseCleanYaml,
   skippedUpstreamFindings,
+  producibleContexts,
   unboundedJobFindings,
   workflowJobs,
+  workflowLevelWrites,
+  type DeclaredPermissions,
   type WorkflowJob,
 } from '../workflow-jobs';
+import { parseFile } from './ast';
+import { declarationsIn } from '../playwright-declarations';
+import { REQUIRED_CHECKS } from '../../scripts/deploy-gate.mjs';
+
+/**
+ * The plain `test(...)` declarations `spec` makes, read by the parser. A test
+ * commented out, or spelled inside a string, is not one: counting `test(` in
+ * the raw text counted both (#218).
+ */
+const plainTestsIn = (spec: string) =>
+  declarationsIn(parseFile(spec)).filter(
+    ({ kind, modifier }) => kind === 'test' && modifier === '',
+  );
 
 /**
  * The deploy pipeline is wired to the things it claims to run.
@@ -75,6 +110,56 @@ const workflowFileNames = (): string[] =>
 const workflowYamlNames = (): string[] =>
   workflowFileNames().filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
 
+/** What a workflow calls itself: the Actions UI, and `github.workflow`. */
+const workflowName = (file: string): string => {
+  const root = parseCleanYaml(workflow(file), file) as { name?: unknown };
+  return typeof root.name === 'string' ? root.name : file;
+};
+
+/** Putting built bytes on an environment — what makes a workflow a deploy. */
+const DEPLOY_COMMAND = 'wrangler pages deploy';
+
+/** Text a human reads, which is where a wrong instruction becomes an action. */
+const READABLE = /\.(md|ya?ml|ts|tsx|mjs|js|astro|sh)$/;
+
+/** A backticked span: the form every context in this repo's prose is written in. */
+const TICKED = /`([^`\n]+)`/g;
+
+/**
+ * How far before the anchor a claim may sit. A context is named right beside
+ * `required_status_checks.contexts` — "X is added to Y", "X joins Y" — and a
+ * wider window starts reading unrelated spans as claims. Measured: the
+ * `-f context=<name>` docblock in `workflow-jobs.ts` sits about 80 characters
+ * before its own mention of the anchor, so 80 would flag correct code.
+ */
+const CLAIM_WINDOW = 40;
+
+/**
+ * Every context this repository's prose names as belonging in
+ * `required_status_checks.contexts`: the backticked span immediately before
+ * the anchor, when it is close enough to be part of the same sentence.
+ *
+ * Prose is the medium the operator acts on, so a claim is read where he reads
+ * it. The anchor's own span is not a claim about itself, and a docblock
+ * boundary or a blank line in the gap means the two spans sit in different
+ * sentences entirely.
+ */
+const contextClaimsIn = (text: string): string[] => {
+  const spans = [...text.matchAll(TICKED)];
+  const claims: string[] = [];
+  spans.forEach((span, index) => {
+    if (!span[1].includes('required_status_checks')) return;
+    const before = spans[index - 1];
+    if (before === undefined) return;
+    const from = (before.index ?? 0) + before[0].length;
+    const gap = text.slice(from, span.index ?? 0);
+    if (gap.length > CLAIM_WINDOW) return;
+    if (gap.includes('*/') || /\n\s*\n/.test(gap)) return;
+    claims.push(before[1]);
+  });
+  return claims;
+};
+
 const allWorkflows = () =>
   workflowYamlNames().map((f) => ({
     name: f,
@@ -94,6 +179,15 @@ const workflowGraphs = () =>
     name,
     jobs: workflowJobs(workflow(name), name),
   }));
+
+// The two constructs that change what prod serves: a wrangler deploy to the
+// prod Pages project, and a rollback through the Pages API on it. The name
+// must END at `shyden-site`, so `shyden-site-dev` is not prod.
+const deploysProd = (scripts: string) =>
+  /--project-name[= ]+shyden-site(?![\w.-])/.test(scripts);
+const rollsProdBack = (scripts: string) =>
+  /\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
+  /\/rollback\b/.test(scripts);
 
 /** The job block owning `needle`, from a workflow's comment-stripped text. */
 const jobBlockRunning = (yaml: string, needle: string): string => {
@@ -125,15 +219,15 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the dev sanity suite exists and is more than a stub', () => {
-    const spec = readFileSync('tests/dev/dev-sanity.spec.ts', 'utf8');
-    const tests = spec.match(/\btest\(/g) ?? [];
     // A guard that only checked the workflow REFERENCES the config would pass
     // against an emptied suite.
-    expect(tests.length).toBeGreaterThan(3);
+    expect(plainTestsIn('tests/dev/dev-sanity.spec.ts').length).toBeGreaterThan(
+      3,
+    );
   });
 
   it('the dev deploy is gated on a gate that SUCCEEDED, never on one that skipped', () => {
-    const deploy = jobNamed('release-dev.yml', 'deploy-dev');
+    const deploy = jobNamed('deploy-dev.yml', 'deploy-dev');
     expect(deploy.needs).toEqual(['gate', 'test']);
 
     // Exactly one of the two gates runs per event, so the other is ALWAYS
@@ -155,7 +249,7 @@ describe('the deploy pipeline runs what it claims to', () => {
     // never verified (run 34742940098). Pinned exactly: the rule below accepts
     // any condition of the right shape, and this is the one the runner was
     // measured running after a skipped gate (run 34743720266).
-    const verify = jobNamed('release-dev.yml', 'verify-dev');
+    const verify = jobNamed('deploy-dev.yml', 'verify-dev');
     expect(verify.needs).toEqual(['deploy-dev']);
     expect(verify.condition).toBe(
       "!cancelled() && needs.deploy-dev.result == 'success'",
@@ -181,7 +275,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the push path proves the tree instead of re-running the suite', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     const gate = jobBlockRunning(dev, 'scripts/deploy-gate.mjs');
     expect(gate).toContain("if: github.event_name == 'push'");
     // The gate reads parents and trees; a shallow clone would make it refuse
@@ -196,34 +290,77 @@ describe('the deploy pipeline runs what it claims to', () => {
     // `workflow_dispatch` puts an ARBITRARY branch on dev. It has no second
     // parent and no PR checks, so there is nothing for the tree gate to verify.
     // Dropping this path would quietly remove a documented capability.
-    const suite = jobBlockRunning(
-      workflowSteps('release-dev.yml'),
-      'npm run test:e2e',
-    );
-    expect(suite).toContain("if: github.event_name != 'push'");
+    const dispatch = jobNamed('deploy-dev.yml', 'test');
+    expect(dispatch.uses).toBe(CI_WORKFLOW);
+    expect(dispatch.condition).toBe("github.event_name != 'push'");
   });
 
-  it('the merge path trusts a check that runs exactly what the dispatch path runs', () => {
+  it("the dispatch path runs the merge path's own workflow, so the two cannot drift", () => {
     // A push deploys because `ci.yml`'s `build-and-test` passed on the tree,
-    // and the gate reads that conclusion, never the steps behind it. So it is
-    // evidence of the suite only while the job RUNS the suite: drop a step and
-    // every later merge passes the gate untested. The dispatch path runs its
-    // own copy for want of that evidence, so the two must not drift (#157).
-    const trusted = jobNamed('ci.yml', 'build-and-test').runs;
-    expect(trusted.filter(runsTheE2eSuite)).toEqual(['npm run test:e2e']);
-    expect(jobNamed('release-dev.yml', 'test').runs).toEqual(trusted);
+    // and the gate reads that conclusion, never the work behind it. A
+    // dispatched branch has no such conclusion, so it runs the suite itself.
+    // Until #163 it ran a COPY of build-and-test's steps, which this test held
+    // equal (#157). Sharding split those steps across three jobs, and a copy
+    // of three jobs is three chances to drift, so the dispatch path now CALLS
+    // ci.yml: the suite a dispatched branch runs is, by construction, the
+    // suite the merge gate believes a pull request passed.
+    const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      on?: Record<string, unknown>;
+    };
+    // The whole trigger set, exactly: callable, and still nothing else.
+    expect(Object.keys(ci.on ?? {}).sort()).toEqual([
+      'pull_request',
+      'workflow_call',
+    ]);
+    expect(jobNamed('deploy-dev.yml', 'test').uses).toBe(CI_WORKFLOW);
+  });
+
+  it('the dispatch path grants the workflow it calls every permission its jobs ask for', () => {
+    // A called workflow's token can only be narrowed, never widened: a job in
+    // ci.yml asking for a scope its caller did not grant makes GitHub refuse
+    // the whole run at startup. The merge path never shows it, because a pull
+    // request's run is not called, so the refusal would surface the first day
+    // somebody needs the escape hatch.
+    type Permissions = Record<string, string>;
+    const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      permissions?: Permissions;
+      jobs: Record<string, { permissions?: Permissions }>;
+    };
+    const dev = parseCleanYaml(
+      workflow('deploy-dev.yml'),
+      'deploy-dev.yml',
+    ) as {
+      jobs: Record<string, { permissions?: Permissions }>;
+    };
+    const granted = dev.jobs.test?.permissions ?? {};
+    const LEVEL: Record<string, number> = { none: 0, read: 1, write: 2 };
+    const asked = [
+      ci.permissions ?? {},
+      ...Object.values(ci.jobs).map((job) => job.permissions ?? {}),
+    ].flatMap((each) => Object.entries(each));
+    const refused = asked
+      .filter(
+        ([scope, level]) => LEVEL[granted[scope] ?? 'none'] < LEVEL[level],
+      )
+      .map(
+        ([scope, level]) =>
+          `ci.yml asks for ${scope}: ${level}, and the dispatch path grants ${granted[scope] ?? 'none'}`,
+      );
+    expect(
+      searched(refused, { of: asked, what: 'permissions ci.yml asks for' }),
+    ).toEqual([]);
   });
 
   // The merge gate. `dev-verified` has to be POSTED by something, or branch
   // protection requiring it blocks every PR forever.
   it('dev-verified is posted by the dev workflow', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     expect(dev).toContain('context=dev-verified');
     expect(dev).toContain('statuses: write');
   });
 
   it('prod-verified is posted by the prod workflow', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     expect(prod).toContain('context=prod-verified');
     expect(prod).toContain('statuses: write');
   });
@@ -232,13 +369,24 @@ describe('the deploy pipeline runs what it claims to', () => {
   // merge means production runs a commit that is on no permanent ref, and
   // `main` stops describing what is live.
   it('prod deploys from main, not from a dispatched branch alone', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     expect(prod).toMatch(/on:[\s\S]*?push:[\s\S]*?branches:\s*\[main\]/);
   });
 
+  // Every job that deploys the prod project, with the environment it names,
+  // read PARSED. A name is the whole name: the regex this replaced read
+  // `name: prod` as a prefix, so a deploy moved into `prod-rollback`, which
+  // has no reviewer, still passed it (#241, mutation W5).
   it('prod is behind the approval-gated environment', () => {
-    const prod = workflowSteps('release-prod.yml');
-    expect(prod).toMatch(/environment:\s*\n\s*name:\s*prod/);
+    const deploys = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter((job) => deploysProd(job.runs.join('\n')))
+        .map(
+          (job) =>
+            `${name} ${job.id} in ${job.environment ?? 'no environment'}`,
+        ),
+    );
+    expect(deploys).toEqual(['deploy-prod.yml deploy-prod in prod']);
   });
 
   // The placeholder guard cost two false-failed releases before it matched the
@@ -246,7 +394,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // Both fixes live in one line, and losing either is a release blocked for
   // nothing.
   it('the prod placeholder guard still skips binaries and matches a shape', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     expect(prod).toContain("grep -rnIE '\\[\\[[^]]{1,60}\\]\\]' dist/");
   });
 
@@ -268,7 +416,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // vacuity was real and was caught by mutating this guard, not by reading it.
   // Set equality also catches a path the routes no longer serve.
   it('the prod smoke covers every page in every locale', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     const loop = /for path in ([^;]+); do/.exec(prod);
     expect(loop, 'the prod smoke no longer loops over a path list').not.toBe(
       null,
@@ -295,7 +443,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // -- the one that introduced its replacements, which could not otherwise
   // earn the `prod-verified` status branch protection then required. That
   // status is no longer required: the gate is `dev-verified`, posted before
-  // the merge by release-dev.yml.
+  // the merge by deploy-dev.yml.
   //
   // Two pipelines both able to deploy prod, disagreeing about when, is worse
   // than either.
@@ -311,12 +459,360 @@ describe('the deploy pipeline runs what it claims to', () => {
         /on:[\s\S]*?push:/.test(w.text) &&
         w.text.includes('shyden-site --branch'),
     );
-    expect(pushers.map((w) => w.name)).toEqual(['release-prod.yml']);
+    expect(pushers.map((w) => w.name)).toEqual(['deploy-prod.yml']);
+  });
+
+  // ---- one lock around everything that changes what prod serves (#238) ----
+  //
+  // rollback.yml and deploy-prod.yml sat in different groups, so a release
+  // still deploying could land after a rollback and undo it, with both runs
+  // reporting success. Measured on the runner (#238 AC1): a run waiting at an
+  // approval HOLDS its group, at workflow and at job level, and a newer arrival
+  // cancels a run already waiting for it. So a rollback that merely queued
+  // could wait on an approval nobody clicks, or be cancelled by the next push
+  // to main. Shyden's decision (AC2): one group, and the rollback cancels
+  // whatever holds it. Read PARSED: a commented-out block is no block.
+  const PROD_LOCK = 'shyden-prod-publish';
+  type ParsedWorkflow = {
+    concurrency?: string | { group?: unknown; 'cancel-in-progress'?: unknown };
+    jobs?: Record<string, { steps?: { run?: unknown }[] }>;
+  };
+  const parsedWorkflow = (name: string) =>
+    parseCleanYaml(workflow(name), name) as ParsedWorkflow;
+  const lockOf = ({ concurrency }: ParsedWorkflow) =>
+    typeof concurrency === 'string' ? concurrency : concurrency?.group;
+  const changesProd = ({ jobs }: ParsedWorkflow) => {
+    const scripts = Object.values(jobs ?? {})
+      .flatMap((job) => (job.steps ?? []).map((step) => String(step.run ?? '')))
+      .join('\n');
+    return deploysProd(scripts) || rollsProdBack(scripts);
+  };
+
+  it('a rollback cancels any prod release in flight, and a release waits for a rollback (#238)', () => {
+    expect(parsedWorkflow('rollback.yml').concurrency, 'rollback.yml').toEqual({
+      group: PROD_LOCK,
+      'cancel-in-progress': true,
+    });
+    expect(
+      parsedWorkflow('deploy-prod.yml').concurrency,
+      'deploy-prod.yml',
+    ).toEqual({
+      group: PROD_LOCK,
+      'cancel-in-progress': false,
+    });
+  });
+
+  // A list of the lock's members would miss the next workflow that deploys
+  // prod, so the members are DERIVED from what each workflow's steps run. And
+  // nothing else may take the lock: a dev deploy inside it would be cancelled
+  // by every prod rollback.
+  it('every workflow that changes what prod serves takes the prod lock, and nothing else does (#238)', () => {
+    const names = workflowYamlNames();
+    const actors = nonEmpty(
+      names.filter((name) => changesProd(parsedWorkflow(name))),
+      'workflows whose steps deploy or roll back the prod Pages project',
+    );
+    const holders = names.filter(
+      (name) => lockOf(parsedWorkflow(name)) === PROD_LOCK,
+    );
+    expect(holders, `the workflows holding ${PROD_LOCK}`).toEqual(actors);
+  });
+
+  // ---- each secret lives in the environment of the job reading it (#241) ----
+  //
+  // A repository secret reaches a workflow on any branch that can be pushed.
+  // An environment secret reaches only a job that names its environment, and
+  // `prod` and `prod-rollback` accept `main` alone. So the secrets are only as
+  // well placed as the jobs that read them: once the repository copies are
+  // deleted, a job naming no environment reads nothing, and a job naming the
+  // wrong one reads another project's token. Read PARSED, per job
+  // (tests/workflow-jobs.ts): a secret in a YAML comment is read by nothing,
+  // and one in a shell comment inside `run:` is still expanded by the runner.
+  const everyJob = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs.map((job) => ({ where: `${name} ${job.id}`, file: name, job })),
+    );
+
+  // GITHUB_TOKEN is not a repository secret: the runner mints it for each run,
+  // scoped by the job's `permissions:`, so no environment can hold it.
+  const storedSecrets = ({ secrets }: WorkflowJob) =>
+    secrets.filter((secret) => secret !== 'GITHUB_TOKEN');
+
+  it('every job that reads a secret other than GITHUB_TOKEN names an environment (#241)', () => {
+    const readers = everyJob().filter(
+      ({ job }) => storedSecrets(job).length > 0,
+    );
+    const unplaced = readers
+      .filter(({ job }) => job.environment === undefined)
+      .map(
+        ({ where, job }) =>
+          `${where} reads ${storedSecrets(job).join(', ')} in no environment`,
+      );
+    expect(
+      searched(unplaced, {
+        of: readers.map(({ where }) => where),
+        what: 'jobs reading a secret other than GITHUB_TOKEN',
+      }),
+    ).toEqual([]);
+  });
+
+  // What a job does with the Cloudflare pair decides the environment it reads
+  // them from, derived from its steps and never from the file's name. The dev
+  // and prod tokens share one name, one per environment, so the environment
+  // is the only thing choosing which project a job can reach.
+  const PAGES_ENVIRONMENTS = [
+    {
+      does: 'deploys shyden-site-dev',
+      environment: 'dev',
+      in: (scripts: string) =>
+        /--project-name[= ]+shyden-site-dev(?![\w.-])/.test(scripts),
+    },
+    { does: 'deploys shyden-site', environment: 'prod', in: deploysProd },
+    {
+      does: 'rolls shyden-site back',
+      environment: 'prod-rollback',
+      in: rollsProdBack,
+    },
+  ];
+
+  it('a Cloudflare secret is read only in the environment of the project its job changes (#241)', () => {
+    const readers = everyJob().filter(({ job }) =>
+      job.secrets.some((secret) => secret.startsWith('CLOUDFLARE_')),
+    );
+    const misplaced = readers.flatMap(({ where, job }) => {
+      const acts = PAGES_ENVIRONMENTS.filter((act) =>
+        act.in(job.runs.join('\n')),
+      );
+      if (acts.length !== 1)
+        return [
+          `${where} reads Cloudflare secrets and ` +
+            (acts.length === 0
+              ? 'changes no Pages project'
+              : acts.map(({ does }) => does).join(' and ')),
+        ];
+      const [{ does, environment }] = acts;
+      return job.environment === environment
+        ? []
+        : [
+            `${where} ${does}, so it reads Cloudflare secrets in ` +
+              `${environment}, not ${job.environment ?? 'no environment'}`,
+          ];
+    });
+    expect(
+      searched(misplaced, {
+        of: readers.map(({ where }) => where),
+        what: 'jobs reading a Cloudflare secret',
+      }),
+    ).toEqual([]);
+  });
+
+  // A prod job is any job in a workflow that changes what prod serves, and any
+  // job in a prod environment. A secret meant for dev is named `DEV_*`, and
+  // `dev` accepts every branch, because deploy-dev.yml puts feature branches
+  // on dev on purpose. Anything it holds is only as private as the least
+  // reviewed branch, so it never travels to prod.
+  it('no job that deploys or verifies prod reads a secret meant for dev (#241)', () => {
+    const prodJobs = everyJob().filter(
+      ({ file, job }) =>
+        changesProd(parsedWorkflow(file)) ||
+        job.environment === 'prod' ||
+        job.environment === 'prod-rollback',
+    );
+    const leaks = prodJobs.flatMap(({ where, job }) =>
+      job.secrets
+        .filter((secret) => secret.startsWith('DEV_'))
+        .map((secret) => `${where} reads ${secret}`),
+    );
+    expect(
+      searched(leaks, {
+        of: prodJobs.map(({ where }) => where),
+        what: 'jobs that deploy or verify prod',
+      }),
+    ).toEqual([]);
+  });
+
+  // ---- the rollback's dry run (#241, Shyden's decision 2026-09-19) --------
+  //
+  // prod-rollback accepts `main` alone, so the rollback's secrets can only be
+  // proved on main, and rolling prod back to prove them is no proof anyone
+  // wants. A dry run runs the real job. It checks that both secrets are set,
+  // then finds the deployment it would promote with a read-only call that
+  // needs the token to reach shyden-site. It skips only the one step that
+  // changes what prod serves. The steps' scripts are RUN here, in bash as the
+  // runner runs them, never matched as text.
+  type RollbackStep = {
+    id?: string;
+    name?: string;
+    if?: unknown;
+    run?: unknown;
+    env?: Record<string, unknown>;
+  };
+  type RollbackWorkflow = {
+    on?: { workflow_dispatch?: { inputs?: Record<string, unknown> } };
+    jobs?: { rollback?: { steps?: RollbackStep[] } };
+  };
+  const rollbackWorkflow = () =>
+    parseCleanYaml(
+      workflow('rollback.yml'),
+      'rollback.yml',
+    ) as RollbackWorkflow;
+  const rollbackSteps = (): RollbackStep[] =>
+    nonEmpty(
+      rollbackWorkflow().jobs?.rollback?.steps ?? [],
+      'steps in the rollback job',
+    );
+  const rollbackStep = (name: string): RollbackStep => {
+    const step = rollbackSteps().find((each) => each.name === name);
+    expect(step, `rollback.yml has no step named '${name}'`).toBeDefined();
+    return step!;
+  };
+  const stepCondition = (step: RollbackStep) =>
+    String(step.if ?? '')
+      .trim()
+      .replace(/^\$\{\{([\s\S]*)\}\}$/, '$1')
+      .trim();
+
+  // A step's script as the runner runs it: bash with -eo pipefail and no
+  // profile, given only the env named here. `https_proxy` points at a closed
+  // port, so a script that reaches for the network fails on the spot rather
+  // than calling Cloudflare.
+  const runStep = (step: RollbackStep, env: Record<string, string>) => {
+    const script = String(step.run ?? '');
+    expect(script, `${step.name} runs no script`).not.toBe('');
+    expect(script, 'an expression reaches a script through env').not.toMatch(
+      /\$\{\{/,
+    );
+    const dir = mkdtempSync(join(tmpdir(), 'rollback-step-'));
+    const outputs = join(dir, 'outputs');
+    writeFileSync(outputs, '');
+    try {
+      const run = spawnSync(
+        'bash',
+        ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script],
+        {
+          encoding: 'utf8',
+          timeout: 10_000,
+          env: {
+            PATH: process.env.PATH ?? '',
+            https_proxy: 'http://127.0.0.1:9',
+            HTTPS_PROXY: 'http://127.0.0.1:9',
+            GITHUB_OUTPUT: outputs,
+            ...env,
+          },
+        },
+      );
+      return {
+        status: run.status,
+        log: `${run.stdout}${run.stderr}`,
+        outputs: readFileSync(outputs, 'utf8'),
+      };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const CLOUDFLARE_ENV = {
+    CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
+    CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+  };
+  const TOKEN = 'token-value-never-printed';
+  const ACCOUNT = 'account-value-never-printed';
+
+  // Off unless asked for: a dispatch that omits it, from the API or a hurried
+  // click, rolls back as it always did.
+  it('the rollback has a dry run, and it is off unless asked for (#241)', () => {
+    expect(rollbackWorkflow().on?.workflow_dispatch?.inputs?.dry_run).toEqual(
+      expect.objectContaining({ type: 'boolean', default: false }),
+    );
+  });
+
+  it('the rollback checks its secrets first and skips only the promote on a dry run (#241)', () => {
+    const steps = rollbackSteps();
+    expect(
+      steps.map((step) => `${step.name}: ${stepCondition(step) || 'always'}`),
+    ).toEqual([
+      'Check the secrets are set: always',
+      'Find the deployment to roll back to: always',
+      'Promote it: !inputs.dry_run',
+    ]);
+    // The call that changes what prod serves lives in the skipped step alone.
+    expect(
+      steps
+        .filter((step) => /\/rollback\b/.test(String(step.run ?? '')))
+        .map((step) => step.name),
+    ).toEqual(['Promote it']);
+  });
+
+  it('a rollback stops before Cloudflare when either secret is missing, and never prints one (#241)', () => {
+    const check = rollbackStep('Check the secrets are set');
+    expect(check.env).toEqual(CLOUDFLARE_ENV);
+    const both = runStep(check, {
+      CLOUDFLARE_API_TOKEN: TOKEN,
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+    });
+    expect(both.status, both.log).toBe(0);
+    expect(both.log).toMatch(/^CLOUDFLARE_API_TOKEN: present$/m);
+    expect(both.log).toMatch(/^CLOUDFLARE_ACCOUNT_ID: present$/m);
+    expect(both.log).not.toContain(TOKEN);
+    expect(both.log).not.toContain(ACCOUNT);
+    // An empty secret is what the runner hands a job that cannot read it, and
+    // an unset one is checked as well.
+    const empty = runStep(check, {
+      CLOUDFLARE_API_TOKEN: '',
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+    });
+    expect(empty.status).not.toBe(0);
+    expect(empty.log).toMatch(/^::error::CLOUDFLARE_API_TOKEN: absent\. /m);
+    const unset = runStep(check, { CLOUDFLARE_API_TOKEN: TOKEN });
+    expect(unset.status).not.toBe(0);
+    expect(unset.log).toMatch(/^::error::CLOUDFLARE_ACCOUNT_ID: absent\. /m);
+  });
+
+  it('the find step passes on a deployment id and refuses anything that could reshape the call (#241)', () => {
+    const find = rollbackStep('Find the deployment to roll back to');
+    expect(find.id).toBe('find');
+    expect(find.env).toEqual({
+      ...CLOUDFLARE_ENV,
+      TARGET_ID: '${{ inputs.deployment_id }}',
+    });
+    const credentials = {
+      CLOUDFLARE_API_TOKEN: TOKEN,
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+    };
+    const id = '6f1c2a3b-0d4e-4f5a-9b6c-7d8e9f0a1b2c';
+    const given = runStep(find, { ...credentials, TARGET_ID: id });
+    expect(given.status, given.log).toBe(0);
+    expect(given.outputs).toBe(`target=${id}\n`);
+    // A path that climbs out of the project, a second output line, a space.
+    for (const bad of ['../../dns_records', `${id}\ntarget=other`, 'a b']) {
+      const run = runStep(find, { ...credentials, TARGET_ID: bad });
+      expect(run.status, JSON.stringify(bad)).not.toBe(0);
+      expect(run.outputs, JSON.stringify(bad)).toBe('');
+    }
+    // No id and no Cloudflare: the lookup fails, and no target is handed on.
+    const unreachable = runStep(find, { ...credentials, TARGET_ID: '' });
+    expect(unreachable.status).not.toBe(0);
+    expect(unreachable.outputs).toBe('');
+  });
+
+  it('the promote step takes its target from the find step, and stops if there is none (#241)', () => {
+    const promote = rollbackStep('Promote it');
+    expect(promote.env).toEqual({
+      ...CLOUDFLARE_ENV,
+      TARGET: '${{ steps.find.outputs.target }}',
+    });
+    const run = runStep(promote, {
+      CLOUDFLARE_API_TOKEN: TOKEN,
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+      TARGET: '',
+    });
+    expect(run.status).not.toBe(0);
+    // Stopped by its own guard, not by curl failing to reach the proxy.
+    expect(run.log).toMatch(/^::error::No deployment to roll back to: /m);
   });
 
   // ---- the develop branching model ---------------------------------------
   //
-  // `release-dev.yml` was DISPATCH-only, which made the dev deploy — and so the
+  // `deploy-dev.yml` was DISPATCH-only, which made the dev deploy — and so the
   // `dev-verified` status gating `main` — a step someone had to remember. The
   // header comment gave a real reason: every PR branch deploying to one shared
   // dev environment means the last push wins, and `dev-verified` then describes
@@ -327,14 +823,14 @@ describe('the deploy pipeline runs what it claims to', () => {
   // longer ambiguous — dev always shows develop's head, which is what it should
   // show.
   it('dev deploys automatically when develop moves', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     expect(dev).toMatch(/on:[\s\S]*?push:[\s\S]*?branches:\s*\[develop\]/);
   });
 
   // The dispatch escape hatch stays: deploying an arbitrary branch to dev is a
   // real capability worth keeping.
   it('the dispatch escape hatch survives', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     expect(dev).toMatch(/workflow_dispatch:/);
   });
 
@@ -345,7 +841,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // exists to prevent. Deploy and test on any ref; publish the STATUS only for
   // develop.
   it('dev-verified is only posted for develop', () => {
-    const dev = workflowSteps('release-dev.yml');
+    const dev = workflowSteps('deploy-dev.yml');
     const post = dev.indexOf('/statuses/');
     expect(post, 'no dev-verified status step found').toBeGreaterThan(-1);
     const step = dev.slice(Math.max(0, post - 900), post);
@@ -385,6 +881,112 @@ describe('the deploy pipeline runs what it claims to', () => {
     // STOPS anything. Renaming this job silently de-gates develop and main,
     // because protection matches a context by NAME (#33).
     expect(workflowSteps('ci.yml')).toContain('build-and-test:');
+  });
+
+  // #284: the other half of #33's lesson. Protection matches a context by
+  // NAME, so a name nothing reports is not a weak gate — it is a branch that
+  // can never merge again, repairable only by an administrator. Both sides
+  // are derived: what the workflows can report, and what the prose claims.
+  it('documents only a context something in this repository can report', () => {
+    const producible = new Set(
+      workflowYamlNames().flatMap((file) =>
+        producibleContexts(workflow(file), file),
+      ),
+    );
+
+    const claims = trackedFiles((path) => READABLE.test(path)).flatMap((file) =>
+      contextClaimsIn(readFileSync(file, 'utf8')).map((context) => ({
+        file,
+        context,
+      })),
+    );
+
+    const findings = claims
+      .filter(({ context }) => !producible.has(context))
+      .map(
+        ({ file, context }) =>
+          `${file} tells the operator to require \`${context}\`, which no job ` +
+          `and no status in this repository reports`,
+      );
+
+    expect(
+      searched(findings, {
+        of: claims.map(({ context }) => context),
+        what: 'contexts this repository documents as required',
+      }),
+    ).toEqual([]);
+  });
+
+  // #284, operator: "if you're deploying to dev, say you're deploying to dev.
+  // it's not a release." A release is the version, tag and change notes
+  // `release-tag.yml` cuts. Putting built bytes on an environment is a
+  // deploy, and calling one a release reads as the sign-off gate having been
+  // bypassed. Derived from what a workflow DOES, so a third environment is
+  // covered the day it is added rather than when someone remembers this.
+  it('never calls a deploy a release', () => {
+    const deploys = workflowYamlNames().filter((file) =>
+      workflowJobs(workflow(file), file).some((job) =>
+        job.runs.some((run) =>
+          withoutCommentLines(run).includes(DEPLOY_COMMAND),
+        ),
+      ),
+    );
+
+    const findings = deploys
+      .filter(
+        (file) => /release/i.test(file) || /release/i.test(workflowName(file)),
+      )
+      .map(
+        (file) =>
+          `${file} deploys, so neither it nor its name: may say release`,
+      );
+
+    expect(
+      searched(findings, {
+        of: deploys,
+        what: `workflows running \`${DEPLOY_COMMAND}\``,
+      }),
+    ).toEqual([]);
+  });
+
+  // #237: a push to an open pull request started a fresh run and left the
+  // superseded one spending about 30 runner-minutes on a head that could no
+  // longer merge (35336492915 and 35335647213 were cancelled by hand). Read
+  // PARSED: a commented-out block is no block, whatever its text says.
+  it("a push cancels its own pull request's superseded CI run, never another's (#237)", () => {
+    const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      on?: Record<string, unknown>;
+      concurrency?: { group?: unknown; 'cancel-in-progress'?: unknown };
+    };
+
+    // The group's pull request number is empty on any other event, and an
+    // empty key is one group for every run: a second trigger would let a run
+    // on one branch cancel a run on another. So a trigger other than a pull
+    // request is allowed only because the key falls back to the run's own id,
+    // a group of one that cancels nothing. The one such trigger is
+    // `workflow_call`, the dispatch path running this suite (#163).
+    expect(
+      Object.keys(ci.on ?? {}).sort(),
+      'a trigger besides pull_request needs a key no other run shares',
+    ).toEqual(['pull_request', 'workflow_call']);
+
+    // Exactly these two, in any order. Every workflow in the repo shares one
+    // namespace of groups, so the key names this workflow; it names the pull
+    // request, so a push never cancels another PR's run, and a run with no
+    // pull request falls back to its own id; and it names nothing finer,
+    // because a key per commit puts each push in a group of its own and
+    // cancels nothing at all.
+    const keyedBy = [
+      ...String(ci.concurrency?.group ?? '').matchAll(/\$\{\{\s*(.+?)\s*\}\}/g),
+    ].map((match) => match[1]);
+    expect(
+      [...keyedBy].sort(),
+      `ci.yml's concurrency group is keyed by [${keyedBy.join(', ')}]`,
+    ).toEqual([
+      'github.event.pull_request.number || github.run_id',
+      'github.workflow',
+    ]);
+    expect(ci.concurrency?.['cancel-in-progress']).toBe(true);
   });
 
   // RAW text on purpose — the opposite of every other check in this file.
@@ -431,7 +1033,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   // `prod-verified` should mean a browser rendered production, so the browser
   // run has to come BEFORE the status is posted, not beside it.
   it('prod-verified is gated on a real browser run, not a curl smoke', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
     const browser = prod.indexOf('playwright.prod.config');
     const status = prod.indexOf('/statuses/');
 
@@ -467,7 +1069,7 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('prod verification targets the public domain, not the deployment alias', () => {
-    const prod = workflowSteps('release-prod.yml');
+    const prod = workflowSteps('deploy-prod.yml');
 
     expect(
       prod,
@@ -482,8 +1084,9 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the prod sanity suite exists and is more than a stub', () => {
-    const spec = readFileSync('tests/prod/prod-sanity.spec.ts', 'utf8');
-    expect(spec.match(/\bit\(|\btest\(/g)?.length ?? 0).toBeGreaterThan(3);
+    expect(
+      plainTestsIn('tests/prod/prod-sanity.spec.ts').length,
+    ).toBeGreaterThan(3);
   });
 });
 
@@ -798,7 +1401,7 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
 /**
  * Every job runs under a budget of its own, and the e2e suite's is one number.
  *
- * MEASURED 2026-09-12 (#155). `release-dev.yml`'s "Comprehensive web tests" job
+ * MEASURED 2026-09-12 (#155). `deploy-dev.yml`'s "Comprehensive web tests" job
  * carried `timeout-minutes: 25`, while `npm run test:e2e` alone took **26m13s**
  * on the identical tree (PR run 34674831504, which went green). Aurora's merge
  * pushed the suite past that budget, so run 34676066071 for `c100e59` was
@@ -814,7 +1417,7 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
  * minutes; `visual` took 44 to 72 seconds.
  *
  * So both rules are DERIVED from every workflow, parsed, never pinned to one
- * named job. `DEV_E2E_JOB_MIN_MINUTES` pinned release-dev.yml's e2e job, and
+ * named job. `DEV_E2E_JOB_MIN_MINUTES` pinned deploy-dev.yml's e2e job, and
  * when #159 made that job dispatch-only it went on guarding the path merges no
  * longer take. Every job running the suite carries EXACTLY the budget below, so
  * no copy can drift from another.
@@ -822,8 +1425,21 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
  * The budget is a POLICY, pinned as a literal and asserted separately from the
  * guard that derives from it, so moving the constant cannot move both sides and
  * quietly restore the hole (#117).
+ *
+ * RESTATED FOR A SHARD (#163). By the time the suite was split it took up to
+ * 39.3 minutes of those 45 (its last eight green runs, median 36.9): a margin
+ * of 1.15 that the suite's growth had eaten from 1.58. And 45 minutes for an
+ * eighth of the suite would bound nothing a shard could plausibly take: a
+ * shard hung for 40 minutes would read as slow, not stuck. The policy is now
+ * per shard, and no job runs the unsplit suite: the dispatch path calls
+ * ci.yml rather than keeping a copy of its steps.
+ *
+ * MEASURED on PR #320, five green eight-shard runs of one head (run
+ * 35832427906, attempts 1 to 5): the slowest shard of each took 8.3 to 8.9
+ * minutes, so 20 is 2.2 times the slowest. Revisit it when that falls under
+ * 1.5, rather than when a shard is cancelled.
  */
-const E2E_JOB_BUDGET_MINUTES = 45;
+const E2E_SHARD_BUDGET_MINUTES = 20;
 
 /**
  * A step script that runs the e2e suite: the command itself, never a longer
@@ -834,7 +1450,7 @@ const runsTheE2eSuite = (script: string): boolean =>
 
 describe('every job runs under a budget of its own (#157)', () => {
   it('pins the e2e budget as a chosen policy, not a number nobody picked', () => {
-    expect(E2E_JOB_BUDGET_MINUTES).toBe(45);
+    expect(E2E_SHARD_BUDGET_MINUTES).toBe(20);
   });
 
   it('no job in any workflow runs on the runner default budget', () => {
@@ -850,17 +1466,17 @@ describe('every job runs under a budget of its own (#157)', () => {
     ).toEqual([]);
   });
 
-  it('every job running the e2e suite carries exactly the e2e budget', () => {
+  it('every job running the e2e suite carries exactly the shard budget', () => {
     const suites = workflowGraphs().flatMap(({ name, jobs }) =>
       jobs
         .filter((job) => job.runs.some(runsTheE2eSuite))
         .map((job) => ({ name, job })),
     );
     const offBudget = suites
-      .filter(({ job }) => job.timeoutMinutes !== E2E_JOB_BUDGET_MINUTES)
+      .filter(({ job }) => job.timeoutMinutes !== E2E_SHARD_BUDGET_MINUTES)
       .map(
         ({ name, job }) =>
-          `${name}: ${job.id} has timeout-minutes ${job.timeoutMinutes ?? 'absent'}, not ${E2E_JOB_BUDGET_MINUTES}`,
+          `${name}: ${job.id} has timeout-minutes ${job.timeoutMinutes ?? 'absent'}, not ${E2E_SHARD_BUDGET_MINUTES}`,
       );
     expect(
       searched(offBudget, {
@@ -868,5 +1484,867 @@ describe('every job runs under a budget of its own (#157)', () => {
         what: 'jobs running npm run test:e2e',
       }),
     ).toEqual([]);
+  });
+});
+
+/** The workflow the dispatch path calls, as a caller job names it. */
+const CI_WORKFLOW = './.github/workflows/ci.yml';
+
+/**
+ * The e2e step every shard runs. The total is the matrix's own size, never a
+ * number written beside it, so the two cannot disagree: a matrix of five with
+ * `/4` spelled out would run shard 5 of 4, which Playwright refuses, and a
+ * matrix of three would leave a quarter of the suite to no shard at all.
+ */
+const E2E_SHARD_COMMAND =
+  'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}';
+
+/** Where each shard writes its account, and where build-and-test reads them. */
+const E2E_ACCOUNTS = 'e2e-accounts';
+
+/**
+ * `build-and-test` once the suite is split (#163).
+ *
+ * Branch protection requires it by NAME and the deploy gate deploys because it
+ * passed, so its success has to go on meaning what it meant when it ran the
+ * suite itself: every step ran, and the whole suite ran. It runs none of that
+ * now. It stands for the jobs that do, and `scripts/e2e-shards.mjs` is its
+ * verdict over them; `tests/unit/e2e-shards.test.ts` holds that verdict's
+ * logic. What is held here is the wiring the verdict cannot see from inside a
+ * run: what it is handed, when it runs, and which jobs it stands for.
+ */
+describe('build-and-test stands for the whole suite, run as shards (#163)', () => {
+  type Step = {
+    run?: string;
+    uses?: string;
+    if?: string;
+    env?: Record<string, string>;
+    with?: Record<string, unknown>;
+  };
+  type Job = {
+    steps?: Step[];
+    strategy?: { 'fail-fast'?: unknown; matrix?: Record<string, unknown> };
+  };
+  const ciParsed = () =>
+    parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      jobs: Record<string, Job>;
+    };
+
+  // A skipped required check is reported to branch protection as PASSING. An
+  // aggregate whose condition could turn false would read green exactly when a
+  // shard failed or was skipped (#157), so it has no condition that can: it
+  // runs always(), and refuses in a step.
+  it('is never skipped: it runs always(), and refuses in a step instead', () => {
+    expect(jobNamed('ci.yml', 'build-and-test').condition).toBe('always()');
+  });
+
+  // Derived, not listed. A job added to ci.yml later is either required by
+  // name itself -- repository administration, which the deploy gate must then
+  // read too (REQUIRED_CHECKS) -- or build-and-test stands for it. A job that
+  // is neither gates nothing, however red it goes (#33).
+  it('stands for every other ci.yml job that is not required by name itself', () => {
+    const jobs = workflowJobs(workflow('ci.yml'), 'ci.yml');
+    const aggregate = jobNamed('ci.yml', 'build-and-test');
+    const standsFor = jobs
+      .map(({ id }) => id)
+      .filter((id) => !REQUIRED_CHECKS.includes(id));
+    expect([...aggregate.needs].sort()).toEqual(standsFor.sort());
+
+    // Liveness, and the property the gate is trusted for: among the jobs it
+    // stands for are the ones running the unit suite and the e2e suite.
+    const stood = jobs.filter(({ id }) => aggregate.needs.includes(id));
+    expect(stood.some(({ runs }) => runs.includes('npm run test:unit'))).toBe(
+      true,
+    );
+    expect(stood.some(({ runs }) => runs.some(runsTheE2eSuite))).toBe(true);
+  });
+
+  it('hands its verdict every job it needs, and every shard account', () => {
+    const verdict = (ciParsed().jobs['build-and-test']?.steps ?? []).find(
+      (step) => step.run?.includes('scripts/e2e-shards.mjs'),
+    );
+    // Every account FILE the download brought, never a directory for the
+    // verdict to list: an unmatched glob stays the literal pattern, which the
+    // verdict refuses by name (#84).
+    expect(verdict?.run?.trim()).toBe(
+      `node scripts/e2e-shards.mjs ${E2E_ACCOUNTS}/*.json`,
+    );
+    // An env var, not an interpolation into the script: `toJSON(needs)`
+    // carries job outputs, and an expression spliced into a `run:` is code.
+    expect(verdict?.env?.NEEDS_JSON).toBe('${{ toJSON(needs) }}');
+  });
+
+  it('runs the e2e suite only as shards, each told its place in the matrix', () => {
+    const e2e = workflowJobs(workflow('ci.yml'), 'ci.yml').filter(({ runs }) =>
+      runs.some(runsTheE2eSuite),
+    );
+    expect(e2e.map(({ id }) => id)).toEqual(['e2e']);
+    expect(e2e[0].runs.filter(runsTheE2eSuite)).toEqual([E2E_SHARD_COMMAND]);
+  });
+
+  it('schedules shards 1 to N, and lets each one finish when another fails', () => {
+    const strategy = ciParsed().jobs.e2e?.strategy;
+    const shards = strategy?.matrix?.shard;
+    expect(Array.isArray(shards)).toBe(true);
+    const list = shards as unknown[];
+    // More than one, or it is not a split at all.
+    expect(list.length).toBeGreaterThan(1);
+    expect(list).toEqual(list.map((_, i) => i + 1));
+    // A failing shard would otherwise CANCEL its siblings, and every test they
+    // had not reached would go unreported: one red run would show one shard's
+    // failures and hide the rest. The gate is unaffected either way, because
+    // a cancelled shard refuses as surely as a failed one.
+    expect(strategy?.['fail-fast']).toBe(false);
+  });
+
+  // The suite's COLLECTION reads the built site: copy-reaches-a-page.spec.ts
+  // walks `dist` at module scope, so an unfiltered `playwright test --list`
+  // ENOENTs without it. The web server builds, but only for the run, never
+  // for the listing. Measured on run 35829226473: shard 1 of 4 passed all 742
+  // of its tests and then refused its own count, because the shard job had
+  // dropped the build step the single job used to run first (#163).
+  it('every job running the e2e suite builds the site before it', () => {
+    const suites = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter((job) => job.runs.some(runsTheE2eSuite))
+        .map((job) => ({ name, job })),
+    );
+    const unbuilt = suites
+      .filter(({ job }) => {
+        const build = job.runs.indexOf('npm run build');
+        return build === -1 || build > job.runs.findIndex(runsTheE2eSuite);
+      })
+      .map(
+        ({ name, job }) =>
+          `${name}: ${job.id} runs the e2e suite without building first`,
+      );
+    expect(
+      searched(unbuilt, { of: suites, what: 'jobs running npm run test:e2e' }),
+    ).toEqual([]);
+  });
+
+  it('each shard writes its account where build-and-test reads it', () => {
+    const steps = ciParsed().jobs.e2e?.steps ?? [];
+    const run = steps.find((step) => step.run?.includes('npm run test:e2e'));
+    expect(run?.env?.E2E_ACCOUNT_DIR).toBe(E2E_ACCOUNTS);
+    // Uploaded whatever the shard's outcome, and an empty upload is an error:
+    // a shard that wrote nothing has nothing to add up.
+    const upload = steps.find(
+      (step) =>
+        step.uses?.startsWith('actions/upload-artifact@') &&
+        step.with?.path === E2E_ACCOUNTS,
+    );
+    expect(upload?.if).toBe('always()');
+    expect(upload?.with?.['if-no-files-found']).toBe('error');
+  });
+});
+
+/**
+ * Every artifact a matrix job uploads is named per leg (#163, AC7).
+ *
+ * `upload-artifact` refuses a second artifact of the same name in one run. Two
+ * shards uploading one name would each race to be first, and the loser's step
+ * would fail -- on a red run, the very run whose traces are wanted, and it
+ * would take that shard's evidence with it.
+ */
+describe('a matrix job names every artifact per leg', () => {
+  it('every upload in a matrix job names its leg', () => {
+    const uploads = workflowYamlNames().flatMap((file) => {
+      const parsed = parseCleanYaml(workflow(file), file) as {
+        jobs?: Record<
+          string,
+          {
+            strategy?: { matrix?: unknown };
+            steps?: { uses?: string; with?: { name?: unknown } }[];
+          }
+        >;
+      };
+      return Object.entries(parsed.jobs ?? {})
+        .filter(([, job]) => job.strategy?.matrix !== undefined)
+        .flatMap(([id, job]) =>
+          (job.steps ?? [])
+            .filter((step) => step.uses?.startsWith('actions/upload-artifact@'))
+            .map((step) => ({
+              where: `${file}: ${id}`,
+              name: String(step.with?.name ?? ''),
+            })),
+        );
+    });
+    const shared = uploads
+      .filter(({ name }) => !/\$\{\{\s*matrix\./.test(name))
+      .map(
+        ({ where, name }) =>
+          `${where} uploads '${name}', the same name on every leg`,
+      );
+    expect(
+      searched(shared, { of: uploads, what: 'uploads in matrix jobs' }),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The runner image every job pins, as an exact set.
+ *
+ * `ubuntu-latest` is a MOVING label: GitHub annotates every run of this repo
+ * with "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19,
+ * 2026", and on that date all ten jobs would change OS at once -- with no PR,
+ * no diff and no run to show for it (#244). The OS is part of the build, and a
+ * part of the build that moves without a diff is a part nobody reviewed.
+ *
+ * Pinned here as a set rather than a rule so the eventual move to Ubuntu 26 is
+ * a one-line change a reviewer can see, which is exactly what this ticket asks
+ * of it.
+ */
+const PINNED_RUNNER_IMAGES = ['ubuntu-26.04'];
+
+describe('no job rides a moving runner label', () => {
+  /** Every runner label of every job, beside the job that asks for it. */
+  const runnerLabels = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs.flatMap((job) =>
+        job.runsOn.map((label) => ({
+          where: `${name} job '${job.id}'`,
+          label,
+        })),
+      ),
+    );
+
+  it('pins an image rather than a label that migrates under it', () => {
+    const all = runnerLabels();
+    // The CLASS, derived: any `*-latest` label floats, not only ubuntu's.
+    const floating = all.filter(({ label }) => /-latest$/.test(label));
+    expect(
+      searched(floating, {
+        of: all.map(({ label }) => label),
+        what: `runner labels in ${WORKFLOWS}`,
+      }),
+    ).toEqual([]);
+  });
+
+  it('pins the images this repository has actually run on', () => {
+    // The LEVEL, as an exact set: a guard derived from the workflows can say
+    // nothing about WHICH image they agreed on (#117), and adding a second
+    // image must be a reviewed change rather than a silent one.
+    const labels = [
+      ...new Set(runnerLabels().map(({ label }) => label)),
+    ].sort();
+    expect(nonEmpty(labels, `runner labels in ${WORKFLOWS}`)).toEqual(
+      PINNED_RUNNER_IMAGES,
+    );
+  });
+});
+
+describe('the visual job says which architecture it rendered on', () => {
+  /**
+   * The baselines are captured on a laptop and compared in CI, and the image
+   * tag they share is MULTI-ARCH -- so "both sides run the same pinned image"
+   * can be true of the tag while the two sides rasterise text differently
+   * (#224). A difference nobody is looking at is still spent out of the
+   * tolerance a real regression has to fit inside, so the architecture has to
+   * be on the record of every run rather than assumed.
+   */
+  const visualRuns = () => jobNamed('ci.yml', 'visual').runs;
+
+  it('prints the container architecture into the job summary', () => {
+    const recording = visualRuns().filter(
+      (script) =>
+        /uname\s+-m/.test(script) && script.includes('GITHUB_STEP_SUMMARY'),
+    );
+    expect(
+      searched(recording, {
+        of: visualRuns(),
+        what: "run steps in ci.yml's visual job",
+      }),
+      'the visual job must record the architecture it renders on',
+    ).toHaveLength(1);
+  });
+
+  it('records it BEFORE the comparison, so a red run still reports it', () => {
+    const runs = visualRuns();
+    const arch = runs.findIndex((script) => /uname\s+-m/.test(script));
+    const compare = runs.findIndex((script) =>
+      script.includes('--project=visual'),
+    );
+    expect(arch, 'no step runs `uname -m`').toBeGreaterThanOrEqual(0);
+    expect(compare, 'no step runs the visual project').toBeGreaterThanOrEqual(
+      0,
+    );
+    // Order is the assertion. A step placed after the comparison still
+    // "prints the architecture", and prints it only when the run is green --
+    // which is the half of the time nobody needs it.
+    expect(arch).toBeLessThan(compare);
+  });
+});
+
+describe('the drift measurement reports, and never gates (#224)', () => {
+  /** The `visual` job's steps, parsed -- `runs` carries only `run:` text. */
+  const visualSteps = (): Array<Record<string, unknown>> => {
+    const root = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
+      jobs: Record<string, { steps: Array<Record<string, unknown>> }>;
+    };
+    return nonEmpty(root.jobs.visual.steps, "steps in ci.yml's visual job");
+  };
+
+  const indexOf = (predicate: (s: Record<string, unknown>) => boolean) =>
+    visualSteps().findIndex(predicate);
+
+  // `--project=visual` is a PREFIX of `--project=visual-measure`, so a
+  // substring test matches the measuring step too and the two are
+  // indistinguishable -- the same shape as `/glory-points` matching inside
+  // `/id/glory-points` (#21 Stage 4). `\\b` does not help either: `-` is a
+  // non-word character, so `\\bvisual\\b` matches inside `visual-measure`.
+  /** A fallback that carries information, as opposed to a bare `|| true`. */
+  const INFORMATIVE_FALLBACK = /\|\|\s*(echo|printf)\b/;
+
+  const GATE_PROJECT = /--project=visual(?![\w-])/;
+  const isGate = (s: Record<string, unknown>) =>
+    typeof s.run === 'string' && GATE_PROJECT.test(s.run);
+  // The SAME prefix trap one level down, and it was left as a bare
+  // `includes` while the comment above spelled the lesson out: mutation M3
+  // renamed the project to `visual-measurement` and this still matched, so a
+  // guard meant to notice the measuring step had vanished stayed green (#286).
+  const MEASURE_PROJECT = /--project=visual-measure(?![\w-])/;
+  const isMeasure = (s: Record<string, unknown>) =>
+    typeof s.run === 'string' && MEASURE_PROJECT.test(s.run);
+
+  it('measures after the gate has decided the build', () => {
+    const gate = indexOf(isGate);
+    const measure = indexOf(isMeasure);
+    expect(
+      gate,
+      'no step runs the gating visual project',
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      measure,
+      'no step runs the measuring project',
+    ).toBeGreaterThanOrEqual(0);
+    expect(measure).toBeGreaterThan(gate);
+  });
+
+  it('is tolerated, while the gate it follows is NOT', () => {
+    // The direction is the whole assertion. Tolerating the gate would let a
+    // real visual regression through; failing to tolerate the measurement
+    // would turn a zero-tolerance comparison -- which is EXPECTED to fail --
+    // into a broken build on every pull request.
+    const steps = visualSteps();
+    expect(steps[indexOf(isMeasure)]['continue-on-error']).toBe(true);
+    expect(steps[indexOf(isGate)]['continue-on-error']).toBeUndefined();
+  });
+
+  // #286: this table is the evidence #224 was decided on, and it was being
+  // cut. Playwright's list reporter prints each comparison's ratio three
+  // times, so ten comparisons overflow forty lines -- the last two were
+  // dropped from the table with nothing in the output saying so.
+  it('prints every comparison rather than the first N lines', () => {
+    const measure = visualSteps()[indexOf(isMeasure)].run as string;
+    expect(
+      withoutCommentLines(measure),
+      'a cap silently drops measurements off the end of the table',
+    ).not.toMatch(/\|\s*head\s+-/);
+  });
+
+  // #286: `||` tests the PIPELINE's status, which is the LAST command's.
+  // `grep ... | head -40 || echo 'no comparison output'` reads head's status,
+  // and head exits 0 whether or not grep matched a single line, so the
+  // fallback could never run. A measurement that produced nothing rendered an
+  // EMPTY block under a confident heading, and silence reads as "nothing
+  // drifted" when it means "nothing was measured".
+  //
+  // Every line of every workflow script is the population, not the lines that
+  // happen to carry a fallback: after a fix there may be no fallback left at
+  // all, and a guard whose population its own fix empties is vacuous by
+  // construction (#118).
+  it('lets a fallback test the status of the command producing its text', () => {
+    const lines = workflowYamlNames().flatMap((file) =>
+      workflowJobs(workflow(file), file).flatMap((job) =>
+        job.runs.flatMap((run) =>
+          withoutCommentLines(run)
+            .split('\n')
+            .map((line) => ({ file, line })),
+        ),
+      ),
+    );
+
+    const findings = lines
+      .filter(
+        ({ line }) =>
+          INFORMATIVE_FALLBACK.test(line) && line.split('||')[0].includes('|'),
+      )
+      .map(({ file, line }) => `${file}: ${line.trim()}`);
+
+    expect(
+      searched(findings, {
+        of: lines.map(({ line }) => line),
+        what: 'lines of workflow run scripts',
+      }),
+      'a command between a fallback and the status it tests makes it dead code',
+    ).toEqual([]);
+  });
+
+  it('writes its numbers where they can be read back, not only to the summary', () => {
+    // A step summary is rendered in the UI and is not exposed by the Actions
+    // API, so `gh run view --log` returns the script and nothing else. The
+    // drift table was written only there once, and could not be read (#224).
+    const summaryWriters = visualSteps().filter(
+      (s) => typeof s.run === 'string' && s.run.includes('GITHUB_STEP_SUMMARY'),
+    );
+    const unreadable = summaryWriters.filter(
+      (s) => !/tee\s+-a\s+"\$GITHUB_STEP_SUMMARY"/.test(s.run as string),
+    );
+    expect(
+      searched(unreadable, {
+        of: summaryWriters.length,
+        what: "steps writing a job summary in ci.yml's visual job",
+      }),
+      'a summary written with >> cannot be read back from the job log',
+    ).toEqual([]);
+  });
+
+  it('runs even when the gate went red, which is when it is worth having', () => {
+    expect(visualSteps()[indexOf(isMeasure)].if).toBe('always()');
+  });
+
+  // The measurement must not destroy the evidence of the failure it follows
+  // (#311). Playwright deletes the `outputDir` of every project a run selects
+  // as that run starts (`createRemoveOutputDirsTask`, over
+  // `testRun.filteredProjects`), and both projects inherited the config's
+  // `test-results/desktop`. So on a red gate the measure step -- `always()`,
+  // so that it runs then above all -- deleted the comparison's expected,
+  // actual and diff images before `Keep the visual diff` uploaded anything.
+  // Run 35772454043 failed on 528 pixels, and its artifact held one image
+  // set: the measurement's, with a single differing pixel.
+
+  /** Where a project's run writes, and so what the start of its run deletes. */
+  const outputDirOf = (project: Project): string =>
+    resolve(project.outputDir ?? playwrightConfig.outputDir ?? 'test-results');
+
+  /** Whether deleting, or uploading, `dir` reaches `path`. */
+  const reaches = (dir: string, path: string): boolean =>
+    path === dir || path.startsWith(dir + sep);
+
+  it('measures into a folder of its own, so its start cannot delete the gate diff (#311)', () => {
+    const gate = outputDirOf(VISUAL_PROJECT);
+    const measure = outputDirOf(VISUAL_MEASURE_PROJECT);
+    expect(
+      reaches(measure, gate),
+      `the measure step clears ${measure} as it starts, and the gate's diff is in ${gate}`,
+    ).toBe(false);
+    // The other way round too, because the gate is also run on its own: a
+    // gate run must not take a measurement's images with it either.
+    expect(
+      reaches(gate, measure),
+      `a gate run clears ${gate} as it starts, and the measurement is in ${measure}`,
+    ).toBe(false);
+  });
+
+  it('uploads the gate diff and the measurement diff together (#311)', () => {
+    const uploads = nonEmpty(
+      visualSteps().filter(
+        (step) =>
+          typeof step.uses === 'string' &&
+          step.uses.startsWith('actions/upload-artifact@'),
+      ),
+      "upload-artifact steps in ci.yml's visual job",
+    );
+    const paths = nonEmpty(
+      uploads
+        .flatMap((step) =>
+          String(
+            (step.with as { path?: unknown } | undefined)?.path ?? '',
+          ).split('\n'),
+        )
+        .map((line) => line.trim())
+        .filter(Boolean),
+      "paths the visual job's uploads keep",
+    );
+    // A glob or a `!` exclusion is a matching rule this guard would have to
+    // re-implement to read, so it is refused rather than approved unread.
+    const unreadable = paths.filter((path) => /[*?[\]{}!]/.test(path));
+    expect(searched(unreadable, { of: paths, what: 'upload paths' })).toEqual(
+      [],
+    );
+
+    const keeps = (dir: string) =>
+      paths.some((path) => reaches(resolve(path), dir));
+    const gate = outputDirOf(VISUAL_PROJECT);
+    const measure = outputDirOf(VISUAL_MEASURE_PROJECT);
+    expect(
+      keeps(gate),
+      `the gate's diff is written to ${gate}, which no upload path reaches`,
+    ).toBe(true);
+    expect(
+      keeps(measure),
+      `the measurement's diff is written to ${measure}, which no upload path reaches`,
+    ).toBe(true);
+  });
+});
+
+describe('no two concurrently launched groups share an output folder (#230)', () => {
+  /**
+   * Playwright wipes its ENTIRE `outputDir` at the start of every invocation,
+   * unconditionally and not scoped to its own artifacts, and names each
+   * worker's artifacts folder by WORKER INDEX alone. `npm run test:devices`
+   * launches more than one config against this same checkout at once, so two
+   * processes numbering their workers independently collide by construction:
+   * one stopping deletes a folder a live worker in the other is still writing
+   * into. Reproduced in isolation -- a group holding a trace failed with
+   * `ENOENT ... .playwright-artifacts-0/traces/...` while a sibling restarted
+   * its worker, and passed alone on the same tree.
+   */
+  const RUNNER = 'scripts/test-devices.mjs';
+
+  /**
+   * The PLAYWRIGHT configs the runner launches, derived from its source.
+   *
+   * Keyed on the COMMAND, not the filename. The first draft matched every
+   * `--config=` and picked up `vitest.ios.config.ts` -- the iOS group is a
+   * vitest run, so it has no `outputDir`, wipes nothing, and cannot take part
+   * in this collision. Its name is every bit as much a `*.config.ts`, so only
+   * the invocation tells them apart.
+   *
+   * Comments are stripped first: this runner's prose names
+   * `playwright.device.config.ts` several times, and a guard satisfied by a
+   * file's own documentation asserts nothing.
+   */
+  const launchedConfigs = (): string[] => {
+    const code = codeWithoutComments(RUNNER, readFileSync(RUNNER, 'utf8'));
+    // The WHOLE invocation, not a split-and-search. A draft that split on
+    // `'playwright',` and took the first `--config=` in the remainder reached
+    // ACROSS invocations: with one group's flag deleted, its segment matched
+    // the iOS group's `--config=vitest.ios.config.ts` further down the file
+    // and the guard reported two Playwright configs where there was one. Found
+    // by mutation, not by reading -- the prediction for that mutation was
+    // wrong, which is how the weakness surfaced at all.
+    const found = [
+      ...code.matchAll(
+        /'playwright',\s*'test',\s*'--config=([\w.-]+\.config\.[cm]?ts)'/g,
+      ),
+    ].map((m) => m[1]);
+    return [
+      ...new Set(nonEmpty(found, `playwright configs launched by ${RUNNER}`)),
+    ];
+  };
+
+  /**
+   * Importing `playwright.device.config.ts` sets `PW_REAL_DEVICE` at module
+   * scope, so the variable is restored rather than left behind for whatever
+   * runs next in this process.
+   */
+  const outputDirOf = async (config: string): Promise<string> => {
+    const before = process.env.PW_REAL_DEVICE;
+    try {
+      const loaded = (await import(resolve(config))) as {
+        default?: { outputDir?: string };
+      };
+      const dir = loaded.default?.outputDir;
+      expect(
+        dir,
+        `${config} declares no outputDir, so it takes Playwright's default and collides by construction`,
+      ).toBeTruthy();
+      return resolve(dir as string);
+    } finally {
+      if (before === undefined) delete process.env.PW_REAL_DEVICE;
+      else process.env.PW_REAL_DEVICE = before;
+    }
+  };
+
+  it('launches more than one config, or the rest of this asserts nothing', () => {
+    expect(launchedConfigs().length).toBeGreaterThan(1);
+  });
+
+  it('gives each launched config a folder of its own', async () => {
+    const configs = launchedConfigs();
+    const dirs = await Promise.all(configs.map(outputDirOf));
+    expect(
+      new Set(dirs).size,
+      `two groups resolve to one output folder: ${dirs.join(', ')}`,
+    ).toBe(dirs.length);
+  });
+
+  it('clears every per-group report before a run, now that nothing wipes them', async () => {
+    // `test-results/` stopped being anybody's outputDir here, so nothing wipes
+    // it any more -- which is the point of the split, and which means a group
+    // that DIED before writing its report would leave the previous run's
+    // report to be read as this run's.
+    //
+    // Guarded against the runner's own exported constants rather than its
+    // source text, which is possible only because #227 made the file
+    // importable. Mutation found this missing: with the reports taken out of
+    // the clear list the whole unit suite stayed green.
+    const runner = (await import(resolve('scripts/test-devices.mjs'))) as {
+      REPORT_FILES: Record<string, string>;
+      RUN_START_CLEARED: readonly string[];
+    };
+    const reports = Object.values(runner.REPORT_FILES);
+    const uncleared = reports.filter(
+      (file) => !runner.RUN_START_CLEARED.includes(file),
+    );
+    expect(
+      searched(uncleared, { of: reports, what: 'per-group report files' }),
+    ).toEqual([]);
+  });
+
+  it('nests none inside another, which a parent wipe would take with it', async () => {
+    const dirs = await Promise.all(launchedConfigs().map(outputDirOf));
+    const nested = dirs.flatMap((inner) =>
+      dirs
+        .filter((outer) => inner !== outer && inner.startsWith(outer + sep))
+        .map((outer) => `${inner} is inside ${outer}`),
+    );
+    expect(
+      searched(nested, { of: dirs, what: 'gauntlet output folders' }),
+    ).toEqual([]);
+  });
+});
+
+// ---- what a job that states nothing is handed (#301) ----------------------
+//
+// A job with no `permissions:` inherits the workflow's; a workflow with none
+// inherits the REPOSITORY default, measured `write` on 2026-09-22 on
+// `actions/permissions/workflow`. `ci.yml` stated none, so its `visual` job --
+// and any job added later to the one workflow that runs on every pull request
+// -- was handed the right to push commits, edit issues and open pull requests
+// in order to read a checkout and run a suite.
+//
+// The default itself is repository administration, and so the operator's; the
+// declaration is the half this repository controls, and it is the half that
+// survives a settings change in either direction.
+describe('no job inherits the repository default permissions (#301)', () => {
+  const declaredPermissions = (): DeclaredPermissions[] =>
+    workflowYamlNames().map((file) => ({
+      file,
+      permissions: (
+        parseCleanYaml(workflow(file), file) as { permissions?: unknown }
+      ).permissions,
+    }));
+
+  it('every workflow states a workflow-level permissions block', () => {
+    const declared = declaredPermissions();
+    expect(
+      searched(inheritedPermissionsFindings(declared), {
+        of: declared.map(({ file }) => file),
+        what: 'workflow files',
+      }),
+    ).toEqual([]);
+  });
+
+  // Four of the finder's five branches cannot fire on this repository's own
+  // configuration, and a detector branch nothing has ever matched is vacuous
+  // whatever it was written to catch (#118). Synthetic input is the only way
+  // to watch them fire, and `fine.yml` is here so a finder that reported
+  // everything would fail this test rather than pass the one above.
+  it('reports a silent workflow, a shorthand, a list and a rejected value', () => {
+    expect(
+      inheritedPermissionsFindings([
+        { file: 'silent.yml', permissions: undefined },
+        { file: 'empty.yml', permissions: null },
+        { file: 'shorthand.yml', permissions: 'write-all' },
+        { file: 'listed.yml', permissions: ['contents'] },
+        { file: 'typo.yml', permissions: { contents: true } },
+        { file: 'fine.yml', permissions: { contents: 'read' } },
+      ]),
+    ).toEqual([
+      'silent.yml states no workflow-level permissions',
+      'empty.yml states no workflow-level permissions',
+      "shorthand.yml grants every scope with the 'write-all' shorthand",
+      'listed.yml declares permissions that are not a mapping',
+      'typo.yml grants contents: true, which is not read, write or none',
+    ]);
+  });
+
+  // Presence cannot pin a LEVEL, and no rule over every workflow can ask for
+  // read-only: `release-tag.yml` needs `contents: write` to cut a tag. This
+  // asks it of the workflows a PULL REQUEST can start, derived from the
+  // parsed `on:` rather than named -- those are the ones whose run can be
+  // provoked by a branch nobody here has reviewed, which is the case the
+  // repository default was never chosen for.
+  it('no workflow a pull request can start grants a write scope to a silent job', () => {
+    const startedByPullRequest = ({ file }: DeclaredPermissions): boolean => {
+      const on = (parseCleanYaml(workflow(file), file) as { on?: unknown }).on;
+      if (typeof on === 'string') return on === 'pull_request';
+      if (Array.isArray(on)) return on.includes('pull_request');
+      return typeof on === 'object' && on !== null && 'pull_request' in on;
+    };
+    const onPullRequest = declaredPermissions().filter(startedByPullRequest);
+    const writes = onPullRequest.flatMap(({ file, permissions }) =>
+      workflowLevelWrites(permissions).map(
+        (scope) => `${file} grants ${scope} at the workflow level`,
+      ),
+    );
+    expect(
+      searched(writes, {
+        of: onPullRequest.map(({ file }) => file),
+        what: 'workflows a pull request can start',
+      }),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * #95. The back-translation review runs on the real engine, can go red, and
+ * runs whenever anything it reads changes.
+ *
+ * Advisory by design -- no score fails it -- which makes the three ways it
+ * could quietly stop meaning anything the ones to hold: an engine that is not
+ * the pinned one, an error swallowed into a green check, and a change to its
+ * own inputs that does not start it at all.
+ */
+describe('the back-translation review', () => {
+  const FILE = 'back-translation.yml';
+  const SCRIPT = 'scripts/i18n-back-translate.mjs';
+  const parsed = () =>
+    parseCleanYaml(workflow(FILE), FILE) as {
+      on?: Record<string, { paths?: string[] } | null>;
+      jobs?: Record<
+        string,
+        {
+          'continue-on-error'?: unknown;
+          steps?: { 'continue-on-error'?: unknown }[];
+        }
+      >;
+    };
+  /** The review job's shell, with its comment lines gone. */
+  const scripts = () =>
+    jobNamed(FILE, 'review')
+      .runs.map((run) => withoutCommentLines(run))
+      .join('\n');
+
+  it('runs the script', () => {
+    expect(scripts()).toMatch(
+      /^\s*node scripts\/i18n-back-translate\.mjs\s*$/m,
+    );
+  });
+
+  it('builds its engine from the Dockerfile Dependabot watches', () => {
+    expect(scripts()).toMatch(
+      /^\s*docker build\b[^\n]*\sdocker\/libretranslate\s*$/m,
+    );
+    expect(existsSync('docker/libretranslate/Dockerfile')).toBe(true);
+  });
+
+  it('can go red: nothing in it continues on error', () => {
+    const job = parsed().jobs?.review;
+    const steps = job?.steps ?? [];
+    const excused = [
+      job?.['continue-on-error'],
+      ...steps.map((step) => step['continue-on-error']),
+    ].filter((value) => value !== undefined);
+    expect(
+      searched(excused, { of: steps, what: 'review steps' }),
+      'a liveness failure swallowed here is a green check over nothing',
+    ).toEqual([]);
+  });
+
+  /** Every module a script loads at run time, following relative imports. */
+  function importClosure(entry: string): string[] {
+    const seen = new Set<string>();
+    const visit = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const code = withoutTsComments(readFileSync(file, 'utf8'));
+      // A type-only import is erased before the script runs.
+      for (const [, specifier] of code.matchAll(
+        /^import\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm,
+      ))
+        visit(normalize(join(dirname(file), specifier)));
+    };
+    visit(entry);
+    return [...seen].sort();
+  }
+
+  const globToRegExp = (glob: string): RegExp =>
+    new RegExp(
+      `^${glob
+        .split('**')
+        .map((part) =>
+          part
+            .split('*')
+            .map((text) => text.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+            .join('[^/]*'),
+        )
+        .join('.*')}$`,
+    );
+
+  it('starts for a pull request that changes anything it reads', () => {
+    const triggers = parsed().on ?? {};
+    expect(Object.keys(triggers).sort()).toEqual([
+      'pull_request',
+      'workflow_dispatch',
+    ]);
+    const paths = triggers.pull_request?.paths ?? [];
+    const inputs = [
+      ...importClosure(SCRIPT),
+      'docker/libretranslate/Dockerfile',
+      `.github/workflows/${FILE}`,
+    ];
+    // The closure is followed, not listed: this is its floor, not its size.
+    expect(inputs.length, 'the import walk found nothing').toBeGreaterThan(10);
+    const unwatched = inputs.filter(
+      (file) => !paths.some((glob) => globToRegExp(glob).test(file)),
+    );
+    expect(
+      searched(unwatched, { of: inputs, what: 'files the review reads' }),
+      'a change to one of these would not start the review',
+    ).toEqual([]);
+  });
+});
+
+/**
+ * wrangler comes from the lockfile (#97, spec section 9).
+ *
+ * Both deploy workflows ran `npm install -g wrangler@4`, so any 4.x could
+ * arrive at deploy time and bundle the Pages Functions differently from the
+ * last deploy of the same commit. The locked copy is what the tests ran, and
+ * Dependabot's npm ecosystem moves it as a reviewable diff.
+ */
+describe('wrangler comes from the lockfile (#97)', () => {
+  it('is an exact-pinned devDependency', () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(pkg.devDependencies.wrangler).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('no workflow installs it globally', () => {
+    const workflows = allWorkflows();
+    const globalInstalls = workflows
+      .filter(({ text }) =>
+        /\bnpm\s+(?:install|i)\b[^\n]*(?:\s-g\b|\s--global\b)[^\n]*\bwrangler\b/.test(
+          text,
+        ),
+      )
+      .map(({ name }) => name);
+    expect(
+      searched(globalInstalls, {
+        of: workflows.map(({ text }) => text),
+        what: 'workflow texts',
+      }),
+    ).toEqual([]);
+  });
+
+  it('every deploy runs the locked copy', () => {
+    const deploys = allWorkflows().flatMap(({ name, text }) =>
+      text
+        .split('\n')
+        .filter((line) => line.includes(DEPLOY_COMMAND))
+        .map((line) => `${name}: ${line.trim()}`),
+    );
+    expect(
+      searched(
+        deploys.filter((line) => !line.includes(`npx ${DEPLOY_COMMAND}`)),
+        { of: deploys, what: 'wrangler deploy lines' },
+      ),
+    ).toEqual([]);
+  });
+
+  it('the functions job runs the functions-runtime suite', () => {
+    // That build-and-test needs the job is already derived by "stands for
+    // every other ci.yml job that is not required by name itself"; this pins
+    // what the job runs, read from the parsed workflow.
+    expect(jobNamed('ci.yml', 'functions').runs).toEqual([
+      'npm ci',
+      'npx playwright install --with-deps chromium',
+      'npm run test:functions',
+    ]);
   });
 });

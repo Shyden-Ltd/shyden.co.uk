@@ -16,6 +16,7 @@ export const siteEn = {
     contact: 'Contact',
   },
   menuLabel: 'Toggle navigation menu',
+  themeDarkMode: 'Dark mode',
   skipToContent: 'Skip to content',
 
   home: {
@@ -113,6 +114,30 @@ export const siteEn = {
     betaLabel: 'beta translation',
     betaNotice: 'Translations may not be accurate. If you notice it, tell us.',
   },
+
+  // The footer's "report a translation problem" form (#97). The English is
+  // the operator-approved table in the spec's section 3.5, pinned literally by
+  // report-copy.test.ts. It renders only on beta locales, never on English.
+  report: {
+    open: 'Report a translation problem',
+    intro:
+      'Reports go to Shyden Ltd and are deleted once they have been dealt with.',
+    quoteLabel: 'Which words are wrong?',
+    quoteHint:
+      'Start typing and choose the words from the list, or copy them from the page.',
+    suggestionLabel: 'What should it say? (optional)',
+    noteLabel: 'Anything else? (optional)',
+    noteHint: "Please don't include names or contact details.",
+    honeypotLabel: 'Leave this field empty',
+    send: 'Send report',
+    sent: 'Thank you. Your report has been sent.',
+    notFound:
+      "We couldn't find those words on this page. Choose them from the list, or copy a shorter piece without any names or numbers.",
+    rejected:
+      "That report couldn't be sent. Please check the form and try again.",
+    failed:
+      "Something went wrong and your report wasn't sent. Please try again later.",
+  },
 };
 
 export type SiteStrings = typeof siteEn;
@@ -124,6 +149,7 @@ export const siteId: SiteStrings = {
     contact: 'Kontak',
   },
   menuLabel: 'Buka atau tutup menu navigasi',
+  themeDarkMode: 'Mode gelap',
   skipToContent: 'Lewati ke konten',
 
   home: {
@@ -210,6 +236,26 @@ export const siteId: SiteStrings = {
     betaNotice:
       'Terjemahan mungkin tidak akurat. Jika Anda melihatnya, beri tahu kami.',
   },
+
+  report: {
+    open: 'Laporkan masalah terjemahan',
+    intro: 'Laporan dikirim ke Shyden Ltd dan dihapus setelah ditangani.',
+    quoteLabel: 'Kata mana yang salah?',
+    quoteHint:
+      'Mulai mengetik lalu pilih kata-katanya dari daftar, atau salin dari halaman.',
+    suggestionLabel: 'Seharusnya tertulis apa? (opsional)',
+    noteLabel: 'Ada hal lain? (opsional)',
+    noteHint: 'Jangan sertakan nama atau detail kontak.',
+    honeypotLabel: 'Biarkan kolom ini kosong',
+    send: 'Kirim laporan',
+    sent: 'Terima kasih. Laporan Anda telah dikirim.',
+    notFound:
+      'Kami tidak dapat menemukan kata-kata itu di halaman ini. Pilih dari daftar, atau salin bagian yang lebih pendek tanpa nama atau angka.',
+    rejected:
+      'Laporan itu tidak dapat dikirim. Silakan periksa formulir dan coba lagi.',
+    failed:
+      'Terjadi kesalahan dan laporan Anda tidak terkirim. Silakan coba lagi nanti.',
+  },
 };
 
 /**
@@ -224,6 +270,7 @@ export const siteZh: SiteStrings = {
     contact: '联系我们',
   },
   menuLabel: '切换导航菜单',
+  themeDarkMode: '深色模式',
   skipToContent: '跳转至正文',
   home: {
     title: 'Shyden Ltd — 一家新的科技公司',
@@ -301,6 +348,23 @@ export const siteZh: SiteStrings = {
     betaLabel: '测试版翻译',
     betaNotice: '翻译可能不准确。如果您发现问题，请告诉我们。',
   },
+
+  report: {
+    open: '报告翻译问题',
+    intro: '报告将发送至Shyden Ltd，处理完毕后即会删除。',
+    quoteLabel: '哪些文字有误？',
+    quoteHint: '开始输入并从列表中选择这些文字，或从页面上复制。',
+    suggestionLabel: '应该怎么写？（可选）',
+    noteLabel: '还有其他问题吗？（可选）',
+    noteHint: '请勿填写姓名或联系方式。',
+    honeypotLabel: '请将此栏留空',
+    send: '发送报告',
+    sent: '谢谢。您的报告已发送。',
+    notFound:
+      '我们在此页面上找不到这些文字。请从列表中选择，或复制一段较短且不含任何姓名或数字的文字。',
+    rejected: '该报告无法发送。请检查表单后重试。',
+    failed: '出现问题，您的报告未能发送。请稍后再试。',
+  },
 };
 
 /**
@@ -315,6 +379,7 @@ export const siteVi: SiteStrings = {
     contact: 'Liên hệ',
   },
   menuLabel: 'Chuyển đổi menu điều hướng',
+  themeDarkMode: 'Chế độ tối',
   skipToContent: 'Chuyển thẳng đến nội dung',
   home: {
     title: 'Shyden Ltd — một công ty công nghệ mới',
@@ -364,11 +429,11 @@ export const siteVi: SiteStrings = {
     regOffice: 'Trụ sở chính:',
   },
   glory: {
-    title: 'Glory Points Máy tính — Shyden',
+    title: 'Máy tính Glory Points — Shyden',
     description:
       'Chuyển đổi điểm vinh quang YeeTalk thành xu, hạt đậu và tổng giá trị quà tặng — ngay lập tức, ngay trên trình duyệt của bạn.',
     forYeetalk: 'Dành cho YeeTalk ↗',
-    heading: 'Glory Points Máy tính',
+    heading: 'Máy tính Glory Points',
     lead: 'Điểm vinh quang là một phần của tính năng tặng quà trong ứng dụng YeeTalk. Chỉ cần nhập số điểm vinh quang mà bạn muốn đạt được, công cụ hỗ trợ này – do Shyden phát triển – sẽ tính toán chính xác số xu, hạt đậu và tổng giá trị quà tặng mà bạn cần để đạt được mục tiêu đó.',
     howToHeading: 'Cách sử dụng',
     howToSteps: [
@@ -395,6 +460,26 @@ export const siteVi: SiteStrings = {
     betaNotice:
       'Bản dịch có thể không chính xác. Nếu bạn phát hiện lỗi, hãy cho chúng tôi biết.',
   },
+
+  report: {
+    open: 'Báo lỗi bản dịch',
+    intro: 'Báo cáo được gửi đến Shyden Ltd và sẽ bị xóa sau khi được xử lý.',
+    quoteLabel: 'Những từ nào bị sai?',
+    quoteHint:
+      'Hãy bắt đầu nhập và chọn các từ trong danh sách, hoặc sao chép chúng từ trang.',
+    suggestionLabel: 'Nên viết như thế nào? (không bắt buộc)',
+    noteLabel: 'Còn điều gì khác không? (không bắt buộc)',
+    noteHint: 'Vui lòng không ghi tên hoặc thông tin liên hệ.',
+    honeypotLabel: 'Hãy để trống trường này',
+    send: 'Gửi báo cáo',
+    sent: 'Cảm ơn bạn. Báo cáo của bạn đã được gửi.',
+    notFound:
+      'Chúng tôi không tìm thấy những từ đó trên trang này. Hãy chọn chúng từ danh sách, hoặc sao chép một đoạn ngắn hơn không có tên hay con số nào.',
+    rejected:
+      'Không thể gửi báo cáo đó. Vui lòng kiểm tra biểu mẫu và thử lại.',
+    failed:
+      'Đã xảy ra lỗi và báo cáo của bạn chưa được gửi. Vui lòng thử lại sau.',
+  },
 };
 
 /**
@@ -409,6 +494,7 @@ export const siteTh: SiteStrings = {
     contact: 'ติดต่อ',
   },
   menuLabel: 'สลับเมนูนำทาง',
+  themeDarkMode: 'โหมดมืด',
   skipToContent: 'ไปตรงสู่เนื้อหา',
   home: {
     title: 'Shyden Ltd — บริษัทเทคโนโลยีน้องใหม่',
@@ -452,16 +538,16 @@ export const siteTh: SiteStrings = {
     backHome: 'กลับสู่หน้าหลัก',
   },
   footer: {
-    registered: 'จดทะเบียนในEngland & Wales',
+    registered: 'จดทะเบียนใน England & Wales',
     companyNo: 'เลขทะเบียนบริษัท',
     regOffice: 'สำนักงานจดทะเบียน:',
   },
   glory: {
-    title: 'Glory Points เครื่องคิดเลข — Shyden',
+    title: 'เครื่องคำนวณ Glory Points — Shyden',
     description:
       'แปลงคะแนนเกียรติยศ YeeTalk เป็นเหรียญ ถั่ว และมูลค่ารวมของของขวัญ — ทันที ในเบราว์เซอร์ของคุณ',
     forYeetalk: 'สำหรับ YeeTalk ↗',
-    heading: 'Glory Points เครื่องคิดเลข',
+    heading: 'เครื่องคำนวณ Glory Points',
     lead: 'คะแนน Glory เป็นส่วนหนึ่งของระบบการส่งของขวัญภายในแอป YeeTalk เพียงป้อนจำนวนคะแนน Glory ที่คุณต้องการ เครื่องมือช่วยนี้ ซึ่งพัฒนาโดย Shyden จะคำนวณจำนวนเหรียญ (coins) และเมล็ด (beans) รวมถึงมูลค่ารวมของของขวัญที่คุณต้องใช้เพื่อให้ถึงเป้าหมายนั้น',
     howToHeading: 'วิธีใช้',
     howToSteps: [
@@ -486,6 +572,23 @@ export const siteTh: SiteStrings = {
     label: 'ภาษา',
     betaLabel: 'คำแปลเวอร์ชันเบต้า',
     betaNotice: 'คำแปลอาจไม่ถูกต้อง หากคุณพบข้อผิดพลาด โปรดแจ้งให้เราทราบ',
+  },
+
+  report: {
+    open: 'แจ้งปัญหาคำแปล',
+    intro: 'รายงานจะถูกส่งถึง Shyden Ltd และจะถูกลบเมื่อดำเนินการเรียบร้อยแล้ว',
+    quoteLabel: 'คำใดที่ไม่ถูกต้อง',
+    quoteHint: 'เริ่มพิมพ์แล้วเลือกคำจากรายการ หรือคัดลอกจากหน้านี้',
+    suggestionLabel: 'ควรเขียนว่าอย่างไร (ไม่บังคับ)',
+    noteLabel: 'มีอะไรเพิ่มเติมไหม (ไม่บังคับ)',
+    noteHint: 'โปรดอย่าใส่ชื่อหรือข้อมูลติดต่อ',
+    honeypotLabel: 'เว้นช่องนี้ว่างไว้',
+    send: 'ส่งรายงาน',
+    sent: 'ขอบคุณ รายงานของคุณถูกส่งแล้ว',
+    notFound:
+      'เราไม่พบคำเหล่านั้นในหน้านี้ เลือกคำจากรายการ หรือคัดลอกข้อความที่สั้นลงโดยไม่มีชื่อหรือตัวเลข',
+    rejected: 'ไม่สามารถส่งรายงานนั้นได้ โปรดตรวจสอบแบบฟอร์มแล้วลองอีกครั้ง',
+    failed: 'เกิดข้อผิดพลาด รายงานของคุณยังไม่ได้ส่ง โปรดลองอีกครั้งในภายหลัง',
   },
 };
 

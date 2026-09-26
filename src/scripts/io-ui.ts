@@ -18,6 +18,7 @@
  * operation.
  */
 import type { Student } from '../lib/grouping';
+import { button } from './dom';
 import type { Strings } from '../lib/i18n';
 import type { Locale } from '../lib/csv-locale';
 import { otherLocales, toolPath } from '../lib/i18n';
@@ -62,17 +63,6 @@ export interface IoHandlers {
    */
   refuseExport?: () => string | null;
 }
-
-const button = (text: string, className: string): HTMLButtonElement => {
-  const el = document.createElement('button');
-  // `type="button"` matters: this section's controls sit inside #cg-form,
-  // and a button with no type is a SUBMIT button — clicking "Download
-  // template" would shuffle the class.
-  el.type = 'button';
-  el.className = className;
-  el.textContent = text;
-  return el;
-};
 
 /**
  * Hand a file to the browser without it ever becoming a URL a teacher could
@@ -285,9 +275,12 @@ export function renderIo(
 
   const destinations = otherLocales(locale).map((code) => {
     const { nativeName, flag } = metadataFor(code);
-    const choice = document.createElement('button');
-    choice.type = 'button';
-    choice.className = 'cg-io-both-target';
+    // No text: this one's label is a flag and a `<span class="name">`, built
+    // below. It still comes from `button` so the `type` rule has ONE home --
+    // the failure it prevents (a submit inside #cg-form) is the same failure
+    // here, and a control built by hand beside a helper is the copy that
+    // stops being updated.
+    const choice = button('', 'cg-io-both-target');
     // Its own `lang`, so a screen reader announces 中文 in Chinese instead of
     // spelling it out in English — the header switcher's rule, kept here.
     choice.lang = code;

@@ -1,4 +1,4 @@
-name: Release — prod (on merge to main, approval-gated)
+name: Deploy to prod (on merge to main, approval-gated)
 # PROD DEPLOYS FROM MAIN, AFTER THE MERGE. Fires on every push to `main` and
 # waits at the `prod` Environment approval gate, so nothing reaches
 # shyden.co.uk without a deliberate approval — and whatever is live is always a
@@ -7,7 +7,7 @@ name: Release — prod (on merge to main, approval-gated)
 # This replaced a deploy-BEFORE-merge pipeline. That one made production the
 # gate: a mistake first became real in front of teachers, and for the length of
 # a release `main` did not describe what was live. The merge gate is now
-# `dev-verified` (release-dev.yml).
+# `dev-verified` (deploy-dev.yml).
 #
 # `workflow_dispatch` is kept for the case main is already correct and prod
 # needs re-deploying — a rollback that is forward rather than backward, and the
@@ -18,8 +18,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# One lock around everything that changes what prod serves, shared with
+# rollback.yml (#238). A deploy never cancels a run in it: pushed during a
+# rollback, it waits for the rollback, then stops at the approval as usual. A
+# rollback, in turn, cancels a deploy that holds the lock (see rollback.yml).
 concurrency:
-  group: release-prod-shyden
+  group: shyden-prod-publish
   cancel-in-progress: false
 
 permissions:
@@ -28,7 +32,7 @@ permissions:
 jobs:
   deploy-prod:
     name: Deploy to Prod (needs approval)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: prod
@@ -67,9 +71,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          npm install -g wrangler@4
-          wrangler pages deploy dist --project-name shyden-site --branch main
+        run: npx wrangler pages deploy dist --project-name shyden-site --branch main
 
   # ---- Post-prod smoke + prod-verified -----------------------------------
   # Smokes the PUBLIC production domain — the host real visitors get.
@@ -88,21 +90,22 @@ jobs:
   smoke-and-verify:
     name: Post-prod smoke + prod-verified
     needs: deploy-prod
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
       statuses: write
     steps:
+      # The public apex is not behind Basic auth, so the smoke sends no
+      # credential. It used to pass the dev password with `curl -u`, which sends
+      # it on the first request whether or not the host asks for one (#241).
       - name: Smoke the live prod deployment
-        env:
-          SMOKE_PW: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
         run: |
           set -euo pipefail
           BASE="https://shyden.co.uk"
 
           # Homepage: 200 + is the Shyden site.
-          code=$(curl -s -o home.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE/")
+          code=$(curl -s -o home.html -w '%{http_code}' "$BASE/")
           [ "$code" = "200" ] || { echo "::error::homepage HTTP $code"; exit 1; }
           grep -qi 'shyden' home.html || { echo "::error::homepage missing 'shyden'"; exit 1; }
 
@@ -127,7 +130,7 @@ jobs:
           # LOCALES and fails until this line is updated. Adding a locale means
           # editing this line by hand; that test is what makes you.
           for path in /glory-points /classroom-groups /id/ /id/glory-points /id/classroom-groups /zh/ /zh/glory-points /zh/classroom-groups /vi/ /vi/glory-points /vi/classroom-groups /th/ /th/glory-points /th/classroom-groups; do
-            code=$(curl -sL -o page.html -w '%{http_code}' -u "x:$SMOKE_PW" "$BASE$path")
+            code=$(curl -sL -o page.html -w '%{http_code}' "$BASE$path")
             [ "$code" = "200" ] || { echo "::error::$path HTTP $code"; exit 1; }
             # Non-trivial: a Cloudflare error page or an empty build is a 200.
             bytes=$(wc -c < page.html)
@@ -135,20 +138,20 @@ jobs:
           done
 
           # The calculator still explains itself.
-          curl -sL -o gp.html -u "x:$SMOKE_PW" "$BASE/glory-points"
+          curl -sL -o gp.html "$BASE/glory-points"
           grep -qi 'How to use it' gp.html || { echo "::error::calculator instructions missing"; exit 1; }
 
           # The Classroom Group Creator still SHIPS ITS SCRIPT. This page is a
           # tool, and a partial deploy that dropped the bundle would leave a
           # form that looks fine and does nothing.
-          curl -sL -o cg.html -u "x:$SMOKE_PW" "$BASE/classroom-groups"
+          curl -sL -o cg.html "$BASE/classroom-groups"
           grep -q 'id="cg-form"' cg.html || { echo "::error::classroom-groups form missing"; exit 1; }
           grep -qE '<script[^>]+src="[^"]*\.js"' cg.html || { echo "::error::classroom-groups ships no script"; exit 1; }
 
-          # The homepage still ships NO script — a promise this site makes and
-          # the kind of thing a bundler change breaks silently.
+          # The homepage still FETCHES no script: its one script, the theme
+          # script, is inline (#142), and a bundler change could add one silently.
           if grep -qE '<script[^>]+src="[^"]*\.js"' home.html; then
-            echo "::error::the homepage now ships JavaScript"; exit 1;
+            echo "::error::the homepage now fetches JavaScript"; exit 1;
           fi
 
           echo "Prod smoke passed against $BASE"
@@ -174,11 +177,6 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify the live prod site in a real browser
         env:
-          # The public apex is not gated, so this credential goes unused there:
-          # Basic auth is only sent when a host actually challenges for it. Kept
-          # wired under its own name so prod can be gated again, or given its
-          # own secret, without touching the config.
-          PROD_BASIC_AUTH_PASSWORD: ${{ secrets.DEV_BASIC_AUTH_PASSWORD }}
           WEB_BASE_URL: https://shyden.co.uk
         run: npx playwright test --config=playwright.prod.config.ts
 

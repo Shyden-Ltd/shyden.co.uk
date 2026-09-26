@@ -1,4 +1,6 @@
 import { parseDocument } from 'yaml';
+import { stringLeaves } from './catalogue-leaves';
+import { withoutCommentLines } from './unit/source-text';
 
 /**
  * The job graph of a GitHub Actions workflow, PARSED.
@@ -24,10 +26,39 @@ export interface WorkflowJob {
   readonly timeoutMinutes: number | undefined;
   /** Each step's `run:` script, in file order; a `uses:` step runs none. */
   readonly runs: readonly string[];
+  /**
+   * The runner labels the job asks for. `runs-on:` may be a single label or a
+   * list of them and both mean the same thing to the runner, so both arrive
+   * here as a list -- a guard reading this cannot be satisfied by whichever
+   * spelling a workflow happens to use (#244).
+   */
+  readonly runsOn: readonly string[];
+  /**
+   * The environment the job names; `undefined` when it names none. A job in
+   * an environment reads that environment's secrets. A job in none reads
+   * repository secrets, which reach a workflow on any branch (#241).
+   */
+  readonly environment: string | undefined;
+  /**
+   * Every secret the job reads through an expression, the workflow's own
+   * `env:` included, since each job reads that too. Names are upper-cased,
+   * because secret names are case-insensitive, then de-duplicated and sorted.
+   */
+  readonly secrets: readonly string[];
+  /**
+   * The reusable workflow the job calls, as its job-level `uses:` names it;
+   * `undefined` for a job of steps. Such a job runs nothing itself and may
+   * declare neither a runner nor a budget: the jobs it calls do, in their own
+   * file (#163).
+   */
+  readonly uses: string | undefined;
 }
 
 const isMapping = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const withoutStringLiterals = (condition: string): string =>
+  condition.replace(/'(?:[^']|'')*'/g, "''");
 
 function needsOf(job: Record<string, unknown>, where: string): string[] {
   const { needs } = job;
@@ -64,6 +95,32 @@ function timeoutMinutesOf(
   return budget;
 }
 
+/**
+ * The runner labels a job asks for, normalised to a list.
+ *
+ * FAILS CLOSED on anything else. A job with no `runs-on` cannot run at all,
+ * and the mapping form (`group:`/`labels:`) is a runner-group request this
+ * repository does not use -- reading either as an empty list would make an
+ * absence assertion over the labels green without a label having been read,
+ * which is the one failure this guard exists to prevent (#118).
+ *
+ * The one job with no runner of its own is a job calling a reusable workflow:
+ * GitHub refuses `runs-on` there, and the jobs it calls ask for their runners
+ * in their own file, where this same rule reads them (#163).
+ */
+function runsOnOf(job: Record<string, unknown>, where: string): string[] {
+  const value = job['runs-on'];
+  if (job.uses !== undefined && value === undefined) return [];
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value))
+    return value.map((label: unknown, index) => {
+      if (typeof label !== 'string')
+        throw new Error(`${where}: runs-on label ${index + 1} is not a string`);
+      return label;
+    });
+  throw new Error(`${where} declares no runs-on as a label or list of labels`);
+}
+
 function runsOf(job: Record<string, unknown>, where: string): string[] {
   const { steps } = job;
   if (steps === undefined) return [];
@@ -76,6 +133,63 @@ function runsOf(job: Record<string, unknown>, where: string): string[] {
       throw new Error(`${which}'s run is not a script`);
     return [step.run];
   });
+}
+
+function environmentOf(
+  job: Record<string, unknown>,
+  where: string,
+): string | undefined {
+  const { environment } = job;
+  if (environment === undefined) return undefined;
+  const name = isMapping(environment) ? environment.name : environment;
+  if (typeof name !== 'string' || name.trim() === '')
+    throw new Error(`${where}: environment names no environment`);
+  if (name.includes('${{'))
+    throw new Error(
+      `${where}: environment is an expression, which only the runner can resolve`,
+    );
+  return name;
+}
+
+const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
+const BRACKETED_SECRET = /(?<![\w.])secrets\s*\[\s*'((?:[^']|'')*)'\s*\]/gi;
+const DOTTED_SECRET = /(?<![\w.])secrets\s*\.\s*([A-Za-z_]\w*)/gi;
+const SECRETS_CONTEXT = /(?<![\w.])secrets(?!\w)/i;
+
+/**
+ * The secrets `value` reads through its `${{ }}` expressions.
+ *
+ * The runner expands an expression wherever it sits in a string, including a
+ * shell comment in a `run:` script, so every one counts. Text outside an
+ * expression reads nothing, and neither does a string literal inside one. A
+ * reference to the whole context is refused, because it hands over every
+ * secret and leaves no name to judge.
+ */
+function secretsReadIn(value: unknown, where: string): string[] {
+  return stringLeaves(value).flatMap(([, text]) =>
+    [...text.matchAll(EXPRESSION)].flatMap(([, expression]) => {
+      const bracketed = [...expression.matchAll(BRACKETED_SECRET)].map(
+        ([, name]) => name,
+      );
+      const rest = withoutStringLiterals(
+        expression.replace(BRACKETED_SECRET, "''"),
+      );
+      const dotted = [...rest.matchAll(DOTTED_SECRET)].map(([, name]) => name);
+      if (SECRETS_CONTEXT.test(rest.replace(DOTTED_SECRET, '')))
+        throw new Error(`${where} reads every secret: name each one it needs`);
+      return [...bracketed, ...dotted].map((name) => name.toUpperCase());
+    }),
+  );
+}
+
+function secretsOf(
+  job: Record<string, unknown>,
+  shared: readonly string[],
+  where: string,
+): string[] {
+  if (job.secrets === 'inherit')
+    throw new Error(`${where} reads every secret: name each one it needs`);
+  return [...new Set([...shared, ...secretsReadIn(job, where)])].sort();
 }
 
 /**
@@ -102,6 +216,10 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
   const root = parseCleanYaml(text, file);
   const jobs = isMapping(root) ? root.jobs : undefined;
   if (!isMapping(jobs)) throw new Error(`${file} has no jobs mapping`);
+  const shared = secretsReadIn(
+    isMapping(root) ? root.env : undefined,
+    `${file}'s env`,
+  );
   return Object.entries(jobs).map(([id, body]) => {
     const where = `${file} job '${id}'`;
     if (!isMapping(body)) throw new Error(`${where} is not a mapping`);
@@ -111,8 +229,23 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
       condition: conditionOf(body, where),
       timeoutMinutes: timeoutMinutesOf(body, where),
       runs: runsOf(body, where),
+      runsOn: runsOnOf(body, where),
+      environment: environmentOf(body, where),
+      secrets: secretsOf(body, shared, where),
+      uses: usesOf(body, where),
     };
   });
+}
+
+function usesOf(
+  job: Record<string, unknown>,
+  where: string,
+): string | undefined {
+  const { uses } = job;
+  if (uses === undefined) return undefined;
+  if (typeof uses !== 'string')
+    throw new Error(`${where}: uses is not a workflow reference`);
+  return uses;
 }
 
 /** What the runner gives a job that declares no `timeout-minutes` of its own. */
@@ -127,7 +260,15 @@ export const RUNNER_DEFAULT_TIMEOUT_MINUTES = 360;
  */
 export function unboundedJobFindings(jobs: readonly WorkflowJob[]): string[] {
   const ceiling = RUNNER_DEFAULT_TIMEOUT_MINUTES - 1;
-  return jobs.flatMap(({ id, timeoutMinutes }) => {
+  return jobs.flatMap(({ id, timeoutMinutes, uses }) => {
+    // A caller may not declare a budget: the jobs it calls carry theirs, and
+    // they are judged in their own file -- when that file is one of ours.
+    if (uses !== undefined)
+      return uses.startsWith('./')
+        ? []
+        : [
+            `${id} calls ${uses}, a workflow outside this repository whose budgets no guard here can read`,
+          ];
     if (timeoutMinutes === undefined)
       return [
         `${id} declares no timeout-minutes, so the runner gives it ${RUNNER_DEFAULT_TIMEOUT_MINUTES} minutes`,
@@ -154,9 +295,6 @@ const REPLACES_IMPLICIT_SUCCESS =
 const CALLS_SUCCESS = /(?<![\w.])success\(\s*\)/;
 
 /** A condition with its string literals emptied, so `'always()'` is no call. */
-const withoutStringLiterals = (condition: string): string =>
-  condition.replace(/'(?:[^']|'')*'/g, "''");
-
 const escapeRegExp = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -244,4 +382,113 @@ export function skippedUpstreamFindings(
         );
     return findings;
   });
+}
+
+/** A commit status posted through the API: the `-f context=<name>` it sends. */
+const POSTED_STATUS = /-f\s+context=(\S+)/g;
+
+/**
+ * Every context `required_status_checks.contexts` could match for one
+ * workflow, derived rather than listed.
+ *
+ * TWO SPECIES, and a guard knowing only the first would call `dev-verified`
+ * unproducible while `main`'s protection requires it. A CHECK RUN is named
+ * after the job's `name:`, falling back to the job id when it declares none.
+ * A COMMIT STATUS is posted by a script and named in the call that posts it.
+ *
+ * An ordinary job carries NO `workflow / job` prefix — that spelling belongs
+ * to required workflows and reusable calls. Requiring it here adds a context
+ * nothing can ever report, so every pull request hangs waiting for a check
+ * its base cannot produce, repairable only by an administrator (#284).
+ */
+export function producibleContexts(text: string, file: string): string[] {
+  const root = parseCleanYaml(text, file);
+  const jobs = isMapping(root) ? root.jobs : undefined;
+  if (!isMapping(jobs)) throw new Error(`${file} has no jobs mapping`);
+
+  const contexts = Object.entries(jobs).map(([id, body]) => {
+    const declared = isMapping(body) ? body.name : undefined;
+    return typeof declared === 'string' ? declared : id;
+  });
+
+  // The PARSED scripts, shell comments stripped. A `#` line inside a `run:`
+  // block is script text the YAML parser keeps rather than a YAML comment it
+  // drops, so a commented-out status post would otherwise widen this set and
+  // soften every guard that reads it.
+  for (const job of workflowJobs(text, file))
+    for (const run of job.runs)
+      for (const [, context] of withoutCommentLines(run).matchAll(
+        POSTED_STATUS,
+      ))
+        contexts.push(context);
+
+  return contexts;
+}
+
+/** What a permission scope may be set to; anything else the runner rejects. */
+const PERMISSION_VALUES = new Set(['read', 'write', 'none']);
+
+/** A workflow's own `permissions:`, as parsed, beside the file it came from. */
+export interface DeclaredPermissions {
+  readonly file: string;
+  readonly permissions: unknown;
+}
+
+/**
+ * A finding for every workflow whose silent jobs fall back to the REPOSITORY
+ * default.
+ *
+ * A job stating no `permissions:` inherits the workflow's; a workflow stating
+ * none inherits the repository default, which lives in settings rather than
+ * in source and was measured `write` here on 2026-09-22
+ * (`actions/permissions/workflow`). Absence is therefore the widest grant the
+ * settings allow, written as nothing at all -- and nothing at all is what a
+ * diff shows for it. Declaring the set is the half this repository controls;
+ * the default itself is administration, and so the operator's (#301).
+ *
+ * `read-all` and `write-all` grant every scope in one word, so a workflow
+ * carrying one satisfies a presence check while handing the next job exactly
+ * the breadth this exists to stop it inheriting: only a mapping names what it
+ * grants. A value the runner would reject is reported rather than trusted,
+ * because a `workflow_dispatch`-only workflow would not find out until the
+ * day someone needed it.
+ */
+export function inheritedPermissionsFindings(
+  workflows: readonly DeclaredPermissions[],
+): string[] {
+  return workflows.flatMap(({ file, permissions }) => {
+    if (permissions === undefined || permissions === null)
+      return [`${file} states no workflow-level permissions`];
+    if (typeof permissions === 'string')
+      return [`${file} grants every scope with the '${permissions}' shorthand`];
+    if (!isMapping(permissions))
+      return [`${file} declares permissions that are not a mapping`];
+    return Object.entries(permissions)
+      .filter(
+        ([, value]) =>
+          typeof value !== 'string' || !PERMISSION_VALUES.has(value),
+      )
+      .map(
+        ([scope, value]) =>
+          `${file} grants ${scope}: ${JSON.stringify(value)}, ` +
+          'which is not read, write or none',
+      );
+  });
+}
+
+/**
+ * Every scope a workflow-level block grants at `write`, sorted.
+ *
+ * Read off the declaration, never off a job: a job block REPLACES the
+ * inherited set rather than adding to it, so what a workflow hands a job
+ * that says nothing is exactly this.
+ */
+export function workflowLevelWrites(permissions: unknown): string[] {
+  if (typeof permissions === 'string')
+    return permissions === 'read-all' ? [] : ['every scope'];
+  if (!isMapping(permissions)) return [];
+  return Object.entries(permissions)
+    .filter(([, value]) => value === 'write')
+    .map(([scope]) => scope)
+    .sort();
 }

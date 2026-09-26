@@ -16,7 +16,7 @@ import { MVP_LOCALES } from '../../src/lib/i18n/metadata';
 import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
-import { filesUnder, searched } from '../source-files';
+import { searched } from '../source-files';
 import { stringLeaves } from '../catalogue-leaves';
 import {
   CSV_KEYS_NOT_TRANSLATED,
@@ -382,22 +382,9 @@ describe('the harness never runs itself', () => {
     ).toBe(true);
   });
 
-  it('is not imported by anything the site ships', () => {
-    // This module is for the CLI. Reaching it from a page would put the
-    // glossary — and whatever it grows into — in the browser bundle.
-    const shipped = filesUnder(
-      'src',
-      (p) => /\.(ts|astro)$/.test(p) && p !== 'src/lib/i18n/translate.ts',
-    );
-    const offenders: string[] = [];
-    for (const path of shipped) {
-      if (readFileSync(path, 'utf8').includes('i18n/translate'))
-        offenders.push(path);
-    }
-    expect(
-      searched(offenders, { of: shipped, what: 'shipped source files' }),
-    ).toEqual([]);
-  });
+  // That nothing the site ships imports this module is held by
+  // cli-only.test.ts, which resolves each import. The substring check that
+  // stood here could not see `./translate` from a sibling in src/lib/i18n/.
 });
 
 /**

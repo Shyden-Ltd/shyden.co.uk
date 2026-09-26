@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Locator, Page, TestInfo } from '@playwright/test';
 import {
-  publishedVideoPath,
+  journeysOfPage,
   renderEvidencePage,
   REVIEW_DATA_ID,
   sha256Of,
@@ -20,12 +20,15 @@ import {
 import {
   counters,
   evidenceTest as test,
+  journeySection,
   ORIGIN,
   PIXEL,
   serveEvidencePage,
+  storeKeyOf,
   WRITE_ORDERS,
   type ServedFile,
 } from './evidence-harness';
+import { recorded } from './evidence';
 import { searched } from '../source-files';
 import { expect } from './fixtures';
 import { contrastRatio } from './helpers';
@@ -40,6 +43,8 @@ import { contrastRatio } from './helpers';
  * (#172), run in both orders a write can complete in wherever a decision or a
  * note is stored; downloads and comments are their own stand-ins.
  */
+
+test.use(recorded);
 
 const FIRST = 'the first journey';
 const SECOND = 'the second journey';
@@ -58,6 +63,14 @@ const RUNTIME_SANDBOX =
 
 /** A real VP8 recording, one second long, so a recording's metadata can load. */
 const RECORDING = readFileSync('tests/e2e/evidence-recording.webm');
+
+/**
+ * Where the asset store would serve a recording. A real id is assigned by the
+ * upload and opaque, so a test fabricates a stable one from the key: the SHAPE
+ * (`/_blob/` and 32 hex digits) is what the page has to handle.
+ */
+const blobOf = (key: string) =>
+  `/_blob/${sha256Of(Buffer.from(key)).slice(0, 32)}`;
 /** Bytes no engine can decode, so a screenshot that never loads can be shown. */
 const BROKEN_SHOT = `data:image/png;base64,${Buffer.from('not a picture').toString('base64')}`;
 
@@ -126,7 +139,7 @@ const render = ({ brokenShot = false } = {}): string =>
         const key = `${slug(journey)}|${engine}`;
         return [
           key,
-          { src: publishedVideoPath(key), sha256: sha256Of(RECORDING) },
+          { src: blobOf(key), sha256: sha256Of(RECORDING), ext: 'webm' },
         ];
       }),
     ),
@@ -238,7 +251,7 @@ async function openReviewPage(
   };
   await page.addInitScript(installCapabilityStandIns, standIns);
   const options: DbStandInOptions = {
-    storeKey: `evidence-review-db:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
+    ...storeKeyOf(testInfo, { kind: 'evidence-review-db' }),
     order: 'resolve-then-confirm',
     seed: {},
     holdUse: false,
@@ -266,10 +279,6 @@ const noteField = (page: Page) =>
   viewer(page).getByRole('textbox', { name: /^Note for Claude/ });
 const figureOf = (page: Page, index: number, items: ReviewItem[] = ITEMS) =>
   page.locator(`[data-item="${itemAt(index, items).key}"]`);
-const journeySection = (page: Page, title: string) =>
-  page.locator('section.journey').filter({
-    has: page.getByRole('heading', { level: 3, name: title, exact: true }),
-  });
 const signoff = (page: Page) => page.locator('#signoff');
 
 /** What a person taps to open an item: its screenshot, or its recording's Review button. */
@@ -544,7 +553,7 @@ test.describe('evidence review: the viewer is a modal dialog', () => {
     };
     await page.addInitScript(installCapabilityStandIns, standIns);
     const options: DbStandInOptions = {
-      storeKey: `evidence-review-framed:${testInfo.testId}:${testInfo.repeatEachIndex}:${testInfo.retry}`,
+      ...storeKeyOf(testInfo, { kind: 'evidence-review-framed' }),
       order: 'resolve-then-confirm',
       seed: {},
       holdUse: false,
@@ -1497,6 +1506,49 @@ test.describe('evidence review: sending the review to Claude', () => {
     );
     expect((await counters(page)).writes).toBe(before);
   });
+
+  // A verdict names the journeys it was given on (#197). One given before the
+  // page changed no longer speaks for it, and a session told "approved" would
+  // act on an approval of a page nobody has seen.
+  for (const { when, covers, says, never } of [
+    {
+      when: 'before the page changed',
+      covers: (onPage: string[]) => [...onPage, 'a-journey-since-removed'],
+      says: 'Sign-off: approved (out of date: given before this page changed)\n',
+      never: undefined,
+    },
+    {
+      when: 'on the page as it is',
+      covers: (onPage: string[]) => onPage,
+      says: 'Sign-off: approved\n',
+      never: 'out of date',
+    },
+  ])
+    test(`an approval given ${when} is sent as such`, async ({
+      page,
+    }, testInfo) => {
+      const onPage = journeysOfPage(HTML);
+      await openReviewPage(page, testInfo, {
+        seed: {
+          ...everyItemApproved(),
+          [DOC]: {
+            journeys: {},
+            verdict: 'approved',
+            verdictCovers: covers(onPage),
+            note: '',
+          },
+        },
+      });
+      await signoff(page)
+        .getByRole('button', { name: 'Send review to Claude' })
+        .click();
+      await expect
+        .poll(async () => (await capabilityControl(page).sends()).length)
+        .toBe(1);
+      const [sent] = await capabilityControl(page).sends();
+      expect(sent.text).toContain(says);
+      if (never) expect(sent.text).not.toContain(never);
+    });
 
   test('a long review is cut to 4 KiB and says how many items it left out', async ({
     page,

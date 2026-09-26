@@ -1,4 +1,17 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import {
+  expect,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from '@playwright/test';
+import { contrast, over, parseColour } from '../wcag';
+import {
+  deviceDownloadText,
+  emptyDeviceDownloads,
+  onRealDevice,
+} from '../device/device-downloads';
+import type { Locale } from '../../src/lib/i18n/index';
+import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 
 /**
  * Fixtures for driving the roster into a starting state -- Stage 3, 4 and 5
@@ -24,6 +37,42 @@ export const openRoster = async (page: Page, path = '/classroom-groups') => {
   await page.goto(path);
   await page.locator('#cg-students-toggle').click();
   await page.getByRole('button', { name: /Add student|Tambah siswa/ }).click();
+};
+
+/**
+ * `expected` with its list of names joined the way THIS browser joins them.
+ *
+ * Messages are rendered here in Node, and the page joins a list with its own
+ * engine's `Intl.ListFormat`, in the locale's `numberLocale`. Engines
+ * disagree: measured 2026-09-14, WebKit 26.6 spaces Thai "และ" where Chromium
+ * 153, Firefox 155 and Node's CLDR 48 do not. So the join comes from the
+ * page's engine and every word around it from the catalogue. Node's join must
+ * occur exactly once, or the swap would compare nothing it meant to; the
+ * replacement is a function so a `$` in a name is never read as a pattern.
+ */
+export const listedByThisBrowser = async (
+  page: Page,
+  locale: Locale,
+  names: readonly string[],
+  expected: string,
+): Promise<string> => {
+  const { numberLocale } = LOCALE_METADATA[locale];
+  const inNode = new Intl.ListFormat(numberLocale, {
+    type: 'conjunction',
+  }).format(names);
+  const inBrowser = await page.evaluate(
+    ([tag, items]) =>
+      new Intl.ListFormat(tag, { type: 'conjunction' }).format(items),
+    [numberLocale, [...names]] as [string, string[]],
+  );
+  expect(expected.split(inNode), `the list "${inNode}", once`).toHaveLength(2);
+  return expected.replace(inNode, () => inBrowser);
+};
+
+/** Visible copy is both: `toHaveText` alone passes on a hidden element. */
+export const expectVisibleText = async (target: Locator, text: string) => {
+  await expect(target).toBeVisible();
+  await expect(target).toHaveText(text);
 };
 
 /**
@@ -54,6 +103,37 @@ export const addSeveral = async (page: Page, howMany: number) => {
     .getByLabel(/How many to add\?|Berapa yang ditambahkan\?/)
     .fill(String(howMany));
   await page.getByRole('button', { name: /^Add$|^Tambah$/ }).click();
+};
+
+/**
+ * Assert the Students box reports `expected`, in a way the markup alone
+ * cannot satisfy.
+ *
+ * `#cg-count` ships a build-time `value=`, so the box already holds a number
+ * before a line of script runs. Three assertions expected the very number it
+ * ships and passed with `updateStudentsBox`'s write removed (#193) -- guarded
+ * the whole time by a comment that named this exact hazard and then went
+ * stale when the shipped default moved onto the number they expected.
+ *
+ * So the control is not a second literal, which would rot the same way.
+ * Assigning `.value` sets the IDL property and never rewrites the content
+ * attribute, so the live page still carries its own shipped default and
+ * `getAttribute('value')` reads it back from the element under test. The
+ * control runs FIRST: an expectation that cannot distinguish a written value
+ * from an untouched one should say so, rather than be masked by whichever
+ * assertion happens to fail after it (#156).
+ */
+export const expectStudentsBoxReports = async (
+  box: Locator,
+  expected: number,
+) => {
+  const shipped = await box.getAttribute('value');
+  expect(
+    String(expected),
+    `the box ships value="${shipped}", so expecting ${expected} cannot tell a ` +
+      'value written from the roster from the untouched markup',
+  ).not.toBe(shipped);
+  await expect(box).toHaveValue(String(expected));
 };
 
 /**
@@ -169,12 +249,21 @@ export const upload = async (page: Page, name: string, body: string) => {
   });
 };
 
-/** The bytes a download actually contains, not the button that produced it. */
+/**
+ * The bytes a download actually contains, not the button that produced it.
+ *
+ * On the real phone the file is saved ON THE PHONE, where the Mac-side stream behind
+ * `createReadStream()` cannot reach it, so it is read back over adb instead (#308). The phone's
+ * download folder is emptied first, so the file read back is this download's and cannot be an
+ * earlier one under the same name.
+ */
 export const downloadText = async (page: Page, button: string | RegExp) => {
+  if (onRealDevice()) emptyDeviceDownloads();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: button }).click(),
   ]);
+  if (onRealDevice()) return deviceDownloadText(download);
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk));
@@ -285,6 +374,27 @@ export const handoverTo = async (page: Page, language: string | RegExp) => {
 };
 
 /**
+ * Refuse every fullscreen request, so the board opens as an overlay.
+ *
+ * The overlay is the board iOS Safari always gets, since it never grants
+ * fullscreen on an arbitrary element, and it is the same layer either way.
+ * A spec whose subject is not fullscreen itself takes this path, because a
+ * GRANTED fullscreen can be taken back by the browser, and the board rightly
+ * closes when that happens (`projector.ts`, `fullscreenchange`). Measured on
+ * macOS WebKit at two workers (#344): a board in a `handoverTo` popup lost
+ * its granted fullscreen in 12 of 81 runs, with no exit asked for by the
+ * page, and closed under the test.
+ *
+ * Takes a context as well as a page, because an init script added to a page
+ * never reaches the popup that page opens.
+ */
+export const refuseFullscreen = (target: Page | BrowserContext) =>
+  target.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error('refused'));
+  });
+
+/**
  * The contrast ratio the browser actually PAINTS for an element's text.
  *
  * Not the token values: it resolves `opacity` and walks up for the first
@@ -297,36 +407,94 @@ export const handoverTo = async (page: Page, language: string | RegExp) => {
  * differ by one term would disagree about the same pixels, and the suite that
  * got the lenient one would pass while the page failed a real audit.
  */
-export const contrastRatio = async (target: Locator): Promise<number> =>
-  target.evaluate((el) => {
+export const contrastRatio = async (target: Locator): Promise<number> => {
+  // The browser READS; the arithmetic happens in node, against the one copy
+  // of the WCAG formula this repo has (#277). A `page.evaluate` callback is
+  // serialised and cannot import, so a callback that did the maths itself
+  // was a copy by construction -- and three of them had accumulated, all
+  // linearising at a different constant from the two node-side copies.
+  const painted = await target.evaluate((el) => {
     const style = getComputedStyle(el);
-    const opacity = Number(style.opacity);
     // Start at the element itself -- it may paint its own background -- and
     // walk up until something does, the same resolution the browser performs
     // when compositing.
     let bgEl: Element | null = el;
-    let backgroundCss = 'rgba(0, 0, 0, 0)';
+    let background = 'rgb(255, 255, 255)';
     while (bgEl) {
       const c = getComputedStyle(bgEl).backgroundColor;
       if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') {
-        backgroundCss = c;
+        background = c;
         break;
       }
       bgEl = bgEl.parentElement;
     }
-    const nums = (css: string) => css.match(/[\d.]+/g)!.map(Number);
-    const [ir, ig, ib] = nums(style.color);
-    const [br, bgn, bb] = nums(backgroundCss);
-    const mix = (i: number, b: number) => opacity * i + (1 - opacity) * b;
-    const lin = (c: number) => {
-      const s = c / 255;
-      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    };
-    const luminance = (r: number, g: number, b: number) =>
-      0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    const textLum = luminance(mix(ir, br), mix(ig, bgn), mix(ib, bb));
-    const bgLum = luminance(br, bgn, bb);
-    const lighter = Math.max(textLum, bgLum);
-    const darker = Math.min(textLum, bgLum);
-    return (lighter + 0.05) / (darker + 0.05);
+    return { colour: style.color, background, opacity: Number(style.opacity) };
   });
+
+  const ink = parseColour(painted.colour);
+  const ground = parseColour(painted.background);
+  if (ink === null || ground === null)
+    throw new Error(
+      `unreadable computed colour: ${painted.colour} on ${painted.background}`,
+    );
+  // The element's own opacity dims its text against what is behind it. A
+  // colour token that passes AA on paper can still fail once the browser has
+  // mixed it -- the bug this was first written for, in classroom-groups.
+  const mixed = over(
+    { rgb: ink.rgb, alpha: ink.alpha * painted.opacity },
+    over(ground, [255, 255, 255]),
+  );
+  return contrast(mixed, over(ground, [255, 255, 255]));
+};
+
+/**
+ * Every place a browser could have kept a pupil's name, in one read (#277).
+ *
+ * Four probes had grown for the same claim, and they did not agree about
+ * where to look. `classroom-groups-privacy.spec.ts` had two -- an object of
+ * four fields, and a joined string of the same four -- `classroom-groups-
+ * io.spec.ts` had the joined string inline, and `classroom-groups-
+ * roster.spec.ts` read `localStorage` and `sessionStorage` ONLY. That last
+ * one asserts "a typed name never reaches storage" while looking at two of
+ * the four places a name could go: the address bar and the cookie jar were
+ * never checked, so the test most specifically about a typed name was the
+ * weakest of the four. Collapsing them is a coverage fix as much as a
+ * refactor.
+ *
+ * The cookie field's own reason, kept from the copy that had it: the plan's
+ * snippet checked the first three, and a cookie is the fourth place a name
+ * could be written to.
+ */
+export const everywhereItCouldHide = (page: Page) =>
+  page.evaluate(() => ({
+    local: JSON.stringify({ ...localStorage }),
+    session: JSON.stringify({ ...sessionStorage }),
+    url: location.href,
+    cookies: document.cookie,
+  }));
+
+/**
+ * Assert none of `names` appears anywhere the page could have persisted it.
+ *
+ * This is an absence assertion over a population read at runtime, so it
+ * carries its own liveness controls (#118): with no names there is nothing
+ * to look for, and a probe that quietly stopped reading one of the four
+ * places would pass every call here while covering less than its name says.
+ * Both are asserted rather than assumed -- an emptied probe and a clean page
+ * look identical from the outside.
+ */
+export const expectNothingStored = async (
+  page: Page,
+  when: string,
+  ...names: readonly string[]
+): Promise<void> => {
+  expect(names.length, `${when}: no name to look for`).toBeGreaterThan(0);
+  const stored = await everywhereItCouldHide(page);
+  expect(
+    Object.keys(stored),
+    `${when}: the probe stopped reading somewhere a name could hide`,
+  ).toEqual(['local', 'session', 'url', 'cookies']);
+  for (const [where, value] of Object.entries(stored))
+    for (const name of names)
+      expect(value, `${where} — ${when}`).not.toContain(name);
+};

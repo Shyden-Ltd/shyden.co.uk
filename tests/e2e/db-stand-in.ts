@@ -22,22 +22,44 @@
  * the promise resolve first. `order` runs both, so a page cannot pass by
  * leaning on one of them.
  *
+ * Both of those complete a write 60 ms after it is made, well inside the
+ * page's 400 ms save window, so they never put two writes in flight. A store
+ * slower than that window does, and `as-released` hands every completion to
+ * the test instead, to release one at a time in whatever order it is
+ * exercising (#260).
+ *
  * #172's last acceptance criterion ties this back to the real thing: a
  * throwaway page on the real runtime, measured the same way.
  */
 
-/** Which of a write's two completions reaches the page first. */
-export type WriteOrder = 'resolve-then-confirm' | 'confirm-then-resolve';
+/**
+ * Which of a write's two completions reaches the page first, or
+ * `as-released`: neither, until the test releases each one itself.
+ */
+export type WriteOrder =
+  'resolve-then-confirm' | 'confirm-then-resolve' | 'as-released';
+
+/** A write's two completions: its confirmed snapshot, and its promise resolving. */
+export type Completion = 'confirm' | 'resolve';
 
 export type StoredBody = Record<string, unknown>;
 
 export interface DbStandInOptions {
   /**
-   * The localStorage key the store lives under. It must be unique per test: a
-   * real phone shares one browser context across every test, so a fixed key
-   * would carry one test's store into the next.
+   * The localStorage key the store lives under. It must be unique per test AND
+   * per run. A real phone shares one browser context across every test, so a
+   * fixed key would carry one test's store into the next; and it keeps one
+   * Chrome profile from run to run, so a key unique only per test hands each
+   * test the store its own previous run left (#229).
    */
   storeKey: string;
+  /**
+   * The prefix every earlier run of the same test wrote its store under.
+   * Installing removes those stores, and no others: without this a key per
+   * run would leave one more store per test on a phone after every run, never
+   * read again, until localStorage refuses writes.
+   */
+  supersedes: string;
   order: WriteOrder;
   /** Documents that already exist, written only while the store is empty. */
   seed: Record<string, StoredBody>;
@@ -76,6 +98,15 @@ export interface DbStandInControl {
   deliveries(): number;
   /** Answer a held `claude.use('db')`. */
   answer(): void;
+  /**
+   * Under `as-released`, completes the oldest write still owing this
+   * completion, and returns that write's number, counting from 1. Each
+   * completion keeps its own line, oldest first, as a store that takes one
+   * page's writes in order. A write is stored at whichever of its two
+   * completions is released first. Throws when no write owes one, so a test
+   * cannot release a write the page never made.
+   */
+  release(completion: Completion): number;
   /** Another viewer writes the whole document. */
   remoteWrite(path: string, body: StoredBody): void;
 }
@@ -152,10 +183,24 @@ export type StandInWindow = Window &
  * cannot run.
  */
 export function installDbStandIn(options: DbStandInOptions): void {
-  const { storeKey, order, seed, holdUse, subscriptionDies, getFails } =
-    options;
+  const {
+    storeKey,
+    supersedes,
+    order,
+    seed,
+    holdUse,
+    subscriptionDies,
+    getFails,
+  } = options;
   const CONFIRM_AFTER_MS = 60;
 
+  const earlierRuns = Array.from({ length: localStorage.length }, (_, i) =>
+    localStorage.key(i),
+  ).filter(
+    (key): key is string =>
+      key !== null && key.startsWith(supersedes) && key !== storeKey,
+  );
+  for (const key of earlierRuns) localStorage.removeItem(key);
   if (localStorage.getItem(storeKey) === null)
     localStorage.setItem(storeKey, JSON.stringify(seed));
   const confirmed = (): Record<string, StoredBody> =>
@@ -335,6 +380,11 @@ export function installDbStandIn(options: DbStandInOptions): void {
   let writes = 0;
   let inflight = 0;
   const writesByPath = new Map<string, number>();
+  // Completions waiting for `release`, one line per kind, oldest first.
+  const held: Record<Completion, { write: number; complete: () => void }[]> = {
+    confirm: [],
+    resolve: [],
+  };
   const documentAt = (path: string): StandInDocument =>
     Object.freeze({
       id: path.split('/').pop() ?? path,
@@ -348,15 +398,37 @@ export function installDbStandIn(options: DbStandInOptions): void {
         writes += 1;
         writesByPath.set(path, (writesByPath.get(path) ?? 0) + 1);
         inflight += 1;
+        const write = writes;
         const body = copyOf(data);
         const queue = unconfirmed.get(path) ?? [];
         queue.push(body);
         unconfirmed.set(path, queue);
         setTimeout(() => deliver(path), 0);
         return new Promise<void>((resolve) => {
-          setTimeout(() => {
+          let stored = false;
+          const store = (): void => {
+            if (stored) return;
+            stored = true;
             persist(path, body);
             queue.splice(queue.indexOf(body), 1);
+          };
+          if (order === 'as-released') {
+            let owed = 2;
+            const completing = (complete: () => void) => (): void => {
+              store();
+              complete();
+              owed -= 1;
+              if (owed === 0) inflight -= 1;
+            };
+            held.confirm.push({
+              write,
+              complete: completing(() => deliver(path)),
+            });
+            held.resolve.push({ write, complete: completing(() => resolve()) });
+            return;
+          }
+          setTimeout(() => {
+            store();
             if (order === 'resolve-then-confirm') {
               resolve();
               setTimeout(() => {
@@ -464,6 +536,12 @@ export function installDbStandIn(options: DbStandInOptions): void {
     inflight: () => inflight,
     deliveries: () => deliveries,
     answer: () => answer(),
+    release: (completion) => {
+      const next = held[completion].shift();
+      if (!next) throw new Error(`no write is waiting to ${completion}`);
+      next.complete();
+      return next.write;
+    },
     remoteWrite: (path, body) => {
       persist(path, copyOf(body));
       deliver(path);
