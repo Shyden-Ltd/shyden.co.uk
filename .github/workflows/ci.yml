@@ -213,12 +213,37 @@ jobs:
           # `warn`, never `ignore`, as for the shards above (#131).
           if-no-files-found: warn
 
+  # The real Pages Functions on workerd (#97): `wrangler pages dev` serves
+  # this tree's dist/ over a local D1 with the real migration applied, and a
+  # browser submits real reports to it. build-and-test needs it, so it gates
+  # with no change to branch protection.
+  functions:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:functions
+      - name: Keep the failing run's Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-traces-${{ github.run_id }}-${{ github.run_attempt }}-functions
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: warn
+
   # THE REQUIRED CONTEXT. Branch protection requires it by name and
   # scripts/deploy-gate.mjs deploys because it passed, so it must go on meaning
   # what it meant when it ran the suite itself: every step ran, and the whole
   # suite ran. It runs none of that now. It stands for the jobs that do.
   build-and-test:
-    needs: [checks, e2e, sanity-on-build]
+    needs: [checks, e2e, sanity-on-build, functions]
     # NEVER skipped. A skipped required check is reported to branch protection
     # as passing, so an aggregate whose condition could turn false would read
     # green exactly when a shard failed or was skipped (#157). It runs always,

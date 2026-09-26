@@ -2336,4 +2336,15 @@ describe('wrangler comes from the lockfile (#97)', () => {
       ),
     ).toEqual([]);
   });
+
+  it('the functions job runs the functions-runtime suite', () => {
+    // That build-and-test needs the job is already derived by "stands for
+    // every other ci.yml job that is not required by name itself"; this pins
+    // what the job runs, read from the parsed workflow.
+    expect(jobNamed('ci.yml', 'functions').runs).toEqual([
+      'npm ci',
+      'npx playwright install --with-deps chromium',
+      'npm run test:functions',
+    ]);
+  });
 });

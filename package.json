@@ -13,6 +13,7 @@
     "typecheck": "astro check",
     "test:unit": "vitest run",
     "test:e2e": "node scripts/test-e2e.mjs",
+    "test:functions": "playwright test --config=playwright.functions.config.ts",
     "test:sanity": "SANITY_ON_BUILD=1 playwright test -c playwright.dev.config.ts && SANITY_ON_BUILD=1 playwright test -c playwright.prod.config.ts",
     "test:visual": "node scripts/visual.mjs",
     "test:visual:update": "node scripts/visual.mjs --update",
