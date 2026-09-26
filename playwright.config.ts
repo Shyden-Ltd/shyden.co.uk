@@ -351,6 +351,12 @@ export default defineConfig({
       name: 'content',
       use: { ...devices['Desktop Chrome'] },
       testMatch: contentOnly,
+      // Most of these specs open a page, but `copy-reaches-a-page.spec.ts`
+      // only reads built files, so a run of this project alone can record no
+      // navigation with the collector healthy. The json report carries this
+      // mark, and `navTimingVerdict` in `scripts/test-e2e.mjs` leaves the
+      // project out of the count it judges (#355).
+      metadata: { requiresNavigation: false },
     },
     // Everything that renders, on every engine it has to render on. A collapsed
     // nav wrapper once pushed the header links off-screen and only a real

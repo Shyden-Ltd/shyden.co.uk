@@ -9,6 +9,8 @@ import {
   navTimings,
   formatNavTimings,
   navTimingVerdict,
+  excusedFromNavigating,
+  resultsByProject,
 } from '../../scripts/test-e2e.mjs';
 
 /**
@@ -209,25 +211,182 @@ describe('summarising navigations per project', () => {
   });
 });
 
-describe('the liveness verdict — the control on all of the above', () => {
-  it('fails a run where tests ran but no navigation was recorded', () => {
-    const verdict = navTimingVerdict({ navigations: 0, testsWithResults: 120 });
-    expect(verdict.ok).toBe(false);
-    expect(verdict.message).toMatch(/Navigate/);
+type Outcome = 'expected' | 'unexpected' | 'flaky' | 'skipped';
+
+/**
+ * A json report in the shape Playwright writes it: `stats` counts tests by
+ * outcome, each test names its project, a `describe` block nests as `suites`,
+ * and each project's `metadata` is copied into `config.projects`. Declared
+ * here rather than imported, so it can disagree with the code it tests.
+ *
+ * Every test sits one `describe` deep, so a walk that reads only top-level
+ * specs finds none of them.
+ */
+const jsonReport = ({
+  tests,
+  excused = [],
+  stats,
+}: {
+  tests: { project: string; status: Outcome }[];
+  excused?: string[];
+  stats?: Partial<Record<Outcome, number>>;
+}) => {
+  const outcomes = (status: Outcome) =>
+    tests.filter((t) => t.status === status).length;
+  const names = [...new Set([...tests.map((t) => t.project), ...excused])];
+  return {
+    config: {
+      projects: names.map((name) => ({
+        name,
+        metadata: excused.includes(name) ? { requiresNavigation: false } : {},
+      })),
+    },
+    stats: stats ?? {
+      expected: outcomes('expected'),
+      unexpected: outcomes('unexpected'),
+      flaky: outcomes('flaky'),
+      skipped: outcomes('skipped'),
+    },
+    suites: [
+      {
+        title: 'a.spec.ts',
+        specs: [],
+        suites: [
+          {
+            title: 'a describe block',
+            specs: tests.map(({ project, status }, i) => ({
+              title: `test ${i}`,
+              tests: [{ projectName: project, status }],
+            })),
+          },
+        ],
+      },
+    ],
+  };
+};
+
+/**
+ * The refusal's message, after asserting the verdict refused, which also
+ * narrows its type for the assertions that read the message.
+ */
+const refusal = (verdict: ReturnType<typeof navTimingVerdict>): string => {
+  if (verdict.ok) throw new Error('expected the verdict to refuse; it passed');
+  return verdict.message;
+};
+
+const ran = (project: string, count: number, status: Outcome = 'expected') =>
+  Array.from({ length: count }, () => ({ project, status }));
+
+describe('which projects must navigate — read back out of the report', () => {
+  it('excuses exactly the projects the config marks', () => {
+    const report = jsonReport({
+      tests: [...ran('chromium', 1), ...ran('content', 1)],
+      excused: ['content'],
+    });
+    expect([...excusedFromNavigating(report)]).toEqual(['content']);
   });
 
-  it('passes a run that recorded navigations', () => {
-    expect(navTimingVerdict({ navigations: 1, testsWithResults: 1 }).ok).toBe(
-      true,
+  it('excuses nothing when the report carries no project config', () => {
+    // Fail closed: a report without the mark counts every project, which is
+    // the behaviour before #355 rather than a silent pass.
+    expect([...excusedFromNavigating({})]).toEqual([]);
+  });
+
+  it('counts each project’s results, however deep the describe blocks, and never a skip', () => {
+    const report = jsonReport({
+      tests: [
+        ...ran('chromium', 1, 'expected'),
+        ...ran('chromium', 1, 'unexpected'),
+        ...ran('chromium', 1, 'flaky'),
+        ...ran('chromium', 2, 'skipped'),
+        ...ran('content', 1),
+      ],
+    });
+    expect(Object.fromEntries(resultsByProject(report))).toEqual({
+      chromium: 3,
+      content: 1,
+    });
+  });
+});
+
+describe('the liveness verdict — the control on all of the above', () => {
+  it('passes a run made only of projects the config excuses (#355)', () => {
+    // `copy-reaches-a-page.spec.ts` reads built files and opens no page, so a
+    // filtered run of it records no navigation with the collector healthy.
+    const verdict = navTimingVerdict({
+      navigations: 0,
+      report: jsonReport({ tests: ran('content', 11), excused: ['content'] }),
+    });
+    expect(verdict).toEqual({ ok: true });
+  });
+
+  it('passes a mixed run that recorded navigations', () => {
+    const verdict = navTimingVerdict({
+      navigations: 4,
+      report: jsonReport({
+        tests: [...ran('chromium', 3), ...ran('content', 2)],
+        excused: ['content'],
+      }),
+    });
+    expect(verdict).toEqual({ ok: true });
+  });
+
+  it('fails a mixed run whose rendering tests recorded no navigation, and names what it counted', () => {
+    const verdict = navTimingVerdict({
+      navigations: 0,
+      report: jsonReport({
+        tests: [
+          ...ran('chromium', 2),
+          ...ran('webkit', 1),
+          ...ran('content', 5),
+        ],
+        excused: ['content'],
+      }),
+    });
+    const message = refusal(verdict);
+    expect(message).toMatch(/3 test\(s\) ran in projects that must navigate/);
+    expect(message).toMatch(/chromium 2, webkit 1/);
+    expect(message).toMatch(/Not counted: 5 result\(s\) from content/);
+    expect(message).toMatch(/Navigate/);
+    // The claim #355 found false: most tests navigate, not every test.
+    expect(message).not.toMatch(/every test/i);
+  });
+
+  it('fails a rendering-only run that recorded no navigation', () => {
+    const verdict = navTimingVerdict({
+      navigations: 0,
+      report: jsonReport({ tests: ran('firefox', 120), excused: ['content'] }),
+    });
+    const message = refusal(verdict);
+    expect(message).toMatch(
+      /120 test\(s\) ran in projects that must navigate \(firefox 120\)/,
     );
+    expect(message).not.toMatch(/Not counted/);
   });
 
   it('passes a run where no test produced a result at all', () => {
     // `--grep` that matches nothing, or a suite-level failure before any test
     // ran: there is no collector to prove alive, so there is nothing to fail.
-    expect(navTimingVerdict({ navigations: 0, testsWithResults: 0 }).ok).toBe(
-      true,
-    );
+    const verdict = navTimingVerdict({
+      navigations: 0,
+      report: jsonReport({ tests: ran('chromium', 3, 'skipped') }),
+    });
+    expect(verdict).toEqual({ ok: true });
+  });
+
+  it('fails when its own walk of the report disagrees with the report’s stats', () => {
+    // The per-project count is this script's walk. A walk that finds nothing
+    // would count zero rendering tests and wave a dead collector through, so
+    // it is checked against the count Playwright keeps itself.
+    const verdict = navTimingVerdict({
+      navigations: 0,
+      report: jsonReport({
+        tests: ran('chromium', 2),
+        stats: { expected: 7 },
+      }),
+    });
+    const message = refusal(verdict);
+    expect(message).toMatch(/stats count 7 .* found 2/);
   });
 });
 

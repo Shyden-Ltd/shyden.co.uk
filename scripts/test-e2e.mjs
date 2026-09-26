@@ -497,10 +497,9 @@ function main() {
         `\n### navigation durations by project\n\n${navTable}\n`,
       );
 
-    const { expected = 0, unexpected = 0, flaky = 0 } = parsed.stats ?? {};
     const liveness = navTimingVerdict({
       navigations: navigations.length,
-      testsWithResults: expected + unexpected + flaky,
+      report: parsed,
     });
 
     const verdict = reconcile({
@@ -552,6 +551,27 @@ const rank = (ascending, quantile) =>
   ascending[Math.ceil(quantile * ascending.length) - 1];
 
 /**
+ * Every test in a Playwright json report, with the spec it belongs to.
+ *
+ * A `describe` block nests as `suites` inside its file's suite, so a walk that
+ * reads only a file's own `specs` misses every test written inside one.
+ *
+ * @param {Record<string, any>} report
+ * @returns {Generator<{ spec: Record<string, any>, test: Record<string, any> }>}
+ */
+function* reportTests(report) {
+  /** @param {any[]} suites @returns {Generator<{ spec: any, test: any }>} */
+  function* visit(suites) {
+    for (const suite of suites ?? []) {
+      for (const spec of suite.specs ?? [])
+        for (const test of spec.tests ?? []) yield { spec, test };
+      yield* visit(suite.suites);
+    }
+  }
+  yield* visit(report?.suites);
+}
+
+/**
  * Per-project duration distribution from a Playwright json report.
  *
  * The suite already produces this and throws it away: the json reporter exists
@@ -567,29 +587,20 @@ const rank = (ascending, quantile) =>
 export function projectTimings(report) {
   const byProject = new Map();
 
-  /** @param {any[]} suites */
-  const visit = (suites) => {
-    for (const suite of suites ?? []) {
-      for (const spec of suite.specs ?? []) {
-        for (const test of spec.tests ?? []) {
-          // The SLOWEST attempt, not the last. A test that times out at 30s
-          // and passes at 800ms on retry is exactly the case this exists to
-          // surface, and reporting the retry erases the finding.
-          const ms = Math.max(
-            0,
-            ...(test.results ?? []).map(
-              (/** @type {{ duration?: number }} */ r) => r.duration ?? 0,
-            ),
-          );
-          const rows = byProject.get(test.projectName) ?? [];
-          rows.push({ title: spec.title, ms });
-          byProject.set(test.projectName, rows);
-        }
-      }
-      visit(suite.suites);
-    }
-  };
-  visit(report?.suites);
+  for (const { spec, test } of reportTests(report)) {
+    // The SLOWEST attempt, not the last. A test that times out at 30s and
+    // passes at 800ms on retry is exactly the case this exists to surface,
+    // and reporting the retry erases the finding.
+    const ms = Math.max(
+      0,
+      ...(test.results ?? []).map(
+        (/** @type {{ duration?: number }} */ r) => r.duration ?? 0,
+      ),
+    );
+    const rows = byProject.get(test.projectName) ?? [];
+    rows.push({ title: spec.title, ms });
+    byProject.set(test.projectName, rows);
+  }
 
   return [...byProject].map(([project, tests]) => {
     const ascending = tests
@@ -718,29 +729,110 @@ export function formatNavTimings(rows) {
  * reading the json report, which strips `pw:api` steps entirely. A Playwright
  * upgrade that renames the step is the same failure arriving later.
  *
- * `testsWithResults` MUST come from an observer other than this collector —
- * `main` passes the json reporter's own stats. Asked to count its own tests, a
- * reporter that never ran answers zero and certifies its own silence.
+ * The tests it judges MUST be counted by an observer other than this
+ * collector: `report` is the json reporter's output. Asked to count its own
+ * tests, a reporter that never ran answers zero and certifies its own silence.
  *
- * @param {{ navigations: number, testsWithResults: number }} input
+ * Only tests in projects that must navigate are judged (#355). The `content`
+ * project reads built files, and one of its specs never opens a page, so a
+ * filtered run of that spec alone recorded nothing with the collector healthy
+ * and exited 1 over a green suite. The config marks such a project with
+ * `metadata: { requiresNavigation: false }`, and the report carries the mark.
+ *
+ * @param {{ navigations: number, report: Record<string, any> }} input
  *   `navigations` is a COUNT: the caller passes `navigations.length`, and the
- *   unit tests pass 0 and 1. Annotating it as the array made `navigations > 0`
+ *   unit tests pass 0 and 4. Annotating it as the array made `navigations > 0`
  *   look like a defect; it is not, and the call site is what settled it.
+ * @returns {{ ok: true } | { ok: false, message: string }}
  */
-export function navTimingVerdict({ navigations, testsWithResults }) {
+export function navTimingVerdict({ navigations, report }) {
+  const { expected = 0, unexpected = 0, flaky = 0 } = report?.stats ?? {};
+  const byProject = resultsByProject(report);
+  const walked = [...byProject.values()].reduce((sum, n) => sum + n, 0);
+  // The per-project count below is this script's own walk of the report. A
+  // walk that found nothing would count no rendering tests and pass a dead
+  // collector, so it must agree with the count Playwright keeps itself.
+  if (walked !== expected + unexpected + flaky)
+    return {
+      ok: false,
+      message:
+        `The report's stats count ${expected + unexpected + flaky} test(s) with a ` +
+        `result, and walking its suites found ${walked}. The navigation count ` +
+        'cannot be judged against a population this script cannot read: check ' +
+        'the json report shape `reportTests` in scripts/test-e2e.mjs expects.',
+    };
   if (navigations > 0) return { ok: true };
-  // No test produced a result: a `--grep` that matched nothing, or a failure
-  // before any test ran. There is no collector to prove alive.
-  if (!testsWithResults) return { ok: true };
+
+  const excused = excusedFromNavigating(report);
+  /** @param {boolean} wanted */
+  const tally = (wanted) =>
+    [...byProject].filter(([project]) => excused.has(project) === wanted);
+  /** @param {[string, number][]} rows */
+  const total = (rows) => rows.reduce((sum, [, n]) => sum + n, 0);
+  const judged = tally(false);
+  const skipped = tally(true);
+  // No test that must navigate produced a result: a `--grep` that matched
+  // nothing, a failure before any test ran, or a run of excused projects
+  // only. There is no collector to prove alive.
+  if (!total(judged)) return { ok: true };
+
+  /** @param {[string, number][]} rows */
+  const named = (rows) =>
+    rows.map(([project, n]) => `${project} ${n}`).join(', ');
+  const notCounted = total(skipped)
+    ? ` Not counted: ${total(skipped)} result(s) from ${skipped.map(([p]) => p).join(', ')}, ` +
+      'which the config excuses from navigating (`metadata.requiresNavigation: false`).'
+    : '';
   return {
     ok: false,
     message:
-      `${testsWithResults} test(s) ran and not one navigation was recorded. Every ` +
-      'test in this suite navigates, so the collector is broken, not the suite: ' +
-      'check that Playwright still titles a `page.goto` step `Navigate` in the ' +
-      '`pw:api` category (tests/reporters/nav-timing-reporter.ts), and that the ' +
-      'reporter is still in the list `mergeReporters` builds.',
+      `${total(judged)} test(s) ran in projects that must navigate ` +
+      `(${named(judged)}) and not one navigation was recorded, so the collector ` +
+      `is broken, not the suite.${notCounted} Check that Playwright still titles ` +
+      'a `page.goto` step `Navigate` in the `pw:api` category ' +
+      '(tests/reporters/nav-timing-reporter.ts), and that the reporter is still ' +
+      'in the list `mergeReporters` builds.',
   };
+}
+
+/**
+ * The projects `playwright.config.ts` excuses from the navigation liveness
+ * verdict, read from the json report, which copies each project's `metadata`
+ * into `config.projects`. The config is the one place the mark is written; a
+ * report without it excuses nothing, which fails closed.
+ *
+ * @param {Record<string, any>} report
+ * @returns {Set<string>}
+ */
+export function excusedFromNavigating(report) {
+  return new Set(
+    (report?.config?.projects ?? [])
+      .filter(
+        (/** @type {{ metadata?: Record<string, unknown> }} */ p) =>
+          p.metadata?.requiresNavigation === false,
+      )
+      .map((/** @type {{ name: string }} */ p) => p.name),
+  );
+}
+
+/**
+ * How many tests produced a result in each project: the outcomes the report's
+ * `stats` counts as expected, unexpected or flaky. A skipped test ran nothing.
+ *
+ * @param {Record<string, any>} report
+ * @returns {Map<string, number>}
+ */
+export function resultsByProject(report) {
+  const counted = new Set(['expected', 'unexpected', 'flaky']);
+  /** @type {Map<string, number>} */
+  const byProject = new Map();
+  for (const { test } of reportTests(report))
+    if (counted.has(test.status))
+      byProject.set(
+        test.projectName,
+        (byProject.get(test.projectName) ?? 0) + 1,
+      );
+  return byProject;
 }
 
 // Only when run, never when imported: the unit tests import the functions
