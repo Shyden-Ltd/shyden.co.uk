@@ -34,8 +34,13 @@ describe('rootTokens', () => {
 });
 
 describe('atmosphereLayers', () => {
+  // The dot grid (#371) is its own rule, declared AFTER body::before here as
+  // in tokens.css, yet read first: it paints on top by tree order, not by
+  // where the rule sits in the file.
+  const GRID = 'radial-gradient(circle, var(--dot) 1px, transparent 1.5px)';
   const before = (background: string): string =>
     `body::before {\n  content: '';\n  background: ${background};\n}\n` +
+    `body::after {\n  content: '';\n  background: ${GRID};\n}\n` +
     '@media print {\n  body::before { display: none; }\n}\n';
 
   it('lists the layers top-first, in declaration order, one token each', () => {
@@ -46,7 +51,7 @@ describe('atmosphereLayers', () => {
             'linear-gradient(100deg, transparent 30%, var(--b) 50%, transparent 70%)',
         ),
       ),
-    ).toEqual(['--a', '--b']);
+    ).toEqual(['--dot', '--a', '--b']);
   });
 
   it('refuses a layer it could not score', () => {
@@ -65,9 +70,16 @@ describe('atmosphereLayers', () => {
   it('refuses a stylesheet with no screen body::before', () => {
     expect(() =>
       atmosphereLayers(
-        '@media print { body::before { background: var(--a); } }',
+        `body::after { background: ${GRID}; }\n` +
+          '@media print { body::before { background: var(--a); } }',
       ),
-    ).toThrow('body::before');
+    ).toThrow('one top-level body::before rule');
+  });
+
+  it('refuses a stylesheet with no screen body::after, so the grid cannot go unscored', () => {
+    expect(() =>
+      atmosphereLayers('body::before { background: var(--a); }'),
+    ).toThrow('one top-level body::after rule');
   });
 });
 

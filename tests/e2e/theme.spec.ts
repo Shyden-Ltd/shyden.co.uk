@@ -397,3 +397,79 @@ test.describe('Back (#142 §5 step 5, AC4)', () => {
     await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
   });
 });
+
+/**
+ * #371. A quiet dot grid over the atmosphere, so the ground reads as a
+ * surface rather than a flat colour, in both themes (operator's choice B,
+ * 2026-09-27). It is its own fixed layer, `body::after`, so it can fade down
+ * the viewport through a mask without fading the colour pools beneath it.
+ */
+test.describe('the dot grid (#371)', () => {
+  /** body::after as painted, and the grid token resolved the same way. */
+  const grid = (page: Page) =>
+    page.evaluate(() => {
+      const layer = getComputedStyle(document.body, '::after');
+      const probe = document.createElement('i');
+      probe.style.color = 'var(--grid-dot)';
+      document.body.append(probe);
+      const dot = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        display: layer.display,
+        position: layer.position,
+        image: layer.backgroundImage,
+        size: layer.backgroundSize,
+        mask: layer.maskImage || layer.webkitMaskImage,
+        dot,
+      };
+    });
+
+  for (const theme of THEMES)
+    test(`${theme}: the grid is drawn in the theme's own dot colour, fixed, and fading`, async ({
+      page,
+    }) => {
+      await page.goto('/');
+      await emulateTheme(page, theme);
+      const drawn = await grid(page);
+      expect(drawn.display).not.toBe('none');
+      expect(drawn.position).toBe('fixed');
+      expect(drawn.image).toContain('radial-gradient');
+      expect(drawn.size).toBe('22px 22px');
+      expect(drawn.dot, 'the token resolves to a colour').toMatch(/^rgba?\(/);
+      expect(
+        drawn.image,
+        'the dots take their colour from --grid-dot',
+      ).toContain(drawn.dot);
+      expect(drawn.mask).toContain('linear-gradient');
+    });
+
+  test('the two themes draw different dots', async ({ page }) => {
+    await page.goto('/');
+    // Each dot must be the colour the grid paints: an undefined token makes
+    // the probe inherit the theme's ink, which also differs by theme, and this
+    // passed against a stylesheet with no grid at all until it said so.
+    await emulateTheme(page, 'light');
+    const light = await grid(page);
+    await emulateTheme(page, 'dark');
+    const dark = await grid(page);
+    expect(light.image).toContain(light.dot);
+    expect(dark.image).toContain(dark.dot);
+    expect(light.dot).not.toBe(dark.dot);
+  });
+
+  test('does not print', async ({ page }) => {
+    await page.goto('/');
+    await page.emulateMedia({ media: 'print' });
+    expect((await grid(page)).display).toBe('none');
+  });
+
+  test('is not drawn under forced colours', async ({ page, browserName }) => {
+    test.skip(
+      browserName !== 'chromium',
+      'Playwright emulates forcedColors in Chromium alone',
+    );
+    await page.goto('/');
+    await page.emulateMedia({ forcedColors: 'active' });
+    expect((await grid(page)).display).toBe('none');
+  });
+});

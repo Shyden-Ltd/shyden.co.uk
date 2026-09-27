@@ -116,32 +116,42 @@ const layersOf = (value: string): string[] => {
 };
 
 /**
- * The page atmosphere's layers as `body::before` paints them, TOP-FIRST. CSS
- * paints the first `background` layer on top, so declaration order IS the
- * stack. Derived, never written down: the suite's hand-written stack once put
- * the shaft on top of a stack the browser paints with the shaft at the bottom.
+ * The page atmosphere's layers as the page paints them, TOP-FIRST: the dot
+ * grid on `body::after` (#371), then `body::before`'s colour layers. Both are
+ * fixed at z-index -1, so `::after` paints above `::before` by tree order,
+ * and within one rule CSS paints the first `background` layer on top, so
+ * declaration order IS the stack. Derived, never written down: the suite's
+ * hand-written stack once put the shaft on top of a stack the browser paints
+ * with the shaft at the bottom.
  *
  * Every layer must take its colour from exactly one token, or no pair could
- * score it: a literal layer would be invisible to every contrast check.
+ * score it: a literal layer would be invisible to every contrast check. A
+ * layer the mask fades is scored at full strength, which is its worst case.
  */
-export const atmosphereLayers = (css: string): string[] => {
-  const rules = topLevel(css, 'body::before');
+export const atmosphereLayers = (css: string): string[] => [
+  ...layerTokens(css, 'body::after'),
+  ...layerTokens(css, 'body::before'),
+];
+
+/** One atmosphere rule's `background` layers, top-first, as token names. */
+const layerTokens = (css: string, selector: string): string[] => {
+  const rules = topLevel(css, selector);
   if (rules.length !== 1)
     throw new Error(
-      `expected one top-level body::before rule in ${TOKENS_FILE}, found ${rules.length}`,
+      `expected one top-level ${selector} rule in ${TOKENS_FILE}, found ${rules.length}`,
     );
   const background = rules[0].declarations.filter(
     ({ property }) => property === 'background',
   );
   if (background.length !== 1)
     throw new Error(
-      `body::before declares background ${background.length} times, expected once`,
+      `${selector} declares background ${background.length} times, expected once`,
     );
   return layersOf(background[0].value).map((layer, i) => {
     const tokens = [...layer.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]);
     if (tokens.length !== 1)
       throw new Error(
-        `body::before layer ${i + 1} names ${tokens.length} tokens; ` +
+        `${selector} layer ${i + 1} names ${tokens.length} tokens; ` +
           `each layer must take its colour from exactly one: ${layer}`,
       );
     return tokens[0];

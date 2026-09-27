@@ -61,6 +61,11 @@
   --pool-top-right: rgb(60 80 110 / 0.045);
   --pool-foot: rgb(30 45 65 / 0.055);
   --shaft: rgb(255 255 255 / 0.35);
+  /* The dot grid (#371), drawn over the atmosphere on body::after, so the
+     ground reads as a surface rather than a flat colour. 0.07 is the most
+     the palette carries: at 0.08, --ink-soft over a dot and the shade pools
+     scores 4.44:1 (contrast.test.ts). */
+  --grid-dot: rgb(17 24 33 / 0.07);
 
   /* The ShyTalk mark's tile (HomePage.astro, #142 §3.4). The mark's two
      tones were made for a dark ground and measure 1.28:1 and 1.70:1 on
@@ -180,6 +185,9 @@
     --pool-top-right: rgb(122 92 255 / 0.1);
     --pool-foot: rgb(24 74 110 / 0.14);
     --shaft: rgb(255 255 255 / 0.05);
+    /* The dot grid: white at 5%, the most the palette carries here. At 0.06,
+       --ink-soft over a dot and every layer scores 4.36:1. */
+    --grid-dot: rgb(255 255 255 / 0.05);
 
     /* No tile: the mark was made for this ground, and zero padding keeps it
        exactly where Aurora always had it. */
@@ -215,6 +223,9 @@
     --pool-top-right: rgb(122 92 255 / 0.1);
     --pool-foot: rgb(24 74 110 / 0.14);
     --shaft: rgb(255 255 255 / 0.05);
+    /* The dot grid: white at 5%, the most the palette carries here. At 0.06,
+       --ink-soft over a dot and every layer scores 4.36:1. */
+    --grid-dot: rgb(255 255 255 / 0.05);
     --wordmark-tile: transparent;
     --wordmark-pad: 0;
     --switch-moon: none;
@@ -283,6 +294,39 @@ body::before {
     ),
     radial-gradient(72rem 46rem at 50% 108%, var(--pool-foot), transparent 70%),
     linear-gradient(100deg, transparent 30%, var(--shaft) 50%, transparent 70%);
+}
+
+/* The dot grid (#371): a 1px dot every 22px in the theme's --grid-dot, over
+   the atmosphere, strongest at the top and fading down the viewport. Its own
+   layer so the mask fades the dots and never the pools beneath them; fixed
+   with them, so nothing repaints on scroll. It paints above body::before
+   because it comes later in the tree at the same z-index, and
+   contrast.test.ts scores it as the atmosphere's top layer. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+      circle at 1px 1px,
+      var(--grid-dot) 1px,
+      transparent 1.5px
+    )
+    0 0 / 22px 22px;
+  mask-image: linear-gradient(
+    to bottom,
+    #000,
+    rgb(0 0 0 / 0.35) 75%,
+    transparent
+  );
+}
+/* A high-contrast user gets a plain ground: a pattern behind text is exactly
+   what forced colours exists to remove. */
+@media (forced-colors: active) {
+  body::after {
+    display: none;
+  }
 }
 h1,
 h2,
@@ -466,6 +510,7 @@ main:focus {
     --pool-top-right: transparent;
     --pool-foot: transparent;
     --shaft: transparent;
+    --grid-dot: transparent;
 
     /* The mark prints in ink (HomePage.astro), so a tile would print as a
        dark slab around dark text, if it printed at all. None on paper. */
@@ -475,9 +520,10 @@ main:focus {
   html {
     background: #fff;
   }
-  /* The atmosphere layer itself, not just its colours: a fixed element can
-     otherwise repeat on every printed page in some engines. */
-  body::before {
+  /* The atmosphere layers themselves, not just their colours: a fixed
+     element can otherwise repeat on every printed page in some engines. */
+  body::before,
+  body::after {
     display: none;
   }
   /* A keyboard affordance, not a record of anything. Globally, so it holds on

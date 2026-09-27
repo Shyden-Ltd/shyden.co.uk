@@ -248,8 +248,9 @@ const pairName = (p: Pair) =>
   `${p.fg.join(' over ')} on ${p.bg.join(' over ')} (${p.where})`;
 
 describe('the palette meets WCAG AA by computation, not by comment', () => {
-  it('reads the atmosphere from body::before, top-first, named by position', () => {
+  it('reads the atmosphere from body::after over body::before, top-first, named by position', () => {
     expect(atmosphereLayers(tokensCss())).toEqual([
+      '--grid-dot',
       '--pool-top-left',
       '--pool-top-right',
       '--pool-foot',
