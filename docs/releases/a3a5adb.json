@@ -1,0 +1,347 @@
+{
+  "base": "a3a5adb1c6ae015a50fcdc391f8520c017a51159",
+  "headline": "Everything since 13 August, before it reaches production",
+  "lede": "One page for the whole release: what changes for a visitor, the journeys that show it on five engines, and the checks that stay yours.",
+  "signoff": {
+    "lede": "Production changes only on your decision. Approving here records that this release may be promoted; the promotion itself stays yours.",
+    "approve": "Signed off — may release to production"
+  },
+  "gapGroup": "Shown by no journey: check by hand",
+  "checks": [
+    {
+      "id": "dev-locales",
+      "group": "On dev (dev.shyden.co.uk), by hand",
+      "label": "Open the homepage in all five languages (/, /id/, /zh/, /vi/, /th/) and move between them from the header."
+    },
+    {
+      "id": "dev-themes",
+      "group": "On dev (dev.shyden.co.uk), by hand",
+      "label": "Switch light and dark from the header on all three pages, then reload: the choice holds."
+    },
+    {
+      "id": "dev-classroom-groups",
+      "group": "On dev (dev.shyden.co.uk), by hand",
+      "label": "Make groups on /classroom-groups from a real class list, open the projector board, and print the register."
+    },
+    {
+      "id": "dev-glory-points",
+      "group": "On dev (dev.shyden.co.uk), by hand",
+      "label": "Work out Glory Points on /glory-points in two languages."
+    },
+    {
+      "id": "dev-report",
+      "group": "On dev (dev.shyden.co.uk), by hand",
+      "label": "Send a translation report from the footer: the page says it was sent, and `npm run reports:review shyden-reports-dev` shows it."
+    },
+    {
+      "id": "dev-404-report",
+      "group": "On dev (dev.shyden.co.uk), by hand",
+      "label": "Open a missing page in a beta language and send a report from the 404."
+    },
+    {
+      "id": "prod-waf",
+      "group": "Before production, yours",
+      "label": "Add the WAF rate-limit rule on /api/report from docs/runbooks/translation-reports.md."
+    },
+    {
+      "id": "prod-workers-plan",
+      "group": "Before production, yours",
+      "label": "Confirm the Workers plan covers the report function."
+    },
+    {
+      "id": "prod-d1-binding",
+      "group": "Before production, yours",
+      "label": "Confirm the production Pages project binds the production reports database."
+    },
+    {
+      "id": "prod-dev-password",
+      "group": "Before production, yours",
+      "label": "Decide on the DEV_PASSWORD variable found on the production Pages project."
+    },
+    {
+      "id": "prod-secrets",
+      "group": "Before production, yours",
+      "label": "Decide on the repository-level Cloudflare secrets for this release (#241)."
+    }
+  ],
+  "entries": {
+    "294cb6f38d9b5fd8744658fafd8b667d695f8a6d": {
+      "kind": "none",
+      "reason": "Refactor: locale routing derived from LOCALES in place of a hardcoded /id; the en and id routes it serves are unchanged."
+    },
+    "3a651961b2721d5148a8d9f504a39b109b536171": {
+      "kind": "visible",
+      "journeys": [
+        "language switcher > lists every language: the current one first and ticked, every other a link",
+        "language switcher > names the current language in its own language, as its width calls for"
+      ]
+    },
+    "8aea25765f71c87dce423f351f7c4f34f2e32192": {
+      "kind": "gap",
+      "check": "On /classroom-groups, choose a handover language other than the page language and export: the handover reads in the chosen language."
+    },
+    "b24272874ddbe40da5b272564d15f97983b869e0": {
+      "kind": "none",
+      "reason": "Refactor: localised routes generated from LOCALES; every page renders at the same paths."
+    },
+    "9ff2a1235c38477057e1e4d10db2c2ff1d68bdcc": {
+      "kind": "none",
+      "reason": "A DeepL harness under src/lib that no page imports; nothing a visitor receives changes."
+    },
+    "d5041ea01b51dbaccad455a8f83b44087ba23d2a": {
+      "kind": "visible",
+      "journeys": [
+        "the no-scroll rule, measured > the action row is sticky at every width, so the primary action is never below the fold",
+        "the no-scroll rule, measured > the pinned action row casts a soft shadow upward at every width"
+      ]
+    },
+    "5ff997a2bfdf5a779a85ae79716bfa06b74ae620": {
+      "kind": "visible",
+      "journeys": [
+        "light theme > zh at 320px: every page renders the theme, with no sideways scroll",
+        "light theme > vi at 320px: every page renders the theme, with no sideways scroll",
+        "light theme > th at 320px: every page renders the theme, with no sideways scroll",
+        "every language renders its own messages > zh: numbers, groups, a summary, a refusal and a list",
+        "every language renders its own messages > th: numbers, groups, a summary, a refusal and a list"
+      ]
+    },
+    "582042f199deada4b2371e1661dcfbd9f15b1f43": {
+      "kind": "visible",
+      "journeys": [
+        "every unverified language is marked BETA > zh: marks each beta language once in the list, and English never",
+        "every unverified language is marked BETA > vi: the footer says why, in vi",
+        "every unverified language is marked BETA > the badge carries a translated name for screen readers"
+      ]
+    },
+    "f7880334f6eb71e54d1016187d6980fe8dda970f": {
+      "kind": "visible",
+      "journeys": [
+        "the 404 answers everyone > shows every language the site serves",
+        "the 404 answers everyone > sends every visitor home in their own language"
+      ]
+    },
+    "bbcb9a704983a4fbec3f54bebab382ff92f12a18": {
+      "kind": "visible",
+      "journeys": [
+        "the Glory Points calculator speaks the page it is on > id: numbers use id conventions",
+        "the Glory Points calculator speaks the page it is on > th: validation is answered in th"
+      ]
+    },
+    "5bf9ade047e8b00704acf0a8a39d52dab545d6ee": {
+      "kind": "none",
+      "reason": "Comments in the CSV locale module only; every CSV a teacher downloads is unchanged."
+    },
+    "7f80b4422040a68a96832b88ee4dcf16f2a90aa5": {
+      "kind": "none",
+      "reason": "Type-checking introduced; twelve type errors fixed without a behaviour change, and the roster and grouping journeys run the touched code."
+    },
+    "79817bd56160a5cf3ea793e1a0a61d523215c046": {
+      "kind": "none",
+      "reason": "An unused parameter removed from the deal animation; what it does is unchanged."
+    },
+    "f19f073802ec9ae33bf88da62ba622d042013c3c": {
+      "kind": "visible",
+      "journeys": [
+        "the controls the browser draws use the brand accent, in both themes",
+        "the roster table > the table has seven columns, in order — the seventh (Remove) has a real header, visually hidden but present"
+      ]
+    },
+    "c100e595b7d7152043e0b7f3b68ca0bc141e1106": {
+      "kind": "visible",
+      "journeys": [
+        "homepage content > the hero leads with ShyTalk and every section is present",
+        "homepage content > the showcase frame shows a real room capture, one PER LOCALE",
+        "dark theme > en at 1280px: every page renders the theme, with no sideways scroll"
+      ]
+    },
+    "25beba940926a2db49f9cf85b33765f175988b80": {
+      "kind": "visible",
+      "journeys": [
+        "every language renders its own messages > vi: numbers, groups, a summary, a refusal and a list",
+        "every language renders its own messages > id: numbers, groups, a summary, a refusal and a list"
+      ]
+    },
+    "15b110d9a9995fcb7cb291e9c0aeee13948694e5": {
+      "kind": "none",
+      "reason": "Docblocks moved beside the code they describe; comments only."
+    },
+    "1bfddbfe0d3c61dd011e638fc5aa409631c408a3": {
+      "kind": "none",
+      "reason": "Reformatted by prettier-plugin-astro 1.0.0; every built page was verified byte-identical in that PR."
+    },
+    "b2605bfc921fefad4ecb3a749211ab02f473b117": {
+      "kind": "none",
+      "reason": "Translation drafts no catalogue sends were dropped from a tooling file; no shipped string changes."
+    },
+    "4d6fc29ad941713600aedb6dfb36d279ebf0f262": {
+      "kind": "visible",
+      "journeys": [
+        "the projector board never hides a name > nothing is out of reach -- five groups wrapping onto a second row",
+        "the projector board never hides a name > nothing is out of reach on a 720p projector"
+      ]
+    },
+    "44901f3fbe3bfe632bbd99411532df4719ec207f": {
+      "kind": "visible",
+      "journeys": [
+        "the roster table > the table has seven columns, in order — the seventh (Remove) has a real header, visually hidden but present"
+      ]
+    },
+    "0ce1ff366eb2c734e09971bc1487f718e154cc94": {
+      "kind": "visible",
+      "journeys": [
+        "classroom group creator > leaves a pupil typed absent out of the groups entirely",
+        "classroom group creator > a refused number blocks the shuffle until it is corrected",
+        "classroom group creator > lowering the count refuses a number that was valid when it was typed"
+      ]
+    },
+    "9f6e08dd4dd17b682d0803c44b416698f8382b92": {
+      "kind": "gap",
+      "check": "On /vi/classroom-groups and /zh/classroom-groups, open Student details: the roster column labels read as the corrected wording."
+    },
+    "66a39bb9e464323a8904f4032e274b40ac97f5dc": {
+      "kind": "visible",
+      "journeys": [
+        "an unset roster dropdown says which column it is for > every unset dropdown shows its own column name"
+      ]
+    },
+    "d5ea088debfb955bd5d94f27169f9670e75ce335": {
+      "kind": "gap",
+      "check": "On /classroom-groups, export the roster as CSV: the sex column has the corrected header, and a CSV with the old header still imports."
+    },
+    "2f8e753c135a41214e70ec4b09292c9ee66830df": {
+      "kind": "visible",
+      "journeys": [
+        "which columns reach paper is decided by name, not by position > showing absent pupils prints every column, including Absent",
+        "which columns reach paper is decided by name, not by position > hiding absent pupils removes the Absent column and only that column"
+      ]
+    },
+    "ed797c2b39857dfe38e4f00ba504c921ba78dd69": {
+      "kind": "visible",
+      "journeys": [
+        "every unverified language is marked BETA > th: the footer says why, in th"
+      ]
+    },
+    "5844797312cc60b1fbe5506d2b52d5e389efb2d3": {
+      "kind": "visible",
+      "journeys": [
+        "the Students box becomes a read-out > the three number fields lock with the box, and recover with it",
+        "a disabled control never depends on its fill reaching paper"
+      ]
+    },
+    "deb9fe77c949ba2e417303494fff82c4c2371193": {
+      "kind": "visible",
+      "journeys": [
+        "the printed register — Indonesian > every column heading reaches paper in Indonesian",
+        "which columns reach paper is decided by name, not by position > hiding absent pupils removes the Absent column and only that column"
+      ]
+    },
+    "c0a39547232ad1c34ee4712e16e7c0a7438e1ebf": {
+      "kind": "none",
+      "reason": "JSDoc types added to the Pages Functions for the type checker; the dev lockdown behaves as before, and dev-sanity checks it on every deploy."
+    },
+    "874ba4191efb6748d69cc71171ab581c72121568": {
+      "kind": "none",
+      "reason": "Refactor: shared helpers moved to one home; the grouping journeys run the moved code unchanged."
+    },
+    "cab474c0e4b9bdf7070a18b98b7d22e88c75a642": {
+      "kind": "visible",
+      "journeys": [
+        "homepage content > call-to-action buttons meet the 44×44px touch target"
+      ]
+    },
+    "9f81fafea541b53a5c72eaae9e57cebea796b11d": {
+      "kind": "none",
+      "reason": "A back-translation review tool under src/lib, run by hand; no page imports it."
+    },
+    "ce080008cbeddf9b7970709a824bb8d5c84ac22c": {
+      "kind": "none",
+      "reason": "A label check under src/lib used by tests; no page imports it."
+    },
+    "4b9ef8a7ba59d5da2d52a7c5888342b240cd566f": {
+      "kind": "visible",
+      "journeys": [
+        "the copy the operator approved on #161 > zh: the tool reads as approved",
+        "the copy the operator approved on #161 > vi: the Glory Points page reads as approved",
+        "the copy the operator approved on #161 > th: the tool reads as approved"
+      ]
+    },
+    "fabbc1f82df84e8ddb836bcbd63dc545906d5d85": {
+      "kind": "visible",
+      "journeys": [
+        "out-of-date groups > the out-of-date sentence meets the WCAG AA contrast floor",
+        "validation as it is typed > the gap warning meets the WCAG AA contrast floor"
+      ]
+    },
+    "5b669d1341cc9f0840e45ed5bd43cb5971df35fe": {
+      "kind": "visible",
+      "journeys": [
+        "language switcher > shows the short code below 720px and the full name from 720px, in every language",
+        "the header row has room for everything in it (#329) > th: no header item overlaps another, at any width",
+        "the header row has room for everything in it (#329) > vi: no header item overlaps another, at any width"
+      ]
+    },
+    "606a143474f54f2a7d974948d0b74f2edc1e7dcc": {
+      "kind": "visible",
+      "journeys": [
+        "light theme > interactive states > /classroom-groups: results, the roster, the docked bar, print and the full-screen board",
+        "dark theme > interactive states > /classroom-groups: results, the roster, the docked bar, print and the full-screen board"
+      ]
+    },
+    "3640af27e1cab40c1af69526d556767165a51732": {
+      "kind": "visible",
+      "journeys": [
+        "/: every control it paints uses a palette colour, in both themes",
+        "the screen palette is not dragged down with the print one"
+      ]
+    },
+    "73aeafaccdf244bbffe32bbb95ea36fc47e950b7": {
+      "kind": "visible",
+      "journeys": [
+        "no flash of the other theme (#142 §6.3, AC5) > a saved light choice on a device preferring dark > the first frame that paints a ground paints the saved theme",
+        "the choice persists (#142 AC4) > across a reload and a second page",
+        "light theme > interactive states > the header: the phone menu, the language list and the focused switch",
+        "dark theme > en at 320px: every page renders the theme, with no sideways scroll"
+      ]
+    },
+    "03ce0e852e52df0e9e62da8ae23376813c5db550": {
+      "kind": "visible",
+      "journeys": [
+        "the sentences corrected on #319 > zh: every reachable correction reads as approved",
+        "the sentences corrected on #319 > vi: every reachable correction reads as approved",
+        "the sentences corrected on #319 > id: everyone absent is refused in the words of the column"
+      ]
+    },
+    "9782fa47802ac73d55f63d10ad17918bd229510e": {
+      "kind": "none",
+      "reason": "A comment in the projector script; the code is unchanged."
+    },
+    "454dd15a2e7e77b904243872cf77e445300275a2": {
+      "kind": "visible",
+      "journeys": [
+        "the disclosure opens from the keyboard and walks its fields in order",
+        "/vi/classroom-groups submits in place: failed shows, takes focus, and the roster survives"
+      ]
+    },
+    "cee5a61bccb73381ae7c7e3ff96b2176057915e4": {
+      "kind": "gap",
+      "check": "On an iPhone, open the report form in the footer and tap a field: the page must not zoom in."
+    },
+    "24798a5279b75ebf41fbb390fd8bb51b68f43a50": {
+      "kind": "none",
+      "reason": "A review script for stored reports, run by hand under src/lib; no page imports it."
+    },
+    "d4b68495cc34058bbafc0b5daef577a1577a3c59": {
+      "kind": "visible",
+      "journeys": [
+        "every beta block carries one form posting its own locale, and English none",
+        "a block walks its own fields from the keyboard, each labelled and described in its language",
+        "zh: its sent status shows in its language, takes focus, and hides every other",
+        "th: its sent status shows in its language, takes focus, and hides every other"
+      ]
+    },
+    "dbba087c37daede6b0501f800efca647c16b0997": {
+      "kind": "none",
+      "reason": "A daily count of waiting reports, run by a workflow; no page imports it."
+    }
+  }
+}
