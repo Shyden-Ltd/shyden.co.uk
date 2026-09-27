@@ -35,7 +35,7 @@ import { signOffOf, standingOf } from './evidence-signoff.mjs';
 /**
  * @param {unknown} s
  */
-const esc = (s) =>
+export const esc = (s) =>
   String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -67,7 +67,7 @@ const esc = (s) =>
  *
  * @param {any} report
  */
-const flattenReport = (report) => {
+export const flattenReport = (report) => {
   /** @type {{ title: string, block: string, project: string, status: string, duration: number, file: string, video: string | undefined }[]} */
   const out = [];
   /**
@@ -213,7 +213,7 @@ export const earlierLine = (earlier) =>
 /**
  * @param {string} s
  */
-const slugOf = (s) =>
+export const slugOf = (s) =>
   String(s)
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-+|-+$/g, '')
@@ -556,6 +556,67 @@ export const assertPageFits = (bytes) => {
 };
 
 /**
+ * The release checks a page carries beside its journeys (#362). Each is a tick
+ * in the same sign-off, so it is marked up exactly as the page script finds a
+ * journey: a `j-` row holding an `h3` (read by `linkTo`, toggled `done`) and a
+ * `chk-` box carrying `data-journey` (bound, and looked up before counting).
+ * Its id joins `JOURNEYS`, so a verdict covers it and `journeysOfPage` reads
+ * it back. A ticket's page carries none, and renders exactly as before.
+ *
+ * @param {unknown} checks `content.checks`
+ * @param {ReadonlySet<string>} journeyIds the journeys on this page
+ * @returns {{ ids: string[], html: string }}
+ */
+export const checksOf = (checks, journeyIds) => {
+  if (checks === undefined) return { ids: [], html: '' };
+  if (!Array.isArray(checks))
+    throw new Error('build-evidence-page: content.checks must be a list');
+  /** @type {string[]} */
+  const ids = [];
+  /** @type {Map<string, string[]>} */
+  const groups = new Map();
+  for (const check of checks) {
+    const { id, group, label } = check ?? {};
+    if (
+      typeof id !== 'string' ||
+      !/^[a-z0-9-]+$/.test(id) ||
+      typeof group !== 'string' ||
+      group === '' ||
+      typeof label !== 'string' ||
+      label === ''
+    )
+      throw new Error(
+        'build-evidence-page: a check needs an id of lowercase letters, ' +
+          `digits and hyphens, a group and a label; got ${JSON.stringify(check)}`,
+      );
+    const key = `check-${id}`;
+    if (ids.includes(key))
+      throw new Error(`build-evidence-page: the check "${id}" appears twice`);
+    if (journeyIds.has(key))
+      throw new Error(
+        `build-evidence-page: the check "${id}" has the id of a journey on this page, "${key}"`,
+      );
+    ids.push(key);
+    const row =
+      `<li class="check" id="j-${esc(key)}"><label class="tick">` +
+      `<input type="checkbox" id="chk-${esc(key)}" data-journey="${esc(key)}">` +
+      '<span class="tickbox" aria-hidden="true"></span>' +
+      `<span class="sr">Checked: ${esc(label)}</span></label>` +
+      `<h3>${esc(label)}</h3></li>`;
+    groups.set(group, [...(groups.get(group) ?? []), row]);
+  }
+  return {
+    ids,
+    html: [...groups]
+      .map(
+        ([group, rows]) =>
+          `<h2>${esc(group)}</h2>\n<ul class="checks">${rows.join('')}</ul>`,
+      )
+      .join('\n'),
+  };
+};
+
+/**
  * The page, as a string. Pure: every input is passed in, nothing is read here.
  *
  * @param {{ manifest: any[], report: any, content: any, shots: Map<string, any>, dims?: Map<string, any>, videos?: Map<string, string> }} input
@@ -683,6 +744,8 @@ export const renderEvidencePage = ({
       ),
     };
   });
+  const checks = checksOf(content.checks, new Set(journeys.map((j) => j.id)));
+  const signoff = content.signoff ?? {};
 
   const stats = report.stats || {};
   /** @param {{ status?: string } | undefined} r */
@@ -748,8 +811,10 @@ export const renderEvidencePage = ({
     .join('');
   const sectionsHtml = (content.sections || [])
     .map(
-      (/** @type {{ heading: string, body: string }} */ s) =>
-        `<h2>${esc(s.heading)}</h2>\n<p class="sub">${s.body}</p>`,
+      (/** @type {{ heading: string, body?: string, html?: string }} */ s) =>
+        s.html !== undefined
+          ? `<h2>${esc(s.heading)}</h2>\n${s.html}`
+          : `<h2>${esc(s.heading)}</h2>\n<p class="sub">${s.body}</p>`,
     )
     .join('\n');
   const mutationsHtml = (content.mutations || [])
@@ -841,6 +906,11 @@ td.j{font-size:.84rem}
 .tick input:checked+.tickbox::after{content:'';position:absolute;left:9px;top:7px;width:6px;height:12px;border:solid var(--on-accent);border-width:0 2.5px 2.5px 0;transform:rotate(42deg)}
 .tick input:focus-visible+.tickbox{outline:2px solid var(--accent-ink);outline-offset:2px}
 .journey.done{border-color:var(--accent)}
+.checks{list-style:none;margin:0 0 28px;padding:0;border:1px solid var(--rule);border-radius:10px;background:var(--surface)}
+.check{display:flex;gap:14px;align-items:flex-start;padding:14px 18px;border-top:1px solid var(--rule)}
+.check:first-child{border-top:0}
+.check h3{font-family:var(--body);font-size:1rem;font-weight:500;line-height:1.45}
+.check.done h3{color:var(--ink-soft)}
 
 .assertion{padding:14px 18px;border-bottom:1px solid var(--rule)}
 .a-label{margin:0 0 10px;font-size:.88rem}
@@ -925,13 +995,14 @@ ${
 <p class="sub">Each image was captured immediately after the assertion above it passed, during the run &mdash; not reconstructed afterwards. Playwright stops a test at its first failed expectation, so a present image <em>is</em> the result. Tap any image to enlarge, and tick a journey once you are satisfied it proves what it claims.</p>
 ${journeyHtml}
 
+${checks.html}
 <section class="signoff" id="signoff">
   <h2 style="margin-top:0">Sign-off</h2>
-  <p class="count" id="progress">0 of ${journeys.length} journeys reviewed</p>
-  <p class="sub">Nothing merges on green CI alone. This ticket progresses only on your explicit decision below.</p>
+  <p class="count" id="progress">0 of ${journeys.length + checks.ids.length} ${checks.ids.length ? 'journeys and checks' : 'journeys'} reviewed</p>
+  <p class="sub">Nothing merges on green CI alone. ${signoff.lede !== undefined ? esc(signoff.lede) : 'This ticket progresses only on your explicit decision below.'}</p>
   <div class="standing" id="standing" role="status"></div>
   <div class="choices">
-    <button type="button" id="btn-approve" aria-pressed="false">Signed off &mdash; may merge to develop</button>
+    <button type="button" id="btn-approve" aria-pressed="false">${signoff.approve !== undefined ? esc(signoff.approve) : 'Signed off &mdash; may merge to develop'}</button>
     <button type="button" id="btn-more" aria-pressed="false">More tests needed</button>
   </div>
   <label for="note" class="sub" style="display:block;margin-bottom:6px">Notes, or what else you want covered</label>
@@ -951,7 +1022,8 @@ ${journeyHtml}
   // pre-merge check run these same functions (evidence-signoff.mjs, #197).
   ${signOffOf.toString()}
   ${standingOf.toString()}
-  var JOURNEYS = ${JSON.stringify(journeys.map((j) => j.id))};
+  var JOURNEYS = ${JSON.stringify([...journeys.map((j) => j.id), ...checks.ids])};
+  var REVIEWED = ${JSON.stringify(checks.ids.length ? ' journeys and checks reviewed' : ' journeys reviewed')};
   var DOC = 'signoff/' + ${JSON.stringify(content.signoffKey ?? 'ticket')};
   var JOURNEY_KEY = 'journey:';
   var READY = 'Ready. Your ticks and decision are saved as you make them.';
@@ -1054,7 +1126,7 @@ ${journeyHtml}
       if (sec) sec.classList.toggle('done', on);
       if (on) done++;
     });
-    progressEl.textContent = done + ' of ' + JOURNEYS.length + ' journeys reviewed';
+    progressEl.textContent = done + ' of ' + JOURNEYS.length + REVIEWED;
     // A verdict shows as given only while it covers exactly these journeys.
     approve.setAttribute('aria-pressed', String(standing.verdict === 'approved' && !standing.stale));
     more.setAttribute('aria-pressed', String(standing.verdict === 'more' && !standing.stale));

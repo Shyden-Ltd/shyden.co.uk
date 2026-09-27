@@ -1481,3 +1481,34 @@ test.describe('the stand-in store, on a phone that keeps one profile from run to
     await errors.expectNoUncaught('the page threw');
   });
 });
+
+test.describe('release checks (#362)', () => {
+  const CHECKS = [
+    { id: 'dev-home', group: 'On dev', label: 'Open the homepage' },
+    { id: 'prod-waf', group: 'Before production', label: 'Add the rule' },
+  ];
+  const html = evidencePageOf(TITLES, SIGNOFF_KEY, { checks: CHECKS });
+
+  test('a check ticks, persists through a reload, and counts toward the progress line', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, {
+      order: 'resolve-then-confirm',
+      html,
+    });
+    const box = page.locator('#chk-check-dev-home');
+    await expect(page.locator('#progress')).toHaveText(
+      '0 of 7 journeys and checks reviewed',
+    );
+    await box.check();
+    await expect
+      .poll(() => storedTicks(page), 'the store keeps the check ticked')
+      .toEqual(['check-dev-home']);
+    await expect(page.locator('#progress')).toHaveText(
+      '1 of 7 journeys and checks reviewed',
+    );
+    await page.reload();
+    await expect(box).toBeChecked();
+    await expect(page.locator('#j-check-dev-home')).toHaveClass(/\bdone\b/);
+  });
+});

@@ -18,6 +18,7 @@ const PIXEL =
 export const evidencePageOf = (
   titles: readonly string[],
   signoffKey: string,
+  extra: Readonly<Record<string, unknown>> = {},
 ): string => {
   const manifest = titles.map((title, index) => ({
     project: 'chromium',
@@ -57,6 +58,7 @@ export const evidencePageOf = (
       headline: `A page with ${titles.length} journeys to sign off`,
       lede: 'Rendered by the real builder.',
       signoffKey,
+      ...extra,
     },
     shots: new Map(manifest.map((entry) => [entry.file, PIXEL])),
   });
