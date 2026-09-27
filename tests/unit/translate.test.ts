@@ -255,8 +255,9 @@ describe('protected terms are wrapped before they are sent', () => {
   });
 
   it('escapes the ampersand that made DeepL answer 400', () => {
-    // The footer's "Registered in England & Wales." A bare `&` is a malformed
-    // entity to an XML parser, and `tag_handling: 'xml'` means DeepL is one.
+    // The footer's "Registered in England & Wales." (#22; the line left with
+    // the company in #370). A bare `&` is a malformed entity to an XML
+    // parser, and `tag_handling: 'xml'` means DeepL is one.
     expect(escapeXml('England & Wales')).toBe('England &amp; Wales');
     expect(escapeXml('a < b > c')).toBe('a &lt; b &gt; c');
   });

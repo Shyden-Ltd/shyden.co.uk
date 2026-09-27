@@ -7,6 +7,7 @@ import { filesUnder } from '../source-files';
 import {
   DEFAULT_LOCALE,
   LOCALES,
+  getSiteStrings,
   getStrings,
   localisePath,
 } from '../../src/lib/i18n';
@@ -1656,11 +1657,19 @@ test.describe('site-wide language switching', () => {
     await expect(page).toHaveURL(/\/classroom-groups\/?$/);
   });
 
-  for (const [path, heading] of [
-    ['/id/', 'Shyden membangun hal-hal yang layak dibicarakan.'],
-    ['/id/glory-points', 'Kalkulator Glory Points'],
+  // The homepage heading comes from the catalogue, so a headline change
+  // (#370) moves this with it; what proves translation is that it is not the
+  // English one. The tool's heading is a name, pinned as written.
+  for (const [path, heading, english] of [
+    [
+      '/id/',
+      getSiteStrings('id').home.heroHeading,
+      getSiteStrings('en').home.heroHeading,
+    ],
+    ['/id/glory-points', 'Kalkulator Glory Points', 'Glory Points Calculator'],
   ] as const) {
     test(`${path} is translated`, async ({ page }) => {
+      expect(heading).not.toBe(english);
       await page.goto(path);
       await expect(page.locator('html')).toHaveAttribute('lang', 'id');
       await expect(page.locator('h1')).toHaveText(heading);
