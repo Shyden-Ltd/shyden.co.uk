@@ -1,6 +1,7 @@
 import { parseDocument } from 'yaml';
 import { stringLeaves } from './catalogue-leaves';
 import { withoutCommentLines } from './unit/source-text';
+import { isRecord } from '../src/lib/is-record';
 
 /**
  * The job graph of a GitHub Actions workflow, PARSED.
@@ -53,9 +54,6 @@ export interface WorkflowJob {
    */
   readonly uses: string | undefined;
 }
-
-const isMapping = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const withoutStringLiterals = (condition: string): string =>
   condition.replace(/'(?:[^']|'')*'/g, "''");
@@ -127,7 +125,7 @@ function runsOf(job: Record<string, unknown>, where: string): string[] {
   if (!Array.isArray(steps)) throw new Error(`${where}: steps is not a list`);
   return steps.flatMap((step: unknown, index) => {
     const which = `${where}: step ${index + 1}`;
-    if (!isMapping(step)) throw new Error(`${which} is not a mapping`);
+    if (!isRecord(step)) throw new Error(`${which} is not a mapping`);
     if (step.run === undefined) return [];
     if (typeof step.run !== 'string')
       throw new Error(`${which}'s run is not a script`);
@@ -141,7 +139,7 @@ function environmentOf(
 ): string | undefined {
   const { environment } = job;
   if (environment === undefined) return undefined;
-  const name = isMapping(environment) ? environment.name : environment;
+  const name = isRecord(environment) ? environment.name : environment;
   if (typeof name !== 'string' || name.trim() === '')
     throw new Error(`${where}: environment names no environment`);
   if (name.includes('${{'))
@@ -214,15 +212,15 @@ export function parseCleanYaml(text: string, file: string): unknown {
 /** Every job in a workflow, in file order. */
 export function workflowJobs(text: string, file: string): WorkflowJob[] {
   const root = parseCleanYaml(text, file);
-  const jobs = isMapping(root) ? root.jobs : undefined;
-  if (!isMapping(jobs)) throw new Error(`${file} has no jobs mapping`);
+  const jobs = isRecord(root) ? root.jobs : undefined;
+  if (!isRecord(jobs)) throw new Error(`${file} has no jobs mapping`);
   const shared = secretsReadIn(
-    isMapping(root) ? root.env : undefined,
+    isRecord(root) ? root.env : undefined,
     `${file}'s env`,
   );
   return Object.entries(jobs).map(([id, body]) => {
     const where = `${file} job '${id}'`;
-    if (!isMapping(body)) throw new Error(`${where} is not a mapping`);
+    if (!isRecord(body)) throw new Error(`${where} is not a mapping`);
     return {
       id,
       needs: needsOf(body, where),
@@ -403,11 +401,11 @@ const POSTED_STATUS = /-f\s+context=(\S+)/g;
  */
 export function producibleContexts(text: string, file: string): string[] {
   const root = parseCleanYaml(text, file);
-  const jobs = isMapping(root) ? root.jobs : undefined;
-  if (!isMapping(jobs)) throw new Error(`${file} has no jobs mapping`);
+  const jobs = isRecord(root) ? root.jobs : undefined;
+  if (!isRecord(jobs)) throw new Error(`${file} has no jobs mapping`);
 
   const contexts = Object.entries(jobs).map(([id, body]) => {
-    const declared = isMapping(body) ? body.name : undefined;
+    const declared = isRecord(body) ? body.name : undefined;
     return typeof declared === 'string' ? declared : id;
   });
 
@@ -461,7 +459,7 @@ export function inheritedPermissionsFindings(
       return [`${file} states no workflow-level permissions`];
     if (typeof permissions === 'string')
       return [`${file} grants every scope with the '${permissions}' shorthand`];
-    if (!isMapping(permissions))
+    if (!isRecord(permissions))
       return [`${file} declares permissions that are not a mapping`];
     return Object.entries(permissions)
       .filter(
@@ -486,7 +484,7 @@ export function inheritedPermissionsFindings(
 export function workflowLevelWrites(permissions: unknown): string[] {
   if (typeof permissions === 'string')
     return permissions === 'read-all' ? [] : ['every scope'];
-  if (!isMapping(permissions)) return [];
+  if (!isRecord(permissions)) return [];
   return Object.entries(permissions)
     .filter(([, value]) => value === 'write')
     .map(([scope]) => scope)
