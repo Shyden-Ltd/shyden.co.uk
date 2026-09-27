@@ -15,6 +15,27 @@ const SHYTALK_URL = 'https://shytalk.shyden.co.uk';
 const SHYTALK_HOST = 'shytalk.shyden.co.uk';
 
 test.describe('homepage content', () => {
+  // #370: the hero names no company. The label above the heading is gone in
+  // every locale, and the English heading and title are the operator's pair
+  // (chosen 2026-09-27 from four).
+  test('the hero has no label above its heading, in any locale', async ({
+    page,
+  }) => {
+    for (const locale of LOCALES) {
+      await page.goto(localisePath('/', locale));
+      await expect(page.locator('.hero h1'), locale).toBeVisible();
+      await expect(page.locator('.hero .eyebrow'), locale).toHaveCount(0);
+    }
+  });
+
+  test('the heading and the title say what Shyden makes', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.hero h1')).toHaveText(
+      'Shyden makes small software, with care.',
+    );
+    await expect(page).toHaveTitle('Shyden — small software, made with care');
+  });
+
   test('the hero leads with ShyTalk and every section is present', async ({
     page,
   }) => {

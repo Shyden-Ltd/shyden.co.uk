@@ -53,8 +53,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
   en: {
     nativeName: 'English',
     shortName: 'EN',
-    // GB rather than US: Shyden Ltd is registered in England & Wales and the
-    // site is shyden.co.uk. The copy is British English throughout.
+    // GB rather than US: the site is shyden.co.uk and the copy is British
+    // English throughout.
     flag: 'gb',
     ogLocale: 'en_GB',
     numberLocale: 'en-GB',
