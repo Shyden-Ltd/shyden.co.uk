@@ -608,6 +608,12 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 2,
     says: 'usage: release-inventory.mjs',
   },
+  // Without a release file and a head it can build nothing, so it refuses (#362).
+  'build-release-content.mjs': {
+    args: [],
+    status: 2,
+    says: 'usage: build-release-content.mjs',
+  },
 };
 
 const runAsScript = (script: string, probe: Probe) => {
