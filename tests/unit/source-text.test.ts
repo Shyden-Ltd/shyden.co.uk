@@ -626,3 +626,89 @@ describe('codeWithoutComments', () => {
     expect(codeWithoutComments('p.astro', page)).toContain('#123456');
   });
 });
+
+describe('withoutTsComments reads substitutions inside template literals (#364)', () => {
+  // A template is text, `${` opens code, and that code may hold a template of
+  // its own. Scanning backtick-to-backtick reads a nested template inside out:
+  // its text as code, where `</b>` starts a phantom regex, and a later
+  // backtick opens a template that never closes, keeping every comment below.
+  it('strips a comment after a nested template whose text holds a slash', () => {
+    const template = "`${xs.map((x) => `<b>${x}</b>`).join('')}</p>`";
+    const out = withoutTsComments(
+      `const a = ${template}; // gone\nconst b = 2;\n`,
+    );
+    expect(out).toContain(template);
+    expect(out).toContain('const b = 2;');
+    expect(out).not.toContain('gone');
+  });
+
+  it('strips past the line that found it, in release-map.mjs (#362)', () => {
+    const line =
+      '`${otherAreas.map(([area, n]) => `${esc(area)} <span class="mono">${n}</span>`).join(\' · \')}</p>`';
+    const out = withoutTsComments(
+      `const others = ${line};\n// gone\n/** gone too */\nconst c = 3;\n`,
+    );
+    expect(out).toContain(line);
+    expect(out).toContain('const c = 3;');
+    expect(out).not.toContain('gone');
+  });
+
+  it('keeps comment syntax that is text in a nested template', () => {
+    const template = '`${urls.map((u) => `https://x.test/${u} /* kept */`)}`';
+    const out = withoutTsComments(`const a = ${template}; // gone\n`);
+    expect(out).toContain(template);
+    expect(out).not.toContain('gone');
+  });
+
+  it('strips a comment written inside a substitution', () => {
+    const out = withoutTsComments('const a = `x${ /* gone */ b }y`;\n');
+    expect(out).toContain('`x${');
+    expect(out).toContain('b }y`');
+    expect(out).not.toContain('gone');
+  });
+
+  it('nests three templates deep and comes back out', () => {
+    const template = '`a${`b${`c${d}/c`}/b`}/a`';
+    const out = withoutTsComments(
+      `const x = ${template}; // gone\nconst e = 1;\n`,
+    );
+    expect(out).toContain(template);
+    expect(out).toContain('const e = 1;');
+    expect(out).not.toContain('gone');
+  });
+
+  // Each edge below puts a comment in the substitution's code AFTER the
+  // construct under test. Closing the substitution early reads that code as
+  // template text, and template text keeps comments, so only a comment there
+  // can tell an early close from a right one (an early close was green here
+  // until the comment was added).
+  it('closes a substitution at its own brace, past an object literal holding a backtick', () => {
+    const out = withoutTsComments(
+      "const x = `${ {a: '`'}.a /* gone */ } // kept`; // gone too\n",
+    );
+    expect(out).toContain("`${ {a: '`'}.a  } // kept`");
+    expect(out).not.toContain('gone');
+  });
+
+  it('is not closed by a brace inside a string or a regex in a substitution', () => {
+    for (const [source, kept] of [
+      ["`${'}' /* gone */} // kept`", "`${'}' } // kept`"],
+      [
+        "`${a.replace(/}/g, '') /* gone */} // kept`",
+        "`${a.replace(/}/g, '') } // kept`",
+      ],
+    ] as const) {
+      const out = withoutTsComments(`const x = ${source}; // gone too\n`);
+      expect(out, source).toContain(kept);
+      expect(out, source).not.toContain('gone');
+    }
+  });
+
+  it('reads an escaped \\${ and a lone $ as text, not code', () => {
+    for (const template of ['`\\${ not code // kept`', '`cost $5 // kept`']) {
+      const out = withoutTsComments(`const x = ${template}; // gone\n`);
+      expect(out, template).toContain(template);
+      expect(out, template).not.toContain('gone');
+    }
+  });
+});
