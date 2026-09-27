@@ -290,7 +290,7 @@
     "3640af27e1cab40c1af69526d556767165a51732": {
       "kind": "visible",
       "journeys": [
-        "/: every control it paints uses a palette colour, in both themes",
+        "/classroom-groups: every control it paints uses a palette colour, in both themes",
         "the screen palette is not dragged down with the print one"
       ]
     },

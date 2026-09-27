@@ -8,7 +8,12 @@
  * tree on dev. `--check` reads a Playwright listing before the merge, when
  * the release head is still a branch with no `dev-verified` and no capture
  * exists. It validates the release file and writes nothing, so a mistyped
- * title surfaces before the merge instead of after an hour-long capture.
+ * title surfaces before the merge instead of after a capture.
+ *
+ * A listing cannot say which tests capture, so `--check` passes a title that
+ * runs but shoots nothing, such as a looped test's `/` case that returns
+ * before its `shoot`. Only building sees that, from the manifest, and it
+ * refuses (#362: `palette-controls`' homepage case, cited for #337).
  */
 
 import { execFileSync } from 'node:child_process';
