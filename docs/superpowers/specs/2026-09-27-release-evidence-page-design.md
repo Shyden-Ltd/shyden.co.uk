@@ -38,16 +38,18 @@ One published page, with the same sign-off mechanics as every ticket page:
 
 ### `scripts/release-map.mjs` — the release's judgement, checked
 
-Classification lives in the repo at `docs/releases/<base7>.json`. It holds `{ base, headline, lede, checks: [{ id, group, label }], entries: { <full sha>: { kind: 'visible', journeys: [<full title path>] } | { kind: 'none', reason } } }`. It names no head: the head is the one being released, and it is read at build time.
+Classification lives in the repo at `docs/releases/<base7>.json`. It holds `{ base, headline, lede, signoff: { lede, approve }, gapGroup, checks: [{ id, group, label }], entries: { <full sha>: { kind: 'visible', journeys: [<full title path>] } | { kind: 'gap', check } | { kind: 'none', reason } } }`. A **gap** is a visitor-facing change that no capturing journey shows. Its `check` says what to try by hand, and it becomes a tickable check, `gap-<sha7>`, under `gapGroup`, so it sits inside the sign-off rather than in a list that is read once. It names no head: the head is the one being released, and it is read at build time.
 
-`changeMapOf({ inventory, release, report })` **throws**, naming the offending SHA or title, in six cases:
+`changeMapOf({ inventory, release, journeys, statuses })` **throws**, naming the offending SHA or title, in eight cases:
 
 - `release.base` differs from `inventory.base`;
 - a visitor-facing entry has no classification (**unclassified**);
 - a classification names a SHA that is not a visitor-facing entry of the inventory (**stale**);
 - a `visible` classification cites no journeys (**empty**);
 - a `visible` classification cites a title that is not a journey (**unknown journey**). When building, a journey is a title with captures in this run's manifest, the same set the builder renders as `j-` sections; a test that ran but captured nothing has no section to link to. Under `--check`, only a listing exists, so a journey is any title in it. That catches a mistyped title before the merge but not a non-capturing one, which the build then refuses.
-- a `none` classification has an empty reason.
+- a `none` classification has an empty reason;
+- a `gap` classification has an empty `check`;
+- a classification's `kind` is none of `visible`, `gap` or `none`.
 
 It returns `{ rows, totals, otherAreas }`. A row is **flagged** in either case:
 
@@ -121,7 +123,8 @@ Mutations, each predicted before it runs:
 - a merges-only walk;
 - a dropped prefix;
 - a merge diffed parent to parent (`<p1> <p2>`) instead of `<p1> <sha>`;
-- each of the six throws removed;
+- each of the eight throws removed;
+- a gap left out of the checks;
 - the flag treating `skipped` as a failure;
 - the flag ignoring a failure when another engine passed;
 - `renderChangeMap` writing a subject unescaped (a fixture subject carries `<img src=x onerror=…>`);
@@ -185,3 +188,4 @@ Mutations, each predicted before it runs:
   - the sign-off section's ticket wording ("may merge to develop") would misname the release decision, so `content.signoff` overrides it, with a mutation added.
 - **Plan-time amendment 2 (2026-09-27):** a fixture for the plan showed `git diff <p1> <p2>` reporting `develop`'s own changes as a stale branch's work (#108's merge was a false positive). Every commit is now diffed against its first parent. The count is 47, not 48, and the mutation is restated.
 - **Plan-time amendment 3 (2026-09-27):** the listing showed 139 capturing journeys, not the ~60 counted from source; locale loops expand and one spec captures through a helper. The selection is now `file:line` of each capturing test, found through helpers to a fixed point, so a capture runs about 148 tests per engine rather than 449. The operator re-confirmed five engines against the corrected numbers.
+- **Plan-time amendment 4 (2026-09-27):** classifying the 47 commits for the plan needed a third kind. Four visible changes have no capturing journey (#41's handover language, #251's roster labels, #256's CSV header, #352's iOS zoom), and forcing them into `visible` or `none` would have misreported them. `gap` was added; each gap becomes a check. Two refusals were added (an empty `check`, an unknown `kind`), and `signoff` and `gapGroup` live in the release file because the scripts hold no prose.
