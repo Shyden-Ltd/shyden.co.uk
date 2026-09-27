@@ -677,20 +677,30 @@ describe('withoutTsComments reads substitutions inside template literals (#364)'
     expect(out).not.toContain('gone');
   });
 
+  // Each edge below puts a comment in the substitution's code AFTER the
+  // construct under test. Closing the substitution early reads that code as
+  // template text, and template text keeps comments, so only a comment there
+  // can tell an early close from a right one (an early close was green here
+  // until the comment was added).
   it('closes a substitution at its own brace, past an object literal holding a backtick', () => {
-    const template = "`${ {a: '`'}.a } // kept`";
-    const out = withoutTsComments(`const x = ${template}; // gone\n`);
-    expect(out).toContain(template);
+    const out = withoutTsComments(
+      "const x = `${ {a: '`'}.a /* gone */ } // kept`; // gone too\n",
+    );
+    expect(out).toContain("`${ {a: '`'}.a  } // kept`");
     expect(out).not.toContain('gone');
   });
 
   it('is not closed by a brace inside a string or a regex in a substitution', () => {
-    const string = "`${'}'} // kept`";
-    const regex = "`${a.replace(/}/g, '')} // kept`";
-    for (const template of [string, regex]) {
-      const out = withoutTsComments(`const x = ${template}; // gone\n`);
-      expect(out, template).toContain(template);
-      expect(out, template).not.toContain('gone');
+    for (const [source, kept] of [
+      ["`${'}' /* gone */} // kept`", "`${'}' } // kept`"],
+      [
+        "`${a.replace(/}/g, '') /* gone */} // kept`",
+        "`${a.replace(/}/g, '') } // kept`",
+      ],
+    ] as const) {
+      const out = withoutTsComments(`const x = ${source}; // gone too\n`);
+      expect(out, source).toContain(kept);
+      expect(out, source).not.toContain('gone');
     }
   });
 
