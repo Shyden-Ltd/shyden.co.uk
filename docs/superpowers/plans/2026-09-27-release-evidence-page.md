@@ -2109,3 +2109,16 @@ Findings, each fixed above:
 Held as written: the other 47 mutations were RED as predicted (M1-M31 with M14a-h and M27a-d, M32b, M33a-e), with totals steady per file (12, 15, 10, 12, 1, 2). The capture selection is 68 tests, and the listing is 147 journeys on chromium. `--check` holds for the branch head. There are 2780 unit tests, and typecheck is 0/0/0. `evidence-page.spec.ts`: 297 passed, 2 skipped, 1 failed. The failure was a Firefox poll timing out at 5.8 s under full load, 6 of 6 alone at 4.0-4.4 s, and it is filed as #363 with its error text. `report-form` + `not-found-report`: 135 passed.
 
 Pass 1 found 12 things, so the loop continues. Pass 2 waits on #364, because Task 6's comment mutation cannot be judged until the scanner strips past a nested template.
+
+### Pass 2 — 2026-09-27, by running (scratch worktree `review-362-pass2`: this branch at `dc33cd6` with #364's fix merged, own `npm ci`)
+
+The plan was applied from its own text, by fence index and the anchors its steps name, not from pass 1's tree.
+
+- Red steps against the stubs: 12, 12, 15 and 10 FAIL, exactly as written. Every green step passes.
+- The 14 files the plan writes or modifies came out byte-identical to pass 1's verified tree, after the plan's `prettier --write` steps. Task 5's selection lines are 15, 136, 32, 80 and 113, as written.
+- `npm run typecheck`: 0 errors, 0 warnings, 0 hints. `npm run test:unit`: 2788 of 2788 (pass 1's 2780 plus #364's 8). `prettier --check .`: clean.
+- All 48 mutations came out as predicted: 47 RED and M32a GREEN. The comment half now holds because #364 is in the tree, and M32b turns the same guard RED, so the guard is live. Totals were steady per file: 13 mutations at 12 (inventory), 10 at 12 (builder), 14 at 15, 4 at 10, 2 at 1 and 5 at 2.
+- Commands and paths named in Tasks 7-8 exist: `--plan`, `--assets` and `--content` on the builder, the argument passthrough in `scripts/test-e2e.mjs`, `EVIDENCE_REPORT` and `EVIDENCE_MANIFEST`, `capturesOfThisRun`, `upload-evidence-assets.mjs` and `closing-keywords.mjs`.
+- The e2e specs were not rerun: their files are byte-identical to pass 1's, where `report-form` and `not-found-report` passed 135 of 135 and `evidence-page` hit only #363.
+
+**No findings. The plan is approved** (self-approved under the 2026-09-24 mandate). One ordering condition: #364 (PR #365) merges into `develop` first, and this branch merges `develop` before Task 6, so Task 7's mutation 32 can hold its comment half.
