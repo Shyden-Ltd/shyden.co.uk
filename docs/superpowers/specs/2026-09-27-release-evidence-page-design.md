@@ -48,7 +48,7 @@ Classification lives in the repo at `docs/releases/<base7>.json`. It holds `{ ba
 - a visitor-facing entry has no classification (**unclassified**);
 - a classification names a SHA that is not a visitor-facing entry of the inventory (**stale**);
 - a `visible` classification cites no journeys (**empty**);
-- a `visible` classification cites a title the report does not hold (**unknown journey**);
+- a `visible` classification cites a title that is not a journey (**unknown journey**). When building, a journey is a title with captures in this run's manifest, the same set the builder renders as `j-` sections; a test that ran but captured nothing has no section to link to. Under `--check`, only a listing exists, so a journey is any title in it. That catches a mistyped title before the merge but not a non-capturing one, which the build then refuses.
 - a `none` classification has an empty reason.
 
 It returns `{ rows, totals, otherAreas }`. A row is **flagged** in either case:
@@ -73,6 +73,8 @@ It reads `dev-verified` for the head through an injected reader; the CLI's reade
 ### `scripts/build-evidence-page.mjs` — one addition
 
 `content.checks` renders as tickable rows, grouped under each check's `group` text in first-seen order, so the dev manual test and the prod setup read as two lists while the builder holds no prose. Each row is marked up the way the page script already finds a journey: the row is `id="j-check-<id>"` with its label in an `h3` (read by `linkTo` and toggled `done`), and its box is `<input type="checkbox" id="chk-check-<id>" data-journey="check-<id>">`. That covers all three ways the script reaches a journey: the `input[data-journey]` binding, the `chk-` lookup that skips an id with no box, and the `j-` section. A tick therefore persists, shows, and counts with no change to the page script's logic. The one change is the wording: on a page with checks, the progress line reads "journeys and checks reviewed" instead of "journeys reviewed", chosen at build time. Each check's id, `check-<id>`, joins the page's `JOURNEYS` list, so the verdict covers it and `journeysOfPage` returns it. A check id must match `^[a-z0-9-]+$`, be unique, and not collide with a journey id; otherwise the build throws. The builder is otherwise untouched, which keeps the conflict with #205's branch small.
+
+A second addition, for the same no-prose reason: `content.signoff`, optional `{ lede, approve }`, replaces the sign-off section's two ticket-shaped strings ("This ticket progresses only on your explicit decision below." and "Signed off — may merge to develop"). On a release page they would name the wrong decision. Without it, every existing page renders exactly as before.
 
 ### Instrumentation
 
@@ -137,6 +139,7 @@ Mutations, each predicted before it runs:
 - `--check` writing the content file;
 - each of the builder's three check-id refusals removed (duplicate, malformed, collision);
 - the progress wording left at "journeys reviewed" on a page with checks;
+- `content.signoff` ignored (the release page reads "may merge to develop");
 - checks rendered in one list, ignoring `group`;
 - `releaseSpecs` keeping the fixture spec;
 - `releaseSpecs` keeping a spec that never calls `shoot(`;
@@ -177,3 +180,6 @@ Mutations, each predicted before it runs:
 - **Pass 8 (2026-09-27):** full read, plus the inventory's branches matched against mutations. **1 finding, fixed:** six branches had none (the ancestor and parent-count refusals, `pr` and `ticket` parsing, `(root)`, and the `shoot(` requirement); each now has one.
 - **Pass 9 (2026-09-27):** full read, plus the map's and content's branches matched against mutations. **1 finding, fixed:** six had none (escaping, the `j-` anchor, totals, area counts, `signoffKey`, the no-prose guard); each now has one.
 - **Pass 10 (2026-09-27):** full read, with every mechanical check re-run: `a3a5adb` is an ancestor of `origin/develop` (`merge-base --is-ancestor`, rc 0); a `--list --reporter=json` of `not-found.spec.ts` carries 20 `describe > test` titles per engine with zero results; anchors, markup hooks, meta-guards and a mutation for every branch all hold. **No findings.** Spec approved under the operator's review-to-zero mandate (2026-09-24).
+- **Plan-time amendment (2026-09-27), found while reading the builder for the plan:**
+  - a cited title must be a captured journey (`order` comes from the manifest), not merely a report title; `--check`'s weaker test is stated;
+  - the sign-off section's ticket wording ("may merge to develop") would misname the release decision, so `content.signoff` overrides it, with a mutation added.
