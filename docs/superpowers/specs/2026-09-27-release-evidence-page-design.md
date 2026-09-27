@@ -33,8 +33,8 @@ One published page, with the same sign-off mechanics as every ticket page:
   - `pr` comes from `Merge pull request #N` or from a squash subject's last `(#N)`.
   - `ticket` is a merge branch's leading digits (`from Shyden-Ltd/362-…`), or a squash subject's first `(#N)` when it carries two. Otherwise it is `null`.
   - `areas` is the sorted set of each file's top-level directory, or `(root)` for a file at the top level.
-- `releaseSpecs(files, read)` picks the capture selection from source. A spec is in when its text calls `shoot(` and it does not import `../evidence-fixture` (the evidence tooling's own spec). `read` is injected.
-- CLI: `node scripts/release-inventory.mjs --base <sha> --head <sha>` prints `{ base, head, entries }` as JSON, and `--specs` prints the selection, one per line.
+- `releaseTests(files, read)` picks the capture selection from source, **parsed with `typescript`, never grepped**, so a comment cannot decide it. It returns `file:line` for every `test(` call whose callback calls `shoot(` directly, or calls a same-file function that does. Helpers are followed to a fixed point, because `classroom-groups-projector.spec.ts` captures only through `expectNothingOutOfReach`. A file importing `../evidence-fixture` (the evidence tooling's own spec) is skipped. `read` is injected. Selecting by `file:line` runs every iteration of a looped test and none of the 300-odd tests in those files that capture nothing.
+- CLI: `node scripts/release-inventory.mjs --base <sha> --head <sha>` prints `{ base, head, entries }` as JSON, and `--tests` prints the selection, one `file:line` per line.
 
 ### `scripts/release-map.mjs` — the release's judgement, checked
 
@@ -96,7 +96,7 @@ The plan runs the whole unit suite over the new files, not only their own tests.
 
 1. **Before the merge**, `build-release-content.mjs --check` validates the release file against `develop`'s head plus the branch. It uses a listing (`npx playwright test --list --reporter=json <specs>`), which carries every title and no results: every throw runs except the flag, which needs results. `--check` skips the `dev-verified` read, because a branch head never carries one, and writes no content file: it can only pass or refuse. A mistyped title found only after the merge would mean a fix PR, a moved head, and a second hour-long capture.
 2. The PR merges to `develop`: the tooling, the instrumentation and `docs/releases/a3a5adb.json`. Dev deploys, and `dev-verified` is read off the commit.
-3. **Capture:** `EVIDENCE_DIR=<dir> npm run test:e2e -- --workers=2 $(node scripts/release-inventory.mjs --specs)`, on all five engines, against `develop`'s head. Nothing else runs meanwhile.
+3. **Capture:** `EVIDENCE_DIR=<dir> npm run test:e2e -- --workers=2 $(node scripts/release-inventory.mjs --tests)`, on all five engines, against `develop`'s head. Nothing else runs meanwhile.
 4. **Content, then page:** `build-release-content.mjs` builds the content, then `build-evidence-page.mjs` builds the page. Assets are uploaded with `upload-evidence-assets.mjs`, and the page is published with `{"db": {}, "assets": {}}`.
 5. **Verified:** the asset count equals the manifest's media count, every image and recording loads, and the sign-off doc key reads `release-<head7>`.
 
@@ -110,7 +110,7 @@ Every refusal is a thrown `Error` naming what to fix. There is no partial page, 
 
 Unit tests (vitest), written red first against throwing stubs:
 
-- **Inventory:** a temporary repository holding a squash commit, a PR merge whose branch changes `functions/` while `develop` moves on beside it (so a parent-to-parent diff would wrongly include `develop`'s change), and a merge whose PR changes only `tests/`. It checks files per shape, `pr` and `ticket` parsing, `areas`, the ancestor refusal, and `releaseSpecs` over fixture sources.
+- **Inventory:** a temporary repository holding a squash commit, a PR merge whose branch changes `functions/` while `develop` moves on beside it (so a parent-to-parent diff would wrongly include `develop`'s change), and a merge whose PR changes only `tests/`. It checks files per shape, `pr` and `ticket` parsing, `areas`, the ancestor refusal, and `releaseTests` over fixture sources (direct, through a helper, through a helper's helper, a comment naming `shoot(`, the fixture import).
 - **Map:** each throw; the flag (one engine failed, so flagged; every engine skipped, so flagged; one engine skipped and the rest passed, so not flagged); totals; escaping; and anchors equal to `#j-` plus `slugOf`.
 - **Content:** the `dev-verified` refusal, the `signoffKey`, `--check` against a listing (titles validated, no flag computed, no `dev-verified` read, nothing written), and no prose in the script.
 - **Builder:** `checks` render with the `j-check-` row, its `h3` and the `chk-check-` box, group under their headings, join `JOURNEYS`, and switch the progress wording. A duplicate, a malformed id, or a collision with a journey throws.
@@ -139,8 +139,10 @@ Mutations, each predicted before it runs:
 - the progress wording left at "journeys reviewed" on a page with checks;
 - `content.signoff` ignored (the release page reads "may merge to develop");
 - checks rendered in one list, ignoring `group`;
-- `releaseSpecs` keeping the fixture spec;
-- `releaseSpecs` keeping a spec that never calls `shoot(`;
+- `releaseTests` keeping the fixture spec;
+- `releaseTests` keeping a test that never reaches `shoot(`;
+- `releaseTests` not following a helper (the projector's journeys vanish);
+- `releaseTests` following helpers one level only (a helper calling a helper that shoots is missed);
 - the ancestor refusal removed;
 - the more-than-two-parents refusal removed;
 - a squash's `pr` taken from its first `(#N)` instead of its last;
@@ -182,3 +184,4 @@ Mutations, each predicted before it runs:
   - a cited title must be a captured journey (`order` comes from the manifest), not merely a report title; `--check`'s weaker test is stated;
   - the sign-off section's ticket wording ("may merge to develop") would misname the release decision, so `content.signoff` overrides it, with a mutation added.
 - **Plan-time amendment 2 (2026-09-27):** a fixture for the plan showed `git diff <p1> <p2>` reporting `develop`'s own changes as a stale branch's work (#108's merge was a false positive). Every commit is now diffed against its first parent. The count is 47, not 48, and the mutation is restated.
+- **Plan-time amendment 3 (2026-09-27):** the listing showed 139 capturing journeys, not the ~60 counted from source; locale loops expand and one spec captures through a helper. The selection is now `file:line` of each capturing test, found through helpers to a fixed point, so a capture runs about 148 tests per engine rather than 449. The operator re-confirmed five engines against the corrected numbers.
