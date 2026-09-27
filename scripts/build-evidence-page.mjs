@@ -362,8 +362,9 @@ export const assetUploads = (candidates) => {
 };
 
 /**
- * The `src` the page points at for each journey, from the map the upload
- * answered with.
+ * The `src` the page points at for each planned asset, from the map the upload
+ * answered with. `what` names the kind in every refusal: recordings and
+ * screenshots (#368) are checked the same way and told apart in what it says.
  *
  * Checked in BOTH directions, because each failure is silent in its own way. A
  * planned recording missing from the map renders a journey with no source,
@@ -372,26 +373,26 @@ export const assetUploads = (candidates) => {
  * a current journey with an older recording is the hazard this file exists to
  * prevent -- nothing about the page would look wrong.
  *
- * @param {{ uploaded: Record<string, string>, candidates: { key: string, abs: string }[] }} input
+ * @param {{ uploaded: Record<string, string>, candidates: { key: string, abs: string }[], what: string }} input
  * @returns {Map<string, string>}
  */
-export const assetVideoPaths = ({ uploaded, candidates }) => {
+export const assetSrcs = ({ uploaded, candidates, what }) => {
   const wanted = new Set(candidates.map(({ key }) => key));
   const missing = candidates.filter(({ key }) => !Object.hasOwn(uploaded, key));
   if (missing.length)
     throw new Error(
-      `build-evidence-page: ${missing.length} recording(s) were planned but ` +
+      `build-evidence-page: ${missing.length} ${what}(s) were planned but ` +
         `never uploaded:\n  ${missing.map(({ key }) => key).join('\n  ')}\n` +
-        'A journey with no source reads as one that was never recorded. Run ' +
-        'the upload again, or rebuild the plan.',
+        `A journey with no source reads as one whose ${what} was never taken. ` +
+        'Run the upload again, or rebuild the plan.',
     );
   const extra = Object.keys(uploaded).filter((key) => !wanted.has(key));
   if (extra.length)
     throw new Error(
       `build-evidence-page: ${extra.length} uploaded asset(s) belong to no ` +
-        `recording in this run:\n  ${extra.join('\n  ')}\n` +
+        `${what} in this run:\n  ${extra.join('\n  ')}\n` +
         "That is a map from an earlier run. Pairing this run's journeys " +
-        "with an earlier run's recordings would look entirely normal.",
+        `with an earlier run's ${what}s would look entirely normal.`,
     );
   for (const [key, path] of Object.entries(uploaded))
     if (!path.startsWith(BLOB_PREFIX))
@@ -402,6 +403,35 @@ export const assetVideoPaths = ({ uploaded, candidates }) => {
       );
   return new Map(candidates.map(({ key }) => [key, uploaded[key]]));
 };
+
+/**
+ * The recordings' `src`s, as #268 built them: `assetSrcs` naming its kind.
+ *
+ * @param {{ uploaded: Record<string, string>, candidates: { key: string, abs: string }[] }} input
+ * @returns {Map<string, string>}
+ */
+export const assetVideoPaths = ({ uploaded, candidates }) =>
+  assetSrcs({ uploaded, candidates, what: 'recording' });
+
+/** The key prefix a screenshot is planned, uploaded and looked up under. */
+export const SHOT_PREFIX = 'shot:';
+
+/**
+ * This run's screenshots as asset-store candidates (#368), one per captured
+ * file, keyed `shot:<manifest file>`. Inlined as base64 they made the #362
+ * release page 104.74 MB against the 16 MB a document carries; beside the
+ * recordings in the store, the page holds a path per shot. Their keys cannot
+ * meet a recording's, which is a journey slug and an engine joined by `|`.
+ *
+ * @param {{ file: string }[]} manifest this run's rows only
+ * @param {string} dir the evidence directory the files are relative to
+ * @returns {{ key: string, abs: string }[]}
+ */
+export const shotCandidates = (manifest, dir) =>
+  [...new Set(manifest.map(({ file }) => file))].map((file) => ({
+    key: `${SHOT_PREFIX}${file}`,
+    abs: join(dir, file),
+  }));
 
 /**
  * A run whose recordings the asset store could not hold is refused before
@@ -1285,9 +1315,11 @@ export const UPLOAD_NOTE =
 /**
  * What a capture actually is, read from its own first bytes.
  *
- * Never from the extension and never hardcoded: a data URI that claims a type
- * the bytes are not paints nothing, and a page of blank frames looks exactly
- * like a page of captures that failed. An unrecognised format is a THROW for
+ * Never from the extension and never hardcoded: an image whose bytes are not
+ * the type it claims paints nothing, and a page of blank frames looks exactly
+ * like a page of captures that failed. Every screenshot is checked here before
+ * the page is built, though since #368 the asset store serves it rather than
+ * a data URI. An unrecognised format is a THROW for
  * the same reason a manifest entry with no image is -- silence here is
  * indistinguishable from evidence.
  *
@@ -1423,28 +1455,31 @@ const main = () => {
       .map((l) => JSON.parse(l)),
     report,
   );
-  // Before any capture is encoded: a missing recording refuses the whole page.
+  // Before any capture is read: a missing recording refuses the whole page.
   const candidates = videoCandidates(report);
+  const screenshots = shotCandidates(manifest, dir);
 
-  // Recordings live in the artifact's ASSET STORE, which holds 5000 files and
-  // 1 GiB against a publish's 255 entries and 64 MB (#268, measured). The
-  // publish itself therefore carries no recording at all -- only the removal
-  // of any an earlier capture published as supporting files, which a redeploy
-  // would otherwise keep.
-  const uploads = assetUploads(candidates);
+  // Recordings AND screenshots (#368) live in the artifact's ASSET STORE, which
+  // holds 5000 files and 1 GiB against a publish's 255 entries and 64 MB and a
+  // document's 16 MB (#268, measured). The publish itself therefore carries no
+  // capture at all -- only the removal of any an earlier capture published as
+  // supporting files, which a redeploy would otherwise keep.
+  const uploads = assetUploads([...candidates, ...screenshots]);
   if (planning) {
     assertAssetLimits({ uploads, sizeOf: (source) => statSync(source).size });
     const planOut = `${out}.uploads.json`;
     writeFileSync(planOut, `${JSON.stringify(uploads, null, 2)}\n`, 'utf8');
     console.log(
-      `planned ${Object.keys(uploads).length} recording(s) to upload (${planOut})`,
+      `planned ${screenshots.length} screenshot(s) and ${candidates.length} ` +
+        `recording(s) to upload (${planOut})`,
     );
     console.log(UPLOAD_NOTE);
     return;
   }
-  if (!assetsPath && candidates.length > 0)
+  if (!assetsPath && candidates.length + screenshots.length > 0)
     throw new Error(
-      `build-evidence-page: ${candidates.length} recording(s) have to reach ` +
+      `build-evidence-page: ${screenshots.length} screenshot(s) and ` +
+        `${candidates.length} recording(s) have to reach ` +
         'the asset store before the page can reference them, and no --assets ' +
         'map was given. Run --plan first, upload what it lists, then pass the ' +
         'map back. Refusing to build a page whose every journey would read as ' +
@@ -1458,11 +1493,12 @@ const main = () => {
   }
   const content = JSON.parse(readFileSync(contentPath, 'utf8'));
 
-  // Read ONCE: the same buffer answers what the file is, how big it renders
-  // and what goes in the src.
+  // Read ONCE: the same buffer answers what the file is and how big it
+  // renders. Its bytes travel through the asset store (#368), not the page.
   const bytes = new Map(
     manifest.map((m) => [m.file, readFileSync(join(dir, m.file))]),
   );
+  for (const b of bytes.values()) mediaType(b);
   const dims = new Map(
     [...bytes]
       // The pair is spelled out: `.map` otherwise answers `any[]`, and a Map
@@ -1477,12 +1513,6 @@ const main = () => {
       )
       .filter(([, size]) => size),
   );
-  const shots = new Map(
-    [...bytes].map(([file, b]) => [
-      file,
-      `data:${mediaType(b)};base64,${b.toString('base64')}`,
-    ]),
-  );
   // Recordings travel BESIDE the page, so the page holds a relative path and
   // the bytes are charged against the publish rather than the 16 MB document.
   // Nothing is selected and nothing is dropped: every recording the report
@@ -1494,10 +1524,32 @@ const main = () => {
       : [],
   });
   assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
+  // One map answers both kinds; each is checked both ways against its own
+  // plan, so a shot missing from it, or one no capture of this run asked for,
+  // refuses exactly as a recording does.
+  /** @type {Record<string, string>} */
+  const uploaded = assetsPath
+    ? JSON.parse(readFileSync(assetsPath, 'utf8'))
+    : {};
+  /** @param {(key: string) => boolean} keep */
+  const part = (keep) =>
+    Object.fromEntries(Object.entries(uploaded).filter(([key]) => keep(key)));
+  const isShot = (/** @type {string} */ key) => key.startsWith(SHOT_PREFIX);
   const videos = assetVideoPaths({
-    uploaded: assetsPath ? JSON.parse(readFileSync(assetsPath, 'utf8')) : {},
+    uploaded: part((key) => !isShot(key)),
     candidates,
   });
+  const shotSrcs = assetSrcs({
+    uploaded: part(isShot),
+    candidates: screenshots,
+    what: 'screenshot',
+  });
+  const shots = new Map(
+    screenshots.map(({ key }) => [
+      key.slice(SHOT_PREFIX.length),
+      shotSrcs.get(key),
+    ]),
+  );
 
   const html = renderEvidencePage({
     manifest,
