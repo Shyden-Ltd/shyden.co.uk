@@ -163,6 +163,14 @@ function startsRegex(tail: string): boolean {
  * matches. Quotes, template literals, escapes and regex literals (`startsRegex`,
  * above) are tracked; that is the whole of the grammar this needs.
  *
+ * A template's `${…}` is code, and that code may hold a template of its own,
+ * so each open substitution keeps its own brace depth on a stack, and its
+ * closing `}` returns to the template text it came from. Read backtick to
+ * backtick instead, a nested template turns inside out: its text is scanned
+ * as code, `</b>` there opens a phantom regex, and a later backtick opens a
+ * template that never closes, keeping every comment in the rest of the file
+ * (#364, found by #362's `renderChangeMap`).
+ *
  * A block comment goes WITH the line breaks inside it, so after one, a line
  * counted in this output is not the file's line (#218: `dev-sanity.spec.ts`
  * line 79 was reported as line 48). A guard that reports lines reads the
@@ -173,6 +181,8 @@ export function withoutTsComments(source: string): string {
   let quote: string | null = null;
   /** Last 16 non-whitespace characters emitted, for the decision above. */
   let tail = '';
+  /** The brace depth inside each open `${`, innermost last. */
+  const substitutions: number[] = [];
 
   const emit = (text: string) => {
     out += text;
@@ -189,8 +199,25 @@ export function withoutTsComments(source: string): string {
       if (char === '\\') {
         emit(source[i + 1] ?? '');
         i += 1;
+      } else if (quote === '`' && char === '$' && next === '{') {
+        emit(next);
+        i += 1;
+        substitutions.push(0);
+        quote = null;
       } else if (char === quote) quote = null;
       continue;
+    }
+
+    const depth = substitutions.length - 1;
+    if (depth >= 0 && char === '{') substitutions[depth] += 1;
+    if (depth >= 0 && char === '}') {
+      if (substitutions[depth] === 0) {
+        substitutions.pop();
+        quote = '`';
+        emit(char);
+        continue;
+      }
+      substitutions[depth] -= 1;
     }
 
     if (char === "'" || char === '"' || char === '`') {
