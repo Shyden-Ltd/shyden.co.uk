@@ -188,6 +188,16 @@ const deploysProd = (scripts: string) =>
 const rollsProdBack = (scripts: string) =>
   /\/pages\/projects\/shyden-site(?![\w.-])/.test(scripts) &&
   /\/rollback\b/.test(scripts);
+// Reading the production reports count (#349): the script's count mode, with
+// no argument, as a whole command line. A shell comment naming it is not a
+// reader, and neither is `report-failure`, which never reads Cloudflare.
+const countsWaitingReports = (scripts: string) =>
+  /^[ \t]*node scripts\/waiting-reports\.mjs[ \t]*$/m.test(scripts);
+/** The two secrets `reports-count` holds, sorted as `WorkflowJob.secrets` is. */
+const REPORTS_COUNT_SECRETS = [
+  'CLOUDFLARE_ACCOUNT_ID',
+  'CLOUDFLARE_D1_READ_TOKEN',
+];
 
 /** The job block owning `needle`, from a workflow's comment-stripped text. */
 const jobBlockRunning = (yaml: string, needle: string): string => {
@@ -559,8 +569,10 @@ describe('the deploy pipeline runs what it claims to', () => {
   // What a job does with the Cloudflare pair decides the environment it reads
   // them from, derived from its steps and never from the file's name. The dev
   // and prod tokens share one name, one per environment, so the environment
-  // is the only thing choosing which project a job can reach.
-  const PAGES_ENVIRONMENTS = [
+  // is the only thing choosing which project a job can reach. Reading the
+  // production reports count changes nothing, and still has its own
+  // environment and token (#349), so a job that reads it is a row here too.
+  const CLOUDFLARE_ENVIRONMENTS = [
     {
       does: 'deploys shyden-site-dev',
       environment: 'dev',
@@ -573,21 +585,26 @@ describe('the deploy pipeline runs what it claims to', () => {
       environment: 'prod-rollback',
       in: rollsProdBack,
     },
+    {
+      does: 'reads the production reports count',
+      environment: 'reports-count',
+      in: countsWaitingReports,
+    },
   ];
 
-  it('a Cloudflare secret is read only in the environment of the project its job changes (#241)', () => {
+  it('a Cloudflare secret is read only in the environment of what its job does (#241, #349)', () => {
     const readers = everyJob().filter(({ job }) =>
       job.secrets.some((secret) => secret.startsWith('CLOUDFLARE_')),
     );
     const misplaced = readers.flatMap(({ where, job }) => {
-      const acts = PAGES_ENVIRONMENTS.filter((act) =>
+      const acts = CLOUDFLARE_ENVIRONMENTS.filter((act) =>
         act.in(job.runs.join('\n')),
       );
       if (acts.length !== 1)
         return [
           `${where} reads Cloudflare secrets and ` +
             (acts.length === 0
-              ? 'changes no Pages project'
+              ? 'does nothing a Cloudflare environment is for'
               : acts.map(({ does }) => does).join(' and ')),
         ];
       const [{ does, environment }] = acts;
@@ -602,6 +619,38 @@ describe('the deploy pipeline runs what it claims to', () => {
       searched(misplaced, {
         of: readers.map(({ where }) => where),
         what: 'jobs reading a Cloudflare secret',
+      }),
+    ).toEqual([]);
+  });
+
+  // `reports-count` holds a token that reads production's reports table, so
+  // it holds exactly the count's two secrets, and nothing but the count reads
+  // them. The rule above places a job by what it does; this one keeps the
+  // environment from gaining a second tenant, or the token a second reader.
+  it('only the waiting-reports count reads secrets in reports-count, or its token anywhere (#349)', () => {
+    const jobs = everyJob();
+    const strays = jobs.flatMap(({ where, job }) => {
+      const inCount = job.environment === 'reports-count';
+      const readsToken = job.secrets.includes('CLOUDFLARE_D1_READ_TOKEN');
+      if (!inCount)
+        return readsToken
+          ? [`${where} reads CLOUDFLARE_D1_READ_TOKEN outside reports-count`]
+          : [];
+      const findings: string[] = [];
+      if (!countsWaitingReports(job.runs.join('\n')))
+        findings.push(`${where} is in reports-count and counts no reports`);
+      const secrets = storedSecrets(job);
+      if (secrets.join() !== REPORTS_COUNT_SECRETS.join())
+        findings.push(
+          `${where} reads ${secrets.join(', ') || 'nothing'} in ` +
+            `reports-count, not ${REPORTS_COUNT_SECRETS.join(', ')}`,
+        );
+      return findings;
+    });
+    expect(
+      searched(strays, {
+        of: jobs.filter(({ job }) => job.environment === 'reports-count'),
+        what: 'jobs in reports-count',
       }),
     ).toEqual([]);
   });
@@ -2354,5 +2403,87 @@ describe('wrangler comes from the lockfile (#97)', () => {
       'npx playwright install --with-deps',
       'npm run test:functions',
     ]);
+  });
+});
+
+// ---- the waiting-reports count (#349, spec 15.3) -------------------------
+//
+// The job holds a production read token, so what it may run is pinned whole:
+// two steps of Node, after checkout and setup-node. Read PARSED
+// (tests/workflow-jobs.ts), so a YAML comment can neither trip nor satisfy it.
+describe('the waiting-reports count (#349)', () => {
+  const FILE = 'waiting-reports.yml';
+  type Step = {
+    uses?: string;
+    run?: string;
+    if?: string;
+    env?: Record<string, string>;
+  };
+  type CountWorkflow = {
+    on?: Record<string, unknown>;
+    concurrency?: unknown;
+    jobs?: Record<
+      string,
+      {
+        permissions?: unknown;
+        env?: Record<string, string>;
+        steps?: Step[];
+      }
+    >;
+  };
+  const parsed = () => parseCleanYaml(workflow(FILE), FILE) as CountWorkflow;
+  const steps = () => parsed().jobs?.count?.steps ?? [];
+  const unwrapped = (condition: string | undefined) =>
+    condition?.replace(/^\$\{\{\s*|\s*\}\}$/g, '').trim();
+
+  it('runs daily at 01:17 UTC and on dispatch, never on a push or a pull request', () => {
+    expect(parsed().on).toEqual({
+      schedule: [{ cron: '17 1 * * *' }],
+      workflow_dispatch: null,
+    });
+    expect(Object.keys(parsed().jobs ?? {})).toEqual(['count']);
+  });
+
+  it('runs one at a time, queued and never cancelled, so two runs cannot both post', () => {
+    expect(parsed().concurrency).toEqual({
+      group: 'waiting-reports',
+      'cancel-in-progress': false,
+    });
+  });
+
+  it('names reports-count, and asks for contents: read and issues: write alone', () => {
+    expect(jobNamed(FILE, 'count').environment).toBe('reports-count');
+    expect(parsed().jobs?.count?.permissions).toEqual({
+      contents: 'read',
+      issues: 'write',
+    });
+  });
+
+  it('runs no npm package code: checkout, setup-node and the script, nothing else', () => {
+    expect(steps().map(({ uses }) => uses?.replace(/@.*/, '') ?? null)).toEqual(
+      ['actions/checkout', 'actions/setup-node', null, null],
+    );
+    expect(jobNamed(FILE, 'count').runs).toEqual([
+      'node scripts/waiting-reports.mjs',
+      'node scripts/waiting-reports.mjs report-failure',
+    ]);
+  });
+
+  it('reports a failure only under if: failure(), and the count runs unconditionally', () => {
+    const [, , counting, reporting] = steps();
+    expect(unwrapped(counting.if)).toBeUndefined();
+    expect(unwrapped(reporting.if)).toBe('failure()');
+  });
+
+  it('gives the Cloudflare secrets to the counting step alone', () => {
+    const [, , counting, reporting] = steps();
+    expect(Object.keys(counting.env ?? {}).sort()).toEqual(
+      REPORTS_COUNT_SECRETS,
+    );
+    expect(reporting.env).toBeUndefined();
+    expect(parsed().jobs?.count?.env).toEqual({
+      NOTICE_ISSUE: '360',
+      GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+    });
   });
 });
