@@ -419,7 +419,7 @@ test.describe('the dot grid (#371)', () => {
         position: layer.position,
         image: layer.backgroundImage,
         size: layer.backgroundSize,
-        mask: layer.maskImage || layer.webkitMaskImage,
+        mask: layer.maskImage,
         dot,
       };
     });
