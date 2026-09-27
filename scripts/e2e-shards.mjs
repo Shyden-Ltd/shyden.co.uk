@@ -28,6 +28,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { messageOf } from './errors.mjs';
+import { isRecord } from '../src/lib/is-record.ts';
 
 /** @typedef {{ index: number, total: number }} Shard */
 
@@ -141,10 +142,6 @@ export function shardNotice({ shard, enumerated, executed }) {
     '(scripts/e2e-shards.mjs).\n'
   );
 }
-
-/** @param {unknown} value @returns {value is Record<string, unknown>} */
-const isRecord = (value) =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /**
  * Why `build-and-test` must not pass on these needs: one finding for every job
