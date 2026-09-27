@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+import { LOCALES, localisePath } from '../../src/lib/i18n';
 
 test.use(recorded);
 
@@ -48,47 +49,37 @@ test.describe('header + footer', () => {
     expect(hrefs).toEqual(['/#shytalk', '/#tools', '/#contact']);
   });
 
-  // The disclosure is asserted as ONE whole sentence rather than as a handful
-  // of substrings. It is assembled from four fragments (three of them
-  // translated), and every join between them is a place a space can go missing
-  // — which is exactly how "Company No.17110487" once shipped. Substring
-  // assertions only ever pinned the joins someone thought to name; matching the
-  // finished sentence pins all of them at once.
-  //
-  // The year is matched as \d{4} on purpose: asserting the CURRENT year would
-  // either restate the implementation or break the suite on 1 January.
-  const disclosureEn =
-    /^© \d{4} Shyden Ltd\. Registered in England & Wales\. Company No\. 17110487\. Registered office: 71-75 Shelton Street, Covent Garden, London, United Kingdom, WC2H 9JQ\.$/;
-  const disclosureId =
-    /^© \d{4} Shyden Ltd\. Terdaftar di Inggris & Wales\. No\. Perusahaan 17110487\. Kantor terdaftar: 71-75 Shelton Street, Covent Garden, London, United Kingdom, WC2H 9JQ\.$/;
+  // Shyden Ltd is dissolved (operator, 2026-09-27, #370): the footer names no
+  // company, no number and no registered office, in any language. What stays
+  // is the way to reach a person. The facts are listed once, here, as the
+  // things that must not come back; each is a string a visitor once read.
+  const DISSOLVED = [
+    'Ltd',
+    '17110487',
+    'Shelton Street',
+    'Registered',
+    'Terdaftar',
+    'Company No',
+    'Perusahaan',
+  ];
 
-  test('footer shows the required UK company disclosure', async ({ page }) => {
-    await page.goto('/');
-    const footer = page.locator('footer');
-    // Real Companies House values (SHYDEN LTD, 17110487) — and no bracketed
-    // placeholder may leak into the shipped disclosure.
-    await expect(footer.locator('.disclosure')).toHaveText(disclosureEn);
-    await expect(footer).not.toContainText('[[');
-    await expect(
-      footer.locator('a[href="mailto:support@shyden.co.uk"]'),
-    ).toBeVisible();
-  });
-
-  test('the Indonesian footer carries the same disclosure, translated', async ({
-    page,
-  }) => {
-    // The company name, number and registered office are legal FACTS and stay
-    // verbatim in every language; only the wording around them is translated.
-    // Indonesian also reorders the label ("No. Perusahaan"), so this is a real
-    // second arrangement of the same fragments — not a copy of the English one.
-    await page.goto('/id/');
-    const footer = page.locator('footer');
-    await expect(footer.locator('.disclosure')).toHaveText(disclosureId);
-    await expect(footer).not.toContainText('[[');
-    await expect(
-      footer.locator('a[href="mailto:support@shyden.co.uk"]'),
-    ).toBeVisible();
-  });
+  for (const locale of LOCALES)
+    test(`${locale}: the footer names no company, and still reaches a person`, async ({
+      page,
+    }) => {
+      await page.goto(localisePath('/', locale));
+      const footer = page.locator('footer');
+      await expect(footer).toBeVisible();
+      await expect(footer.locator('.disclosure')).toHaveCount(0);
+      for (const fact of DISSOLVED)
+        await expect(
+          footer,
+          `${locale} footer still says ${fact}`,
+        ).not.toContainText(fact);
+      await expect(
+        footer.locator('a[href="mailto:support@shyden.co.uk"]'),
+      ).toBeVisible();
+    });
 
   test(
     'mobile menu: zero-JS disclosure reveals and hides the nav',

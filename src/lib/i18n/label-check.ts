@@ -144,7 +144,6 @@ const SITE_PAGES: Record<keyof SiteStrings, string> = {
   menuLabel: CHROME,
   themeDarkMode: CHROME,
   skipToContent: CHROME,
-  footer: CHROME,
   language: CHROME,
   report: CHROME,
   home: '/',

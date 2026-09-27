@@ -258,7 +258,6 @@ describe('renderedOn: where a label is read', () => {
     ['site.glory.heading', '/glory-points'],
     ['site.notFound.heading', 'the 404 page'],
     ['site.nav.home', 'the header or footer of every page'],
-    ['site.footer.registered', 'the header or footer of every page'],
     ['csv.columns.sex', 'the CSV file a teacher downloads'],
   ])('%s is read on %s', (key, where) => {
     expect(renderedOn(key)).toBe(where);

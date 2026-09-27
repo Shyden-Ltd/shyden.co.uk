@@ -162,7 +162,6 @@ describe('a page offers its own sections plus the chrome', () => {
     expect(chrome).toEqual(
       expect.arrayContaining([
         'nav',
-        'footer',
         'language',
         'report',
         'menuLabel',

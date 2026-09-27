@@ -330,3 +330,22 @@ test.describe('every site string reaches a built page', () => {
     });
   }
 });
+
+/**
+ * #370. Shyden Ltd is dissolved (operator, 2026-09-27), so no built page may
+ * name it: not in visible text, not in a `<title>`, not in a meta tag. Read
+ * from the raw HTML, which holds all three, and derived from `dist/` rather
+ * than listed, so a page added later is covered the day it is built.
+ */
+test.describe('no built page names the dissolved company (#370)', () => {
+  const DISSOLVED =
+    /\bLtd\b|17110487|Shelton Street|Registered office|Company No\.|Registered in England|Terdaftar di Inggris|Perusahaan baru|A new company|一家新公司|一家新的科技公司|Một công ty mới|บริษัทน้องใหม่/;
+
+  test('every page in every locale', () => {
+    const pages = filesUnder('dist', (path) => /\.html$/.test(path));
+    const naming = pages.filter((path) =>
+      DISSOLVED.test(readFileSync(path, 'utf8')),
+    );
+    expect(searched(naming, { of: pages, what: 'built pages' })).toEqual([]);
+  });
+});

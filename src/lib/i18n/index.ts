@@ -49,7 +49,7 @@ export const BETA_BADGE = 'BETA';
 /**
  * Whether a locale's copy is unverified -- true for everything but the default.
  *
- * Derived, never enumerated. Shyden Ltd has no native speakers for any locale
+ * Derived, never enumerated. Shyden has no native speakers for any locale
  * but English, so "unverified" is a property of the whole non-English set and
  * not of four particular codes. A hand-written set would miss the next locale
  * added on the day it is added, which is the exact failure behind #24, #49 and

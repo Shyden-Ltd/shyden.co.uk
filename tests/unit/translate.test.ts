@@ -133,18 +133,25 @@ describe('every MVP language has a DeepL code', () => {
 });
 
 describe('what must never be sent to a translator', () => {
-  it('holds the names and the legal facts', () => {
-    for (const term of [
-      'Shyden',
-      'ShyTalk',
-      'Glory Points',
-      '17110487', // the company number, as it appears in the footer
-    ]) {
+  it('holds the names', () => {
+    for (const term of ['Shyden', 'ShyTalk', 'Glory Points']) {
       expect(
         DO_NOT_TRANSLATE.some((t) => t === term),
-        `${term} is translatable — a company name or a legal fact is not copy`,
+        `${term} is translatable — a name is not copy`,
       ).toBe(true);
     }
+  });
+
+  it('holds only terms the site still ships', () => {
+    // #370 removed the company's legal facts from every page. A term no
+    // sentence carries protects nothing, and reads as a fact the site still
+    // states -- 'England and Wales' sat here matching nothing until #22.
+    const sentences = [...translatableSentences()];
+    for (const term of DO_NOT_TRANSLATE)
+      expect(
+        sentences.some((s) => s.includes(term)),
+        `${term} is in no sentence the site sends to a translator`,
+      ).toBe(true);
   });
 
   it('leaves a function alone, because a function is code', () => {
@@ -188,11 +195,15 @@ describe('protected terms are wrapped before they are sent', () => {
   });
 
   it('wraps the longest match first, so a name is never split', () => {
-    // 'Shyden' is a prefix of 'Shyden Ltd'. Shortest-first would produce
-    // `<x>Shyden</x> Ltd` and hand "Ltd" to the translator on its own.
+    // 'Shyden' is a prefix of 'Shyden Studio'. Shortest-first would produce
+    // `<x>Shyden</x> Studio` and hand "Studio" to the translator on its own.
+    // The shipped list has no such pair since #370, so the pair is given.
     expect(
-      protectTerms(escapeXml('Shyden Ltd is registered in England & Wales.')),
-    ).toBe('<x>Shyden Ltd</x> is registered in <x>England &amp; Wales</x>.');
+      protectTerms(escapeXml('Shyden Studio is by Shyden.'), [
+        'Shyden',
+        'Shyden Studio',
+      ]),
+    ).toBe('<x>Shyden Studio</x> is by <x>Shyden</x>.');
   });
 
   it('leaves a string with no protected term untouched', () => {
@@ -203,7 +214,7 @@ describe('protected terms are wrapped before they are sent', () => {
   it('round-trips: unprotect undoes protect exactly', () => {
     for (const source of [
       'Built for teachers, by Shyden.',
-      'Shyden Ltd, company 17110487, England & Wales.',
+      'ShyTalk & Glory Points, by Shyden.',
       'Nothing protected here at all.',
     ]) {
       expect(unprotectTerms(protectTerms(source))).toBe(source);
@@ -244,8 +255,9 @@ describe('protected terms are wrapped before they are sent', () => {
   });
 
   it('escapes the ampersand that made DeepL answer 400', () => {
-    // The footer's "Registered in England & Wales." A bare `&` is a malformed
-    // entity to an XML parser, and `tag_handling: 'xml'` means DeepL is one.
+    // The footer's "Registered in England & Wales." (#22; the line left with
+    // the company in #370). A bare `&` is a malformed entity to an XML
+    // parser, and `tag_handling: 'xml'` means DeepL is one.
     expect(escapeXml('England & Wales')).toBe('England &amp; Wales');
     expect(escapeXml('a < b > c')).toBe('a &lt; b &gt; c');
   });
@@ -261,9 +273,14 @@ describe('protected terms are wrapped before they are sent', () => {
 
   it('protects a term that carries an ampersand, in its escaped form', () => {
     // `DO_NOT_TRANSLATE` said 'England and Wales' until #22 and therefore
-    // matched nothing: the copy has always said '&'.
-    const body = buildRequestBody(['Registered in England & Wales.'], 'zh');
-    expect(body.text[0]).toBe('Registered in <x>England &amp; Wales</x>.');
+    // matched nothing: the copy has always said '&'. The term left the list
+    // with the footer (#370), so the ampersand case is given.
+    expect(
+      protectTerms(escapeXml('Salt & Pepper, by Shyden.'), [
+        'Salt & Pepper',
+        'Shyden',
+      ]),
+    ).toBe('<x>Salt &amp; Pepper</x>, by <x>Shyden</x>.');
   });
 
   it("collects all three catalogues, not just the tool's", () => {

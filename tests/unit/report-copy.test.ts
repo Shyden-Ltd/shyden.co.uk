@@ -11,7 +11,8 @@ describe('the report copy is the approved English (#97)', () => {
     expect(siteEn.report).toEqual({
       open: 'Report a translation problem',
       intro:
-        'Reports go to Shyden Ltd and are deleted once they have been dealt with.',
+        // #370: Shyden Ltd is dissolved, so the report goes to Shyden.
+        'Reports go to Shyden and are deleted once they have been dealt with.',
       quoteLabel: 'Which words are wrong?',
       quoteHint:
         'Start typing and choose the words from the list, or copy them from the page.',

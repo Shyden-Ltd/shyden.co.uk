@@ -20,11 +20,10 @@ export const siteEn = {
   skipToContent: 'Skip to content',
 
   home: {
-    title: 'Shyden Ltd — a new technology company',
+    title: 'Shyden — small software, made with care',
     description:
-      'We build things worth talking about. ShyTalk is our first product — live rooms where you learn a language by speaking it with someone learning yours.',
-    eyebrow: 'A new company',
-    heroHeading: 'Shyden builds things worth talking about.',
+      'We make small software, with care. ShyTalk is our first product — live rooms where you learn a language by speaking it with someone learning yours.',
+    heroHeading: 'Shyden makes small software, with care.',
     heroLead:
       'ShyTalk is the first out of the door — live rooms where you learn a language by speaking it with someone learning yours. Somewhere to actually talk.',
     exploreShytalk: 'Explore ShyTalk',
@@ -60,15 +59,6 @@ export const siteEn = {
     heading: 'Page not found',
     body: "That page doesn't exist.",
     backHome: 'Back to the homepage',
-  },
-
-  footer: {
-    // The legal entity name, company number and registered office are legal
-    // facts from Companies House and stay verbatim in every language. Only the
-    // wording around them is translated.
-    registered: 'Registered in England & Wales.',
-    companyNo: 'Company No.',
-    regOffice: 'Registered office:',
   },
 
   glory: {
@@ -121,7 +111,7 @@ export const siteEn = {
   report: {
     open: 'Report a translation problem',
     intro:
-      'Reports go to Shyden Ltd and are deleted once they have been dealt with.',
+      'Reports go to Shyden and are deleted once they have been dealt with.',
     quoteLabel: 'Which words are wrong?',
     quoteHint:
       'Start typing and choose the words from the list, or copy them from the page.',
@@ -153,11 +143,10 @@ export const siteId: SiteStrings = {
   skipToContent: 'Lewati ke konten',
 
   home: {
-    title: 'Shyden Ltd — perusahaan teknologi baru',
+    title: 'Shyden — perangkat lunak kecil, dibuat dengan cermat',
     description:
-      'Kami membangun hal-hal yang layak dibicarakan. ShyTalk adalah produk pertama kami — ruang langsung tempat Anda belajar bahasa dengan berbicara bersama orang yang sedang belajar bahasa Anda.',
-    eyebrow: 'Perusahaan baru',
-    heroHeading: 'Shyden membangun hal-hal yang layak dibicarakan.',
+      'Kami membuat perangkat lunak kecil, dengan cermat. ShyTalk adalah produk pertama kami — ruang langsung tempat Anda belajar bahasa dengan berbicara bersama orang yang sedang belajar bahasa Anda.',
+    heroHeading: 'Shyden membuat perangkat lunak kecil, dengan cermat.',
     heroLead:
       'ShyTalk adalah yang pertama kami luncurkan — ruang langsung tempat Anda belajar bahasa dengan berbicara bersama orang yang sedang belajar bahasa Anda. Tempat untuk benar-benar berbicara.',
     exploreShytalk: 'Jelajahi ShyTalk',
@@ -194,12 +183,6 @@ export const siteId: SiteStrings = {
     heading: 'Halaman tidak ditemukan',
     body: 'Halaman itu tidak ada.',
     backHome: 'Kembali ke beranda',
-  },
-
-  footer: {
-    registered: 'Terdaftar di Inggris & Wales.',
-    companyNo: 'No. Perusahaan',
-    regOffice: 'Kantor terdaftar:',
   },
 
   glory: {
@@ -239,7 +222,7 @@ export const siteId: SiteStrings = {
 
   report: {
     open: 'Laporkan masalah terjemahan',
-    intro: 'Laporan dikirim ke Shyden Ltd dan dihapus setelah ditangani.',
+    intro: 'Laporan dikirim ke Shyden dan dihapus setelah ditangani.',
     quoteLabel: 'Kata mana yang salah?',
     quoteHint:
       'Mulai mengetik lalu pilih kata-katanya dari daftar, atau salin dari halaman.',
@@ -273,11 +256,10 @@ export const siteZh: SiteStrings = {
   themeDarkMode: '深色模式',
   skipToContent: '跳转至正文',
   home: {
-    title: 'Shyden Ltd — 一家新的科技公司',
+    title: 'Shyden — 精心制作的小巧软件',
     description:
-      '我们打造值得谈论的产品。ShyTalk 是我们的第一款产品——在实时房间里，你通过开口说来学习一门语言，对方也正在学你的语言。',
-    eyebrow: '一家新公司',
-    heroHeading: 'Shyden 打造值得谈论的产品。',
+      '我们用心打造小型软件。ShyTalk 是我们的第一款产品——在实时房间里，你通过开口说来学习一门语言，对方也正在学你的语言。',
+    heroHeading: 'Shyden 精心开发小型软件。',
     heroLead:
       'ShyTalk 是我们推出的第一款产品——在实时房间里，你通过开口说来学习一门语言，对方也正在学你的语言。一个真正可以开口的地方。',
     exploreShytalk: '了解 ShyTalk',
@@ -311,11 +293,6 @@ export const siteZh: SiteStrings = {
     heading: '页面未找到',
     body: '该页面不存在。',
     backHome: '返回首页',
-  },
-  footer: {
-    registered: '注册于England & Wales。',
-    companyNo: '公司编号：',
-    regOffice: '注册办事处：',
   },
   glory: {
     title: 'Glory Points 计算器 — Shyden',
@@ -351,7 +328,7 @@ export const siteZh: SiteStrings = {
 
   report: {
     open: '报告翻译问题',
-    intro: '报告将发送至Shyden Ltd，处理完毕后即会删除。',
+    intro: '报告将发送至Shyden，处理完毕后即会删除。',
     quoteLabel: '哪些文字有误？',
     quoteHint: '开始输入并从列表中选择这些文字，或从页面上复制。',
     suggestionLabel: '应该怎么写？（可选）',
@@ -382,11 +359,10 @@ export const siteVi: SiteStrings = {
   themeDarkMode: 'Chế độ tối',
   skipToContent: 'Chuyển thẳng đến nội dung',
   home: {
-    title: 'Shyden Ltd — một công ty công nghệ mới',
+    title: 'Shyden — phần mềm nhỏ, được phát triển với sự tận tâm',
     description:
-      'Chúng tôi xây dựng những thứ đáng để nói đến. ShyTalk là sản phẩm đầu tiên của chúng tôi — những phòng trực tuyến nơi bạn học một ngôn ngữ bằng cách nói nó với người đang học ngôn ngữ của bạn.',
-    eyebrow: 'Một công ty mới',
-    heroHeading: 'Shyden xây dựng những thứ đáng để nói đến.',
+      'Chúng tôi phát triển các phần mềm nhỏ với sự tận tâm. ShyTalk là sản phẩm đầu tiên của chúng tôi — những phòng trực tuyến nơi bạn học một ngôn ngữ bằng cách nói nó với người đang học ngôn ngữ của bạn.',
+    heroHeading: 'Shyden phát triển các phần mềm nhỏ với sự tận tâm.',
     heroLead:
       'ShyTalk là sản phẩm đầu tiên chúng tôi ra mắt — những phòng trực tuyến nơi bạn học một ngôn ngữ bằng cách nói nó với người đang học ngôn ngữ của bạn. Một nơi để thực sự trò chuyện.',
     exploreShytalk: 'Khám phá ShyTalk',
@@ -423,11 +399,6 @@ export const siteVi: SiteStrings = {
     body: 'Trang đó không tồn tại.',
     backHome: 'Quay lại trang chủ',
   },
-  footer: {
-    registered: 'Được đăng ký tại England & Wales.',
-    companyNo: 'Số đăng ký doanh nghiệp',
-    regOffice: 'Trụ sở chính:',
-  },
   glory: {
     title: 'Máy tính Glory Points — Shyden',
     description:
@@ -463,7 +434,7 @@ export const siteVi: SiteStrings = {
 
   report: {
     open: 'Báo lỗi bản dịch',
-    intro: 'Báo cáo được gửi đến Shyden Ltd và sẽ bị xóa sau khi được xử lý.',
+    intro: 'Báo cáo được gửi đến Shyden và sẽ bị xóa sau khi được xử lý.',
     quoteLabel: 'Những từ nào bị sai?',
     quoteHint:
       'Hãy bắt đầu nhập và chọn các từ trong danh sách, hoặc sao chép chúng từ trang.',
@@ -497,11 +468,10 @@ export const siteTh: SiteStrings = {
   themeDarkMode: 'โหมดมืด',
   skipToContent: 'ไปตรงสู่เนื้อหา',
   home: {
-    title: 'Shyden Ltd — บริษัทเทคโนโลยีน้องใหม่',
+    title: 'Shyden — ซอฟต์แวร์ขนาดเล็ก ที่พัฒนาด้วยความใส่ใจ',
     description:
-      'เราสร้างสิ่งที่ควรค่าแก่การพูดถึง ShyTalk คือผลิตภัณฑ์แรกของเรา — ห้องสนทนาสดที่คุณเรียนภาษาด้วยการพูดกับคนที่กำลังเรียนภาษาของคุณ',
-    eyebrow: 'บริษัทน้องใหม่',
-    heroHeading: 'Shyden สร้างสิ่งที่ควรค่าแก่การพูดถึง',
+      'เราพัฒนาซอฟต์แวร์ขนาดเล็ก ด้วยความใส่ใจ ShyTalk คือผลิตภัณฑ์แรกของเรา — ห้องสนทนาสดที่คุณเรียนภาษาด้วยการพูดกับคนที่กำลังเรียนภาษาของคุณ',
+    heroHeading: 'Shyden พัฒนาซอฟต์แวร์ขนาดเล็ก ด้วยความใส่ใจ',
     heroLead:
       'ShyTalk คือสิ่งแรกที่เราปล่อยออกมา — ห้องสนทนาสดที่คุณเรียนภาษาด้วยการพูดกับคนที่กำลังเรียนภาษาของคุณ ที่ที่ได้พูดจริง ๆ',
     exploreShytalk: 'สำรวจ ShyTalk',
@@ -537,11 +507,6 @@ export const siteTh: SiteStrings = {
     body: 'หน้านั้นไม่มีอยู่',
     backHome: 'กลับสู่หน้าหลัก',
   },
-  footer: {
-    registered: 'จดทะเบียนใน England & Wales',
-    companyNo: 'เลขทะเบียนบริษัท',
-    regOffice: 'สำนักงานจดทะเบียน:',
-  },
   glory: {
     title: 'เครื่องคำนวณ Glory Points — Shyden',
     description:
@@ -576,7 +541,7 @@ export const siteTh: SiteStrings = {
 
   report: {
     open: 'แจ้งปัญหาคำแปล',
-    intro: 'รายงานจะถูกส่งถึง Shyden Ltd และจะถูกลบเมื่อดำเนินการเรียบร้อยแล้ว',
+    intro: 'รายงานจะถูกส่งถึง Shyden และจะถูกลบเมื่อดำเนินการเรียบร้อยแล้ว',
     quoteLabel: 'คำใดที่ไม่ถูกต้อง',
     quoteHint: 'เริ่มพิมพ์แล้วเลือกคำจากรายการ หรือคัดลอกจากหน้านี้',
     suggestionLabel: 'ควรเขียนว่าอย่างไร (ไม่บังคับ)',

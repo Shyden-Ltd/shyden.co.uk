@@ -113,15 +113,12 @@ export const TRANSLATABLE_LOCALES = Object.keys(DEEPL_LANGUAGE) as MvpLocale[];
  */
 export const DO_NOT_TRANSLATE: readonly string[] = [
   'Shyden',
-  'Shyden Ltd',
   'ShyTalk',
   'Glory Points',
-  // The registered company number and office, as the footer states them. A
-  // legal fact, and wrong the moment it is "translated".
-  '17110487',
-  // The footer's own wording, ampersand and all. This read 'England and
-  // Wales' until #22 and therefore matched no string the site ships.
-  'England & Wales',
+  // 'Shyden Ltd', the company number and 'England & Wales' left with the
+  // footer's disclosure (#370): the company is dissolved, and a term no
+  // sentence carries protects nothing. translate.test.ts holds every term
+  // here to a sentence the site still sends.
 ];
 
 /**
@@ -137,9 +134,10 @@ const PROTECT_TAG = 'x';
 /**
  * Protected terms, longest first.
  *
- * `Shyden` is a prefix of `Shyden Ltd`. Wrapping the short one first yields
- * `<x>Shyden</x> Ltd` and hands "Ltd" to the translator on its own, which is
- * how a company name comes back half-translated.
+ * When one term is a prefix of another (`Shyden` of `Shyden Studio`),
+ * wrapping the short one first yields `<x>Shyden</x> Studio` and hands
+ * "Studio" to the translator on its own, which is how a name comes back
+ * half-translated. `protectTerms` sorts any list it is given the same way.
  */
 const PROTECTED_LONGEST_FIRST: readonly string[] = [...DO_NOT_TRANSLATE].sort(
   (a, b) => b.length - a.length,
@@ -180,14 +178,21 @@ export const unescapeXml = (text: string): string =>
  * copy, which is why nothing looked wrong.
  *
  * The lookbehind stops a shorter term matching inside a span a longer one
- * already wrapped: in `<x>Shyden Ltd</x>`, `Shyden` sits immediately after
+ * already wrapped: in `<x>Shyden Studio</x>`, `Shyden` sits immediately after
  * `<x>` and is skipped.
+ *
+ * `terms` defaults to the shipped list. It is a parameter so longest-first
+ * stays provable when the shipped list holds no prefix pair, as it has not
+ * since #370.
  */
-export function protectTerms(text: string): string {
+export function protectTerms(
+  text: string,
+  terms: readonly string[] = PROTECTED_LONGEST_FIRST,
+): string {
   let out = text;
-  for (const term of PROTECTED_LONGEST_FIRST) {
+  for (const term of [...terms].sort((a, b) => b.length - a.length)) {
     // The term is escaped the same way the text was, or a name carrying an
-    // ampersand ("England & Wales") never matches the escaped copy it sits in.
+    // ampersand ("Salt & Pepper") never matches the escaped copy it sits in.
     out = out.replace(
       new RegExp(
         `(?<!<${PROTECT_TAG}>)${escapeForRegExp(escapeXml(term))}(?!</${PROTECT_TAG}>)`,

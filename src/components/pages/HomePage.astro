@@ -38,7 +38,6 @@ const features = [
 
 <BaseLayout title={t.title} description={t.description} lang={lang}>
   <section class="hero wrap">
-    <p class="eyebrow">{t.eyebrow}</p>
     <h1>{t.heroHeading}</h1>
     <p class="lead">{t.heroLead}</p>
     <p class="cta">
@@ -120,9 +119,9 @@ const features = [
   .hero {
     padding-top: 4.5rem;
   }
-  /* Monospace, tracked-out, small: the Aurora eyebrow. Uses --ink-soft, which
-     is pinned against --bg in tests/unit/contrast.test.ts. */
-  .eyebrow,
+  /* Monospace, tracked-out, small: a section's kicker. Drawn in --accent;
+     tests/unit/contrast.test.ts scores every token pair the site paints. The
+     hero's label went with the company it named (#370). */
   .kicker {
     margin: 0 0 0.75rem;
     color: var(--accent);
