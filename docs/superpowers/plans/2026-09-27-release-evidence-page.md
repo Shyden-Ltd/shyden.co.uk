@@ -28,6 +28,7 @@ The builder gains `checks`, sections given as `html`, and a content-worded sign-
 - The capture runs at `--workers=2`, with nothing else running on the machine.
 - Production is the operator's: nothing opens or merges `develop` → `main`.
 - No new npm dependency. `typescript` is already a devDependency.
+- Every commit is preceded by `npx prettier --write` on the files it adds: `.githooks/pre-push` and CI both run `prettier --check .`, and pass 1 found eight of this plan's files unformatted as first written.
 
 ## Review Focus
 
@@ -163,9 +164,21 @@ describe('release checks on an evidence page (#362)', () => {
 
   it.each([
     ['a repeated id', [...CHECKS, CHECKS[0]], /appears twice/],
-    ['an id with a capital', [{ id: 'Dev', group: 'g', label: 'l' }], /lowercase letters/],
-    ['a check with no label', [{ id: 'dev', group: 'g', label: '' }], /lowercase letters/],
-    ['a check with no group', [{ id: 'dev', group: '', label: 'l' }], /lowercase letters/],
+    [
+      'an id with a capital',
+      [{ id: 'Dev', group: 'g', label: 'l' }],
+      /lowercase letters/,
+    ],
+    [
+      'a check with no label',
+      [{ id: 'dev', group: 'g', label: '' }],
+      /lowercase letters/,
+    ],
+    [
+      'a check with no group',
+      [{ id: 'dev', group: '', label: 'l' }],
+      /lowercase letters/,
+    ],
     ['a value that is not a list', { id: 'dev' }, /must be a list/],
   ])('refuses %s', (_, checks, message) => {
     expect(() => checksOf(checks, new Set())).toThrow(message);
@@ -204,7 +217,7 @@ describe('release checks on an evidence page (#362)', () => {
 });
 ```
 
-- [ ] **Step 3: Stub the export so the file collects.** Add a throwing `checksOf` export to `scripts/build-evidence-page.mjs`, directly above `export const renderEvidencePage`:
+- [ ] **Step 3: Stub the export so the file collects.** Add a throwing `checksOf` export to `scripts/build-evidence-page.mjs`, directly above `renderEvidencePage`'s docblock (`/**` over ` * The page, as a string.`). Directly above the `export const` line puts the stub between that docblock and its declaration: the docblock then types `checksOf`, and `renderEvidencePage`'s four destructured parameters become implicit `any` (ts(7031), found by running pass 1):
 
 ```js
 /**
@@ -294,10 +307,7 @@ export const checksOf = (checks, journeyIds) => {
   3. In `renderEvidencePage`, directly after `const journeys = order.map(…);` closes, add:
 
 ```js
-  const checks = checksOf(
-    content.checks,
-    new Set(journeys.map((j) => j.id)),
-  );
+  const checks = checksOf(content.checks, new Set(journeys.map((j) => j.id)));
 ```
 
   4. Replace the `sectionsHtml` map with one that renders `html` as given:
@@ -305,9 +315,7 @@ export const checksOf = (checks, journeyIds) => {
 ```js
   const sectionsHtml = (content.sections || [])
     .map(
-      (
-        /** @type {{ heading: string, body?: string, html?: string }} */ s,
-      ) =>
+      (/** @type {{ heading: string, body?: string, html?: string }} */ s) =>
         s.html !== undefined
           ? `<h2>${esc(s.heading)}</h2>\n${s.html}`
           : `<h2>${esc(s.heading)}</h2>\n<p class="sub">${s.body}</p>`,
@@ -393,6 +401,7 @@ Expected: PASS on all five engines (5 passed).
 - [ ] **Step 8: Commit.**
 
 ```bash
+npx prettier --write scripts/build-evidence-page.mjs tests/evidence-fixture.ts tests/unit/evidence-checks.test.ts tests/e2e/evidence-page.spec.ts
 git add scripts/build-evidence-page.mjs tests/evidence-fixture.ts tests/unit/evidence-checks.test.ts tests/e2e/evidence-page.spec.ts
 git commit -m "An evidence page carries release checks in its sign-off, html sections, and a sign-off in content's words (Refs #362)"
 ```
@@ -452,7 +461,13 @@ const repository = () => {
     git(['commit', '-q', '-m', subject]);
     return git(['rev-parse', 'HEAD']).trim();
   };
-  return { dir, git, write, commit, remove: () => rmSync(dir, { recursive: true, force: true }) };
+  return {
+    dir,
+    git,
+    write,
+    commit,
+    remove: () => rmSync(dir, { recursive: true, force: true }),
+  };
 };
 
 describe('the release inventory (#362)', () => {
@@ -476,7 +491,14 @@ describe('the release inventory (#362)', () => {
     // ...while develop moves on beside it, so its branch falls behind.
     write('src/components/Footer.astro', 'footer\n');
     sha.single = commit('fix(footer): one ref (#50)');
-    git(['merge', '-q', '--no-ff', '-m', 'Merge pull request #347 from Shyden-Ltd/97-report', '97-report']);
+    git([
+      'merge',
+      '-q',
+      '--no-ff',
+      '-m',
+      'Merge pull request #347 from Shyden-Ltd/97-report',
+      '97-report',
+    ]);
     sha.merge = git(['rev-parse', 'HEAD']).trim();
     // A pull request whose work is tests and a root file only.
     git(['switch', '-q', '-c', 'dependabot/npm/x']);
@@ -484,7 +506,14 @@ describe('the release inventory (#362)', () => {
     write('package.json', '{}\n');
     commit('bump');
     git(['switch', '-q', 'develop']);
-    git(['merge', '-q', '--no-ff', '-m', 'Merge pull request #298 from Shyden-Ltd/dependabot/npm/x', 'dependabot/npm/x']);
+    git([
+      'merge',
+      '-q',
+      '--no-ff',
+      '-m',
+      'Merge pull request #298 from Shyden-Ltd/dependabot/npm/x',
+      'dependabot/npm/x',
+    ]);
     sha.head = git(['rev-parse', 'HEAD']).trim();
   });
   afterAll(() => repo.remove());
@@ -525,13 +554,23 @@ describe('the release inventory (#362)', () => {
 
   it('marks what a visitor receives, and names every other area', () => {
     const entries = inventoryOf(commits());
-    expect(entries.map((e) => e.visitorFacing)).toEqual([true, true, true, false]);
+    expect(entries.map((e) => e.visitorFacing)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
     expect(entries[3]?.areas).toEqual(['(root)', 'tests']);
     expect(entries[0]?.areas).toEqual(['src', 'tests']);
   });
 
   it('covers exactly the four directories a visitor receives', () => {
-    expect([...VISITOR_PREFIXES]).toEqual(['src/', 'functions/', 'migrations/', 'public/']);
+    expect([...VISITOR_PREFIXES]).toEqual([
+      'src/',
+      'functions/',
+      'migrations/',
+      'public/',
+    ]);
     for (const prefix of VISITOR_PREFIXES) {
       const [entry] = inventoryOf([
         { sha: 'x', parents: ['p'], subject: 's', files: [`${prefix}a`] },
@@ -541,7 +580,11 @@ describe('the release inventory (#362)', () => {
   });
 
   it('resolves the ends to full shas', () => {
-    const inventory = inventoryFor({ base: 'HEAD~4', head: 'HEAD', git: repo.git });
+    const inventory = inventoryFor({
+      base: 'HEAD~4',
+      head: 'HEAD',
+      git: repo.git,
+    });
     expect(inventory.base).toBe(sha.base);
     expect(inventory.head).toBe(sha.head);
     expect(inventory.entries).toHaveLength(4);
@@ -568,7 +611,9 @@ describe('a commit the inventory has no rule for (#362)', () => {
       }
       git(['switch', '-q', 'develop']);
       git(['merge', '-q', '--no-ff', '-m', 'octopus', 'one', 'two']);
-      expect(() => readCommits({ base, head: 'HEAD', git })).toThrow(/has 3 parents/);
+      expect(() => readCommits({ base, head: 'HEAD', git })).toThrow(
+        /has 3 parents/,
+      );
     } finally {
       repo.remove();
     }
@@ -626,20 +671,34 @@ describe('release-inventory.mjs as a command (#362)', () => {
   const script = resolve('scripts/release-inventory.mjs');
 
   it('prints the capture selection of this repository, and it is not empty', () => {
-    const run = spawnSync(process.execPath, [script, '--tests'], { encoding: 'utf8' });
+    const run = spawnSync(process.execPath, [script, '--tests'], {
+      encoding: 'utf8',
+    });
     expect(run.status, run.stderr).toBe(0);
     const lines = run.stdout.trim().split('\n');
     expect(lines.length).toBeGreaterThan(50);
-    expect(lines.every((l) => /^tests\/e2e\/[\w.-]+\.spec\.ts:\d+$/.test(l))).toBe(true);
-    expect(lines.some((l) => l.startsWith('tests/e2e/classroom-groups-projector.spec.ts:'))).toBe(true);
-    expect(lines.some((l) => l.startsWith('tests/e2e/evidence-page.spec.ts:'))).toBe(false);
+    expect(
+      lines.every((l) => /^tests\/e2e\/[\w.-]+\.spec\.ts:\d+$/.test(l)),
+    ).toBe(true);
+    expect(
+      lines.some((l) =>
+        l.startsWith('tests/e2e/classroom-groups-projector.spec.ts:'),
+      ),
+    ).toBe(true);
+    expect(
+      lines.some((l) => l.startsWith('tests/e2e/evidence-page.spec.ts:')),
+    ).toBe(false);
   });
 
   it('refuses a selection that is empty, rather than let a capture run everything', () => {
     const empty = mkdtempSync(join(tmpdir(), 'release-tests-'));
     try {
       mkdirSync(join(empty, 'tests', 'e2e'), { recursive: true });
-      const run = spawnSync(process.execPath, [script, '--tests'], { cwd: empty, encoding: 'utf8' });
+      execFileSync('git', ['init', '-q'], { cwd: empty });
+      const run = spawnSync(process.execPath, [script, '--tests'], {
+        cwd: empty,
+        encoding: 'utf8',
+      });
       expect(run.stderr).toContain('no test captures the site');
       expect(run.status).toBe(1);
     } finally {
@@ -655,7 +714,7 @@ Line numbers in the fixtures count from the template's opening newline, so line 
 
 Run: `npx vitest run tests/unit/release-inventory.test.ts`
 
-Expected: all 13 FAIL. The command tests fail on status, because the stub has no `main`. A PASS is a finding.
+Expected: all 12 FAIL (eight in the first describe, then one each for the octopus and the selection, and two for the command). The command tests fail on status, because the stub has no `main`. A PASS is a finding.
 
 - [ ] **Step 3: Implement.** Replace `scripts/release-inventory.mjs` whole:
 
@@ -678,7 +737,7 @@ Expected: all 13 FAIL. The command tests fail on status, because the stub has no
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import ts from 'typescript';
 
@@ -794,7 +853,8 @@ export const inventoryOf = (commits) =>
  */
 export const inventoryFor = ({ base, head, git }) => {
   /** @param {string} ref */
-  const full = (ref) => git(['rev-parse', '--verify', `${ref}^{commit}`]).trim();
+  const full = (ref) =>
+    git(['rev-parse', '--verify', `${ref}^{commit}`]).trim();
   const from = full(base);
   const to = full(head);
   return {
@@ -877,7 +937,7 @@ const capturingLines = (file, source) => {
   visit(sf);
   if (tooling) return [];
   const shooting = new Set(['shoot']);
-  for (let grew = true; grew; ) {
+  for (let grew = true; grew;) {
     grew = false;
     for (const [name, calls] of functions)
       if (!shooting.has(name) && [...calls].some((c) => shooting.has(c))) {
@@ -921,12 +981,19 @@ const main = () => {
   } catch {
     values = {};
   }
+  /** @type {Git} */
+  const git = (args) =>
+    execFileSync('git', args, {
+      encoding: 'utf8',
+      maxBuffer: 256 * 1024 * 1024,
+    });
   if (values.tests) {
-    const dir = 'tests/e2e';
-    const files = readdirSync(dir)
-      .filter((name) => name.endsWith('.spec.ts'))
-      .sort()
-      .map((name) => `${dir}/${name}`);
+    // The specs git tracks: the capture runs what is committed, and git's list
+    // cannot disagree with that, where a directory read can.
+    const files = git(['ls-files', '-z', '--', 'tests/e2e/*.spec.ts'])
+      .split('\0')
+      .filter((file) => /^tests\/e2e\/[^/]+\.spec\.ts$/.test(file))
+      .sort();
     const selection = releaseTests(files, (file) => readFileSync(file, 'utf8'));
     if (selection.length === 0) {
       console.error(
@@ -941,11 +1008,12 @@ const main = () => {
     console.error(USAGE);
     process.exit(2);
   }
-  /** @type {Git} */
-  const git = (args) =>
-    execFileSync('git', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   console.log(
-    JSON.stringify(inventoryFor({ base: values.base, head: values.head, git }), null, 2),
+    JSON.stringify(
+      inventoryFor({ base: values.base, head: values.head, git }),
+      null,
+      2,
+    ),
   );
 };
 
@@ -972,6 +1040,7 @@ Expected: all PASS.
 - [ ] **Step 6: Commit.**
 
 ```bash
+npx prettier --write scripts/release-inventory.mjs tests/unit/release-inventory.test.ts tests/unit/script-entry.test.ts
 git add scripts/release-inventory.mjs tests/unit/release-inventory.test.ts tests/unit/script-entry.test.ts
 git commit -m "The release inventory: every first-parent commit against its first parent, and the tests that capture (Refs #362)"
 ```
@@ -1002,7 +1071,12 @@ import { slugOf } from '../../scripts/build-evidence-page.mjs';
 import { changeMapOf, renderChangeMap } from '../../scripts/release-map.mjs';
 
 const BASE = 'b'.repeat(40);
-const entry = (sha: string, visitorFacing: boolean, areas = ['src'], subject = `commit ${sha}`) => ({
+const entry = (
+  sha: string,
+  visitorFacing: boolean,
+  areas = ['src'],
+  subject = `commit ${sha}`,
+) => ({
   sha: sha.repeat(40).slice(0, 40),
   subject,
   pr: 1,
@@ -1039,34 +1113,100 @@ const passing = new Map([
   [JOURNEY, ['passed', 'passed', 'passed', 'passed', 'passed']],
   [SKIPPY, ['passed', 'skipped', 'skipped', 'passed', 'passed']],
 ]);
-const map = (entries: Record<string, unknown>, statuses: ReadonlyMap<string, readonly string[]> | null = passing) =>
-  changeMapOf({ inventory, release: release(entries), journeys, statuses });
+const map = (
+  entries: Record<string, unknown>,
+  statuses: ReadonlyMap<string, readonly string[]> | null = passing,
+) => changeMapOf({ inventory, release: release(entries), journeys, statuses });
 
 describe('the change map (#362)', () => {
   it('has one row per visitor-facing commit, in release order', () => {
-    expect(map(ALL).rows.map((r) => r.entry.sha)).toEqual([A.sha, C.sha, D.sha]);
+    expect(map(ALL).rows.map((r) => r.entry.sha)).toEqual([
+      A.sha,
+      C.sha,
+      D.sha,
+    ]);
   });
 
   it.each([
-    ['a release for another base', { ...ALL }, (r: ReturnType<typeof release>) => ({ ...r, base: 'x'.repeat(40) }), /is for x+, the inventory starts at b+/],
-    ['an unclassified commit', { [A.sha]: ALL[A.sha], [C.sha]: ALL[C.sha] }, null, /d{40} .* is unclassified/],
-    ['a stale classification', { ...ALL, [T.sha]: { kind: 'none', reason: 'x' } }, null, /e{40} is classified but is not a visitor-facing commit/],
-    ['a visible change citing nothing', { ...ALL, [A.sha]: { kind: 'visible', journeys: [] } }, null, /a{40} is visible but cites no journey/],
-    ['an unknown journey', { ...ALL, [A.sha]: { kind: 'visible', journeys: ['a describe > a jorney'] } }, null, /"a describe > a jorney" .* is not a journey/],
-    ['a reasonless none', { ...ALL, [D.sha]: { kind: 'none', reason: ' ' } }, null, /d{40} .* gives no reason/],
-    ['an empty gap', { ...ALL, [C.sha]: { kind: 'gap', check: '' } }, null, /c{40} .* says nothing to check/],
-    ['an unknown kind', { ...ALL, [D.sha]: { kind: 'visble', journeys: [JOURNEY] } }, null, /d{40} .* kind "visble"/],
+    [
+      'a release for another base',
+      { ...ALL },
+      (r: ReturnType<typeof release>) => ({ ...r, base: 'x'.repeat(40) }),
+      /is for x+, the inventory starts at b+/,
+    ],
+    [
+      'an unclassified commit',
+      { [A.sha]: ALL[A.sha], [C.sha]: ALL[C.sha] },
+      null,
+      /d{40} .* is unclassified/,
+    ],
+    [
+      'a stale classification',
+      { ...ALL, [T.sha]: { kind: 'none', reason: 'x' } },
+      null,
+      /e{40} is classified but is not a visitor-facing commit/,
+    ],
+    [
+      'a visible change citing nothing',
+      { ...ALL, [A.sha]: { kind: 'visible', journeys: [] } },
+      null,
+      /a{40} is visible but cites no journey/,
+    ],
+    [
+      'an unknown journey',
+      {
+        ...ALL,
+        [A.sha]: { kind: 'visible', journeys: ['a describe > a jorney'] },
+      },
+      null,
+      /"a describe > a jorney", cited by a{40}, is not a journey/,
+    ],
+    [
+      'a reasonless none',
+      { ...ALL, [D.sha]: { kind: 'none', reason: ' ' } },
+      null,
+      /d{40} .* gives no reason/,
+    ],
+    [
+      'an empty gap',
+      { ...ALL, [C.sha]: { kind: 'gap', check: '' } },
+      null,
+      /c{40} .* says nothing to check/,
+    ],
+    [
+      'an unknown kind',
+      { ...ALL, [D.sha]: { kind: 'visble', journeys: [JOURNEY] } },
+      null,
+      /d{40} .* kind "visble"/,
+    ],
   ])('refuses %s', (_, entries, reshape, message) => {
     const r = release(entries);
     expect(() =>
-      changeMapOf({ inventory, release: reshape ? reshape(r) : r, journeys, statuses: passing }),
+      changeMapOf({
+        inventory,
+        release: reshape ? reshape(r) : r,
+        journeys,
+        statuses: passing,
+      }),
     ).toThrow(message);
   });
 
   it('flags a journey that failed on any engine, and one that passed on none', () => {
-    const failed = new Map(passing).set(JOURNEY, ['passed', 'failed', 'passed', 'passed', 'passed']);
+    const failed = new Map(passing).set(JOURNEY, [
+      'passed',
+      'failed',
+      'passed',
+      'passed',
+      'passed',
+    ]);
     expect(map(ALL, failed).rows[0]?.flagged).toBe(true);
-    const skippedEverywhere = new Map(passing).set(JOURNEY, ['skipped', 'skipped', 'skipped', 'skipped', 'skipped']);
+    const skippedEverywhere = new Map(passing).set(JOURNEY, [
+      'skipped',
+      'skipped',
+      'skipped',
+      'skipped',
+      'skipped',
+    ]);
     expect(map(ALL, skippedEverywhere).rows[0]?.flagged).toBe(true);
   });
 
@@ -1080,15 +1220,30 @@ describe('the change map (#362)', () => {
   });
 
   it('totals each kind, and counts only real flags', () => {
-    const failed = new Map(passing).set(JOURNEY, ['failed', 'passed', 'passed', 'passed', 'passed']);
-    expect(map(ALL, failed).totals).toEqual({ entries: 3, visible: 1, gap: 1, none: 1, flagged: 1 });
+    const failed = new Map(passing).set(JOURNEY, [
+      'failed',
+      'passed',
+      'passed',
+      'passed',
+      'passed',
+    ]);
+    expect(map(ALL, failed).totals).toEqual({
+      entries: 3,
+      visible: 1,
+      gap: 1,
+      none: 1,
+      flagged: 1,
+    });
     expect(map(ALL).totals.flagged).toBe(0);
   });
 
   it('counts every commit a visitor never receives, by area', () => {
     const { otherCommits, otherAreas } = map(ALL);
     expect(otherCommits).toBe(2);
-    expect(otherAreas).toEqual([['.github', 1], ['tests', 2]]);
+    expect(otherAreas).toEqual([
+      ['.github', 1],
+      ['tests', 2],
+    ]);
   });
 
   it('renders every value escaped, and links each journey to its section', () => {
@@ -1107,7 +1262,7 @@ describe('the change map (#362)', () => {
 
 Run: `npx vitest run tests/unit/release-map.test.ts`
 
-Expected: all 16 FAIL (8 refusals plus 8 others). A PASS is a finding: a bare `toThrow` would pass on a stub, which is why every refusal names its message.
+Expected: all 15 FAIL (8 refusals plus 7 others). A PASS is a finding: a bare `toThrow` would pass on a stub, which is why every refusal names its message.
 
 - [ ] **Step 3: Implement.** Replace `scripts/release-map.mjs` whole:
 
@@ -1136,7 +1291,8 @@ import { esc, slugOf } from './build-evidence-page.mjs';
  * @property {{ lede?: string, approve?: string }} signoff
  * @property {string} gapGroup
  * @property {Check[]} checks
- * @property {Record<string, Classification>} entries
+ * @property {Record<string, unknown>} entries each commit's classification as
+ *   the file gives it, untrusted until `changeMapOf` has checked it
  * @typedef {{ entry: Entry, classification: Classification, flagged: boolean | null }} Row
  * @typedef {object} ChangeMap
  * @property {Row[]} rows
@@ -1190,8 +1346,13 @@ export const changeMapOf = ({ inventory, release, journeys, statuses }) => {
       throw new Error(
         `release-map: ${named(entry)} has kind ${JSON.stringify(classification.kind)}, which is none of visible, gap and none`,
       );
-    if (!Array.isArray(classification.journeys) || classification.journeys.length === 0)
-      throw new Error(`release-map: ${entry.sha} is visible but cites no journey`);
+    if (
+      !Array.isArray(classification.journeys) ||
+      classification.journeys.length === 0
+    )
+      throw new Error(
+        `release-map: ${entry.sha} is visible but cites no journey`,
+      );
     for (const title of classification.journeys)
       if (!journeys.has(title))
         throw new Error(
@@ -1217,7 +1378,8 @@ export const changeMapOf = ({ inventory, release, journeys, statuses }) => {
       for (const area of e.areas) areas.set(area, (areas.get(area) ?? 0) + 1);
 
   /** @param {Classification['kind']} kind */
-  const count = (kind) => rows.filter((r) => r.classification.kind === kind).length;
+  const count = (kind) =>
+    rows.filter((r) => r.classification.kind === kind).length;
   return {
     rows,
     totals: {
@@ -1281,6 +1443,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit.**
 
 ```bash
+npx prettier --write scripts/release-map.mjs tests/unit/release-map.test.ts
 git add scripts/release-map.mjs tests/unit/release-map.test.ts
 git commit -m "The change map: a release file must cover every visitor-facing commit and cite only real journeys (Refs #362)"
 ```
@@ -1313,8 +1476,24 @@ import {
 
 const BASE = 'b'.repeat(40);
 const HEAD = 'h'.repeat(40);
-const V = { sha: 'a'.repeat(40), subject: 'visible', pr: 1, ticket: 2, files: ['src/x'], visitorFacing: true, areas: ['src'] };
-const G = { sha: 'c'.repeat(40), subject: 'gap', pr: 3, ticket: null, files: ['src/y'], visitorFacing: true, areas: ['src'] };
+const V = {
+  sha: 'a'.repeat(40),
+  subject: 'visible',
+  pr: 1,
+  ticket: 2,
+  files: ['src/x'],
+  visitorFacing: true,
+  areas: ['src'],
+};
+const G = {
+  sha: 'c'.repeat(40),
+  subject: 'gap',
+  pr: 3,
+  ticket: null,
+  files: ['src/y'],
+  visitorFacing: true,
+  areas: ['src'],
+};
 const inventory = { base: BASE, head: HEAD, entries: [V, G] };
 const TITLE = 'a describe > a journey';
 const release = {
@@ -1332,19 +1511,57 @@ const release = {
 const START = '2026-09-27T08:00:00.000Z';
 const report = {
   stats: { startTime: START },
-  suites: [{ file: 'x.spec.ts', suites: [{ title: 'a describe', specs: [{ title: 'a journey', tests: [{ projectName: 'chromium', results: [{ status: 'passed', duration: 1, attachments: [] }] }] }] }] }],
+  suites: [
+    {
+      file: 'x.spec.ts',
+      suites: [
+        {
+          title: 'a describe',
+          specs: [
+            {
+              title: 'a journey',
+              tests: [
+                {
+                  projectName: 'chromium',
+                  results: [{ status: 'passed', duration: 1, attachments: [] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
 };
-const manifest = [{ project: 'chromium', title: TITLE, order: 1, label: 'l', file: 'chromium/a.jpg', at: '2026-09-27T08:00:01.000Z' }];
+const manifest = [
+  {
+    project: 'chromium',
+    title: TITLE,
+    order: 1,
+    label: 'l',
+    file: 'chromium/a.jpg',
+    at: '2026-09-27T08:00:01.000Z',
+  },
+];
 
 describe('the release content (#362)', () => {
-  const content = releaseContentOf({ release, inventory, report, manifest, devVerified: 'success' });
+  // Built inside each test, so a stub fails each on its own assertion rather
+  // than the whole file at collection.
+  const content = () =>
+    releaseContentOf({
+      release,
+      inventory,
+      report,
+      manifest,
+      devVerified: 'success',
+    });
 
   it('keys the sign-off to the release head', () => {
-    expect(content?.signoffKey).toBe('release-hhhhhhh');
+    expect(content()?.signoffKey).toBe('release-hhhhhhh');
   });
 
   it('names production, the head and its dev-verified state', () => {
-    expect(content?.ids).toEqual([
+    expect(content()?.ids).toEqual([
       { label: 'Production', value: BASE },
       { label: 'Release head', value: HEAD },
       { label: 'dev-verified', value: 'success' },
@@ -1352,31 +1569,71 @@ describe('the release content (#362)', () => {
   });
 
   it('carries the release file wording and its checks, and turns every gap into a check', () => {
-    expect(content?.headline).toBe('The headline');
-    expect(content?.signoff).toEqual({ lede: 'Yours.', approve: 'Release' });
-    expect(content?.checks).toEqual([
+    expect(content()?.headline).toBe('The headline');
+    expect(content()?.signoff).toEqual({ lede: 'Yours.', approve: 'Release' });
+    expect(content()?.checks).toEqual([
       { id: 'dev-home', group: 'On dev', label: 'Open it' },
-      { id: 'gap-ccccccc', group: 'Shown by no journey', label: 'gap: Try it by hand' },
+      {
+        id: 'gap-ccccccc',
+        group: 'Shown by no journey',
+        label: 'gap: Try it by hand',
+      },
     ]);
   });
 
   it('renders the change map and the rest as html sections', () => {
-    expect(content?.sections?.map((s: { html?: string }) => typeof s.html)).toEqual(['string', 'string']);
-    expect(content?.sections?.[0]?.html).toContain('#j-a-describe-a-journey');
+    expect(
+      content()?.sections?.map((s: { html?: string }) => typeof s.html),
+    ).toEqual(['string', 'string']);
+    expect(content()?.sections?.[0]?.html).toContain('#j-a-describe-a-journey');
   });
 
-  it.each([['failure'], [null]])('refuses a head whose dev-verified reads %s', (state) => {
-    expect(() => releaseContentOf({ release, inventory, report, manifest, devVerified: state })).toThrow(/dev-verified/);
-  });
+  it.each([['failure'], [null]])(
+    'refuses a head whose dev-verified reads %s',
+    (state) => {
+      expect(() =>
+        releaseContentOf({
+          release,
+          inventory,
+          report,
+          manifest,
+          devVerified: state,
+        }),
+      ).toThrow(/dev-verified/);
+    },
+  );
 
   it('refuses a cited title that ran but captured nothing', () => {
-    expect(() => releaseContentOf({ release, inventory, report, manifest: [{ ...manifest[0], title: 'another' }], devVerified: 'success' })).toThrow(/is not a journey of this run/);
+    expect(() =>
+      releaseContentOf({
+        release,
+        inventory,
+        report,
+        manifest: [{ ...manifest[0], title: 'another' }],
+        devVerified: 'success',
+      }),
+    ).toThrow(/is not a journey of this run/);
   });
 });
 
 describe('--check against a listing (#362)', () => {
   const listing = {
-    suites: [{ file: 'x.spec.ts', suites: [{ title: 'a describe', specs: [{ title: 'a journey', tests: [{ projectName: 'chromium', results: [] }] }] }] }],
+    suites: [
+      {
+        file: 'x.spec.ts',
+        suites: [
+          {
+            title: 'a describe',
+            specs: [
+              {
+                title: 'a journey',
+                tests: [{ projectName: 'chromium', results: [] }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
   };
 
   it('reads every listed title, results or none', () => {
@@ -1384,12 +1641,34 @@ describe('--check against a listing (#362)', () => {
   });
 
   it('passes a branch head with no dev-verified, and writes nothing', () => {
-    expect(releaseContentOf({ release, inventory, report: listing, manifest: null, devVerified: null })).toBeNull();
+    expect(
+      releaseContentOf({
+        release,
+        inventory,
+        report: listing,
+        manifest: null,
+        devVerified: null,
+      }),
+    ).toBeNull();
   });
 
   it('still refuses a title the listing does not hold', () => {
-    const typo = { ...release, entries: { ...release.entries, [V.sha]: { kind: 'visible', journeys: ['a describe > a jorney'] } } };
-    expect(() => releaseContentOf({ release: typo, inventory, report: listing, manifest: null, devVerified: null })).toThrow(/is not a journey of this run/);
+    const typo = {
+      ...release,
+      entries: {
+        ...release.entries,
+        [V.sha]: { kind: 'visible', journeys: ['a describe > a jorney'] },
+      },
+    };
+    expect(() =>
+      releaseContentOf({
+        release: typo,
+        inventory,
+        report: listing,
+        manifest: null,
+        devVerified: null,
+      }),
+    ).toThrow(/is not a journey of this run/);
   });
 });
 ```
@@ -1458,7 +1737,13 @@ export const listedTitles = (listing) => {
  * @param {any[] | null} input.manifest the capture's manifest rows, or null when checking
  * @param {string | null} input.devVerified the head's dev-verified state
  */
-export const releaseContentOf = ({ release, inventory, report, manifest, devVerified }) => {
+export const releaseContentOf = ({
+  release,
+  inventory,
+  report,
+  manifest,
+  devVerified,
+}) => {
   const checking = manifest === null;
   if (!checking && devVerified !== 'success')
     throw new Error(
@@ -1474,7 +1759,11 @@ export const releaseContentOf = ({ release, inventory, report, manifest, devVeri
     release,
     journeys: checking
       ? listedTitles(report)
-      : new Set(capturesOfThisRun(manifest, report).current.map((/** @type {{ title: string }} */ r) => r.title)),
+      : new Set(
+          capturesOfThisRun(manifest, report).current.map(
+            (/** @type {{ title: string }} */ r) => r.title,
+          ),
+        ),
     statuses: checking ? null : statuses,
   });
   if (checking) return null;
@@ -1498,7 +1787,13 @@ export const releaseContentOf = ({ release, inventory, report, manifest, devVeri
       ...release.checks,
       ...map.rows.flatMap(({ entry, classification }) =>
         classification.kind === 'gap'
-          ? [{ id: `gap-${entry.sha.slice(0, 7)}`, group: release.gapGroup, label: `${entry.subject}: ${classification.check}` }]
+          ? [
+              {
+                id: `gap-${entry.sha.slice(0, 7)}`,
+                group: release.gapGroup,
+                label: `${entry.subject}: ${classification.check}`,
+              },
+            ]
           : [],
       ),
     ],
@@ -1514,7 +1809,12 @@ const USAGE =
 const devVerifiedOf = (sha) => {
   const state = execFileSync(
     'gh',
-    ['api', `repos/{owner}/{repo}/commits/${sha}/statuses`, '--jq', '[.[] | select(.context == "dev-verified")][0].state // ""'],
+    [
+      'api',
+      `repos/{owner}/{repo}/commits/${sha}/statuses`,
+      '--jq',
+      '[.[] | select(.context == "dev-verified")][0].state // ""',
+    ],
     { encoding: 'utf8' },
   ).trim();
   return state === '' ? null : state;
@@ -1551,11 +1851,23 @@ const main = () => {
     const inventory = inventoryFor({
       base: release.base,
       head: values.head,
-      git: (args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }),
+      git: (args) =>
+        execFileSync('git', args, {
+          encoding: 'utf8',
+          maxBuffer: 256 * 1024 * 1024,
+        }),
     });
     if (checking) {
-      releaseContentOf({ release, inventory, report: JSON.parse(readFileSync(values.listing ?? '', 'utf8')), manifest: null, devVerified: null });
-      console.log(`build-release-content: ${values.release} holds for ${inventory.head}`);
+      releaseContentOf({
+        release,
+        inventory,
+        report: JSON.parse(readFileSync(values.listing ?? '', 'utf8')),
+        manifest: null,
+        devVerified: null,
+      });
+      console.log(
+        `build-release-content: ${values.release} holds for ${inventory.head}`,
+      );
       return;
     }
     const dir = values.evidence ?? '';
@@ -1563,7 +1875,11 @@ const main = () => {
       release,
       inventory,
       report: JSON.parse(readFileSync(join(dir, EVIDENCE_REPORT), 'utf8')),
-      manifest: readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)),
+      manifest: readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)),
       devVerified: devVerifiedOf(inventory.head),
     });
     writeFileSync(values.out ?? '', `${JSON.stringify(content, null, 2)}\n`);
@@ -1597,6 +1913,7 @@ Expected: all PASS.
 - [ ] **Step 6: Commit.**
 
 ```bash
+npx prettier --write scripts/build-release-content.mjs tests/unit/build-release-content.test.ts tests/unit/script-entry.test.ts
 git add scripts/build-release-content.mjs tests/unit/build-release-content.test.ts tests/unit/script-entry.test.ts
 git commit -m "The release content: gaps become checks, dev-verified is required, and --check validates before the merge (Refs #362)"
 ```
@@ -1631,11 +1948,12 @@ Expected: all PASS. Without `EVIDENCE_DIR`, `shoot` returns at once.
 
 Run: `node scripts/release-inventory.mjs --tests | command grep -cE 'report-form|not-found-report'`
 
-Expected: `5`, which is lines 15 and 131 of `report-form`, and 32, 75 and 107 of `not-found-report`.
+Expected: `5`, which after `prettier --write` are lines 15 and 136 of `report-form`, and 32, 80 and 113 of `not-found-report`. The count is the assertion: a line moves whenever the shoot calls above it wrap.
 
 - [ ] **Step 5: Commit.**
 
 ```bash
+npx prettier --write tests/e2e/report-form.spec.ts tests/e2e/not-found-report.spec.ts
 git add tests/e2e/report-form.spec.ts tests/e2e/not-found-report.spec.ts
 git commit -m "The report form and the 404 report capture evidence after their verdicts (Refs #362)"
 ```
@@ -1654,27 +1972,34 @@ git commit -m "The report form and the 404 report capture evidence after their v
 ```ts
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { stringLeaves } from '../catalogue-leaves';
 import { filesUnder, searched } from '../source-files';
 import { withoutTsComments } from './source-text';
 
-/** Every string a release file holds, from its wording to its reasons. */
-const phrasesOf = (value: unknown): string[] =>
-  typeof value === 'string'
-    ? [value]
-    : Array.isArray(value)
-      ? value.flatMap(phrasesOf)
-      : value && typeof value === 'object'
-        ? Object.values(value).flatMap(phrasesOf)
-        : [];
-
 const RELEASES = filesUnder('docs/releases', (p) => p.endsWith('.json'));
-const SCRIPTS = ['scripts/release-inventory.mjs', 'scripts/release-map.mjs', 'scripts/build-release-content.mjs', 'scripts/build-evidence-page.mjs'];
+const SCRIPTS = [
+  'scripts/release-inventory.mjs',
+  'scripts/release-map.mjs',
+  'scripts/build-release-content.mjs',
+  'scripts/build-evidence-page.mjs',
+];
 
 describe('no script carries a release’s prose (#362)', () => {
   it('finds none of any release file’s sentences in the scripts that render it', () => {
-    const phrases = RELEASES.flatMap((file) => phrasesOf(JSON.parse(readFileSync(file, 'utf8')))).filter((p) => p.length >= 24 && !/^[0-9a-f]{40}$/.test(p));
-    const code = SCRIPTS.map((file) => withoutTsComments(readFileSync(file, 'utf8'))).join('\n');
-    expect(searched(phrases.filter((p) => code.includes(p)), { of: phrases, what: 'release phrases' })).toEqual([]);
+    const phrases = RELEASES.flatMap((file) =>
+      stringLeaves(JSON.parse(readFileSync(file, 'utf8'))).map(
+        ([, phrase]) => phrase,
+      ),
+    ).filter((p) => p.length >= 24 && !/^[0-9a-f]{40}$/.test(p));
+    const code = SCRIPTS.map((file) =>
+      withoutTsComments(readFileSync(file, 'utf8')),
+    ).join('\n');
+    expect(
+      searched(
+        phrases.filter((p) => code.includes(p)),
+        { of: phrases, what: 'release phrases' },
+      ),
+    ).toEqual([]);
   });
 });
 ```
@@ -1694,6 +2019,7 @@ Expected: `build-release-content: docs/releases/a3a5adb.json holds for <HEAD sha
 - [ ] **Step 4: Commit.**
 
 ```bash
+npx prettier --write docs/releases/a3a5adb.json tests/unit/release-prose.test.ts
 git add docs/releases/a3a5adb.json tests/unit/release-prose.test.ts
 git commit -m "The release file for a3a5adb, checked before the merge, with no script carrying its prose (Refs #362)"
 ```
@@ -1734,12 +2060,12 @@ git commit -m "The release file for a3a5adb, checked before the merge, with no s
   24. `release-${head7}` becomes `'ticket'`. Red on "keys the sign-off…".
   25. `checks.ids` left out of `JOURNEYS`. Red on "puts every check in the sign-off…".
   26. A check's box written with `id="chk-${id}"`. Red on "marks each check up…", and in the e2e test.
-  27. Each of `checksOf`'s three refusals removed: 3 mutations, each red on its row.
+  27. Each of `checksOf`'s four refusals removed (not a list, the shape, twice, a journey's id): 4 mutations, each red on its row.
   28. `REVIEWED` fixed at `' journeys reviewed'`. Red on "counts checks…".
   29. `groups` collapsed to one list. Red on "groups the checks…".
   30. `signoff.approve` ignored. Red on "carries the release decision…".
   31. The `html` branch removed. Red on "renders an html section…".
-  32. Release prose added to `release-map.mjs`. Red in `release-prose.test.ts`.
+  32. Release prose added to `release-map.mjs` as a string literal: red in `release-prose.test.ts`. The same prose as a comment must stay GREEN, and it does only once #364 has landed: `withoutTsComments` does not track `${}`, and a nested template in `renderChangeMap` ends its comment stripping for the rest of the file.
   33. Each new `shoot()` moved above its test's first assertion: 5 mutations, red in `capture-after-assertion.test.ts`.
 - [ ] **Step 3: Grep for dependent facts.** Run `command grep -rn "journeys reviewed\|may merge to develop" tests/dev tests/prod tests/device`. Expected: no match, with a known positive checked alongside.
 - [ ] **Step 4: Open the PR** into `develop` with the body checked by `node scripts/closing-keywords.mjs <body> "this pull request body"`, and wait for `build-and-test` by name at the head read from `headRefOid`.
@@ -1760,3 +2086,26 @@ git commit -m "The release file for a3a5adb, checked before the merge, with no s
 ## Review log
 
 (Passes are appended here.)
+
+### Pass 1 — 2026-09-27, by running (scratch worktree `review-362-pass1`, own `npm ci`)
+
+Every task's code was applied as written. The red steps were run against throwing stubs, then the green steps, then `npm run typecheck`, the whole unit suite, `prettier --check .`, the three e2e specs on five engines, `--check` of the release file against this branch's listing, and 48 mutations, each predicted before it ran. The code blocks above are now the code that ran, as prettier formats it.
+
+Findings, each fixed above:
+
+1. Task 2's red count was 13; the file holds 12 tests.
+2. Task 3's red count was 16 (8 + 8); it is 15 (8 + 7).
+3. Task 3's "an unknown journey" regex, `/"…" .* is not a journey/`, needs a space after the quote, and the message has a comma there. It could never match. It now spells the whole message.
+4. Task 4 built `content` in the describe body, so against the stub the whole file failed at collection ("no tests"). It is now built inside each test.
+5. Task 1's stub, placed "directly above `export const renderEvidencePage`", took that function's docblock. `astro check` then found four ts(7031) errors. The stub now goes above the docblock.
+6. `Release.entries` was typed `Record<string, Classification>`, which is an already-validated file. `astro check` refused seven test fixtures (ts(2322)). The file is untrusted until `changeMapOf` checks it, so it is now `Record<string, unknown>`.
+7. Eight of the plan's files were not prettier-formatted. Every commit now runs `prettier --write` first, and the blocks are prettier's output.
+8. `one-home.test.ts`: `release-prose.test.ts` carried a private catalogue walker. It uses `stringLeaves` now.
+9. `one-home.test.ts`: `release-inventory.mjs --tests` read `tests/e2e` with a bare `readdirSync`. It now lists the specs git tracks (`git ls-files`), which is also the right population for a capture of committed code. Its empty-selection test runs `git init` first.
+10. Task 5's line numbers were pre-format. After prettier they are 15 and 136, and 32, 80 and 113. The count of 5 held.
+11. Task 7 item 27 said `checksOf` had three refusals. It has four.
+12. Mutation 32's comment half came back RED where GREEN was predicted. The cause is a scanner defect, not a plan defect: #364.
+
+Held as written: the other 47 mutations were RED as predicted (M1-M31 with M14a-h and M27a-d, M32b, M33a-e), with totals steady per file (12, 15, 10, 12, 1, 2). The capture selection is 68 tests, and the listing is 147 journeys on chromium. `--check` holds for the branch head. There are 2780 unit tests, and typecheck is 0/0/0. `evidence-page.spec.ts`: 297 passed, 2 skipped, 1 failed. The failure was a Firefox poll timing out at 5.8 s under full load, 6 of 6 alone at 4.0-4.4 s, and it is filed as #363 with its error text. `report-form` + `not-found-report`: 135 passed.
+
+Pass 1 found 12 things, so the loop continues. Pass 2 waits on #364, because Task 6's comment mutation cannot be judged until the scanner strips past a nested template.
