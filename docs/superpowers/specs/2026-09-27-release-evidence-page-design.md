@@ -2,7 +2,7 @@
 
 ## Why
 
-The release protocol's step 4 is an interactive evidence page for the operator, and no page covers the release now waiting. Production is `a3a5adb` (2026-08-13). `develop` is 133 PR merges and 45 squash commits ahead of it. Per-ticket pages cover part of that, on older trees, and stopped when per-ticket sign-off was suspended on 2026-09-24.
+The release protocol's step 4 is an interactive evidence page for the operator, and no page covers the release now waiting. Production is `a3a5adb` (2026-08-13). `develop` is 133 PR merges and 45 squash commits ahead of it; 47 of those 178 commits change a visitor-facing file. Per-ticket pages cover part of that, on older trees, and stopped when per-ticket sign-off was suspended on 2026-09-24.
 
 The operator decided on 2026-09-27: build one release-wide page, **capture on all five engines**, and reuse `scripts/build-evidence-page.mjs`.
 
@@ -26,9 +26,7 @@ One published page, with the same sign-off mechanics as every ticket page:
 ### `scripts/release-inventory.mjs` — what is in the release
 
 - `VISITOR_PREFIXES = ['src/', 'functions/', 'migrations/', 'public/']`.
-- `readCommits({ base, head, git })` walks `git rev-list --first-parent <base>..<head>`, oldest first. Each commit carries `sha`, `parents` and `subject`, plus `files`, taken as follows:
-  - a commit with two parents (a PR merge) takes its PR's own work, `git diff --name-only <p1> <p2>`;
-  - a commit with one parent (a squash) takes `git diff --name-only <p1> <sha>`.
+- `readCommits({ base, head, git })` walks `git rev-list --first-parent <base>..<head>`, oldest first. Each commit carries `sha`, `parents`, `subject` and `files`. `files` is `git diff --name-only <p1> <sha>`, what the commit brought to the first-parent line, the same for a PR merge and a squash. A merge's two parents are never diffed against each other: for a branch that sat behind `develop`, `<p1> <p2>` reports everything `develop` gained meanwhile as the PR's own work. Measured: #108's merge counted three `src/` files it never touched.
 
   `git` is injected: the CLI passes a runner around `execFileSync('git', …)`, and the tests pass a real temporary repository. It throws when `base` is not an ancestor of `head`, and on a commit with more than two parents, which this history has never had and which would need its own rule.
 - `inventoryOf(commits)` is pure. For each commit it returns `{ sha, subject, pr, ticket, files, visitorFacing, areas }`.
@@ -112,7 +110,7 @@ Every refusal is a thrown `Error` naming what to fix. There is no partial page, 
 
 Unit tests (vitest), written red first against throwing stubs:
 
-- **Inventory:** a temporary repository holding a squash commit and a PR merge whose second parent changes `src/`, and a merge whose PR changes only `tests/`. It checks files per shape, `pr` and `ticket` parsing, `areas`, the ancestor refusal, and `releaseSpecs` over fixture sources.
+- **Inventory:** a temporary repository holding a squash commit, a PR merge whose branch changes `functions/` while `develop` moves on beside it (so a parent-to-parent diff would wrongly include `develop`'s change), and a merge whose PR changes only `tests/`. It checks files per shape, `pr` and `ticket` parsing, `areas`, the ancestor refusal, and `releaseSpecs` over fixture sources.
 - **Map:** each throw; the flag (one engine failed, so flagged; every engine skipped, so flagged; one engine skipped and the rest passed, so not flagged); totals; escaping; and anchors equal to `#j-` plus `slugOf`.
 - **Content:** the `dev-verified` refusal, the `signoffKey`, `--check` against a listing (titles validated, no flag computed, no `dev-verified` read, nothing written), and no prose in the script.
 - **Builder:** `checks` render with the `j-check-` row, its `h3` and the `chk-check-` box, group under their headings, join `JOURNEYS`, and switch the progress wording. A duplicate, a malformed id, or a collision with a journey throws.
@@ -122,7 +120,7 @@ Mutations, each predicted before it runs:
 
 - a merges-only walk;
 - a dropped prefix;
-- `p1..p2` swapped for `p1..sha` on merges;
+- a merge diffed parent to parent (`<p1> <p2>`) instead of `<p1> <sha>`;
 - each of the six throws removed;
 - the flag treating `skipped` as a failure;
 - the flag ignoring a failure when another engine passed;
@@ -183,3 +181,4 @@ Mutations, each predicted before it runs:
 - **Plan-time amendment (2026-09-27), found while reading the builder for the plan:**
   - a cited title must be a captured journey (`order` comes from the manifest), not merely a report title; `--check`'s weaker test is stated;
   - the sign-off section's ticket wording ("may merge to develop") would misname the release decision, so `content.signoff` overrides it, with a mutation added.
+- **Plan-time amendment 2 (2026-09-27):** a fixture for the plan showed `git diff <p1> <p2>` reporting `develop`'s own changes as a stale branch's work (#108's merge was a false positive). Every commit is now diffed against its first parent. The count is 47, not 48, and the mutation is restated.
