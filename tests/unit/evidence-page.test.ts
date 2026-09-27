@@ -260,6 +260,22 @@ const blobPath = (key: string) =>
     .padStart(32, '0')}`;
 
 /**
+ * Where a built page points for one screenshot: the `/_blob/` path the stood-in
+ * upload gave its `shot:` key (#368). A capture is proved SHOWN by that `src`
+ * on the page, and proved ABSENT by its key missing from the upload plan.
+ */
+const shotSrc = (dir: string, file: string) => {
+  const assets: Record<string, string> = JSON.parse(
+    readFileSync(join(dir, 'assets.json'), 'utf8'),
+  );
+  const src = assets[`shot:${file}`];
+  if (src === undefined) throw new Error(`no shot:${file} in the uploaded map`);
+  return `src="${src}"`;
+};
+const plannedKeys = (page: string) =>
+  Object.keys(JSON.parse(readFileSync(`${page}.uploads.json`, 'utf8')));
+
+/**
  * The builder as an operator runs it: its own process, reading only the disk.
  *
  * TWO PASSES since #268, because an asset id is minted by the upload and
@@ -850,13 +866,18 @@ describe('an earlier run in the same evidence directory stays off the page', () 
     const shown = withoutMarkupComments(html);
     for (const row of chromium)
       expect(shown, `${row.file} is missing from the page`).toContain(
-        base64Of(dir, row.file),
+        shotSrc(dir, row.file),
       );
-    for (const row of webkit)
+    for (const row of webkit) {
+      expect(
+        plannedKeys(page),
+        `${row.file}, from the earlier run, was planned for upload`,
+      ).not.toContain(`shot:${row.file}`);
       expect(
         html,
         `${row.file}, from the earlier run, is on the page`,
       ).not.toContain(base64Of(dir, row.file));
+    }
     // Set aside, never deleted: every capture and every row is still there.
     for (const row of rows)
       expect(existsSync(join(dir, row.file)), row.file).toBe(true);
@@ -886,7 +907,11 @@ describe('an earlier run in the same evidence directory stays off the page', () 
     expect(built.status, built.stderr).toBe(0);
     expect(built.stdout).toContain('shots=1 videos=0/0');
     const html = readFileSync(page, 'utf8');
-    expect(withoutMarkupComments(html)).toContain(base64Of(dir, second.file));
+    expect(withoutMarkupComments(html)).toContain(shotSrc(dir, second.file));
+    expect(
+      plannedKeys(page),
+      "the unreached assertion's earlier picture was planned for upload",
+    ).not.toContain(`shot:${first[1]?.file}`);
     expect(
       html,
       "the unreached assertion carries the earlier run's picture",
@@ -1632,7 +1657,7 @@ describe('the builder builds its page from any checkout path (#221)', () => {
     expect(built.status, built.stderr).toBe(0);
     // On the page, not in a comment on it.
     expect(withoutMarkupComments(readFileSync(page, 'utf8'))).toContain(
-      readFileSync(join(dir, row.file)).toString('base64'),
+      shotSrc(dir, row.file),
     );
   });
 });
@@ -2001,10 +2026,11 @@ describe('recordings travel in the asset store (#268)', () => {
     ).toThrow(/over the 1024\.00MB one artifact holds/);
   });
 
-  it('plans the upload without reading a single screenshot', () => {
-    // The plan pass runs before content and before any capture is encoded: it
-    // needs the recordings and nothing else, and a plan refused over a missing
-    // --content would be a pass refusing an argument it does not use.
+  it('plans the upload from paths alone, before any content', () => {
+    // The plan pass runs before content and before any capture is read: it
+    // needs the recordings and the manifest's screenshot paths (#368), and a
+    // plan refused over a missing --content would be a pass refusing an
+    // argument it does not use.
     const dir = runDirectory('plan-');
     const page = join(dir, 'page.html');
     const planned = spawnSync(
@@ -2022,6 +2048,7 @@ describe('recordings travel in the asset store (#268)', () => {
     expect(planned.status, planned.stderr).toBe(0);
     expect(JSON.parse(readFileSync(`${page}.uploads.json`, 'utf8'))).toEqual({
       'a-journey|chromium': join(scratch, 'plan-.webm'),
+      'shot:chromium/a__01.png': join(dir, 'chromium/a__01.png'),
     });
     expect(existsSync(page), 'the plan pass wrote a page').toBe(false);
   });
@@ -2062,5 +2089,210 @@ describe('recordings travel in the asset store (#268)', () => {
         sizeOf: () => 1024,
       }),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * #368. Screenshots travel in the artifact's asset store beside the
+ * recordings, so a five-engine release page is not 105 MB of base64 in a
+ * document that carries 16 MB. Each is planned as `shot:<manifest file>`,
+ * uploaded with the recordings, and referenced at the `/_blob/` path the
+ * upload answered with, checked in both directions as recordings are.
+ */
+describe('screenshots travel in the asset store (#368)', () => {
+  let scratch = '';
+  beforeAll(() => {
+    scratch = mkdtempSync(join(tmpdir(), 'evidence-shots-'));
+  });
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  const START = Date.parse(REPORT.stats.startTime);
+  const row = (order: number, project = 'chromium') =>
+    manifestRow(
+      {
+        project,
+        title: 'suite > a journey',
+        order,
+        label: `thing ${order}`,
+        file: `${project}/a__${String(order).padStart(2, '0')}.png`,
+      },
+      new Date(START + 5_000 + order),
+    );
+
+  /** A run: one capture file per row (distinct bytes unless `same`), the rows, the report. */
+  const run = (rows: { file: string }[], same = false) => {
+    const dir = mkdtempSync(join(scratch, 'run-'));
+    rows.forEach(({ file }, i) => {
+      mkdirSync(join(dir, dirname(file)), { recursive: true });
+      writeFileSync(join(dir, file), png(same ? 10 : 10 + i));
+    });
+    writeFileSync(
+      join(dir, EVIDENCE_MANIFEST),
+      rows.map((r) => `${JSON.stringify(r)}\n`).join(''),
+    );
+    writeFileSync(
+      join(dir, EVIDENCE_REPORT),
+      JSON.stringify(reportOf([{ journey: 'a journey', project: 'chromium' }])),
+    );
+    return dir;
+  };
+  const plannedOf = (page: string): Record<string, string> =>
+    JSON.parse(readFileSync(`${page}.uploads.json`, 'utf8'));
+  const assetsOf = (dir: string): Record<string, string> =>
+    JSON.parse(readFileSync(join(dir, 'assets.json'), 'utf8'));
+
+  /** The second pass alone, against a map the test writes. */
+  const buildWith = (dir: string, page: string, assets: object) => {
+    const content = join(dir, 'content.json');
+    writeFileSync(content, JSON.stringify(CONTENT));
+    const map = join(dir, 'assets-by-hand.json');
+    writeFileSync(map, JSON.stringify(assets));
+    return spawnSync(
+      process.execPath,
+      [
+        'scripts/build-evidence-page.mjs',
+        '--evidence',
+        dir,
+        '--content',
+        content,
+        '--out',
+        page,
+        '--assets',
+        map,
+      ],
+      { encoding: 'utf8' },
+    );
+  };
+
+  it('plans every screenshot as shot:<file>, beside the recordings, and says how many of each', () => {
+    const rows = [row(1), row(2)];
+    const dir = run(rows);
+    const page = join(dir, 'page.html');
+    const planned = spawnSync(
+      process.execPath,
+      [
+        'scripts/build-evidence-page.mjs',
+        '--plan',
+        '--evidence',
+        dir,
+        '--out',
+        page,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(planned.status, planned.stderr).toBe(0);
+    expect(plannedOf(page)).toEqual(
+      Object.fromEntries(
+        rows.map((r) => [`shot:${r.file}`, join(dir, r.file)]),
+      ),
+    );
+    expect(planned.stdout).toContain(
+      'planned 2 screenshot(s) and 0 recording(s)',
+    );
+  });
+
+  it('references each screenshot at the blob path the map gives, and inlines none', () => {
+    const rows = [row(1), row(2)];
+    const dir = run(rows);
+    const page = join(dir, 'page.html');
+    const built = runBuilder(dir, page);
+    expect(built.status, built.stderr).toBe(0);
+    const html = readFileSync(page, 'utf8');
+    const shown = withoutMarkupComments(html);
+    const assets = assetsOf(dir);
+    for (const { file } of rows) {
+      const src = assets[`shot:${file}`];
+      expect(src, file).toMatch(/^\/_blob\/[0-9a-f]{32}$/);
+      expect(shown, file).toContain(`src="${src}"`);
+    }
+    expect(html).not.toContain('data:image');
+    // Still sized from the local file, so the page reserves the space.
+    expect(shown).toMatch(
+      /<img loading="lazy" width="\d+" height="\d+" src="\/_blob\//,
+    );
+  });
+
+  it('refuses a planned screenshot the map does not carry, and names it', () => {
+    const rows = [row(1), row(2)];
+    const dir = run(rows);
+    const page = join(dir, 'page.html');
+    const refused = buildWith(dir, page, {
+      [`shot:${rows[0]?.file}`]: `/_blob/${'1'.repeat(32)}`,
+    });
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain(
+      '1 screenshot(s) were planned but never uploaded',
+    );
+    expect(refused.stderr).toContain(`shot:${rows[1]?.file}`);
+    expect(existsSync(page), 'a page was written without a screenshot').toBe(
+      false,
+    );
+  });
+
+  it('refuses a shot: entry for a file this run did not capture', () => {
+    const rows = [row(1)];
+    const dir = run(rows);
+    const page = join(dir, 'page.html');
+    const refused = buildWith(dir, page, {
+      [`shot:${rows[0]?.file}`]: `/_blob/${'1'.repeat(32)}`,
+      'shot:webkit/gone__01.png': `/_blob/${'2'.repeat(32)}`,
+    });
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain(
+      '1 uploaded asset(s) belong to no screenshot in this run',
+    );
+    expect(refused.stderr).toContain('shot:webkit/gone__01.png');
+  });
+
+  it('counts screenshots against the files one artifact holds', () => {
+    const rows = Array.from({ length: ASSET_MAX_FILES + 1 }, (_, i) =>
+      row(i + 1),
+    );
+    const dir = run(rows, true);
+    const page = join(dir, 'page.html');
+    const planned = spawnSync(
+      process.execPath,
+      [
+        'scripts/build-evidence-page.mjs',
+        '--plan',
+        '--evidence',
+        dir,
+        '--out',
+        page,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(planned.status).not.toBe(0);
+    expect(planned.stderr).toContain(
+      `${ASSET_MAX_FILES + 1} assets, over the ${ASSET_MAX_FILES} one artifact holds`,
+    );
+  });
+
+  it('refuses a screenshot that is not an image, though no data URI carries it now', () => {
+    const rows = [row(1)];
+    const dir = run(rows);
+    writeFileSync(join(dir, rows[0]?.file ?? ''), 'GIF89a not a capture');
+    const page = join(dir, 'page.html');
+    const refused = runBuilder(dir, page);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain('unrecognised capture format');
+    expect(existsSync(page), 'a page was written around a blank frame').toBe(
+      false,
+    );
+  });
+
+  it('renders two byte-identical screenshots from the one stored asset', () => {
+    const rows = [row(1), row(2)];
+    const dir = run(rows, true);
+    const page = join(dir, 'page.html');
+    const one = `/_blob/${'a'.repeat(32)}`;
+    const built = buildWith(
+      dir,
+      page,
+      Object.fromEntries(rows.map((r) => [`shot:${r.file}`, one])),
+    );
+    expect(built.status, built.stderr).toBe(0);
+    const shown = withoutMarkupComments(readFileSync(page, 'utf8'));
+    expect(shown.split(`src="${one}"`)).toHaveLength(rows.length + 1);
   });
 });
