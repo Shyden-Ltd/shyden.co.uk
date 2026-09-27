@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { recorded } from './evidence';
+import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { contrastRatio } from './helpers';
 import { THEMES } from '../palette';
@@ -49,6 +49,11 @@ test('every beta block carries one form posting its own locale, and English none
       );
     expect(offered, locale).toEqual([...reportOptions('not-found', locale)]);
   }
+  await shoot(
+    page,
+    'a report form under every beta language',
+    page.locator('details[data-report]').first(),
+  );
 });
 
 test('each block offers what it shows: its heading, sentence and link match its own keys', async ({
@@ -101,6 +106,7 @@ test('a block walks its own fields from the keyboard, each labelled and describe
   await expect(
     details.getByLabel(t.noteLabel, { exact: true }),
   ).toHaveAccessibleDescription(t.noteHint);
+  await shoot(page, 'the open block, walked to its send button', details);
 });
 
 for (const locale of BETA)
@@ -118,6 +124,7 @@ for (const locale of BETA)
     const statuses = page.locator('[data-report-status]');
     await expect(statuses).toHaveCount(BETA.length * 4);
     await expect(page.locator('[data-report-status]:visible')).toHaveCount(1);
+    await shoot(page, `${locale}: the sent status in its own language`, shown);
   });
 
 for (const theme of THEMES)

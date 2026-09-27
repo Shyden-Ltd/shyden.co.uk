@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { recorded } from './evidence';
+import { recorded, shoot } from './evidence';
 import { recordRequests, urlMatching } from './recorders';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { contrastRatio } from './helpers';
@@ -49,6 +49,11 @@ test('the disclosure opens from the keyboard and walks its fields in order', asy
     '',
   );
   await expect(page.getByLabel(t.noteLabel, { exact: true })).toHaveValue('');
+  await shoot(
+    page,
+    'the open form, walked field by field',
+    page.locator('[data-report]'),
+  );
 });
 
 test('every control is at least 44px, every text meets AA, every field has a 3:1 boundary', async ({
@@ -164,6 +169,11 @@ test('/vi/classroom-groups submits in place: failed shows, takes focus, and the 
   ).toHaveValue('Lan');
   await expect(page.getByLabel(t.quoteLabel, { exact: true })).toHaveValue(
     t.open,
+  );
+  await shoot(
+    page,
+    'the failed status, with the roster and the quote kept',
+    page.locator('[data-report]'),
   );
 });
 
