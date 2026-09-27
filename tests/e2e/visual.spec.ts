@@ -25,9 +25,9 @@ import { expectTheme } from '../themes';
  *  - `document.fonts.ready` is awaited, because a font that arrives one frame
  *    late re-flows every line of text on the page and is otherwise a coin
  *    toss between runs;
- *  - the footer's copyright line is MASKED. It is built from
- *    `new Date().getFullYear()`, so an unmasked baseline silently fails on
- *    1 January for no change to any code;
+ *  - no page reads the clock, so nothing dated can reach a baseline. The
+ *    footer's copyright year was masked here until #370 removed the line;
+ *    `no-dated-render.test.ts` now refuses the date at its source;
  *  - `scale: 'css'` pins the device-pixel ratio, so a HiDPI runner and a
  *    normal one produce comparable images;
  *  - a FULL-PAGE capture holds every sticky element in normal flow
@@ -134,22 +134,7 @@ async function expectSamePixels(
     ).toEqual([]);
   }
 
-  // A mask that matches NOTHING masks nothing, silently, and the baseline
-  // quietly regains the copyright year -- which then fails every 1 January
-  // with the mask sitting right there looking like it handles the case. Same
-  // liveness rule as any other collector (#84): prove the population before
-  // trusting the result.
-  const dated = page.locator('p.disclosure');
-  await expect(
-    dated,
-    'nothing to mask — the footer copyright moved, so the year is ' +
-      'about to be baked into a baseline',
-  ).toHaveCount(1);
-
-  await expect(page).toHaveScreenshot(snapshot, {
-    fullPage,
-    mask: [dated],
-  });
+  await expect(page).toHaveScreenshot(snapshot, { fullPage });
 }
 
 for (const theme of THEMES) {
