@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -10,12 +10,12 @@ import {
   readCommits,
   releaseTests,
 } from '../../scripts/release-inventory.mjs';
+import { scratchGit } from '../git-env';
 
 /** A throwaway repository, driven by the real git. */
 const repository = () => {
   const dir = mkdtempSync(join(tmpdir(), 'release-inventory-'));
-  const git = (args: string[]) =>
-    execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+  const git = scratchGit(dir);
   git(['init', '-q', '-b', 'develop']);
   git(['config', 'user.email', 'fixture@example.test']);
   git(['config', 'user.name', 'Fixture']);
@@ -262,7 +262,7 @@ describe('release-inventory.mjs as a command (#362)', () => {
     const empty = mkdtempSync(join(tmpdir(), 'release-tests-'));
     try {
       mkdirSync(join(empty, 'tests', 'e2e'), { recursive: true });
-      execFileSync('git', ['init', '-q'], { cwd: empty });
+      scratchGit(empty)(['init', '-q']);
       const run = spawnSync(process.execPath, [script, '--tests'], {
         cwd: empty,
         encoding: 'utf8',
