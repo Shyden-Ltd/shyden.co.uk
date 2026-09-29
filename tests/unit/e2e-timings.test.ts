@@ -6,7 +6,15 @@ import {
   TEST_BUDGET_MS,
 } from '../../scripts/test-e2e.mjs';
 import { withoutTsComments } from './source-text';
-import { commentsIn, parseSource } from './ast';
+import ts from 'typescript';
+import { commentsIn, parseFile, parseSource, where } from './ast';
+import { specDirs } from '../spec-dirs';
+import { searched, tsFilesUnder } from '../source-files';
+import {
+  budgetsIn,
+  declarationsIn,
+  enclosingDeclaration,
+} from '../playwright-declarations';
 
 /**
  * Where the e2e suite's time actually goes, per project.
@@ -186,5 +194,67 @@ describe('the budget every table is measured against is the real one', () => {
       .join('\n');
     expect(prose).toMatch(/\btimeout\b/i);
     expect(withoutTsComments(raw)).not.toMatch(/\btimeout\b/i);
+  });
+});
+
+describe('every test that leaves the default budget is pinned here, with its reason', () => {
+  /**
+   * The tables above judge every test against `TEST_BUDGET_MS`, and a test
+   * that sets its own budget is judged against a number it no longer uses.
+   * So the tests that do are few, named here, and each carries its reason
+   * beside the call (#380). A literal per test, not a ceiling: a budget
+   * raised quietly is how a slow journey stops being noticed, and a value
+   * asserted against the constant it came from would move with it.
+   *
+   * Keyed by file and the test's title as written, a template for a looped
+   * test, so a budget cannot drift onto a different test unseen.
+   */
+  const PINNED: Readonly<Record<string, number>> = {
+    'tests/e2e/text-over-ribbon.spec.ts › `${theme} at ${width}px: every text run over the ribbon clears AA, on every page`': 120_000,
+  };
+
+  const found = () =>
+    specDirs()
+      .flatMap(tsFilesUnder)
+      .flatMap((file) => {
+        const sf = parseFile(file);
+        const declarations = declarationsIn(sf);
+        return budgetsIn(sf).map((budget) => ({
+          sf,
+          budget,
+          key: `${file} › ${enclosingDeclaration(budget.call, declarations)?.title ?? '(no test)'}`,
+        }));
+      });
+
+  it('names every budget, and no other', () => {
+    const budgets = found();
+    expect(
+      Object.fromEntries(
+        searched(budgets, {
+          of: budgets.map(({ key }) => key),
+          what: 'budgets',
+        }).map(({ key, budget }) => [
+          key,
+          budget.ms ?? budget.unreadable ?? budget.how,
+        ]),
+      ),
+    ).toEqual(PINNED);
+  });
+
+  it('writes the reason for each budget in a comment just above it', () => {
+    const budgets = found();
+    const bare = budgets
+      .filter(({ sf, budget }) => {
+        const statement = budget.call.parent;
+        return !ts.getLeadingCommentRanges(
+          sf.getFullText(),
+          statement.getFullStart(),
+        )?.length;
+      })
+      .map(({ sf, budget }) => where(sf, budget.call));
+    expect(
+      searched(bare, { of: budgets.map(({ key }) => key), what: 'budgets' }),
+      bare.join('\n'),
+    ).toEqual([]);
   });
 });

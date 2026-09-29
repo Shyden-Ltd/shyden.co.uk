@@ -292,3 +292,66 @@ export function enclosingDeclaration(
   }
   return undefined;
 }
+
+/**
+ * A call that gives a test, or a group of tests, a budget other than the
+ * config's default (#380).
+ */
+export interface Budget {
+  readonly call: ts.CallExpression;
+  /** The 1-based line the call starts on. */
+  readonly line: number;
+  /**
+   * `setTimeout` for `test.setTimeout(ms)` and `testInfo.setTimeout(ms)`,
+   * `slow` for `test.slow()`, which triples the budget, and `configure` for
+   * `test.describe.configure({ timeout })`.
+   */
+  readonly how: 'setTimeout' | 'slow' | 'configure';
+  /** The milliseconds, when written as a numeric literal. */
+  readonly ms?: number;
+  /** Why the milliseconds cannot be read, when they cannot. */
+  readonly unreadable?: string;
+}
+
+/** Every call in `sf` that changes a test's budget, in source order. */
+export function budgetsIn(sf: ts.SourceFile): Budget[] {
+  return callsIn(sf).flatMap((call): Budget[] => {
+    const callee = call.expression;
+    if (!ts.isPropertyAccessExpression(callee)) return [];
+    const name = callee.name.text;
+    const receiver = callee.expression.getText(sf);
+    const line = lineOf(sf, call);
+    if (receiver === 'test.describe' && name === 'configure') {
+      const { options } = optionsOf(call.arguments[0]);
+      const timeout = options.get('timeout');
+      return timeout === undefined
+        ? []
+        : [{ call, line, how: 'configure', ...millisecondsOf(timeout) }];
+    }
+    // `testInfo` is whatever the test names its second parameter, so any
+    // receiver counts but the globals a timer is scheduled on.
+    if (TIMER_OWNERS.has(receiver)) return [];
+    if (name === 'slow' && (receiver === 'test' || receiver === 'test.info()'))
+      return [{ call, line, how: 'slow' }];
+    if (name === 'setTimeout')
+      return [
+        { call, line, how: 'setTimeout', ...millisecondsOf(call.arguments[0]) },
+      ];
+    return [];
+  });
+}
+
+/** The objects `setTimeout` is a timer on, not a test's budget. */
+const TIMER_OWNERS: ReadonlySet<string> = new Set([
+  'window',
+  'globalThis',
+  'self',
+]);
+
+/** A budget's milliseconds, or why they cannot be read. */
+const millisecondsOf = (
+  node: ts.Expression | undefined,
+): { ms: number } | { unreadable: string } =>
+  node !== undefined && ts.isNumericLiteral(node)
+    ? { ms: Number(node.text) }
+    : { unreadable: 'a budget that is not a numeric literal' };

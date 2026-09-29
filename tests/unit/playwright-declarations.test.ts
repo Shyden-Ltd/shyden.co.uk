@@ -3,6 +3,7 @@ import { parseFile, parseSource, where } from './ast';
 import { specDirs } from '../spec-dirs';
 import { searched, tsFilesUnder } from '../source-files';
 import {
+  budgetsIn,
   callsIn,
   declarationsIn,
   enclosingDeclaration,
@@ -278,6 +279,56 @@ describe('useCallsIn() reads what a test.use() sets', () => {
       ['recorded', undefined],
       [undefined, undefined],
     ]);
+  });
+});
+
+describe('budgetsIn() reads every call that moves a test off the default budget', () => {
+  it('reads each form Playwright takes a budget in, with its milliseconds', () => {
+    const sf = source(
+      "test('a', async () => { test.setTimeout(120_000); });",
+      "test('b', async ({}, testInfo) => { testInfo.setTimeout(45000); });",
+      "test('c', async () => { test.info().setTimeout(60_000); });",
+      "test('d', async () => { test.slow(); });",
+      "test.describe('e', () => { test.describe.configure({ timeout: 90_000 }); });",
+    );
+
+    expect(budgetsIn(sf).map(({ how, ms, line }) => [how, ms, line])).toEqual([
+      ['setTimeout', 120000, 1],
+      ['setTimeout', 45000, 2],
+      ['setTimeout', 60000, 3],
+      ['slow', undefined, 4],
+      ['configure', 90000, 5],
+    ]);
+  });
+
+  it('names a budget it cannot read, instead of reading it as none', () => {
+    const sf = source(
+      'const LONG = 60_000;',
+      "test('a', async () => { test.setTimeout(LONG); });",
+      "test('b', async () => { test.setTimeout(2 * 30_000); });",
+      "test.describe('c', () => { test.describe.configure({ timeout: LONG }); });",
+    );
+
+    expect(
+      budgetsIn(sf).map(({ how, ms, unreadable }) => [how, ms, unreadable]),
+    ).toEqual([
+      ['setTimeout', undefined, 'a budget that is not a numeric literal'],
+      ['setTimeout', undefined, 'a budget that is not a numeric literal'],
+      ['configure', undefined, 'a budget that is not a numeric literal'],
+    ]);
+  });
+
+  it('does not count a timer, a configure call without a timeout, or a comment', () => {
+    const sf = source(
+      'setTimeout(() => {}, 30_000);',
+      'window.setTimeout(() => {}, 30_000);',
+      'globalThis.setTimeout(() => {}, 30_000);',
+      "test.describe.configure({ mode: 'serial' });",
+      '// test.setTimeout(120_000);',
+      "const s = 'test.slow()';",
+    );
+
+    expect(budgetsIn(sf)).toEqual([]);
   });
 });
 
