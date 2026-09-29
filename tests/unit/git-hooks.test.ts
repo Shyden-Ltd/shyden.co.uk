@@ -111,4 +111,19 @@ describe('the pre-push hook', () => {
     // kind should be a deliberate edit to this list.
     expect(invokedNpmScripts()).toEqual(['format', 'test:unit']);
   });
+
+  it('clears the repository git hands it before any check runs (#377)', () => {
+    // From a linked worktree git runs this hook with an absolute GIT_DIR, and
+    // the unit suite's scratch-repository tests acted on the real repository
+    // through it. Git's own idiom, from its submodule code, clears the list
+    // git itself keeps.
+    const lines = withoutCommentLines(hookSource(), '#').split('\n');
+    const cleared = lines.findIndex((line) =>
+      /^\s*unset \$\(git rev-parse --local-env-vars\)\s*$/.test(line),
+    );
+    const firstCheck = lines.findIndex((line) => /^\s*npm run /.test(line));
+    expect(firstCheck, 'the hook runs a check').toBeGreaterThanOrEqual(0);
+    expect(cleared, 'the hook clears the variables').toBeGreaterThanOrEqual(0);
+    expect(cleared).toBeLessThan(firstCheck);
+  });
 });
