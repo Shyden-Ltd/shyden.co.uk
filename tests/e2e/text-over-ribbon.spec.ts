@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
+import { shoot } from './evidence';
 import { filesUnder, searched } from '../source-files';
 import { THEMES, ribbonLayers, tokensCss } from '../palette';
 import { emulateTheme } from '../themes';
@@ -203,6 +204,18 @@ for (const theme of THEMES)
           await emulateTheme(page, theme);
           const scan = await scoreRuns(page, path);
           if (scan.seen === 0) unread.push(path);
+          if (path === '/') {
+            // The release evidence (#362) pictures the ribbon here: the
+            // homepage's first screen, where the band sits behind the hero.
+            expect(
+              scan.seen,
+              "the homepage's first screen was read",
+            ).toBeGreaterThan(0);
+            await shoot(
+              page,
+              `${theme} at ${width}px: the homepage under the ribbon`,
+            );
+          }
           if (scan.runs.length === 0) belowTheBand.push(path);
           runs.push(...scan.runs);
         }
