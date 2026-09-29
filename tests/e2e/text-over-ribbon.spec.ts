@@ -211,6 +211,11 @@ for (const theme of THEMES)
               scan.seen,
               "the homepage's first screen was read",
             ).toBeGreaterThan(0);
+            // The scan left every glyph transparent to photograph the ground,
+            // so the picture is of a fresh load, as a visitor sees it.
+            await page.goto(path);
+            await emulateTheme(page, theme);
+            await expect(page.locator('.hero h1')).toBeVisible();
             await shoot(
               page,
               `${theme} at ${width}px: the homepage under the ribbon`,
