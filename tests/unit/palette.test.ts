@@ -4,6 +4,7 @@ import {
   atmosphereLayers,
   computedForm,
   darkBlocks,
+  ribbonGeometry,
   rootTokens,
   subsets,
   themeTokens,
@@ -34,8 +35,13 @@ describe('rootTokens', () => {
 });
 
 describe('atmosphereLayers', () => {
+  // A body::after sits beside it, as the ribbon does in tokens.css (#371),
+  // and is NOT read: the ribbon is scored on the rendered page instead.
+  const RIBBON =
+    'radial-gradient(40rem 10rem at 20% 5rem, var(--ribbon), transparent 72%)';
   const before = (background: string): string =>
     `body::before {\n  content: '';\n  background: ${background};\n}\n` +
+    `body::after {\n  content: '';\n  background: ${RIBBON};\n}\n` +
     '@media print {\n  body::before { display: none; }\n}\n';
 
   it('lists the layers top-first, in declaration order, one token each', () => {
@@ -65,9 +71,52 @@ describe('atmosphereLayers', () => {
   it('refuses a stylesheet with no screen body::before', () => {
     expect(() =>
       atmosphereLayers(
-        '@media print { body::before { background: var(--a); } }',
+        `body::after { background: ${RIBBON}; }\n` +
+          '@media print { body::before { background: var(--a); } }',
       ),
-    ).toThrow('body::before');
+    ).toThrow('one top-level body::before rule');
+  });
+});
+
+describe('ribbonGeometry', () => {
+  // The atmosphere beside it and a print rule with its own height, as in
+  // tokens.css: neither is the ribbon's screen box.
+  const after = (declarations: string): string =>
+    'body::before {\n  background: radial-gradient(90rem 90rem at 0% 0%, var(--pool), transparent 70%);\n}\n' +
+    `body::after {\n  content: '';\n${declarations}\n}\n` +
+    '@media print {\n  body::after { display: none; height: 99rem; }\n}\n';
+  const TEAL =
+    'radial-gradient(50rem 10rem at 20% 3rem, var(--a), transparent 72%)';
+  const VIOLET =
+    'radial-gradient(46rem 9rem at 62% 5rem, var(--b), transparent 50%)';
+
+  it("reads the screen body::after's height and each field's reach, top-first, in rem", () => {
+    const { height, reaches } = ribbonGeometry(
+      after(`  height: 12rem;\n  background: ${TEAL}, ${VIOLET};`),
+    );
+    expect(height).toBe(12);
+    expect(reaches).toHaveLength(2);
+    expect(reaches[0]).toBeCloseTo(3 + 10 * 0.72);
+    expect(reaches[1]).toBeCloseTo(5 + 9 * 0.5);
+  });
+
+  it('refuses a field whose reach it cannot derive', () => {
+    for (const field of [
+      'radial-gradient(circle at 20% 3rem, var(--a), transparent 72%)',
+      'radial-gradient(50rem 160px at 20% 3rem, var(--a), transparent 72%)',
+      'radial-gradient(50rem 10rem at 20% 3rem, var(--a), transparent)',
+    ])
+      expect(() =>
+        ribbonGeometry(
+          after(`  height: 12rem;\n  background: ${TEAL}, ${field};`),
+        ),
+      ).toThrow('cannot derive how far field 2 reaches');
+  });
+
+  it('refuses a box height not written in rem', () => {
+    expect(() =>
+      ribbonGeometry(after(`  height: 44vh;\n  background: ${TEAL};`)),
+    ).toThrow('height must be one length in rem');
   });
 });
 

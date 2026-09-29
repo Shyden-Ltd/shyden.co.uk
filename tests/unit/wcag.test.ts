@@ -1,5 +1,47 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
+import { trackedFiles } from '../source-files';
 import { contrast, luminance, over, parseColour, type RGB } from '../wcag';
+import { declaredName, parseSource } from './ast';
+
+/** The sRGB transfer curve's constants: the linear slope, then the curve's. */
+const CURVE = [12.92, 1.055, 2.4];
+
+/**
+ * Every function in `source` whose own code spells the whole sRGB transfer
+ * curve, as `file:name` (see 'the WCAG formula has one home' below).
+ *
+ * Numeric literals off the syntax tree, never text, so a comment or a string
+ * that quotes the formula is not a copy. A nested function's literals are
+ * its own and not its parent's, so the copy is named where it is written.
+ */
+const curvesIn = (source: string, file: string): string[] => {
+  const found: string[] = [];
+  const visit = (scope: ts.Node): void => {
+    const literals = new Set<number>();
+    const walk = (node: ts.Node): void => {
+      // Every callback returns nothing: `forEachChild` stops at the first
+      // child whose callback returns something truthy (#118).
+      ts.forEachChild(node, (child) => {
+        if (ts.isFunctionLike(child)) {
+          visit(child);
+          return;
+        }
+        if (ts.isNumericLiteral(child)) literals.add(Number(child.text));
+        walk(child);
+      });
+    };
+    walk(scope);
+    if (
+      ts.isFunctionLike(scope) &&
+      CURVE.every((constant) => literals.has(constant))
+    )
+      found.push(`${file}:${declaredName(scope) ?? 'anonymous'}`);
+  };
+  visit(parseSource(source, file));
+  return found;
+};
 
 const WHITE: RGB = [255, 255, 255];
 const BLACK: RGB = [0, 0, 0];
@@ -32,6 +74,63 @@ describe('WCAG relative luminance and contrast', () => {
     expect(luminance([11, 11, 11])).toBeCloseTo(overThreshold(11), 12);
     // And nothing integral sits between them.
     expect(Math.ceil(0.03928 * 255)).toBe(Math.ceil(0.04045 * 255));
+  });
+});
+
+/**
+ * The formula has one home, found by its constants rather than by its shape
+ * (#277, #371).
+ *
+ * `duplication.test.ts` compares whole function bodies of 120 printed
+ * characters or more, and it caught the three copies #277 was filed against.
+ * It could not catch the fourth: text-over-ribbon.spec.ts spelled `lin` and
+ * `lum` inside a large `evaluate` callback, each too short to be compared,
+ * in a body too big to resemble anything. This asks the question directly.
+ */
+describe('the WCAG formula has one home', () => {
+  it('finds a function that spells the whole curve, and nothing else', () => {
+    // The fourth copy, as it was written.
+    const copy = [
+      'export const score = () => page.evaluate(() => {',
+      '  const lin = (v: number) => {',
+      '    const c = v / 255;',
+      '    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;',
+      '  };',
+      '  return lin(128);',
+      '});',
+    ].join('\n');
+    expect(curvesIn(copy, 'copy.ts')).toEqual(['copy.ts:lin']);
+    // Quoted in a comment or a string, as duplication.test.ts's fixtures
+    // quote it, the formula is not a copy: beside a real one, only the real
+    // one is found.
+    const quoted = [
+      '// return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;',
+      "const fixture = () => 'c / 12.92 : ((c + 0.055) / 1.055) ** 2.4';",
+    ].join('\n');
+    expect(curvesIn(`${quoted}\n${copy}`, 'quoted.ts')).toEqual([
+      'quoted.ts:lin',
+    ]);
+    // Split between two functions it is two halves, which is how the
+    // measurement above pins the constant without being a formula itself.
+    const halves = [
+      'const under = (v: number) => v / 255 / 12.92;',
+      'const over = (v: number) => ((v / 255 + 0.055) / 1.055) ** 2.4;',
+    ].join('\n');
+    expect(curvesIn(`${halves}\n${copy}`, 'halves.ts')).toEqual([
+      'halves.ts:lin',
+    ]);
+  });
+
+  it('lives in tests/wcag.ts alone, across the whole tracked tree', () => {
+    const scanned = trackedFiles(
+      (path) =>
+        /^(src|tests|scripts)\//.test(path) && /\.(ts|mjs|js)$/.test(path),
+    );
+    expect(scanned.length).toBeGreaterThan(100);
+    // The home is in the result, so an empty scan cannot pass this.
+    expect(
+      scanned.flatMap((file) => curvesIn(readFileSync(file, 'utf8'), file)),
+    ).toEqual(['tests/wcag.ts:channel']);
   });
 });
 

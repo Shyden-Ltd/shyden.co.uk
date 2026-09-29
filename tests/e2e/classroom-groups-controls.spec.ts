@@ -1899,7 +1899,9 @@ test.describe('a full roster at the narrow end', () => {
               who = el.className || el.tagName;
             }
           }
-          return { over: Math.round(over * 10) / 10, who };
+          // Unrounded: the 0.5px below is the whole tolerance, and rounding
+          // to a tenth first let 0.54px through (#371).
+          return { over, who };
         });
         expect(worst.over, `${worst.who} escapes the card`).toBeLessThanOrEqual(
           0.5,

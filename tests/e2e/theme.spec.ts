@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
+import { resolvedColour } from './helpers';
 import { THEMES, themeColour } from '../palette';
 import { emulateTheme, expectTheme } from '../themes';
 import { atLeast44 } from '../viewport';
@@ -395,5 +396,80 @@ test.describe('Back (#142 §5 step 5, AC4)', () => {
     });
     await expectTheme(page, 'light');
     await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+/**
+ * #371. An aurora ribbon: one broad, soft band of the brand's teal, violet
+ * and blue across the top of the page, behind the header and the hero,
+ * fading out before the content (the operator's choice, 2026-09-27, after a
+ * dot grid too faint to see). It is `body::after`, absolutely placed at the
+ * top of the document, so it scrolls away with the hero.
+ */
+test.describe('the aurora ribbon (#371)', () => {
+  const TOKENS = ['--ribbon-a', '--ribbon-b', '--ribbon-c'] as const;
+
+  /** body::after as painted, and the ribbon tokens resolved the same way. */
+  const ribbon = async (page: Page) => {
+    const layer = await page.evaluate(() => {
+      const after = getComputedStyle(document.body, '::after');
+      return {
+        display: after.display,
+        position: after.position,
+        top: after.top,
+        image: after.backgroundImage,
+      };
+    });
+    const colours: string[] = [];
+    for (const token of TOKENS)
+      colours.push(await resolvedColour(page, `var(${token})`));
+    return { ...layer, colours };
+  };
+
+  for (const theme of THEMES)
+    test(`${theme}: the ribbon is drawn at the top of the page in the theme's own colours`, async ({
+      page,
+    }) => {
+      await page.goto('/');
+      await emulateTheme(page, theme);
+      const drawn = await ribbon(page);
+      expect(drawn.display).not.toBe('none');
+      expect(drawn.position).toBe('absolute');
+      expect(drawn.top).toBe('0px');
+      expect(drawn.image.match(/radial-gradient/g) ?? []).toHaveLength(3);
+      for (const [n, colour] of drawn.colours.entries()) {
+        expect(colour, `${TOKENS[n]} resolves to a colour`).toMatch(/^rgba?\(/);
+        expect(drawn.image, `the ribbon paints ${TOKENS[n]}`).toContain(colour);
+      }
+    });
+
+  test('the two themes paint different ribbons', async ({ page }) => {
+    // Each colour must be one the ribbon paints: an undefined token makes the
+    // probe inherit the theme's ink, which also differs by theme (the dot
+    // grid's version of this test passed against no grid at all, #371).
+    await page.goto('/');
+    await emulateTheme(page, 'light');
+    const light = await ribbon(page);
+    await emulateTheme(page, 'dark');
+    const dark = await ribbon(page);
+    for (const drawn of [light, dark])
+      for (const colour of drawn.colours) expect(drawn.image).toContain(colour);
+    expect(light.colours).not.toEqual(dark.colours);
+  });
+
+  test('does not print', async ({ page }) => {
+    await page.goto('/');
+    await page.emulateMedia({ media: 'print' });
+    expect((await ribbon(page)).display).toBe('none');
+  });
+
+  test('is not drawn under forced colours', async ({ page, browserName }) => {
+    test.skip(
+      browserName !== 'chromium',
+      'Playwright emulates forcedColors in Chromium alone',
+    );
+    await page.goto('/');
+    await page.emulateMedia({ forcedColors: 'active' });
+    expect((await ribbon(page)).display).toBe('none');
   });
 });
