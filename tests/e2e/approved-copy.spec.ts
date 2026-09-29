@@ -45,6 +45,9 @@ const LANGUAGES: readonly Locale[] = ['zh', 'vi', 'th'];
 test.describe('the copy the operator approved on #161', () => {
   for (const locale of LANGUAGES) {
     test(`${locale}: the tool reads as approved`, async ({ page, context }) => {
+      // The whole tool walked in one locale: more than the default 30 s on
+      // webkit under load, worst measured 36.8 s (#380).
+      test.setTimeout(75_000);
       const t = getStrings(locale);
       // The board's words are this spec's subject, not fullscreen, which
       // classroom-groups-projector.spec.ts owns. On the CONTEXT, so the

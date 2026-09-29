@@ -210,6 +210,8 @@ describe('every test that leaves the default budget is pinned here, with its rea
    * test, so a budget cannot drift onto a different test unseen.
    */
   const PINNED: Readonly<Record<string, number>> = {
+    'tests/e2e/approved-copy.spec.ts › `${locale}: the tool reads as approved`': 75_000,
+    'tests/e2e/feature-words.spec.ts › `${locale}: every reachable correction reads as approved`': 120_000,
     'tests/e2e/text-over-ribbon.spec.ts › `${theme} at ${width}px: every text run over the ribbon clears AA, on every page`': 120_000,
   };
 
