@@ -80,7 +80,7 @@ export const siteEn = {
       `${coins} coins → ${beans} beans → ${gift} total gift value`,
     needsJs: 'This calculator needs JavaScript enabled.',
     assumptions:
-      'Assumes 1 coin per point, 0.9 beans per coin, and gifts converting to beans at 40%.',
+      'Assumes 1 coin per point, 0.9 coins per bean, and gifts converting to beans at 40%.',
     // Keyed to gloryPoints.ts's ERRORS so the calculator's own English copy —
     // asserted as a contract by its unit tests — stays untouched while the
     // Indonesian page still speaks Indonesian.
@@ -204,7 +204,7 @@ export const siteId: SiteStrings = {
       `${coins} koin → ${beans} bean → ${gift} total nilai hadiah`,
     needsJs: 'Kalkulator ini memerlukan JavaScript yang aktif.',
     assumptions:
-      'Mengasumsikan 1 koin per poin, 0,9 bean per koin, dan hadiah dikonversi ke bean sebesar 40%.',
+      'Mengasumsikan 1 koin per poin, 0,9 koin per bean, dan hadiah dikonversi ke bean sebesar 40%.',
     errors: {
       empty: 'Silakan masukkan angka.',
       notWhole: 'Silakan masukkan bilangan bulat.',
@@ -312,7 +312,7 @@ export const siteZh: SiteStrings = {
     resultLine: siteEn.glory.resultLine,
     needsJs: '此计算器需要启用 JavaScript。',
     assumptions:
-      '假设每1分需1枚金币，每枚金币可兑换0.9颗豆子，且礼物可按40%的比例兑换成豆子。',
+      '假设每1分需1枚金币，每颗豆子可兑换0.9枚金币，且礼物可按40%的比例兑换成豆子。',
     errors: {
       empty: '请输入一个数字。',
       notWhole: '请输入一个整数。',
@@ -417,7 +417,7 @@ export const siteVi: SiteStrings = {
     resultLine: siteEn.glory.resultLine,
     needsJs: 'Trình tính này cần bật JavaScript.',
     assumptions:
-      'Giả định mỗi điểm tương ứng với 1 đồng xu, mỗi đồng xu tương ứng với 0,9 hạt đậu, và quà tặng được quy đổi thành hạt đậu theo tỷ lệ 40%.',
+      'Giả định mỗi điểm tương ứng với 1 đồng xu, mỗi hạt đậu tương ứng với 0,9 đồng xu, và quà tặng được quy đổi thành hạt đậu theo tỷ lệ 40%.',
     errors: {
       empty: 'Vui lòng nhập một số.',
       notWhole: 'Vui lòng nhập một số nguyên.',
@@ -525,7 +525,7 @@ export const siteTh: SiteStrings = {
     resultLine: siteEn.glory.resultLine,
     needsJs: 'เครื่องคำนวณนี้ต้องเปิด JavaScript ไว้',
     assumptions:
-      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 ถั่วต่อเหรียญ และของขวัญจะถูกแปลงเป็นถั่วในอัตรา 40%',
+      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 เหรียญต่อถั่ว และของขวัญจะถูกแปลงเป็นถั่วในอัตรา 40%',
     errors: {
       empty: 'กรุณาป้อนตัวเลข',
       notWhole: 'กรุณาป้อนตัวเลขเต็ม',
