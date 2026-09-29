@@ -329,10 +329,10 @@ export function budgetsIn(sf: ts.SourceFile): Budget[] {
         : [{ call, line, how: 'configure', ...millisecondsOf(timeout) }];
     }
     // `testInfo` is whatever the test names its second parameter, so any
-    // receiver counts but the globals a timer is scheduled on.
+    // receiver counts but the globals a timer is scheduled on. That holds for
+    // `slow` as much as `setTimeout`: `TestInfo` has both.
     if (TIMER_OWNERS.has(receiver)) return [];
-    if (name === 'slow' && (receiver === 'test' || receiver === 'test.info()'))
-      return [{ call, line, how: 'slow' }];
+    if (name === 'slow') return [{ call, line, how: 'slow' }];
     if (name === 'setTimeout')
       return [
         { call, line, how: 'setTimeout', ...millisecondsOf(call.arguments[0]) },

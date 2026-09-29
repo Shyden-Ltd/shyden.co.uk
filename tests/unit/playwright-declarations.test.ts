@@ -290,6 +290,8 @@ describe('budgetsIn() reads every call that moves a test off the default budget'
       "test('c', async () => { test.info().setTimeout(60_000); });",
       "test('d', async () => { test.slow(); });",
       "test.describe('e', () => { test.describe.configure({ timeout: 90_000 }); });",
+      "test('f', async ({}, info) => { info.slow(); });",
+      "test('g', async () => { test.info().slow(); });",
     );
 
     expect(budgetsIn(sf).map(({ how, ms, line }) => [how, ms, line])).toEqual([
@@ -298,6 +300,8 @@ describe('budgetsIn() reads every call that moves a test off the default budget'
       ['setTimeout', 60000, 3],
       ['slow', undefined, 4],
       ['configure', 90000, 5],
+      ['slow', undefined, 6],
+      ['slow', undefined, 7],
     ]);
   });
 
