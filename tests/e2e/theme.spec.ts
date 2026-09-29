@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
+import { resolvedColour } from './helpers';
 import { THEMES, themeColour } from '../palette';
 import { emulateTheme, expectTheme } from '../themes';
 import { atLeast44 } from '../viewport';
@@ -399,68 +400,67 @@ test.describe('Back (#142 §5 step 5, AC4)', () => {
 });
 
 /**
- * #371. A quiet dot grid over the atmosphere, so the ground reads as a
- * surface rather than a flat colour, in both themes (operator's choice B,
- * 2026-09-27). It is its own fixed layer, `body::after`, so it can fade down
- * the viewport through a mask without fading the colour pools beneath it.
+ * #371. An aurora ribbon: one broad, soft band of the brand's teal, violet
+ * and blue across the top of the page, behind the header and the hero,
+ * fading out before the content (the operator's choice, 2026-09-27, after a
+ * dot grid too faint to see). It is `body::after`, absolutely placed at the
+ * top of the document, so it scrolls away with the hero.
  */
-test.describe('the dot grid (#371)', () => {
-  /** body::after as painted, and the grid token resolved the same way. */
-  const grid = (page: Page) =>
-    page.evaluate(() => {
-      const layer = getComputedStyle(document.body, '::after');
-      const probe = document.createElement('i');
-      probe.style.color = 'var(--grid-dot)';
-      document.body.append(probe);
-      const dot = getComputedStyle(probe).color;
-      probe.remove();
+test.describe('the aurora ribbon (#371)', () => {
+  const TOKENS = ['--ribbon-a', '--ribbon-b', '--ribbon-c'] as const;
+
+  /** body::after as painted, and the ribbon tokens resolved the same way. */
+  const ribbon = async (page: Page) => {
+    const layer = await page.evaluate(() => {
+      const after = getComputedStyle(document.body, '::after');
       return {
-        display: layer.display,
-        position: layer.position,
-        image: layer.backgroundImage,
-        size: layer.backgroundSize,
-        mask: layer.maskImage,
-        dot,
+        display: after.display,
+        position: after.position,
+        top: after.top,
+        image: after.backgroundImage,
       };
     });
+    const colours: string[] = [];
+    for (const token of TOKENS)
+      colours.push(await resolvedColour(page, `var(${token})`));
+    return { ...layer, colours };
+  };
 
   for (const theme of THEMES)
-    test(`${theme}: the grid is drawn in the theme's own dot colour, fixed, and fading`, async ({
+    test(`${theme}: the ribbon is drawn at the top of the page in the theme's own colours`, async ({
       page,
     }) => {
       await page.goto('/');
       await emulateTheme(page, theme);
-      const drawn = await grid(page);
+      const drawn = await ribbon(page);
       expect(drawn.display).not.toBe('none');
-      expect(drawn.position).toBe('fixed');
-      expect(drawn.image).toContain('radial-gradient');
-      expect(drawn.size).toBe('22px 22px');
-      expect(drawn.dot, 'the token resolves to a colour').toMatch(/^rgba?\(/);
-      expect(
-        drawn.image,
-        'the dots take their colour from --grid-dot',
-      ).toContain(drawn.dot);
-      expect(drawn.mask).toContain('linear-gradient');
+      expect(drawn.position).toBe('absolute');
+      expect(drawn.top).toBe('0px');
+      expect(drawn.image.match(/radial-gradient/g) ?? []).toHaveLength(3);
+      for (const [n, colour] of drawn.colours.entries()) {
+        expect(colour, `${TOKENS[n]} resolves to a colour`).toMatch(/^rgba?\(/);
+        expect(drawn.image, `the ribbon paints ${TOKENS[n]}`).toContain(colour);
+      }
     });
 
-  test('the two themes draw different dots', async ({ page }) => {
+  test('the two themes paint different ribbons', async ({ page }) => {
+    // Each colour must be one the ribbon paints: an undefined token makes the
+    // probe inherit the theme's ink, which also differs by theme (the dot
+    // grid's version of this test passed against no grid at all, #371).
     await page.goto('/');
-    // Each dot must be the colour the grid paints: an undefined token makes
-    // the probe inherit the theme's ink, which also differs by theme, and this
-    // passed against a stylesheet with no grid at all until it said so.
     await emulateTheme(page, 'light');
-    const light = await grid(page);
+    const light = await ribbon(page);
     await emulateTheme(page, 'dark');
-    const dark = await grid(page);
-    expect(light.image).toContain(light.dot);
-    expect(dark.image).toContain(dark.dot);
-    expect(light.dot).not.toBe(dark.dot);
+    const dark = await ribbon(page);
+    for (const drawn of [light, dark])
+      for (const colour of drawn.colours) expect(drawn.image).toContain(colour);
+    expect(light.colours).not.toEqual(dark.colours);
   });
 
   test('does not print', async ({ page }) => {
     await page.goto('/');
     await page.emulateMedia({ media: 'print' });
-    expect((await grid(page)).display).toBe('none');
+    expect((await ribbon(page)).display).toBe('none');
   });
 
   test('is not drawn under forced colours', async ({ page, browserName }) => {
@@ -470,6 +470,6 @@ test.describe('the dot grid (#371)', () => {
     );
     await page.goto('/');
     await page.emulateMedia({ forcedColors: 'active' });
-    expect((await grid(page)).display).toBe('none');
+    expect((await ribbon(page)).display).toBe('none');
   });
 });

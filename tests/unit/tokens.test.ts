@@ -6,6 +6,7 @@ import { cssRules, type CssRule } from './css-rules';
 import {
   customProperties,
   darkBlocks,
+  ribbonGeometry,
   rootBlock,
   rootTokens,
   themeTokens,
@@ -121,5 +122,20 @@ describe('the two themes (#142)', () => {
     );
     expect(themeTokens(css, 'dark').get('--wordmark-tile')).toBe('transparent');
     expect(themeTokens(css, 'dark').get('--wordmark-pad')).toBe('0');
+  });
+});
+
+describe('the aurora ribbon (#371)', () => {
+  it('ends its box where its furthest field has faded out', () => {
+    const { height, reaches } = ribbonGeometry(tokensCss());
+    // Three fields, each reaching some way down the page.
+    expect(reaches.filter((reach) => reach > 0)).toHaveLength(3);
+    const furthest = Math.max(...reaches);
+    // Any shorter, and the band is cut off in a hard line.
+    expect(height).toBeGreaterThanOrEqual(furthest);
+    // Any taller, and the box goes on below the band painting nothing, which
+    // still costs rasterising on a phone (#141) and lengthens any page
+    // shorter than the box. It was 44rem over a band gone by 11.48rem.
+    expect(height - furthest).toBeLessThanOrEqual(1);
   });
 });

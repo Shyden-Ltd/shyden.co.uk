@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordRequests, urlMatching } from './recorders';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
-import { contrastRatio } from './helpers';
+import { contrastRatio, resolvedColour } from './helpers';
 import {
   PREFIXED_LOCALES,
   getSiteStrings,
@@ -82,14 +82,7 @@ test('every control is at least 44px, every text meets AA, every field has a 3:1
   // WCAG 1.4.11: each field's boundary is --border-strong, the token
   // contrast.test.ts scores at 3:1. #133 shipped --border (1.17:1) on every
   // control. Resolved by the browser, so both sides are computed rgb.
-  const strong = await page.evaluate(() => {
-    const probe = document.createElement('div');
-    probe.style.color = 'var(--border-strong)';
-    document.body.append(probe);
-    const value = getComputedStyle(probe).color;
-    probe.remove();
-    return value;
-  });
+  const strong = await resolvedColour(page, 'var(--border-strong)');
   for (const label of [t.quoteLabel, t.suggestionLabel, t.noteLabel])
     await expect(page.getByLabel(label, { exact: true })).toHaveCSS(
       'border-top-color',

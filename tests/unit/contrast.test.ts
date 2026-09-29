@@ -8,6 +8,7 @@ import {
   THEMES,
   TOKENS_FILE,
   atmosphereLayers,
+  ribbonLayers,
   flatten,
   themeTokens,
   tokensCss,
@@ -236,6 +237,24 @@ const DECORATIVE: Record<string, string> = {
 };
 
 /**
+ * Tokens scored on the RENDERED page rather than here (#371). The aurora
+ * ribbon is read over, so it is not decorative; but its three fields never
+ * meet at one point, and stacking them at full strength under one letter
+ * scored a page that does not exist (2.76:1, where every text run on the
+ * rendered pages clears 4.5:1). Operator decision, 2026-09-27: measure real
+ * text.
+ * `text-over-ribbon.spec.ts` renders every built page in both themes at two
+ * widths and holds every text run to 4.5:1 against the pixels behind it. The
+ * keys must be exactly the tokens body::after paints, asserted below, so
+ * nothing else can be parked here.
+ */
+const RENDERED: Record<string, string> = {
+  '--ribbon-a': "the ribbon's teal field, scored by text-over-ribbon.spec.ts",
+  '--ribbon-b': "the ribbon's violet field, scored by text-over-ribbon.spec.ts",
+  '--ribbon-c': "the ribbon's blue field, scored by text-over-ribbon.spec.ts",
+};
+
+/**
  * The disabled fill in each theme, pinned against the brief (#250, #142
  * §3.1): the level every derived guard around it is unable to assert.
  */
@@ -248,9 +267,8 @@ const pairName = (p: Pair) =>
   `${p.fg.join(' over ')} on ${p.bg.join(' over ')} (${p.where})`;
 
 describe('the palette meets WCAG AA by computation, not by comment', () => {
-  it('reads the atmosphere from body::after over body::before, top-first, named by position', () => {
+  it('reads the atmosphere from body::before, top-first, named by position', () => {
     expect(atmosphereLayers(tokensCss())).toEqual([
-      '--grid-dot',
       '--pool-top-left',
       '--pool-top-right',
       '--pool-foot',
@@ -381,13 +399,22 @@ describe('the palette meets WCAG AA by computation, not by comment', () => {
       const all = colourTokens(theme);
       const unclassified = all
         .map(([name]) => name)
-        .filter((name) => !paired.has(name) && !(name in DECORATIVE));
+        .filter(
+          (name) =>
+            !paired.has(name) && !(name in DECORATIVE) && !(name in RENDERED),
+        );
 
       expect(
         searched(unclassified, { of: all, what: 'colour tokens' }),
       ).toEqual([]);
     });
   }
+
+  it('leaves to the rendered check exactly the tokens the ribbon paints, and no other', () => {
+    expect(Object.keys(RENDERED).sort()).toEqual(
+      [...ribbonLayers(tokensCss())].sort(),
+    );
+  });
 });
 
 /**

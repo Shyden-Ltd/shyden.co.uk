@@ -3,6 +3,7 @@ import { shoot } from './evidence';
 import { searched } from '../source-files';
 import { THEMES } from '../palette';
 import { emulateTheme } from '../themes';
+import { resolvedColour } from './helpers';
 
 /**
  * Every control's colour comes from the palette, not from the browser.
@@ -176,14 +177,7 @@ test('the controls the browser draws use the brand accent, in both themes', asyn
         .getPropertyValue('--accent')
         .trim(),
     );
-    const resolved = await page.evaluate((value) => {
-      const probe = document.createElement('span');
-      probe.style.color = value;
-      document.body.append(probe);
-      const rgb = getComputedStyle(probe).color;
-      probe.remove();
-      return rgb;
-    }, accent);
+    const resolved = await resolvedColour(page, accent);
 
     // Inline, not hoisted: `event-collectors.test.ts` matches this exact shape
     // when scanning for locator loops that were never proved non-empty, and a

@@ -448,6 +448,25 @@ export const contrastRatio = async (target: Locator): Promise<number> => {
 };
 
 /**
+ * A CSS colour, or `var(--token)`, as the browser resolves it: a probe's
+ * computed `color`. An assertion then compares two colours the browser
+ * resolved, never the browser's rgb against a hex written by hand.
+ *
+ * An undefined token resolves to the ink the probe inherits, not to nothing,
+ * so a caller comparing a token against what a rule paints needs the rule's
+ * own colour on the other side.
+ */
+export const resolvedColour = (page: Page, value: string): Promise<string> =>
+  page.evaluate((value) => {
+    const probe = document.createElement('span');
+    probe.style.color = value;
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, value);
+
+/**
  * Every place a browser could have kept a pupil's name, in one read (#277).
  *
  * Four probes had grown for the same claim, and they did not agree about

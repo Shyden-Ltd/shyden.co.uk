@@ -116,38 +116,100 @@ const layersOf = (value: string): string[] => {
 };
 
 /**
- * The page atmosphere's layers as the page paints them, TOP-FIRST: the dot
- * grid on `body::after` (#371), then `body::before`'s colour layers. Both are
- * fixed at z-index -1, so `::after` paints above `::before` by tree order,
- * and within one rule CSS paints the first `background` layer on top, so
- * declaration order IS the stack. Derived, never written down: the suite's
- * hand-written stack once put the shaft on top of a stack the browser paints
- * with the shaft at the bottom.
+ * The page atmosphere's layers as `body::before` paints them, TOP-FIRST. CSS
+ * paints the first `background` layer on top, so declaration order IS the
+ * stack. Derived, never written down: the suite's hand-written stack once put
+ * the shaft on top of a stack the browser paints with the shaft at the bottom.
  *
  * Every layer must take its colour from exactly one token, or no pair could
- * score it: a literal layer would be invisible to every contrast check. A
- * layer the mask fades is scored at full strength, which is its worst case.
+ * score it: a literal layer would be invisible to every contrast check.
+ *
+ * NOT `body::after`. The aurora ribbon (#371) is three separate soft fields
+ * that never meet at one point, so stacking them at full strength under one
+ * letter scores a page that does not exist (2.76:1, while every text run on
+ * the rendered pages clears 4.5:1). The operator chose, 2026-09-27, to score it where text
+ * really sits: `tests/e2e/text-over-ribbon.spec.ts` renders every page and
+ * measures each text run against the pixels behind it.
  */
-export const atmosphereLayers = (css: string): string[] => [
-  ...layerTokens(css, 'body::after'),
-  ...layerTokens(css, 'body::before'),
-];
+export const atmosphereLayers = (css: string): string[] =>
+  layerTokens(css, 'body::before');
 
-/** One atmosphere rule's `background` layers, top-first, as token names. */
-const layerTokens = (css: string, selector: string): string[] => {
+/**
+ * The aurora ribbon's layers as `body::after` paints them, top-first (#371):
+ * the tokens `text-over-ribbon.spec.ts` renders and measures, and the only
+ * tokens `contrast.test.ts` may leave to it.
+ */
+export const ribbonLayers = (css: string): string[] =>
+  layerTokens(css, 'body::after');
+
+/**
+ * The aurora ribbon's box height, and how far down the page each of its
+ * fields reaches before it has faded out, top-first, all in rem (#371).
+ *
+ * A field is `radial-gradient(<rx>rem <ry>rem at <x>% <y>rem, var(--token),
+ * transparent <stop>%)`. Its colour is gone `stop` of the way out along the
+ * ellipse, so it reaches `y + ry * stop` down from the top of the box. A
+ * field written any other way is refused, because its reach could not be
+ * derived, and a guard that skipped it would pass over the one field that
+ * outgrew the box.
+ */
+export const ribbonGeometry = (
+  css: string,
+): { height: number; reaches: number[] } => {
+  const height = /^(\d+(?:\.\d+)?)rem$/.exec(
+    declarationOf(css, 'body::after', 'height'),
+  );
+  if (height === null)
+    throw new Error(
+      "body::after's height must be one length in rem, to be compared with how far its fields reach",
+    );
+  const reaches = layersOf(declarationOf(css, 'body::after', 'background')).map(
+    (layer, i) => {
+      const field = RIBBON_FIELD.exec(layer);
+      if (field === null)
+        throw new Error(
+          `cannot derive how far field ${i + 1} reaches: write it as ` +
+            'radial-gradient(<rx>rem <ry>rem at <x>% <y>rem, var(--token), transparent <stop>%), ' +
+            `not ${layer}`,
+        );
+      const [, , ry, y, stop] = field.map(Number);
+      return y + (ry * stop) / 100;
+    },
+  );
+  return { height: Number(height[1]), reaches };
+};
+
+/** A ribbon field's radii, centre height and fade stop (see ribbonGeometry). */
+const REM = String.raw`(\d+(?:\.\d+)?)rem`;
+const RIBBON_FIELD = new RegExp(
+  String.raw`^radial-gradient\(\s*${REM}\s+${REM}\s+at\s+\d+(?:\.\d+)?%\s+${REM}\s*,` +
+    String.raw`\s*var\(\s*--[\w-]+\s*\)\s*,\s*transparent\s+(\d+(?:\.\d+)?)%\s*\)$`,
+);
+
+/** The value of `property` in `selector`'s one top-level rule, declared once. */
+const declarationOf = (
+  css: string,
+  selector: string,
+  property: string,
+): string => {
   const rules = topLevel(css, selector);
   if (rules.length !== 1)
     throw new Error(
       `expected one top-level ${selector} rule in ${TOKENS_FILE}, found ${rules.length}`,
     );
-  const background = rules[0].declarations.filter(
-    ({ property }) => property === 'background',
+  const values = rules[0].declarations.filter(
+    (declaration) => declaration.property === property,
   );
-  if (background.length !== 1)
+  if (values.length !== 1)
     throw new Error(
-      `${selector} declares background ${background.length} times, expected once`,
+      `${selector} declares ${property} ${values.length} times, expected once`,
     );
-  return layersOf(background[0].value).map((layer, i) => {
+  return values[0].value.trim();
+};
+
+/** One atmosphere rule's `background` layers, top-first, as token names. */
+const layerTokens = (css: string, selector: string): string[] =>
+  layersOf(declarationOf(css, selector, 'background')).map((layer, i) => {
     const tokens = [...layer.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]);
     if (tokens.length !== 1)
       throw new Error(
@@ -156,7 +218,6 @@ const layerTokens = (css: string, selector: string): string[] => {
       );
     return tokens[0];
   });
-};
 
 /** Every subset of `items`, each keeping their order; the empty one first. */
 export const subsets = <T>(items: readonly T[]): T[][] =>
