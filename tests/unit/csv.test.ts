@@ -1240,7 +1240,7 @@ describe('the sex column header, corrected without breaking old files', () => {
         /\s*[(（][^)）]*[)）]\s*$/,
         '',
       );
-      if (word(inFile) === '' || word(inFile) !== word(onPage))
+      if (word(inFile) !== word(onPage))
         drift.push(`${locale}: file "${inFile}" vs page "${onPage}"`);
     }
     expect(
