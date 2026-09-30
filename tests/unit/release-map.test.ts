@@ -1,6 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { slugOf } from '../../scripts/build-evidence-page.mjs';
-import { changeMapOf, renderChangeMap } from '../../scripts/release-map.mjs';
+import {
+  changeMapOf,
+  releaseOf,
+  renderChangeMap,
+} from '../../scripts/release-map.mjs';
+import { filesUnder } from '../source-files';
 
 const BASE = 'b'.repeat(40);
 const entry = (
@@ -252,5 +258,78 @@ describe('the change map (#362)', () => {
       '<p class="sub"><span class="mono">2</span> more commits change nothing a visitor receives. By area: ' +
         '.github <span class="mono">1</span> · tests <span class="mono">2</span></p>',
     );
+  });
+});
+
+describe('the release file, before anything reads it (#390)', () => {
+  const good = () => ({
+    ...release({}),
+    base: BASE,
+    headline: 'h',
+    signoff: { lede: 'Yours.', approve: 'Release' },
+    checks: [{ id: 'dev-home', group: 'On dev', label: 'Open it' }],
+  });
+
+  it('passes a whole release file, and every committed one', () => {
+    expect(releaseOf(good())).toEqual(good());
+    const files = filesUnder('docs/releases', (p) => p.endsWith('.json'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files)
+      expect(
+        () => releaseOf(JSON.parse(readFileSync(file, 'utf8'))),
+        file,
+      ).not.toThrow();
+  });
+
+  it.each([
+    ['a list', () => [], /release file: is not an object/],
+    ['no base', () => ({ ...good(), base: undefined }), /base is not words/],
+    [
+      'no headline',
+      () => ({ ...good(), headline: '' }),
+      /headline is not words/,
+    ],
+    ['a lede of 7', () => ({ ...good(), lede: 7 }), /lede is not words/],
+    [
+      'a blank gap group',
+      () => ({ ...good(), gapGroup: ' ' }),
+      /gapGroup is not words/,
+    ],
+    [
+      'checks that are no list',
+      () => ({ ...good(), checks: {} }),
+      /checks is not a list/,
+    ],
+    [
+      'a check with no label',
+      () => ({ ...good(), checks: [{ id: 'a', group: 'b' }] }),
+      /checks\[0\]\.label is not words/,
+    ],
+    [
+      'a check that is a word',
+      () => ({ ...good(), checks: ['a'] }),
+      /checks\[0\]\.id is not words/,
+    ],
+    [
+      'no sign-off',
+      () => ({ ...good(), signoff: null }),
+      /signoff is not an object/,
+    ],
+    [
+      'a blank sign-off button',
+      () => ({ ...good(), signoff: { approve: '' } }),
+      /signoff\.approve is not words/,
+    ],
+    [
+      'entries that are a list',
+      () => ({ ...good(), entries: [] }),
+      /entries is not an object/,
+    ],
+  ])('refuses %s', (_, file, message) => {
+    expect(() => releaseOf(file())).toThrow(message);
+  });
+
+  it('lets a sign-off leave its wording to the page', () => {
+    expect(() => releaseOf({ ...good(), signoff: {} })).not.toThrow();
   });
 });

@@ -1,16 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { GH_STAND_IN, ghCalledWith as ghArgsIn } from '../gh-stand-in';
 
 /**
  * `scripts/dependabot-labels.mjs` as CI runs it: from a checkout, with `gh`
@@ -32,13 +31,6 @@ const SCRIPT = path.resolve(
   '../../scripts/dependabot-labels.mjs',
 );
 
-const GH = `#!/bin/sh
-for a in "$@"; do printf '%s\\n' "$a"; done > "$GH_ARGS"
-printf '%s' "$GH_OUT"
-printf '%s' "$GH_ERR" >&2
-exit "\${GH_STATUS:-0}"
-`;
-
 const CONFIG =
   'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n' +
   '    labels: [npm, dependencies]\n';
@@ -48,7 +40,7 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'dependabot-labels-'));
   mkdirSync(path.join(dir, '.github'));
   mkdirSync(path.join(dir, 'bin'));
-  writeFileSync(path.join(dir, 'bin', 'gh'), GH);
+  writeFileSync(path.join(dir, 'bin', 'gh'), GH_STAND_IN);
   chmodSync(path.join(dir, 'bin', 'gh'), 0o755);
   writeFileSync(path.join(dir, '.github', 'dependabot.yml'), CONFIG);
 });
@@ -77,12 +69,7 @@ const run = (answer: Answer, { withGh = true } = {}) => {
 };
 
 /** The arguments `gh` was called with, or null if it never was. */
-const ghCalledWith = (): string[] | null => {
-  const file = path.join(dir, 'gh-args');
-  return existsSync(file)
-    ? readFileSync(file, 'utf8').split('\n').slice(0, -1)
-    : null;
-};
+const ghCalledWith = () => ghArgsIn(path.join(dir, 'gh-args'));
 
 const useConfig = (labels: string) =>
   writeFileSync(

@@ -32,6 +32,49 @@ import { esc, slugOf } from './build-evidence-page.mjs';
  * @property {[string, number][]} otherAreas
  */
 
+/**
+ * A release file as JSON gives it, checked field by field before anything
+ * reads it. Every field here reaches the page the operator signs: a missing
+ * headline would title it "undefined". `changeMapOf` checks the entries
+ * themselves, against the release they describe.
+ *
+ * @param {unknown} value
+ * @returns {Release}
+ */
+export const releaseOf = (value) => {
+  /** @param {unknown} field */
+  const isWords = (field) => typeof field === 'string' && field.trim() !== '';
+  /** @param {unknown} field */
+  const isObject = (field) =>
+    typeof field === 'object' && field !== null && !Array.isArray(field);
+  if (!isObject(value)) refuseRelease('is not an object');
+  const file = /** @type {Record<string, unknown>} */ (value);
+  for (const key of ['base', 'headline', 'lede', 'gapGroup'])
+    if (!isWords(file[key])) refuseRelease(`${key} is not words`);
+  const { checks, signoff, entries } = file;
+  if (!Array.isArray(checks)) refuseRelease('checks is not a list');
+  checks.forEach((check, i) => {
+    for (const key of ['id', 'group', 'label'])
+      if (!isWords(/** @type {Record<string, unknown>} */ (Object(check))[key]))
+        refuseRelease(`checks[${i}].${key} is not words`);
+  });
+  if (!isObject(signoff)) refuseRelease('signoff is not an object');
+  const said = /** @type {Record<string, unknown>} */ (signoff);
+  for (const key of ['lede', 'approve'])
+    if (key in said && !isWords(said[key]))
+      refuseRelease(`signoff.${key} is not words`);
+  if (!isObject(entries)) refuseRelease('entries is not an object');
+  return /** @type {Release} */ (value);
+};
+
+/**
+ * @param {string} what
+ * @returns {never}
+ */
+function refuseRelease(what) {
+  throw new Error(`release file: ${what}`);
+}
+
 /** @param {Entry} entry */
 const named = (entry) => `${entry.sha} (${entry.subject})`;
 
