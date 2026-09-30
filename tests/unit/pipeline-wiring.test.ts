@@ -24,6 +24,7 @@ import playwrightConfig, {
 } from '../../playwright.config';
 import { sitePaths } from '../site-pages';
 import {
+  checkoutSteps,
   inheritedPermissionsFindings,
   jobsDownstreamOfAConditionalJob,
   parseCleanYaml,
@@ -1500,6 +1501,24 @@ const runsTheE2eSuite = (script: string): boolean =>
 describe('every job runs under a budget of its own (#157)', () => {
   it('pins the e2e budget as a chosen policy, not a number nobody picked', () => {
     expect(E2E_SHARD_BUDGET_MINUTES).toBe(20);
+  });
+
+  it('no checkout in any workflow leaves the job token in .git/config (#395)', () => {
+    // No step pushes or fetches with it, and every later step -- npm ci, the
+    // build, Playwright, wrangler -- could read it, in jobs that hold
+    // statuses: write and contents: write.
+    const checkouts = workflowYamlNames().flatMap((name) =>
+      checkoutSteps(workflow(name), name),
+    );
+    const findings = checkouts
+      .filter(({ persistsCredentials }) => persistsCredentials)
+      .map(({ where }) => where);
+    expect(
+      searched(findings, {
+        of: checkouts.map(({ where }) => where),
+        what: 'checkout steps across every workflow',
+      }),
+    ).toEqual([]);
   });
 
   it('no job in any workflow runs on the runner default budget', () => {
