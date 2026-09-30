@@ -19,14 +19,10 @@
 export const SHYTALK_MARK = {
   /** The light half of the wordmark — "Shy". */
   shy: '#e8e0f0',
-  /** The purple half — "Talk". Also the card's hover edge. */
+  /** The purple half — "Talk". Also the wordmark's glow, through `asRgba`. */
   talk: '#d0bcff',
   /** The near-black tile the mark sits on, from the product's own site. */
   tile: '#0f0d15',
-  /** The tile's resting edge. */
-  edge: '#2a2438',
-  /** Muted body text on the tile. */
-  muted: '#b8b0c8',
 } as const;
 
 /**

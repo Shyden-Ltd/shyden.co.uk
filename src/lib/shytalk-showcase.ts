@@ -1,11 +1,12 @@
 /**
  * Geometry for the ShyTalk showcase device frame on the homepage.
  *
- * One home for the numbers, because three consumers need to agree and none
- * of them can see the others: the Astro component's frame CSS, the capture
- * pass that produces the PNGs, and the guard that refuses a capture which is
- * the wrong size. Restating a measured value in a second place is how the
- * `:lang(th)` line-height was silently undone (#17).
+ * One home for the numbers, because the Astro component's frame and the guard
+ * that refuses a capture of the wrong size must agree, and neither can see
+ * the other. The captures themselves are made outside this repo, from the
+ * device named below, and have to arrive at `ROOM_CAPTURE_PIXELS`; the guard
+ * is what holds them to it. Restating a measured value in a second place is
+ * how the `:lang(th)` line-height was silently undone (#17).
  *
  * The aspect is not chosen, it is DERIVED from the capture device so nothing
  * is letterboxed or cropped: the OnePlus CPH2653 renders 1440x3168, which is
