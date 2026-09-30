@@ -51,6 +51,17 @@ let merge = '';
 
 const short = (sha: string) => sha.slice(0, 7);
 
+/**
+ * The paths the stand-in received, closed by a request this test sends
+ * itself once the script has exited. "The script asked nothing" is then
+ * `['/sentinel']`, which a listener that never fired cannot produce, where an
+ * empty list is what a dead one and a silent script both look like.
+ */
+const requestsThenSentinel = async (): Promise<string[]> => {
+  await fetch(`${api}/sentinel`);
+  return received.map(({ url }) => url);
+};
+
 beforeAll(async () => {
   server = createServer((req, res) => {
     const url = req.url ?? '';
@@ -199,7 +210,7 @@ describe('the deploy gate, run in a checkout against the checks API', () => {
     expect(out).toContain(
       `deploy-gate: REFUSE — ${short(tested)} has 1 parent(s).`,
     );
-    expect(received).toEqual([]);
+    expect(await requestsThenSentinel()).toEqual(['/sentinel']);
     expect(code).toBe(1);
     expect(short(base)).not.toBe(short(tested));
   });
@@ -241,7 +252,7 @@ describe('the deploy gate, run in a checkout against the checks API', () => {
     const { code, err } = await run({ GITHUB_TOKEN: undefined });
 
     expect(err).toContain('GITHUB_REPOSITORY and GITHUB_TOKEN are required');
-    expect(received).toEqual([]);
+    expect(await requestsThenSentinel()).toEqual(['/sentinel']);
     expect(code).toBe(1);
   });
 });
