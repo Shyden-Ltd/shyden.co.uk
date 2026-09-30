@@ -26,7 +26,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 17 | src | M | `src/layouts/BaseLayout.astro` | +35/-13 | — |  |  |
 | 18 | src | A | `src/lib/catalogue-leaves.ts` | +39/-0 | read in full | none | 4 run: 4 RED |
 | 19 | src | M | `src/lib/csv-locale.ts` | +125/-11 | — |  |  |
-| 20 | src | M | `src/lib/csv.ts` | +59/-26 | — |  |  |
+| 20 | src | M | `src/lib/csv.ts` | +59/-26 | diff read (superseded columns, message arguments) | F9: detectLocale scored en and id only, so zh/vi/th files were parsed as the page's language: fixed (derived over LOCALES) with tests | 7 run: 6 RED, CV2 RED once F9 was fixed and its test isolated |
 | 21 | src | M | `src/lib/fit.ts` | +57/-0 | diff read (fontThatFits, 57 lines) | floor for unmeasured room pinned exactly (the old test asserted only finite and positive) | 8 run: 5 RED, FT1 FT2 FT8 equivalent |
 | 22 | src | M | `src/lib/gloryPoints.ts` | +10/-7 | diff read (rename + locale metadata) | none | 2 run: 2 RED |
 | 23 | src | M | `src/lib/grouping.ts` | +17/-2 | diff read (anonymousStudent exported) | none | 1 run: 1 RED |
