@@ -1926,8 +1926,9 @@ test.describe('the no-scroll rule, measured', () => {
     { width: 1280, height: 800 }, // laptop
   ];
 
-  const measureFit = async (page: Page) => {
-    await page.goto('/classroom-groups');
+  const measureFit = async (page: Page, path = '/classroom-groups') => {
+    await page.goto(path);
+    await page.evaluate(() => document.fonts.ready);
     const { bottom, budget } = await page.evaluate(() => ({
       bottom: Math.round(
         document.getElementById('cg-go')!.getBoundingClientRect().bottom,
@@ -1955,6 +1956,25 @@ test.describe('the no-scroll rule, measured', () => {
         await measureFit(page);
       },
     );
+  }
+
+  // EVERY LOCALE, since #384. The loop above only ever measured English, and
+  // copy length is exactly what moves the fold: on develop before #384,
+  // /id/ put `#cg-go` 27px and /vi/ 111px below the fold at 320x568 with
+  // every test green. Swapping the lead for the longer who-and-why paragraph
+  // then pushed English (+33px) and Thai (+55px) over too. Derived from
+  // LOCALES, so a sixth language is measured the day it is added.
+  for (const locale of LOCALES.filter((l) => l !== DEFAULT_LOCALE)) {
+    for (const { width, height } of VIEWPORTS) {
+      test(
+        `/${locale}/: the primary action is reachable without scrolling at ${width}x${height}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height });
+          await measureFit(page, localisePath('/classroom-groups', locale));
+        },
+      );
+    }
   }
 
   // ASSERT THE SEAM, not the sides. The four tests above measure PIXELS, and
