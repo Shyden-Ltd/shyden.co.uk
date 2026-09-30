@@ -78,25 +78,25 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 69 | functions | A | `functions/api/report/index.js` | +13/-0 | read in full | plumbing test asserted the import only: body now pinned | FN1 RED (after fix) |
 | 70 | scripts | A | `.githooks/commit-msg` | +33/-0 | — |  |  |
 | 71 | scripts | A | `.githooks/pre-push` | +30/-0 | — |  |  |
-| 72 | scripts | A | `scripts/back-translate-client.mjs` | +67/-0 | — |  |  |
+| 72 | scripts | A | `scripts/back-translate-client.mjs` | +67/-0 | read in full (tranche 4) | F34 an unreachable engine printed only 'fetch failed' (ECONNREFUSED sat on cause): call() now names the request and the cause. Non-JSON refusal excerpt, method in the message, 200-not-JSON and short-answer refusals were untested | 7 run: CL4 CL5 RED before; CL1-3 CL6 GREEN now RED; CL7 (cause dropped) RED |
 | 73 | scripts | A | `scripts/build-evidence-page.mjs` | +1584/-0 | — |  |  |
-| 74 | scripts | A | `scripts/build-release-content.mjs` | +214/-0 | — |  |  |
+| 74 | scripts | A | `scripts/build-release-content.mjs` | +214/-0 | — | (not yet read in full) F35 private messageOf copy replaced (tranche 4) | OH1-class covered by the one-home rule |
 | 75 | scripts | A | `scripts/closing-keywords.mjs` | +123/-0 | — |  |  |
 | 76 | scripts | M | `scripts/dashboard.mjs` | +48/-86 | — |  |  |
 | 77 | scripts | A | `scripts/dependabot-labels.mjs` | +194/-0 | — |  |  |
 | 78 | scripts | A | `scripts/deploy-gate.mjs` | +222/-0 | — |  |  |
 | 79 | scripts | A | `scripts/e2e-shards.mjs` | +366/-0 | — |  |  |
-| 80 | scripts | A | `scripts/errors.mjs` | +73/-0 | — |  |  |
+| 80 | scripts | A | `scripts/errors.mjs` | +73/-0 | read in full (tranche 4) | F35 five private copies of messageOf's line (build-release-content, signoff-status, tests/device/ios/webdriver.ts, translate.test.ts, and one this review wrote into i18n-scaffold.test.ts) now import it; one-home.test.ts rule readsACaughtMessage keeps it single, one fixture per clause | 7 run on the rule: OH1 (copy re-added) RED, OH2 (copy as a comment) GREEN as intended, OH3-OH7 (each clause dropped) RED |
 | 81 | scripts | A | `scripts/evidence-files.mjs` | +124/-0 | — |  |  |
 | 82 | scripts | A | `scripts/evidence-signoff.mjs` | +132/-0 | — |  |  |
-| 83 | scripts | A | `scripts/i18n-back-translate.mjs` | +122/-0 | — |  |  |
-| 84 | scripts | A | `scripts/i18n-scaffold.mjs` | +200/-0 | — |  |  |
+| 83 | scripts | A | `scripts/i18n-back-translate.mjs` | +122/-0 | read in full (tranche 4) | F33 the stand-in harness asserted refusals only: score, once-per-locale sending, engine name, printed review, cannot-be-believed header, progress line and error prefix now pinned. Private messageOf copy replaced by the import; its new errors.mjs import was outside back-translation.yml path filter (pipeline-wiring.test.ts caught it in the whole suite), now watched | 12 run: 3 RED before (BS8 BS10 BS11), 8 GREEN now RED (BS1-6 BS9, BS12 new); BS7 GREEN, residual: no catalogue has a slot-only translation, so the empty-text filter guards a case today's data cannot reach |
+| 84 | scripts | A | `scripts/i18n-scaffold.mjs` | +200/-0 | read in full (tranche 4) | F32 rendering untested past the argv refusal, incl. the overwrite refusal its docblock calls the important one: render throws, renderCatalogue exported, main driven in a scratch cwd. Bug: drafts and the locale read through Object.prototype ('constructor' rendered as undefined; i18n:scaffold -- constructor crashed in Intl.PluralRules), now Object.hasOwn. plainKey docblock inverted | 19 run: 19 RED (SC1-SC17, SC2a/b, SC5a/b), re-run after the anchored-presence fix: 19 RED |
 | 85 | scripts | A | `scripts/i18n-translate.mjs` | +280/-0 | read in full (tranche 3) | F24 drafts paired by index with no count check (deeplDrafts); misleading needs-a-human report removed; F25 | none: network wiring; its decisions moved to deeplDrafts (DD1-4 RED) |
 | 86 | scripts | A | `scripts/install-hooks.mjs` | +86/-0 | — |  |  |
 | 87 | scripts | A | `scripts/release-inventory.mjs` | +299/-0 | — |  |  |
 | 88 | scripts | A | `scripts/release-map.mjs` | +165/-0 | — |  |  |
 | 89 | scripts | A | `scripts/reports-review.mjs` | +132/-0 | read in full (132 lines) | none | 5 run: 5 RED |
-| 90 | scripts | A | `scripts/signoff-status.mjs` | +113/-0 | — |  |  |
+| 90 | scripts | A | `scripts/signoff-status.mjs` | +113/-0 | — | (not yet read in full) F35 private messageOf copy replaced (tranche 4) | OH1 RED |
 | 91 | scripts | M | `scripts/test-devices.mjs` | +238/-69 | — |  |  |
 | 92 | scripts | A | `scripts/test-e2e.mjs` | +842/-0 | — |  |  |
 | 93 | scripts | A | `scripts/upload-evidence-assets.mjs` | +237/-0 | — |  |  |
