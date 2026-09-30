@@ -20,15 +20,21 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
  * any `finally`: every run left its directory behind, 739 of them in one
  * session's `$TMPDIR`, each holding a whole report after a real run.
  *
- * `npx` is a stand-in that lists three tests and runs none, so the script
- * reaches its no-report refusal in milliseconds; `TMPDIR` is a scratch
- * directory, so what the run leaves there is all it left.
+ * `npx` is a stand-in that lists `$E2E_LISTED` tests (three by default) and
+ * writes `$E2E_REPORT` as the run's report, or no report at all, so the script
+ * reaches each verdict in milliseconds; `TMPDIR` is a scratch directory, so
+ * what the run leaves there is all it left.
  */
 
 const SCRIPT = path.resolve(import.meta.dirname, '../../scripts/test-e2e.mjs');
 
 const NPX = `#!/bin/sh
-if [ "$3" = "--list" ]; then printf '%s\\n' 'Total: 3 tests in 1 file'; exit 0; fi
+if [ "$3" = "--list" ]; then
+  printf 'Total: %s tests in 1 file\\n' "\${E2E_LISTED:-3}"; exit 0
+fi
+if [ -n "$E2E_REPORT" ]; then
+  printf '%s' "$E2E_REPORT" > "$PLAYWRIGHT_JSON_OUTPUT_NAME"; exit 0
+fi
 exit 1
 `;
 
@@ -69,5 +75,48 @@ describe('the report a run keeps for itself (#390)', () => {
     const result = run({ EVIDENCE_DIR: evidence });
     expect(result.status).toBe(1);
     expect(existsSync(evidence)).toBe(true);
+  });
+});
+
+describe("the run's verdict, from its own report (#390)", () => {
+  /** A json report of three passed tests, in a project excused from navigating. */
+  const REPORT = JSON.stringify({
+    config: {
+      projects: [{ name: 'content', metadata: { requiresNavigation: false } }],
+    },
+    stats: { expected: 3, unexpected: 0, flaky: 0, skipped: 0 },
+    suites: [
+      {
+        title: 'a.spec.ts',
+        specs: ['one', 'two', 'three'].map((title) => ({
+          title,
+          tests: [
+            {
+              projectName: 'content',
+              status: 'expected',
+              results: [{ status: 'passed', duration: 1 }],
+            },
+          ],
+        })),
+      },
+    ],
+  });
+
+  it('passes a run that executed the whole suite, and still removes its report', () => {
+    const result = run({ E2E_REPORT: REPORT });
+    expect(result.stderr).not.toContain('RECONCILIATION FAILED');
+    expect(result.status).toBe(0);
+    expect(
+      existsSync(path.join(dir, 'tmp', `e2e-reconcile-${result.pid}`)),
+    ).toBe(false);
+  });
+
+  it('fails a green run that executed less than the suite it listed', () => {
+    const result = run({ E2E_REPORT: REPORT, E2E_LISTED: '4' });
+    expect(result.stderr).toContain(
+      'E2E RECONCILIATION FAILED — this run measured less than the suite',
+    );
+    expect(result.stderr).toMatch(/accounted for by this run +: 3\n/);
+    expect(result.status).toBe(1);
   });
 });
