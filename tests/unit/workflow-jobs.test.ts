@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RUNNER_DEFAULT_TIMEOUT_MINUTES,
+  checkoutSteps,
   jobsDownstreamOfAConditionalJob,
   skippedUpstreamFindings,
   unboundedJobFindings,
@@ -495,5 +496,73 @@ describe('the secrets a job reads, and the environment it reads them in (#241)',
         .secrets,
     ).toEqual(['GITHUB_TOKEN']);
     expect(onlyJob('    steps:\n      - run: npm ci\n').secrets).toEqual([]);
+  });
+});
+
+describe('a checkout leaves no token behind (#395)', () => {
+  const CHECKOUT = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
+  const withInput = (input: string) => `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: ${CHECKOUT} # v7.0.1${input}
+      - run: npm ci
+`;
+  const persists = (input: string) =>
+    checkoutSteps(withInput(input), 'fixture.yml').map(
+      ({ persistsCredentials }) => persistsCredentials,
+    );
+
+  it('reads persist-credentials: false as leaving nothing behind', () => {
+    expect(
+      persists('\n        with:\n          persist-credentials: false'),
+    ).toEqual([false]);
+  });
+
+  it.each([
+    ['no with: at all', ''],
+    ['a with: that does not say', '\n        with:\n          fetch-depth: 0'],
+    ['true', '\n        with:\n          persist-credentials: true'],
+    [
+      "the string 'false'",
+      "\n        with:\n          persist-credentials: 'false'",
+    ],
+    [
+      'false in a trailing comment only',
+      '\n        with: # persist-credentials: false\n          fetch-depth: 0',
+    ],
+  ])('flags %s as persisting the token', (_, input) => {
+    expect(persists(input)).toEqual([true]);
+  });
+
+  it('names the file, the job and the step', () => {
+    expect(checkoutSteps(withInput(''), 'fixture.yml')).toEqual([
+      { where: "fixture.yml job 'build': step 1", persistsCredentials: true },
+    ]);
+  });
+
+  it('finds a checkout at any version, and no other action', () => {
+    const text = `
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - run: echo actions/checkout@v7
+      - uses: actions/checkout@v4
+  b:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: ${CHECKOUT}
+        with:
+          persist-credentials: false
+`;
+    expect(checkoutSteps(text, 'f.yml')).toEqual([
+      { where: "f.yml job 'a': step 3", persistsCredentials: true },
+      { where: "f.yml job 'b': step 1", persistsCredentials: false },
+    ]);
   });
 });
