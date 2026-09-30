@@ -131,9 +131,9 @@ export const vi: Catalogue = {
   stateApart: '{n} tách biệt',
   stateAdded: '{n} đã được thêm vào',
   stateNone: 'không có',
-  stateMixed: 'phân loại theo giới tính',
+  stateMixed: 'nam và nữ cân bằng',
   stateSeparated: 'phân chia theo giới tính',
-  stateBunched: 'thức ăn thừa trong một nhóm',
+  stateBunched: 'học sinh còn lại gộp vào một nhóm',
   stateNothingToSave: 'Chưa có gì để lưu cả',
   stateUnsaved: 'các thay đổi chưa được lưu — hãy xuất để giữ lại chúng',
   makeGroups: 'Tạo nhóm',
@@ -146,7 +146,7 @@ export const vi: Catalogue = {
   studentNumber: 'Học sinh {n}',
   staleMode: 'Các nhóm này đã lỗi thời — quy mô nhóm đã thay đổi.',
   staleLeftovers:
-    'Các nhóm này đã lỗi thời — lựa chọn “thức ăn thừa” đã thay đổi.',
+    'Các nhóm này đã lỗi thời — lựa chọn “học sinh còn lại” đã thay đổi.',
   staleSexMode:
     'Các nhóm này đã lỗi thời — cách phân nhóm các em trai và em gái đã thay đổi.',
   staleRoster: 'Các nhóm này đã lỗi thời — danh sách lớp đã thay đổi.',

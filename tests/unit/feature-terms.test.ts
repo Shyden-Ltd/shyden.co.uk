@@ -39,6 +39,14 @@ import type { Locale } from '../../src/lib/i18n/locales';
  * its one word per locale was approved on #319 itself, and any future pin
  * control is held to it. Changing an entry needs a fresh operator read, like
  * every pinned value.
+ *
+ * `mix` and `leftovers` (#390) take their words from those features' own
+ * controls, `sexMixLabel` and `leftoversLabel`. Each control was correct in
+ * every locale while the copy describing it was not. zh 平均 and th เท่ากัน
+ * ("evenly") and vi cân bằng ("balanced") are how each locale's
+ * "Mix boys and girls evenly" control says it. Leftovers are the students
+ * left over, never the bare word for "left", which also names leftover food:
+ * zh 剩余, vi còn lại and th นักเรียน…เหลือ, where the student is in the word.
  */
 const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
   id: {
@@ -53,6 +61,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     ],
     absent: ['tidak hadir', 'ketidakhadiran'],
     group: ['kelompok', 'pengelompokan'],
+    mix: ['campur'],
+    leftovers: ['tersisa', 'sisa dalam'],
   },
   zh: {
     pin: ['固定'],
@@ -60,6 +70,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     apart: ['分开'],
     absent: ['缺席'],
     group: ['组'],
+    mix: ['平均'],
+    leftovers: ['剩余'],
   },
   vi: {
     pin: ['ghim'],
@@ -67,6 +79,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     apart: ['tách biệt', 'khác nhóm'],
     absent: ['vắng mặt'],
     group: ['nhóm'],
+    mix: ['cân bằng'],
+    leftovers: ['còn học sinh', 'học sinh còn lại'],
   },
   th: {
     pin: ['ปักหมุด'],
@@ -74,6 +88,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     apart: ['แยก', 'คนละกลุ่ม'],
     absent: ['ไม่มา', 'ขาด'],
     group: ['กลุ่ม'],
+    mix: ['เท่ากัน'],
+    leftovers: ['นักเรียนเหลือ', 'นักเรียนที่เหลือ'],
   },
 };
 
@@ -98,6 +114,8 @@ const ONE_WORD: Glossary = {
   apart: ['tách biệt'],
   absent: ['vắng mặt'],
   group: ['nhóm'],
+  mix: ['cân bằng'],
+  leftovers: ['học sinh còn lại'],
 };
 
 /** What zh `warnings.PINNED_MIXED_SEX` said until #319. */
@@ -119,6 +137,10 @@ describe('featuresNamed: the features a piece of English copy names', () => {
       '{grouped} of {typed} grouped — numbers {absent} are absent.',
       ['absent', 'group'],
     ],
+    ['Mix boys and girls evenly', ['mix']],
+    ['mixed by sex', ['mix']],
+    ['If students are left over', ['leftovers']],
+    ['leftovers in one group', ['group', 'leftovers']],
   ])('%j names %j', (english, named) => {
     expect(featuresNamed(english)).toEqual(named);
   });
@@ -130,6 +152,8 @@ describe('featuresNamed: the features a piece of English copy names', () => {
     'Keep everyone apartment-free while keeping score.',
     'Spin the wheel at the pinnacle.',
     'He left absently.',
+    // "mixture" holds m-i-x, and a dough left overnight is not a leftover.
+    'A mixture of flour and water, left overnight.',
   ])('%j names no feature', (english) => {
     expect(featuresNamed(english)).toEqual([]);
   });
