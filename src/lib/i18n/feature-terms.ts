@@ -27,7 +27,10 @@ import type { Locale } from './locales.ts';
  * by sex", the opposite of the setting; in th it was the same text as
  * "separated by sex". "leftovers in one group" became leftover FOOD. The
  * controls' own labels were correct in every locale, so holding the rest of
- * the copy to those labels' words catches both.
+ * the copy to those labels' words catches both. `sound` and `classList`
+ * joined with them: "Sound off" had become the idiom for speaking up (zh
+ * 畅所欲言, vi "Hãy lên tiếng", th แสดงความคิดเห็น), and zh called the class
+ * list a course list (课程列表) in three sentences.
  *
  * What it cannot see: copy that carries an approved word once and a wrong
  * word elsewhere. A count was tried and rejected, because a prefix changes an
@@ -40,7 +43,15 @@ import type { Locale } from './locales.ts';
 
 /** A feature of the classroom-groups tool that its copy names. */
 export type FeatureTerm =
-  'pin' | 'together' | 'apart' | 'absent' | 'group' | 'mix' | 'leftovers';
+  | 'pin'
+  | 'together'
+  | 'apart'
+  | 'absent'
+  | 'group'
+  | 'mix'
+  | 'leftovers'
+  | 'sound'
+  | 'classList';
 
 /**
  * How English copy names each feature: as a whole word, in every form the
@@ -56,6 +67,8 @@ export const FEATURE_TERMS: Readonly<Record<FeatureTerm, RegExp>> = {
   group: /\bgroup(?:s|ed|ings?)?\b/,
   mix: /\bmix(?:es|ed|ing)?\b/,
   leftovers: /\bleft ?overs?\b/,
+  sound: /\bsounds?\b/,
+  classList: /\bclass lists?\b/,
 };
 
 /** The words a locale may use for each feature, as the operator approved them. */

@@ -47,6 +47,8 @@ import type { Locale } from '../../src/lib/i18n/locales';
  * "Mix boys and girls evenly" control says it. Leftovers are the students
  * left over, never the bare word for "left", which also names leftover food:
  * zh 剩余, vi còn lại and th นักเรียน…เหลือ, where the student is in the word.
+ * `sound` takes the Sound on control's word, and `classList` the words of
+ * the Class list print option, pinned on #161 in th.
  */
 const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
   id: {
@@ -63,6 +65,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     group: ['kelompok', 'pengelompokan'],
     mix: ['campur'],
     leftovers: ['tersisa', 'sisa dalam'],
+    sound: ['suara'],
+    classList: ['daftar kelas'],
   },
   zh: {
     pin: ['固定'],
@@ -72,6 +76,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     group: ['组'],
     mix: ['平均'],
     leftovers: ['剩余'],
+    sound: ['声音'],
+    classList: ['班级名单'],
   },
   vi: {
     pin: ['ghim'],
@@ -81,6 +87,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     group: ['nhóm'],
     mix: ['cân bằng'],
     leftovers: ['còn học sinh', 'học sinh còn lại'],
+    sound: ['âm thanh'],
+    classList: ['danh sách lớp'],
   },
   th: {
     pin: ['ปักหมุด'],
@@ -90,6 +98,8 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     group: ['กลุ่ม'],
     mix: ['เท่ากัน'],
     leftovers: ['นักเรียนเหลือ', 'นักเรียนที่เหลือ'],
+    sound: ['เสียง'],
+    classList: ['รายชื่อชั้น', 'รายชื่อนักเรียน'],
   },
 };
 
@@ -116,6 +126,8 @@ const ONE_WORD: Glossary = {
   group: ['nhóm'],
   mix: ['cân bằng'],
   leftovers: ['học sinh còn lại'],
+  sound: ['âm thanh'],
+  classList: ['danh sách lớp'],
 };
 
 /** What zh `warnings.PINNED_MIXED_SEX` said until #319. */
@@ -141,6 +153,8 @@ describe('featuresNamed: the features a piece of English copy names', () => {
     ['mixed by sex', ['mix']],
     ['If students are left over', ['leftovers']],
     ['leftovers in one group', ['group', 'leftovers']],
+    ['Sound off', ['sound']],
+    ['Your class list is still here.', ['classList']],
   ])('%j names %j', (english, named) => {
     expect(featuresNamed(english)).toEqual(named);
   });
@@ -384,6 +398,40 @@ describe('on the live catalogues', () => {
     );
     expect(verdict?.missing).toContain('pin');
   });
+
+  it.each<[string, string, string, FeatureTerm]>([
+    ['zh', 'soundOff', '畅所欲言', 'sound'],
+    ['vi', 'soundOff', 'Hãy lên tiếng', 'sound'],
+    ['th', 'soundOff', 'แสดงความคิดเห็น', 'sound'],
+    [
+      'zh',
+      'privacy',
+      '所有操作都在您的浏览器中完成。课程列表绝不会离开此页面。',
+      'classList',
+    ],
+    ['zh', 'stateBunched', '一组剩菜', 'leftovers'],
+    ['th', 'stateMixed', 'แบ่งตามเพศ', 'mix'],
+  ])(
+    '%s %s seeded back to what #390 corrected is flagged for %s',
+    (locale, key, before, feature) => {
+      const units = backTranslationUnits(locale as Locale);
+      const seeded = units.map((one) =>
+        one.key === key ? { ...one, translation: before } : one,
+      );
+      // Watch the seed apply: exactly one unit differs, and it is this one.
+      expect(
+        seeded
+          .filter((one, index) => one !== units[index])
+          .map((one) => one.key),
+      ).toEqual([key]);
+      const verdict = checkFeatureTerms(
+        seeded,
+        locale as Locale,
+        glossaryOf(locale as Locale),
+      ).find((one) => one.key === key);
+      expect(verdict?.missing).toContain(feature);
+    },
+  );
 
   it('the corrected zh PINNED_MIXED_SEX is not flagged, and says 固定', () => {
     const units = backTranslationUnits('zh');

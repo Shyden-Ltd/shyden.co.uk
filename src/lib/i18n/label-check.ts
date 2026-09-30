@@ -1,4 +1,5 @@
 import { isLabel, type BackTranslationUnit } from './back-translate.ts';
+import { escapeForRegExp } from './translate.ts';
 import type { Locale } from './locales.ts';
 import type { SiteStrings } from './site.ts';
 
@@ -86,6 +87,21 @@ const uses = (english: string): RegExp =>
   new RegExp(`(?<![\\p{L}\\p{N}])${english}(?:e?s)?(?![\\p{L}\\p{N}])`, 'u');
 
 /**
+ * Whether `outer`'s rendering carries every part of `inner`'s. `[].every` is
+ * true, so a rendering left with no words holds nothing and is held by
+ * nothing, rather than agreeing with everything.
+ */
+const holds = (
+  outer: BackTranslationUnit,
+  inner: BackTranslationUnit,
+  locale: Locale,
+): boolean => {
+  const parts = partsOf(inner.translation, locale);
+  const text = wordsOf(outer.translation, locale);
+  return parts.length > 0 && parts.every((part) => text.includes(part));
+};
+
+/**
  * Every label in `units`, checked against every other unit in `units`. Pass
  * one locale's units, from `backTranslationUnits`: a witness is only evidence
  * about the locale it was written in.
@@ -98,14 +114,6 @@ export function checkLabels(
     one,
     english: wordsOf(one.english, 'en'),
   }));
-  // Whether `outer`'s rendering carries every part of `inner`'s. `[].every`
-  // is true, so a rendering left with no words holds nothing and is held by
-  // nothing, rather than agreeing with everything.
-  const holds = (outer: BackTranslationUnit, inner: BackTranslationUnit) => {
-    const parts = partsOf(inner.translation, locale);
-    const text = wordsOf(outer.translation, locale);
-    return parts.length > 0 && parts.every((part) => text.includes(part));
-  };
   return copy
     .filter(({ one }) => isLabel(one.english))
     .map(({ one: label, english }) => {
@@ -122,14 +130,109 @@ export function checkLabels(
       const variants = others
         .filter((other) => other.english === english)
         .map(({ one }) => one)
-        .filter((other) => !holds(label, other) && !holds(other, label));
+        .filter(
+          (other) =>
+            !holds(label, other, locale) && !holds(other, label, locale),
+        );
       const status: LabelStatus =
         witnesses.length === 0
           ? 'unchecked'
-          : witnesses.some((witness) => holds(witness, label))
+          : witnesses.some((witness) => holds(witness, label, locale))
             ? 'agrees'
             : 'disagrees';
       return { ...label, status, witnesses, variants };
+    });
+}
+
+/** A sentence that names one or more labels, and whether it carries them. */
+export interface LabelReference {
+  readonly sentence: BackTranslationUnit;
+  /** The labels it names: every label sharing that English, in the order given. */
+  readonly labels: readonly BackTranslationUnit[];
+  /** Whether its rendering carries every part of one of their renderings. */
+  readonly carried: boolean;
+}
+
+/** A regular expression matching `text` exactly, as whole words. */
+const asWholeWords = (text: string): RegExp =>
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapeForRegExp(text)}(?![\\p{L}\\p{N}])`,
+    'gu',
+  );
+
+/**
+ * Whether English copy names a label: holds its English with the label's own
+ * capitals, where a capital is not simply the start of a sentence. A label of
+ * more than one word is a name wherever it stands; a one-word label only
+ * after a lower-case word, as in "Select Calculate".
+ */
+const namesLabel = (sentence: string, label: string): boolean =>
+  [...sentence.matchAll(asWholeWords(label))].some(
+    ({ index }) =>
+      label.includes(' ') || /[\p{Ll},]\s$/u.test(sentence.slice(0, index)),
+  );
+
+/**
+ * Copy that ends as a sentence does, however short ("Press Make Groups."). A
+ * heading of four words ("How to use it") is neither a sentence nor a label,
+ * and is not held to a shorter heading inside it.
+ */
+const isSentence = (english: string): boolean => /[.!?]$/.test(english.trim());
+
+/**
+ * Every sentence in `units` that names a label, and whether its rendering
+ * carries that label's (#390). Pass one locale's units, from
+ * `backTranslationUnits`.
+ *
+ * `checkLabels` asks whether a label's rendering appears ANYWHERE its English
+ * is used, so one sentence using a heading's word hides five naming the same
+ * section another way: zh told teachers to open 学生详情 six times beside a
+ * heading reading 学生信息, and vi and th did the same. A teacher sent to a
+ * section or a button looks for the words the sentence gives, on a page
+ * showing the label's, so each sentence is held to the label it names.
+ *
+ * A label names a thing on the page when it starts with a capital and has no
+ * slot, and a sentence is copy ending as one does. A label inside a longer
+ * label the same sentence names belongs to the longer one ("Groups" in "Make
+ * Groups"), and labels sharing an English are one name, so carrying any of
+ * their renderings is enough.
+ *
+ * What it cannot see: a label named in lower case, which reads as the common
+ * words ("the class list"), and a rendering that carries the label's words
+ * inside a different phrase.
+ */
+export function checkNamedLabels(
+  units: readonly BackTranslationUnit[],
+  locale: Locale,
+): LabelReference[] {
+  const labels = new Map<string, BackTranslationUnit[]>();
+  for (const one of units)
+    if (
+      isLabel(one.english) &&
+      !isSentence(one.english) &&
+      /^\p{Lu}/u.test(one.english) &&
+      !/[{}]/.test(one.english)
+    )
+      labels.set(one.english, [...(labels.get(one.english) ?? []), one]);
+  return units
+    .filter(({ english }) => isSentence(english))
+    .flatMap((sentence) => {
+      const named = [...labels.keys()].filter((label) =>
+        namesLabel(sentence.english, label),
+      );
+      return named
+        .filter(
+          (label) =>
+            !named.some((longer) => longer !== label && longer.includes(label)),
+        )
+        .map((label) => {
+          const sharing = labels.get(label) ?? [];
+          return {
+            sentence,
+            labels: sharing,
+            carried: sharing.some((one) => holds(sentence, one, locale)),
+          };
+        });
     });
 }
 
