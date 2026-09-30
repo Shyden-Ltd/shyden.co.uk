@@ -106,6 +106,18 @@ describe('the change map (#362)', () => {
       /c{40} .* says nothing to check/,
     ],
     [
+      'a reason that is not words',
+      { ...ALL, [D.sha]: { kind: 'none', reason: {} } },
+      null,
+      /d{40} .* gives no reason/,
+    ],
+    [
+      'a check that is not words',
+      { ...ALL, [C.sha]: { kind: 'gap', check: ['try it by hand'] } },
+      null,
+      /c{40} .* says nothing to check/,
+    ],
+    [
       'an unknown kind',
       { ...ALL, [D.sha]: { kind: 'visble', journeys: [JOURNEY] } },
       null,
@@ -147,6 +159,12 @@ describe('the change map (#362)', () => {
     expect(map(cites).rows[0]?.flagged).toBe(false);
   });
 
+  it('flags a cited journey that has no result at all', () => {
+    const unrun = new Map(passing);
+    unrun.delete(JOURNEY);
+    expect(map(ALL, unrun).rows[0]?.flagged).toBe(true);
+  });
+
   it('computes no flag from a listing', () => {
     expect(map(ALL, null).rows[0]?.flagged).toBeNull();
   });
@@ -186,5 +204,53 @@ describe('the change map (#362)', () => {
     expect(changeMap).toContain('try it by hand');
     expect(changeMap).toContain('a refactor');
     expect(others).toContain('tests');
+  });
+
+  it('renders refs, totals, flags and area counts, and escapes every value', () => {
+    const TAGGED = 'a describe > a <b>tagged</b> journey';
+    const G = { ...entry('g', true), pr: null, ticket: 9 };
+    const H = { ...entry('h', true), pr: null, ticket: null };
+    const { changeMap, others } = renderChangeMap(
+      changeMapOf({
+        inventory: { base: BASE, entries: [A, C, D, G, H, T, U] },
+        release: release({
+          [A.sha]: { kind: 'visible', journeys: [JOURNEY] },
+          [C.sha]: { kind: 'gap', check: 'press <kbd>Tab</kbd>' },
+          [D.sha]: { kind: 'none', reason: 'renames a <div>' },
+          [G.sha]: { kind: 'visible', journeys: [TAGGED] },
+          [H.sha]: { kind: 'gap', check: 'look' },
+        }),
+        journeys: new Set([JOURNEY, TAGGED]),
+        statuses: new Map([
+          [JOURNEY, ['passed', 'failed']],
+          [TAGGED, ['passed']],
+        ]),
+      }),
+    );
+    // The header row comes first; each commit's row follows in order.
+    const rows = changeMap.split('<tr>').slice(2);
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toContain(
+      '<td class="mono">aaaaaaa</td><td>PR #1 · #2</td>',
+    );
+    expect(rows[0]).toContain('Flagged: a journey below did not pass.');
+    expect(rows[3]).toContain('<td class="mono">ggggggg</td><td>#9</td>');
+    expect(rows[3]).not.toContain('Flagged');
+    expect(rows[4]).toContain('<td class="mono">hhhhhhh</td><td></td>');
+    expect(changeMap).toContain('press &lt;kbd&gt;Tab&lt;/kbd&gt;');
+    expect(changeMap).toContain('renames a &lt;div&gt;');
+    expect(changeMap).toContain(
+      '>a describe &gt; a &lt;b&gt;tagged&lt;/b&gt; journey</a>',
+    );
+    expect(changeMap).not.toMatch(/<kbd>|<div>|<b>/);
+    expect(changeMap).toContain(
+      '<span class="mono">5</span> commits change what a visitor receives: ' +
+        '<span class="mono">2</span> shown by journeys, <span class="mono">2</span> shown by none, ' +
+        '<span class="mono">1</span> with no intended visible change, <span class="mono">1</span> flagged.',
+    );
+    expect(others).toBe(
+      '<p class="sub"><span class="mono">2</span> more commits change nothing a visitor receives. By area: ' +
+        '.github <span class="mono">1</span> · tests <span class="mono">2</span></p>',
+    );
   });
 });
