@@ -200,23 +200,28 @@ test.describe('privacy — with JavaScript blocked', () => {
   // has the full reasoning). `javaScriptEnabled: false` on this describe
   // block means that script never runs, so the raw markup below is exactly
   // what a real script-disabled visitor gets — not a proxy for it.
-  for (const [path, whoAndWhy] of [
+  for (const [path, whoAndWhy, whatItDoes] of [
     [
       '/classroom-groups',
       'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+      'Tell it how big your class is and how many students you want per group. It shuffles and deals everyone out, and no group ever ends up smaller than you asked for.',
     ],
     [
       '/id/classroom-groups',
       'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+      'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
     ],
   ] as const) {
     test(
-      `${path}: the who-and-why copy is reachable without JavaScript`,
+      `${path}: the lead and How to use part 1 are reachable without JavaScript`,
       { tag: '@requires-isolated-context' },
       async ({ page }) => {
         await page.goto(path);
         await expect(page.locator('#cg-howto-body')).toBeVisible();
-        await expect(page.locator('#cg-howto-body > p')).toHaveText(whoAndWhy);
+        // Since #384 the who-and-why paragraph is the lead, and part 1 of
+        // How to use says what the tool does. Both must survive no script.
+        await expect(page.locator('.lead')).toHaveText(whoAndWhy);
+        await expect(page.locator('#cg-howto-body > p')).toHaveText(whatItDoes);
       },
     );
   }

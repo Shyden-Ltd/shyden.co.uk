@@ -26,27 +26,24 @@ export const en = {
   description:
     'Split your class into groups instantly — in your browser, with nothing sent anywhere.',
   heading: 'Classroom Group Creator',
-  lead: 'Tell it how big your class is and how many students you want per group. It shuffles and deals everyone out, and no group ever ends up smaller than you asked for.',
+  // The lead says WHO the tool is for and WHY it was built, not only what it
+  // does. That paragraph was How to use's part 1 (design spec section 3) until
+  // the operator swapped the two on 2026-09-30 (#384), so it is read before
+  // anything is opened. Every locale swaps its own pair; the placement is
+  // pinned per locale by classroom-groups-placement.test.ts.
+  lead: 'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
   privacy:
     'Everything happens in your browser. No class list ever leaves this page.',
 
   howToHeading: 'How to use',
-  // Part 1 must say WHO it is for and WHY it was built, not only what it does
-  // -- an explicit operator instruction (design spec section 3, which carries
-  // the approved copy verbatim). Assembled with `+` HERE, in the locale file,
-  // never written across template lines: whitespace between two nodes in the
-  // Astro template survives only while they share a line, and prettier
-  // re-wraps long lines -- the seam that has already shipped three broken
-  // sentences on this site (see rendered-text.spec.ts). A single JS string
-  // constant, however it is line-wrapped, always concatenates back to the
-  // same characters -- prettier reflows the surrounding whitespace, never the
-  // contents of a string literal, so this sentence cannot lose a space no
-  // matter how these four lines get re-wrapped.
+  // Part 1 of How to use says WHAT the tool does (the page's lead until #384).
+  // Kept as one string in the locale file, never written across template
+  // lines: whitespace between two nodes in the Astro template survives only
+  // while they share a line, and prettier re-wraps long lines -- the seam
+  // that has already shipped three broken sentences on this site (see
+  // rendered-text.spec.ts).
   howToWhat:
-    'Built for teachers, by Shyden. Splitting a class fairly takes time you do ' +
-    'not have, and doing it by hand invites an argument about favourites. This ' +
-    'does it in one press — free, with no sign-up, and with nothing about your ' +
-    'class ever leaving your browser.',
+    'Tell it how big your class is and how many students you want per group. It shuffles and deals everyone out, and no group ever ends up smaller than you asked for.',
   // Rewritten alongside `howToWhat` above: the old step 1 ("...or paste their
   // names, one per line") described the free-text names box removed when the
   // engine was rewritten to a numbered roster (see grouping.ts's

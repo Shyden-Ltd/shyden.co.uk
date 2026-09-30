@@ -741,22 +741,32 @@ const sexWhyText = sexWhy(roster, t);
           </div>
         </section>
       </div>
-
-      <p class="actions">
-        <button type="submit" id="cg-go">
-          {t.makeGroups}
-        </button>
-      </p>
-
-      <!-- Without this, a visitor whose browser is not running the script
-           presses the button and gets a page reload with nothing to show for
-           it — no result and no reason. Says so instead, in their language. -->
-      <noscript>
-        <p class="error" id="cg-noscript">
-          {t.needsJs}
-        </p>
-      </noscript>
     </form>
+
+    <!-- OUTSIDE the form, joined to it by `form="cg-form"` (#384). A sticky
+         element cannot rise above the top of its parent, and inside the form
+         that parent started below the fold on a 320x568 phone in four of the
+         five languages, so the bar could not reach it. Here the parent is the
+         whole page section, which starts at the top, so the same sticky rule
+         puts the button on the fold at every size and in every language.
+         Submitting is unchanged: the button's form owner is still #cg-form,
+         for a click, for Enter in a field (implicit submission finds it as
+         the form's default button) and for the script's
+         `form.requestSubmit(goButton)`. -->
+    <p class="actions">
+      <button type="submit" id="cg-go" form="cg-form">
+        {t.makeGroups}
+      </button>
+    </p>
+
+    <!-- Without this, a visitor whose browser is not running the script
+         presses the button and gets a page reload with nothing to show for
+         it — no result and no reason. Says so instead, in their language. -->
+    <noscript>
+      <p class="error" id="cg-noscript">
+        {t.needsJs}
+      </p>
+    </noscript>
 
     <!-- Stage 3, Task 8 (design spec section 5). The three avatar faces,
          defined ONCE, here, from `avatarDefs` above -- a sibling of
@@ -2839,9 +2849,11 @@ const sexWhyText = sexWhy(roster, t);
 
      `sticky`, not `fixed`, for the reason `.cg-io-both` states above for its
      own picker: in flow is free, and correct at every width. The row keeps
-     its place in the form, comes to rest at its natural position once the
-     end of the form scrolls into view, and needs nothing to reserve space
-     for it. `fixed` takes it out of flow and needs a matching
+     its place in flow, straight after the form, comes to rest at its natural
+     position once the end of the form scrolls into view, and needs nothing
+     to reserve space for it. Since #384 the row sits OUTSIDE the form (see
+     the markup's own comment): a sticky element cannot rise above its
+     parent's top, and the form's top was below the fold on a 320x568 phone. `fixed` takes it out of flow and needs a matching
      `padding-bottom` on the form -- which hides the last field the moment
      the two drift apart.
 

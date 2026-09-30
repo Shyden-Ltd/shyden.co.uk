@@ -18,12 +18,12 @@ export const vi: Catalogue = {
   description:
     'Chia lớp học của bạn thành các nhóm ngay lập tức — ngay trên trình duyệt, mà không cần gửi dữ liệu đi đâu cả.',
   heading: 'Trình tạo nhóm trong lớp học',
-  lead: 'Hãy cho chương trình biết lớp của bạn có bao nhiêu học sinh và bạn muốn mỗi nhóm có bao nhiêu học sinh. Chương trình sẽ xáo trộn danh sách và phân chia học sinh vào các nhóm, đồng thời đảm bảo không có nhóm nào có số lượng học sinh ít hơn số lượng bạn yêu cầu.',
+  lead: 'Được phát triển dành cho giáo viên, bởi Shyden. Việc chia lớp một cách công bằng tốn thời gian mà bạn không có, và nếu làm thủ công thì dễ dẫn đến tranh cãi về việc thiên vị. Công cụ này giúp bạn hoàn thành việc đó chỉ với một cú nhấp chuột — miễn phí, không cần đăng ký, và mọi thông tin về lớp học của bạn sẽ không bao giờ rời khỏi trình duyệt.',
   privacy:
     'Mọi thứ đều diễn ra ngay trong trình duyệt của bạn. Danh sách lớp học sẽ không bao giờ được chuyển ra khỏi trang này.',
   howToHeading: 'Cách sử dụng',
   howToWhat:
-    'Được phát triển dành cho giáo viên, bởi Shyden. Việc chia lớp một cách công bằng tốn thời gian mà bạn không có, và nếu làm thủ công thì dễ dẫn đến tranh cãi về việc thiên vị. Công cụ này giúp bạn hoàn thành việc đó chỉ với một cú nhấp chuột — miễn phí, không cần đăng ký, và mọi thông tin về lớp học của bạn sẽ không bao giờ rời khỏi trình duyệt.',
+    'Hãy cho chương trình biết lớp của bạn có bao nhiêu học sinh và bạn muốn mỗi nhóm có bao nhiêu học sinh. Chương trình sẽ xáo trộn danh sách và phân chia học sinh vào các nhóm, đồng thời đảm bảo không có nhóm nào có số lượng học sinh ít hơn số lượng bạn yêu cầu.',
   howToSteps: [
     'Hãy cho biết trong lớp bạn có bao nhiêu học sinh.',
     'Hãy chọn cách chia nhóm cho các em.',
