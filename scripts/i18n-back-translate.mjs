@@ -41,6 +41,7 @@ import {
   sendable,
 } from '../src/lib/i18n/back-translate.ts';
 import { call, readBack } from './back-translate-client.mjs';
+import { messageOf } from './errors.mjs';
 
 async function main() {
   // Everything it reads is an environment variable, so an argument is a
@@ -115,8 +116,6 @@ async function main() {
 
 if (import.meta.main)
   await main().catch((error) => {
-    console.error(
-      `✗ ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`✗ ${messageOf(error)}`);
     process.exitCode = 1;
   });
