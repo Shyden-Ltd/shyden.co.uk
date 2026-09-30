@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -10,9 +10,8 @@ import { scratchGit, withoutLocalGit } from '../git-env';
  * in a source tarball and in a container checkout.
  *
  * Its success line once named only the pre-push hook while `.githooks/`
- * installed `commit-msg` too, which is the closing-keyword refusal. The line
- * now names what the directory holds, so a hook added later is named the day
- * it lands.
+ * installed `commit-msg` too, which is the closing-keyword refusal. It now
+ * names the directory and no hook in it, so there is no list to fall behind.
  */
 
 const SCRIPT = path.resolve(
@@ -36,32 +35,18 @@ const install = () => {
 };
 
 describe('install-hooks', () => {
-  it('points git at .githooks and names every hook it holds', () => {
+  it('points git at .githooks, and names no hook it could leave out', () => {
     const git = scratchGit(dir);
     git(['init', '-q']);
-    mkdirSync(path.join(dir, '.githooks'));
-    for (const hook of ['pre-push', 'commit-msg', '.DS_Store'])
-      writeFileSync(path.join(dir, '.githooks', hook), '');
 
     const { code, out, err } = install();
 
     expect(err).toBe('');
     expect(out).toBe(
-      'install-hooks: git will run the hooks in .githooks/: commit-msg, ' +
-        'pre-push. Bypass one with --no-verify.\n',
+      'install-hooks: git will run the hooks in .githooks/. ' +
+        'Bypass one with --no-verify.\n',
     );
     expect(git(['config', 'core.hooksPath']).trim()).toBe('.githooks');
-    expect(code).toBe(0);
-  });
-
-  it('says so when .githooks holds no hook, rather than naming none', () => {
-    scratchGit(dir)(['init', '-q']);
-
-    const { code, out } = install();
-
-    expect(out).toBe(
-      'install-hooks: git will read hooks from .githooks/, which holds none.\n',
-    );
     expect(code).toBe(0);
   });
 

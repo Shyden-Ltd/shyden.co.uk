@@ -18,7 +18,7 @@
  * git and could exit the importing process.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { argv, exit } from 'node:process';
 import { die } from './errors.mjs';
 
@@ -77,19 +77,11 @@ export function main() {
     );
     exit(0);
   }
-  // Named from the directory, not from a list here: a list named only the
-  // pre-push hook for as long as commit-msg (the closing-keyword refusal)
-  // was installed beside it.
-  const hooks = existsSync(HOOKS)
-    ? readdirSync(HOOKS)
-        .filter((name) => !name.startsWith('.'))
-        .sort()
-    : [];
+  // No list of hook names: one named only the pre-push hook for as long as
+  // commit-msg (the closing-keyword refusal) was installed beside it.
   console.log(
-    hooks.length > 0
-      ? `install-hooks: git will run the hooks in ${HOOKS}/: ` +
-          `${hooks.join(', ')}. Bypass one with --no-verify.`
-      : `install-hooks: git will read hooks from ${HOOKS}/, which holds none.`,
+    `install-hooks: git will run the hooks in ${HOOKS}/. ` +
+      'Bypass one with --no-verify.',
   );
 }
 
