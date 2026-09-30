@@ -180,11 +180,11 @@ export const UPLOAD_BATCH = 25;
  */
 export const pendingUploads = ({ plan, stored }) => {
   const held = new Set(stored.map((asset) => asset.sha256));
-  // Once each: a path two keys name, and a recording byte-identical to one
-  // already pending, would be sent again for an asset the map already has.
+  // Once each: a path two keys name, or a recording byte-identical to one
+  // already pending, has the digest of the first, so it is not sent again.
   /** @type {string[]} */
   const pending = [];
-  for (const abs of new Set(Object.values(plan))) {
+  for (const abs of Object.values(plan)) {
     const digest = sha256Of(abs);
     if (held.has(digest)) continue;
     held.add(digest);
