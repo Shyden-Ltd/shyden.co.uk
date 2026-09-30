@@ -30,22 +30,22 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 21 | src | M | `src/lib/fit.ts` | +57/-0 | diff read (fontThatFits, 57 lines) | floor for unmeasured room pinned exactly (the old test asserted only finite and positive) | 8 run: 5 RED, FT1 FT2 FT8 equivalent |
 | 22 | src | M | `src/lib/gloryPoints.ts` | +10/-7 | diff read (rename + locale metadata) | none | 2 run: 2 RED |
 | 23 | src | M | `src/lib/grouping.ts` | +17/-2 | diff read (anonymousStudent exported) | none | 1 run: 1 RED |
-| 24 | src | A | `src/lib/i18n/.translations.json` | +830/-0 | — |  |  |
+| 24 | src | A | `src/lib/i18n/.translations.json` | +830/-0 | — | drafts held the wrong senses too (id "sisa makanan", "dibagi" beside a hand-corrected catalogue): corrected with every catalogue fix, so a re-seed cannot restore them |  |
 | 25 | src | A | `src/lib/i18n/back-translate.ts` | +538/-0 | — |  |  |
 | 26 | src | M | `src/lib/i18n/en.ts` | +359/-166 | — |  |  |
-| 27 | src | A | `src/lib/i18n/feature-terms.ts` | +97/-0 | — | F11 guard: `mix` and `leftovers` added, held to their controls' words (glossary awaits the operator's read) | FTa-FTf: 6/6 RED |
+| 27 | src | A | `src/lib/i18n/feature-terms.ts` | +97/-0 | — | F11/F18/F20 guards: mix, leftovers, sound, classList, gloryPoints, bean, coin added from their controls' words (glossary awaits the operator's read) | FTa-FTh, GLc GLd: RED |
 | 28 | src | A | `src/lib/i18n/flags.ts` | +115/-0 | — |  |  |
 | 29 | src | M | `src/lib/i18n/id.ts` | +152/-132 | — |  |  |
 | 30 | src | M | `src/lib/i18n/index.ts` | +252/-53 | — |  |  |
-| 31 | src | A | `src/lib/i18n/label-check.ts` | +167/-0 | — |  |  |
+| 31 | src | A | `src/lib/i18n/label-check.ts` | +167/-0 | read in full; checkNamedLabels added | F17 guard: checkLabels' any-witness rule hid 23 sentences naming a label in other words | NLa-NLg: 6 RED, NLf GREEN (fixture carried the first rendering): fixed, NLfb RED |
 | 32 | src | A | `src/lib/i18n/locales.ts` | +22/-0 | — |  |  |
 | 33 | src | A | `src/lib/i18n/message.ts` | +431/-0 | — |  |  |
 | 34 | src | A | `src/lib/i18n/metadata.ts` | +116/-0 | — |  |  |
-| 35 | src | M | `src/lib/i18n/site.ts` | +461/-61 | — |  |  |
-| 36 | src | A | `src/lib/i18n/th.ts` | +278/-0 | — | F11: stateMixed read "divided by sex" and equalled stateSeparated, stateBunched named leftover food: fixed; classLabel/csvWrongLanguage loanword คลาส aligned to ชั้นเรียน (row not yet read in full) |  |
-| 37 | src | A | `src/lib/i18n/translate.ts` | +598/-0 | — |  |  |
-| 38 | src | A | `src/lib/i18n/vi.ts` | +286/-0 | — | F11: stateMixed read "classified by sex", stateBunched/staleLeftovers named leftover food: fixed (row not yet read in full) |  |
-| 39 | src | A | `src/lib/i18n/zh.ts` | +258/-0 | — | F11: stateMixed read "sorted by sex", stateBunched/staleLeftovers named leftover food: fixed (row not yet read in full) |  |
+| 35 | src | M | `src/lib/i18n/site.ts` | +461/-61 | translated units read (home, glory, report, nav, 404) | F20: zh/vi/th Glory result line was English's own function: each now its own. Glory currency names inconsistent in all three: operator decision 2026-09-30 (English app names, coin translated), applied; th glory lead named its input differently (F17) | GLa GLb GLc GLd: RED |
+| 36 | src | A | `src/lib/i18n/th.ts` | +278/-0 | every translated unit read beside en | F11 (stateMixed equal to stateSeparated). F12 class loanword. F17: 7 sentences named Student details unlike its heading, 2 named Shuffle again unlike its button. F18: Sound off = express an opinion, Export groups a noun, Group results = company earnings, university students, "pieces", printed-from. F19: สาวๆ, เปลี่ยนมัน. All fixed | FTb NLb GLd: RED |
+| 37 | src | A | `src/lib/i18n/translate.ts` | +598/-0 | — | escapeForRegExp exported for label-check rather than a third copy (#390); file not yet read in full |  |
+| 38 | src | A | `src/lib/i18n/vi.ts` | +286/-0 | every translated unit read beside en | F11 state labels. F17: 4 sentences named Student details unlike the pinned heading. F18: Sound off = speak up, nhập khẩu/xuất khẩu (trade), Export groups a noun, list of classes x2, printed-at, number-blank lost "number". F19: hoạt hình, a capitalised state, Hàng/Dòng, slot order. All fixed | FTc FTg GLc: RED |
+| 39 | src | A | `src/lib/i18n/zh.ts` | +258/-0 | every translated unit read beside en (265 keys across zh/vi/th) | F11 state labels (mixed = sorted by sex, leftover food). F17: 7 sentences named Student details unlike its heading, 2 named Shuffle again unlike its button. F18: Sound off = speak freely, 进出口 (trade), list "now open to the public", list "still in that tab", course list x3, 分班/座位, printed-from. F19: 群组, 男孩/女孩, 已恢复, 保留我所拥有的. All fixed | FTa FTf NLa FTh and seeded regressions: RED |
 | 40 | src | A | `src/lib/is-record.ts` | +11/-0 | read in full | none | 2 run: 2 RED |
 | 41 | src | A | `src/lib/numberSets.ts` | +217/-0 | read in full (217 lines) | NS14 NS16 NS20 NS21 untested (NS16: apart typed alone would reach the engine as the bare count): tests added | 21 run: 17 RED + 4 re-run RED |
 | 42 | src | A | `src/lib/report-review.ts` | +254/-0 | read in full (254 lines) | RR12 RR18 RR21 RR22 untested: tests added. Error paths print id/locale/keys unescaped: trusted, since only the endpoint writes rows | 22 run: 17 RED + RR11 control + 4 re-run RED |
