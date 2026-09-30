@@ -981,6 +981,35 @@ test.describe("the tool's collapsible sections", () => {
     );
   });
 
+  // #390. The form's change handler refreshed the header only for
+  // `name="leftovers"`, and the sex switches carry no name. So ticking
+  // "Mix boys and girls evenly" left the header reading "none" until a
+  // leftovers radio moved, in every locale. It is checked both ways here,
+  // and also after a roster edit disables the switches: a new student has no
+  // sex yet, `readSexMode` then ignores the ticked box, and the header must
+  // drop it too.
+  test('the grouping header follows the sex switches, live', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['F', 'Ana'],
+      ['M', 'Budi'],
+    ]);
+    await page.locator('#cg-grouping-toggle').click();
+    const header = page.locator('#cg-grouping-toggle');
+    await page.check('#cg-sex-mix');
+    await expect(header).toHaveText('Grouping options · mixed by sex');
+    await page.check('#cg-sex-separate');
+    await expect(header).toHaveText('Grouping options · separated by sex');
+    await page
+      .getByRole('button', { name: '+ Add student', exact: true })
+      .click();
+    await expect(page.locator('.cg-student')).toHaveCount(3);
+    await expect(page.locator('#cg-sex-separate')).toBeChecked();
+    await expect(page.locator('#cg-sex-separate')).toBeDisabled();
+    await expect(header).toHaveText('Grouping options · none');
+  });
+
   // Student details no longer shares a row: it holds a seven-column table and
   // now spans the full width on a laptop. This test used to pair it with
   // Grouping options and reddened when that changed — correctly. Squeezed into
