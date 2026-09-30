@@ -86,6 +86,31 @@ describe('databaseIdFrom', () => {
     expect(() => databaseIdFrom(list)).toThrow(/has no uuid/);
   });
 
+  it.each([`../${PROD_ID}`, `${PROD_ID}/../x`, ` ${PROD_ID}`])(
+    'throws on a UUID with anything around it: %j',
+    (uuid) => {
+      // A real UUID inside the value is not the value being one: the check
+      // is anchored at both ends, or a path could ride in beside it (#390).
+      const list = listing([{ uuid, name: 'shyden-reports' }]);
+      expect(() => databaseIdFrom(list)).toThrow(/has no uuid/);
+    },
+  );
+
+  it.each([
+    ['missing', undefined],
+    ['the string "true"', 'true'],
+    ['1', 1],
+  ])('throws when success is %s, since only true is success', (_, success) => {
+    const list = {
+      ...listing([{ uuid: PROD_ID, name: 'shyden-reports' }]),
+      success,
+    };
+    expect(() => databaseIdFrom(list)).toThrow(/database list says success: /);
+    expect(() => countFrom({ ...counted(3), success })).toThrow(
+      /query says success: /,
+    );
+  });
+
   it('throws on success: false, naming Cloudflare errors', () => {
     const list = {
       success: false,
