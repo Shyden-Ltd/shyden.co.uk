@@ -564,7 +564,15 @@ describe('the Pages Functions are plumbing only', () => {
         `import \\{ ${handler} \\} from '\\.\\./\\.\\./\\.\\./src/lib/report'`,
       ),
     );
-    expect(code).toMatch(/^export const onRequest/m);
+    // The title promises the hand-off, so the export's whole body is
+    // pinned: an `onRequest` that imported the handler and answered
+    // anything else passed the bare `export const onRequest` match (#390).
+    expect(code).toMatch(
+      new RegExp(
+        `^export const onRequest = \\(\\{ request, env \\}\\) =>\\s+${handler}\\(request, env\\);$`,
+        'm',
+      ),
+    );
   });
 });
 
