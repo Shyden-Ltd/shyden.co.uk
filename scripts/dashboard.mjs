@@ -69,8 +69,11 @@ const POLL_MS = 250;
 // costs nothing (tests/unit/dashboard-paths.test.ts). That file's comment on
 // DASHBOARD_STATE_DIR says why the live files cannot sit under test-results/.
 const JSONL_FILE = DASHBOARD_FILES.jsonl;
-/** @typedef {keyof typeof JSONL_FILE} GroupName */
-/** The groups in page order, one per live file the harness writes. */
+/**
+ * The groups in page order, one per live file the harness writes.
+ *
+ * @typedef {keyof typeof JSONL_FILE} GroupName
+ */
 const GROUP_NAMES = /** @type {GroupName[]} */ (Object.keys(JSONL_FILE));
 const GROUPS_FILE = DASHBOARD_FILES.groups;
 const FINAL_FILE = DASHBOARD_FILES.final;

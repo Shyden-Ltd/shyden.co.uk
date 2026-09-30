@@ -6,6 +6,7 @@ import {
   IOS_MODE_FILE,
   REPORT_DIR,
 } from '../../scripts/test-devices.mjs';
+import { searched } from '../source-files';
 import { withoutTsComments } from './source-text';
 
 /**
@@ -46,7 +47,12 @@ describe('the dashboard reads the paths the device harness writes', () => {
     // Liveness: a needle the harness does not spell either proves nothing
     // by being absent from the dashboard.
     expect(spelledIn(harness)).toEqual(NEEDLES.map(String));
-    expect(spelledIn(dashboard)).toEqual([]);
+    expect(
+      searched(spelledIn(dashboard), {
+        of: NEEDLES.map(String),
+        what: 'shared path literals',
+      }),
+    ).toEqual([]);
   });
 
   it('exports every file the dashboard reads, under the repository root', () => {
