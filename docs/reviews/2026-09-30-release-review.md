@@ -24,7 +24,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 15 | src | M | `src/components/pages/HomePage.astro` | +175/-36 | — |  |  |
 | 16 | src | A | `src/env.d.ts` | +15/-0 | — |  |  |
 | 17 | src | M | `src/layouts/BaseLayout.astro` | +35/-13 | — |  |  |
-| 18 | src | A | `src/lib/catalogue-leaves.ts` | +39/-0 | — |  |  |
+| 18 | src | A | `src/lib/catalogue-leaves.ts` | +39/-0 | read in full | none | 4 run: 4 RED |
 | 19 | src | M | `src/lib/csv-locale.ts` | +125/-11 | — |  |  |
 | 20 | src | M | `src/lib/csv.ts` | +59/-26 | — |  |  |
 | 21 | src | M | `src/lib/fit.ts` | +57/-0 | — |  |  |
@@ -46,9 +46,9 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 37 | src | A | `src/lib/i18n/translate.ts` | +598/-0 | — |  |  |
 | 38 | src | A | `src/lib/i18n/vi.ts` | +286/-0 | — |  |  |
 | 39 | src | A | `src/lib/i18n/zh.ts` | +258/-0 | — |  |  |
-| 40 | src | A | `src/lib/is-record.ts` | +11/-0 | — |  |  |
-| 41 | src | A | `src/lib/numberSets.ts` | +217/-0 | — |  |  |
-| 42 | src | A | `src/lib/report-review.ts` | +254/-0 | — |  |  |
+| 40 | src | A | `src/lib/is-record.ts` | +11/-0 | read in full | none | 2 run: 2 RED |
+| 41 | src | A | `src/lib/numberSets.ts` | +217/-0 | read in full (217 lines) | NS14 NS16 NS20 NS21 untested (NS16: apart typed alone would reach the engine as the bare count): tests added | 21 run: 17 RED + 4 re-run RED |
+| 42 | src | A | `src/lib/report-review.ts` | +254/-0 | read in full (254 lines) | RR12 RR18 RR21 RR22 untested: tests added. Error paths print id/locale/keys unescaped: trusted, since only the endpoint writes rows | 22 run: 17 RED + RR11 control + 4 re-run RED |
 | 43 | src | A | `src/lib/report.ts` | +573/-0 | read in full (574 lines) | 8 behaviours no test observed (R1 R5 R8 R10 R22 R33 R49 R53): tests added in the review branch. WAF rate-limit rule (spec 9.3) is operator dashboard config, not proven here | 62 run: 49 RED unit + R25/R54 RED in tests/functions; R15 R31 R44 equivalent (explained in the commit); R53 re-run as R53b RED |
 | 44 | src | M | `src/lib/roster.ts` | +37/-10 | — |  |  |
 | 45 | src | M | `src/lib/sections.ts` | +5/-5 | — |  |  |
@@ -95,7 +95,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 86 | scripts | A | `scripts/install-hooks.mjs` | +86/-0 | — |  |  |
 | 87 | scripts | A | `scripts/release-inventory.mjs` | +299/-0 | — |  |  |
 | 88 | scripts | A | `scripts/release-map.mjs` | +165/-0 | — |  |  |
-| 89 | scripts | A | `scripts/reports-review.mjs` | +132/-0 | — |  |  |
+| 89 | scripts | A | `scripts/reports-review.mjs` | +132/-0 | read in full (132 lines) | none | 5 run: 5 RED |
 | 90 | scripts | A | `scripts/signoff-status.mjs` | +113/-0 | — |  |  |
 | 91 | scripts | M | `scripts/test-devices.mjs` | +238/-69 | — |  |  |
 | 92 | scripts | A | `scripts/test-e2e.mjs` | +842/-0 | — |  |  |
