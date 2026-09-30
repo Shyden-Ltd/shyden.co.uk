@@ -12,6 +12,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { parseArgs } from 'node:util';
 import { die, messageOf } from './errors.mjs';
 
 /** Where the artifact serves a stored asset, in every view (#268). */
@@ -25,6 +26,34 @@ const BLOB_PREFIX = '/_blob/';
  */
 const sha256Of = (abs) =>
   createHash('sha256').update(readFileSync(abs)).digest('hex');
+
+/**
+ * The plan as JSON gives it: every journey key against the recording it
+ * uploads. Checked before anything reads it, because an empty plan writes an
+ * empty map, and a page built from that reads as a run that recorded nothing.
+ *
+ * @param {unknown} value
+ * @returns {Record<string, string>}
+ */
+export const planOf = (value) => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error(
+      'upload-evidence-assets: the plan is not an object of journey keys to recording paths',
+    );
+  const entries = Object.entries(value);
+  if (entries.length === 0)
+    throw new Error(
+      'upload-evidence-assets: the plan names no recording, so there is nothing to upload or pair',
+    );
+  const pathless = entries
+    .filter(([, path]) => typeof path !== 'string' || path === '')
+    .map(([key]) => key);
+  if (pathless.length)
+    throw new Error(
+      `upload-evidence-assets: ${pathless.length} plan key(s) with no recording path: ${pathless.join(', ')}`,
+    );
+  return /** @type {Record<string, string>} */ (value);
+};
 
 /** The count the listing states for itself, which every asset line is checked against. */
 const DECLARED_FILES = /^Assets of \S+: (\d+) files,/m;
@@ -151,23 +180,26 @@ export const UPLOAD_BATCH = 25;
  */
 export const pendingUploads = ({ plan, stored }) => {
   const held = new Set(stored.map((asset) => asset.sha256));
-  const pending = Object.values(plan).filter((abs) => !held.has(sha256Of(abs)));
+  // Once each: a path two keys name, and a recording byte-identical to one
+  // already pending, would be sent again for an asset the map already has.
+  /** @type {string[]} */
+  const pending = [];
+  for (const abs of new Set(Object.values(plan))) {
+    const digest = sha256Of(abs);
+    if (held.has(digest)) continue;
+    held.add(digest);
+    pending.push(abs);
+  }
   const batches = [];
   for (let at = 0; at < pending.length; at += UPLOAD_BATCH)
     batches.push(pending.slice(at, at + UPLOAD_BATCH));
   return batches;
 };
 
-/**
- * A named argument's value, or undefined.
- *
- * @param {string} name
- * @returns {string | undefined}
- */
-const arg = (name) => {
-  const at = process.argv.indexOf(`--${name}`);
-  return at === -1 ? undefined : process.argv[at + 1];
-};
+const USAGE =
+  'usage: upload-evidence-assets.mjs --plan <file.uploads.json> --listing <listing.txt> [--out <assets.json>]\n' +
+  '       without --out it prints the batches still to upload; with it, ' +
+  'it writes the map the page is built from.';
 
 /**
  * EVERY EFFECT IS IN HERE, reached only under `import.meta.main` (#276), so
@@ -181,15 +213,26 @@ const arg = (name) => {
  * @returns {void}
  */
 const main = () => {
-  const planPath = arg('plan');
-  const listingPath = arg('listing');
-  const out = arg('out');
+  // Parsed strictly: a mistyped `--outt` read by hand was ignored, and the
+  // run printed batches instead of writing the map it was asked for.
+  /** @type {{ plan?: string, listing?: string, out?: string }} */
+  let values;
+  try {
+    ({ values } = parseArgs({
+      options: {
+        plan: { type: 'string' },
+        listing: { type: 'string' },
+        out: { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    console.error(`upload-evidence-assets: ${messageOf(error)}`);
+    console.error(USAGE);
+    process.exit(2);
+  }
+  const { plan: planPath, listing: listingPath, out } = values;
   if (!planPath || !listingPath) {
-    console.error(
-      'usage: upload-evidence-assets.mjs --plan <file.uploads.json> --listing <listing.txt> [--out <assets.json>]\n' +
-        '       without --out it prints the batches still to upload; with it, ' +
-        'it writes the map the page is built from.',
-    );
+    console.error(USAGE);
     process.exit(2);
   }
   try {
@@ -209,7 +252,7 @@ const main = () => {
  * @returns {void}
  */
 const run = ({ planPath, listingPath, out }) => {
-  const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+  const plan = planOf(JSON.parse(readFileSync(planPath, 'utf8')));
   const stored = parseAssetListing(readFileSync(listingPath, 'utf8'));
   if (!out) {
     const batches = pendingUploads({ plan, stored });
