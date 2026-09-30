@@ -27,9 +27,9 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 18 | src | A | `src/lib/catalogue-leaves.ts` | +39/-0 | read in full | none | 4 run: 4 RED |
 | 19 | src | M | `src/lib/csv-locale.ts` | +125/-11 | — |  |  |
 | 20 | src | M | `src/lib/csv.ts` | +59/-26 | — |  |  |
-| 21 | src | M | `src/lib/fit.ts` | +57/-0 | — |  |  |
-| 22 | src | M | `src/lib/gloryPoints.ts` | +10/-7 | — |  |  |
-| 23 | src | M | `src/lib/grouping.ts` | +17/-2 | — |  |  |
+| 21 | src | M | `src/lib/fit.ts` | +57/-0 | diff read (fontThatFits, 57 lines) | floor for unmeasured room pinned exactly (the old test asserted only finite and positive) | 8 run: 5 RED, FT1 FT2 FT8 equivalent |
+| 22 | src | M | `src/lib/gloryPoints.ts` | +10/-7 | diff read (rename + locale metadata) | none | 2 run: 2 RED |
+| 23 | src | M | `src/lib/grouping.ts` | +17/-2 | diff read (anonymousStudent exported) | none | 1 run: 1 RED |
 | 24 | src | A | `src/lib/i18n/.translations.json` | +830/-0 | — |  |  |
 | 25 | src | A | `src/lib/i18n/back-translate.ts` | +538/-0 | — |  |  |
 | 26 | src | M | `src/lib/i18n/en.ts` | +359/-166 | — |  |  |
@@ -50,9 +50,9 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 41 | src | A | `src/lib/numberSets.ts` | +217/-0 | read in full (217 lines) | NS14 NS16 NS20 NS21 untested (NS16: apart typed alone would reach the engine as the bare count): tests added | 21 run: 17 RED + 4 re-run RED |
 | 42 | src | A | `src/lib/report-review.ts` | +254/-0 | read in full (254 lines) | RR12 RR18 RR21 RR22 untested: tests added. Error paths print id/locale/keys unescaped: trusted, since only the endpoint writes rows | 22 run: 17 RED + RR11 control + 4 re-run RED |
 | 43 | src | A | `src/lib/report.ts` | +573/-0 | read in full (574 lines) | 8 behaviours no test observed (R1 R5 R8 R10 R22 R33 R49 R53): tests added in the review branch. WAF rate-limit rule (spec 9.3) is operator dashboard config, not proven here | 62 run: 49 RED unit + R25/R54 RED in tests/functions; R15 R31 R44 equivalent (explained in the commit); R53 re-run as R53b RED |
-| 44 | src | M | `src/lib/roster.ts` | +37/-10 | — |  |  |
-| 45 | src | M | `src/lib/sections.ts` | +5/-5 | — |  |  |
-| 46 | src | M | `src/lib/sexOptions.ts` | +4/-2 | — |  |  |
+| 44 | src | M | `src/lib/roster.ts` | +37/-10 | diff read (LETTERS, message arguments) | none; RO1 equivalent (slice already caps) | 6 run: 5 RED, RO1 equivalent |
+| 45 | src | M | `src/lib/sections.ts` | +5/-5 | diff read (message arguments) | none | 2 run: 2 RED |
+| 46 | src | M | `src/lib/sexOptions.ts` | +4/-2 | diff read (message arguments) | none | 2 run: 2 RED |
 | 47 | src | A | `src/lib/shytalk-brand.ts` | +54/-0 | — |  |  |
 | 48 | src | A | `src/lib/shytalk-showcase.ts` | +40/-0 | — |  |  |
 | 49 | src | A | `src/lib/waiting-reports.ts` | +152/-0 | read in full (152 lines) | W4, W19 untested: tests added (an unanchored UUID could carry a path) | 22 run: 19 RED + W4b/W19b RED; W6 equivalent |
