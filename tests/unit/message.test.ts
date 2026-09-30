@@ -242,6 +242,11 @@ describe('malformed templates fail loudly, never render half a sentence', () => 
       'expected "," after plural (at 11 ',
     ],
     [
+      'a plural that never closes after its last branch',
+      '{n, plural, other {x}',
+      'unterminated slot (at 0 ',
+    ],
+    [
       'a branch that never closes',
       '{n, plural, other {x',
       'branch "other" is unterminated (at 12 ',
