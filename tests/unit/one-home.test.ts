@@ -495,6 +495,14 @@ describe("reading a caught value's message has exactly one home", () => {
     ).toBe(false);
   });
 
+  it('is not fired by reading the message of something else', () => {
+    expect(
+      readsACaughtMessage(
+        'const s = error instanceof Error ? fallback.message : "";',
+      ),
+    ).toBe(false);
+  });
+
   it('is not fired by reading another property', () => {
     expect(
       readsACaughtMessage(
