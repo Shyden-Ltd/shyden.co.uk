@@ -54,11 +54,28 @@ export const EVIDENCE_MANIFEST = 'manifest.jsonl';
  * Twice now the shots have spent a budget the videos needed, so the real fix is
  * #158: publish captures as supporting files, and stop making scope and video
  * compete for one page.
+ *
+ * An override outside 1 to 100, or not a whole number, is refused rather than
+ * replaced with 90: a capture at a quality nobody asked for is a run nobody
+ * asked for, and nothing would say so.
+ *
+ * @returns {number}
  */
-export const EVIDENCE_JPEG_QUALITY = (() => {
-  const asked = Number(process.env.EVIDENCE_JPEG_QUALITY);
-  return Number.isFinite(asked) && asked >= 1 && asked <= 100 ? asked : 90;
-})();
+export const jpegQuality = (/** @type {string | undefined} */ asked) => {
+  if (asked === undefined || asked === '') return 90;
+  const quality = Number(asked);
+  if (!Number.isInteger(quality) || quality < 1 || quality > 100)
+    throw new Error(
+      `EVIDENCE_JPEG_QUALITY=${asked} is not a JPEG quality: ` +
+        'expected a whole number from 1 to 100',
+    );
+  return quality;
+};
+
+/** The quality this run captures at: `jpegQuality` of the environment. */
+export const EVIDENCE_JPEG_QUALITY = jpegQuality(
+  process.env.EVIDENCE_JPEG_QUALITY,
+);
 
 /**
  * Filesystem-safe, still readable in a directory listing.
