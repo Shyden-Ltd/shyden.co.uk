@@ -99,7 +99,7 @@ test.describe('language switcher', () => {
     },
   );
 
-  test('lists every language: the current one first and ticked, every other a link', async ({
+  test('lists every language in one fixed order, the current one ticked in place, every other a link', async ({
     page,
   }) => {
     for (const locale of LOCALES) {
@@ -112,9 +112,17 @@ test.describe('language switcher', () => {
       const items = page.locator(`${SWITCHER} li`);
       await expect(items).toHaveCount(LOCALES.length);
 
-      // The current language, with its full name: at narrow widths the
-      // summary shows only a code, so this is where the name is (#329).
-      const current = items.first();
+      // ONE order on every page, LOCALES order (operator, 2026-09-30, #385).
+      // The list used to put the language being read first, so it reordered
+      // itself on every language and nothing sat where the eye last left it.
+      await expect(items.locator('.name')).toHaveText(
+        LOCALES.map((l) => LOCALE_METADATA[l].nativeName),
+      );
+
+      // The current language, with its full name, ticked IN ITS OWN PLACE:
+      // at narrow widths the summary shows only a code, so this is where the
+      // name is (#329).
+      const current = items.nth(LOCALES.indexOf(locale));
       await expect(current).toHaveAttribute('aria-current', 'true');
       await expect(current.locator('.name')).toBeVisible();
       await expect(current.locator('.name')).toHaveText(
@@ -141,7 +149,7 @@ test.describe('language switcher', () => {
       }
       await shoot(
         page,
-        `${locale}: every language listed, ${LOCALE_METADATA[locale].nativeName} first and ticked`,
+        `${locale}: every language listed in one order, ${LOCALE_METADATA[locale].nativeName} ticked in place`,
         page.locator(`${SWITCHER} ul`),
       );
     }

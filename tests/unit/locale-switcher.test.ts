@@ -74,14 +74,17 @@ describe('the language switcher labels every alternative (tripwire 1, retired)',
     ).toBe(false);
   });
 
-  it('derives its entries from otherLocales, not from a fixed pair', () => {
+  it('derives its entries from LOCALES, not from a fixed pair', () => {
     const src = source(SWITCHER);
     // Anchored to the CALL and to a property READ, not to the words: an
     // import left behind after the derivation was replaced would satisfy a
-    // bare `toContain` even on stripped source (#98 AC 3).
+    // bare `toContain` even on stripped source (#98 AC 3). Every locale, in
+    // LOCALES order, since #385: it was `otherLocales(lang)` after the current
+    // one, which reordered the list on every language.
+    // language-switcher.spec.ts pins the rendered order itself.
     expect(
-      /\botherLocales\s*\(/.test(src),
-      'the switcher names otherLocales but never calls it',
+      /\bLOCALES\s*\.\s*map\s*\(/.test(src),
+      'the switcher names LOCALES but never maps over it',
     ).toBe(true);
     expect(
       /\.\s*nativeName\b/.test(src),
