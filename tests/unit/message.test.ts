@@ -57,7 +57,9 @@ describe('formatMessage: slots', () => {
   });
 
   it('refuses to render a slot it was given no value for, naming it', () => {
-    expect(() => formatMessage('Hello {name}', {}, 'en-GB')).toThrow(/name/);
+    expect(() => formatMessage('Hello {name}', {}, 'en-GB')).toThrow(
+      'no value was given for {name}',
+    );
   });
 });
 
@@ -154,7 +156,7 @@ describe('formatMessage: plurals', () => {
 
   it('refuses a plural over a value that is not a count', () => {
     expect(() => formatMessage(students, { count: 'many' }, 'en-GB')).toThrow(
-      /count/,
+      '{count} is a plural, so it takes a number or a list, not "many"',
     );
   });
 });
@@ -186,25 +188,101 @@ describe('formatMessage: select', () => {
 });
 
 describe('malformed templates fail loudly, never render half a sentence', () => {
+  // Each case pins its REASON and position, not just the error class: every
+  // check throws the same class, so a table asserting only the class stayed
+  // green when a check was deleted and the case fell through to the next
+  // check that happened to refuse it (#390, MS5 MS6 MS8 MS11).
   it.each([
-    ['an unterminated slot', 'Hello {name'],
-    ['a stray closing brace', 'Hello name}'],
-    ['an empty slot', 'Hello {}'],
-    ['a slot name that is not an identifier', 'Hello {1st}'],
-    ['a format this subset does not implement', 'The most is {n, number}'],
-    ['a plural without other', '{n, plural, one {x}}'],
-    ['a select without other', '{s, select, M {x}}'],
+    ['an unterminated slot', 'Hello {name', 'unterminated slot (at 6 '],
+    ['a stray closing brace', 'Hello name}', 'unmatched "}" (at 10 '],
+    ['an empty slot', 'Hello {}', 'expected a slot name (at 7 '],
+    [
+      'a slot name that is not an identifier',
+      'Hello {1st}',
+      'expected a slot name (at 7 ',
+    ],
+    [
+      'a format this subset does not implement',
+      'The most is {n, number}',
+      'unsupported format "number" (at 22 ',
+    ],
+    [
+      'a plural without other',
+      '{n, plural, one {x}}',
+      'plural needs an "other" branch (at 0 ',
+    ],
+    [
+      'a select without other',
+      '{s, select, M {x}}',
+      'select needs an "other" branch (at 0 ',
+    ],
     [
       'a plural key that is no CLDR category',
       '{n, plural, single {x} other {y}}',
+      '"single" is not a CLDR plural category (at 12 ',
     ],
-    ['a branch key given twice', '{n, plural, one {x} one {y} other {z}}'],
-    ['a branch key with no body', '{n, plural, one other {y}}'],
-    ['a plural with no branches at all', '{n, plural, }'],
-  ])('%s', (_, template) => {
+    [
+      'a branch key given twice',
+      '{n, plural, one {x} one {y} other {z}}',
+      'branch "one" is given twice (at 20 ',
+    ],
+    [
+      'a branch key with no body',
+      '{n, plural, one other {y}}',
+      'branch "one" has no body (at 12 ',
+    ],
+    [
+      'a plural with no branches at all',
+      '{n, plural, }',
+      'plural needs an "other" branch (at 0 ',
+    ],
+    [
+      'a plural with no comma before its branches',
+      '{n, plural other {x}}',
+      'expected "," after plural (at 11 ',
+    ],
+    [
+      'a branch that never closes',
+      '{n, plural, other {x',
+      'branch "other" is unterminated (at 12 ',
+    ],
+  ])('%s', (_, template, reason) => {
+    const run = () =>
+      formatMessage(template, { name: 'x', n: 1, s: 'M' }, 'en-GB');
+    expect(run).toThrow(MessageSyntaxError);
+    expect(run).toThrow(`${reason}in ${JSON.stringify(template)})`);
+  });
+});
+
+describe('what the parser accepts at its edges', () => {
+  it('reads a slot name with spaces inside the braces', () => {
+    expect(formatMessage('Group { n }', { n: 3 }, 'en-GB')).toBe('Group 3');
+  });
+
+  it('keeps # literal directly inside a select branch, which is not a count', () => {
+    expect(
+      formatMessage('{s, select, other {Row #}}', { s: 'M' }, 'en-GB'),
+    ).toBe('Row #');
+  });
+
+  it.each([
+    ['7', 'Year 7'],
+    ['year-8', 'Year 8'],
+    ['9', 'another year'],
+  ])('a select key may be a number or hyphenated: %s', (s, expected) => {
+    expect(
+      formatMessage(
+        '{s, select, 7 {Year 7} year-8 {Year 8} other {another year}}',
+        { s },
+        'en-GB',
+      ),
+    ).toBe(expected);
+  });
+
+  it('refuses a list given to a select, which names one value', () => {
     expect(() =>
-      formatMessage(template, { name: 'x', n: 1, s: 'M' }, 'en-GB'),
-    ).toThrow(MessageSyntaxError);
+      formatMessage('{s, select, other {x}}', { s: ['M', 'F'] }, 'en-GB'),
+    ).toThrow('{s} is a select, so it takes one value, not a list');
   });
 });
 
