@@ -205,6 +205,38 @@ export function protectTerms(
 export const unprotectTerms = (text: string): string =>
   text.replace(new RegExp(`</?${PROTECT_TAG}>`, 'g'), '');
 
+/**
+ * The drafts in a DeepL answer, checked rather than trusted, then unwrapped.
+ *
+ * The script pairs each draft with the sentence sent in the same position, so
+ * an answer one short would put every later draft on the wrong English, and
+ * each would still read as a good sentence. So the count must equal the texts
+ * sent, and every entry must carry a string. The errors name the shape, never
+ * the content: the script reports a failed request by its status alone,
+ * because a DeepL answer can echo the request.
+ */
+export function deeplDrafts(response: unknown, expected: number): string[] {
+  const translations =
+    response && typeof response === 'object' && 'translations' in response
+      ? response.translations
+      : undefined;
+  if (!Array.isArray(translations))
+    throw new Error('DeepL answered without a list of translations');
+  if (translations.length !== expected)
+    throw new Error(
+      `DeepL returned ${translations.length} translations for ${expected} texts`,
+    );
+  return translations.map((entry: unknown, index) => {
+    const text =
+      entry && typeof entry === 'object' && 'text' in entry
+        ? entry.text
+        : undefined;
+    if (typeof text !== 'string')
+      throw new Error(`translation ${index} has no text`);
+    return unescapeXml(unprotectTerms(text));
+  });
+}
+
 /** A slot in a sentence: `{names}`, `{n}`. */
 const SLOT = /\{[A-Za-z_][A-Za-z0-9_]*\}/g;
 
@@ -264,28 +296,6 @@ const HAS_A_LETTER = /\p{L}/u;
  */
 export const needsTranslation = (value: unknown): value is string =>
   typeof value === 'string' && HAS_A_LETTER.test(value);
-
-/**
- * Every key the harness cannot do itself, as a dotted path.
- *
- * The point of the report: a machine-translated catalogue that silently
- * carries copy nobody translated looks complete. This names those keys, so
- * the gap is a list somebody works through rather than a discovery months
- * later.
- *
- * Paths match the shape `tests/unit/i18n.test.ts` already reports
- * (`errors.TOO_MANY_STUDENTS`, `list[0]`), so a name from one is a name in
- * the other.
- */
-export function untranslatedKeys(table: unknown, path = ''): string[] {
-  if (Array.isArray(table))
-    return table.flatMap((v, i) => untranslatedKeys(v, `${path}[${i}]`));
-  if (table && typeof table === 'object')
-    return Object.entries(table).flatMap(([k, v]) =>
-      untranslatedKeys(v, path ? `${path}.${k}` : k),
-    );
-  return needsTranslation(table) ? [] : [path];
-}
 
 /**
  * What the harness sends for one catalogue entry: copy as it is, a message as

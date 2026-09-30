@@ -22,6 +22,7 @@ import {
   DO_NOT_TRANSLATE,
   buildRequestBody,
   escapeXml,
+  deeplDrafts,
   deeplEndpoint,
   deeplLanguage,
   needsTranslation,
@@ -29,7 +30,6 @@ import {
   pruneDrafts,
   unescapeXml,
   unprotectTerms,
-  untranslatedKeys,
   translatableSentences,
   translationUnits,
   TRANSLATABLE_LOCALES,
@@ -286,9 +286,71 @@ describe('protected terms are wrapped before they are sent', () => {
     expect(script, 'the request body must come from buildRequestBody').toMatch(
       /buildRequestBody\(/,
     );
-    expect(script, 'the response must be unwrapped again').toMatch(
-      /unprotectTerms\(/,
+    expect(script, 'the response must be checked and unwrapped').toMatch(
+      /deeplDrafts\(/,
     );
+  });
+
+  it('reads the drafts out of an answer, unwrapped and unescaped', () => {
+    expect(
+      deeplDrafts(
+        {
+          translations: [
+            { text: '由 <x>Shyden</x> 打造 &amp; 分享。' },
+            { text: '添加学生' },
+          ],
+        },
+        2,
+      ),
+    ).toEqual(['由 Shyden 打造 & 分享。', '添加学生']);
+  });
+
+  it.each([
+    [1, 2],
+    [3, 2],
+    [0, 1],
+  ])(
+    'refuses %i drafts for %i sentences, which would pair each draft with the wrong English',
+    (returned, sent) => {
+      const response = {
+        translations: Array.from({ length: returned }, () => ({ text: 'x' })),
+      };
+      expect(() => deeplDrafts(response, sent)).toThrow(
+        `DeepL returned ${returned} translations for ${sent} texts`,
+      );
+    },
+  );
+
+  it.each([
+    ['that is not an object', null],
+    ['with no translations', {}],
+    ['whose translations are not a list', { translations: 'x' }],
+  ])('refuses an answer %s', (_, response) => {
+    expect(() => deeplDrafts(response, 1)).toThrow(
+      'DeepL answered without a list of translations',
+    );
+  });
+
+  it.each([
+    ['a number', { text: 3 }],
+    ['nothing', {}],
+    ['a null entry', null],
+  ])('refuses a translation whose text is %s', (_, entry) => {
+    expect(() =>
+      deeplDrafts({ translations: [{ text: 'fine' }, entry] }, 2),
+    ).toThrow('translation 1 has no text');
+  });
+
+  it('never quotes what came back in its error, as the script never prints a body', () => {
+    // The script reports a failed request by its status alone, because a
+    // DeepL error can echo the request.
+    let message = '';
+    try {
+      deeplDrafts({ translations: [{ text: 'Pupil copy, echoed' }] }, 2);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toBe('DeepL returned 1 translations for 2 texts');
   });
 
   it('escapes the ampersand that made DeepL answer 400', () => {
@@ -355,19 +417,6 @@ describe('protected terms are wrapped before they are sent', () => {
       }),
       'these strings do not survive the request pipeline unchanged',
     ).toEqual([]);
-  });
-});
-
-describe('the harness reports what a human still has to write', () => {
-  it('lists every key it could not translate', () => {
-    const report = untranslatedKeys({
-      greeting: 'Hello',
-      count: (n: number) => `${n}`,
-      symbol: '#',
-      message: '{n, plural, one {# left} other {# left}}',
-      nested: { deep: 'Yes', fn: () => 'x' },
-    });
-    expect(report.sort()).toEqual(['count', 'nested.fn', 'symbol']);
   });
 });
 
