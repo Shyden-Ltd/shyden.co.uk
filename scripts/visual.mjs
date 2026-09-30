@@ -124,6 +124,9 @@ export function dockerArgs({ image, cwd, update, forwarded }) {
   ];
 }
 
+/** Playwright's update flag in each spelling: `-u`, bare, and `=<preset>`. */
+const PLAYWRIGHT_UPDATE = /^(-u|--update-snapshots(=.*)?)$/;
+
 /**
  * The runner's own `--update`, and every other argument, forwarded to
  * Playwright in order. Playwright's own update flag is refused: forwarded
@@ -136,12 +139,7 @@ export function dockerArgs({ image, cwd, update, forwarded }) {
  */
 export function splitArgs(argv) {
   const forwarded = argv.filter((arg) => arg !== '--update');
-  const rewrite = forwarded.find(
-    (arg) =>
-      arg === '-u' ||
-      arg === '--update-snapshots' ||
-      arg.startsWith('--update-snapshots='),
-  );
+  const rewrite = forwarded.find((arg) => PLAYWRIGHT_UPDATE.test(arg));
   if (rewrite !== undefined)
     throw new Error(
       `visual: ${rewrite} is Playwright's own update flag. Baselines change one ` +
