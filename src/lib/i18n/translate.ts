@@ -131,18 +131,6 @@ export const DO_NOT_TRANSLATE: readonly string[] = [
  */
 const PROTECT_TAG = 'x';
 
-/**
- * Protected terms, longest first.
- *
- * When one term is a prefix of another (`Shyden` of `Shyden Studio`),
- * wrapping the short one first yields `<x>Shyden</x> Studio` and hands
- * "Studio" to the translator on its own, which is how a name comes back
- * half-translated. `protectTerms` sorts any list it is given the same way.
- */
-const PROTECTED_LONGEST_FIRST: readonly string[] = [...DO_NOT_TRANSLATE].sort(
-  (a, b) => b.length - a.length,
-);
-
 /** `text` as a regular expression that matches it literally. */
 export const escapeForRegExp = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -175,34 +163,36 @@ export const unescapeXml = (text: string): string =>
  * emitted, so the list protected nothing. The zh/vi/th run returned "Shyden"
  * intact in all three languages by DeepL's own proper-noun handling -- luck,
  * not a control, and luck that runs out the first time someone writes "Glory
- * Points" into the catalogue. Only one of the six terms occurs in today's
- * copy, which is why nothing looked wrong.
+ * Points" into the catalogue. Only one protected term occurred in the copy of
+ * the day, which is why nothing looked wrong.
  *
- * The lookbehind stops a shorter term matching inside a span a longer one
- * already wrapped: in `<x>Shyden Studio</x>`, `Shyden` sits immediately after
- * `<x>` and is skipped.
+ * One pass over the text with every term in one alternation, longest first.
+ * A regular expression tries its alternatives in order at each position, so
+ * where one term starts another (`Shyden` of `Shyden Studio`) the longer
+ * wins, and a matched span is consumed whole, so no term is ever wrapped
+ * inside another. A loop over the terms, one replacement each, wrapped a
+ * shorter term again wherever it sat in the middle of a longer one (#390).
  *
  * `terms` defaults to the shipped list. It is a parameter so longest-first
- * stays provable when the shipped list holds no prefix pair, as it has not
- * since #370.
+ * stays provable when the shipped list holds no pair that overlaps, as it has
+ * not since #370. An empty term matches everywhere and protects nothing, so it
+ * is dropped.
  */
 export function protectTerms(
   text: string,
-  terms: readonly string[] = PROTECTED_LONGEST_FIRST,
+  terms: readonly string[] = DO_NOT_TRANSLATE,
 ): string {
-  let out = text;
-  for (const term of [...terms].sort((a, b) => b.length - a.length)) {
-    // The term is escaped the same way the text was, or a name carrying an
-    // ampersand ("Salt & Pepper") never matches the escaped copy it sits in.
-    out = out.replace(
-      new RegExp(
-        `(?<!<${PROTECT_TAG}>)${escapeForRegExp(escapeXml(term))}(?!</${PROTECT_TAG}>)`,
-        'g',
-      ),
-      `<${PROTECT_TAG}>${escapeXml(term)}</${PROTECT_TAG}>`,
-    );
-  }
-  return out;
+  // Each term is escaped the same way the text was, or a name carrying an
+  // ampersand ("Salt & Pepper") never matches the escaped copy it sits in.
+  const alternatives = terms
+    .filter((term) => term !== '')
+    .sort((a, b) => b.length - a.length)
+    .map((term) => escapeForRegExp(escapeXml(term)));
+  if (alternatives.length === 0) return text;
+  return text.replace(
+    new RegExp(alternatives.join('|'), 'g'),
+    (term) => `<${PROTECT_TAG}>${term}</${PROTECT_TAG}>`,
+  );
 }
 
 /**

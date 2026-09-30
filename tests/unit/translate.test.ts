@@ -78,19 +78,22 @@ describe('the DeepL key decides the host', () => {
   it('routes a free key to the free host', () => {
     // The whole reason this function exists. A Free-plan key ends `:fx` and
     // is REJECTED by api.deepl.com — the request does not fail over, it 403s.
-    expect(deeplEndpoint('abc123:fx')).toContain('api-free.deepl.com');
+    expect(deeplEndpoint('abc123:fx')).toBe(
+      'https://api-free.deepl.com/v2/translate',
+    );
   });
 
   it('routes a pro key to the paid host', () => {
-    expect(deeplEndpoint('abc123')).toContain('api.deepl.com');
-    expect(deeplEndpoint('abc123')).not.toContain('api-free');
+    expect(deeplEndpoint('abc123')).toBe('https://api.deepl.com/v2/translate');
   });
 
   it('survives the whitespace a real .env file carries', () => {
     // `DEEPL_API_KEY=abc:fx\n` read naively keeps the newline, and
     // `endsWith(':fx')` is then false — a Free key silently sent to the paid
     // host, which is a 403 at the end of a long run.
-    expect(deeplEndpoint(' abc123:fx\n')).toContain('api-free.deepl.com');
+    expect(deeplEndpoint(' abc123:fx\n')).toBe(
+      'https://api-free.deepl.com/v2/translate',
+    );
   });
 
   it('never puts the key in the URL it returns', () => {
@@ -101,8 +104,8 @@ describe('the DeepL key decides the host', () => {
   });
 
   it('refuses an empty key rather than guessing a host', () => {
-    expect(() => deeplEndpoint('')).toThrow();
-    expect(() => deeplEndpoint('   ')).toThrow();
+    expect(() => deeplEndpoint('')).toThrow('DEEPL_API_KEY is empty');
+    expect(() => deeplEndpoint('   ')).toThrow('DEEPL_API_KEY is empty');
   });
 });
 
@@ -116,6 +119,16 @@ describe('every MVP language has a DeepL code', () => {
     // could change under us.
     expect(deeplLanguage('zh')).toBe('ZH-HANS');
     expect(deeplLanguage('en')).toBe('EN-GB');
+  });
+
+  it('names each language by the code DeepL documents for it', () => {
+    // Literals, all five: `IN`, `VN` or `THA` read as plausible codes and are
+    // refused by the API, and only zh and en were pinned before #390.
+    expect(
+      Object.fromEntries(
+        MVP_LOCALES.map((locale) => [locale, deeplLanguage(locale)]),
+      ),
+    ).toEqual({ en: 'EN-GB', id: 'ID', zh: 'ZH-HANS', vi: 'VI', th: 'TH' });
   });
 
   it('offers exactly the MVP locales as targets, derived not copied', () => {
@@ -204,6 +217,36 @@ describe('protected terms are wrapped before they are sent', () => {
         'Shyden Studio',
       ]),
     ).toBe('<x>Shyden Studio</x> is by <x>Shyden</x>.');
+  });
+
+  it('never wraps a term that sits at the END of a longer one', () => {
+    expect(
+      protectTerms('Shyden Studio and Studio', ['Studio', 'Shyden Studio']),
+    ).toBe('<x>Shyden Studio</x> and <x>Studio</x>');
+  });
+
+  it('never wraps a term that sits in the MIDDLE of a longer one', () => {
+    // A per-term loop wrapped `Glory Points` again inside the span the longer
+    // term had already wrapped: `<x>The <x>Glory Points</x> Cup</x>`.
+    expect(
+      protectTerms('The Glory Points Cup, and Glory Points', [
+        'Glory Points',
+        'The Glory Points Cup',
+      ]),
+    ).toBe('<x>The Glory Points Cup</x>, and <x>Glory Points</x>');
+  });
+
+  it('protects nothing, and changes nothing, given no terms or an empty one', () => {
+    const text = 'Built for teachers, by Shyden.';
+    expect(protectTerms(text, [])).toBe(text);
+    expect(protectTerms(text, [''])).toBe(text);
+  });
+
+  it('matches a term literally, never as a pattern', () => {
+    // `A.B.` as a pattern would match `AxB.` too.
+    expect(protectTerms('AxB. is not A.B.', ['A.B.'])).toBe(
+      'AxB. is not <x>A.B.</x>',
+    );
   });
 
   it('leaves a string with no protected term untouched', () => {

@@ -78,10 +78,30 @@ describe('a message is sent as the sentences it can say', () => {
       messageUnits(
         '{a, select, x {One} other {Two}} {b, select, y {Three} other {Four}}',
       ),
-    ).toThrow(/one select/);
+    ).toThrow(
+      'makes 2 choices of sentence, and a translation can be drafted for one select only',
+    );
+    // The reason, not `/=0/`: the error quotes the template, which carries
+    // `=0` whatever the reason given.
     expect(() =>
       messageUnits('{n, plural, =0 {No one} other {# left}}'),
-    ).toThrow(/=0/);
+    ).toThrow(
+      '{n} has the exact-match branch =0, which a sentence drafted from "other" cannot carry',
+    );
+  });
+
+  it('refuses a choice nested inside another, which is two choices too', () => {
+    expect(() =>
+      messageUnits(
+        '{a, select, x {{b, select, y {One} other {Two}}} other {Three}}',
+      ),
+    ).toThrow('makes 2 choices of sentence');
+  });
+
+  it('keeps the words before a choice in every sentence it sends', () => {
+    expect(
+      messageUnits('Now {sex, select, M {boys} other {girls}} join.'),
+    ).toEqual(['Now boys join.', 'Now girls join.']);
   });
 
   it('sends every slot bare, and tags them only for a retry', () => {
@@ -178,6 +198,36 @@ describe('a translated message is rebuilt, and checked', () => {
         translation,
       ).toThrow(/slots/);
   });
+
+  it('accepts a translation that puts the same slots in another order', () => {
+    // Word order is the translator's to change: Chinese puts the rounds first.
+    const unit = '{names} left after {n} rounds.';
+    expect(
+      assembleMessage(
+        unit,
+        translator({ [unit]: '{n} 轮后 {names} 离开了。' }),
+        OTHER_ONLY,
+      ),
+    ).toBe('{n} 轮后 {names} 离开了。');
+  });
+
+  it.each(['plural', 'select'])(
+    'refuses a translation that turns a slot into a %s',
+    (kind) => {
+      const unit = '{names} left after {n} rounds.';
+      expect(() =>
+        assembleMessage(
+          unit,
+          translator({
+            [unit]: `{names} 在 {n, ${kind}, other {几}} 轮后离开了。`,
+          }),
+          OTHER_ONLY,
+        ),
+      ).toThrow(
+        `which fills the slots {(${kind}), names} instead of {n, names}`,
+      );
+    },
+  );
 
   it('refuses a translation that is not a template', () => {
     expect(() =>
