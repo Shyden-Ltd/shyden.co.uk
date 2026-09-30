@@ -81,7 +81,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 72 | scripts | A | `scripts/back-translate-client.mjs` | +67/-0 | read in full (tranche 4) | F34 an unreachable engine printed only 'fetch failed' (ECONNREFUSED sat on cause): call() now names the request and the cause. Non-JSON refusal excerpt, method in the message, 200-not-JSON and short-answer refusals were untested | 7 run: CL4 CL5 RED before; CL1-3 CL6 GREEN now RED; CL7 (cause dropped) RED |
 | 73 | scripts | A | `scripts/build-evidence-page.mjs` | +1584/-0 | — | (not yet read in full) F36 sweep: arg() ignores a flag it does not know, so --asset for --assets builds without the map; fix with its review (tranche 4) |  |
 | 74 | scripts | A | `scripts/build-release-content.mjs` | +214/-0 | — | (not yet read in full) F35 private messageOf copy replaced (tranche 4) | OH1-class covered by the one-home rule |
-| 75 | scripts | A | `scripts/closing-keywords.mjs` | +123/-0 | — |  |  |
+| 75 | scripts | A | `scripts/closing-keywords.mjs` | +123/-0 | read in full (tranche 4) | F37 a keyword before a full issue or pull request URL was accepted (a form GitHub does not document, so it is not relied on): refused now, and a bare URL is still accepted. Two comments named build-and-test as the pull-request-body check (it is pr-body.yml's closing-keywords job). The docblock's claim that \d+ keeps #<n> placeholders out was unpinned (CK7 green): fixture added | 8 run: 8 RED (CK1-CK8; CK7 green until its fixture landed) |
 | 76 | scripts | M | `scripts/dashboard.mjs` | +48/-86 | — |  |  |
 | 77 | scripts | A | `scripts/dependabot-labels.mjs` | +194/-0 | — |  |  |
 | 78 | scripts | A | `scripts/deploy-gate.mjs` | +222/-0 | — |  |  |
