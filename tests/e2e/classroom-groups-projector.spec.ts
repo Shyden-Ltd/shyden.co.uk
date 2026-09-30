@@ -560,7 +560,7 @@ test.describe('the projector board holds a real name', () => {
       ['F', 'Dewi'],
       ['M', 'Eko'],
     ]);
-    await page.locator('#cg-form button[type="submit"]').click();
+    await page.locator('#cg-go').click();
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await page
       .getByRole('button', { name: /Full screen|Layar penuh/ })

@@ -463,10 +463,12 @@ test.describe('classroom groups — mobile-first layout', () => {
       // everything inside them, `#cg-speed` included. This test's own job is
       // narrower -- the controls already on screen before a teacher opens
       // anything -- and #cg-speed simply is not one of those any more.
+      // `[form="cg-form"]`: the form's controls that live outside it. #cg-go
+      // has since #384, and `#cg-form button` alone would stop measuring it.
       const measureVisible = () =>
         page
           .locator(
-            '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"]',
+            '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"], [form="cg-form"]',
           )
           .evaluateAll((els) =>
             els
@@ -486,7 +488,7 @@ test.describe('classroom groups — mobile-first layout', () => {
       // reporting nothing because it found nothing to look at.
       const seen = await page
         .locator(
-          '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"]',
+          '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"], [form="cg-form"]',
         )
         .evaluateAll(
           (els) =>
@@ -667,6 +669,21 @@ test.describe('How to use', () => {
     await expect(form.locator('#cg-howto')).toHaveCount(0);
   });
 
+  // The who-and-why paragraph is the page's lead: read before anything is
+  // opened, where How to use now starts with what the tool does (operator,
+  // 2026-09-30, #384).
+  test('the lead says who it is for and why, before any click', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    const lead = page.locator('.lead');
+    await expect(lead).toHaveCount(1);
+    await expect(lead).toBeVisible();
+    await expect(lead).toHaveText(
+      'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+    );
+  });
+
   // Reverses design spec section 3's original "open by default" -- section
   // 2's operator ruling 2 (2026-08-08) collapses it, because measurement
   // showed it was ~310px of a phone screen, the single biggest saving
@@ -680,10 +697,11 @@ test.describe('How to use', () => {
     await expect(
       page.getByRole('button', { name: 'How to use' }),
     ).toHaveAttribute('aria-expanded', 'false');
-    // The whole sentence, and it must name WHO and WHY -- not just what.
+    // The whole sentence. Part 1 says WHAT the tool does; WHO it is for and
+    // WHY it exists moved to the page's lead (operator, 2026-09-30, #384).
     await expect(
       page.getByText(
-        'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+        'Tell it how big your class is and how many students you want per group. It shuffles and deals everyone out, and no group ever ends up smaller than you asked for.',
       ),
     ).toBeHidden();
     await expect(
@@ -696,7 +714,7 @@ test.describe('How to use', () => {
     await page.getByRole('button', { name: 'How to use' }).click();
     await expect(
       page.getByText(
-        'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+        'Tell it how big your class is and how many students you want per group. It shuffles and deals everyone out, and no group ever ends up smaller than you asked for.',
       ),
     ).toBeVisible();
     await expect(
@@ -720,7 +738,7 @@ test.describe('How to use', () => {
     await toggle.click();
     await expect(
       page.getByText(
-        'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
+        'Tell it how big your class is and how many students you want per group. It shuffles and deals everyone out, and no group ever ends up smaller than you asked for.',
       ),
     ).toBeHidden();
     await expect(
@@ -806,7 +824,7 @@ test.describe('How to use — Indonesian', () => {
     ).toHaveAttribute('aria-expanded', 'false');
     await expect(
       page.getByText(
-        'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+        'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
       ),
     ).toBeHidden();
     await expect(
@@ -819,7 +837,7 @@ test.describe('How to use — Indonesian', () => {
     await page.getByRole('button', { name: 'Cara menggunakan' }).click();
     await expect(
       page.getByText(
-        'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+        'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
       ),
     ).toBeVisible();
     await expect(
@@ -841,7 +859,7 @@ test.describe('How to use — Indonesian', () => {
     await toggle.click();
     await expect(
       page.getByText(
-        'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+        'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
       ),
     ).toBeHidden();
     await expect(

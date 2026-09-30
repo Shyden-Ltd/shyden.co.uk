@@ -12,7 +12,7 @@ export const id: Catalogue = {
   description:
     'Bagi kelas Anda menjadi kelompok secara instan — langsung di peramban, tanpa mengirim data ke mana pun.',
   heading: 'Pembuat Kelompok Kelas',
-  lead: 'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
+  lead: 'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
   privacy:
     'Semuanya berjalan di peramban Anda. Daftar kelas tidak pernah keluar dari halaman ini.',
 
@@ -21,14 +21,10 @@ export const id: Catalogue = {
   // to use" -- so it is recorded here rather than quietly dropped in one
   // language.
   howToHeading: 'Cara menggunakan',
-  // The approved copy from design spec section 3, translated -- see en.ts's
-  // own comment on `howToWhat` for why this is assembled with `+` here rather
-  // than written across template lines.
+  // What the tool does; the lead until the operator swapped the two (#384).
+  // See en.ts's comments on `lead` and `howToWhat`.
   howToWhat:
-    'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu ' +
-    'yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan ' +
-    'soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu ' +
-    'mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
+    'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
   // Rewritten alongside `howToWhat` above, mirroring en.ts's own correction:
   // the old step 1 mentioned pasting names, a box the rewritten engine no
   // longer has anywhere to put (see grouping.ts's GroupingInput).
