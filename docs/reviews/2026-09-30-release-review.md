@@ -25,7 +25,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 16 | src | A | `src/env.d.ts` | +15/-0 | — |  |  |
 | 17 | src | M | `src/layouts/BaseLayout.astro` | +35/-13 | — |  |  |
 | 18 | src | A | `src/lib/catalogue-leaves.ts` | +39/-0 | read in full | none | 4 run: 4 RED |
-| 19 | src | M | `src/lib/csv-locale.ts` | +125/-11 | — |  |  |
+| 19 | src | M | `src/lib/csv-locale.ts` | +125/-11 | diff read (all five tables, superseded words, sex and yes/no tokens, file names) | F10: sex tokens held to the roster only by literal pins: relationship test added. F12: zh `# 类：` read "Category:": now 班级; th file and class field disagreed (ชั้นเรียน/คลาส): aligned, test added. Operator decision 2026-09-30: yes/no tokens 否/có/ไม่ใช่. Stale "no type checker" docblocks corrected (F15). vi superseded comment now covers apart | L1-L10: 10/10 RED (L4 L6 L7 L8 L9 predicted GREEN, each caught by a pin not read first). CLa-CLh: 8/8 RED |
 | 20 | src | M | `src/lib/csv.ts` | +59/-26 | diff read (superseded columns, message arguments) | F9: detectLocale scored en and id only, so zh/vi/th files were parsed as the page's language: fixed (derived over LOCALES) with tests | 7 run: 6 RED, CV2 RED once F9 was fixed and its test isolated |
 | 21 | src | M | `src/lib/fit.ts` | +57/-0 | diff read (fontThatFits, 57 lines) | floor for unmeasured room pinned exactly (the old test asserted only finite and positive) | 8 run: 5 RED, FT1 FT2 FT8 equivalent |
 | 22 | src | M | `src/lib/gloryPoints.ts` | +10/-7 | diff read (rename + locale metadata) | none | 2 run: 2 RED |
@@ -33,7 +33,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 24 | src | A | `src/lib/i18n/.translations.json` | +830/-0 | — |  |  |
 | 25 | src | A | `src/lib/i18n/back-translate.ts` | +538/-0 | — |  |  |
 | 26 | src | M | `src/lib/i18n/en.ts` | +359/-166 | — |  |  |
-| 27 | src | A | `src/lib/i18n/feature-terms.ts` | +97/-0 | — |  |  |
+| 27 | src | A | `src/lib/i18n/feature-terms.ts` | +97/-0 | — | F11 guard: `mix` and `leftovers` added, held to their controls' words (glossary awaits the operator's read) | FTa-FTf: 6/6 RED |
 | 28 | src | A | `src/lib/i18n/flags.ts` | +115/-0 | — |  |  |
 | 29 | src | M | `src/lib/i18n/id.ts` | +152/-132 | — |  |  |
 | 30 | src | M | `src/lib/i18n/index.ts` | +252/-53 | — |  |  |
@@ -42,10 +42,10 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 33 | src | A | `src/lib/i18n/message.ts` | +431/-0 | — |  |  |
 | 34 | src | A | `src/lib/i18n/metadata.ts` | +116/-0 | — |  |  |
 | 35 | src | M | `src/lib/i18n/site.ts` | +461/-61 | — |  |  |
-| 36 | src | A | `src/lib/i18n/th.ts` | +278/-0 | — |  |  |
+| 36 | src | A | `src/lib/i18n/th.ts` | +278/-0 | — | F11: stateMixed read "divided by sex" and equalled stateSeparated, stateBunched named leftover food: fixed; classLabel/csvWrongLanguage loanword คลาส aligned to ชั้นเรียน (row not yet read in full) |  |
 | 37 | src | A | `src/lib/i18n/translate.ts` | +598/-0 | — |  |  |
-| 38 | src | A | `src/lib/i18n/vi.ts` | +286/-0 | — |  |  |
-| 39 | src | A | `src/lib/i18n/zh.ts` | +258/-0 | — |  |  |
+| 38 | src | A | `src/lib/i18n/vi.ts` | +286/-0 | — | F11: stateMixed read "classified by sex", stateBunched/staleLeftovers named leftover food: fixed (row not yet read in full) |  |
+| 39 | src | A | `src/lib/i18n/zh.ts` | +258/-0 | — | F11: stateMixed read "sorted by sex", stateBunched/staleLeftovers named leftover food: fixed (row not yet read in full) |  |
 | 40 | src | A | `src/lib/is-record.ts` | +11/-0 | read in full | none | 2 run: 2 RED |
 | 41 | src | A | `src/lib/numberSets.ts` | +217/-0 | read in full (217 lines) | NS14 NS16 NS20 NS21 untested (NS16: apart typed alone would reach the engine as the bare count): tests added | 21 run: 17 RED + 4 re-run RED |
 | 42 | src | A | `src/lib/report-review.ts` | +254/-0 | read in full (254 lines) | RR12 RR18 RR21 RR22 untested: tests added. Error paths print id/locale/keys unescaped: trusted, since only the endpoint writes rows | 22 run: 17 RED + RR11 control + 4 re-run RED |
@@ -53,8 +53,8 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 44 | src | M | `src/lib/roster.ts` | +37/-10 | diff read (LETTERS, message arguments) | none; RO1 equivalent (slice already caps) | 6 run: 5 RED, RO1 equivalent |
 | 45 | src | M | `src/lib/sections.ts` | +5/-5 | diff read (message arguments) | none | 2 run: 2 RED |
 | 46 | src | M | `src/lib/sexOptions.ts` | +4/-2 | diff read (message arguments) | none | 2 run: 2 RED |
-| 47 | src | A | `src/lib/shytalk-brand.ts` | +54/-0 | — |  |  |
-| 48 | src | A | `src/lib/shytalk-showcase.ts` | +40/-0 | — |  |  |
+| 47 | src | A | `src/lib/shytalk-brand.ts` | +54/-0 | read in full (54 lines) | F13: `edge`/`muted` used nowhere and `talk`'s hover-edge doc stale: removed/reworded; `asRgba` (homepage glow) untested: test added | B1 B2 RED; B4 GREEN over the whole suite (gap), B4b RED after the test |
+| 48 | src | A | `src/lib/shytalk-showcase.ts` | +40/-0 | read in full (40 lines) | F14: docblock named a capture pass as a consumer; git log -S shows none ever existed: reworded | S1-S4: 4/4 RED |
 | 49 | src | A | `src/lib/waiting-reports.ts` | +152/-0 | read in full (152 lines) | W4, W19 untested: tests added (an unanchored UUID could carry a path) | 22 run: 19 RED + W4b/W19b RED; W6 equivalent |
 | 50 | src | M | `src/pages/404.astro` | +62/-20 | — |  |  |
 | 51 | src | A | `src/pages/[locale]/classroom-groups.astro` | +33/-0 | — |  |  |
@@ -63,7 +63,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 54 | src | D | `src/pages/id/classroom-groups.astro` | +0/-5 | — |  |  |
 | 55 | src | D | `src/pages/id/glory-points.astro` | +0/-5 | — |  |  |
 | 56 | src | D | `src/pages/id/index.astro` | +0/-5 | — |  |  |
-| 57 | src | M | `src/scripts/classroom-groups.ts` | +264/-51 | — |  |  |
+| 57 | src | M | `src/scripts/classroom-groups.ts` | +264/-51 | — | F16: the Grouping options header ignored the sex switches (live on prod too): fixed with an e2e test; TDZ comment corrected (F15) | HSa HSb: 2/2 RED (e2e, chromium) |
 | 58 | src | A | `src/scripts/dom.ts` | +33/-0 | — |  |  |
 | 59 | src | M | `src/scripts/glory-points.ts` | +20/-3 | — |  |  |
 | 60 | src | M | `src/scripts/io-ui.ts` | +118/-30 | — |  |  |
