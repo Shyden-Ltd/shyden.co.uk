@@ -503,11 +503,14 @@ describe("reading a caught value's message has exactly one home", () => {
     ).toBe(false);
   });
 
-  it('is not fired by reading another property', () => {
-    expect(
-      readsACaughtMessage(
-        'const s = error instanceof Error && error.stack ? error.stack : "";',
-      ),
-    ).toBe(false);
+  // One fixture per clause of the detector, each refused by that clause
+  // alone, so a mutation dropping any one of them goes red.
+  it.each([
+    ['another property', 'error instanceof Error ? error.stack : ""'],
+    ['a narrower class', 'error instanceof TypeError ? error.message : ""'],
+    ['a test that is not instanceof', 'error === Error ? error.message : ""'],
+    ['a guard, not a choice', 'error instanceof Error && error.stack'],
+  ])('is not fired by %s', (_, code) => {
+    expect(readsACaughtMessage(`const s = ${code};`)).toBe(false);
   });
 });
