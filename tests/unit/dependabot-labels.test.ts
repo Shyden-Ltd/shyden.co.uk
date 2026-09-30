@@ -17,7 +17,7 @@ import { nonEmpty, searched } from '../source-files';
  * The half a unit test CAN reach is the derivation — which labels the config
  * asks for — and whether anything in CI goes on to check them. The other half
  * needs a token and lives in `scripts/dependabot-labels.mjs`, run by
- * `build-and-test`.
+ * `ci.yml`'s `checks` job (dependabot-labels-script.test.ts drives it).
  *
  * Why the file exists at all: Dependabot creates a label only when no
  * `labels:` key names one. This repo set that key, so `npm` and
@@ -72,6 +72,26 @@ describe('the labels dependabot.yml asks for', () => {
     // The whole check is satisfied for free by an empty set, which is why the
     // script refuses one rather than reporting a clean pass (#112, #118).
     expect(declaredLabels('version: 2\nupdates: []\n')).toHaveLength(0);
+  });
+
+  it('refuse a label YAML does not read as text, rather than dropping it', () => {
+    // `7`, `1.0`, `~` and `true` parse as a number, a number, null and a
+    // boolean. Filtering them out left a label nobody checked, and `1.0` is
+    // not even the text the author wrote once it has been read.
+    const config =
+      'version: 2\nupdates:\n  - package-ecosystem: npm\n' +
+      '    labels: [npm, 7, 1.0, ~, true]\n';
+
+    expect(() => declaredLabels(config)).toThrow(
+      `${DEPENDABOT} names labels YAML does not read as text: 7, 1, null, true.\n` +
+        "Quote each one, e.g. labels: ['7'].",
+    );
+  });
+
+  it('refuse a config that does not parse, naming the file', () => {
+    expect(() => declaredLabels('updates: [\n')).toThrow(
+      `cannot parse ${DEPENDABOT}: `,
+    );
   });
 });
 
