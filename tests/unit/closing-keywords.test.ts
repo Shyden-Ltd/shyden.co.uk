@@ -106,6 +106,10 @@ const ACCEPTED: readonly Fixture[] = [
     why: 'fix inside a longer word: there is no word boundary before it',
   },
   {
+    text: 'never write `close #<n>` in a message',
+    why: 'a placeholder, not a number — how the rule itself is documented',
+  },
+  {
     text: 'see https://github.com/Shyden-Ltd/shyden.co.uk/issues/12',
     why: 'an issue URL with no keyword before it',
   },
