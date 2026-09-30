@@ -1,6 +1,6 @@
 # Pre-release review ledger (#390)
 
-Derived by `ledger.py` from `git diff a3a5adb1c6ae015a50fcdc391f8520c017a51159..6566a73a73f35cdb6ba342e6a08f37e1e264e387` — 397 rows, equal to
+Derived by `ledger.py` from `git diff a3a5adb1c6ae015a50fcdc391f8520c017a51159..5480797301e17bacdc6cac75b60566c5d89d9520` — 397 rows, equal to
 `git diff --name-only | wc -l`. Never edit the file list by hand: re-derive it if `develop` moves.
 
 Columns: **Review** is `—` until the file is read in full; **Mutations** is `n/n RED` (run/red).
@@ -103,13 +103,13 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 94 | scripts | A | `scripts/visual.mjs` | +169/-0 | — |  |  |
 | 95 | scripts | A | `scripts/waiting-reports.mjs` | +196/-0 | read in full (196 lines) | S2 S3 S6 S9 S12 untested; S6 was real: a GitHub 403 in JSON printed 'Posted.' and exited 0. Tests added | 16 run: 11 RED + 5 re-run RED |
 | 96 | workflow | A | `.github/dependabot.yml` | +110/-0 | — |  |  |
-| 97 | workflow | A | `.github/workflows/back-translation.yml` | +80/-0 | — |  |  |
-| 98 | workflow | M | `.github/workflows/ci.yml` | +382/-9 | — |  |  |
-| 99 | workflow | A | `.github/workflows/deploy-dev.yml` | +198/-0 | — |  |  |
-| 100 | workflow | R from '.github/workflows/release-prod.yml' | `.github/workflows/deploy-prod.yml` | +69/-26 | — |  |  |
-| 101 | workflow | A | `.github/workflows/pr-body.yml` | +99/-0 | — |  |  |
+| 97 | workflow | A | `.github/workflows/back-translation.yml` | +82/-0 | — |  |  |
+| 98 | workflow | M | `.github/workflows/ci.yml` | +394/-9 | — |  |  |
+| 99 | workflow | A | `.github/workflows/deploy-dev.yml` | +203/-0 | — |  |  |
+| 100 | workflow | R from '.github/workflows/release-prod.yml' | `.github/workflows/deploy-prod.yml` | +73/-26 | — |  |  |
+| 101 | workflow | A | `.github/workflows/pr-body.yml` | +100/-0 | — |  |  |
 | 102 | workflow | D | `.github/workflows/release-dev.yml` | +0/-114 | — |  |  |
-| 103 | workflow | M | `.github/workflows/release-tag.yml` | +2/-2 | — |  |  |
+| 103 | workflow | M | `.github/workflows/release-tag.yml` | +3/-2 | — |  |  |
 | 104 | workflow | M | `.github/workflows/rollback.yml` | +77/-14 | — |  |  |
 | 105 | workflow | A | `.github/workflows/waiting-reports.yml` | +56/-0 | read in full | Y5: 14 of 15 checkouts across the workflows persisted the token: #395 (PR #396) | 7 run: 6 RED, Y5 GREEN, filed #395 |
 | 106 | config | A | `.env.example` | +12/-0 | — |  |  |
@@ -295,7 +295,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 286 | test | A | `tests/unit/one-home.test.ts` | +447/-0 | — |  |  |
 | 287 | test | A | `tests/unit/palette.test.ts` | +235/-0 | — |  |  |
 | 288 | test | A | `tests/unit/parked-tests.test.ts` | +248/-0 | — |  |  |
-| 289 | test | M | `tests/unit/pipeline-wiring.test.ts` | +2381/-43 | — |  |  |
+| 289 | test | M | `tests/unit/pipeline-wiring.test.ts` | +2400/-43 | — |  |  |
 | 290 | test | A | `tests/unit/playwright-declarations.test.ts` | +346/-0 | — |  |  |
 | 291 | test | A | `tests/unit/presence-detector.ts` | +160/-0 | — |  |  |
 | 292 | test | A | `tests/unit/release-inventory.test.ts` | +276/-0 | — |  |  |
@@ -347,10 +347,10 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 338 | test | A | `tests/unit/waiting-reports.test.ts` | +309/-0 | — |  |  |
 | 339 | test | A | `tests/unit/wcag.test.ts` | +195/-0 | — |  |  |
 | 340 | test | A | `tests/unit/webdriver-status.test.ts` | +51/-0 | — |  |  |
-| 341 | test | A | `tests/unit/workflow-jobs.test.ts` | +499/-0 | — |  |  |
+| 341 | test | A | `tests/unit/workflow-jobs.test.ts` | +568/-0 | — |  |  |
 | 342 | test | A | `tests/viewport.ts` | +116/-0 | — |  |  |
 | 343 | test | A | `tests/wcag.ts` | +87/-0 | — |  |  |
-| 344 | test | A | `tests/workflow-jobs.ts` | +492/-0 | — |  |  |
+| 344 | test | A | `tests/workflow-jobs.ts` | +530/-0 | — |  |  |
 | 345 | doc | M | `CLAUDE.md` | +17/-5 | not code: prose, read for claims the code contradicts |  |  |
 | 346 | doc | A | `HANDOVER.md` | +83/-0 | not code: prose, read for claims the code contradicts |  |  |
 | 347 | doc | M | `README.md` | +134/-17 | not code: prose, read for claims the code contradicts |  |  |
