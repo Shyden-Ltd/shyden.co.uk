@@ -31,19 +31,19 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 22 | src | M | `src/lib/gloryPoints.ts` | +10/-7 | diff read (rename + locale metadata) | none | 2 run: 2 RED |
 | 23 | src | M | `src/lib/grouping.ts` | +17/-2 | diff read (anonymousStudent exported) | none | 1 run: 1 RED |
 | 24 | src | A | `src/lib/i18n/.translations.json` | +830/-0 | — | drafts held the wrong senses too (id "sisa makanan", "dibagi" beside a hand-corrected catalogue): corrected with every catalogue fix, so a re-seed cannot restore them |  |
-| 25 | src | A | `src/lib/i18n/back-translate.ts` | +538/-0 | — |  |  |
+| 25 | src | A | `src/lib/i18n/back-translate.ts` | +538/-0 | read in full (tranche 3) | F30 (20 test gaps); two codes in one script misreported as unreadable (fixed); F23 csvCopy reason | 67 run (44 RED); the 20 whole-suite-confirmed gaps now RED (BT48 as BT48n, BT48z); BT1 BT14 BT49 equivalent; BT59 RED |
 | 26 | src | M | `src/lib/i18n/en.ts` | +359/-166 | — |  |  |
 | 27 | src | A | `src/lib/i18n/feature-terms.ts` | +97/-0 | — | F11/F18/F20 guards: mix, leftovers, sound, classList, gloryPoints, bean, coin added from their controls' words (glossary awaits the operator's read) | FTa-FTh, GLc GLd: RED |
-| 28 | src | A | `src/lib/i18n/flags.ts` | +115/-0 | — |  |  |
+| 28 | src | A | `src/lib/i18n/flags.ts` | +115/-0 | read in full (tranche 3) | none | in lmf: FL1 FL2 equivalent (sprite and <use> share flagSymbolId); FL5 is the visual suite's |
 | 29 | src | M | `src/lib/i18n/id.ts` | +152/-132 | — |  |  |
-| 30 | src | M | `src/lib/i18n/index.ts` | +252/-53 | — |  |  |
+| 30 | src | M | `src/lib/i18n/index.ts` | +252/-53 | read in full (tranche 3) | F25 comments; F27 bare prefix untested, ternary built one string twice (simplified); F29 | 63 run (58 RED); IX11 RE9 RE10 GREEN over 2,924, now RED; IX4 IX13 equivalent (IX13's code removed); new IXs1 RED |
 | 31 | src | A | `src/lib/i18n/label-check.ts` | +167/-0 | read in full; checkNamedLabels added | F17 guard: checkLabels' any-witness rule hid 23 sentences naming a label in other words | NLa-NLg: 6 RED, NLf GREEN (fixture carried the first rendering): fixed, NLfb RED |
-| 32 | src | A | `src/lib/i18n/locales.ts` | +22/-0 | — |  |  |
-| 33 | src | A | `src/lib/i18n/message.ts` | +431/-0 | — |  |  |
-| 34 | src | A | `src/lib/i18n/metadata.ts` | +116/-0 | — |  |  |
+| 32 | src | A | `src/lib/i18n/locales.ts` | +22/-0 | read in full (tranche 3) | none | in lmf |
+| 33 | src | A | `src/lib/i18n/message.ts` | +431/-0 | read in full (tranche 3) | F21 (tests only; parser correct) | 37 run: 34 RED after F21 (was 23: MS3 MS5-8 MS11 MS12 MS14 MS14b MS20 MS35 now RED); 3 equivalent (MS22, MS39/MS40 caches) |
+| 34 | src | A | `src/lib/i18n/metadata.ts` | +116/-0 | read in full (tranche 3) | F26 marquee named MVP_LOCALES, not LOCALES (fixed); F28; F25 | lmf 16 run (9 RED); MD2 and MD7 RED over the whole suite (sitemap-config, marquee); MD6 gap, RED after F28; new MD7n MF1 RED; MD8 equivalent |
 | 35 | src | M | `src/lib/i18n/site.ts` | +461/-61 | translated units read (home, glory, report, nav, 404) | F20: zh/vi/th Glory result line was English's own function: each now its own. Glory currency names inconsistent in all three: operator decision 2026-09-30 (English app names, coin translated), applied; th glory lead named its input differently (F17) | GLa GLb GLc GLd: RED |
 | 36 | src | A | `src/lib/i18n/th.ts` | +278/-0 | every translated unit read beside en | F11 (stateMixed equal to stateSeparated). F12 class loanword. F17: 7 sentences named Student details unlike its heading, 2 named Shuffle again unlike its button. F18: Sound off = express an opinion, Export groups a noun, Group results = company earnings, university students, "pieces", printed-from. F19: สาวๆ, เปลี่ยนมัน. All fixed | FTb NLb GLd: RED |
-| 37 | src | A | `src/lib/i18n/translate.ts` | +598/-0 | — | escapeForRegExp exported for label-check rather than a third copy (#390); file not yet read in full |  |
+| 37 | src | A | `src/lib/i18n/translate.ts` | +598/-0 | read in full (tranche 3) | F22 protectTerms double-wrapped a middle term and wrapped every position for an empty one (fixed); F23 CSV sex hold-back a no-op (removed); F24 deeplDrafts added; F25; F31 walk via catalogueLeaves | 51 run (37 RED); after fixes TR4 TR5a-c TR13 TR35 TR36 TR47 TR48 RED; TR8 TR11 TR23 TR26 left with their code; TR43 equivalent; new NP1-3 CS1-2 DD1-4 9/9 RED |
 | 38 | src | A | `src/lib/i18n/vi.ts` | +286/-0 | every translated unit read beside en | F11 state labels. F17: 4 sentences named Student details unlike the pinned heading. F18: Sound off = speak up, nhập khẩu/xuất khẩu (trade), Export groups a noun, list of classes x2, printed-at, number-blank lost "number". F19: hoạt hình, a capitalised state, Hàng/Dòng, slot order. All fixed | FTc FTg GLc: RED |
 | 39 | src | A | `src/lib/i18n/zh.ts` | +258/-0 | every translated unit read beside en (265 keys across zh/vi/th) | F11 state labels (mixed = sorted by sex, leftover food). F17: 7 sentences named Student details unlike its heading, 2 named Shuffle again unlike its button. F18: Sound off = speak freely, 进出口 (trade), list "now open to the public", list "still in that tab", course list x3, 分班/座位, printed-from. F19: 群组, 男孩/女孩, 已恢复, 保留我所拥有的. All fixed | FTa FTf NLa FTh and seeded regressions: RED |
 | 40 | src | A | `src/lib/is-record.ts` | +11/-0 | read in full | none | 2 run: 2 RED |
@@ -91,7 +91,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 82 | scripts | A | `scripts/evidence-signoff.mjs` | +132/-0 | — |  |  |
 | 83 | scripts | A | `scripts/i18n-back-translate.mjs` | +122/-0 | — |  |  |
 | 84 | scripts | A | `scripts/i18n-scaffold.mjs` | +200/-0 | — |  |  |
-| 85 | scripts | A | `scripts/i18n-translate.mjs` | +280/-0 | — |  |  |
+| 85 | scripts | A | `scripts/i18n-translate.mjs` | +280/-0 | read in full (tranche 3) | F24 drafts paired by index with no count check (deeplDrafts); misleading needs-a-human report removed; F25 | none: network wiring; its decisions moved to deeplDrafts (DD1-4 RED) |
 | 86 | scripts | A | `scripts/install-hooks.mjs` | +86/-0 | — |  |  |
 | 87 | scripts | A | `scripts/release-inventory.mjs` | +299/-0 | — |  |  |
 | 88 | scripts | A | `scripts/release-map.mjs` | +165/-0 | — |  |  |
@@ -221,7 +221,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 212 | test | A | `tests/unit/ast.test.ts` | +452/-0 | — |  |  |
 | 213 | test | A | `tests/unit/ast.ts` | +592/-0 | — |  |  |
 | 214 | test | A | `tests/unit/astro-css-strip.test.ts` | +150/-0 | — |  |  |
-| 215 | test | A | `tests/unit/back-translate.test.ts` | +824/-0 | — |  |  |
+| 215 | test | A | `tests/unit/back-translate.test.ts` | +824/-0 | read in full (tranche 3) | F30 | via back-translate.ts |
 | 216 | test | A | `tests/unit/base-url-calls.test.ts` | +441/-0 | — |  |  |
 | 217 | test | A | `tests/unit/board-geometry.test.ts` | +110/-0 | — |  |  |
 | 218 | test | A | `tests/unit/browser-matrix.test.ts` | +556/-0 | — |  |  |
@@ -279,15 +279,15 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 270 | test | A | `tests/unit/literal-grounds.test.ts` | +363/-0 | — |  |  |
 | 271 | test | A | `tests/unit/locale-beta.test.ts` | +104/-0 | — |  |  |
 | 272 | test | A | `tests/unit/locale-fallbacks.test.ts` | +141/-0 | — |  |  |
-| 273 | test | A | `tests/unit/locale-metadata.test.ts` | +183/-0 | — |  |  |
+| 273 | test | A | `tests/unit/locale-metadata.test.ts` | +183/-0 | read in full (tranche 3) | F28; F25 | via metadata.ts |
 | 274 | test | A | `tests/unit/locale-routing.test.ts` | +104/-0 | — |  |  |
 | 275 | test | A | `tests/unit/locale-switcher.test.ts` | +187/-0 | — |  |  |
 | 276 | test | M | `tests/unit/lockdown.test.ts` | +2/-2 | — |  |  |
-| 277 | test | A | `tests/unit/marquee.test.ts` | +40/-0 | — |  |  |
+| 277 | test | A | `tests/unit/marquee.test.ts` | +40/-0 | read in full | F26 staged-locale case | via metadata.ts |
 | 278 | test | A | `tests/unit/message-catalogue.test.ts` | +77/-0 | — |  |  |
 | 279 | test | A | `tests/unit/message-characterisation.test.ts` | +144/-0 | — |  |  |
 | 280 | test | A | `tests/unit/message-parity.test.ts` | +243/-0 | — |  |  |
-| 281 | test | A | `tests/unit/message.test.ts` | +243/-0 | — |  |  |
+| 281 | test | A | `tests/unit/message.test.ts` | +243/-0 | read in full (tranche 3) | F21 reasons and positions pinned; 7 edge cases | via message.ts |
 | 282 | test | A | `tests/unit/nav-timings.test.ts` | +413/-0 | — |  |  |
 | 283 | test | A | `tests/unit/no-dated-render.test.ts` | +38/-0 | — |  |  |
 | 284 | test | A | `tests/unit/node-contract.test.ts` | +157/-0 | — |  |  |
@@ -334,8 +334,8 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 325 | test | A | `tests/unit/stranded-docblocks.test.ts` | +372/-0 | — |  |  |
 | 326 | test | A | `tests/unit/supply-chain.test.ts` | +456/-0 | — |  |  |
 | 327 | test | A | `tests/unit/tokens.test.ts` | +153/-0 | — |  |  |
-| 328 | test | A | `tests/unit/translate-messages.test.ts` | +312/-0 | — |  |  |
-| 329 | test | A | `tests/unit/translate.test.ts` | +663/-0 | — |  |  |
+| 328 | test | A | `tests/unit/translate-messages.test.ts` | +312/-0 | read in full (tranche 3) | F22 (TR35 TR36 TR47 TR48; /=0/ matched the template) | via translate.ts |
+| 329 | test | A | `tests/unit/translate.test.ts` | +663/-0 | read in full (tranche 3) | F22 F24 F25 | via translate.ts |
 | 330 | test | A | `tests/unit/typecheck-scope.test.ts` | +87/-0 | — |  |  |
 | 331 | test | A | `tests/unit/unit-budget.test.ts` | +24/-0 | — |  |  |
 | 332 | test | A | `tests/unit/upload-assets.test.ts` | +233/-0 | — |  |  |
