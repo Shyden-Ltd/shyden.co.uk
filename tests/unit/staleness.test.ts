@@ -189,9 +189,9 @@ describe('staleReason', () => {
     expect(en.staleRoster).not.toBe(id.staleRoster);
   });
 
-  // I-2 (review): every Snapshot field is TYPED as a string, but nothing in
-  // this repo checks that at compile time -- there is no type checker
-  // anywhere, in the editor or in CI (see CLAUDE.md). `mode` avoids the
+  // I-2 (review): every Snapshot field is TYPED as a string, and since #115
+  // `astro check` holds typed callers to it, but a snapshot built from the
+  // DOM or through a cast is not held to anything. `mode` avoids the
   // consequence by explicitly JSON.stringify-ing at its own call site
   // (classroom-groups.ts's `readMode`); `roster` now does the same
   // (`readRoster`). But a future call site that skips that and assigns an

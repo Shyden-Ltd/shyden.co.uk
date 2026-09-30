@@ -2487,8 +2487,9 @@ describe('the warnings channel', () => {
       expect(out.ok).toBe(true);
       if (!out.ok) return;
       // The exact shape, not just an empty array wherever a caller happened
-      // to look -- a stray extra key on `result` has no type checker to
-      // catch it in this repo (see the module doc), so it is checked here.
+      // to look -- a stray extra key on `result` is not something the type
+      // check promises to catch (excess keys are flagged only on some object
+      // literals), so it is checked here.
       expect(Object.keys(out.result).sort()).toEqual(['groups', 'warnings']);
       expect(out.result.warnings).toEqual([]);
     },

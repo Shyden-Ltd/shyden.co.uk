@@ -1054,8 +1054,9 @@ if (form) {
    * three predicates that write it: `updateStaleness` clears it, and
    * `updateStaleness` runs during setup -- a `const` declared later is in
    * its temporal dead zone at that moment and throws, which nothing in this
-   * repo would have caught before a visitor did (there is no type checker,
-   * and `astro build` strips types without checking them).
+   * repo would have caught before a visitor did (`astro check` cannot see
+   * the order a function is called in, and `astro build` strips types
+   * without checking them).
    *
    * ONE element for all three exits, because a teacher does one thing at a
    * time and three boxes would be three places to look.

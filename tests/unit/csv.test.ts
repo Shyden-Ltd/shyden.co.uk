@@ -110,8 +110,8 @@ describe('CSV_LOCALES', () => {
   // sorted-set comparison that version carried alongside it -- same array,
   // same order, therefore same keys -- so this is the whole contract rather
   // than half of it. A missing column in one language is a file the other
-  // pages cannot read, and nothing else in this repo would catch it: there
-  // is no type checker in CI.
+  // pages cannot read. `astro check` catches a missing key, since `columns`
+  // is a `Record<CsvColumn, string>`, but no type can see their order.
   it('lists the same column keys, in the same order, in every locale', () => {
     const expected = Object.keys(CSV_LOCALES.en.columns);
     expect(expected).toHaveLength(6);
