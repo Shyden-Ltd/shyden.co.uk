@@ -63,14 +63,15 @@ const PORT = Number(process.env.DASHBOARD_PORT) || 4322;
 // for as long as the server runs, not stop once one condition is met.
 const POLL_MS = 250;
 
-const GROUP_NAMES = ['desktop', 'android', 'ios'];
-
 // Every file below is WRITTEN by scripts/test-devices.mjs, and its paths are
 // imported from there rather than copied: this is a separate process, but
 // the harness only runs `main()` when it is the entry point, so importing it
 // costs nothing (tests/unit/dashboard-paths.test.ts). That file's comment on
 // DASHBOARD_STATE_DIR says why the live files cannot sit under test-results/.
 const JSONL_FILE = DASHBOARD_FILES.jsonl;
+/** @typedef {keyof typeof JSONL_FILE} GroupName */
+/** The groups in page order, one per live file the harness writes. */
+const GROUP_NAMES = /** @type {GroupName[]} */ (Object.keys(JSONL_FILE));
 const GROUPS_FILE = DASHBOARD_FILES.groups;
 const FINAL_FILE = DASHBOARD_FILES.final;
 // Still under test-results/, unlike the files above: tests/device/ios/
@@ -195,7 +196,7 @@ function applyEvent(group, ev) {
   }
 }
 
-/** @param {string} name */
+/** @param {GroupName} name */
 function tailOneFile(name) {
   const file = JSONL_FILE[name];
   const t = tail[name];
