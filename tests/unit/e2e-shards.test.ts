@@ -109,7 +109,11 @@ describe('shardOf: the shard a run was asked for', () => {
   });
 
   it('refuses --shard with no value at all', () => {
-    expect(() => shardOf(['--shard'])).toThrow(/--shard/);
+    // The whole message: `--shard=undefined is not a shard` names the flag
+    // too, and is what the run said before this refusal existed.
+    expect(() => shardOf(['--shard'])).toThrow(
+      '--shard was given no value: expected <index>/<total>',
+    );
   });
 });
 
@@ -311,6 +315,17 @@ describe('accountFindings: the shards add up to the suite', () => {
     );
   });
 
+  it('refuses a shard that could not say how big the suite is, in those words', () => {
+    const accounts = whole();
+    accounts[2] = account(3, 552, { enumerated: null });
+    const findings = accountFindings(accounts);
+    expect(findings).toContain(
+      'a shard could not say how many tests the suite holds',
+    );
+    // Not a disagreement between suites, and no sum against a null size.
+    expect(findings.join('\n')).not.toMatch(/null/);
+  });
+
   it('refuses an enumeration of zero', () => {
     const accounts = whole().map((each) => ({ ...each, enumerated: 0 }));
     expect(accountFindings(accounts).join('\n')).toMatch(/enumerated no tests/);
@@ -343,6 +358,8 @@ describe('accountFindings: the shards add up to the suite', () => {
     [{}],
     [{ shard: { index: 1, total: 4 }, enumerated: SUITE }],
     [{ ...account(1, 553), executed: '553' }],
+    [{ ...account(1, 553), playwrightExitCode: null }],
+    [{ ...account(1, 553), playwrightExitCode: '0' }],
   ])('refuses an account it cannot read: %j', (broken) => {
     const accounts: unknown[] = whole().slice(1);
     accounts.unshift(broken);
