@@ -22,6 +22,7 @@ import {
   engineConfig,
   engineLanguages,
   engineSource,
+  isLabel,
   libreTranslateBody,
   livenessProblems,
   reviewMarkdown,
@@ -62,6 +63,17 @@ describe('chrF: how far a back-translation drifted from its English', () => {
     ['full-width letters', 'AB', 'ＡＢ', 100],
     ['a message slot', '{names} have joined', 'have joined', 100],
     ['an empty back-translation', 'Add a student', '', 0],
+    ['symbols, which carry no language', 'A + B', 'AB', 100],
+    // Orders one to six: 7/8, 6/7, 5/6, 4/5, 3/4 and 2/3 on both sides, whose
+    // mean is 4017/5040. Five orders would give 3457/4200 instead.
+    [
+      'a text long enough for all six orders',
+      'abcdefgh',
+      'abcdefgx',
+      133900 / 1680,
+    ],
+    ['two texts with nothing to compare', '', '', 100],
+    ['two texts of punctuation alone', '.', '!', 100],
     // U+20000 and U+20001 share their high surrogate, so a count over UTF-16
     // code units would find half of each in common and score 25.
     ['astral letters that share a surrogate', '𠀀', '𠀁', 0],
@@ -124,6 +136,23 @@ describe('unitsBetween: what the reader is asked to read', () => {
     ).toEqual([{ key: 'add', english: 'Add', translation: 'Tambah' }]);
   });
 
+  it('sends no symbol even when its translation differs', () => {
+    expect(unitsBetween({ n: '#', dash: '—' }, { n: '＃', dash: '–' })).toEqual(
+      [],
+    );
+  });
+
+  it('sends nothing for copy the locale has no string for', () => {
+    expect(
+      unitsBetween(
+        { a: 'Add a student', b: 'Type a name', c: 'Close' },
+        { b: 'Ketik nama', c: 7 },
+      ),
+    ).toEqual([
+      { key: 'b', english: 'Type a name', translation: 'Ketik nama' },
+    ]);
+  });
+
   it('sends a plural as its "other" sentence', () => {
     expect(
       unitsBetween(
@@ -161,13 +190,44 @@ describe('unitsBetween: what the reader is asked to read', () => {
         { pick: '{sex, select, M {boy} other {girl}}' },
         { pick: 'anak' },
       ),
-    ).toThrow(/pick/);
+    ).toThrow(
+      'pick: the English chooses by {sex} from M, other; the translation makes no choice',
+    );
     expect(() =>
       unitsBetween(
         { pick: '{sex, select, M {boy} other {girl}}' },
         { pick: '{sex, select, other {anak}}' },
       ),
-    ).toThrow(/pick.*M/);
+    ).toThrow(
+      'pick: the English chooses by {sex} from M, other; the translation chooses by {sex} from other',
+    );
+  });
+
+  it.each([
+    [
+      'chooses by another value',
+      '{kind, select, M {anak laki} other {anak}}',
+      'chooses by {kind} from M, other',
+    ],
+    [
+      'adds a branch',
+      '{sex, select, M {laki} F {perempuan} other {anak}}',
+      'chooses by {sex} from M, F, other',
+    ],
+    [
+      'has as many branches under other names',
+      '{sex, select, F {perempuan} other {anak}}',
+      'chooses by {sex} from F, other',
+    ],
+  ])('refuses a translation that %s', (_, translation, theirs) => {
+    expect(() =>
+      unitsBetween(
+        { pick: '{sex, select, M {boy} other {girl}}' },
+        { pick: translation },
+      ),
+    ).toThrow(
+      `pick: the English chooses by {sex} from M, other; the translation ${theirs}`,
+    );
   });
 });
 
@@ -291,6 +351,12 @@ describe('worstFirst', () => {
     ]);
     expect(rows[0].key, 'worstFirst sorted its input in place').toBe('b');
   });
+
+  it('breaks a tie on score and locale by key', () => {
+    // Given b before a, so a stable sort that ignored the key keeps them wrong.
+    const rows = [compared('id', 'b', 70), compared('id', 'a', 70)];
+    expect(worstFirst(rows).map((row) => row.key)).toEqual(['a', 'b']);
+  });
 });
 
 describe('livenessProblems: a run that read nothing is a failure', () => {
@@ -305,7 +371,7 @@ describe('livenessProblems: a run that read nothing is a failure', () => {
 
   it('names a locale that compared nothing', () => {
     expect(livenessProblems(['id', 'zh'], [compared('id', 'a', 90)])).toEqual([
-      expect.stringMatching(/^zh: /),
+      'zh: nothing was compared -- no translated copy was read back',
     ]);
   });
 
@@ -315,7 +381,7 @@ describe('livenessProblems: a run that read nothing is a failure', () => {
         ['th'],
         [compared('th', 'a', 0, ''), compared('th', 'b', 0, '  ')],
       ),
-    ).toEqual([expect.stringMatching(/^th: /)]);
+    ).toEqual(['th: none of 2 back-translations came back with any text']);
   });
 
   it('leaves one empty back-translation to the review, as its worst row', () => {
@@ -348,9 +414,29 @@ describe('engineSource: which of the engine’s languages a locale is', () => {
 
   it('refuses a locale the engine cannot read into English', () => {
     expect(() => engineSource('th', [{ code: 'th', targets: ['fr'] }])).toThrow(
-      /th/,
+      'th: the engine cannot read th into English; it reads nothing',
     );
-    expect(() => engineSource('th', offered('en', 'vi'))).toThrow(/th/);
+    expect(() => engineSource('th', offered('en', 'vi'))).toThrow(
+      'th: the engine cannot read th into English; it reads en, vi',
+    );
+  });
+
+  it('prefers the locale’s own code to a scripted one', () => {
+    expect(engineSource('zh', offered('en', 'zh', 'zh-Hans'))).toBe('zh');
+  });
+
+  it('refuses to guess between two codes in the locale’s script', () => {
+    expect(() =>
+      engineSource('zh', offered('en', 'zh-Hans', 'zh-Hans-CN')),
+    ).toThrow(
+      'zh: the engine offers zh-Hans, zh-Hans-CN for zh in the Hans script, and the gate will not guess which',
+    );
+  });
+
+  it('never takes a code Intl cannot read as the locale’s script', () => {
+    expect(() => engineSource('vi', offered('en', 'vi-!!'))).toThrow(
+      'vi: the engine cannot read vi into English; it reads en, vi-!!',
+    );
   });
 });
 
@@ -366,6 +452,15 @@ describe('engineLanguages: what the engine says it can read', () => {
     expect(() => engineLanguages([{ code: 'th' }])).toThrow(/languages/);
     expect(() => engineLanguages([{ code: 'th', targets: 'en' }])).toThrow(
       /languages/,
+    );
+  });
+
+  it.each([
+    ['an entry with no code', [{ targets: ['en'] }]],
+    ['a target that is not a string', [{ code: 'th', targets: ['en', 3] }]],
+  ])('refuses %s', (_, answer) => {
+    expect(() => engineLanguages(answer)).toThrow(
+      'expected GET /languages to answer a list of { code, targets }',
     );
   });
 });
@@ -398,7 +493,7 @@ describe('the LibreTranslate request and its answer', () => {
 
   it('refuses an answer with a different count', () => {
     expect(() => translatedTexts({ translatedText: ['only one'] }, 2)).toThrow(
-      /2/,
+      'expected 2 translatedText entries, got 1',
     );
   });
 
@@ -553,6 +648,62 @@ describe('reviewMarkdown: the page a reviewer reads', () => {
     expect(labels, 'no labels section').toBeGreaterThan(-1);
     expect(slotted.indexOf('| `slotted` |')).toBeGreaterThan(labels);
     expect(slotted).not.toContain('#### Sentences');
+  });
+
+  it('counts a label by its words, never its symbols', () => {
+    expect(isLabel('Boys & girls only')).toBe(true);
+    expect(isLabel('Keep these four together')).toBe(false);
+  });
+
+  it('opens the labels section with the caveat the score needs', () => {
+    const labelled = reviewMarkdown(
+      [
+        {
+          ...compared('vi', 'label', 9, 'Gender', 'Giới tính'),
+          english: 'Sex',
+        },
+      ],
+      ['vi'],
+      'engine',
+    );
+    const heading = labelled.indexOf('#### Labels of three words or fewer');
+    const caveat = labelled.indexOf(
+      'Judge these by eye; the order is only a place to start (#95, #161).',
+    );
+    expect(heading, 'no labels section').toBeGreaterThan(-1);
+    expect(caveat, 'no caveat after the heading').toBeGreaterThan(heading);
+    expect(labelled.indexOf('| `label` |')).toBeGreaterThan(caveat);
+  });
+
+  it('has no labels section when every row is a sentence', () => {
+    const sentences = reviewMarkdown(
+      [
+        {
+          ...compared('vi', 'sentence', 40),
+          english: 'Keep these students together in one group',
+        },
+      ],
+      ['vi'],
+      'engine',
+    );
+    expect(sentences, 'no sentences section').toContain('#### Sentences');
+    expect(sentences).not.toContain('#### Labels');
+  });
+
+  it('says a locale read nothing back, rather than scoring an empty list', () => {
+    expect(reviewMarkdown([], ['zh'], 'engine')).toContain(
+      '<details><summary>zh — 0 compared</summary>\n\nNothing was read back.\n\n</details>',
+    );
+  });
+
+  it('keeps an entity-like text literal, escaping its ampersand', () => {
+    expect(
+      reviewMarkdown(
+        [compared('vi', 'k', 10, 'Use &lt; for <')],
+        ['vi'],
+        'engine',
+      ),
+    ).toContain('| Use &amp;lt; for &lt; |');
   });
 
   it('keeps every value inside its own table cell', () => {
