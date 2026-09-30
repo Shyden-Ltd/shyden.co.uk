@@ -82,10 +82,14 @@ describe('install-hooks', () => {
 
     const { code, out } = install();
 
-    expect(out).toContain(
-      'install-hooks: git would not accept a config here (fatal: ',
-    );
-    expect(out).toContain('so no hooks were installed.');
+    // One line, and it is the refusal: git's own wording varies by version,
+    // so the line is matched by its shape rather than spelled out, and a
+    // success line printed after it would be a second line.
+    expect(out.split('\n').filter((line) => line !== '')).toEqual([
+      expect.stringMatching(
+        /^install-hooks: git would not accept a config here \(fatal: .+\), so no hooks were installed\./,
+      ),
+    ]);
     expect(code).toBe(0);
   });
 });
