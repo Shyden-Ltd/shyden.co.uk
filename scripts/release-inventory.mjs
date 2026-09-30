@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import ts from 'typescript';
+import { messageOf } from './errors.mjs';
 
 /** The directories whose files a visitor receives. */
 export const VISITOR_PREFIXES = Object.freeze([
@@ -59,7 +60,11 @@ const linesOf = (text) => text.split('\n').filter((line) => line !== '');
 export const readCommits = ({ base, head, git }) => {
   try {
     git(['merge-base', '--is-ancestor', base, head]);
-  } catch {
+  } catch (error) {
+    // `--is-ancestor` answers no with status 1. Any other failure is git's
+    // own, such as a name that is no commit, and its message says which.
+    if (/** @type {{ status?: unknown } | null} */ (error)?.status !== 1)
+      throw error;
     throw new Error(
       `release-inventory: ${base} is not an ancestor of ${head}, so no line of commits runs from one to the other`,
     );
@@ -248,7 +253,7 @@ const USAGE =
 
 const main = () => {
   /** @type {{ base?: string, head?: string, tests?: boolean }} */
-  let values = {};
+  let values;
   try {
     ({ values } = parseArgs({
       options: {
@@ -257,8 +262,10 @@ const main = () => {
         tests: { type: 'boolean' },
       },
     }));
-  } catch {
-    values = {};
+  } catch (error) {
+    console.error(`release-inventory: ${messageOf(error)}`);
+    console.error(USAGE);
+    process.exit(2);
   }
   /** @type {Git} */
   const git = (args) =>
