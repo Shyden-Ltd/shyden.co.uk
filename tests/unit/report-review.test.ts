@@ -399,6 +399,9 @@ describe('what a visitor typed prints escaped, never raw (AC6)', () => {
   });
 });
 
+/** Longer than the 200 characters a refusal quotes. */
+const BAD_GATEWAY = `<html>${'bad gateway '.repeat(30)}</html>`;
+
 describe('the engine client has one home (AC4)', () => {
   let server: Server;
   let url: string;
@@ -417,6 +420,22 @@ describe('the engine client has one home (AC4)', () => {
         }
         const body = JSON.parse(raw) as { q: string[] };
         requests.push({ path: request.url ?? '', body });
+        // What a proxy sends when the engine behind it is down: HTML.
+        if (body.q.includes('html please')) {
+          response.writeHead(502, { 'content-type': 'text/html' });
+          response.end(BAD_GATEWAY);
+          return;
+        }
+        if (body.q.includes('plain please')) {
+          response.writeHead(200, { 'content-type': 'text/plain' });
+          response.end('OK');
+          return;
+        }
+        if (body.q.includes('short please')) {
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end(JSON.stringify({ translatedText: [] }));
+          return;
+        }
         if (body.q.includes('refuse me')) {
           response.writeHead(400, { 'content-type': 'application/json' });
           response.end(JSON.stringify({ error: 'unsupported text' }));
@@ -470,6 +489,43 @@ describe('the engine client has one home (AC4)', () => {
     await expect(readBack(url, undefined, 'vi', ['refuse me'])).rejects.toThrow(
       /answered 400: unsupported text/,
     );
+  });
+
+  it('quotes the start of a refusal that is not JSON, naming the request', async () => {
+    await expect(
+      readBack(url, undefined, 'vi', ['html please']),
+    ).rejects.toMatchObject({
+      message: `POST ${url}/translate answered 502: ${BAD_GATEWAY.slice(0, 200)}`,
+    });
+  });
+
+  it('refuses an answer that is not JSON', async () => {
+    await expect(
+      readBack(url, undefined, 'vi', ['plain please']),
+    ).rejects.toMatchObject({
+      message: `POST ${url}/translate answered with no JSON`,
+    });
+  });
+
+  it('refuses an answer with fewer texts than it was sent', async () => {
+    await expect(
+      readBack(url, undefined, 'vi', ['short please']),
+    ).rejects.toMatchObject({
+      message: 'expected 1 translatedText entries, got 0',
+    });
+  });
+
+  it('says which engine it could not reach, and why', async () => {
+    // A port nothing listens on: the engine's container is not running.
+    const closed = createServer();
+    await new Promise<void>((done) => closed.listen(0, '127.0.0.1', done));
+    const { port } = closed.address() as AddressInfo;
+    await new Promise<void>((done) => closed.close(() => done()));
+    await expect(
+      call(`http://127.0.0.1:${port}/languages`),
+    ).rejects.toMatchObject({
+      message: `GET http://127.0.0.1:${port}/languages could not be reached: connect ECONNREFUSED 127.0.0.1:${port}`,
+    });
   });
 
   describe('the script asks the engine only where it can say something', () => {
