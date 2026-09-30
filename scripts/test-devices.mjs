@@ -67,7 +67,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PORT = 4321;
 const TEST_RESULTS_DIR = path.join(ROOT, 'test-results');
-const IOS_MODE_FILE = path.join(TEST_RESULTS_DIR, 'ios-mode.json');
+export const IOS_MODE_FILE = path.join(TEST_RESULTS_DIR, 'ios-mode.json');
 const IOS_SESSION_MARKER_FILE = path.join(
   TEST_RESULTS_DIR,
   'ios-session-marker.json',
@@ -151,11 +151,17 @@ const DASHBOARD_JSONL_FILE = {
   android: path.join(DASHBOARD_STATE_DIR, 'android.jsonl'),
   ios: path.join(DASHBOARD_STATE_DIR, 'ios.jsonl'),
 };
-// Kept in sync with scripts/dashboard.mjs's own REPORT_INDEX -- that file
-// checks for `<dir>/index.html` under these exact two directories to show
-// a report link. Only desktop/android are Playwright; iOS is a Vitest
+
+/** The live files scripts/dashboard.mjs reads, named once for both processes. */
+export const DASHBOARD_FILES = {
+  groups: DASHBOARD_GROUPS_FILE,
+  final: DASHBOARD_FINAL_FILE,
+  jsonl: DASHBOARD_JSONL_FILE,
+};
+// Imported by scripts/dashboard.mjs, which checks for `<dir>/index.html`
+// under these two directories to show a report link. Only desktop/android are Playwright; iOS is a Vitest
 // run and has no HTML report to link to.
-const REPORT_DIR = {
+export const REPORT_DIR = {
   desktop: path.join(ROOT, 'playwright-report', 'desktop'),
   android: path.join(ROOT, 'playwright-report', 'android'),
 };
