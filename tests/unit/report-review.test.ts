@@ -212,6 +212,17 @@ describe('each key is read from the catalogues (AC3)', () => {
     expect(catalogueText(fixture, 'en', 'site.nav.home')).toBe('Home');
   });
 
+  it('reads a tool key that merely starts with "site" as tool copy', () => {
+    // Only `site.` names the site table: a tool key spelled `siteName` is
+    // tool copy, and a bare `site` prefix check would look for it in the
+    // wrong table and print it as missing (#390).
+    const catalogues: Catalogues = {
+      ...fixture,
+      vi: { ...fixture.vi, strings: { siteName: 'Tên trang' } },
+    };
+    expect(catalogueText(catalogues, 'vi', 'siteName')).toBe('Tên trang');
+  });
+
   it('has nothing for a missing key, or for a key naming a table', () => {
     expect(catalogueText(fixture, 'vi', 'gone')).toBeUndefined();
     expect(catalogueText(fixture, 'vi', 'site.nav')).toBeUndefined();
@@ -245,6 +256,18 @@ describe('each key is read from the catalogues (AC3)', () => {
     expect(block).toContain('  English   "Home"');
     expect(block).toContain('  vi now    "Trang chủ"');
     expect(block.indexOf('greet')).toBeLessThan(block.indexOf('site.nav.home'));
+  });
+
+  it("prints a key only English holds as missing, never the locale's text as undefined", () => {
+    const catalogues: Catalogues = {
+      ...fixture,
+      en: { ...fixture.en, strings: { fresh: 'New' } },
+    };
+    const block = reviewBlock(row({ keys: '["fresh"]' }), catalogues, {
+      kind: 'not-needed',
+    });
+    expect(block).toContain('key         fresh');
+    expect(block).toContain('  missing from the catalogue');
   });
 
   it('prints a key the catalogue no longer holds, rather than skipping it', () => {
@@ -343,6 +366,19 @@ describe('what a visitor typed prints escaped, never raw (AC6)', () => {
   it('leaves every script the site speaks alone', () => {
     const copy = 'Báo lỗi 报告翻译 รายงานคำแปล Laporkan';
     expect(escaped(copy)).toBe(copy);
+  });
+
+  it('escapes the page and an engine failure too, which the row and the engine supply', () => {
+    const block = reviewBlock(
+      row({ page: `home${BELL}`, suggestion: 'Báo cáo' }),
+      fixture,
+      {
+        kind: 'failed',
+        reason: `engine said ${String.fromCharCode(27)}[2J`,
+      },
+    );
+    expect(block).toContain(`page        home${ESC}u{7}`);
+    expect(block).toContain(`  in English FAILED: engine said ${ESC}u{1b}[2J`);
   });
 
   it('never lets a note put a raw control character on the terminal', () => {
