@@ -7,6 +7,8 @@ import { THEMES, themeColour } from '../palette';
 import { emulateTheme, expectTheme } from '../themes';
 import { atLeast44 } from '../viewport';
 import { LOCALES, getSiteStrings, localisePath } from '../../src/lib/i18n';
+import { searched } from '../source-files';
+import { sitePaths } from '../site-pages';
 
 test.use(recorded);
 
@@ -472,4 +474,100 @@ test.describe('the aurora ribbon (#371)', () => {
     await page.emulateMedia({ forcedColors: 'active' });
     expect((await ribbon(page)).display).toBe('none');
   });
+});
+
+/**
+ * Nothing moves when the theme changes (#386). Colour, ground and shadow may
+ * change with the theme; geometry may not. The operator saw the ShyTalk
+ * wordmark jump ~17px sideways and grow ~12px, because the light theme gave
+ * it a tile with padding and the dark theme gave it none, and everything
+ * below it moved with it.
+ *
+ * Derived, not listed: every element in the body, on every page, in every
+ * locale, at a phone and a desktop width, is measured in dark, the switch is
+ * pressed to light and back to dark, exactly as a visitor does it, and every
+ * box is measured again each time, in the same document. Pressing rather than
+ * emulating the device matters: a saved choice is served by a different dark
+ * block in tokens.css from the device preference. Animations and transitions are frozen
+ * identically for both passes, so the marquee's motion cannot read as a
+ * theme shift. The theme switch swaps its own sun and moon by design, so its
+ * descendants are the one exemption; the switch's own box is still compared.
+ */
+test.describe('nothing moves when the theme changes (#386)', () => {
+  const boxes = (page: Page) =>
+    page.evaluate((switchSelector) => {
+      const theSwitch = document.querySelector(switchSelector);
+      return [...document.body.querySelectorAll('*')].map((el) => {
+        const r = el.getBoundingClientRect();
+        const classes =
+          typeof el.className === 'string' && el.className.trim()
+            ? `.${el.className.trim().split(/\s+/).join('.')}`
+            : '';
+        return {
+          what: `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${classes}`,
+          rendered: el.getClientRects().length > 0,
+          inSwitch:
+            theSwitch !== null && theSwitch !== el && theSwitch.contains(el),
+          box: [r.x, r.y, r.width, r.height].map(
+            (v) => Math.round(v * 10) / 10,
+          ),
+        };
+      });
+    }, SWITCH);
+
+  for (const route of sitePaths()) {
+    for (const locale of LOCALES) {
+      for (const width of [390, 1280]) {
+        const path = localisePath(route, locale);
+        test(
+          `${path} at ${width}px: no element moves between dark and light`,
+          { tag: '@emulated-viewport' },
+          async ({ page }) => {
+            await page.setViewportSize({ width, height: 900 });
+            await page.goto(path);
+            await page.addStyleTag({
+              content:
+                '*, *::before, *::after { animation: none !important; transition: none !important; }',
+            });
+            await page.evaluate(() => document.fonts.ready);
+            await emulateTheme(page, 'dark');
+            const dark = await boxes(page);
+            await toggle(page).click();
+            await expectTheme(page, 'light');
+            const light = await boxes(page);
+            await toggle(page).click();
+            await expectTheme(page, 'dark');
+            const darkAgain = await boxes(page);
+
+            const compared = dark.filter((d) => d.rendered && !d.inSwitch);
+            for (const [label, other] of [
+              ['light', light],
+              ['saved dark', darkAgain],
+            ] as const) {
+              expect(other, 'the document changed between passes').toHaveLength(
+                dark.length,
+              );
+              const moved = dark
+                .map((d, i) => ({ d, o: other[i] }))
+                .filter(
+                  ({ d, o }) =>
+                    !d.inSwitch &&
+                    (d.rendered !== o.rendered ||
+                      d.box.some((v, k) => Math.abs(v - o.box[k]) > 0.5)),
+                )
+                .map(
+                  ({ d, o }) => `${d.what} dark ${d.box} -> ${label} ${o.box}`,
+                );
+              expect(
+                searched(moved, {
+                  of: compared.length,
+                  what: 'rendered elements',
+                }),
+              ).toEqual([]);
+            }
+          },
+        );
+      }
+    }
+  }
 });
