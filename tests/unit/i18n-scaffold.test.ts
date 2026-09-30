@@ -91,7 +91,7 @@ describe('renderCatalogue', () => {
     expect(source.startsWith("import type { Catalogue } from './en';\n")).toBe(
       true,
     );
-    expect(source).toContain('\nexport const ja: Catalogue = {\n');
+    expect(source).toMatch(/^export const ja: Catalogue = \{$/m);
     expect(source.endsWith('\n};\n')).toBe(true);
   });
 
@@ -179,8 +179,8 @@ describe('main', () => {
     expect(run.stderr).toBe('');
     expect(run.stdout).toBe(`✓ src/lib/i18n/ja.ts\n`);
     expect(run.status).toBe(0);
-    expect(readFileSync(join(cwd, OUT), 'utf8')).toContain(
-      '\nexport const ja: Catalogue = {\n',
+    expect(readFileSync(join(cwd, OUT), 'utf8')).toMatch(
+      /^export const ja: Catalogue = \{$/m,
     );
   });
 
@@ -203,8 +203,8 @@ describe('main', () => {
       const run = scaffold(cwd, ...args);
       expect(run.stderr).toBe('');
       expect(run.status).toBe(0);
-      expect(readFileSync(join(cwd, OUT), 'utf8')).toContain(
-        '\nexport const ja: Catalogue = {\n',
+      expect(readFileSync(join(cwd, OUT), 'utf8')).toMatch(
+        /^export const ja: Catalogue = \{$/m,
       );
     },
   );
