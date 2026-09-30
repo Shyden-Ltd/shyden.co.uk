@@ -455,7 +455,8 @@ function main() {
           '  Without it there is no count to check, so this cannot be treated as\n' +
           `  a pass.\n${RULE}\n`,
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // #44 wants the distribution before anyone changes a timeout. Emitted
@@ -523,8 +524,11 @@ function main() {
       );
     // Neither verdict masks the other: reconcile keeps its exit code, and a
     // dead collector turns an otherwise-clean run red on its own.
-    process.exit(verdict.exitCode || (liveness.ok ? 0 : 1));
+    process.exitCode = verdict.exitCode || (liveness.ok ? 0 : 1);
   } finally {
+    // Reached because the verdicts above set `process.exitCode` and return:
+    // `process.exit()` ends the process without running any `finally`, and
+    // every run left this directory behind while this said otherwise (#390).
     // An evidence directory is the operator's, not ours: it holds the captures
     // and the video the sign-off page is built from.
     if (ephemeral) rmSync(reportDir, { recursive: true, force: true });
