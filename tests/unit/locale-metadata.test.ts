@@ -24,10 +24,10 @@ import {
  * a locale is described, and the assertions here are what stop it drifting
  * back out into ternaries.
  *
- * MVP_LOCALES is deliberately WIDER than LOCALES: the metadata for all five
- * MVP languages ships now, while only `en` and `id` are routed. That is the
- * whole point of groundwork — adding `zh` to LOCALES must not require writing
- * new metadata code, only flipping which locales are served.
+ * MVP_LOCALES is deliberately WIDER than LOCALES: the metadata for a language
+ * ships before the language is served, so serving it means flipping which
+ * locales are served, never writing new metadata code. #22 served zh, vi and
+ * th that way, and today the two lists hold the same five.
  */
 
 describe('the locale metadata table', () => {
@@ -84,6 +84,29 @@ describe('the locale metadata table', () => {
     }
     expect(LOCALE_METADATA.en.ogLocale).toBe('en_GB');
     expect(LOCALE_METADATA.id.ogLocale).toBe('id_ID');
+  });
+
+  it('pins every language its og:locale and number locale, as literals', () => {
+    // All five (#390). Only en and id were pinned, so `zh_TW` announcing a
+    // Simplified page as Taiwanese, or `th-TH-u-nu-thai` printing Thai digits,
+    // left every test green.
+    expect(
+      Object.fromEntries(
+        MVP_LOCALES.map((locale) => [
+          locale,
+          [
+            LOCALE_METADATA[locale].ogLocale,
+            LOCALE_METADATA[locale].numberLocale,
+          ],
+        ]),
+      ),
+    ).toEqual({
+      en: ['en_GB', 'en-GB'],
+      id: ['id_ID', 'id-ID'],
+      zh: ['zh_CN', 'zh-CN'],
+      vi: ['vi_VN', 'vi-VN'],
+      th: ['th_TH', 'th-TH'],
+    });
   });
 
   it('carries a number-formatting locale that Intl actually accepts', () => {
