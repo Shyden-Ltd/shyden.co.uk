@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { renderCatalogue } from '../../scripts/i18n-scaffold.mjs';
 import { translatableSentences } from '../../src/lib/i18n/translate';
+import { messageOf } from '../../scripts/errors.mjs';
 
 /**
  * `scripts/i18n-scaffold.mjs` renders zh, vi and th from `en.ts` and the
@@ -61,7 +62,7 @@ const fail = (catalogue: unknown, locale: ReturnType<typeof ja>) => {
   try {
     renderCatalogue(catalogue, locale);
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return messageOf(error);
   }
   throw new Error('renderCatalogue returned where it should have refused');
 };

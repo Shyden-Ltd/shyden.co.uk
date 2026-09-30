@@ -24,6 +24,7 @@ import { capturesOfThisRun, flattenReport } from './build-evidence-page.mjs';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 import { inventoryFor } from './release-inventory.mjs';
 import { changeMapOf, renderChangeMap } from './release-map.mjs';
+import { messageOf } from './errors.mjs';
 
 /**
  * Every test title a listing holds, as the builder writes a journey's title
@@ -206,7 +207,7 @@ const main = () => {
     writeFileSync(values.out ?? '', `${JSON.stringify(content, null, 2)}\n`);
     console.log(`build-release-content: wrote ${values.out}`);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(messageOf(error));
     process.exit(1);
   }
 };

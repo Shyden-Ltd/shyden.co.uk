@@ -18,6 +18,8 @@
  * generic W3C read would predict; see the comment at each one.
  */
 
+import { messageOf } from '../../../scripts/errors.mjs';
+
 /**
  * The W3C "web element identifier" key. Every element reference safaridriver
  * returns is a one-key object mapping this string to an opaque handle.
@@ -215,7 +217,7 @@ export async function waitFor<T>(
       }
     } catch (error) {
       if (!retryable(error)) throw error;
-      observed = `threw ${error instanceof Error ? error.message : String(error)}`;
+      observed = `threw ${messageOf(error)}`;
     }
 
     if (Date.now() >= deadline) {

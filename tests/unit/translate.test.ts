@@ -18,6 +18,7 @@ import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import { searched } from '../source-files';
 import { stringLeaves } from '../catalogue-leaves';
+import { messageOf } from '../../scripts/errors.mjs';
 import {
   DO_NOT_TRANSLATE,
   buildRequestBody,
@@ -347,7 +348,7 @@ describe('protected terms are wrapped before they are sent', () => {
     try {
       deeplDrafts({ translations: [{ text: 'Pupil copy, echoed' }] }, 2);
     } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
+      message = messageOf(error);
     }
     expect(message).toBe('DeepL returned 1 translations for 2 texts');
   });
