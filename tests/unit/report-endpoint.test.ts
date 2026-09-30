@@ -491,14 +491,20 @@ describe('the health check', () => {
 
   it('answers 200 ok:true for the migrated table, and logs nothing', async () => {
     const lines: string[] = [];
+    const log = (line: string) => lines.push(line);
     const response = await reportHealth(
       new Request(HEALTH),
       { REPORTS: tableWith(REPORT_COLUMNS) },
-      (line) => lines.push(line),
+      log,
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    expect(lines).toEqual([]);
+    // A call with no binding through the same log proves it live, so one
+    // line in all is the healthy call's silence, not a dead listener.
+    await reportHealth(new Request(HEALTH), NO_DB, log);
+    expect(lines).toEqual([
+      'report health: Error: the REPORTS binding is missing',
+    ]);
   });
 
   it('answers 503 ok:false for a drifted table, and logs the drift', async () => {
