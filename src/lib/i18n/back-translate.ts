@@ -5,11 +5,7 @@ import { DEFAULT_LOCALE, LOCALES, type Locale } from './locales.ts';
 import { describeMessage, isMessageTemplate } from './message.ts';
 import { siteEn, siteId, siteTh, siteVi, siteZh } from './site.ts';
 import { th } from './th.ts';
-import {
-  CSV_KEYS_NOT_TRANSLATED,
-  messageUnits,
-  needsTranslation,
-} from './translate.ts';
+import { messageUnits, needsTranslation } from './translate.ts';
 import { vi } from './vi.ts';
 import { zh } from './zh.ts';
 
@@ -89,15 +85,14 @@ export const TRANSLATED_LOCALES: readonly Locale[] = LOCALES.filter(
 );
 
 /**
- * The third catalogue: the words a downloaded CSV carries. Its `sex` tokens
- * are held back from translation (`CSV_KEYS_NOT_TRANSLATED`), so there is
- * nothing of theirs to read back.
+ * The third catalogue: the words a downloaded CSV carries, less its `sex`
+ * letters. Those are the roster's own `rosterSexMale` and `rosterSexFemale`
+ * (`tests/unit/csv.test.ts` holds them equal), which the roster rows already
+ * read back, so reading them again here would only list them twice.
  */
 const csvCopy = (locale: Locale): Record<string, unknown> =>
   Object.fromEntries(
-    Object.entries(CSV_LOCALES[locale]).filter(
-      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
-    ),
+    Object.entries(CSV_LOCALES[locale]).filter(([key]) => key !== 'sex'),
   );
 
 /** Every unit of one locale, from all three catalogues. */

@@ -1,6 +1,7 @@
 import type { MvpLocale } from './metadata';
 // With their extensions: the DeepL scripts load this module under plain Node,
 // which resolves nothing without one.
+import { catalogueLeaves } from '../catalogue-leaves.ts';
 import { CSV_LOCALES } from '../csv-locale.ts';
 import { en } from './en.ts';
 import {
@@ -243,22 +244,6 @@ export function buildRequestBody(
   };
 }
 
-/**
- * CSV vocabulary keys a translator must never be handed.
- *
- * `sex` holds the two TOKENS a teacher types into a spreadsheet cell -- `M`
- * and `F` in English, `L`/`P` in Indonesian (from laki-laki / perempuan,
- * matching what the roster table shows on the Indonesian page). Sent to DeepL
- * a bare `M` comes back as a guess about a letter, and the tokens carry a
- * cross-file invariant a translator cannot see: they must agree with
- * `rosterSexMale`/`rosterSexFemale` in the same locale's own catalogue, or the
- * file a teacher exports disagrees with the table they exported it from.
- *
- * Everything else in the table is ordinary words -- column headers, `yes`,
- * `no`, the class comment -- and goes through DeepL like any other copy.
- */
-export const CSV_KEYS_NOT_TRANSLATED: readonly string[] = ['sex'];
-
 /** A letter in any script — Latin, Han, Thai. Not a digit and not punctuation. */
 const HAS_A_LETTER = /\p{L}/u;
 
@@ -322,27 +307,21 @@ export function translationUnits(value: unknown): string[] {
  * footer, homepage and 404 copy came to be invisible to the translator: they
  * live in `site.ts`. The CSV vocabulary is the third catalogue: every word a
  * downloaded file carries has to match the language of the page it came
- * from, which makes it copy. Its `sex` tokens are the one part held back --
- * see CSV_KEYS_NOT_TRANSLATED.
+ * from, which makes it copy. Its `sex` letters go too: `M` and `F` are also
+ * `en.rosterSexMale` and `rosterSexFemale`, the letters the roster table
+ * shows, and `tests/unit/csv.test.ts` holds each locale's pair equal. A
+ * hold-back here (`CSV_KEYS_NOT_TRANSLATED`, until #390) kept nothing from
+ * the translator, because the same two strings arrived from `en`.
  *
  * A Set: the same word appears under several keys, and DeepL charges per
  * character sent, not per distinct string.
  */
 export function translatableSentences(): ReadonlySet<string> {
-  const csv = Object.fromEntries(
-    Object.entries(CSV_LOCALES.en).filter(
-      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
+  return new Set(
+    [en, siteEn, CSV_LOCALES.en].flatMap((table) =>
+      catalogueLeaves(table).flatMap(([, value]) => translationUnits(value)),
     ),
   );
-  return new Set([en, siteEn, csv].flatMap(unitsIn));
-}
-
-/** Every unit a catalogue sends, walked depth-first in its own key order. */
-function unitsIn(table: unknown): string[] {
-  if (Array.isArray(table)) return table.flatMap(unitsIn);
-  if (table && typeof table === 'object')
-    return Object.values(table).flatMap(unitsIn);
-  return translationUnits(table);
 }
 
 /**

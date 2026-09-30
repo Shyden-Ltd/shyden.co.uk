@@ -178,7 +178,7 @@ const CATALOGUES = { id, zh, vi, th } satisfies Record<
 >;
 const TRANSLATED = Object.keys(CATALOGUES) as Array<keyof typeof CATALOGUES>;
 
-/** The CSV vocabulary without its `sex` tokens, which are never translated. */
+/** The CSV vocabulary without its `sex` letters, which the roster rows read back. */
 const csvCopy = (locale: Locale) =>
   Object.fromEntries(
     Object.entries(CSV_LOCALES[locale]).filter(([key]) => key !== 'sex'),
