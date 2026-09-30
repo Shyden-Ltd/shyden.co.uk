@@ -48,7 +48,9 @@ import type { Locale } from '../../src/lib/i18n/locales';
  * left over, never the bare word for "left", which also names leftover food:
  * zh 剩余, vi còn lại and th นักเรียน…เหลือ, where the student is in the word.
  * `sound` takes the Sound on control's word, and `classList` the words of
- * the Class list print option, pinned on #161 in th.
+ * the Class list print option, pinned on #161 in th. `gloryPoints`, `bean`
+ * and `coin` are the operator's 2026-09-30 decision, which id already kept:
+ * YeeTalk's names in English, the coin in the page's language.
  */
 const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
   id: {
@@ -67,6 +69,9 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     leftovers: ['tersisa', 'sisa dalam'],
     sound: ['suara'],
     classList: ['daftar kelas'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['koin'],
   },
   zh: {
     pin: ['固定'],
@@ -78,6 +83,9 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     leftovers: ['剩余'],
     sound: ['声音'],
     classList: ['班级名单'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['金币'],
   },
   vi: {
     pin: ['ghim'],
@@ -89,6 +97,9 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     leftovers: ['còn học sinh', 'học sinh còn lại'],
     sound: ['âm thanh'],
     classList: ['danh sách lớp'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['xu'],
   },
   th: {
     pin: ['ปักหมุด'],
@@ -100,6 +111,9 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     leftovers: ['นักเรียนเหลือ', 'นักเรียนที่เหลือ'],
     sound: ['เสียง'],
     classList: ['รายชื่อชั้น', 'รายชื่อนักเรียน'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['เหรียญ'],
   },
 };
 
@@ -128,6 +142,9 @@ const ONE_WORD: Glossary = {
   leftovers: ['học sinh còn lại'],
   sound: ['âm thanh'],
   classList: ['danh sách lớp'],
+  gloryPoints: ['glory point'],
+  bean: ['bean'],
+  coin: ['xu'],
 };
 
 /** What zh `warnings.PINNED_MIXED_SEX` said until #319. */
@@ -411,6 +428,24 @@ describe('on the live catalogues', () => {
     ],
     ['zh', 'stateBunched', '一组剩菜', 'leftovers'],
     ['th', 'stateMixed', 'แบ่งตามเพศ', 'mix'],
+    [
+      'vi',
+      'site.glory.howToSteps[0]',
+      'Hãy nhập số điểm vinh quang mà bạn muốn đạt được vào ô bên dưới.',
+      'gloryPoints',
+    ],
+    [
+      'th',
+      'site.glory.assumptions',
+      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 เหรียญต่อถั่ว และของขวัญจะถูกแปลงเป็นถั่วในอัตรา 40%',
+      'bean',
+    ],
+    [
+      'zh',
+      'site.glory.howToSteps[2]',
+      '请准确读出达到该目标所需的硬币、豆子以及礼物总价值。',
+      'coin',
+    ],
   ])(
     '%s %s seeded back to what #390 corrected is flagged for %s',
     (locale, key, before, feature) => {

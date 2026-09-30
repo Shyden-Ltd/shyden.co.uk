@@ -334,12 +334,14 @@ describe('checkNamedLabels: a sentence that names a label, held to it', () => {
   });
 
   it('labels sharing an English are one name: carrying any rendering of it is enough', () => {
+    // The sentence carries the SECOND label's rendering only, so a check that
+    // read the first alone would call it a miss.
     const again = unit('again', 'Shuffle again', '重新洗牌');
     const board = unit('boardShuffle', 'Shuffle again', '再洗一次');
     const refusal = unit(
       'staleRefusePrint',
       'These groups are out of date. Shuffle again before printing them.',
-      '这些分组已经过时了。打印前请重新洗牌。',
+      '这些分组已经过时了。打印前请再洗一次。',
     );
     expect(checkNamedLabels([again, board, refusal], 'zh')).toEqual([
       { sentence: refusal, labels: [again, board], carried: true },

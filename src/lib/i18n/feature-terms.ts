@@ -30,7 +30,11 @@ import type { Locale } from './locales.ts';
  * the copy to those labels' words catches both. `sound` and `classList`
  * joined with them: "Sound off" had become the idiom for speaking up (zh
  * 畅所欲言, vi "Hãy lên tiếng", th แสดงความคิดเห็น), and zh called the class
- * list a course list (课程列表) in three sentences.
+ * list a course list (课程列表) in three sentences. The Glory Points page's
+ * three currencies joined too, by operator decision (2026-09-30, "Keep app
+ * names in English"): YeeTalk's own names, glory points and bean, stay in
+ * English in every language, and the coin is one word per language. Each
+ * page had named them two or three ways, beans as bean seeds among them.
  *
  * What it cannot see: copy that carries an approved word once and a wrong
  * word elsewhere. A count was tried and rejected, because a prefix changes an
@@ -51,7 +55,10 @@ export type FeatureTerm =
   | 'mix'
   | 'leftovers'
   | 'sound'
-  | 'classList';
+  | 'classList'
+  | 'gloryPoints'
+  | 'bean'
+  | 'coin';
 
 /**
  * How English copy names each feature: as a whole word, in every form the
@@ -69,6 +76,9 @@ export const FEATURE_TERMS: Readonly<Record<FeatureTerm, RegExp>> = {
   leftovers: /\bleft ?overs?\b/,
   sound: /\bsounds?\b/,
   classList: /\bclass lists?\b/,
+  gloryPoints: /\bglory points?\b/,
+  bean: /\bbeans?\b/,
+  coin: /\bcoins?\b/,
 };
 
 /** The words a locale may use for each feature, as the operator approved them. */

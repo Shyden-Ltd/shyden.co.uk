@@ -279,7 +279,7 @@ export const siteZh: SiteStrings = {
     toolBadge: '已上线',
     workGloryTitle: 'Glory Points 计算器',
     workGloryBody:
-      '把 YeeTalk 的 glory points 换算成达成目标所需的金币、beans 和礼物价值。',
+      '把 YeeTalk 的 glory points 换算成达成目标所需的金币、bean 和礼物价值。',
     openGlory: '打开计算器',
     workClassroomTitle: '课堂小组创建器',
     workClassroomBody:
@@ -297,22 +297,23 @@ export const siteZh: SiteStrings = {
   glory: {
     title: 'Glory Points 计算器 — Shyden',
     description:
-      '将YeeTalk荣耀点数兑换为金币、豆豆和总礼品价值——在浏览器中即可即时完成。',
+      '将 YeeTalk 的 glory points 换算成金币、bean 和礼物总价值——在浏览器中即可即时完成。',
     forYeetalk: '适用于 YeeTalk ↗',
     heading: 'Glory Points 计算器',
-    lead: '“荣耀点”是YeeTalk应用内送礼功能的一部分。输入您希望获得的荣耀点数，这款由Shyden开发的辅助工具会计算出您需要多少金币、豆子以及总送礼金额才能达到该目标。',
+    lead: 'Glory points 是 YeeTalk 应用内送礼功能的一部分。输入您想达到的 glory points，这款由 Shyden 开发的辅助工具会算出达到该目标所需的确切金币、bean 和礼物总价值。',
     howToHeading: '如何使用',
     howToSteps: [
-      '请在下方框中输入您希望达到的荣耀点数。',
+      '请在下方框中输入您想达到的 glory points。',
       '选择“计算”——或按 Enter 键。',
-      '请准确读出达到该目标所需的硬币、豆子以及礼物总价值。',
+      '即可看到达到该目标所需的确切金币、bean 和礼物总价值。',
     ],
-    inputLabel: '荣耀点数',
+    inputLabel: 'Glory points',
     calculate: '计算',
-    resultLine: siteEn.glory.resultLine,
+    resultLine: (coins: string, beans: string, gift: string) =>
+      `${coins} 金币 → ${beans} bean → ${gift} 礼物总价值`,
     needsJs: '此计算器需要启用 JavaScript。',
     assumptions:
-      '假设每1分需1枚金币，每颗豆子可兑换0.9枚金币，且礼物可按40%的比例兑换成豆子。',
+      '假设每 1 点需 1 枚金币，每个 bean 可兑换 0.9 枚金币，且礼物按 40% 的比例兑换成 bean。',
     errors: {
       empty: '请输入一个数字。',
       notWhole: '请输入一个整数。',
@@ -402,22 +403,23 @@ export const siteVi: SiteStrings = {
   glory: {
     title: 'Máy tính Glory Points — Shyden',
     description:
-      'Chuyển đổi điểm vinh quang YeeTalk thành xu, hạt đậu và tổng giá trị quà tặng — ngay lập tức, ngay trên trình duyệt của bạn.',
+      'Chuyển đổi glory points của YeeTalk thành xu, bean và tổng giá trị quà tặng — ngay lập tức, ngay trên trình duyệt của bạn.',
     forYeetalk: 'Dành cho YeeTalk ↗',
     heading: 'Máy tính Glory Points',
-    lead: 'Điểm vinh quang là một phần của tính năng tặng quà trong ứng dụng YeeTalk. Chỉ cần nhập số điểm vinh quang mà bạn muốn đạt được, công cụ hỗ trợ này – do Shyden phát triển – sẽ tính toán chính xác số xu, hạt đậu và tổng giá trị quà tặng mà bạn cần để đạt được mục tiêu đó.',
+    lead: 'Glory points là một phần của tính năng tặng quà trong ứng dụng YeeTalk. Chỉ cần nhập số glory points mà bạn muốn đạt được, công cụ hỗ trợ này – do Shyden phát triển – sẽ tính toán chính xác số xu, bean và tổng giá trị quà tặng mà bạn cần để đạt được mục tiêu đó.',
     howToHeading: 'Cách sử dụng',
     howToSteps: [
-      'Hãy nhập số điểm vinh quang mà bạn muốn đạt được vào ô bên dưới.',
+      'Hãy nhập số glory points mà bạn muốn đạt được vào ô bên dưới.',
       'Chọn “Tính toán” — hoặc nhấn phím Enter.',
-      'Hãy đếm chính xác số đồng xu, hạt đậu và tổng giá trị quà tặng mà bạn cần để đạt được mục tiêu đó.',
+      'Xem chính xác số xu, bean và tổng giá trị quà tặng mà bạn cần để đạt được mục tiêu đó.',
     ],
-    inputLabel: 'Điểm vinh quang',
+    inputLabel: 'Glory points',
     calculate: 'Tính toán',
-    resultLine: siteEn.glory.resultLine,
+    resultLine: (coins: string, beans: string, gift: string) =>
+      `${coins} xu → ${beans} bean → ${gift} tổng giá trị quà tặng`,
     needsJs: 'Trình tính này cần bật JavaScript.',
     assumptions:
-      'Giả định mỗi điểm tương ứng với 1 đồng xu, mỗi hạt đậu tương ứng với 0,9 đồng xu, và quà tặng được quy đổi thành hạt đậu theo tỷ lệ 40%.',
+      'Giả định mỗi điểm tương ứng với 1 xu, mỗi bean tương ứng với 0,9 xu, và quà tặng được quy đổi thành bean theo tỷ lệ 40%.',
     errors: {
       empty: 'Vui lòng nhập một số.',
       notWhole: 'Vui lòng nhập một số nguyên.',
@@ -510,22 +512,23 @@ export const siteTh: SiteStrings = {
   glory: {
     title: 'เครื่องคำนวณ Glory Points — Shyden',
     description:
-      'แปลงคะแนนเกียรติยศ YeeTalk เป็นเหรียญ ถั่ว และมูลค่ารวมของของขวัญ — ทันที ในเบราว์เซอร์ของคุณ',
+      'แปลง glory points ของ YeeTalk เป็นเหรียญ bean และมูลค่ารวมของของขวัญ — ทันที ในเบราว์เซอร์ของคุณ',
     forYeetalk: 'สำหรับ YeeTalk ↗',
     heading: 'เครื่องคำนวณ Glory Points',
-    lead: 'คะแนนเกียรติยศ เป็นส่วนหนึ่งของระบบการส่งของขวัญภายในแอป YeeTalk เพียงป้อนจำนวนคะแนนเกียรติยศ ที่คุณต้องการ เครื่องมือช่วยนี้ ซึ่งพัฒนาโดย Shyden จะคำนวณจำนวนเหรียญ (coins) และเมล็ด (beans) รวมถึงมูลค่ารวมของของขวัญที่คุณต้องใช้เพื่อให้ถึงเป้าหมายนั้น',
+    lead: 'Glory points เป็นส่วนหนึ่งของระบบการส่งของขวัญภายในแอป YeeTalk เพียงป้อนจำนวน glory points ที่คุณต้องการ เครื่องมือช่วยนี้ ซึ่งพัฒนาโดย Shyden จะคำนวณจำนวนเหรียญและ bean รวมถึงมูลค่ารวมของของขวัญที่คุณต้องใช้เพื่อให้ถึงเป้าหมายนั้น',
     howToHeading: 'วิธีใช้',
     howToSteps: [
-      'กรอกจำนวนคะแนนเกียรติยศที่คุณต้องการให้ถึงลงในช่องด้านล่าง',
+      'กรอกจำนวน glory points ที่คุณต้องการให้ถึงลงในช่องด้านล่าง',
       'เลือก "คำนวณ" — หรือกด Enter',
-      'อ่านจำนวนเหรียญและเมล็ดถั่วที่แน่นอน รวมถึงมูลค่ารวมของของขวัญที่คุณต้องใช้เพื่อให้ถึงเป้าหมายนั้น',
+      'ดูจำนวนเหรียญและ bean ที่แน่นอน รวมถึงมูลค่ารวมของของขวัญที่คุณต้องใช้เพื่อให้ถึงเป้าหมายนั้น',
     ],
-    inputLabel: 'คะแนนเกียรติยศ',
+    inputLabel: 'Glory points',
     calculate: 'คำนวณ',
-    resultLine: siteEn.glory.resultLine,
+    resultLine: (coins: string, beans: string, gift: string) =>
+      `${coins} เหรียญ → ${beans} bean → ${gift} มูลค่ารวมของของขวัญ`,
     needsJs: 'เครื่องคำนวณนี้ต้องเปิด JavaScript ไว้',
     assumptions:
-      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 เหรียญต่อถั่ว และของขวัญจะถูกแปลงเป็นถั่วในอัตรา 40%',
+      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 เหรียญต่อ bean และของขวัญจะถูกแปลงเป็น bean ในอัตรา 40%',
     errors: {
       empty: 'กรุณาป้อนตัวเลข',
       notWhole: 'กรุณาป้อนตัวเลขเต็ม',
