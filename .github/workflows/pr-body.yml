@@ -57,6 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The pull request's own commits, not just its tip: the messages are
           # read below, and a shallow clone has none of them.
           fetch-depth: 0
