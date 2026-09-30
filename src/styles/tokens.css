@@ -190,10 +190,12 @@
     --ribbon-b: rgb(122 92 255 / 0.3);
     --ribbon-c: rgb(40 140 230 / 0.26);
 
-    /* No tile: the mark was made for this ground, and zero padding keeps it
-       exactly where Aurora always had it. */
+    /* No tile: the mark was made for this ground. The padding is NOT reset:
+       a theme change may recolour the mark, never move it (#386). Zero
+       padding here moved it ~17px sideways and everything below it ~12px
+       down on every switch, so dark keeps light's box with a transparent
+       tile (operator's choice, 2026-09-30). */
     --wordmark-tile: transparent;
-    --wordmark-pad: 0;
     --switch-moon: none;
     --switch-sun: inline-block;
   }
@@ -229,7 +231,6 @@
     --ribbon-b: rgb(122 92 255 / 0.3);
     --ribbon-c: rgb(40 140 230 / 0.26);
     --wordmark-tile: transparent;
-    --wordmark-pad: 0;
     --switch-moon: none;
     --switch-sun: inline-block;
   }

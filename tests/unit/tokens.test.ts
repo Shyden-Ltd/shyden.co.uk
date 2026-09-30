@@ -113,7 +113,7 @@ describe('the two themes (#142)', () => {
     ).toEqual([]);
   });
 
-  it('puts the ShyTalk mark on its own tile in light, and on nothing in dark', () => {
+  it('puts the ShyTalk mark on its own tile in light, and on nothing in dark, in one box', () => {
     // The tile's colour now lives in two files (§3.4): SHYTALK_MARK, whose
     // level shytalk-brand.test.ts pins, and this token, held equal to it here.
     const css = tokensCss();
@@ -121,7 +121,19 @@ describe('the two themes (#142)', () => {
       SHYTALK_MARK.tile,
     );
     expect(themeTokens(css, 'dark').get('--wordmark-tile')).toBe('transparent');
-    expect(themeTokens(css, 'dark').get('--wordmark-pad')).toBe('0');
+    // ONE box in both themes (#386). Dark used to set the padding to 0, so
+    // switching theme moved the mark ~17px sideways and everything below it
+    // ~12px down. The operator chose light's box: dark keeps the padding
+    // with a transparent tile. Checked per dark block, because themeTokens
+    // merges only the first and there are two (device preference and a
+    // saved choice), either of which could quietly put the 0 back.
+    const pad = themeTokens(css, 'light').get('--wordmark-pad');
+    expect(pad).toBe('0.12em 0.42em 0.18em');
+    const blocks = darkBlocks(css);
+    expect(blocks.length).toBeGreaterThan(1);
+    for (const block of blocks) {
+      expect(customProperties(block).get('--wordmark-pad') ?? pad).toBe(pad);
+    }
   });
 });
 
