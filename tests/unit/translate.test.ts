@@ -727,6 +727,16 @@ describe('the harness prunes the cache it writes', () => {
     expect(run.output).toMatch(/^✗ --send and --prune cannot be combined: /m);
   });
 
+  it('refuses a second locale, rather than drafting only the first', () => {
+    const before = writeFixture();
+    const run = harness(['zh', 'th', '--send'], 'test-key:fx');
+    expect(run.status, run.output).toBe(1);
+    expect(readFileSync(cachePath, 'utf8'), 'a refused run wrote').toBe(before);
+    expect(run.output).toMatch(
+      /^✗ name one locale, not 2 \(zh, th\) — usage: npm run i18n:translate -- /m,
+    );
+  });
+
   it('refuses an option it does not know, rather than dry-running past a typo', () => {
     const run = harness(['zh', '--prnue']);
     expect(run.status, run.output).toBe(1);

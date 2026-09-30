@@ -36,6 +36,8 @@ import {
 import { en } from '../src/lib/i18n/en.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
+const OPTIONS = ['--force'];
+const USAGE = `usage: npm run i18n:scaffold -- <locale> [${OPTIONS.join(' | ')}]`;
 
 /**
  * One locale's rendering context: which locale, the drafts cached for it, and
@@ -191,8 +193,21 @@ export const renderCatalogue = (catalogue, locale) =>
  */
 export function main() {
   const args = argv.slice(2);
+  // Refused, not ignored, as i18n-translate.mjs does: `--froce` read as no
+  // option refuses a reviewed file for the wrong reason, and a second locale
+  // read as nothing renders one catalogue where two were asked for.
+  const unknown = args.filter(
+    (a) => a.startsWith('--') && !OPTIONS.includes(a),
+  );
+  if (unknown.length > 0)
+    die(`unknown option ${unknown.join(', ')} — ${USAGE}`);
   const force = args.includes('--force');
-  const target = args.find((a) => !a.startsWith('--'));
+  const locales = args.filter((a) => !a.startsWith('--'));
+  if (locales.length > 1)
+    die(
+      `name one locale, not ${locales.length} (${locales.join(', ')}) — ${USAGE}`,
+    );
+  const [target] = locales;
   if (!target) die('name a locale: npm run i18n:scaffold -- zh');
 
   if (!existsSync(CACHE))

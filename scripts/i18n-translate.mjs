@@ -150,6 +150,11 @@ export async function main() {
   if (send && prune)
     die('--send and --prune cannot be combined: a send prunes as it writes');
   if (!requested) die(USAGE);
+  const locales = args.filter((a) => !a.startsWith('--'));
+  if (locales.length > 1)
+    die(
+      `name one locale, not ${locales.length} (${locales.join(', ')}) — ${USAGE}`,
+    );
   if (!isTranslatable(requested))
     die(
       `${requested} is not an MVP locale (${TRANSLATABLE_LOCALES.join(', ')})`,

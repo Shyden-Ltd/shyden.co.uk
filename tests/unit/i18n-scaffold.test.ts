@@ -236,6 +236,23 @@ describe('main', () => {
     expect(existsSync(join(cwd, 'src', 'lib', 'i18n', 'ru.ts'))).toBe(false);
   });
 
+  it.each([
+    [
+      ['ja', '--froce'],
+      '✗ unknown option --froce — usage: npm run i18n:scaffold -- <locale> [--force]\n',
+    ],
+    [
+      ['ja', 'th'],
+      '✗ name one locale, not 2 (ja, th) — usage: npm run i18n:scaffold -- <locale> [--force]\n',
+    ],
+  ])('refuses %j before it writes anything', (args, says) => {
+    const cwd = workspace({ ja: everyDraft(), th: everyDraft() }, true);
+    const run = scaffold(cwd, ...args);
+    expect(run.stderr).toBe(says);
+    expect(run.status).toBe(1);
+    expect(readFileSync(join(cwd, OUT), 'utf8')).toBe(REVIEWED);
+  });
+
   it('refuses when there is no cache at all', () => {
     const cwd = workspace();
     const run = scaffold(cwd, 'ja');
