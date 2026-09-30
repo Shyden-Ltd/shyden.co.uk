@@ -18,7 +18,7 @@
  * git and could exit the importing process.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { argv, exit } from 'node:process';
 import { die } from './errors.mjs';
 
@@ -46,7 +46,7 @@ export function main() {
   if (!existsSync('.git')) {
     console.log(
       `install-hooks: no .git here, so no git hooks were installed. ` +
-        `Run this again from a clone if you want the pre-push checks.`,
+        `Run this again from a clone to install its hooks.`,
     );
     exit(0);
   }
@@ -77,9 +77,19 @@ export function main() {
     );
     exit(0);
   }
+  // Named from the directory, not from a list here: a list named only the
+  // pre-push hook for as long as commit-msg (the closing-keyword refusal)
+  // was installed beside it.
+  const hooks = existsSync(HOOKS)
+    ? readdirSync(HOOKS)
+        .filter((name) => !name.startsWith('.'))
+        .sort()
+    : [];
   console.log(
-    `install-hooks: git will run hooks from ${HOOKS}/ — ` +
-      `pre-push checks formatting and unit tests. Bypass one push with --no-verify.`,
+    hooks.length > 0
+      ? `install-hooks: git will run the hooks in ${HOOKS}/: ` +
+          `${hooks.join(', ')}. Bypass one with --no-verify.`
+      : `install-hooks: git will read hooks from ${HOOKS}/, which holds none.`,
   );
 }
 
