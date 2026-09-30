@@ -1,12 +1,7 @@
 ---
 import Flag from './Flag.astro';
 import BetaBadge from './BetaBadge.astro';
-import {
-  localisePath,
-  otherLocales,
-  isBetaLocale,
-  type Locale,
-} from '../lib/i18n';
+import { LOCALES, localisePath, isBetaLocale, type Locale } from '../lib/i18n';
 import { metadataFor } from '../lib/i18n/metadata';
 import { getSiteStrings } from '../lib/i18n';
 
@@ -38,15 +33,18 @@ const { lang, pathname } = Astro.props;
  * Below 720px, where the header also carries the menu button, the summary
  * shows the language's short code instead of its full name: "Bahasa
  * Indonesia" ran the Shyden wordmark under the menu button at 320px (#329).
- * The full name is never lost: the open list names every language, the one
- * being read first, ticked and marked `aria-current`. Both labels are in the
+ * The full name is never lost: the open list names every language, in ONE
+ * order on every page (`LOCALES` order), with the one being read ticked and
+ * marked `aria-current` in its own place. It used to be listed first, which
+ * reordered the list on every language (operator, 2026-09-30, #385). Both labels are in the
  * markup and CSS picks one, so the switcher still needs no JavaScript. The
  * summary's accessible name is its `aria-label` either way.
  */
 const t = getSiteStrings(lang);
 const current = metadataFor(lang);
-const alternatives = otherLocales(lang).map((code) => ({
+const entries = LOCALES.map((code) => ({
   code,
+  current: code === lang,
   meta: metadataFor(code),
   href: localisePath(pathname, code),
   beta: isBetaLocale(code),
@@ -62,29 +60,32 @@ const alternatives = otherLocales(lang).map((code) => ({
     <span class="caret" aria-hidden="true"></span>
   </summary>
   <ul>
-    <li aria-current="true">
-      <span class="entry">
-        <Flag code={current.flag} />
-        <span class="name">{current.nativeName}</span>
-        {isBetaLocale(lang) && <BetaBadge lang={lang} />}
-        <span class="tick" aria-hidden="true"></span>
-      </span>
-    </li>
-    {alternatives.map(({ code, meta, href, beta }) => (
-      <li>
-        <a
-          class="entry"
-          href={href}
-          hreflang={code}
-          lang={code}
-          rel="alternate"
-        >
-          <Flag code={meta.flag} />
-          <span class="name">{meta.nativeName}</span>
-          {beta && <BetaBadge lang={lang} />}
-        </a>
-      </li>
-    ))}
+    {entries.map(({ code, current, meta, href, beta }) =>
+      current ? (
+        <li aria-current="true">
+          <span class="entry">
+            <Flag code={meta.flag} />
+            <span class="name">{meta.nativeName}</span>
+            {beta && <BetaBadge lang={lang} />}
+            <span class="tick" aria-hidden="true"></span>
+          </span>
+        </li>
+      ) : (
+        <li>
+          <a
+            class="entry"
+            href={href}
+            hreflang={code}
+            lang={code}
+            rel="alternate"
+          >
+            <Flag code={meta.flag} />
+            <span class="name">{meta.nativeName}</span>
+            {beta && <BetaBadge lang={lang} />}
+          </a>
+        </li>
+      ),
+    )}
   </ul>
 </details>
 
