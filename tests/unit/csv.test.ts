@@ -891,11 +891,12 @@ describe('detectLocale', () => {
   });
 
   it('recognises a file by a header its locale has since superseded', () => {
+    // The superseded word alone, beside a word no table uses: a current
+    // header in the same file would win the score on its own and hide
+    // whether the superseded word counted.
     const [word] = CSV_LOCALES.vi.supersededColumns?.sex ?? [];
     expect(word).toBe('tình dục');
-    expect(
-      detectLocale(`${CSV_LOCALES.vi.columns.number},${word}\n1,F\n`),
-    ).toBe('vi');
+    expect(detectLocale(`${word},x\nF,1\n`)).toBe('vi');
   });
 
   it('returns null for an empty file rather than guessing', () =>
