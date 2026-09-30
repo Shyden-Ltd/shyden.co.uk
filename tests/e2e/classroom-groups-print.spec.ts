@@ -411,8 +411,10 @@ test.describe('the printed class list', () => {
     // Nothing a teacher could press or type into is left anywhere on the
     // sheet -- a stronger claim than naming sections one at a time, and the
     // one that actually fails if a future control is added and forgotten.
+    // `[form="cg-form"]` is the form's own controls that live OUTSIDE it:
+    // #cg-go has since #384, and `#cg-form button` alone went blind to it.
     const interactive = page.locator(
-      '#cg-form input:visible, #cg-form select:visible, #cg-form button:visible, #cg-form textarea:visible',
+      '#cg-form input:visible, #cg-form select:visible, #cg-form button:visible, #cg-form textarea:visible, [form="cg-form"]:visible',
     );
     await expect(interactive).toHaveCount(0);
     // …and the class list is still there, which is the whole point of not

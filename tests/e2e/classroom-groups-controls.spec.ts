@@ -463,10 +463,12 @@ test.describe('classroom groups — mobile-first layout', () => {
       // everything inside them, `#cg-speed` included. This test's own job is
       // narrower -- the controls already on screen before a teacher opens
       // anything -- and #cg-speed simply is not one of those any more.
+      // `[form="cg-form"]`: the form's controls that live outside it. #cg-go
+      // has since #384, and `#cg-form button` alone would stop measuring it.
       const measureVisible = () =>
         page
           .locator(
-            '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"]',
+            '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"], [form="cg-form"]',
           )
           .evaluateAll((els) =>
             els
@@ -486,7 +488,7 @@ test.describe('classroom groups — mobile-first layout', () => {
       // reporting nothing because it found nothing to look at.
       const seen = await page
         .locator(
-          '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"]',
+          '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"], [form="cg-form"]',
         )
         .evaluateAll(
           (els) =>
