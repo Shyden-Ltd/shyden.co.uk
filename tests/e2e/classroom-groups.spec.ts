@@ -784,7 +784,7 @@ test.describe('classroom group creator', () => {
 // nothing is blocked... It heads the results: `7B — your groups`... It is
 // not repeated on every group card."
 test.describe('class name and results heading', () => {
-  // Corrected from task-5-brief.md's own snippet, which located the
+  // Corrected from the uncommitted #9 task brief's own snippet, which located the
   // "not repeated on cards" check at `#cg-groups` -- that id belongs to the
   // "how many groups" NUMBER INPUT on this page, not the results container
   // (`#cg-tables`, where the script actually appends group cards) -- the
@@ -799,7 +799,7 @@ test.describe('class name and results heading', () => {
     await expect(page.locator('#cg-tables').getByText('7B')).toHaveCount(0);
   });
 
-  // task-5-brief.md's own count (9 students at the page's default group
+  // the uncommitted #9 task brief's own count (9 students at the page's default group
   // size, 4) predicted `#cg-groups .group` would have count 3. The engine's
   // own targetSizes (src/lib/grouping.ts) says otherwise: groupCount =
   // floor(9/4) = 2, not ceil -- the same "never smaller than the size you
@@ -842,7 +842,7 @@ test.describe('class name and results heading', () => {
     await expect(page.locator('#cg-results-h')).toHaveText('Your groups');
   });
 
-  // Corrected from task-5-brief.md's own `#cg-groups .group h3` locator --
+  // Corrected from the uncommitted #9 task brief's own `#cg-groups .group h3` locator --
   // same mistake as above. Filling the class field first is what makes this
   // a real test of THIS task's own wiring rather than a pin of
   // stage-3-owned behaviour: a naive implementation that broke
@@ -1088,7 +1088,7 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
 
   // Mirrors the English 'class name and results heading' describe block
   // above -- "assert whole rendered sentences, in both locales" applies
-  // regardless of what task-5-brief.md's own snippet happened to show (it
+  // regardless of what the uncommitted #9 task brief's own snippet happened to show (it
   // was English-only).
   test('the class name heads the results, once', async ({ page }) => {
     await page.goto('/id/classroom-groups');

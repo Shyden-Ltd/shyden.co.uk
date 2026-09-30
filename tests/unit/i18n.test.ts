@@ -1827,7 +1827,7 @@ describe('the results heading names the class once, or leaves it out entirely', 
   // this heading too, so a NON-blank name keeps its own incidental
   // leading/trailing whitespace -- `.trim()` only decides blankness above,
   // it never edits what is actually shown. Deliberately corrects
-  // task-5-brief.md's own snippet, which threaded `className.trim()`
+  // the uncommitted #9 task brief's own snippet, which threaded `className.trim()`
   // through to the named branch as well.
   it.each(locales)(
     'a non-blank name keeps its own whitespace, untrimmed (%s)',

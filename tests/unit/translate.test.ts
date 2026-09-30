@@ -38,9 +38,8 @@ import {
 /**
  * #21 Stage 5. The DeepL harness, minus the network.
  *
- * Built and NOT run — operator instruction, 2026-09-09. `LOCALES` stays
- * `['en','id']` and no translation is committed by this stage. What ships is
- * the logic, unit-tested, so that when #22 does run it the decisions have
+ * Built before it was run (operator instruction, 2026-09-09): the logic,
+ * unit-tested, so that when #22 ran it for zh, vi and th the decisions had
  * already been reviewed: which host the key routes to, what DeepL calls each
  * language, and which strings must never be sent at all.
  *
@@ -190,7 +189,7 @@ describe('what must never be sent to a translator', () => {
  * Presence is not the assertion, exactly as the supply-chain guard (#23) and
  * the prod-smoke path list (#21 Stage 4) both learned.
  *
- * Only one of the six terms occurs in today's catalogue, which is why nothing
+ * Only one protected term occurred in the catalogue then, which is why nothing
  * looked wrong. The tests below assert the EFFECT: that the text handed to
  * DeepL carries the tags, and that what comes back is unwrapped again.
  */

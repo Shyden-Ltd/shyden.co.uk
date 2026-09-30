@@ -22,8 +22,7 @@ import { siteEn } from './site.ts';
  * free-tier quota. Same split CLAUDE.md already requires of `gloryPoints.ts`
  * and `grouping.ts` against the page scripts.
  *
- * Built and NOT run — #21 Stage 5, operator instruction 2026-09-09. No
- * translation is committed by this stage; #22 is what runs it.
+ * Built for #21 Stage 5 and run first by #22, which drafted zh, vi and th.
  *
  * This module is CLI-only and must stay out of the browser bundle, which
  * `tests/unit/translate.test.ts` asserts by scanning `src/` for importers.
