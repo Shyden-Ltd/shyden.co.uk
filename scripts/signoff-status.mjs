@@ -90,11 +90,11 @@ const USAGE =
   'usage: signoff-status.mjs <published page.html> <sign-off document.json>';
 
 const main = () => {
-  const [pagePath, docPath] = process.argv.slice(2);
+  const [pagePath, docPath, ...extra] = process.argv.slice(2);
   /** @type {Status} */
   let status;
   try {
-    if (!pagePath || !docPath) throw new Error(USAGE);
+    if (!pagePath || !docPath || extra.length > 0) throw new Error(USAGE);
     status = signOffStatus(
       readFileSync(pagePath, 'utf8'),
       JSON.parse(readFileSync(docPath, 'utf8')),
