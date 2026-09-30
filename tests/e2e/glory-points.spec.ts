@@ -19,7 +19,7 @@ test.describe('glory points calculator', () => {
   }) => {
     // "." groups thousands and "," is the decimal mark in Indonesian, so the
     // English rendering "1.112" would read as one-point-one-one-two. The
-    // static copy on this very page already says "0,9 bean per koin".
+    // static copy on this very page already says "0,9 koin per bean".
     //
     // The Indonesian calculator had never been exercised at all — which is
     // how this survived, along with t.errors.* and the English fallback in
