@@ -880,6 +880,24 @@ describe('detectLocale', () => {
     expect(detectLocale(emptyTemplate('id'))).toBe('id');
   });
 
+  // Every locale, derived: the two-locale detector scored `en` and `id` by
+  // name, so a zh, vi or th file came back null and was parsed as the
+  // page's language -- while the no-shared-word guard above had already
+  // been widened to all ten pairs (#390, F9).
+  it.each(LOCALES)('recognises a %s file this codebase wrote', (locale) => {
+    const roster = [student({ number: 1, name: 'Ana', sex: 'F' })];
+    expect(detectLocale(serialiseRoster(roster, '7B', locale))).toBe(locale);
+    expect(detectLocale(emptyTemplate(locale))).toBe(locale);
+  });
+
+  it('recognises a file by a header its locale has since superseded', () => {
+    const [word] = CSV_LOCALES.vi.supersededColumns?.sex ?? [];
+    expect(word).toBe('tình dục');
+    expect(
+      detectLocale(`${CSV_LOCALES.vi.columns.number},${word}\n1,F\n`),
+    ).toBe('vi');
+  });
+
   it('returns null for an empty file rather than guessing', () =>
     expect(detectLocale('')).toBe(null));
 
@@ -919,6 +937,15 @@ describe('importFile — the wrong language, refused with a way forward', () => 
     if (out.ok) return;
     expect(out.problems).toHaveLength(1);
     expect(out.problems[0].row).toBeNull();
+  });
+
+  it('refuses a Vietnamese file on the English page, naming Vietnamese', () => {
+    const roster = [student({ number: 1, name: 'Ana', sex: 'F' })];
+    const out = importFile(serialiseRoster(roster, '7B', 'vi'), 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems).toHaveLength(1);
+    expect(out.problems[0].message).toContain(en.csvLanguageName.vi);
   });
 
   it('passes a right-language file straight through to parseRoster', () => {
