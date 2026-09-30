@@ -19,6 +19,8 @@
  * `.ts` home could not be the one home.
  */
 
+import { createHash } from 'node:crypto';
+
 /** Playwright's json report, as the page builder expects to find it. */
 export const EVIDENCE_REPORT = 'report.json';
 
@@ -77,6 +79,36 @@ export const slug = (s) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 80)
     .toLowerCase();
+
+/**
+ * Where one capture is written, relative to the evidence directory. Both
+ * capture legs name their files here, so there is one scheme to change.
+ *
+ * `slug` alone is not a name: it keeps 80 characters of a title path and
+ * drops case and punctuation, and on the #390 listing 650 of 4,109 tests
+ * shared a slug with another test in the same project. Two such tests
+ * shooting the same order and label wrote one file, and the evidence page
+ * showed one test's picture under the other's name. Eight characters of a
+ * hash over the project and the full title keep each test's own file; the
+ * slugs keep the name readable in a listing.
+ *
+ * @param {{
+ *   project: string,
+ *   title: string,
+ *   order: number,
+ *   label: string,
+ *   ext: 'jpg' | 'png',
+ * }} capture
+ * @returns {string}
+ */
+export const captureFile = ({ project, title, order, label, ext }) => {
+  const test = createHash('sha256')
+    .update(`${project}\n${title}`)
+    .digest('hex')
+    .slice(0, 8);
+  const shot = `${String(order).padStart(2, '0')}-${slug(label)}`;
+  return `${slug(project)}/${slug(title)}-${test}__${shot}.${ext}`;
+};
 
 /**
  * What one assertion shot records about itself.

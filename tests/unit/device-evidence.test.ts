@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mediaType } from '../../scripts/build-evidence-page.mjs';
 import {
   EVIDENCE_MANIFEST,
+  captureFile,
   manifestRow,
-  slug,
 } from '../../scripts/evidence-files.mjs';
 import {
   resetDeviceCaptureCounters,
@@ -107,10 +107,13 @@ describe('the device leg writes the same evidence every other leg does', () => {
     expect(driver.calls(), 'the phone was asked exactly once').toBe(1);
 
     expect(file).toBe(
-      join(
-        slug('ios-safari-real-device'),
-        `${slug('Journey 14 -- the board on a refused grant')}__01-${slug('nothing out of reach')}.png`,
-      ),
+      captureFile({
+        project: 'ios-safari-real-device',
+        title: 'Journey 14 -- the board on a refused grant',
+        order: 1,
+        label: 'nothing out of reach',
+        ext: 'png',
+      }),
     );
     expect(existsSync(join(dir, file!)), `${file} was written`).toBe(true);
 
