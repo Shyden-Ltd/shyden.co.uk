@@ -55,7 +55,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 46 | src | M | `src/lib/sexOptions.ts` | +4/-2 | — |  |  |
 | 47 | src | A | `src/lib/shytalk-brand.ts` | +54/-0 | — |  |  |
 | 48 | src | A | `src/lib/shytalk-showcase.ts` | +40/-0 | — |  |  |
-| 49 | src | A | `src/lib/waiting-reports.ts` | +152/-0 | — |  |  |
+| 49 | src | A | `src/lib/waiting-reports.ts` | +152/-0 | read in full (152 lines) | W4, W19 untested: tests added (an unanchored UUID could carry a path) | 22 run: 19 RED + W4b/W19b RED; W6 equivalent |
 | 50 | src | M | `src/pages/404.astro` | +62/-20 | — |  |  |
 | 51 | src | A | `src/pages/[locale]/classroom-groups.astro` | +33/-0 | — |  |  |
 | 52 | src | A | `src/pages/[locale]/glory-points.astro` | +33/-0 | — |  |  |
@@ -101,7 +101,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 92 | scripts | A | `scripts/test-e2e.mjs` | +842/-0 | — |  |  |
 | 93 | scripts | A | `scripts/upload-evidence-assets.mjs` | +237/-0 | — |  |  |
 | 94 | scripts | A | `scripts/visual.mjs` | +169/-0 | — |  |  |
-| 95 | scripts | A | `scripts/waiting-reports.mjs` | +196/-0 | — |  |  |
+| 95 | scripts | A | `scripts/waiting-reports.mjs` | +196/-0 | read in full (196 lines) | S2 S3 S6 S9 S12 untested; S6 was real: a GitHub 403 in JSON printed 'Posted.' and exited 0. Tests added | 16 run: 11 RED + 5 re-run RED |
 | 96 | workflow | A | `.github/dependabot.yml` | +110/-0 | — |  |  |
 | 97 | workflow | A | `.github/workflows/back-translation.yml` | +80/-0 | — |  |  |
 | 98 | workflow | M | `.github/workflows/ci.yml` | +382/-9 | — |  |  |
@@ -111,7 +111,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 102 | workflow | D | `.github/workflows/release-dev.yml` | +0/-114 | — |  |  |
 | 103 | workflow | M | `.github/workflows/release-tag.yml` | +2/-2 | — |  |  |
 | 104 | workflow | M | `.github/workflows/rollback.yml` | +77/-14 | — |  |  |
-| 105 | workflow | A | `.github/workflows/waiting-reports.yml` | +56/-0 | — |  |  |
+| 105 | workflow | A | `.github/workflows/waiting-reports.yml` | +56/-0 | read in full | Y5: 14 of 15 checkouts across the workflows persisted the token: #395 (PR #396) | 7 run: 6 RED, Y5 GREEN, filed #395 |
 | 106 | config | A | `.env.example` | +12/-0 | — |  |  |
 | 107 | config | M | `.gitignore` | +6/-0 | — |  |  |
 | 108 | config | A | `.npmrc` | +8/-0 | — |  |  |
