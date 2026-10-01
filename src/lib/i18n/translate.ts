@@ -143,7 +143,8 @@ const PROTECTED_LONGEST_FIRST: readonly string[] = [...DO_NOT_TRANSLATE].sort(
   (a, b) => b.length - a.length,
 );
 
-const escapeForRegExp = (text: string): string =>
+/** `text` as a regular expression that matches it literally. */
+export const escapeForRegExp = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**

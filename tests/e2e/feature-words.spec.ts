@@ -18,6 +18,9 @@ test.use(recorded);
 
 /**
  * The sentences corrected on #319's sheet, read where a teacher meets them.
+ * So are the grouping options' summary and the stale-leftovers notice, which
+ * #390 corrected: zh, vi and th said "sorted by sex" for mixing, and leftover
+ * FOOD for the leftover students.
  *
  * `feature-terms.test.ts` holds every piece of copy that names a feature to
  * the words its language approved, and `verified-labels.test.ts` pins what the
@@ -105,6 +108,25 @@ test.describe('the sentences corrected on #319', () => {
           .first()
           .locator('xpath=ancestor::div[@class="field"]'),
       );
+
+      // The section's own summary names each option chosen (#390).
+      const summary = tool.locator('#cg-grouping-toggle .state');
+      await tool.locator('#cg-sex-mix').check();
+      await expectVisibleText(summary, t.stateMixed);
+      await shoot(
+        tool,
+        `${locale}: mixing boys and girls reads “${t.stateMixed}”`,
+        summary,
+      );
+      await tool.locator('#cg-sex-mix').uncheck();
+      await tool.locator('input[name="leftovers"][value="bunch"]').check();
+      await expectVisibleText(summary, t.stateBunched);
+      await shoot(
+        tool,
+        `${locale}: leftover students in one group reads “${t.stateBunched}”`,
+        summary,
+      );
+      await tool.locator('input[name="leftovers"][value="spread"]').check();
 
       // A mixed-sex together pair cannot make a single-sex group.
       await tool.locator('#cg-sex-separate').check();
@@ -212,6 +234,23 @@ test.describe('the sentences corrected on #319', () => {
       );
       await tool.keyboard.press('Escape');
       await expect(panel).toBeHidden();
+
+      // Changing the leftovers choice makes those groups out of date, and the
+      // notice names the choice in the words of its own label (#390).
+      const stale = tool.locator('#cg-stale');
+      await tool.locator('input[name="leftovers"][value="bunch"]').check();
+      await expectVisibleText(
+        stale.locator('#cg-stale-text'),
+        t.staleLeftovers,
+      );
+      await shoot(
+        tool,
+        `${locale}: out of date because “${t.staleLeftovers}”`,
+        stale,
+      );
+      await tool.locator('input[name="leftovers"][value="spread"]').check();
+      await expect(stale).toHaveCount(1);
+      await expect(stale).toBeHidden();
 
       // A together pair that is also an apart pair is refused as it is typed.
       // A select offers the letters in use and the next free one, so 'A' it is.

@@ -8,8 +8,8 @@
  *
  * Everything here is copied verbatim from design spec section 9's own
  * table. Two invariants that table implies are asserted in
- * tests/unit/csv.test.ts rather than left to inspection, because nothing in
- * this repo or in CI type-checks (CLAUDE.md) and both are load-bearing.
+ * tests/unit/csv.test.ts rather than left to inspection, because no type can
+ * state either one and both are load-bearing.
  * Both are asserted over every unordered PAIR of locales, derived from
  * `LOCALES` -- written against `en` and `id` by name, they covered one pair
  * of the ten once #22 shipped five languages:
@@ -37,12 +37,11 @@
 /**
  * The site's languages — RE-EXPORTED from `i18n`, never declared again here.
  *
- * A second union of the same members would be structurally identical, so
- * nothing in this repo would ever report the two drifting apart: TypeScript
- * would accept it and there is no type checker in CI regardless. Deriving it
- * means a NEW site locale makes `CSV_LOCALES` fail its own completeness test
- * below, rather than shipping a page whose export button has no table to
- * read.
+ * A second union would be a second place to remember when a language is
+ * added. Declared once, a NEW site locale makes `CSV_LOCALES` fail both the
+ * type check (`npm run typecheck`, in CI since #115) and its own completeness
+ * test below, rather than shipping a page whose export button has no table
+ * to read.
  */
 export type { Locale } from './i18n';
 import type { Locale } from './i18n';
@@ -166,9 +165,10 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     fileName: { 'class-list': 'daftar-kelas', groups: 'kelompok' },
   },
   zh: {
-    classComment: '# 类：',
-    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
-    // reviewer may prefer native tokens; both places change together.
+    // 班级, the page's own word for the class (#390): 类 read "Category:".
+    classComment: '# 班级：',
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale, which
+    // tests/unit/csv.test.ts holds them to: both places change together.
     sex: { M: 'M', F: 'F' },
     columns: {
       number: '编号',
@@ -181,8 +181,9 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     // Written as these headers until #252 (name, sex) and #319 (number,
     // which read as "numeral") corrected them.
     supersededColumns: { number: ['数字'], name: ['名称'], sex: ['性'] },
+    // 是/否, a form's yes/no (operator decision on #390; 不 until then).
     absentYes: '是',
-    absentNo: '不',
+    absentNo: '否',
     groupColumn: '组',
     groupsMadeComment: '# 已创建的组',
     templateHint: '删除这两行，然后输入你自己的内容',
@@ -193,8 +194,8 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
   },
   vi: {
     classComment: '# Lớp:',
-    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
-    // reviewer may prefer native tokens; both places change together.
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale, which
+    // tests/unit/csv.test.ts holds them to: both places change together.
     sex: { M: 'M', F: 'F' },
     columns: {
       number: 'số',
@@ -204,9 +205,12 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
       together: 'cùng nhau',
       apart: 'tách biệt',
     },
-    // Written as the sex header until #252 corrected it.
+    // Written as the sex header until #252 corrected it, and as the apart
+    // header until #161's sheet did.
     supersededColumns: { sex: ['tình dục'], apart: ['riêng biệt'] },
-    absentYes: 'đúng vậy',
+    // có/không, a form's yes/no (operator decision on #390; "đúng vậy",
+    // "that's right", until then).
+    absentYes: 'có',
     absentNo: 'không',
     groupColumn: 'nhóm',
     groupsMadeComment: '# Các nhóm đã được tạo',
@@ -218,8 +222,8 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
   },
   th: {
     classComment: '# ชั้นเรียน:',
-    // M/F, matching this locale's own rosterSexMale/rosterSexFemale. A
-    // reviewer may prefer native tokens; both places change together.
+    // M/F, matching this locale's own rosterSexMale/rosterSexFemale, which
+    // tests/unit/csv.test.ts holds them to: both places change together.
     sex: { M: 'M', F: 'F' },
     columns: {
       number: 'หมายเลข',
@@ -232,8 +236,9 @@ export const CSV_LOCALES: Record<Locale, CsvLocale> = {
     // Written as the number header until #319 corrected it: ตัวเลข is a
     // numeral, หมายเลข a student's number.
     supersededColumns: { number: ['ตัวเลข'] },
+    // ใช่/ไม่ใช่, a form's yes/no (operator decision on #390; ไม่ until then).
     absentYes: 'ใช่',
-    absentNo: 'ไม่',
+    absentNo: 'ไม่ใช่',
     groupColumn: 'กลุ่ม',
     groupsMadeComment: '# กลุ่มที่สร้างแล้ว',
     templateHint: 'ลบสองบรรทัดนี้แล้วพิมพ์ข้อความของคุณเอง',

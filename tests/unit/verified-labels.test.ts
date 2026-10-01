@@ -155,6 +155,9 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterClashMessage: '{names} 被放在一起，因此无法再把他们分开。',
     'warnings.PINNED_MIXED_SEX':
       '{names} 被一起固定在同一组里，但他们并非全是同一性别，因此这个组没有像其他组那样按性别划分。这正是固定分组所要求的，并不是需要更正的错误。',
+    // #390: the CSV yes/no tokens, chosen by the operator on 2026-09-30
+    // ("Change all three"): 否, a form's no, where 不 was.
+    'csv.absentNo': '否',
   },
   vi: {
     rosterColNumber: '#',
@@ -285,6 +288,9 @@ const VERIFIED: Record<Locale, Record<string, string>> = {
     rosterClashMessage: '{names} ถูกจัดให้อยู่ด้วยกัน จึงไม่สามารถแยกกันได้',
     'warnings.PINNED_MIXED_SEX':
       '{names} ถูกปักหมุดไว้ด้วยกันเป็นกลุ่มเดียว แต่ไม่ใช่ทุกคนในกลุ่มนี้เป็นเพศเดียวกัน ดังนั้นกลุ่มนี้จึงไม่ถูกแบ่งตามเพศเหมือนกลุ่มอื่น ๆ นั่นคือสิ่งที่การปักหมุดกำหนดไว้ ไม่ใช่ข้อผิดพลาดที่ต้องแก้ไข',
+    // #390: the CSV yes/no tokens, chosen by the operator on 2026-09-30
+    // ("Change all three"): ไม่ใช่, a form's no, where ไม่ was.
+    'csv.absentNo': 'ไม่ใช่',
   },
 };
 

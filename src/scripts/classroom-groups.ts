@@ -611,21 +611,19 @@ if (form) {
       ? serialiseForCompare(roster)
       : JSON.stringify({ count: readCount() });
 
-  // `leftovers` is the one `ToolState` field a teacher can actually change
-  // today: the radios now live inside `#cg-grouping-body` (Stage 2, Task 4
-  // rehomed them there, unchanged), and the header must not go on reporting
-  // "none" once one is chosen. This listener needed NO change for that
-  // move: it delegates on `#cg-form`'s own `change` event and
-  // `readRadio` queries `input[name="leftovers"]:checked` scoped to the
-  // whole form, neither of which cares how deep the radio sits inside it.
-  // Calls the SAME `sectionState` that produced the header's build-time
-  // text (see ClassroomGroupsPage.astro's own `initialToolState`) with
-  // every other field left at that same default -- no roster exists yet,
-  // and nothing can mark the roster dirty until a later stage gives it
-  // something to lose -- so the two can never disagree by computing the
-  // sentence two different ways. `sexMode` stays `'off'` here for the same
-  // reason `readSexMode` always returns `'off'` -- see that function's own
-  // comment, above, for the rest of the reasoning.
+  // The Grouping options header names the two choices made inside that
+  // section: the sex switches and the leftovers radios. It must never go on
+  // reporting "none" once either is chosen. The form's `change` handler
+  // (below) refreshes it for both. The switches carry no `name`, so they are
+  // matched by identity; until #390 only the radios were, and ticking "Mix
+  // boys and girls evenly" left the header saying "none" in every locale.
+  // `updateSexSwitches` refreshes it too, because a roster edit that
+  // disables the switches changes what `readSexMode` returns without any
+  // switch changing. Calls the SAME `sectionState` that produced the
+  // header's build-time text (see ClassroomGroupsPage.astro's own
+  // `initialToolState`), so the two can never disagree by computing the
+  // sentence two different ways; the roster fields it leaves at their
+  // defaults belong to the Student details header, not this one.
   const groupingStateEl = document.querySelector<HTMLElement>(
     '#cg-grouping .state',
   );
@@ -908,6 +906,9 @@ if (form) {
       sexWhyEl.hidden = why === null;
       sexWhyEl.textContent = why ?? '';
     }
+    // A disabled switch no longer counts (`readSexMode`), so the header
+    // that names it must drop it too.
+    updateGroupingHeader();
   };
 
   /**
@@ -1053,8 +1054,9 @@ if (form) {
    * three predicates that write it: `updateStaleness` clears it, and
    * `updateStaleness` runs during setup -- a `const` declared later is in
    * its temporal dead zone at that moment and throws, which nothing in this
-   * repo would have caught before a visitor did (there is no type checker,
-   * and `astro build` strips types without checking them).
+   * repo would have caught before a visitor did (`astro check` cannot see
+   * the order a function is called in, and `astro build` strips types
+   * without checking them).
    *
    * ONE element for all three exits, because a teacher does one thing at a
    * time and three boxes would be three places to look.
@@ -1115,7 +1117,12 @@ if (form) {
     finishDealNow();
     const target = e.target as HTMLInputElement;
     if (target.name === 'mode') showFor('mode', target.value);
-    if (target.name === 'leftovers') updateGroupingHeader();
+    if (
+      target.name === 'leftovers' ||
+      target === sexMix ||
+      target === sexSeparate
+    )
+      updateGroupingHeader();
     updateStaleness();
   });
   // The brief's own instruction: recompute on every `change` AND `input`

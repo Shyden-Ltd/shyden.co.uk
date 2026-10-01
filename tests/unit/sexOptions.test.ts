@@ -154,10 +154,10 @@ describe('sexWhy — why the two sex switches are disabled', () => {
   });
 
   // F-3 (review). The type says `sex: 'M' | 'F' | null` -- never
-  // `undefined` -- but nothing in this repo or in CI enforces that
-  // (CLAUDE.md: "no type checker anywhere"), and stage 3 builds this roster
-  // by reading the DOM, where a field the type promises is never missing
-  // can still arrive `undefined` in practice. The `student()` factory above
+  // `undefined` -- but `astro check` holds only the code to that, and stage
+  // 3 builds this roster by reading the DOM, where a field the type promises
+  // is never missing can still arrive `undefined` in practice. The
+  // `student()` factory above
   // cannot produce this shape (`Partial<Student>` still means "if given,
   // `sex` is `'M' | 'F' | null`"), so this is a hand-built object with a
   // cast, reaching past the type the same way a real DOM read could. A

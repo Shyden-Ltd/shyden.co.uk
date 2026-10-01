@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { searched } from '../source-files';
+import { catalogueLeaves } from '../../src/lib/catalogue-leaves';
 import {
   calculateGlory,
   formatNumber,
@@ -116,22 +118,57 @@ describe('the assumptions line states the rate the formula uses (#382)', () => {
       siteId,
       'Mengasumsikan 1 koin per poin, 0,9 koin per bean, dan hadiah dikonversi ke bean sebesar 40%.',
     ],
+    // #390, by operator decision (2026-09-30, "Keep app names in English"):
+    // YeeTalk's own names, glory points and bean, stay in English as id's
+    // always did; only the coin is a word of the page's language.
     [
       'zh',
       siteZh,
-      '假设每1分需1枚金币，每颗豆子可兑换0.9枚金币，且礼物可按40%的比例兑换成豆子。',
+      '假设每 1 点需 1 枚金币，每个 bean 可兑换 0.9 枚金币，且礼物按 40% 的比例兑换成 bean。',
     ],
     [
       'vi',
       siteVi,
-      'Giả định mỗi điểm tương ứng với 1 đồng xu, mỗi hạt đậu tương ứng với 0,9 đồng xu, và quà tặng được quy đổi thành hạt đậu theo tỷ lệ 40%.',
+      'Giả định mỗi điểm tương ứng với 1 xu, mỗi bean tương ứng với 0,9 xu, và quà tặng được quy đổi thành bean theo tỷ lệ 40%.',
     ],
     [
       'th',
       siteTh,
-      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 เหรียญต่อถั่ว และของขวัญจะถูกแปลงเป็นถั่วในอัตรา 40%',
+      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 เหรียญต่อ bean และของขวัญจะถูกแปลงเป็น bean ในอัตรา 40%',
     ],
   ])('%s', (_locale, site, sentence) => {
     expect(site.glory.assumptions).toBe(sentence);
+  });
+});
+
+describe('the result line reads in the page’s own language (#390)', () => {
+  // zh, vi and th assigned `siteEn.glory.resultLine` itself, so every result
+  // on those pages read "… coins → … beans → … total gift value". A function
+  // is code, not a string, so no translation guard ever read it.
+  it.each([
+    ['en', siteEn, '1 coins → 2 beans → 3 total gift value'],
+    ['id', siteId, '1 koin → 2 bean → 3 total nilai hadiah'],
+    ['zh', siteZh, '1 金币 → 2 bean → 3 礼物总价值'],
+    ['vi', siteVi, '1 xu → 2 bean → 3 tổng giá trị quà tặng'],
+    ['th', siteTh, '1 เหรียญ → 2 bean → 3 มูลค่ารวมของของขวัญ'],
+  ])('%s', (_locale, site, line) => {
+    expect(site.glory.resultLine('1', '2', '3')).toBe(line);
+  });
+
+  it('no translated site catalogue reuses one of English’s functions', () => {
+    // Derived, so a second function added to site.ts is covered the day it
+    // appears: a translated locale that assigns English's own function
+    // renders English, whatever its strings say.
+    const functions = (table: unknown) =>
+      catalogueLeaves(table).filter(([, value]) => typeof value === 'function');
+    const english = new Map(functions(siteEn));
+    const reused = [siteId, siteZh, siteVi, siteTh].flatMap((site, index) =>
+      functions(site)
+        .filter(([path, fn]) => english.get(path) === fn)
+        .map(([path]) => `${['id', 'zh', 'vi', 'th'][index]}: ${path}`),
+    );
+    expect(
+      searched(reused, { of: [...english], what: 'English functions' }),
+    ).toEqual([]);
   });
 });
