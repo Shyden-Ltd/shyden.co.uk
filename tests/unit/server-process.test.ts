@@ -151,6 +151,30 @@ describe('startServerProcess', () => {
     ).toEqual({ exitCode: true, signal: true, printed: true, awaited: true });
   });
 
+  it('keeps the END of what a talkative server printed, where its diagnosis is', async () => {
+    // Start-up chatter first, the diagnosis last: the order a server that
+    // logs as it goes prints in. Both on stderr, because two pipes can be
+    // read in either order and the test is about which end is kept.
+    const { outcome } = await attemptStart(node, [
+      '-e',
+      "require('node:fs').writeSync(2, 'FIRST-LINE ' + 'chatter '.repeat(250)); " +
+        DIES_LIKE_A_TAKEN_PORT,
+    ]);
+
+    const message = messageOf(outcome);
+    const printed = message.slice(message.indexOf('It printed: '));
+    expect(
+      {
+        diagnosis: printed.includes(
+          'Unable to start the server: Address already in use',
+        ),
+        headDropped: !printed.includes('FIRST-LINE'),
+        bounded: printed.length <= 'It printed: '.length + 500,
+      },
+      message,
+    ).toEqual({ diagnosis: true, headDropped: true, bounded: true });
+  });
+
   it('reports a server that dies while its readiness check is still waiting for an answer', async () => {
     const holder = await silentListener();
     const began = performance.now();
