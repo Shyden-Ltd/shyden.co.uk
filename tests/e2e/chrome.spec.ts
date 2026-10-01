@@ -24,6 +24,23 @@ test.describe('header + footer', () => {
         'href',
         '/#shytalk',
       );
+      // Scroll order, as the title says: each link's section sits below the
+      // one before it. Read from the links' own fragments, so a section moved
+      // on the page without its link fails here.
+      const hrefs = await nav
+        .locator('a')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('href') ?? ''));
+      const tops: number[] = [];
+      for (const href of hrefs) {
+        const box = await page
+          .locator(new URL(href, page.url()).hash)
+          .boundingBox();
+        expect(box, `${href} leads to no section on the page`).not.toBeNull();
+        tops.push(box?.y ?? Number.NaN);
+      }
+      expect(tops, `section tops, in nav order: ${tops.join(', ')}`).toEqual(
+        [...tops].sort((a, b) => a - b),
+      );
       // Aurora renamed these from Services/Work; this spec is the established
       // home for nav-link facts, so the proof belongs here and not in a second
       // guard elsewhere.
@@ -236,11 +253,16 @@ test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
       await atLeast44(page.locator('.wordmark'));
       // Derived, not named: the header gained a second disclosure (the
       // language switcher) after this test was written, and a hand-written
-      // list would have kept passing while missing it.
-      const summaries = page.locator('header details.menu > summary');
+      // list would have kept passing while missing it. The selector was then
+      // narrowed to `details.menu`, which measured the menu alone under this
+      // same comment (#390 F107), so the count is held to every disclosure.
+      const summaries = page.locator('header details > summary');
       const howMany = await summaries.count();
       expect(howMany, 'no header disclosures found to measure').toBeGreaterThan(
         0,
+      );
+      expect(howMany, 'a header disclosure left unmeasured').toBe(
+        await page.locator('header details').count(),
       );
       for (let i = 0; i < howMany; i += 1) await atLeast44(summaries.nth(i));
       await page.locator('header details.menu > summary').click(); // open the nav
