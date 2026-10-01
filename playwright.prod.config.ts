@@ -44,6 +44,8 @@ if (build && process.env.PUBLIC_SHYTALK_URL !== undefined)
 
 export default defineConfig({
   testDir: './tests/prod',
+  // A stray `test.only` fails the run in CI rather than narrowing it (#390).
+  forbidOnly: !!process.env.CI,
   // One retry: a single network blip against the live site does not block a
   // release, while a check that fails twice does, and the run reports a
   // passed retry as flaky rather than hiding it. The timeout keeps a hung

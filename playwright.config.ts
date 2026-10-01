@@ -176,6 +176,8 @@ export default defineConfig({
   outputDir:
     evidenceOutputDir(process.env.EVIDENCE_DIR) ?? 'test-results/desktop',
   fullyParallel: true,
+  // A stray `test.only` fails the run in CI rather than narrowing it (#390).
+  forbidOnly: !!process.env.CI,
   // Measure the bytes that ship, not the ones the dev server improvises.
   // `astro dev` renders on request and skips build-time steps — compressHTML,
   // asset hashing, the sitemap — so a suite pointed at it can be entirely
