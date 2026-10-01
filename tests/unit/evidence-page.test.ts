@@ -2254,15 +2254,18 @@ describe('recordings travel in the asset store (#268)', () => {
     });
   });
 
-  it('refuses a published listing that is not a list of paths, naming it', () => {
+  it.each([
+    ['a list holding an object', [{ path: 'evidence/old.webm' }]],
+    ['an object, not a list', { files: ['evidence/old.webm'] }],
+  ])('refuses a published listing that is %s, naming it', (_, shape) => {
     const dir = runDirectory('listing-shape-');
     const listing = join(dir, 'listing.json');
-    writeFileSync(listing, JSON.stringify([{ path: 'evidence/old.webm' }]));
+    writeFileSync(listing, JSON.stringify(shape));
     const page = join(dir, 'page.html');
     const refused = runBuilder(dir, page, undefined, ['--published', listing]);
     expect(refused.status, refused.stderr).toBe(1);
     expect(refused.stderr).toContain(
-      `✗ build-evidence-page: the published file listing at ${listing} is not a list of paths -- got [{"path":"evidence/old.webm"}]`,
+      `✗ build-evidence-page: the published file listing at ${listing} is not a list of paths -- got ${JSON.stringify(shape)}`,
     );
     expect(existsSync(page), 'a page was written').toBe(false);
   });
