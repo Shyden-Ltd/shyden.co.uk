@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { trackedFiles } from '../source-files';
-import { contrast, luminance, over, parseColour, type RGB } from '../wcag';
+import {
+  contrast,
+  luminance,
+  over,
+  paintedGround,
+  parseColour,
+  type RGB,
+} from '../wcag';
 import { declaredName, parseSource } from './ast';
 
 /** The sRGB transfer curve's constants: the linear slope, then the curve's. */
@@ -191,5 +198,43 @@ describe('putting a colour onto its ground', () => {
     const onPaper = over(faint!, WHITE);
     expect(onPaper).toEqual([230, 230, 230]);
     expect(contrast(onPaper, WHITE)).toBeLessThan(1.3);
+  });
+});
+
+/**
+ * Text sits on a stack: its nearest background is often translucent, over an
+ * opaque card. `contrastRatio` stopped at the first background it found and
+ * composited that over white, so dark Aurora's `--glass` (white at 5.5%) on
+ * `--surface` scored as if it were on paper (#390 F127).
+ */
+describe('the ground text is painted on', () => {
+  const glass = { rgb: [255, 255, 255] as RGB, alpha: 0.055 };
+  const surface = { rgb: [7, 13, 22] as RGB, alpha: 1 };
+
+  it('is the white canvas when nothing paints a background', () => {
+    expect(paintedGround([])).toEqual([255, 255, 255]);
+  });
+
+  it('is an opaque background itself', () => {
+    expect(paintedGround([surface])).toEqual([7, 13, 22]);
+  });
+
+  it('is a translucent layer over the opaque one behind it, not over white', () => {
+    // 0.055 * 255 + 0.945 * (7, 13, 22), rounded: worked by hand.
+    expect(paintedGround([glass, surface])).toEqual([21, 26, 35]);
+  });
+
+  it('ignores whatever an opaque layer covers', () => {
+    const page = { rgb: [238, 241, 244] as RGB, alpha: 1 };
+    expect(paintedGround([surface, page])).toEqual([7, 13, 22]);
+  });
+
+  it('stacks translucent layers nearest on top', () => {
+    const red = { rgb: [255, 0, 0] as RGB, alpha: 0.5 };
+    const blue = { rgb: [0, 0, 255] as RGB, alpha: 0.5 };
+    const black = { rgb: [0, 0, 0] as RGB, alpha: 1 };
+    // blue over black is (0, 0, 128); red over that is (128, 0, 64). The
+    // other order would give (64, 0, 128).
+    expect(paintedGround([red, blue, black])).toEqual([128, 0, 64]);
   });
 });

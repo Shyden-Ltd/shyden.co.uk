@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { LOCALES, localisePath } from '../../src/lib/i18n/index';
-import { searched } from '../source-files';
+import { filesUnder, searched } from '../source-files';
 import { publishedPaths } from './published-paths';
 
 /**
@@ -24,16 +24,24 @@ test.describe('the sitemap', () => {
       new URL(m[1]).pathname.replace(/\/$/, ''),
     );
 
-    // Derived from LOCALES, not listed: a hand-written list of six was
-    // correct for two languages and silently wrong the moment #22 added
-    // three more. Every page in every locale, with the trailing slash
-    // stripped the same way the parse above strips it.
-    const expected = LOCALES.flatMap((locale) =>
-      ['/', '/classroom-groups', '/glory-points'].map((page) =>
-        localisePath(page, locale).replace(/\/$/, ''),
-      ),
-    );
-    expect(locs.sort()).toEqual(expected.sort());
+    // Every page the build wrote, not a list. publishedPaths, and every guard
+    // that visits "every published page", reads its pages FROM this sitemap,
+    // so this is the one check that the sitemap is complete; a hand-written
+    // list of three pages could only agree with itself, and a fourth page
+    // the sitemap left out would have been invisible to all of them (#390
+    // F126). The 404 is the one page deliberately left out. Read here, not
+    // at module scope: the web server rebuilds dist/ after this file loads.
+    const built = filesUnder('dist', (path) => /\.html$/.test(path))
+      .filter((path) => path !== 'dist/404.html')
+      .map((path) => path.replace(/^dist/, '').replace(/\/?index\.html$/, ''));
+    expect(locs.sort()).toEqual(built.sort());
+
+    // And every page in every locale is among them: a hand-written list of
+    // six was correct for two languages and silently wrong the moment #22
+    // added three more.
+    for (const locale of LOCALES)
+      for (const page of ['/', '/classroom-groups', '/glory-points'])
+        expect(built).toContain(localisePath(page, locale).replace(/\/$/, ''));
   });
 
   test('declares the language relationships search engines need', async ({

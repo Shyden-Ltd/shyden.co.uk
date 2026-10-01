@@ -5,7 +5,8 @@ import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { expectNoHorizontalScroll } from '../viewport';
 import { THEMES } from '../palette';
-import { emulateTheme } from '../themes';
+import { emulateTheme, expectTheme, saveTheme } from '../themes';
+import { contrastRatio } from './helpers';
 
 test.use(recorded);
 
@@ -221,6 +222,41 @@ test.describe('homepage content', () => {
       new Set(rendered.values()).size,
       `distinct captures across ${[...rendered.keys()].join(', ')}`,
     ).toBe(LOCALES.length);
+  });
+
+  // A badge's text sits on --glass, a translucent fill, over the card's
+  // opaque --surface: the one rendered stack of that shape, so it is what
+  // proves contrastRatio composites every layer rather than putting the
+  // first over white (#390 F127). Both dark routes, since the device's
+  // setting and a saved choice reach different blocks of tokens.css.
+  test('the tool badges clear AA as painted, in both themes', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const badges = page.locator('#tools .work-card-badge');
+    await expect(badges).toHaveCount(2);
+    const routes: Array<[string, () => Promise<void>]> = [
+      ...THEMES.map((theme): [string, () => Promise<void>] => [
+        `${theme}, from the device`,
+        () => emulateTheme(page, theme),
+      ]),
+      [
+        'dark, saved over a light device',
+        async () => {
+          await emulateTheme(page, 'light');
+          await saveTheme(page, 'dark');
+          await expectTheme(page, 'dark');
+        },
+      ],
+    ];
+    for (const [route, show] of routes) {
+      await show();
+      for (const badge of await badges.all())
+        expect(
+          await contrastRatio(badge),
+          `${route}: "${await badge.textContent()}"`,
+        ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   test('exactly two tool cards, each badged and linked in-locale', async ({
