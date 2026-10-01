@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { makeGroups } from '../make-groups';
 import type { Page } from '@playwright/test';
 import { recorded, shoot } from './evidence';
 import { rosterOf, upload } from './helpers';
@@ -264,16 +265,11 @@ test.describe('screen-reader announcements', () => {
 
   test('the summary joins the page before it is written', async ({ page }) => {
     await page.goto('/classroom-groups');
-    await page.fill('#cg-count', '8');
-    await page.fill('#cg-size', '4');
-    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7. This
-    // click is on #cg-sound-toggle, which `recordOperations` above never
-    // instruments (it carries no live role and is none of the three named),
-    // and only cg-results and cg-summary are read below, so opening the
-    // section here cannot add a spurious entry to what is compared.
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
-    await page.click('#cg-go');
+    // makeGroups opens Sound & animation, which `recordOperations` above
+    // never instruments (it carries no live role and is none of the three
+    // named), and only cg-results and cg-summary are read below, so it
+    // cannot add a spurious entry to what is compared.
+    await makeGroups(page, '8', '4');
     await expect(page.locator('#cg-summary')).toBeVisible();
     await expect(page.locator('#cg-summary')).toHaveText(
       '2 groups from 8 students.',

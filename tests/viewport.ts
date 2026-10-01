@@ -69,6 +69,43 @@ export const expectNoHorizontalScroll = async (
 };
 
 /**
+ * The element inside `#cardId` reaching furthest past the card's padding
+ * edge, and by how much: the containment question `horizontalOverflow`
+ * cannot answer, since content can overflow a card by 34.5px while the
+ * document stays still. Two copies in `classroom-groups-controls.spec.ts`
+ * disagreed about what counts as rendered (#390 F110).
+ *
+ * Rendered is `getClientRects().length > 0`: `display: none` on an ANCESTOR
+ * leaves a descendant's own computed display untouched (#17). Unrounded,
+ * because callers allow 0.5px and that is the whole tolerance (#371).
+ */
+export const spillPastCard = (
+  page: Page,
+  cardId: string,
+): Promise<{ over: number; who: string }> =>
+  page.evaluate((id) => {
+    const card = document.getElementById(id);
+    if (card === null) throw new Error(`no #${id} to measure against`);
+    const box = card.getBoundingClientRect();
+    const style = getComputedStyle(card);
+    const inner =
+      box.right -
+      parseFloat(style.paddingRight) -
+      parseFloat(style.borderRightWidth);
+    let over = 0;
+    let who = '';
+    for (const el of card.querySelectorAll('*')) {
+      if (el.getClientRects().length === 0) continue;
+      const spill = el.getBoundingClientRect().right - inner;
+      if (spill > over) {
+        over = spill;
+        who = String(el.className).split(' ')[0] || el.tagName;
+      }
+    }
+    return { over, who };
+  }, cardId);
+
+/**
  * A control is at least 44x44 CSS pixels -- the working agreement's touch
  * target floor, and WCAG 2.2 SC 2.5.8's.
  *

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { chooseSpeed } from '../make-groups';
 import { recordErrors, recordRequests, urlMatching } from './recorders';
 import type { Page } from '@playwright/test';
 
@@ -48,20 +49,10 @@ const fill = async (
     await page.check('input[name="mode"][value="groupCount"]');
     await page.fill('#cg-groups', opts.groups);
   }
-  // Stage 2, Task 7 folded Sound & animation into the tool's fourth
-  // collapsible section, the same treatment Task 4 already gave the
-  // leftovers radios -- #cg-speed now lives in #cg-sound-body, which starts
-  // collapsed, and Playwright's `selectOption` waits for a visible target
-  // rather than acting on a hidden one. Idempotent (checked, not clicked
-  // unconditionally): `fill()` runs more than once inside some tests, and a
-  // second click would close what the first one just opened.
-  const soundBody = page.locator('#cg-sound-body');
-  if (await soundBody.isHidden()) {
-    await page.locator('#cg-sound-toggle').click();
-  }
   // Default to skip so the tests assert the RESULT, not the show. The
-  // animation gets its own test below.
-  await page.selectOption('#cg-speed', opts.speed ?? 'skip');
+  // animation gets its own test below. Idempotent, so `fill()` may run
+  // more than once in a test (see chooseSpeed).
+  await chooseSpeed(page, opts.speed ?? 'skip');
 };
 
 /**
@@ -884,10 +875,9 @@ test.describe('class name and results heading', () => {
     });
     const raw = '<img src=x onerror=alert(1)>7B & "Sons"';
     await page.getByLabel('Class (optional)').fill(raw);
-    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7 (see
-    // the fill() helper's own comment above -- this test does not use it).
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
+    // This test keeps the default class size, so it chooses the speed
+    // alone rather than going through fill().
+    await chooseSpeed(page, 'skip');
     await page.click('#cg-go');
     await expect(page.locator('#cg-results-h')).toHaveText(
       `${raw} — your groups`,
@@ -908,8 +898,7 @@ test.describe('class name and results heading', () => {
   }) => {
     await page.goto('/classroom-groups');
     await page.getByLabel('Class (optional)').fill('Year 7 / Set B');
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
+    await chooseSpeed(page, 'skip');
     await page.click('#cg-go');
     await expect(page.locator('#cg-results-h')).toHaveText(
       'Year 7 / Set B — your groups',
@@ -930,8 +919,7 @@ test.describe('class name and results heading', () => {
       await page.setViewportSize({ width: 320, height: 900 });
       await page.goto('/classroom-groups');
       await page.getByLabel('Class (optional)').fill('x'.repeat(300));
-      await page.locator('#cg-sound-toggle').click();
-      await page.selectOption('#cg-speed', 'skip');
+      await chooseSpeed(page, 'skip');
       await page.click('#cg-go');
       await expect(page.locator('#cg-results-h')).toBeVisible();
       await expectNoHorizontalScroll(page);
@@ -1930,12 +1918,15 @@ test.describe('the no-scroll rule, measured', () => {
     await page.goto(path);
     await page.evaluate(() => document.fonts.ready);
     const { bottom, budget } = await page.evaluate(() => ({
-      bottom: Math.round(
-        document.getElementById('cg-go')!.getBoundingClientRect().bottom,
-      ),
+      bottom: document.getElementById('cg-go')!.getBoundingClientRect().bottom,
       budget: window.innerHeight,
     }));
-    expect(bottom).toBeLessThanOrEqual(budget);
+    // Compared RAW and rounded only for the reader: rounding first let a
+    // button 0.4px under the fold read as above it (#371, #390 F114).
+    expect(
+      bottom,
+      `#cg-go's bottom at ${bottom.toFixed(1)}px against a ${budget}px fold`,
+    ).toBeLessThanOrEqual(budget);
   };
 
   // No `fits` flag and no if/else any more -- every viewport runs as `test`.
