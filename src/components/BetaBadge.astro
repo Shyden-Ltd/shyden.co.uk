@@ -48,10 +48,11 @@ const t = getSiteStrings(lang);
     padding: 0.05em 0.4em;
     border: 1px solid currentColor;
     border-radius: 999px;
-    /* --accent-ink on --bg is 6.6:1 and on --surface 7.1:1, both clear of the
-       4.5:1 AA floor for normal text. Asserted, not asserted-by-comment: see
-       `the badge clears the WCAG AA floor` in tests/e2e/locale-beta.spec.ts,
-       which computes what the browser actually paints. */
+    /* --accent-ink must clear the 4.5:1 AA floor for normal text on both grounds it sits on (the
+       header and the switcher's list), in both themes. No ratio is written here because the
+       palette moves (Aurora, then light mode, left a stale pair behind):
+       `the badge clears the WCAG AA floor` in tests/e2e/locale-beta.spec.ts
+       computes what the browser actually paints. */
     color: var(--accent-ink);
     font-family: var(--font-body);
     font-size: 0.65em;

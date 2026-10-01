@@ -58,8 +58,10 @@ const half = run.repeat(2);
     margin-block: clamp(1.5rem, 1rem + 2vw, 2.5rem);
     padding-block: 0.5rem;
     background: var(--accent);
-    /* Not --ink: mint is a light ground, and --ink on it is 1.4:1. The whole
-       reason --on-accent exists (#17). */
+    /* Not --ink: --ink is the page's text colour, and on the accent ground
+       it fails AA in both themes (the dark theme's mint is a LIGHT ground).
+       --on-accent exists for exactly this (#17); tests/unit/contrast.test.ts
+       scores it against --accent, so no ratio is written here. */
     color: var(--on-accent);
     box-shadow: 0 0 50px var(--accent-glow);
     /* The tilt is the point of the band. `scale` covers the corners the
