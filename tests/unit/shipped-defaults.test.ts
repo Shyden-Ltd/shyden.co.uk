@@ -33,6 +33,14 @@ const HELPERS = 'tests/e2e/helpers.ts';
 /** The click every roster in this suite is ultimately built from. */
 const ROSTER_SEED = 'Add student';
 
+/**
+ * The same control named by its catalogue key, which is how helpers.ts names
+ * it since #390 F113 (every label read from the page's own catalogue, so zh,
+ * vi and th can be driven): `openRoster` holds this key and no English. Two
+ * specs already clicked it this way and were invisible to the literal alone.
+ */
+const ROSTER_SEED_KEY = 'rosterAddStudent';
+
 /** A field the page serves with a build-time value a test could collide with. */
 interface ShippedField {
   id: string;
@@ -89,12 +97,13 @@ function shippedFields(): ShippedField[] {
 /**
  * Every string OR regex literal anywhere under `node`.
  *
- * The regex half is not defensive padding. Since the i18n work every roster
- * helper matches its control bilingually -- `name: /Add student|Tambah siswa/`
- * -- so a seed search that collects only string literals finds NOTHING in
- * `helpers.ts` and silently reports that this suite builds no rosters at all.
+ * The regex half is not defensive padding. After the i18n work every roster
+ * helper matched its control bilingually -- `name: /Add student|Tambah siswa/`
+ * -- so a seed search that collected only string literals found NOTHING in
+ * `helpers.ts` and silently reported that this suite builds no rosters at all.
  * It did exactly that here, and the guard still named the right three sites,
- * by an accident described on `isTestBlock` below.
+ * by an accident described on `isTestBlock` below. The helpers now name the
+ * control by its catalogue key, which `ROSTER_SEED_KEY` answers for.
  */
 function literalsIn(node: ts.Node): string[] {
   const found: string[] = [];
@@ -162,7 +171,10 @@ function rosterBuilders(): Set<string> {
   for (const [name, seen] of body)
     // `includes` on the array would demand the literal be the whole control.
     // The seed lives inside an alternation, so the containment is per literal.
-    if (seen.literals.some((literal) => literal.includes(ROSTER_SEED)))
+    if (
+      seen.literals.some((literal) => literal.includes(ROSTER_SEED)) ||
+      seen.names.includes(ROSTER_SEED_KEY)
+    )
       builders.add(name);
 
   // Fixed point: a caller of a builder is a builder. Iterating over a snapshot
@@ -267,7 +279,8 @@ function collisions(
         const called = namesIn(node);
         if (
           called.some((name) => builders.has(name)) ||
-          literalsIn(node).some((literal) => literal.includes(ROSTER_SEED))
+          literalsIn(node).some((literal) => literal.includes(ROSTER_SEED)) ||
+          called.includes(ROSTER_SEED_KEY)
         )
           hooksBuild = true;
       }
@@ -326,7 +339,8 @@ function collisions(
                     called.some((name) => builders.has(name)) ||
                     literalsIn(current).some((literal) =>
                       literal.includes(ROSTER_SEED),
-                    )
+                    ) ||
+                    namesIn(current).includes(ROSTER_SEED_KEY)
                   )
                     built = true;
                 }
