@@ -1455,6 +1455,28 @@ const jsonFrom = (text, where) => {
 const jsonAt = (file, what) =>
   jsonFrom(textAt(file, what), `${what} at ${file}`);
 
+/**
+ * The paths an artifact already serves, from a saved file listing, refused
+ * unless it is a list of them: an object in it reached `reconcileFiles` and
+ * failed as `path.startsWith is not a function` (#390).
+ *
+ * @param {string} file
+ * @returns {string[]}
+ */
+const listingAt = (file) => {
+  const listing = jsonAt(file, 'the published file listing');
+  if (
+    !Array.isArray(listing) ||
+    !listing.every((path) => typeof path === 'string')
+  ) {
+    throw new Error(
+      `build-evidence-page: the published file listing at ${file} is not a list of paths -- ` +
+        `got ${JSON.stringify(listing).slice(0, 200)}`,
+    );
+  }
+  return listing;
+};
+
 const main = () => {
   // Parsed strictly (#390). The hand-rolled reader ignored an option it did
   // not know, so a mistyped `--publishd` cost the publish every removal in
@@ -1614,9 +1636,7 @@ const build = ({
   // names is published, or the build has already refused above.
   const files = reconcileFiles({
     desired: {},
-    published: publishedPath
-      ? jsonAt(publishedPath, 'the published file listing')
-      : [],
+    published: publishedPath ? listingAt(publishedPath) : [],
   });
   assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
   // One map answers both kinds; each is checked both ways against its own

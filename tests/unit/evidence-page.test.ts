@@ -289,6 +289,7 @@ const runBuilder = (
   dir: string,
   page: string,
   script = 'scripts/build-evidence-page.mjs',
+  extra: string[] = [],
 ) => {
   const content = join(dir, 'content.json');
   writeFileSync(content, JSON.stringify(CONTENT));
@@ -325,6 +326,7 @@ const runBuilder = (
       page,
       '--assets',
       assets,
+      ...extra,
     ],
     { encoding: 'utf8' },
   );
@@ -2235,6 +2237,34 @@ describe('recordings travel in the asset store (#268)', () => {
     expect(refused.stderr).toContain(
       `✗ build-evidence-page: could not read the evidence report at ${join(dir, EVIDENCE_REPORT)}: ENOENT`,
     );
+  });
+
+  it('removes what an earlier publish served, from the --published listing', () => {
+    // Driven through the command: only reconcileFiles itself was tested, so
+    // the option that hands it the listing could be dropped with every test
+    // green.
+    const dir = runDirectory('published-');
+    const listing = join(dir, 'listing.json');
+    writeFileSync(listing, JSON.stringify(['index.html', 'evidence/old.webm']));
+    const page = join(dir, 'page.html');
+    const built = runBuilder(dir, page, undefined, ['--published', listing]);
+    expect(built.status, built.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(`${page}.files.json`, 'utf8'))).toEqual({
+      'evidence/old.webm': null,
+    });
+  });
+
+  it('refuses a published listing that is not a list of paths, naming it', () => {
+    const dir = runDirectory('listing-shape-');
+    const listing = join(dir, 'listing.json');
+    writeFileSync(listing, JSON.stringify([{ path: 'evidence/old.webm' }]));
+    const page = join(dir, 'page.html');
+    const refused = runBuilder(dir, page, undefined, ['--published', listing]);
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: the published file listing at ${listing} is not a list of paths -- got [{"path":"evidence/old.webm"}]`,
+    );
+    expect(existsSync(page), 'a page was written').toBe(false);
   });
 });
 
