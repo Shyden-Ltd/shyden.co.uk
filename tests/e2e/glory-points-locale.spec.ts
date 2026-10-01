@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
+import { expectVisibleText } from './helpers';
 import {
   LOCALES,
   localisePath,
@@ -35,8 +36,10 @@ test.describe('the Glory Points calculator speaks the page it is on', () => {
       await page.locator('#glory-input').fill('');
       await page.locator('#glory-submit').click();
 
+      // Visible copy: `toHaveText` alone passes for a message the page
+      // wrote and never showed (#390 F123).
       const error = page.locator('#glory-error');
-      await expect(error).toHaveText(t.errors.empty);
+      await expectVisibleText(error, t.errors.empty);
       await shoot(
         page,
         `${locale}: empty input is refused in ${locale}`,
@@ -51,6 +54,7 @@ test.describe('the Glory Points calculator speaks the page it is on', () => {
       await page.locator('#glory-submit').click();
 
       const result = page.locator('#glory-result');
+      await expect(result).toBeVisible();
       await expect(result).not.toBeEmpty();
       const shown = (await result.textContent()) ?? '';
 
