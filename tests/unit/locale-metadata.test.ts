@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LOCALES, type Locale } from '../../src/lib/i18n/index';
-import { getSiteStrings } from '../../src/lib/i18n';
+import { LOCALES, type Locale, getSiteStrings } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import {
   MVP_LOCALES,
@@ -202,5 +201,26 @@ describe('resolving a locale to its site copy', () => {
       searched(wrong, { of: LOCALES, what: 'routed locales' }),
       'a non-English locale receiving the English table is the ternary bug',
     ).toEqual([]);
+  });
+});
+
+describe('how each language joins and ends a sentence (#390 F65)', () => {
+  it('pins each gap and full stop as a literal', () => {
+    // Literals, not derived: the 404 assembles a sentence around its link from
+    // these, and Chinese once read 该页面不存在。 返回首页. with English rules.
+    expect(
+      Object.fromEntries(
+        Object.entries(LOCALE_METADATA).map(([locale, meta]) => [
+          locale,
+          [meta.sentenceGap, meta.fullStop],
+        ]),
+      ),
+    ).toEqual({
+      en: [' ', '.'],
+      id: [' ', '.'],
+      zh: ['', '。'],
+      vi: [' ', '.'],
+      th: [' ', ''],
+    });
   });
 });
