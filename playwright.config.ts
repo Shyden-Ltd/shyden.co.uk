@@ -127,7 +127,8 @@ const isWithin = (dir: string, path: string): boolean => {
 
 /**
  * Where an evidence run keeps what Playwright writes, recordings included --
- * or `undefined`, which leaves an ordinary run on the default `test-results/`.
+ * or `undefined`, which leaves an ordinary run on its own folder,
+ * `test-results/desktop` (see `outputDir` below).
  *
  * Playwright clears its output directory when a run starts. Left at the
  * default, an evidence run's recordings lasted until the next run of any kind:
@@ -139,8 +140,8 @@ const isWithin = (dir: string, path: string): boolean => {
  *
  * Resolved against the working directory, as `tests/e2e/evidence.ts` and
  * `scripts/test-e2e.mjs` resolve `EVIDENCE_DIR`, so all three name one place.
- * An ordinary run keeps the default because `ci.yml` and `deploy-dev.yml`
- * upload `test-results/` when a job fails.
+ * An ordinary run stays under `test-results/` because `ci.yml` uploads that
+ * folder when a job fails.
  */
 const evidenceOutputDir = (
   evidence: string | undefined,
@@ -192,9 +193,10 @@ export default defineConfig({
   // upheld by the runner, not by this file: `PW_REUSE_SERVER` is set by
   // nothing else, and the runner sets it only after it has (a) freed port
   // 4321 itself, (b) run a fresh `npm run build`, (c) started
-  // `astro preview` itself, and (d) fetched `/classroom-groups` and confirmed
-  // the response references a hashed `/_astro/` asset — proof the server is
-  // previewing a fresh build, not something already-running and stale. A run
+  // `astro preview` itself, and (d) fetched a page and confirmed it equals
+  // the file in `dist/` byte for byte — proof the server is previewing this
+  // build, not something already-running and stale. (A `/_astro/` reference
+  // was the check until #390 F52, and every build carries one.) A run
   // of this config that does NOT go through the runner (e.g. a bare
   // `npx playwright test`) never has `PW_REUSE_SERVER` set, so it keeps the
   // original safe behaviour unchanged: refuse an already-listening server.
@@ -291,7 +293,7 @@ export default defineConfig({
     // exceeded` is the TEST timeout, so that is the budget to compare with.
     //
     // A green run on this machine is not evidence either way: CI is
-    // `ubuntu-latest`, so `webkit` and `mobile-safari` there are WebKit-GTK,
+    // `ubuntu-26.04`, so `webkit` and `mobile-safari` there are WebKit-GTK,
     // while a macOS checkout runs WebKit-Mac. Different binaries.
     //
     // None of that licenses raising a timeout. These are whole-test
