@@ -331,14 +331,28 @@ export function renderIo(
 
   // ── behaviour ───────────────────────────────────────────────────────────
 
+  // Each alert below is revealed, THEN written: a live region only reports
+  // mutations to something already in the accessibility tree, the ordering
+  // `applyImport` and `say` follow. Both were written first and revealed
+  // after, so a refused file or the replace warning could go unannounced
+  // (#390 F109).
   const showProblems = (found: CsvProblem[]) => {
+    problems.hidden = found.length === 0;
     problemsList.textContent = '';
     for (const p of found) {
       const li = document.createElement('li');
       li.textContent = p.message;
       problemsList.appendChild(li);
     }
-    problems.hidden = found.length === 0;
+  };
+
+  /** The warning before an import replaces `current`, a roster with work in it. */
+  const askToReplace = (current: readonly Student[]) => {
+    confirm.hidden = false;
+    confirmText.textContent = t.ioReplaceWarning({
+      total: current.length,
+      named: current.filter((s) => s.name).length,
+    });
   };
 
   /**
@@ -411,11 +425,7 @@ export function renderIo(
       applyImport(outcome.roster, outcome.className);
       return;
     }
-    confirmText.textContent = t.ioReplaceWarning({
-      total: current.length,
-      named: current.filter((s) => s.name).length,
-    });
-    confirm.hidden = false;
+    askToReplace(current);
     confirmYes.onclick = () => applyImport(outcome.roster, outcome.className);
     confirmNo.onclick = () => clearPanels();
   });
@@ -632,11 +642,7 @@ export function renderIo(
         applyAndAck();
         return;
       }
-      confirmText.textContent = t.ioReplaceWarning({
-        total: current.length,
-        named: current.filter((s) => s.name).length,
-      });
-      confirm.hidden = false;
+      askToReplace(current);
       confirmYes.onclick = () => {
         clearPanels();
         applyAndAck();

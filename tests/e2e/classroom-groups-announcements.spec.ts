@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { recorded, shoot } from './evidence';
+import { rosterOf, upload } from './helpers';
 
 test.use(recorded);
 
@@ -15,8 +16,9 @@ test.use(recorded);
  * That ordering is invisible in the finished DOM: both sequences end in the
  * same state. So these tests record the operations as the page performs them.
  *
- * Recorded by wrapping the two setters on the elements themselves — the real
- * accessors are still called, so the page behaves exactly as it ships. The
+ * Recorded by wrapping the real accessors and calling them, so the page
+ * behaves exactly as it ships: `hidden` on each region itself, and every
+ * write that lands INSIDE a live region, credited to the nearest one. The
  * obvious alternative, a MutationObserver, is not usable here: its callback
  * is a microtask that runs after every synchronous mutation in the batch, so
  * reading `hidden` inside it reports the END state for every record and a
@@ -67,14 +69,57 @@ const recordOperations = (page: Page) =>
             hidden.set!.call(this, value);
           },
         });
-        Object.defineProperty(el, 'textContent', {
+      }
+
+      // Writes are recorded wherever they land inside a live region, not
+      // only on the region itself: #cg-io-problems and #cg-io-confirm are
+      // written through children (a list, a sentence), and a recorder that
+      // watched only the region's own textContent saw them revealed and
+      // never written (#390 F109). Credited to the NEAREST live region, so
+      // the summary's write stays the summary's.
+      const liveRegionOf = (node: Node | null): string | null => {
+        for (let at = node; at !== null; at = at.parentNode) {
+          if (
+            at instanceof Element &&
+            at.id !== '' &&
+            ['alert', 'status'].includes(at.getAttribute('role') ?? '')
+          ) {
+            return at.id;
+          }
+        }
+        return null;
+      };
+      Object.defineProperty(Node.prototype, 'textContent', {
+        configurable: true,
+        get() {
+          return text.get!.call(this);
+        },
+        set(value: string) {
+          const id = liveRegionOf(this);
+          if (id !== null) log(`${id}:write`);
+          text.set!.call(this, value);
+        },
+      });
+      // The four ways a node is put into another, all of which the page's
+      // scripts use somewhere.
+      const insertions: ReadonlyArray<[object, string]> = [
+        [Node.prototype, 'appendChild'],
+        [Node.prototype, 'insertBefore'],
+        [Element.prototype, 'append'],
+        [Element.prototype, 'replaceChildren'],
+      ];
+      for (const [prototype, name] of insertions) {
+        const real = Reflect.get(prototype, name) as (
+          this: Node,
+          ...args: unknown[]
+        ) => unknown;
+        Object.defineProperty(prototype, name, {
           configurable: true,
-          get() {
-            return text.get!.call(this);
-          },
-          set(value: string) {
-            log(`${id}:write`);
-            text.set!.call(this, value);
+          writable: true,
+          value(this: Node, ...args: unknown[]) {
+            const id = liveRegionOf(this);
+            if (id !== null) log(`${id}:write`);
+            return real.apply(this, args);
           },
         });
       }
@@ -150,6 +195,57 @@ test.describe('screen-reader announcements', () => {
       page,
       'the refusal to open Student details, revealed before it was written',
       limit,
+    );
+  });
+
+  // #390 F109. Both of io-ui's alerts were written, then revealed. A
+  // region written through its children is announced only if it is in the
+  // accessibility tree when the children land, the same as one written
+  // directly. The last write must follow the last reveal; `toContain`
+  // first, because a missing reveal would put both at -1.
+  test('a refused file is announced, not just revealed', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-io-toggle').click();
+    await upload(page, 'bad.csv', 'number\nabc\n');
+
+    const problems = page.locator('#cg-io-problems');
+    await expect(problems).toBeVisible();
+    await expect(problems).toContainText(
+      "Row 1 — number 'abc' is not a whole number.",
+    );
+    const ops = await opsFor(page, 'cg-io-problems');
+    expect(ops).toContain('show');
+    expect(ops.lastIndexOf('write'), ops.join(', ')).toBeGreaterThan(
+      ops.lastIndexOf('show'),
+    );
+    await shoot(
+      page,
+      'a refused file, revealed before it was listed',
+      problems,
+    );
+  });
+
+  test('the warning before an import replaces a roster is announced', async ({
+    page,
+  }) => {
+    await rosterOf(page, 3);
+    await page.locator('#cg-io-toggle').click();
+    await upload(page, 'three.csv', 'number\n1\n2\n3\n');
+
+    const confirm = page.locator('#cg-io-confirm');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText(
+      'This will replace your current class list — 3 students, 0 named.',
+    );
+    const ops = await opsFor(page, 'cg-io-confirm');
+    expect(ops).toContain('show');
+    expect(ops.lastIndexOf('write'), ops.join(', ')).toBeGreaterThan(
+      ops.lastIndexOf('show'),
+    );
+    await shoot(
+      page,
+      'the replace warning, revealed before it was written',
+      confirm,
     );
   });
 
