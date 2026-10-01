@@ -36,8 +36,8 @@ const avatarDefs = AVATAR_SEXES.map(avatarSvg).join('');
 //
 // Derived from LOCALES, not from all five MVP flags: the picker can only ever
 // offer a language the site actually serves, so a symbol for an unrouted one
-// would be bytes on every page load that nothing can reference. #22 adds `zh`
-// to LOCALES and this follows, with no edit here.
+// would be bytes on every page load that nothing can reference. When #22
+// added zh, vi and th to LOCALES, this followed with no edit here.
 const flagDefs = LOCALES.map((l) => flagSymbol(LOCALE_METADATA[l].flag)).join(
   '',
 );
@@ -1352,7 +1352,7 @@ const sexWhyText = sexWhy(roster, t);
      thirty-row register, and leaving it truncated).
      `no dropdown ever truncates its own column name` measures it.
 
-     Row 2: Sex, Absent, three columns each (12 / 4) --
+     Row 2: Sex, Absent, six columns each (12 / 2) --
      "on the second [line]" (design spec section 3), stated the same
      explicit way as row 1 rather than left to wrap on its own. Six of
      twelve columns is ~180px at a phone's default width, so these DO clear
@@ -1805,10 +1805,10 @@ const sexWhyText = sexWhy(roster, t);
      Its own line (`flex-basis: 100%`), so the open list never sits beside a
      button or reaches past the section's edge. The header's switcher can
      afford an absolutely-positioned menu because it hangs off a header with
-     room to its right; this one is inside a section that ALREADY has an
-     open 320px overflow bug (#32), and a second floating layer there would
-     be a second one. In flow, an open list pushes the page down -- which is
-     free, and correct at every width. */
+     room to its right; this one is inside a section that has already had
+     one 320px overflow bug (#32, since fixed), and a floating layer there
+     would risk a second. In flow, an open list pushes the page down --
+     which is free, and correct at every width. */
   .cg-io-both {
     flex-basis: 100%;
     /* `min-width: 0`, or a flex item refuses to shrink below its own
