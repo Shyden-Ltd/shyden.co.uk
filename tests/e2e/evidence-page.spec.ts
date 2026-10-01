@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { evidencePageOf } from '../evidence-fixture';
+import { asPublished, evidencePageOf } from '../evidence-fixture';
 import {
   installDbStandIn,
   type Completion,
@@ -103,7 +103,8 @@ const test = base.extend<{ pageErrors: void }>({
 test.use(recorded);
 
 /**
- * Serves the page as the builder rendered it, and nothing from any other host.
+ * Serves the page as the builder rendered it, wrapped as publishing wraps it
+ * (`asPublished`), and nothing from any other host.
  * Called again, it republishes to the same address, as a rebuilt evidence
  * page is: the store, kept per test, carries over.
  */
@@ -111,7 +112,10 @@ async function serveEvidencePage(page: Page, html = HTML): Promise<void> {
   await page.unroute(/^https:\/\/evidence\.test\//);
   await page.route(/^https:\/\/evidence\.test\//, (route) =>
     route.request().url() === `${ORIGIN}/`
-      ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: html })
+      ? route.fulfill({
+          contentType: 'text/html; charset=utf-8',
+          body: asPublished(html),
+        })
       : route.fulfill({ status: 204 }),
   );
   // The builder links Google Fonts. Nothing in this suite reaches a third party.
@@ -307,6 +311,65 @@ for (const { order, when } of ORDERS) {
       );
     });
 
+    test('the stand-in keeps a write as it was when set() was called, as the bridge copies it', async ({
+      page,
+    }, testInfo) => {
+      await openEvidencePage(page, testInfo, { order });
+      const trace = await page.evaluate(async () => {
+        const standIn = window as StandInWindow;
+        const db = await standIn.claude.use('db');
+        if (!db) return ['use resolved null'];
+        const ref = db.doc('stand-in/bridge');
+        const seen: string[] = [];
+        ref.onSnapshot((snap) => {
+          seen.push(`delivered ${JSON.stringify(snap.data() ?? null)}`);
+        });
+        // Let the first delivery report the empty document on its own.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const sent = { journeys: { a: true } };
+        const written = ref.set(sent);
+        // Changed after the call: the real runtime has already cloned it.
+        sent.journeys.a = false;
+        await written;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        seen.push(
+          `stored ${JSON.stringify(standIn.__dbStandIn.read('stand-in/bridge'))}`,
+        );
+        return seen;
+      });
+      const asSent = '{"journeys":{"a":true}}';
+      expect(trace).toEqual([
+        'delivered null',
+        `delivered ${asSent}`,
+        `delivered ${asSent}`,
+        `stored ${asSent}`,
+      ]);
+    });
+
+    test('the stand-in fails a read only after the subscription has delivered', async ({
+      page,
+    }, testInfo) => {
+      // db.d.ts: a transient failure can hit a read while the subscription
+      // carries on. A failure that landed first would show the page's "could
+      // not load" for a moment and then be painted over, so a page reporting
+      // it after the sign-off had loaded would pass unseen.
+      await openEvidencePage(page, testInfo, { order, getFails: true });
+      const trace = await page.evaluate(async () => {
+        const db = await (window as StandInWindow).claude.use('db');
+        if (!db) return ['use resolved null'];
+        const ref = db.doc('stand-in/failing-read');
+        const seen: string[] = [];
+        const read = ref.get().then(
+          () => seen.push('read resolved'),
+          (failure: { code: string }) => seen.push(`read ${failure.code}`),
+        );
+        ref.onSnapshot(() => seen.push('delivered'));
+        await read;
+        return seen;
+      });
+      expect(trace).toEqual(['delivered', 'read unavailable']);
+    });
+
     test('five ticks made one at a time all persist, and all five are still ticked after a reload', async ({
       page,
     }, testInfo) => {
@@ -373,6 +436,16 @@ for (const { order, when } of ORDERS) {
       });
       await toggle(page, TITLES[2]);
       await expect(tickBox(page, TITLES[2])).toBeChecked();
+      // The scenario itself: storage has not answered when the tick is made.
+      // Without this, a stand-in that answered anyway would hand the tick an
+      // already-loaded page and every assertion below would still pass.
+      expect(
+        (await counters(page)).deliveries,
+        'storage answered before the early tick was made',
+      ).toBe(0);
+      await expect(page.locator('#state')).toHaveText(
+        'Not saved yet — the saved sign-off has not loaded.',
+      );
       // Answer storage and read the status the moment the stored sign-off
       // lands, long before the 400 ms save: a status calling the page ready
       // over a tick that is not yet stored is caught in the act.
@@ -803,6 +876,36 @@ test.describe('evidence page sign-off ticks, when the store is slower than the s
 });
 
 test.describe('evidence page sign-off, whatever the write order', () => {
+  test('the page is the document a reader receives: standards mode, UTF-8, laid out at the device width', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    // Measured by the page against its own screen, so it holds on a real
+    // phone too: a phone without the viewport meta lays the page out 980px
+    // wide on a screen half that.
+    const read = await page.evaluate(() => ({
+      mode: document.compatMode,
+      charset: document.characterSet,
+      laidOut: document.documentElement.clientWidth,
+      screen: screen.width,
+    }));
+    expect({ mode: read.mode, charset: read.charset }).toEqual({
+      mode: 'CSS1Compat',
+      charset: 'UTF-8',
+    });
+    expect(
+      read.laidOut,
+      `the page is laid out ${read.laidOut}px wide on a ${read.screen}px screen`,
+    ).toBeLessThanOrEqual(read.screen);
+    // The copy as written, where WebKit once showed "â€¦" for "…". Read in
+    // the click's own task: the page says it there, and its save replaces it.
+    const saying = await page.evaluate(() => {
+      document.querySelector<HTMLElement>('section.journey label')?.click();
+      return document.getElementById('state')?.textContent ?? '';
+    });
+    expect(saying).toBe('Saving…');
+  });
+
   test('each tick is named for the journey it marks', async ({
     page,
   }, testInfo) => {
@@ -1329,12 +1432,22 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
         ),
         `the page is in its ${scheme} theme`,
       ).toBe(scheme === 'dark' ? 'rgb(19, 21, 25)' : 'rgb(247, 246, 242)');
-      const parts = {
+      // Every paragraph the notice renders, derived rather than listed: the
+      // first alone left the other three free to take any ink. This seed
+      // renders four (the lead, "Added since", "No longer on the page", and
+      // what to do next), each with words in it.
+      const paragraphs = notice.locator('p').filter({ hasText: /\S/ });
+      await expect(
+        paragraphs,
+        'the notice renders its four paragraphs',
+      ).toHaveCount(4);
+      const parts: Record<string, Locator> = {
         'lead sentence': notice.locator('strong'),
-        'first paragraph': notice.locator('p').first(),
         'added journey link': notice.getByRole('link'),
         'removed journey id': notice.locator('code'),
       };
+      for (let i = 0; i < 4; i += 1)
+        parts[`paragraph ${i + 1}`] = paragraphs.nth(i);
       for (const [part, locator] of Object.entries(parts)) {
         await expect(locator, `the notice has one ${part}`).toHaveCount(1);
         expect(

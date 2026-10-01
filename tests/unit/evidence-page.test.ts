@@ -13,7 +13,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withoutMarkupComments, withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
-import { reportLocation } from '../../scripts/test-e2e.mjs';
+import { oneAttemptEach, reportLocation } from '../../scripts/test-e2e.mjs';
 import {
   CONTRACT_MODULE,
   EVIDENCE_JPEG_QUALITY,
@@ -1067,6 +1067,62 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
     expect(runner, 'the report directory is deleted unconditionally').toMatch(
       /if \(ephemeral\)\s*rmSync\(reportDir/,
     );
+  });
+
+  it('refuses a second attempt of any test, which would overwrite the first one’s captures', () => {
+    // `shoot` numbers a test's captures per worker, and Playwright runs a retry
+    // in a fresh worker, so attempt 2 writes `01-…`, `02-…` over attempt 1's
+    // files while the manifest keeps both attempts' rows: the sign-off page
+    // shows one picture twice. A repeat collides the same way.
+    const evidence = { EVIDENCE_DIR: '/e' };
+    for (const argv of [
+      ['--retries=1'],
+      ['--retries', '2'],
+      ['tests/e2e/x.spec.ts', '--retries=1'],
+    ])
+      expect(() => oneAttemptEach(argv, evidence), argv.join(' ')).toThrow(
+        /an evidence run takes one attempt of each test: --retries=[12] /,
+      );
+    for (const argv of [['--repeat-each=2'], ['--repeat-each', '3']])
+      expect(() => oneAttemptEach(argv, evidence), argv.join(' ')).toThrow(
+        /an evidence run takes one attempt of each test: --repeat-each=[23] /,
+      );
+    for (const argv of [['--retries'], ['--repeat-each']])
+      expect(() => oneAttemptEach(argv, evidence), argv.join(' ')).toThrow(
+        /^--(retries|repeat-each) was given no value$/,
+      );
+  });
+
+  it('allows one attempt of each test, and leaves an ordinary run its retries', () => {
+    for (const argv of [
+      [],
+      ['--retries=0'],
+      ['--retries', '0'],
+      ['--repeat-each=1'],
+      ['--workers', '2', '--project=chromium'],
+    ])
+      expect(oneAttemptEach(argv, { EVIDENCE_DIR: '/e' }), argv.join(' ')).toBe(
+        'one attempt',
+      );
+    // Without EVIDENCE_DIR nothing is captured, so nothing can be overwritten.
+    for (const argv of [['--retries=2'], ['--repeat-each', '3']])
+      expect(oneAttemptEach(argv, {}), argv.join(' ')).toBe(
+        'not an evidence run',
+      );
+  });
+
+  it('is asked before the suite is listed or run', () => {
+    // A refusal that arrives after the run has spent its minutes is a refusal
+    // nobody needed. Read from the stripped source: the docblock names it too.
+    const runner = withoutTsComments(
+      readFileSync('scripts/test-e2e.mjs', 'utf8'),
+    );
+    const main = runner.slice(runner.indexOf('function main()'));
+    const asked = main.indexOf('oneAttemptEach(argv, process.env)');
+    const listed = main.indexOf("'--list'");
+    expect(listed, 'main() no longer lists the suite').toBeGreaterThan(0);
+    expect(asked, 'main() never asks oneAttemptEach').toBeGreaterThan(0);
+    expect(asked, 'main() lists the suite before it asks').toBeLessThan(listed);
   });
 
   it('keeps the recordings in a directory of their own inside the evidence directory', async () => {

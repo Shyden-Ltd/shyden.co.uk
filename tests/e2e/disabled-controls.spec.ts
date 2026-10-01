@@ -537,9 +537,14 @@ test.describe('a disabled control affords that it is disabled', () => {
       // classroom-groups-controls.spec.ts, and a second opinion here would
       // only split the truth in two.
       const measured = reachable.filter((a) => !a.uaPainted);
+      // A target is 44px each way: a control 44px tall and 30px wide is still
+      // a 30px target for a finger.
       const small = measured
-        .filter((a) => a.height < 44)
-        .map((a) => `${a.label} — ${a.height.toFixed(1)}px tall`);
+        .filter((a) => a.width < 44 || a.height < 44)
+        .map(
+          (a) =>
+            `${a.label} — ${a.width.toFixed(1)} × ${a.height.toFixed(1)}px`,
+        );
       expect(
         searched(small, {
           of: measured.map((a) => a.label),

@@ -80,3 +80,17 @@ export const evidencePageOf = (
     ),
   });
 };
+
+/**
+ * A rendered page as a reader receives it once published. The builder emits
+ * the page's body alone, and the artifact runtime wraps it in a document
+ * skeleton at publish time: a doctype, a UTF-8 charset and a device-width
+ * viewport. A browser test served the bare fragment instead ran in quirks
+ * mode at a 980px layout on every phone, and WebKit, which ignores the
+ * charset on a route Playwright fulfils, read every non-ASCII character as
+ * Windows-1252: "Not saved yet — …" showed as "Not saved yet â€” …".
+ */
+export const asPublished = (html: string): string =>
+  '<!doctype html><meta charset="utf-8">' +
+  '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+  html;

@@ -160,6 +160,45 @@ export function isFilteredRun(argv = []) {
 }
 
 /**
+ * The value each attempt flag must keep in an evidence run.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+const ONE_ATTEMPT = { '--retries': '0', '--repeat-each': '1' };
+
+/**
+ * An evidence run captures exactly one attempt of each test, so it refuses a
+ * flag that would make a second.
+ *
+ * `shoot` (tests/e2e/evidence.ts) numbers a test's captures per worker, and
+ * Playwright runs a retry in a fresh worker, so a second attempt writes its
+ * `01-…`, `02-…` over the first's files while the manifest keeps both
+ * attempts' rows: the sign-off page shows one picture twice, under a test it
+ * may not describe. A repeat collides the same way. An ordinary run captures
+ * nothing, so it keeps every flag.
+ *
+ * @param {readonly string[]} argv
+ * @param {Record<string, string | undefined>} env
+ * @returns {'one attempt' | 'not an evidence run'}
+ */
+export function oneAttemptEach(argv, env) {
+  if (!env.EVIDENCE_DIR) return 'not an evidence run';
+  for (let i = 0; i < argv.length; i += 1) {
+    const [name, inline] = argv[i].split('=');
+    if (!Object.hasOwn(ONE_ATTEMPT, name)) continue;
+    const value = inline ?? argv[i + 1];
+    if (value === undefined) throw new Error(`${name} was given no value`);
+    if (value !== ONE_ATTEMPT[name])
+      throw new Error(
+        `an evidence run takes one attempt of each test: ${name}=${value} ` +
+          'would write a second attempt’s captures over the first’s, and keep ' +
+          'both in the manifest',
+      );
+  }
+  return 'one attempt';
+}
+
+/**
  * The reporter that keeps #44's per-navigation durations. A path rather than a
  * built-in name: Playwright resolves an unknown CLI reporter id against the
  * cwd, which is the repo root under `npm run test:e2e`.
@@ -379,6 +418,7 @@ function main() {
   // Refuses a shard it could not account for BEFORE spending a run on it:
   // the account written below needs to say which shard this was (#163).
   shardOf(argv);
+  oneAttemptEach(argv, process.env);
   const filtered = isFilteredRun(argv);
   const { passthrough, reporter } = mergeReporters(argv);
 
