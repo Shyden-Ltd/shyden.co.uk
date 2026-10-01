@@ -307,6 +307,65 @@ for (const { order, when } of ORDERS) {
       );
     });
 
+    test('the stand-in keeps a write as it was when set() was called, as the bridge copies it', async ({
+      page,
+    }, testInfo) => {
+      await openEvidencePage(page, testInfo, { order });
+      const trace = await page.evaluate(async () => {
+        const standIn = window as StandInWindow;
+        const db = await standIn.claude.use('db');
+        if (!db) return ['use resolved null'];
+        const ref = db.doc('stand-in/bridge');
+        const seen: string[] = [];
+        ref.onSnapshot((snap) => {
+          seen.push(`delivered ${JSON.stringify(snap.data() ?? null)}`);
+        });
+        // Let the first delivery report the empty document on its own.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const sent = { journeys: { a: true } };
+        const written = ref.set(sent);
+        // Changed after the call: the real runtime has already cloned it.
+        sent.journeys.a = false;
+        await written;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        seen.push(
+          `stored ${JSON.stringify(standIn.__dbStandIn.read('stand-in/bridge'))}`,
+        );
+        return seen;
+      });
+      const asSent = '{"journeys":{"a":true}}';
+      expect(trace).toEqual([
+        'delivered null',
+        `delivered ${asSent}`,
+        `delivered ${asSent}`,
+        `stored ${asSent}`,
+      ]);
+    });
+
+    test('the stand-in fails a read only after the subscription has delivered', async ({
+      page,
+    }, testInfo) => {
+      // db.d.ts: a transient failure can hit a read while the subscription
+      // carries on. A failure that landed first would show the page's "could
+      // not load" for a moment and then be painted over, so a page reporting
+      // it after the sign-off had loaded would pass unseen.
+      await openEvidencePage(page, testInfo, { order, getFails: true });
+      const trace = await page.evaluate(async () => {
+        const db = await (window as StandInWindow).claude.use('db');
+        if (!db) return ['use resolved null'];
+        const ref = db.doc('stand-in/failing-read');
+        const seen: string[] = [];
+        const read = ref.get().then(
+          () => seen.push('read resolved'),
+          (failure: { code: string }) => seen.push(`read ${failure.code}`),
+        );
+        ref.onSnapshot(() => seen.push('delivered'));
+        await read;
+        return seen;
+      });
+      expect(trace).toEqual(['delivered', 'read unavailable']);
+    });
+
     test('five ticks made one at a time all persist, and all five are still ticked after a reload', async ({
       page,
     }, testInfo) => {
@@ -373,6 +432,16 @@ for (const { order, when } of ORDERS) {
       });
       await toggle(page, TITLES[2]);
       await expect(tickBox(page, TITLES[2])).toBeChecked();
+      // The scenario itself: storage has not answered when the tick is made.
+      // Without this, a stand-in that answered anyway would hand the tick an
+      // already-loaded page and every assertion below would still pass.
+      expect(
+        (await counters(page)).deliveries,
+        'storage answered before the early tick was made',
+      ).toBe(0);
+      await expect(page.locator('#state')).toHaveText(
+        'Not saved yet — the saved sign-off has not loaded.',
+      );
       // Answer storage and read the status the moment the stored sign-off
       // lands, long before the 400 ms save: a status calling the page ready
       // over a tick that is not yet stored is caught in the act.
