@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
-import { catalogueLeaves, stringLeaves } from '../catalogue-leaves';
+import { catalogueLeaves, stringLeaves } from '../../src/lib/catalogue-leaves';
 import { en as enCatalogue } from '../../src/lib/i18n/en';
 import { id as idCatalogue } from '../../src/lib/i18n/id';
 import {

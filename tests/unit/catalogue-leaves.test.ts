@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogueLeaves, stringLeaves } from '../catalogue-leaves';
+import { catalogueLeaves, stringLeaves } from '../../src/lib/catalogue-leaves';
 
 /**
  * The walk every catalogue guard reads through (`one-home.test.ts` keeps it

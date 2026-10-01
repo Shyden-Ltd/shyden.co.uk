@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { stringLeaves } from '../catalogue-leaves';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
 import { filesUnder, searched } from '../source-files';
 import { withoutTsComments } from './source-text';
 

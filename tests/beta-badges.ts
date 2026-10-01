@@ -11,8 +11,9 @@ import { LOCALES, isBetaLocale, type Locale } from '../src/lib/i18n/index';
  *
  * The one home for this count. The browser suite checks it against the build
  * and the dev suite against the deployed site, and each once kept a copy: #329
- * changed the markup and one copy, the pull request's CI never runs the dev
- * suite, and the stale copy failed the first deploy after the merge.
+ * changed the markup and one copy, the pull request's CI did not run the dev
+ * suite then (it does since #335, as \`sanity-on-build\`), and the stale copy
+ * failed the first deploy after the merge.
  *
  * An EXACT count, never "at least one": a marker painted on everything,
  * English included, would satisfy any weaker check while telling the visitor

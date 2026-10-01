@@ -8,7 +8,7 @@ import {
 } from '../../src/lib/i18n/index';
 import type { Locale } from '../../src/lib/i18n/index';
 import { filesUnder, searched } from '../source-files';
-import { stringLeaves } from '../catalogue-leaves';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
 
 /**
  * Site copy that reaches no page -- measured against the BUILT BYTES.

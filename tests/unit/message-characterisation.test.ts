@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { stringLeaves } from '../catalogue-leaves';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
 import { ERROR_CODES, type GroupingError } from '../../src/lib/grouping';
 import { getStrings, renderError } from '../../src/lib/i18n';
 import { en } from '../../src/lib/i18n/en';
