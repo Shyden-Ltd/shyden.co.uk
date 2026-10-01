@@ -1,4 +1,4 @@
-import { adb } from '../../scripts/adb.mjs';
+import { adb, renderedScreen } from '../../scripts/adb.mjs';
 import { test, expect } from '../e2e/fixtures';
 
 test('the suite is running on the real phone, not an emulated profile', async ({
@@ -14,24 +14,17 @@ test('the suite is running on the real phone, not an emulated profile', async ({
   }));
 
   // What the device itself says its screen is -- adb cannot be fooled by an emulated profile.
-  // Both lines take the LAST `WxH`/number match after trimming, not the first: `wm density` on
-  // this hardware prints both `Physical density: 640` and `Override density: 560`, and the
-  // override -- the one the browser actually renders at -- is always the second line when
-  // present. `wm size` prints only `Physical size: ...` on this device (no observed override),
-  // so the same "last match wins" rule is a no-op there today, but stays ready for a device
-  // that does print an `Override size` line, the same way `wm density` already does. Using
-  // "first match" on one and "last match" on the other -- the original shape of this file --
-  // would silently take the wrong value the day a size override appears.
-  const size = adb(['shell', 'wm', 'size']);
-  const density = adb(['shell', 'wm', 'density']);
-  const physicalWidth = Number(/(\d+)x\d+\s*$/.exec(size.trim())![1]);
-  const physicalDensity = Number(/(\d+)\s*$/.exec(density.trim())![1]);
+  // renderedScreen takes the override line where `wm` prints one, as the browser does.
+  const screen = renderedScreen(
+    adb(['shell', 'wm', 'size']),
+    adb(['shell', 'wm', 'density']),
+  );
 
   expect(browserSide.ua).toContain('Android');
   expect(browserSide.touchPoints).toBeGreaterThan(0);
-  // dpr is density/160 on Android, and CSS width is the physical width divided by it.
-  expect(browserSide.dpr).toBeCloseTo(physicalDensity / 160, 2);
-  expect(browserSide.cssWidth).toBeCloseTo(physicalWidth / browserSide.dpr, 0);
+  // dpr is density/160 on Android, and CSS width is the screen's pixel width divided by it.
+  expect(browserSide.dpr).toBeCloseTo(screen.density / 160, 2);
+  expect(browserSide.cssWidth).toBeCloseTo(screen.width / browserSide.dpr, 0);
 });
 
 test('the bare request fixture resolves a relative URL against baseURL, on the real device', async ({
