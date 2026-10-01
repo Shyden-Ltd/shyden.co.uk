@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { evidencePageOf } from '../evidence-fixture';
+import { asPublished, evidencePageOf } from '../evidence-fixture';
 import {
   installDbStandIn,
   type Completion,
@@ -103,7 +103,8 @@ const test = base.extend<{ pageErrors: void }>({
 test.use(recorded);
 
 /**
- * Serves the page as the builder rendered it, and nothing from any other host.
+ * Serves the page as the builder rendered it, wrapped as publishing wraps it
+ * (`asPublished`), and nothing from any other host.
  * Called again, it republishes to the same address, as a rebuilt evidence
  * page is: the store, kept per test, carries over.
  */
@@ -111,7 +112,10 @@ async function serveEvidencePage(page: Page, html = HTML): Promise<void> {
   await page.unroute(/^https:\/\/evidence\.test\//);
   await page.route(/^https:\/\/evidence\.test\//, (route) =>
     route.request().url() === `${ORIGIN}/`
-      ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: html })
+      ? route.fulfill({
+          contentType: 'text/html; charset=utf-8',
+          body: asPublished(html),
+        })
       : route.fulfill({ status: 204 }),
   );
   // The builder links Google Fonts. Nothing in this suite reaches a third party.
@@ -872,6 +876,32 @@ test.describe('evidence page sign-off ticks, when the store is slower than the s
 });
 
 test.describe('evidence page sign-off, whatever the write order', () => {
+  test('the page is the document a reader receives: standards mode, UTF-8, laid out at the device width', async ({
+    page,
+  }, testInfo) => {
+    await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    const read = await page.evaluate(() => ({
+      mode: document.compatMode,
+      charset: document.characterSet,
+      layoutWidth: document.documentElement.clientWidth,
+    }));
+    const viewport = page.viewportSize();
+    expect(viewport, 'the project sets a viewport').not.toBeNull();
+    expect(read).toEqual({
+      mode: 'CSS1Compat',
+      charset: 'UTF-8',
+      // A phone without the viewport meta lays the page out 980px wide.
+      layoutWidth: viewport?.width,
+    });
+    // The copy as written, where WebKit once showed "â€¦" for "…". Read in
+    // the click's own task: the page says it there, and its save replaces it.
+    const saying = await page.evaluate(() => {
+      document.querySelector<HTMLElement>('section.journey label')?.click();
+      return document.getElementById('state')?.textContent ?? '';
+    });
+    expect(saying).toBe('Saving…');
+  });
+
   test('each tick is named for the journey it marks', async ({
     page,
   }, testInfo) => {
@@ -1398,12 +1428,22 @@ test.describe('a verdict covers the journeys it was given on (#197)', () => {
         ),
         `the page is in its ${scheme} theme`,
       ).toBe(scheme === 'dark' ? 'rgb(19, 21, 25)' : 'rgb(247, 246, 242)');
-      const parts = {
+      // Every paragraph the notice renders, derived rather than listed: the
+      // first alone left the other three free to take any ink. This seed
+      // renders four (the lead, "Added since", "No longer on the page", and
+      // what to do next), each with words in it.
+      const paragraphs = notice.locator('p').filter({ hasText: /\S/ });
+      await expect(
+        paragraphs,
+        'the notice renders its four paragraphs',
+      ).toHaveCount(4);
+      const parts: Record<string, Locator> = {
         'lead sentence': notice.locator('strong'),
-        'first paragraph': notice.locator('p').first(),
         'added journey link': notice.getByRole('link'),
         'removed journey id': notice.locator('code'),
       };
+      for (let i = 0; i < 4; i += 1)
+        parts[`paragraph ${i + 1}`] = paragraphs.nth(i);
       for (const [part, locator] of Object.entries(parts)) {
         await expect(locator, `the notice has one ${part}`).toHaveCount(1);
         expect(
