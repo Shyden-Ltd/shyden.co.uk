@@ -1,11 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { filesUnder, searched } from '../source-files';
-import {
-  withoutAstroComments,
-  withoutCssComments,
-  withoutTsComments,
-} from './source-text';
+import { codeWithoutComments } from './source-text';
 
 /**
  * Every custom property `src` reads is defined somewhere in `src` (#390 F62).
@@ -32,12 +28,6 @@ const READ = /var\(\s*(--[A-Za-z0-9_-]+)/g;
 const all = (pattern: RegExp, text: string): string[] =>
   [...text.matchAll(pattern)].map((match) => match[1]);
 
-function withoutComments(path: string, text: string): string {
-  if (path.endsWith('.css')) return withoutCssComments(text);
-  if (path.endsWith('.astro')) return withoutAstroComments(text);
-  return withoutTsComments(text);
-}
-
 interface Properties {
   defined: Set<string>;
   read: Map<string, string[]>;
@@ -48,7 +38,7 @@ function propertiesOf(files: ReadonlyMap<string, string>): Properties {
   const defined = new Set<string>();
   const read = new Map<string, string[]>();
   for (const [path, raw] of files) {
-    const text = withoutComments(path, raw);
+    const text = codeWithoutComments(path, raw);
     for (const name of [...all(DECLARED, text), ...all(SET_PROPERTY, text)])
       defined.add(name);
     for (const block of all(DEFINE_VARS, text))
