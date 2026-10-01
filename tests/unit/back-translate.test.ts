@@ -1032,7 +1032,11 @@ describe('scripts/i18n-back-translate.mjs', () => {
       readFileSync('docker/libretranslate/Dockerfile', 'utf8'),
     );
     expect(built).toMatch(/^LibreTranslate v\d/);
-    expect(summary()).toContain(`read back into English by **${built}**, `);
+    // The name the review's anchored opening line carries, compared EXACTLY
+    // with the Dockerfile's: a missing line reads as undefined and fails.
+    const opening =
+      /^Every translated locale, read back into English by \*\*(LibreTranslate v[^*]+)\*\*, /m;
+    expect(opening.exec(summary())?.[1]).toBe(built);
   });
 
   it('prints the review when there is no job summary to write it to', async () => {
