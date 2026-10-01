@@ -468,6 +468,42 @@ function clearSessionMarker(): void {
   if (existsSync(SESSION_MARKER_FILE)) unlinkSync(SESSION_MARKER_FILE);
 }
 
+/**
+ * Lets go of a session that exists: every path out of `startIosSession` once a
+ * session is created, and `teardown()`, end through here (#390).
+ *
+ * HARD rule: always DELETE /session/{id}, or the next run is locked out -- iOS
+ * concurrency is exactly one session, by Apple's design. The marker is cleared
+ * only on a CONFIRMED delete: if the delete fails, it deliberately survives
+ * this process, so scripts/test-devices.mjs's fallback cleanup still finds the
+ * session and finishes the job. The two failure paths in `startIosSession`
+ * used to clear it whatever the delete did. safaridriver is stopped last
+ * whatever happens, and only once the delete has its answer, since
+ * safaridriver is the server answering it.
+ */
+export async function endSession(
+  driver: Pick<WebDriver, 'deleteSession'>,
+  child: Pick<ChildProcess, 'kill'>,
+  clearMarker: () => void = clearSessionMarker,
+): Promise<{ deleted: true } | { deleted: false; error: unknown }> {
+  try {
+    try {
+      await driver.deleteSession();
+    } catch (error) {
+      // eslint-disable-next-line no-console -- a failed delete is reported, and the marker is what acts on it
+      console.error(
+        'Failed to delete the WebDriver session (stopping safaridriver; the marker stays for the runner to finish the job):',
+        error,
+      );
+      return { deleted: false, error };
+    }
+    clearMarker();
+    return { deleted: true };
+  } finally {
+    child.kill();
+  }
+}
+
 // ── Public surface ──────────────────────────────────────────────────────
 
 export interface DeviceSession {
@@ -534,9 +570,7 @@ export async function startIosSession(): Promise<DeviceSession> {
   try {
     resolved = await resolveReachableBaseUrl(driver); // 4: the phone picks the address
   } catch (error) {
-    await driver.deleteSession().catch(() => {});
-    clearSessionMarker();
-    child.kill();
+    await endSession(driver, child);
     throw error;
   }
 
@@ -544,9 +578,7 @@ export async function startIosSession(): Promise<DeviceSession> {
   try {
     mode = await detectInteractionMode(driver); // design doc s5a: the canary
   } catch (error) {
-    await driver.deleteSession().catch(() => {});
-    clearSessionMarker();
-    child.kill();
+    await endSession(driver, child);
     throw error;
   }
   // HARD requirement (design doc s5a): "The mode is named in the suite's
@@ -612,26 +644,7 @@ export async function startIosSession(): Promise<DeviceSession> {
     },
 
     async teardown(): Promise<void> {
-      // HARD rule: always DELETE /session/{id}, or the next run is locked
-      // out -- iOS concurrency is exactly one session, by Apple's design.
-      // Guarded so a session that is already gone for some other reason
-      // cannot stop safaridriver itself from being killed too.
-      try {
-        await driver.deleteSession();
-        // Only cleared on CONFIRMED deletion -- if the DELETE above threw,
-        // the marker deliberately survives this process exiting, so
-        // scripts/test-devices.mjs's own fallback cleanup still finds it
-        // and finishes the job.
-        clearSessionMarker();
-      } catch (error) {
-        // eslint-disable-next-line no-console -- teardown must not throw past this point
-        console.error(
-          'Failed to delete the WebDriver session during teardown (continuing to stop safaridriver):',
-          error,
-        );
-      } finally {
-        child.kill();
-      }
+      await endSession(driver, child);
     },
   };
 }
