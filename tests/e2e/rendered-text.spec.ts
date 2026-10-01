@@ -76,8 +76,10 @@ const renderedText = (page: Page) =>
   });
 
 /**
- * Joins that are meant to be there. Ten on the whole site, two shapes in five
- * languages, and both shapes are ordinary typography rather than accidents.
+ * Joins that are meant to be there: ordinary typography, never one sentence.
+ * The full-width shapes arrived with #390 F65, when the 404 stopped putting an
+ * English space into its Chinese line. A Chinese sentence glued to its link
+ * WITHOUT a full stop is still a finding.
  */
 const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
   {
@@ -87,8 +89,15 @@ const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
   },
   {
     left: /\S$/,
-    right: /^[.,]$/,
+    right: /^[.,。，]$/,
     why: 'punctuation closing a sentence that ended in a link',
+  },
+  {
+    left: /[。！？]$/,
+    right: /^\S/,
+    why:
+      'a full-width stop carries its own space: Chinese sets the next ' +
+      'sentence straight after it (#390 F65)',
   },
 ];
 
@@ -100,7 +109,9 @@ const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
  * at from punctuation. The purely textual scan above only knows Latin
  * letters: delete the 404 page's `{' '}` and it finds the Indonesian and
  * Vietnamese sentences glued to their links, while this finds those two and
- * the Chinese and Thai ones as well (measured, #198).
+ * the Chinese and Thai ones as well (measured, #198). The Chinese one has had
+ * no space since #390 F65, by design: it ends in `。`, which the allow-list
+ * below accepts.
  *
  * Measured rather than reasoned about, because the obvious implementations
  * are both wrong. Comparing text alone reports 172 joins on this site, nearly
