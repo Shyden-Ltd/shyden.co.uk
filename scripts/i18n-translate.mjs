@@ -10,7 +10,7 @@
  * free-tier quota and is the kind of thing that gets triggered by a stray
  * shell-history arrow key; the dry run prints exactly what would be sent and
  * how many characters it costs, so the spend is a decision rather than a
- * side effect. It is also what lets this stage ship "built but not run".
+ * side effect.
  *
  * A draft is kept only while its English is still sent (#164). The cache used
  * to keep every draft it had ever been given, so retired copy lingered in it
@@ -43,12 +43,9 @@ import {
   pruneDrafts,
   slotsKept,
   translatableSentences,
-  unescapeXml,
-  unprotectTerms,
-  untranslatedKeys,
+  deeplDrafts,
   TRANSLATABLE_LOCALES,
 } from '../src/lib/i18n/translate.ts';
-import { en } from '../src/lib/i18n/en.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
 /** DeepL accepts up to 50 texts per request. */
@@ -117,12 +114,9 @@ async function draftAll(sources, options, deepl) {
     });
     // The status only, never the body: a DeepL error can echo the request.
     if (!response.ok) die(`DeepL responded ${response.status}`);
-    const { translations } = await response.json();
-    drafts.push(
-      ...translations.map((/** @type {{ text: string }} */ { text }) =>
-        unescapeXml(unprotectTerms(text)),
-      ),
-    );
+    // Checked before it is used: the caller pairs drafts with sources by
+    // position, so a short answer would shift every later draft.
+    drafts.push(...deeplDrafts(await response.json(), batch.length));
     console.log(`  ${Math.min(i + BATCH, sources.length)}/${sources.length}`);
   }
   return drafts;
@@ -197,7 +191,6 @@ export async function main() {
    */
   const pending = [...strings].filter((s) => needsSending(s, known[s]));
   const characters = pending.reduce((n, s) => n + s.length, 0);
-  const manual = untranslatedKeys(en);
 
   console.log(`target        ${target} → DeepL ${deeplLanguage(target)}`);
   console.log(`catalogue     ${strings.size} translatable strings`);
@@ -206,7 +199,6 @@ export async function main() {
     `to send       ${pending.length} strings, ${characters} characters`,
   );
   console.log(`stale         ${stale.length} drafts no catalogue sends`);
-  console.log(`needs a human ${manual.length} keys (symbols)`);
   console.log(`do-not-send   ${DO_NOT_TRANSLATE.length} protected terms`);
 
   if (prune) {
@@ -271,10 +263,6 @@ export async function main() {
   writeCache(cache, target, known);
   console.log(`\n✓ cache written to ${CACHE}`);
   console.log(`  dropped ${stale.length} stale drafts`);
-  console.log(
-    `  ${manual.length} keys still need a human — see untranslatedKeys`,
-  );
-  console.log('  Nothing was added to LOCALES. That is #22.');
 }
 
 if (import.meta.main) await main();

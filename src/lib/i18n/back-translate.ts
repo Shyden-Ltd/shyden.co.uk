@@ -5,11 +5,7 @@ import { DEFAULT_LOCALE, LOCALES, type Locale } from './locales.ts';
 import { describeMessage, isMessageTemplate } from './message.ts';
 import { siteEn, siteId, siteTh, siteVi, siteZh } from './site.ts';
 import { th } from './th.ts';
-import {
-  CSV_KEYS_NOT_TRANSLATED,
-  messageUnits,
-  needsTranslation,
-} from './translate.ts';
+import { messageUnits, needsTranslation } from './translate.ts';
 import { vi } from './vi.ts';
 import { zh } from './zh.ts';
 
@@ -89,15 +85,14 @@ export const TRANSLATED_LOCALES: readonly Locale[] = LOCALES.filter(
 );
 
 /**
- * The third catalogue: the words a downloaded CSV carries. Its `sex` tokens
- * are held back from translation (`CSV_KEYS_NOT_TRANSLATED`), so there is
- * nothing of theirs to read back.
+ * The third catalogue: the words a downloaded CSV carries, less its `sex`
+ * letters. Those are the roster's own `rosterSexMale` and `rosterSexFemale`
+ * (`tests/unit/csv.test.ts` holds them equal), which the roster rows already
+ * read back, so reading them again here would only list them twice.
  */
 const csvCopy = (locale: Locale): Record<string, unknown> =>
   Object.fromEntries(
-    Object.entries(CSV_LOCALES[locale]).filter(
-      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
-    ),
+    Object.entries(CSV_LOCALES[locale]).filter(([key]) => key !== 'sex'),
   );
 
 /** Every unit of one locale, from all three catalogues. */
@@ -367,7 +362,8 @@ function scriptOf(tag: string): string | undefined {
  * English: the locale's own code, or else the one code for that language in
  * the script the locale is written in. An engine that splits Chinese into
  * `zh-Hans` and `zh-Hant` must be asked for Simplified, which is what `zh`
- * maximises to and what the site ships.
+ * maximises to and what the site ships. Two codes in that script (`zh-Hans`
+ * and `zh-Hans-CN`) are refused as a question only a person can answer.
  */
 export function engineSource(
   locale: Locale,
@@ -379,7 +375,15 @@ export function engineSource(
   const candidates = readable.filter(
     ({ code }) => code.split('-')[0] === locale && scriptOf(code) === script,
   );
-  if (candidates.length !== 1)
+  if (candidates.length > 1)
+    throw new Error(
+      `${locale}: the engine offers ${candidates
+        .map(({ code }) => code)
+        .join(
+          ', ',
+        )} for ${locale} in the ${script} script, and the gate will not guess which`,
+    );
+  if (candidates.length === 0)
     throw new Error(
       `${locale}: the engine cannot read ${locale} into English; it reads ${
         readable.map(({ code }) => code).join(', ') || 'nothing'

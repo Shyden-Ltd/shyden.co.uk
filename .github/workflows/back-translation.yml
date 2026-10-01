@@ -18,6 +18,7 @@ on:
     # script's own import closure, so a new input cannot go unwatched.
     paths:
       - 'src/lib/i18n/**'
+      - 'src/lib/catalogue-leaves.ts'
       - 'src/lib/csv-locale.ts'
       - 'scripts/i18n-back-translate.mjs'
       - 'scripts/back-translate-client.mjs'

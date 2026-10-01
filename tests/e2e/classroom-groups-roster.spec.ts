@@ -595,7 +595,7 @@ test.describe('headers follow the roster, live', () => {
  * grouping.test.ts; this is the PAGE half, catching the identical fact one
  * keystroke earlier, before the button is ever pressed.
  *
- * task-5-brief.md's own Step 3 snippet is reproduced below with one real
+ * the uncommitted #9 task brief's own Step 3 snippet is reproduced below with one real
  * correction, not verbatim: its own "a gap warns but does not block" test
  * fills the FIRST (and, at that point, ONLY) roster row's number to '4' --
  * a one-student roster has no internal range to be missing a number FROM

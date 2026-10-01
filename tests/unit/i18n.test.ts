@@ -298,6 +298,19 @@ describe('every engine error can be rendered in every language', () => {
     expect(msg).toContain('5');
   });
 
+  it('the too-many and duplicate messages print the numbers the engine gave', () => {
+    // The sentence check above passes with any number in the slot, so the
+    // limit and the repeated number went unobserved (#390, RE9 RE10).
+    expect(
+      renderError({ code: ERROR_CODES.tooManyStudents, maxStudents: 500 }, en),
+    ).toBe('That is more students than this tool will take. The most is 500.');
+    expect(
+      renderError({ code: ERROR_CODES.duplicateNumber, number: 5 }, en),
+    ).toBe(
+      'Student number 5 is used twice. Give each student their own number.',
+    );
+  });
+
   describe('resolving a student number to a label', () => {
     // KEEP_APART_IMPOSSIBLE carries numbers (Student.number is the identity;
     // see grouping.ts), never names -- the engine has no roster to resolve
@@ -1656,6 +1669,10 @@ describe('the locale-aware paths', () => {
     ['/', 'id', '/id/'],
     ['/id/', 'en', '/'],
     ['/id/', 'id', '/id/'],
+    // A prefix with no slash after it is that language's homepage too.
+    ['/id', 'en', '/'],
+    ['/id', 'id', '/id/'],
+    ['/zh', 'vi', '/vi/'],
     ['/classroom-groups', 'id', '/id/classroom-groups'],
     ['/classroom-groups/', 'id', '/id/classroom-groups/'],
     ['/id/classroom-groups', 'en', '/classroom-groups'],
@@ -1810,7 +1827,7 @@ describe('the results heading names the class once, or leaves it out entirely', 
   // this heading too, so a NON-blank name keeps its own incidental
   // leading/trailing whitespace -- `.trim()` only decides blankness above,
   // it never edits what is actually shown. Deliberately corrects
-  // task-5-brief.md's own snippet, which threaded `className.trim()`
+  // the uncommitted #9 task brief's own snippet, which threaded `className.trim()`
   // through to the named branch as well.
   it.each(locales)(
     'a non-blank name keeps its own whitespace, untrimmed (%s)',

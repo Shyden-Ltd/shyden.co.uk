@@ -692,7 +692,7 @@ describe('rosterWarnings', () => {
   });
 
   // A single-student roster has no internal range to be missing a number
-  // FROM. This is the exact scenario task-5-brief.md's own e2e snippet got
+  // FROM. This is the exact scenario the uncommitted #9 task brief's own e2e snippet got
   // wrong -- see this task's own report -- so it is pinned here at the unit
   // level too: filling the only row's number produces no gap, whatever it
   // is filled with.

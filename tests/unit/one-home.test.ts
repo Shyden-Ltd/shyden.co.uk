@@ -237,10 +237,10 @@ describe('walking a directory tree has exactly one home', () => {
  * `Object.entries`, `Object.values` or `Object.keys` is a walk, whatever it is
  * called.
  *
- * KNOWN LIMIT: the test tree only. `scripts/` and `src/` walk catalogues for
- * themselves -- the harness's `collect`, the scaffold's `render`,
- * `untranslatedKeys` -- because shipped code cannot import the test tree, and
- * a guard importing the shipped walk would depend on the thing it checks.
+ * KNOWN LIMIT: the test tree only. `scripts/` and `src/` still hold walks of
+ * their own -- the scaffold's `render`, back-translation's paired
+ * `unitsBetween` -- and a guard importing the shipped walk would depend on
+ * the thing it checks.
  * The walk itself now ships (#97); its behaviour is pinned by
  * `catalogue-leaves.test.ts`, which the move does not change.
  */

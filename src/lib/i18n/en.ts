@@ -72,7 +72,7 @@ export const en = {
   //
   // Design spec section 3's own top-row ordering: "Class (optional) ·
   // Students · Split by". Stage 2, Task 5. The literal "(optional)" is
-  // pinned by task-5-brief.md's own test (`getByLabel('Class (optional)')`)
+  // pinned by the uncommitted #9 task brief's own test (`getByLabel('Class (optional)')`)
   // -- the field carries no `required`, no pattern and no `maxlength` to
   // match: design spec section 8 says plainly "Blank is fine and nothing is
   // blocked", and section 9 says the name a teacher types is never altered
@@ -339,7 +339,7 @@ export const en = {
   // just caught one keystroke earlier and phrased for the moment of typing
   // rather than the moment of shuffling: this one names WHO already holds
   // the number, which DUPLICATE_NUMBER above cannot -- the engine has no
-  // roster to resolve a name from. The approved copy (task-5-brief.md,
+  // roster to resolve a name from. The approved copy (the uncommitted #9 task brief,
   // verbatim) is a fixed two-part sentence with no singular/plural branch,
   // because a duplicate always names exactly one prior holder.
   rosterDuplicateMessage:

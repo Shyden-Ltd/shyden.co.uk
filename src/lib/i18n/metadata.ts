@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE } from './locales';
+import { DEFAULT_LOCALE, LOCALES } from './locales';
 
 /**
  * Everything that differs per language, in one table.
@@ -16,9 +16,9 @@ import { DEFAULT_LOCALE } from './locales';
 /**
  * The five MVP languages, deliberately WIDER than `LOCALES`.
  *
- * Metadata for all five ships now while only `en` and `id` are routed. That is
- * what makes #22 a data change: adding `zh` to LOCALES must mean flipping which
- * locales are served, never writing new metadata code.
+ * Metadata for a language ships before the language is served, so serving it
+ * is a data change -- adding it to `LOCALES` -- never new metadata code. That
+ * is how #22 served zh, vi and th. Today every MVP language is served.
  */
 export const MVP_LOCALES = ['en', 'id', 'zh', 'vi', 'th'] as const;
 export type MvpLocale = (typeof MVP_LOCALES)[number];
@@ -91,14 +91,14 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
 };
 
 /**
- * Every served locale's own name for itself, in `MVP_LOCALES` order.
+ * Every served locale's own name for itself, in `LOCALES` order.
  *
  * Derived rather than listed so the homepage marquee cannot name a language
  * the site does not serve, and cannot fall behind one that is added. The
  * approved Aurora artifact writes the list by hand (#17).
  */
 export const localeNativeNames = (): string[] =>
-  MVP_LOCALES.map((locale) => LOCALE_METADATA[locale].nativeName);
+  LOCALES.map((locale) => LOCALE_METADATA[locale].nativeName);
 
 export const isMvpLocale = (value: unknown): value is MvpLocale =>
   typeof value === 'string' &&
