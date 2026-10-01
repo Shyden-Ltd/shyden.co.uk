@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { serversClosedAfterEach } from '../http-stand-in';
 import { createServer, type Server } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,17 +45,7 @@ async function serving(
   return { server, port: address.port, seen };
 }
 
-const servers: Server[] = [];
-afterEach(async () => {
-  await Promise.all(
-    servers
-      .splice(0)
-      .map(
-        (server) =>
-          new Promise<void>((resolve) => server.close(() => resolve())),
-      ),
-  );
-});
+const servers = serversClosedAfterEach();
 
 describe('waitUntil: the timeout bounds the whole wait', () => {
   it('abandons a predicate that never settles at the deadline', async () => {
