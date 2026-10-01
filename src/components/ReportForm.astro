@@ -15,8 +15,9 @@ import {
  * English never shows it and no caller keeps a list of locales.
  *
  * The disclosure and each status carry `lang` (the fields inherit it),
- * because on the 404 the document's own `lang` is English. The status paragraphs sit outside the `<details>`,
- * because a closed one renders nothing and a status must show either way.
+ * because on the 404 the document's own `lang` is English. The status
+ * paragraphs sit outside the `<details>`, because a closed one renders
+ * nothing and a status must show either way.
  */
 interface Props {
   lang: Locale;
