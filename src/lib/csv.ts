@@ -2,6 +2,7 @@ import type { Student } from './grouping';
 import type { Strings } from './i18n';
 import { MAX_ROSTER } from './roster';
 import { CSV_LOCALES, type Locale, type CsvColumn } from './csv-locale';
+import { LOCALES } from './i18n/locales';
 
 /**
  * The CSV format: writing it here, reading it in the parser below (Task 3).
@@ -540,10 +541,10 @@ export function parseRoster(
 
 /**
  * Which language a file is written in, from its headers alone — or `null`
- * when it is neither.
+ * when no one locale's words lead.
  *
- * This is only possible because of the invariant `csv-locale.ts` asserts:
- * the two tables share NO header word. That is why a design rule and not a
+ * This is only possible because of the invariant `csv.test.ts` asserts over
+ * every pair of locales: no two tables share a header word. That is why a design rule and not a
  * nicety, and it is why detection needs no guessing from content.
  *
  * The header row is the FIRST non-comment record, so a student called
@@ -593,10 +594,12 @@ export function detectLocale(text: string): Locale | null {
     return fromHeader + fromComment;
   };
 
-  const en = score('en');
-  const id = score('id');
-  if (en === id) return null;
-  return en > id ? 'en' : 'id';
+  // Every locale, derived: the detector once scored `en` and `id` by name,
+  // so a file in any locale added later came back `null` (#390).
+  const scores = LOCALES.map((locale) => ({ locale, score: score(locale) }));
+  const best = Math.max(...scores.map(({ score }) => score));
+  const leaders = scores.filter(({ score }) => score === best);
+  return best > 0 && leaders.length === 1 ? leaders[0].locale : null;
 }
 
 /**

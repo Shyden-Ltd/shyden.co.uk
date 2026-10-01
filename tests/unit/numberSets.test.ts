@@ -159,6 +159,21 @@ describe('parseNumberSets -- what it refuses', () => {
     });
   });
 
+  // Where a number is above both, the page's own limit is the one named:
+  // lowering the count cannot fix it, so "above the count" would send the
+  // teacher to the wrong box (#390, NS20).
+  it('names the maximum, not the count, for a number above both', () => {
+    expect(
+      parseNumberSets(String(MAX_STUDENTS + 1), {
+        count: MAX_STUDENTS,
+        kind: 'absent',
+      }),
+    ).toEqual({
+      sets: [],
+      problem: { kind: 'aboveMaximum', text: String(MAX_STUDENTS + 1) },
+    });
+  });
+
   // AC4. The roster's own DUPLICATE rule refuses rather than silently
   // de-duplicating (roster.ts `rosterProblems`), and this mirrors it: a
   // number typed twice is a teacher losing their place, not a shorthand.
@@ -187,6 +202,12 @@ describe('parseNumberSets -- what it refuses', () => {
         problem: { kind: 'lonelySet', text: '3' },
       },
     );
+  });
+
+  it('names a lonely set as it was typed, trailing comma and all', () => {
+    expect(
+      parseNumberSets('3, ; 14,15', { count: 25, kind: 'pairing' }),
+    ).toEqual({ sets: [], problem: { kind: 'lonelySet', text: '3,' } });
   });
 
   it('accepts a single absent number', () => {
@@ -261,6 +282,15 @@ describe('parseNumberSets -- what it refuses', () => {
     expect(parsed.sets).toHaveLength(26);
   });
 
+  it('lets absence run past 26 sets, since an absentee needs no letter', () => {
+    const absences = Array.from({ length: 27 }, (_, i) => String(i + 1)).join(
+      '; ',
+    );
+    const parsed = parseNumberSets(absences, { count: 30, kind: 'absent' });
+    expect(parsed.problem).toBeNull();
+    expect(parsed.sets).toHaveLength(27);
+  });
+
   it('refuses a 27th pairing set, naming the one with no letter left', () => {
     expect(
       parseNumberSets(pairsUpTo(27), { count: 60, kind: 'pairing' }),
@@ -283,6 +313,17 @@ describe('studentsForInput -- typed numbers become a roster', () => {
   // has always received, not a 25-long array of anonymous students.
   it('returns the bare count when all three fields are empty', () => {
     expect(studentsForInput(25, noFields)).toBe(25);
+  });
+
+  // Each field on its own leaves the default path: a check that forgot one
+  // would hand the engine the bare count and drop what was typed there.
+  it.each([
+    ['absent', { ...noFields, absent: [[7]] }],
+    ['together', { ...noFields, together: [[3, 9]] }],
+    ['apart', { ...noFields, apart: [[3, 9]] }],
+  ])('builds the class when only %s is typed', (_, fields) => {
+    const built = studentsForInput(25, fields);
+    expect(Array.isArray(built) && built.length).toBe(25);
   });
 
   // AC8, AC9. Absence marks a pupil out of THIS shuffle, not out of the
