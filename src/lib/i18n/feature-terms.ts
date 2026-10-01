@@ -45,7 +45,10 @@ import type { Locale } from './locales.ts';
  * CLI-only, like the `back-translate.ts` it reads its units from.
  */
 
-/** A feature of the classroom-groups tool that its copy names. */
+/**
+ * A feature a tool page's copy names: the classroom-groups controls, and the
+ * Glory Points page's three currencies (#390).
+ */
 export type FeatureTerm =
   | 'pin'
   | 'together'
