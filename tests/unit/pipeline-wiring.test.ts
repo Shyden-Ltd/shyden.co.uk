@@ -1242,9 +1242,24 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     const { version } = JSON.parse(
       readFileSync('node_modules/@playwright/test/package.json', 'utf8'),
     ) as { version: string };
+    const pinned = `mcr.microsoft.com/playwright:v${version}-noble`;
     expect(withoutCommentLines(workflow('ci.yml'), '#')).toContain(
-      `image: mcr.microsoft.com/playwright:v${version}-noble`,
+      `image: ${pinned}`,
     );
+    // And every other place a workflow names it says the same. The visual
+    // job's step summary types the image a second time, and a bump that
+    // reaches only the `container:` line leaves that summary recording an
+    // image the run never used (#390). The `image:` line above guarantees
+    // at least one name, so the set cannot be empty.
+    const named = workflowFileNames()
+      .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+      .flatMap(
+        (name) =>
+          withoutCommentLines(workflow(name), '#').match(
+            /mcr\.microsoft\.com\/playwright:[\w.-]+/g,
+          ) ?? [],
+      );
+    expect(new Set(named)).toEqual(new Set([pinned]));
   });
 
   it('runs the visual project, with the switch that declares it', () => {
