@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { searched, trackedFiles } from '../source-files';
 
 /**
  * Shyden Ltd is dissolved (#370), and the organisation behind the site is
@@ -29,5 +30,38 @@ describe('the organisation is named Shyden Labs (#413)', () => {
   ])('%s no longer names the dissolved company', (_name, text) => {
     expect(text).toContain('Shyden');
     expect(text).not.toMatch(/Shyden\s+Ltd/i);
+  });
+});
+
+/**
+ * The org's GitHub handle moved to shyden-labs (#413). GitHub
+ * redirects the old one only until someone claims it, so no live file may
+ * lean on it. Dated plans and specs are history and keep what they said, and
+ * one merge-message fixture keeps the old form because develop's own history
+ * is written in it: that hit is also this scan's proof that it reads files.
+ * The handle is assembled, never spelt, so this file cannot find itself.
+ */
+const HISTORY = 'docs/superpowers/';
+const OLD_HANDLE = ['Shyden', 'Ltd'].join('-');
+const KEPT = [
+  `tests/unit/release-inventory.test.ts:      'Merge pull request #347 from ${OLD_HANDLE}/97-report',`,
+];
+
+describe("no live file names the org's old GitHub handle (#413)", () => {
+  it('only the one historic fixture outside the dated docs', () => {
+    const files = trackedFiles((path) => !path.startsWith(HISTORY));
+    const hits = files.flatMap((path) =>
+      readFileSync(path, 'latin1')
+        .split('\n')
+        .filter((line) => line.includes(OLD_HANDLE))
+        .map((line) => `${path}:${line}`),
+    );
+    expect(hits.filter((hit) => KEPT.includes(hit))).toEqual(KEPT);
+    expect(
+      searched(
+        hits.filter((hit) => !KEPT.includes(hit)),
+        { of: files, what: 'tracked files outside the dated docs' },
+      ),
+    ).toEqual([]);
   });
 });

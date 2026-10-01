@@ -26,7 +26,7 @@ const SCRIPT = path.resolve(
   import.meta.dirname,
   '../../scripts/deploy-gate.mjs',
 );
-const REPO = 'Shyden-Ltd/shyden.co.uk';
+const REPO = 'shyden-labs/shyden.co.uk';
 const TOKEN = 'gate-token';
 
 interface Received {

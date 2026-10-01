@@ -161,7 +161,7 @@ beforeEach(() => {
     return { status: 404, body: { success: false, errors: [] } };
   });
   github.answer(({ method, url }) => {
-    const path = `/repos/Shyden-Ltd/shyden.co.uk/issues/${ISSUE}/comments`;
+    const path = `/repos/shyden-labs/shyden.co.uk/issues/${ISSUE}/comments`;
     if (method === 'GET' && url.startsWith(`${path}?`))
       return { status: 200, body: comments };
     if (method === 'POST' && url === path) return { status: 201, body: {} };
@@ -183,7 +183,7 @@ const run = (
         CLOUDFLARE_D1_READ_TOKEN: 'cf-read-token',
         GITHUB_API_URL: github.url,
         GITHUB_SERVER_URL: 'https://github.com',
-        GITHUB_REPOSITORY: 'Shyden-Ltd/shyden.co.uk',
+        GITHUB_REPOSITORY: 'shyden-labs/shyden.co.uk',
         GITHUB_RUN_ID: '36000000001',
         GITHUB_TOKEN: 'gh-token',
         NOTICE_ISSUE: ISSUE,
@@ -396,7 +396,7 @@ describe('the report-failure mode', () => {
       {
         body:
           'The waiting-reports count could not be read.\n\n' +
-          'https://github.com/Shyden-Ltd/shyden.co.uk/actions/runs/36000000001',
+          'https://github.com/shyden-labs/shyden.co.uk/actions/runs/36000000001',
       },
     ]);
     await cloudflare.expectNothingReceived();

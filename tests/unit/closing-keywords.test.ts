@@ -67,16 +67,16 @@ const REFUSED: readonly Fixture[] = [
   { text: 'never closes #3', why: 'the never form' },
   { text: 'Closes: #65', why: 'the colon form GitHub also reads' },
   {
-    text: 'fixes Shyden-Ltd/shyden.co.uk#12',
+    text: 'fixes shyden-labs/shyden.co.uk#12',
     why: 'the cross-repository form',
   },
   { text: 'closes GH-12', why: 'the GH- reference form' },
   {
-    text: 'fixes https://github.com/Shyden-Ltd/shyden.co.uk/issues/12',
+    text: 'fixes https://github.com/shyden-labs/shyden.co.uk/issues/12',
     why: 'the full issue URL — undocumented by GitHub, so refused rather than trusted',
   },
   {
-    text: 'Closes: http://github.com/Shyden-Ltd/shyden.co.uk/pull/12',
+    text: 'Closes: http://github.com/shyden-labs/shyden.co.uk/pull/12',
     why: 'the URL form with a colon, over http, naming a pull request',
   },
   {
@@ -110,11 +110,11 @@ const ACCEPTED: readonly Fixture[] = [
     why: 'a placeholder, not a number — how the rule itself is documented',
   },
   {
-    text: 'see https://github.com/Shyden-Ltd/shyden.co.uk/issues/12',
+    text: 'see https://github.com/shyden-labs/shyden.co.uk/issues/12',
     why: 'an issue URL with no keyword before it',
   },
   {
-    text: 'the fix is in https://github.com/Shyden-Ltd/shyden.co.uk/pull/5',
+    text: 'the fix is in https://github.com/shyden-labs/shyden.co.uk/pull/5',
     why: 'a keyword and a URL in one sentence, but NOT adjacent',
   },
   {
