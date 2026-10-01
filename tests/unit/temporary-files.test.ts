@@ -39,14 +39,19 @@ describe('leakedEntries: what a test left in the run directory', () => {
     ).toEqual([]);
   });
 
-  it('reports a 21-character directory holding more than a module cache', () => {
+  it('reports what only looks like a module cache', () => {
+    // A 21-character directory holding more than `ssr`, a 21-character FILE,
+    // and a test's own directory holding only `ssr`: the name and the
+    // contents both have to match.
     const dir = scratchDir('lookalike-');
     mkdirSync(join(dir, 'nIWSclig0jW8grtzoQ_px', 'ssr'), { recursive: true });
     writeFileSync(join(dir, 'nIWSclig0jW8grtzoQ_px', 'notes.txt'), '');
     writeFileSync(join(dir, '37RQnaJ1OG-QLDz10P8uA'), 'ssr');
+    mkdirSync(join(dir, 'vite-run-Ab12Cd', 'ssr'), { recursive: true });
     expect(leakedEntries(dir)).toEqual([
       '37RQnaJ1OG-QLDz10P8uA',
       'nIWSclig0jW8grtzoQ_px',
+      'vite-run-Ab12Cd',
     ]);
   });
 
