@@ -7,7 +7,7 @@ import type { Server } from 'node:http';
  * the top of a test file, never inside a test.
  *
  * One home since #390: `device-runner.test.ts` was written with a copy of the
- * teardown `webdriver-status.test.ts` already had, and `duplication.test.ts`
+ * teardown `webdriver.test.ts` (then `webdriver-status.test.ts`) already had, and `duplication.test.ts`
  * refused the pair.
  */
 export function serversClosedAfterEach(): Server[] {

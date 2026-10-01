@@ -10,8 +10,26 @@ import {
   emptyDeviceDownloads,
   onRealDevice,
 } from '../device/device-downloads';
-import type { Locale } from '../../src/lib/i18n/index';
+import {
+  getStrings,
+  localeFromPath,
+  type Locale,
+  type Strings,
+} from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+
+/**
+ * The catalogue of the language the page is showing, read off its URL.
+ *
+ * The roster helpers named their controls by an English-or-Indonesian
+ * pattern (`/Sex|Jenis kelamin/`), written when those were the only two
+ * locales, so none of them could drive zh, vi or th, and a layout test on
+ * those pages could not even open the roster (#390 F113). Exact catalogue
+ * labels are stricter too: a substring pattern for "Add" also matches
+ * "+ Add student".
+ */
+const stringsOf = (page: Page): Strings =>
+  getStrings(localeFromPath(new URL(page.url()).pathname));
 
 /**
  * Fixtures for driving the roster into a starting state -- Stage 3, 4 and 5
@@ -36,7 +54,12 @@ import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 export const openRoster = async (page: Page, path = '/classroom-groups') => {
   await page.goto(path);
   await page.locator('#cg-students-toggle').click();
-  await page.getByRole('button', { name: /Add student|Tambah siswa/ }).click();
+  await page
+    .getByRole('button', {
+      name: stringsOf(page).rosterAddStudent,
+      exact: true,
+    })
+    .click();
 };
 
 /**
@@ -90,19 +113,22 @@ export const expectVisibleText = async (target: Locator, text: string) => {
 export const giveEveryoneASex = async (page: Page, sex: 'M' | 'F' = 'M') => {
   const rows = page.locator('#cg-roster tbody tr');
   for (let i = 0; i < (await rows.count()); i++) {
-    const select = rows.nth(i).getByLabel(/Sex|Jenis kelamin/);
+    const select = rows
+      .nth(i)
+      .getByLabel(stringsOf(page).rosterColSex, { exact: true });
     if ((await select.inputValue()) === '') await select.selectOption(sex);
   }
 };
 
 export const addSeveral = async (page: Page, howMany: number) => {
+  const t = stringsOf(page);
   await page
-    .getByRole('button', { name: /Add several|Tambah beberapa/ })
+    .getByRole('button', { name: t.rosterAddSeveral, exact: true })
     .click();
+  await page.getByLabel(t.rosterHowMany, { exact: true }).fill(String(howMany));
   await page
-    .getByLabel(/How many to add\?|Berapa yang ditambahkan\?/)
-    .fill(String(howMany));
-  await page.getByRole('button', { name: /^Add$|^Tambah$/ }).click();
+    .getByRole('button', { name: t.rosterAddConfirm, exact: true })
+    .click();
 };
 
 /**
@@ -157,7 +183,7 @@ export const setSex = async (page: Page, row: number, sex: 'M' | 'F') =>
   page
     .locator('.cg-student')
     .nth(row)
-    .getByLabel(/Sex|Jenis kelamin/)
+    .getByLabel(stringsOf(page).rosterColSex, { exact: true })
     .selectOption(sex);
 
 /** [sex, name] per student, in order. The one builder every later suite uses. */
@@ -170,8 +196,14 @@ export const buildRoster = async (
   if (students.length > 1) await addSeveral(page, students.length - 1);
   for (const [i, [sex, name]] of students.entries()) {
     const row = page.locator('.cg-student').nth(i);
-    if (name) await row.getByLabel(/Name|Nama/).fill(name);
-    if (sex) await row.getByLabel(/Sex|Jenis kelamin/).selectOption(sex);
+    if (name)
+      await row
+        .getByLabel(stringsOf(page).rosterColName, { exact: true })
+        .fill(name);
+    if (sex)
+      await row
+        .getByLabel(stringsOf(page).rosterColSex, { exact: true })
+        .selectOption(sex);
   }
   await expect(page.locator('.cg-student')).toHaveCount(students.length);
 };
@@ -215,7 +247,9 @@ export const withGroups = async (
   // -- zero hits outside its own definition), so the bug was latent, never
   // exercised, and would have reddened the FIRST test to use it for a
   // reason that had nothing to do with what that test was checking.
-  await page.getByRole('button', { name: /Make Groups|Buat Kelompok/ }).click();
+  await page
+    .getByRole('button', { name: stringsOf(page).makeGroups, exact: true })
+    .click();
   await expect(page.locator('#cg-results .group').first()).toBeVisible();
 };
 
@@ -348,7 +382,7 @@ export const namesIn = (text: string): string[] =>
 /** Open the print panel from the results section. */
 export const openPrintPanel = async (page: Page) => {
   await page
-    .getByRole('button', { name: /^(Print|Cetak)$/ })
+    .getByRole('button', { name: stringsOf(page).printOpen, exact: true })
     .first()
     .click();
   await expect(page.locator('#cg-print-panel')).toBeVisible();

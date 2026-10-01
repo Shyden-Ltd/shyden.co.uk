@@ -2,6 +2,8 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { DISSOLVED_COMPANY, dissolvedIn } from '../dissolved-company';
+import { searched } from '../source-files';
 
 test.use(recorded);
 
@@ -23,6 +25,23 @@ test.describe('header + footer', () => {
       await expect(nav.locator('a').nth(0)).toHaveAttribute(
         'href',
         '/#shytalk',
+      );
+      // Scroll order, as the title says: each link's section sits below the
+      // one before it. Read from the links' own fragments, so a section moved
+      // on the page without its link fails here.
+      const hrefs = await nav
+        .locator('a')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('href') ?? ''));
+      const tops: number[] = [];
+      for (const href of hrefs) {
+        const box = await page
+          .locator(new URL(href, page.url()).hash)
+          .boundingBox();
+        expect(box, `${href} leads to no section on the page`).not.toBeNull();
+        tops.push(box?.y ?? Number.NaN);
+      }
+      expect(tops, `section tops, in nav order: ${tops.join(', ')}`).toEqual(
+        [...tops].sort((a, b) => a - b),
       );
       // Aurora renamed these from Services/Work; this spec is the established
       // home for nav-link facts, so the proof belongs here and not in a second
@@ -51,17 +70,8 @@ test.describe('header + footer', () => {
 
   // Shyden Ltd is dissolved (operator, 2026-09-27, #370): the footer names no
   // company, no number and no registered office, in any language. What stays
-  // is the way to reach a person. The facts are listed once, here, as the
-  // things that must not come back; each is a string a visitor once read.
-  const DISSOLVED = [
-    'Ltd',
-    '17110487',
-    'Shelton Street',
-    'Registered',
-    'Terdaftar',
-    'Company No',
-    'Perusahaan',
-  ];
+  // is the way to reach a person. The forms it must not print have one home,
+  // tests/dissolved-company.ts, shared with the every-page scan (#390 F116).
 
   for (const locale of LOCALES)
     test(`${locale}: the footer names no company, and still reaches a person`, async ({
@@ -71,11 +81,15 @@ test.describe('header + footer', () => {
       const footer = page.locator('footer');
       await expect(footer).toBeVisible();
       await expect(footer.locator('.disclosure')).toHaveCount(0);
-      for (const fact of DISSOLVED)
-        await expect(
-          footer,
-          `${locale} footer still says ${fact}`,
-        ).not.toContainText(fact);
+      // textContent, not innerText: a form hidden from sight is still printed.
+      const printed = dissolvedIn((await footer.textContent()) ?? '');
+      expect(
+        searched(printed, {
+          of: DISSOLVED_COMPANY,
+          what: 'dissolved-company forms',
+        }),
+        `${locale} footer still names the company`,
+      ).toEqual([]);
       await expect(
         footer.locator('a[href="mailto:support@shyden.co.uk"]'),
       ).toBeVisible();
@@ -236,11 +250,16 @@ test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
       await atLeast44(page.locator('.wordmark'));
       // Derived, not named: the header gained a second disclosure (the
       // language switcher) after this test was written, and a hand-written
-      // list would have kept passing while missing it.
-      const summaries = page.locator('header details.menu > summary');
+      // list would have kept passing while missing it. The selector was then
+      // narrowed to `details.menu`, which measured the menu alone under this
+      // same comment (#390 F107), so the count is held to every disclosure.
+      const summaries = page.locator('header details > summary');
       const howMany = await summaries.count();
       expect(howMany, 'no header disclosures found to measure').toBeGreaterThan(
         0,
+      );
+      expect(howMany, 'a header disclosure left unmeasured').toBe(
+        await page.locator('header details').count(),
       );
       for (let i = 0; i < howMany; i += 1) await atLeast44(summaries.nth(i));
       await page.locator('header details.menu > summary').click(); // open the nav

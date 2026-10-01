@@ -9,6 +9,8 @@ import {
 import type { Locale } from '../../src/lib/i18n/index';
 import { filesUnder, searched } from '../source-files';
 import { stringLeaves } from '../../src/lib/catalogue-leaves';
+import { renderedText } from '../html-text';
+import { dissolvedIn } from '../dissolved-company';
 
 /**
  * Site copy that reaches no page -- measured against the BUILT BYTES.
@@ -47,27 +49,6 @@ const REPORT_TYPE_AHEAD =
   /<datalist\b[^>]*\bdata-report-strings\b[^>]*>[\s\S]*?<\/datalist>/g;
 /** A report form's opening tag: the 404 carries one per translated block. */
 const REPORT_FORM = /<form\b[^>]*\bdata-report-form\b/g;
-
-/**
- * Entity-decoded and whitespace-flattened.
- *
- * Both normalisations are load-bearing. An apostrophe is served as `&#39;`, so
- * "what you're building" never matches the source string raw; and HTML wraps
- * freely, so a sentence can be split across lines between any two words.
- */
-const decode = (text: string) =>
-  text
-    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) =>
-      String.fromCharCode(parseInt(h, 16)),
-    )
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ');
 
 interface Corpus {
   /** How many built pages were read. */
@@ -117,7 +98,7 @@ const builtCorpus = (): Corpus => {
       (count, html) => count + (html.match(REPORT_TYPE_AHEAD)?.length ?? 0),
       0,
     ),
-    rendered: decode(
+    rendered: renderedText(
       raw.map((html) => html.replace(REPORT_TYPE_AHEAD, '')).join('\n'),
     ),
   };
@@ -132,7 +113,7 @@ const PAGE_404 = 'dist/404.html';
  * find a heading the block had stopped showing.
  */
 const RENDERED_404 = () =>
-  decode(readFileSync(PAGE_404, 'utf8').replace(REPORT_TYPE_AHEAD, ''));
+  renderedText(readFileSync(PAGE_404, 'utf8').replace(REPORT_TYPE_AHEAD, ''));
 
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -338,14 +319,14 @@ test.describe('every site string reaches a built page', () => {
  * than listed, so a page added later is covered the day it is built.
  */
 test.describe('no built page names the dissolved company (#370)', () => {
-  const DISSOLVED =
-    /\bLtd\b|17110487|Shelton Street|Registered office|Company No\.|Registered in England|Terdaftar di Inggris|Perusahaan baru|A new company|一家新公司|一家新的科技公司|Một công ty mới|บริษัทน้องใหม่/;
-
   test('every page in every locale', () => {
     const pages = filesUnder('dist', (path) => /\.html$/.test(path));
-    const naming = pages.filter((path) =>
-      DISSOLVED.test(readFileSync(path, 'utf8')),
-    );
+    // Decoded first: raw HTML serves the old registration line as
+    // `England &amp; Wales`, and the forms are written as a reader sees them.
+    const naming = pages.flatMap((path) => {
+      const found = dissolvedIn(renderedText(readFileSync(path, 'utf8')));
+      return found.length > 0 ? [`${path}: ${found.join(', ')}`] : [];
+    });
     expect(searched(naming, { of: pages, what: 'built pages' })).toEqual([]);
   });
 });

@@ -188,11 +188,7 @@ test.describe('the Classroom Group Creator v2 surfaces reached dev', () => {
     page,
   }) => {
     await page.goto('/classroom-groups');
-    await page.fill('#cg-count', '8');
-    await page.fill('#cg-size', '4');
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
-    await page.click('#cg-go');
+    await makeGroups(page, '8', '4');
     await expect(page.locator('#cg-results .group').first()).toBeVisible();
 
     await page.getByRole('button', { name: 'Print' }).click();

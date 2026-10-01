@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ADB_TIMEOUT_MS, adb, androidAbsence } from '../../scripts/adb.mjs';
+import {
+  ADB_TIMEOUT_MS,
+  adb,
+  androidAbsence,
+  renderedScreen,
+} from '../../scripts/adb.mjs';
 import { standInOnPath } from '../path-stand-in';
 
 /**
@@ -91,6 +96,56 @@ describe('androidAbsence: a phone is present only when adb calls it ready', () =
     expect(androidAbsence(listing('R58M123\tdevice'), 'R58M999')).toBe(
       "`adb devices` did not list serial R58M999 (from ANDROID_SERIAL) in state 'device' -- " +
         'seen: [{"serial":"R58M123","state":"device"}]',
+    );
+  });
+});
+
+describe('renderedScreen: the width and density the browser renders at', () => {
+  // Measured on the leg's phone: `wm density` prints the physical line and then
+  // the override, and the browser renders at the override.
+  it('reads a screen with no override', () => {
+    expect(
+      renderedScreen('Physical size: 1440x3120\n', 'Physical density: 640\n'),
+    ).toEqual({ width: 1440, density: 640 });
+  });
+
+  it('takes the override density over the physical one', () => {
+    expect(
+      renderedScreen(
+        'Physical size: 1440x3120\n',
+        'Physical density: 640\nOverride density: 560\n',
+      ),
+    ).toEqual({ width: 1440, density: 560 });
+  });
+
+  it('takes the override size over the physical one', () => {
+    expect(
+      renderedScreen(
+        'Physical size: 1440x3120\nOverride size: 1080x2340\n',
+        'Physical density: 640\n',
+      ),
+    ).toEqual({ width: 1080, density: 640 });
+  });
+
+  it('refuses size output with no size in it, quoting what adb printed', () => {
+    expect(() =>
+      renderedScreen(
+        'error: no devices/emulators found\n',
+        'Physical density: 640\n',
+      ),
+    ).toThrow(
+      '`adb shell wm size` printed no WxH size: "error: no devices/emulators found\\n"',
+    );
+  });
+
+  it('refuses density output with no number in it, quoting what adb printed', () => {
+    expect(() =>
+      renderedScreen(
+        'Physical size: 1440x3120\n',
+        'Physical density: unknown\n',
+      ),
+    ).toThrow(
+      '`adb shell wm density` printed no density: "Physical density: unknown\\n"',
     );
   });
 });

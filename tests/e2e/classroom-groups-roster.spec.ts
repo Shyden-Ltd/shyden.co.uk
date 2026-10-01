@@ -2,6 +2,7 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { searched } from '../source-files';
+import { localePaths } from './locale-sampling';
 import { THEMES } from '../palette';
 import { emulateTheme } from '../themes';
 import {
@@ -1661,64 +1662,75 @@ test.describe('an unset roster dropdown says which column it is for', () => {
    * arrow's room with `padding-right: 1.6rem`, so the computed padding read
    * here already accounts for it -- there is no native chrome left to guess.
    */
-  test(
-    'no dropdown ever truncates its own column name',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // 768px is where the card layout gives way to the table, so both
-      // layouts are measured, and 600px and 430px sit inside the card band
-      // that used to be the table's.
-      const widths = [320, 375, 390, 430, 600, 768, 1024, 1280];
-      const findings: string[] = [];
-      const measured: string[] = [];
-
-      for (const width of widths) {
-        await page.setViewportSize({ width, height: 900 });
-        await openRoster(page);
-        const row = page.locator('.cg-student').first();
-        const boxes = await row.evaluate((el) =>
-          [...el.querySelectorAll('select')].map((select) => {
-            const style = getComputedStyle(select);
-            const probe = document.createElement('span');
-            probe.style.cssText =
-              'position:absolute;visibility:hidden;white-space:pre';
-            probe.style.font = style.font;
-            probe.textContent = select.selectedOptions[0]?.textContent ?? '';
-            document.body.appendChild(probe);
-            const textWidth = probe.getBoundingClientRect().width;
-            probe.remove();
-            const chrome =
-              parseFloat(style.paddingLeft) +
-              parseFloat(style.paddingRight) +
-              parseFloat(style.borderLeftWidth) +
-              parseFloat(style.borderRightWidth);
-            return {
-              label: select.getAttribute('aria-label') ?? '(unlabelled)',
-              shows: select.selectedOptions[0]?.textContent ?? '',
-              box: Math.round(select.getBoundingClientRect().width),
-              needs: Math.round(textWidth + chrome),
-            };
-          }),
+  // Every locale (#390 F113): a column name is the very text whose width
+  // varies by language, and this measured English alone.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `no dropdown ever truncates its own column name -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        // Indonesian and Vietnamese do not fit today (#409), measured when this
+        // test first ran in every locale. Expected to FAIL there, not skipped:
+        // the day the layout is fixed this goes red and the line has to go, so
+        // the park cannot outlive its fix.
+        test.fail(
+          path === '/id/classroom-groups' || path === '/vi/classroom-groups',
+          'the column names do not fit in Indonesian and Vietnamese (#409)',
         );
+        // 768px is where the card layout gives way to the table, so both
+        // layouts are measured, and 600px and 430px sit inside the card band
+        // that used to be the table's.
+        const widths = [320, 375, 390, 430, 600, 768, 1024, 1280];
+        const findings: string[] = [];
+        const measured: string[] = [];
 
-        for (const box of boxes) {
-          measured.push(`${width}px ${box.label}`);
-          if (box.needs > box.box) {
-            findings.push(
-              `${width}px ${box.label}: shows "${box.shows}" in ${box.box}px, needs ${box.needs}px`,
-            );
+        for (const width of widths) {
+          await page.setViewportSize({ width, height: 900 });
+          await openRoster(page, path);
+          const row = page.locator('.cg-student').first();
+          const boxes = await row.evaluate((el) =>
+            [...el.querySelectorAll('select')].map((select) => {
+              const style = getComputedStyle(select);
+              const probe = document.createElement('span');
+              probe.style.cssText =
+                'position:absolute;visibility:hidden;white-space:pre';
+              probe.style.font = style.font;
+              probe.textContent = select.selectedOptions[0]?.textContent ?? '';
+              document.body.appendChild(probe);
+              const textWidth = probe.getBoundingClientRect().width;
+              probe.remove();
+              const chrome =
+                parseFloat(style.paddingLeft) +
+                parseFloat(style.paddingRight) +
+                parseFloat(style.borderLeftWidth) +
+                parseFloat(style.borderRightWidth);
+              return {
+                label: select.getAttribute('aria-label') ?? '(unlabelled)',
+                shows: select.selectedOptions[0]?.textContent ?? '',
+                box: Math.round(select.getBoundingClientRect().width),
+                needs: Math.round(textWidth + chrome),
+              };
+            }),
+          );
+
+          for (const box of boxes) {
+            measured.push(`${width}px ${box.label}`);
+            if (box.needs > box.box) {
+              findings.push(
+                `${width}px ${box.label}: shows "${box.shows}" in ${box.box}px, needs ${box.needs}px`,
+              );
+            }
           }
         }
-      }
 
-      expect(
-        searched(findings, {
-          of: measured,
-          what: 'roster dropdowns measured across widths',
-        }),
-      ).toEqual([]);
-    },
-  );
+        expect(
+          searched(findings, {
+            of: measured,
+            what: 'roster dropdowns measured across widths',
+          }),
+        ).toEqual([]);
+      },
+    );
 
   test("the empty option keeps each column's own behaviour", async ({
     page,

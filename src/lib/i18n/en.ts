@@ -291,8 +291,8 @@ export const en = {
   // second. The literal leading "+" is the spec's own wording -- kept as
   // real button text, not CSS-generated content, since a pseudo-element's
   // own text is inconsistently exposed to assistive tech, and helpers.ts's
-  // `openRoster`/`addSeveral` match these by a REGEX substring, so the "+"
-  // costs nothing there either.
+  // `openRoster`/`addSeveral` read these from the page's own catalogue and
+  // match them exactly, "+" included.
   rosterAddStudent: '+ Add student',
   rosterAddSeveral: '+ Add several…',
   // The inline count field's own label, and the button that confirms it.

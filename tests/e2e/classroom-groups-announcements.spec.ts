@@ -1,6 +1,8 @@
 import { test, expect } from './fixtures';
+import { makeGroups } from '../make-groups';
 import type { Page } from '@playwright/test';
 import { recorded, shoot } from './evidence';
+import { rosterOf, upload } from './helpers';
 
 test.use(recorded);
 
@@ -15,8 +17,9 @@ test.use(recorded);
  * That ordering is invisible in the finished DOM: both sequences end in the
  * same state. So these tests record the operations as the page performs them.
  *
- * Recorded by wrapping the two setters on the elements themselves — the real
- * accessors are still called, so the page behaves exactly as it ships. The
+ * Recorded by wrapping the real accessors and calling them, so the page
+ * behaves exactly as it ships: `hidden` on each region itself, and every
+ * write that lands INSIDE a live region, credited to the nearest one. The
  * obvious alternative, a MutationObserver, is not usable here: its callback
  * is a microtask that runs after every synchronous mutation in the batch, so
  * reading `hidden` inside it reports the END state for every record and a
@@ -67,17 +70,40 @@ const recordOperations = (page: Page) =>
             hidden.set!.call(this, value);
           },
         });
-        Object.defineProperty(el, 'textContent', {
-          configurable: true,
-          get() {
-            return text.get!.call(this);
-          },
-          set(value: string) {
-            log(`${id}:write`);
-            text.set!.call(this, value);
-          },
-        });
       }
+
+      // Writes are recorded wherever they land inside a live region, not
+      // only on the region itself: #cg-io-problems and #cg-io-confirm are
+      // written through children (a list, a sentence), and a recorder that
+      // watched only the region's own textContent saw them revealed and
+      // never written (#390 F109). Credited to the NEAREST live region, so
+      // the summary's write stays the summary's. textContent is the only
+      // write path recorded: wrapping the four insertion methods too was
+      // mutated away with every test green (AN5), since each region the page
+      // fills through children is cleared through textContent first.
+      const liveRegionOf = (node: Node | null): string | null => {
+        for (let at = node; at !== null; at = at.parentNode) {
+          if (
+            at instanceof Element &&
+            at.id !== '' &&
+            ['alert', 'status'].includes(at.getAttribute('role') ?? '')
+          ) {
+            return at.id;
+          }
+        }
+        return null;
+      };
+      Object.defineProperty(Node.prototype, 'textContent', {
+        configurable: true,
+        get() {
+          return text.get!.call(this);
+        },
+        set(value: string) {
+          const id = liveRegionOf(this);
+          if (id !== null) log(`${id}:write`);
+          text.set!.call(this, value);
+        },
+      });
     });
   });
 
@@ -113,7 +139,9 @@ test.describe('screen-reader announcements', () => {
     await page.fill('#cg-count', '25');
     await page.fill('#cg-numbers-absent', '26');
 
-    await expect(page.locator('#cg-numbers-problem')).toHaveText(
+    const problem = page.locator('#cg-numbers-problem');
+    await expect(problem).toBeVisible();
+    await expect(problem).toHaveText(
       'There is no number 26. You have 25 students.',
     );
     expect((await opsFor(page, 'cg-numbers-problem')).slice(-2)).toEqual([
@@ -124,6 +152,81 @@ test.describe('screen-reader announcements', () => {
       page,
       'the refusal, revealed before it was written',
       page.locator('#cg-numbers-problem'),
+    );
+  });
+
+  // #390 F108. Student details refuses to open above 100 students, and the
+  // refusal was written into its hidden region and revealed afterwards: the
+  // already-populated appearance screen readers commonly say nothing about.
+  // The whole sequence, because nothing before the click touches the region.
+  test('the refusal to open Student details is announced, not just revealed', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.fill('#cg-count', '300');
+    await page.locator('#cg-students-toggle').click();
+
+    const limit = page.locator('#cg-students-limit');
+    await expect(limit).toBeVisible();
+    await expect(limit).toHaveText(
+      'Student details holds up to 100 students. Lower the number to list this class individually.',
+    );
+    expect(await opsFor(page, 'cg-students-limit')).toEqual(['show', 'write']);
+    await shoot(
+      page,
+      'the refusal to open Student details, revealed before it was written',
+      limit,
+    );
+  });
+
+  // #390 F109. Both of io-ui's alerts were written, then revealed. A
+  // region written through its children is announced only if it is in the
+  // accessibility tree when the children land, the same as one written
+  // directly. The last write must follow the last reveal; `toContain`
+  // first, because a missing reveal would put both at -1.
+  test('a refused file is announced, not just revealed', async ({ page }) => {
+    await page.goto('/classroom-groups');
+    await page.locator('#cg-io-toggle').click();
+    await upload(page, 'bad.csv', 'number\nabc\n');
+
+    const problems = page.locator('#cg-io-problems');
+    await expect(problems).toBeVisible();
+    await expect(problems).toContainText(
+      "Row 1 — number 'abc' is not a whole number.",
+    );
+    const ops = await opsFor(page, 'cg-io-problems');
+    expect(ops).toContain('show');
+    expect(ops.lastIndexOf('write'), ops.join(', ')).toBeGreaterThan(
+      ops.lastIndexOf('show'),
+    );
+    await shoot(
+      page,
+      'a refused file, revealed before it was listed',
+      problems,
+    );
+  });
+
+  test('the warning before an import replaces a roster is announced', async ({
+    page,
+  }) => {
+    await rosterOf(page, 3);
+    await page.locator('#cg-io-toggle').click();
+    await upload(page, 'three.csv', 'number\n1\n2\n3\n');
+
+    const confirm = page.locator('#cg-io-confirm');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText(
+      'This will replace your current class list — 3 students, 0 named.',
+    );
+    const ops = await opsFor(page, 'cg-io-confirm');
+    expect(ops).toContain('show');
+    expect(ops.lastIndexOf('write'), ops.join(', ')).toBeGreaterThan(
+      ops.lastIndexOf('show'),
+    );
+    await shoot(
+      page,
+      'the replace warning, revealed before it was written',
+      confirm,
     );
   });
 
@@ -142,15 +245,12 @@ test.describe('screen-reader announcements', () => {
 
   test('the summary joins the page before it is written', async ({ page }) => {
     await page.goto('/classroom-groups');
-    await page.fill('#cg-count', '8');
-    await page.fill('#cg-size', '4');
-    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7. This
-    // click is on #cg-sound-toggle, an element `recordOperations` above
-    // never instruments (it only wraps cg-error/cg-results/cg-summary), so
-    // opening the section here cannot add a spurious entry to `__ops`.
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
-    await page.click('#cg-go');
+    // makeGroups opens Sound & animation, which `recordOperations` above
+    // never instruments (it carries no live role and is none of the three
+    // named), and only cg-results and cg-summary are read below, so it
+    // cannot add a spurious entry to what is compared.
+    await makeGroups(page, '8', '4');
+    await expect(page.locator('#cg-summary')).toBeVisible();
     await expect(page.locator('#cg-summary')).toHaveText(
       '2 groups from 8 students.',
     );

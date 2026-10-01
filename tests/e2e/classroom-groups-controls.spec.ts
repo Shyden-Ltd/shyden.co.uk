@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { makeGroups } from '../make-groups';
 import { recordErrors } from './recorders';
-import { sampledPaths } from './locale-sampling';
+import { localePaths, sampledPaths } from './locale-sampling';
 import { searched } from '../source-files';
 import {
   addSeveral,
@@ -15,6 +15,7 @@ import {
   horizontalOverflow,
   expectNoHorizontalScroll,
   rectAtLeast44,
+  spillPastCard,
 } from '../viewport';
 
 test.use(recorded);
@@ -340,7 +341,7 @@ test.describe('the results are styled, not just present', () => {
 });
 
 test.describe('classroom groups — mobile-first layout', () => {
-  for (const path of sampledPaths('/classroom-groups')) {
+  for (const path of localePaths('/classroom-groups')) {
     for (const width of [320, 375, 768, 1280]) {
       test(
         `${path}: no horizontal scroll at ${width}px`,
@@ -537,7 +538,7 @@ test.describe('classroom groups — mobile-first layout', () => {
   // pattern in homepage.spec.ts / site-meta.spec.ts, each case runs ~7
   // navigations, the cases run in parallel, and a failure names its locale
   // and width in the title instead of only in the message.
-  for (const path of sampledPaths('/classroom-groups')) {
+  for (const path of localePaths('/classroom-groups')) {
     for (const width of [320, 390, 768]) {
       test(
         `no horizontal scroll at ${width}px with any single section open — ${path}, every section derived`,
@@ -594,7 +595,7 @@ test.describe('classroom groups — mobile-first layout', () => {
   test('a disclosure label keeps a visible gap between marker, label and state', async ({
     page,
   }) => {
-    for (const path of sampledPaths('/classroom-groups')) {
+    for (const path of localePaths('/classroom-groups')) {
       await page.goto(path);
       const gaps = await page.evaluate(() => {
         const out: {
@@ -1681,13 +1682,16 @@ test.describe('classroom groups — what a teacher actually sees', () => {
   // PAINT cost surfaced as "element not stable" against a button that was
   // perfectly fine. Per-width tests each get their own budget AND say which
   // width actually broke.
+  //
+  // And per LOCALE since #390 F113. This is a fit test, so it runs on every
+  // locale (tests/e2e/locale-sampling.ts), and five locales inside one
+  // test would rebuild exactly the shared budget this split took apart.
   for (const width of [320, 390, 600, 768, 1024, 1280, 1512]) {
-    test(
-      `nothing in the roster escapes its card at ${width}px`,
-      { tag: '@emulated-viewport' },
-      async ({ page }) => {
-        const failures: string[] = [];
-        for (const path of sampledPaths('/classroom-groups')) {
+    for (const path of localePaths('/classroom-groups')) {
+      test(
+        `nothing in the roster escapes its card at ${width}px -- ${path}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
           await page.setViewportSize({ width, height: 950 });
           await openRoster(page, path);
           // openRoster already adds one, so three more makes four — enough rows
@@ -1695,40 +1699,14 @@ test.describe('classroom groups — what a teacher actually sees', () => {
           for (let i = 0; i < 3; i++)
             await page.locator('.cg-add-student').click();
           await expect(page.locator('.cg-student')).toHaveCount(4);
-          const worst = await page.evaluate(() => {
-            const card = document.getElementById('cg-students')!;
-            const cb = card.getBoundingClientRect();
-            const cs = getComputedStyle(card);
-            const padR =
-              cb.right -
-              parseFloat(cs.paddingRight) -
-              parseFloat(cs.borderRightWidth);
-            let over = 0;
-            let who = '';
-            for (const el of card.querySelectorAll('*')) {
-              const eb = el.getBoundingClientRect();
-              if (!eb.width) continue;
-              if (eb.right - padR > over) {
-                over = eb.right - padR;
-                who = String(el.className).split(' ')[0] || el.tagName;
-              }
-            }
-            return { over, who };
-          });
-          if (worst.over > 0.5)
-            failures.push(
-              `${path} @${width}px: ${worst.who} is ${worst.over.toFixed(1)}px past the card`,
-            );
-        }
-        expect(
-          searched(failures, {
-            of: sampledPaths('/classroom-groups'),
-            what: `sampled tool paths @${width}px`,
-          }),
-          failures.join('\n'),
-        ).toEqual([]);
-      },
-    );
+          const worst = await spillPastCard(page, 'cg-students');
+          expect(
+            worst.over,
+            `${path} @${width}px: ${worst.who} is ${worst.over.toFixed(1)}px past the card`,
+          ).toBeLessThanOrEqual(0.5);
+        },
+      );
+    }
   }
 
   // Two separate mechanisms, both required. The spinner reset MUST live in the
@@ -1909,7 +1887,7 @@ test.describe('the five the operator asked for', () => {
  * roster of thirty, the size the tool is actually used at.
  */
 test.describe('a full roster at the narrow end', () => {
-  for (const path of sampledPaths('/classroom-groups')) {
+  for (const path of localePaths('/classroom-groups')) {
     test(
       `${path}: thirty rows produce no horizontal scroll at 320px`,
       { tag: '@emulated-viewport' },
@@ -1921,35 +1899,10 @@ test.describe('a full roster at the narrow end', () => {
 
         await expectNoHorizontalScroll(page, 'document scrolls sideways');
 
-        // Page-level scrollWidth is not containment: content can overflow a
-        // CARD by 34.5px and produce zero document scroll, which is how the
-        // Remove button once shipped hanging outside its border at every
-        // laptop width. The offending element's own container is the subject.
-        const worst = await page.evaluate(() => {
-          const card = document.getElementById('cg-students')!;
-          const box = card.getBoundingClientRect();
-          const style = getComputedStyle(card);
-          const inner =
-            box.right -
-            parseFloat(style.paddingRight) -
-            parseFloat(style.borderRightWidth);
-          let over = 0;
-          let who = '';
-          for (const el of card.querySelectorAll('*')) {
-            // `display: none` on an ANCESTOR leaves a descendant's own
-            // computed display untouched, so a per-element check reports
-            // hidden content as rendered. Rects are the only honest filter.
-            if (el.getClientRects().length === 0) continue;
-            const spill = el.getBoundingClientRect().right - inner;
-            if (spill > over) {
-              over = spill;
-              who = el.className || el.tagName;
-            }
-          }
-          // Unrounded: the 0.5px below is the whole tolerance, and rounding
-          // to a tenth first let 0.54px through (#371).
-          return { over, who };
-        });
+        // Page-level scrollWidth is not containment (#277): the card is
+        // the subject, which is how the Remove button once shipped
+        // hanging outside its border at every laptop width.
+        const worst = await spillPastCard(page, 'cg-students');
         expect(worst.over, `${worst.who} escapes the card`).toBeLessThanOrEqual(
           0.5,
         );

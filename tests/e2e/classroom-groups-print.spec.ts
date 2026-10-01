@@ -668,6 +668,11 @@ test.describe('the printed sheet', () => {
   });
 });
 
+/** The text edit both register blocks below make: it never re-renders. */
+const typeAName = async (row: import('@playwright/test').Locator) => {
+  await row.getByLabel('Name').fill('Ana');
+};
+
 /**
  * #253. `refreshPrintMirrors` wrote every roster row's print-only twin by
  * DOCUMENT ORDER, against a `texts` array that still began at `number`. The
@@ -702,9 +707,6 @@ test.describe('the printed register after an edit', () => {
       ),
     );
 
-  const typeAName = async (row: import('@playwright/test').Locator) => {
-    await row.getByLabel('Name').fill('Ana');
-  };
   const useTheSelects = async (row: import('@playwright/test').Locator) => {
     await row.getByLabel('Sex').selectOption('F');
     await row.getByLabel('Absent').check();
@@ -825,9 +827,6 @@ test.describe('the absent bookkeeping the printed register is built on', () => {
       .locator('.cg-student')
       .evaluateAll((rows) => rows.map((r) => r.getAttribute('data-absent')));
 
-  const typeAName = async (row: import('@playwright/test').Locator) => {
-    await row.getByLabel('Name').fill('Ana');
-  };
   const tickAbsent = async (row: import('@playwright/test').Locator) => {
     await row.getByLabel('Absent').check();
   };

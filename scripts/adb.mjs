@@ -76,3 +76,34 @@ export function androidAbsence(raw, serial) {
   }
   return null;
 }
+
+/**
+ * The screen width in pixels and the density the browser renders at, read
+ * from `adb shell wm size` and `adb shell wm density`.
+ *
+ * Each takes the LAST value printed. Measured on the leg's phone, `wm density`
+ * prints `Physical density: 640` and then `Override density: 560`, and the
+ * browser renders at the override; `wm size` prints its override line the
+ * same way, second. Taking the first match on one and the last on the other
+ * was this parse's original shape, and would take the physical size the day
+ * an override is set (#390 F105).
+ *
+ * @param {string} sizeOutput
+ * @param {string} densityOutput
+ * @returns {{ width: number, density: number }}
+ */
+export function renderedScreen(sizeOutput, densityOutput) {
+  const size = /(\d+)x\d+\s*$/.exec(sizeOutput.trim());
+  if (size === null) {
+    throw new Error(
+      `\`adb shell wm size\` printed no WxH size: ${JSON.stringify(sizeOutput)}`,
+    );
+  }
+  const density = /(\d+)\s*$/.exec(densityOutput.trim());
+  if (density === null) {
+    throw new Error(
+      `\`adb shell wm density\` printed no density: ${JSON.stringify(densityOutput)}`,
+    );
+  }
+  return { width: Number(size[1]), density: Number(density[1]) };
+}
