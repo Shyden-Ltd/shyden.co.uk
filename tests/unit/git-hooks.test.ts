@@ -7,10 +7,12 @@ import { withoutCommentLines } from './source-text';
  * The pre-push hook exists, is wired, and still runs what it was built to run.
  *
  * PR #34 failed CI on `npm run format` — one line over Prettier's print width
- * in a new test file. `format` is the FIRST step of `build-and-test`, so
+ * in a new test file. `format` was then the FIRST step of `build-and-test`, so
  * `build`, the unit suite and the whole e2e corpus were skipped: a ~15 minute
- * run that verified nothing and reported a two-second problem. That is CI used
- * as a debugging loop, and a hook is the cheap end of it.
+ * run that verified nothing and reported a two-second problem. Since #163 the
+ * e2e shards run beside ci.yml's `checks` job, but a format slip still turns
+ * `build-and-test` red after a whole run. That is CI used as a debugging loop,
+ * and a hook is the cheap end of it.
  *
  * NO HOOK RUNNER. husky is the conventional answer and it is a new dependency,
  * against this repo's stated rule (a new npm package is an operator decision;
@@ -97,7 +99,7 @@ describe('the pre-push hook', () => {
     expect(() => accessSync(HOOK, constants.X_OK)).not.toThrow();
   });
 
-  it('invokes exactly the two checks that gate the first CI step', () => {
+  it('invokes exactly the two fastest checks of the CI checks job', () => {
     // COMMANDS ACTUALLY INVOKED, not strings present in the file. Asserting
     // `toContain('npm run test:unit')` passed while the hook did NOT run it:
     // the string survived inside the failure hint the hook prints to tell you
