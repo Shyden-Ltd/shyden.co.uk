@@ -2251,20 +2251,23 @@ const sexWhyText = sexWhy(roster, t);
       margin: 0.5rem 0 0;
     }
 
-    /* Remove is column 7 and is never on paper: there is nothing to press. */
-    #cg-roster th:nth-child(7),
-    #cg-roster td:nth-child(7) {
+    /* Remove is never on paper: there is nothing to press. NAMED, like every
+       rule below, so no reorder of the row can put a real column here. */
+    #cg-roster th[data-col='remove'],
+    #cg-roster td[data-col='remove'] {
       display: none !important;
     }
 
-    /* Sex (4), Together (5), Apart (6) -- governed by the letters box, and
-       ONLY by it. */
-    [data-print-letters='off'] #cg-roster th:nth-child(4),
-    [data-print-letters='off'] #cg-roster td:nth-child(4),
-    [data-print-letters='off'] #cg-roster th:nth-child(5),
-    [data-print-letters='off'] #cg-roster td:nth-child(5),
-    [data-print-letters='off'] #cg-roster th:nth-child(6),
-    [data-print-letters='off'] #cg-roster td:nth-child(6) {
+    /* Sex, Together and Apart -- governed by the letters box, and ONLY by it.
+       Named rather than numbered since #390 F73: as `nth-child(4..6)` this
+       was the one rule #253 AC2 left on positions, and swapping Name and Sex
+       in the row made it hide Name and print Sex. */
+    [data-print-letters='off'] #cg-roster th[data-col='sex'],
+    [data-print-letters='off'] #cg-roster td[data-col='sex'],
+    [data-print-letters='off'] #cg-roster th[data-col='together'],
+    [data-print-letters='off'] #cg-roster td[data-col='together'],
+    [data-print-letters='off'] #cg-roster th[data-col='apart'],
+    [data-print-letters='off'] #cg-roster td[data-col='apart'] {
       display: none !important;
     }
 

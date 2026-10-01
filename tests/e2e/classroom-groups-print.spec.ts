@@ -316,6 +316,14 @@ test.describe('the printed class list', () => {
       'Apart',
     ]);
     await expect(page.locator('.print-list tbody tr:visible')).toHaveCount(6);
+    // The ROW too, not only the header: a Remove cell that lost its name
+    // printed a column of buttons under a hidden heading (#390 PL5).
+    await expect(
+      page
+        .locator('.print-list tbody tr:visible')
+        .first()
+        .locator('td:visible'),
+    ).toHaveCount(6);
     await expect(page.locator('.print-foot')).toHaveText(
       '6 students · 5 here · 1 absent',
     );
@@ -972,6 +980,38 @@ test.describe('which columns reach paper is decided by name, not by position', (
     await shoot(
       page,
       'absent pupils hidden: the Absent column is gone and Ana’s row with it',
+    );
+  });
+
+  // #390 F73, the letters box's half of #253 AC2. Its rule hid columns 4, 5
+  // and 6 by position, so reordering the row would have hidden whichever
+  // columns landed there and printed Sex. Compared as a SET of names, so a
+  // reorder that keeps the rule honest stays green and one that re-points
+  // it says which column went instead.
+  test('hiding the letters removes Sex, Together and Apart, and only those', async ({
+    page,
+  }) => {
+    await buildRoster(page, [
+      ['M', 'Ana'],
+      ['F', 'Budi'],
+    ]);
+    await sheet(page, {
+      what: 'Class list',
+      absent: true,
+      letters: false,
+      avatars: true,
+    });
+
+    const columns = await printedColumns(page, 1);
+    expect(
+      [...searched(columns, { of: columns, what: 'printed columns' })].sort(),
+    ).toEqual(
+      ALL_SIX.filter((c) => !['sex', 'together', 'apart'].includes(c)).sort(),
+    );
+
+    await shoot(
+      page,
+      'letters hidden: Sex, Together and Apart are gone, Absent stays',
     );
   });
 
