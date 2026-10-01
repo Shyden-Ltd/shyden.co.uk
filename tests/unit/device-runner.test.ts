@@ -10,7 +10,6 @@ import {
   contained,
   deleteSession,
   exitCodeFor,
-  iphoneAbsence,
   leakedSessionOf,
   once,
   playwrightVerdict,
@@ -512,67 +511,6 @@ describe('androidAbsence: a phone is present only when adb calls it ready', () =
     expect(androidAbsence(adb('R58M123\tdevice'), 'R58M999')).toBe(
       "`adb devices` did not list serial R58M999 (from ANDROID_SERIAL) in state 'device' -- " +
         'seen: [{"serial":"R58M123","state":"device"}]',
-    );
-  });
-});
-
-describe('iphoneAbsence: one physical iPhone, or a reason', () => {
-  const device = (
-    udid: string,
-    { reality = 'physical', deviceType = 'iPhone' } = {},
-  ) => ({ hardwareProperties: { udid, reality, deviceType } });
-  const listing = (...devices: unknown[]) =>
-    JSON.stringify({ result: { devices } });
-
-  it('finds one physical iPhone', () => {
-    expect(iphoneAbsence(listing(device('00008101-A')), undefined)).toBeNull();
-  });
-
-  it('ignores a simulator and an iPad', () => {
-    expect(
-      iphoneAbsence(
-        listing(
-          device('SIM-1', { reality: 'virtual' }),
-          device('IPAD-1', { deviceType: 'iPad' }),
-        ),
-        undefined,
-      ),
-    ).toBe(
-      'expected `xcrun devicectl list devices` to list at least one physical iPhone -- none found. ' +
-        'Is it connected, paired and trusted? (Set IOS_UDID to target one by UDID.)',
-    );
-  });
-
-  it('refuses two iPhones without a UDID to choose', () => {
-    expect(iphoneAbsence(listing(device('A'), device('B')), undefined)).toBe(
-      'expected exactly one physical iPhone to target -- found 2: ["A","B"]. Set IOS_UDID to disambiguate.',
-    );
-  });
-
-  it('takes the iPhone IOS_UDID names among two', () => {
-    expect(iphoneAbsence(listing(device('A'), device('B')), 'B')).toBeNull();
-  });
-
-  it('refuses a UDID that is not attached, naming it and what it saw', () => {
-    expect(iphoneAbsence(listing(device('A')), 'Z')).toBe(
-      'expected `xcrun devicectl list devices` to include a physical iPhone with udid Z ' +
-        '(from IOS_UDID) -- none found; physical iPhones seen: ["A"]',
-    );
-  });
-
-  it('refuses output that is not JSON, quoting it', () => {
-    expect(iphoneAbsence('error: devicectl crashed', undefined)).toBe(
-      'expected `xcrun devicectl list devices --json-output -` to print JSON on stdout -- got: error: devicectl crashed',
-    );
-  });
-
-  it.each([
-    ['no result', {}],
-    ['devices that are not a list', { result: { devices: {} } }],
-    ['a device with no hardware properties', { result: { devices: [{}] } }],
-  ])('names a listing with %s, rather than a TypeError', (_, shape) => {
-    expect(iphoneAbsence(JSON.stringify(shape), undefined)).toBe(
-      `expected \`xcrun devicectl list devices\` to list result.devices[].hardwareProperties -- got ${JSON.stringify(shape)}`,
     );
   });
 });

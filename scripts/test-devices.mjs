@@ -54,6 +54,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { constants } from 'node:os';
 import { die, messageOf } from './errors.mjs';
 import { adb } from './adb.mjs';
+import { listDevices, pickIphone } from './devicectl.mjs';
 import {
   closeSync,
   existsSync,
@@ -573,7 +574,7 @@ export async function confirmServesBuild(url, builtFile) {
  *
  * `ANDROID_SERIAL` (a real, standard adb environment variable) disambiguates
  * when more than one device is attached, the same role `IOS_UDID` plays for
- * `iphoneAbsence` below -- set it to a serial that is not attached
+ * `isIosPresent` below -- set it to a serial that is not attached
  * and this function honestly reports absence. That is also how this run's
  * "device absent" proof was produced for a phone this agent has no hands to
  * physically unplug: point this env var at a serial that is not attached
@@ -630,88 +631,28 @@ export function androidAbsence(raw, serial) {
 }
 
 /**
- * `iphoneAbsence` is a deliberate, cross-referenced DUPLICATE of `findIosDevice` in
- * tests/device/ios/session.ts -- not imported from there. Measured, not a
- * style choice: this script tried importing that file directly (this
- * repo's pinned Node, .nvmrc: 24, does strip TypeScript *types* natively)
- * and it failed with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` -- `session.ts`
- * transitively pulls in `webdriver.ts` and `interaction.ts`, both of which
- * use constructor PARAMETER PROPERTIES (e.g. `constructor(private readonly
- * driver: WebDriver)`), a real syntax transform, not mere type erasure,
- * which Node's strip-only mode explicitly does not support. Rewriting
- * those already-shipped, already-reviewed files to dodge that -- purely so
- * this script could import them -- was judged a worse trade than one
- * small, clearly-labelled duplication. If `xcrun devicectl`'s JSON shape
- * ever changes, both this function and session.ts's `findIosDevice` need
- * updating together.
+ * Why no iPhone can be driven, or `null` when exactly one physical iPhone is
+ * there, read through `scripts/devicectl.mjs`, the one home the iOS session
+ * reads it through too (#390).
+ *
+ * This script cannot import the session's own TypeScript. Measured, not a
+ * style choice: importing `tests/device/ios/session.ts` failed with
+ * `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` under this repo's pinned Node (.nvmrc:
+ * 24, which strips TypeScript *types* natively), because the session pulls in
+ * `webdriver.ts` and `interaction.ts`, both of which use constructor PARAMETER
+ * PROPERTIES (`constructor(private readonly driver: WebDriver)`), a real
+ * syntax transform that Node's strip-only mode does not support. The session
+ * can import a plain module, so the listing and its parsing live in one.
  */
 function isIosPresent() {
   let raw;
   try {
-    raw = execFileSync(
-      'xcrun',
-      ['devicectl', 'list', 'devices', '--json-output', '-'],
-      { encoding: 'utf8' },
-    );
+    raw = listDevices();
   } catch (error) {
-    return `\`xcrun devicectl list devices\` failed to run: ${messageOf(error)}`;
+    return messageOf(error);
   }
-  return iphoneAbsence(raw, process.env.IOS_UDID);
-}
-
-/**
- * Why no iPhone can be driven, read from `xcrun devicectl list devices
- * --json-output -`, or `null` when exactly one physical iPhone is there.
- * `udid` is `IOS_UDID`. A listing of another shape is named as one: reading it
- * blind once reported a connected phone as absent with a bare TypeError (#390).
- *
- * @param {string} raw
- * @param {string | undefined} udid
- * @returns {string | null}
- */
-export function iphoneAbsence(raw, udid) {
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return (
-      `expected \`xcrun devicectl list devices --json-output -\` to print JSON on stdout -- got: ` +
-      `${raw.slice(0, 300)}`
-    );
-  }
-  const devices = parsed?.result?.devices;
-  if (
-    !Array.isArray(devices) ||
-    !devices.every(
-      (d) =>
-        typeof d?.hardwareProperties === 'object' &&
-        d.hardwareProperties !== null,
-    )
-  ) {
-    return `expected \`xcrun devicectl list devices\` to list result.devices[].hardwareProperties -- got ${JSON.stringify(parsed)}`;
-  }
-  /** @type {{ udid: string, reality: string, deviceType: string }[]} */
-  const physicalIphones = devices
-    .map((d) => d.hardwareProperties)
-    .filter((h) => h.reality === 'physical' && h.deviceType === 'iPhone');
-  const candidates = udid
-    ? physicalIphones.filter((h) => h.udid === udid)
-    : physicalIphones;
-
-  if (candidates.length === 0) {
-    return udid
-      ? `expected \`xcrun devicectl list devices\` to include a physical iPhone with udid ${udid} ` +
-          `(from IOS_UDID) -- none found; physical iPhones seen: ${JSON.stringify(physicalIphones.map((h) => h.udid))}`
-      : 'expected `xcrun devicectl list devices` to list at least one physical iPhone -- none found. ' +
-          'Is it connected, paired and trusted? (Set IOS_UDID to target one by UDID.)';
-  }
-  if (candidates.length > 1) {
-    return (
-      `expected exactly one physical iPhone to target -- found ${candidates.length}: ` +
-      `${JSON.stringify(candidates.map((h) => h.udid))}. Set IOS_UDID to disambiguate.`
-    );
-  }
-  return null;
+  const picked = pickIphone(raw, process.env.IOS_UDID);
+  return 'absence' in picked ? picked.absence : null;
 }
 
 // ── one-off discovery: how many tests does grepInvert exclude by design? ──

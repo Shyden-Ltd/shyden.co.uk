@@ -22,7 +22,7 @@
  * below. Both are inert when nothing reads them, so a plain `npm run
  * test:ios` is unaffected.
  */
-import { execFileSync, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
@@ -42,26 +42,11 @@ import {
   type WebElement,
 } from './webdriver';
 import { themeColour } from '../../palette';
+import { listDevices, pickIphone } from '../../../scripts/devicectl.mjs';
 
 const DEV_SERVER_PORT = 4321;
 
 // ── Precondition 1: the device is present ──────────────────────────────────
-
-interface DevicectlDevice {
-  readonly hardwareProperties: {
-    readonly udid: string;
-    readonly reality: string; // 'physical' | 'simulated' (measured: 'physical' for the real phone)
-    readonly deviceType: string; // measured: 'iPhone'
-  };
-  readonly deviceProperties: {
-    readonly name: string;
-    readonly osVersionNumber: string;
-  };
-}
-
-interface DevicectlListOutput {
-  readonly result: { readonly devices: readonly DevicectlDevice[] };
-}
 
 interface IosDevice {
   readonly udid: string;
@@ -70,99 +55,17 @@ interface IosDevice {
 }
 
 /**
- * Precondition 1: the device is present per `xcrun devicectl list devices`.
- * `IOS_UDID` overrides which one, when more than one physical iPhone is
- * paired.
- *
- * Measured, not assumed: `xcrun devicectl list devices --json-output -`
- * prints its plain-text table to STDERR and pure JSON to STDOUT when the
- * path argument is `-` (confirmed by redirecting each stream separately),
- * so `execFileSync`'s returned stdout is clean JSON with nothing to strip.
- *
- * Also measured, and the reason this reads a nested field rather than the
- * obvious top-level one: devicectl's top-level `identifier` field is a
- * CoreDevice UUID (e.g. `74563FF8-D1FC-...`), NOT the classic ECID-style
- * UDID `safari:deviceUDID` expects (e.g. `00008150-000954D90A20401C`).
- * Using `identifier` would silently hand safaridriver the wrong value. The
- * real classic UDID lives at `hardwareProperties.udid` (confirmed by
- * walking the full JSON tree for a known UDID string on a live device --
- * it also appears, duplicated, at `properties.hardware.udid`, but
- * `hardwareProperties.udid` is the more directly-typed path here).
- *
- * scripts/test-devices.mjs (the parallel runner) asks this same real
- * question as its own upfront presence check, but through its OWN,
- * self-contained copy of this parsing rather than importing this function:
- * measured directly (not assumed) that plain Node cannot load this module
- * graph even with this repo's pinned Node (see .nvmrc), which strips
- * TypeScript *types* natively but not TypeScript *syntax that requires a
- * real transform* -- `webdriver.ts` and `interaction.ts` both use
- * constructor parameter properties (e.g. `constructor(private readonly
- * driver: WebDriver)`), which Node's strip-only mode explicitly rejects
- * with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. Rewriting those constructors to
- * dodge that, purely so a plain script could import them, was rejected as
- * a worse trade than one small, clearly cross-referenced duplication in the
- * runner -- see that file's own `findIosDeviceOrThrow`.
+ * Precondition 1: exactly one physical iPhone, per `xcrun devicectl list
+ * devices`; `IOS_UDID` chooses among several. Read through
+ * `scripts/devicectl.mjs`, the home the runner reads it through too: this
+ * file used to carry its own copy of the parsing, which threw a bare TypeError
+ * on a listing of another shape after the runner's copy had learned to name
+ * it, and called devicectl with no deadline (#390).
  */
 function findIosDevice(): IosDevice {
-  const raw = execFileSync(
-    'xcrun',
-    ['devicectl', 'list', 'devices', '--json-output', '-'],
-    {
-      encoding: 'utf8',
-    },
-  );
-
-  let parsed: DevicectlListOutput;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(
-      `expected \`xcrun devicectl list devices --json-output -\` to print JSON on stdout -- got: ${raw.slice(0, 300)}`,
-      { cause },
-    );
-  }
-
-  const physicalIphones = parsed.result.devices.filter(
-    (d) =>
-      d.hardwareProperties.reality === 'physical' &&
-      d.hardwareProperties.deviceType === 'iPhone',
-  );
-
-  const override = process.env.IOS_UDID;
-  const candidates = override
-    ? physicalIphones.filter((d) => d.hardwareProperties.udid === override)
-    : physicalIphones;
-
-  if (candidates.length === 0) {
-    const seen = physicalIphones.map((d) => d.hardwareProperties.udid);
-    throw new Error(
-      override
-        ? `expected \`xcrun devicectl list devices\` to include a physical iPhone with udid ${override} ` +
-            `(from IOS_UDID) -- none found; physical iPhones seen: ${JSON.stringify(seen)}`
-        : 'expected `xcrun devicectl list devices` to list at least one physical iPhone -- none found. ' +
-            'Is it connected, paired and trusted? (Set IOS_UDID to target one by UDID.)',
-    );
-  }
-  if (candidates.length > 1) {
-    throw new Error(
-      `expected exactly one physical iPhone to target -- found ${candidates.length}: ` +
-        `${JSON.stringify(candidates.map((d) => d.hardwareProperties.udid))}. Set IOS_UDID to disambiguate.`,
-    );
-  }
-
-  const [device] = candidates;
-  if (!device) {
-    // Unreachable given the length checks above; named rather than left to
-    // a bare non-null assertion, per this file's own no-silent-guards rule.
-    throw new Error(
-      'internal error: candidates.length === 1 but candidates[0] is undefined',
-    );
-  }
-  return {
-    udid: device.hardwareProperties.udid,
-    name: device.deviceProperties.name,
-    osVersion: device.deviceProperties.osVersionNumber,
-  };
+  const picked = pickIphone(listDevices(), process.env.IOS_UDID);
+  if ('absence' in picked) throw new Error(picked.absence);
+  return picked.device;
 }
 
 // ── Precondition 2: safaridriver started, answers GET /status ─────────────

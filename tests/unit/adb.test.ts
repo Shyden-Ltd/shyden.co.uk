@@ -1,10 +1,8 @@
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ADB_TIMEOUT_MS, adb } from '../../scripts/adb.mjs';
 import { scratchDir } from '../scratch-dir';
-import { filesUnder, searched } from '../source-files';
-import { withoutTsComments } from './source-text';
 
 /**
  * Every `adb` call the device leg makes goes through `scripts/adb.mjs` (#390).
@@ -12,7 +10,8 @@ import { withoutTsComments } from './source-text';
  * Nineteen calls across five files were bare `execFileSync('adb', ...)` with no
  * deadline. A wedged phone leaves `adb shell` waiting, and a synchronous wait
  * blocks the worker's event loop, so not even Playwright's test timeout can
- * fire: the gauntlet hangs with nothing to say why.
+ * fire: the gauntlet hangs with nothing to say why. That every call goes
+ * through it is held by `device-tool-homes.test.ts`.
  */
 
 /** Answers `$1 $2…`, fails on `fail`, and never answers on `hang`. */
@@ -58,26 +57,5 @@ describe('adb()', () => {
 
   it('allows fifteen seconds by default', () => {
     expect(ADB_TIMEOUT_MS).toBe(15_000);
-  });
-});
-
-describe('no file spawns adb but scripts/adb.mjs', () => {
-  it('reads every call site through the one home', () => {
-    const files = ['tests', 'scripts'].flatMap((dir) =>
-      filesUnder(dir, (file) => /\.(ts|mjs)$/.test(file)),
-    );
-    const spawning = files.filter(
-      (file) =>
-        file !== 'scripts/adb.mjs' &&
-        /\b(?:execFileSync|execFile|spawnSync|spawn|execSync|exec)\(\s*['"`]adb\b/.test(
-          withoutTsComments(readFileSync(file, 'utf8')),
-        ),
-    );
-    expect(
-      searched(spawning, {
-        of: files,
-        what: 'files under tests/ and scripts/',
-      }),
-    ).toEqual([]);
   });
 });
