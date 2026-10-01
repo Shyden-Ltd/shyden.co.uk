@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { searched } from '../source-files';
 import { sitePaths } from '../site-pages';
+import { IOS_ZOOM_FLOOR_PX, measureTypedFields } from '../typed-fields';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
 
 /**
@@ -23,45 +24,16 @@ import { LOCALES, localisePath } from '../../src/lib/i18n';
  * computed style is defined for a closed subtree, and the visitor who opens it
  * is the one who gets zoomed. Excluded: `type=hidden`, the controls no one
  * types into, and anything under `aria-hidden` (the honeypot no person
- * reaches).
+ * reaches). Which fields count is `tests/typed-fields.ts`, the one definition
+ * Journey 11 sends to the phone as well.
  */
-const IOS_ZOOM_FLOOR_PX = 16;
-
 const NOT_FOUND = '/definitely-not-a-page';
-
-/** Input types that open no keyboard, so focusing one never zooms. */
-const NOT_TYPED = [
-  'hidden',
-  'checkbox',
-  'radio',
-  'button',
-  'submit',
-  'reset',
-  'file',
-  'image',
-  'range',
-  'color',
-];
 
 type Control = { page: string; field: string; fontSize: number };
 
 const typedControls = async (page: Page, path: string): Promise<Control[]> => {
   await page.goto(path);
-  const found = await page.evaluate((notTyped) => {
-    const fields = document.querySelectorAll<HTMLElement>(
-      'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
-    );
-    return [...fields]
-      .filter(
-        (el) =>
-          !(el instanceof HTMLInputElement && notTyped.includes(el.type)) &&
-          !el.closest('[aria-hidden="true"]'),
-      )
-      .map((el) => ({
-        field: el.id ? `#${el.id}` : el.tagName.toLowerCase(),
-        fontSize: parseFloat(getComputedStyle(el).fontSize),
-      }));
-  }, NOT_TYPED);
+  const found = await page.evaluate(measureTypedFields);
   return found.map((control) => ({ page: path, ...control }));
 };
 
