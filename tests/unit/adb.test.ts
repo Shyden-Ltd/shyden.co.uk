@@ -1,10 +1,6 @@
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ADB_TIMEOUT_MS, adb } from '../../scripts/adb.mjs';
-import { scratchDir } from '../scratch-dir';
-import { filesUnder, searched } from '../source-files';
-import { withoutTsComments } from './source-text';
+import { describe, expect, it } from 'vitest';
+import { ADB_TIMEOUT_MS, adb, androidAbsence } from '../../scripts/adb.mjs';
+import { standInOnPath } from '../path-stand-in';
 
 /**
  * Every `adb` call the device leg makes goes through `scripts/adb.mjs` (#390).
@@ -12,7 +8,8 @@ import { withoutTsComments } from './source-text';
  * Nineteen calls across five files were bare `execFileSync('adb', ...)` with no
  * deadline. A wedged phone leaves `adb shell` waiting, and a synchronous wait
  * blocks the worker's event loop, so not even Playwright's test timeout can
- * fire: the gauntlet hangs with nothing to say why.
+ * fire: the gauntlet hangs with nothing to say why. That every call goes
+ * through it is held by `device-tool-homes.test.ts`.
  */
 
 /** Answers `$1 $2…`, fails on `fail`, and never answers on `hang`. */
@@ -23,17 +20,7 @@ echo "answered: $*"
 `;
 
 describe('adb()', () => {
-  let path: string | undefined;
-  beforeEach(() => {
-    const bin = scratchDir('adb-stand-in-');
-    writeFileSync(join(bin, 'adb'), STAND_IN);
-    chmodSync(join(bin, 'adb'), 0o755);
-    path = process.env.PATH;
-    process.env.PATH = `${bin}${delimiter}${path ?? ''}`;
-  });
-  afterEach(() => {
-    process.env.PATH = path;
-  });
+  standInOnPath('adb', STAND_IN);
 
   it('returns what adb printed', () => {
     expect(adb(['shell', 'dumpsys', 'window'])).toBe(
@@ -61,23 +48,49 @@ describe('adb()', () => {
   });
 });
 
-describe('no file spawns adb but scripts/adb.mjs', () => {
-  it('reads every call site through the one home', () => {
-    const files = ['tests', 'scripts'].flatMap((dir) =>
-      filesUnder(dir, (file) => /\.(ts|mjs)$/.test(file)),
-    );
-    const spawning = files.filter(
-      (file) =>
-        file !== 'scripts/adb.mjs' &&
-        /\b(?:execFileSync|execFile|spawnSync|spawn|execSync|exec)\(\s*['"`]adb\b/.test(
-          withoutTsComments(readFileSync(file, 'utf8')),
-        ),
-    );
+describe('androidAbsence: a phone is present only when adb calls it ready', () => {
+  const listing = (...lines: string[]) =>
+    ['List of devices attached', ...lines, ''].join('\n');
+
+  it('finds one ready phone', () => {
+    expect(androidAbsence(listing('R58M123\tdevice'), undefined)).toBeNull();
+  });
+
+  it('refuses a phone that is attached but not ready, listing what it saw', () => {
     expect(
-      searched(spawning, {
-        of: files,
-        what: 'files under tests/ and scripts/',
-      }),
-    ).toEqual([]);
+      androidAbsence(
+        listing('R58M123\tunauthorized', 'emulator-5554\toffline'),
+        undefined,
+      ),
+    ).toBe(
+      "`adb devices` listed no device in state 'device' (unplugged, asleep, offline, or unauthorized otherwise) -- seen: " +
+        '[{"serial":"R58M123","state":"unauthorized"},{"serial":"emulator-5554","state":"offline"}]',
+    );
+  });
+
+  it('refuses no phone at all', () => {
+    expect(androidAbsence(listing(), undefined)).toContain('seen: []');
+  });
+
+  it('refuses two ready phones without a serial to choose', () => {
+    expect(
+      androidAbsence(listing('R58M123\tdevice', 'R58M456\tdevice'), undefined),
+    ).toBe(
+      'expected exactly one ready Android device -- found 2: ' +
+        '[{"serial":"R58M123","state":"device"},{"serial":"R58M456","state":"device"}]. Set ANDROID_SERIAL to disambiguate.',
+    );
+  });
+
+  it('takes the phone ANDROID_SERIAL names among two', () => {
+    expect(
+      androidAbsence(listing('R58M123\tdevice', 'R58M456\tdevice'), 'R58M456'),
+    ).toBeNull();
+  });
+
+  it('refuses a serial that is not attached, naming it', () => {
+    expect(androidAbsence(listing('R58M123\tdevice'), 'R58M999')).toBe(
+      "`adb devices` did not list serial R58M999 (from ANDROID_SERIAL) in state 'device' -- " +
+        'seen: [{"serial":"R58M123","state":"device"}]',
+    );
   });
 });

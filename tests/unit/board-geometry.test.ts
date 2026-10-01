@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { measureBoard, measureBoardScript } from '../board-geometry';
 import { searched, tsFilesUnder } from '../source-files';
+import { expectClosesOverNothing } from './closes-over-nothing';
 import { withoutTsComments } from './source-text';
 
 /**
@@ -46,30 +47,10 @@ describe('the board is measured once, and survives being sent somewhere else', (
   });
 
   it('closes over nothing, because anything it closed over would be undefined at the far end', () => {
-    const source = withoutTsComments(
-      readFileSync('tests/board-geometry.ts', 'utf8'),
-    );
-
-    // The positive control: this is the right file, so "no imports" below is
-    // a fact about the measurement and not about an empty read.
-    expect(source, 'read the module that owns the measurement').toContain(
+    expectClosesOverNothing(
+      'tests/board-geometry.ts',
       'export const measureBoard',
     );
-
-    // The population goes INSIDE the assertion: a filter that quietly stopped
-    // matching reads exactly like a module with no imports, and only one of
-    // those is good news (#118). `searched` counts the population by CONTENT,
-    // so blank lines cannot stand in for source.
-    const lines = source.split('\n');
-    const imports = lines.filter((line) => /^\s*import\s/.test(line));
-    expect(
-      searched(imports, {
-        of: lines,
-        what: 'source lines in the measurement module',
-      }),
-      'an import here is a binding that exists while type-checking and is ' +
-        'undefined inside the page -- the failure only a real device shows',
-    ).toEqual([]);
   });
 
   it('has one spelling of the wrapper the device leg sends', () => {

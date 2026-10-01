@@ -9,12 +9,12 @@
  * that runs past its deadline is stopped, and the error names the command.
  *
  * One home, imported by `scripts/test-devices.mjs` and by `tests/device/`, and
- * held by `tests/unit/adb.test.ts`, which also refuses any other file that
- * spawns `adb` itself.
+ * held by `tests/unit/adb.test.ts`; `tests/unit/device-tool-homes.test.ts`
+ * refuses any other file that runs `adb` itself. The deadline is
+ * `scripts/run-with-deadline.mjs`, shared with `devicectl`.
  */
 
-import { execFileSync } from 'node:child_process';
-import { messageOf } from './errors.mjs';
+import { runWithDeadline } from './run-with-deadline.mjs';
 
 /**
  * How long one `adb` call may take. The slowest the device leg makes, a cold
@@ -32,21 +32,47 @@ export const ADB_TIMEOUT_MS = 15_000;
  * @returns {string}
  */
 export function adb(args, { timeoutMs = ADB_TIMEOUT_MS } = {}) {
-  const command = `adb ${args.join(' ')}`;
-  try {
-    return execFileSync('adb', [...args], {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      stdio: ['ignore', 'pipe', 'pipe'],
+  return runWithDeadline('adb', args, {
+    timeoutMs,
+    whenSilent: 'is the phone still connected and unlocked?',
+  });
+}
+
+/**
+ * Why no Android phone can be driven, read from `adb devices` output, or
+ * `null` when exactly one is ready. `serial` is `ANDROID_SERIAL`, passed in so
+ * the decision can be run without a phone (#390).
+ *
+ * @param {string} raw
+ * @param {string | undefined} serial
+ * @returns {string | null}
+ */
+export function androidAbsence(raw, serial) {
+  const devices = raw
+    .split('\n')
+    .slice(1) // drop the "List of devices attached" header line
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [serial, state] = line.split(/\s+/);
+      return { serial, state };
     });
-  } catch (error) {
-    const timedOut =
-      error instanceof Error && 'code' in error && error.code === 'ETIMEDOUT';
-    throw new Error(
-      timedOut
-        ? `${command} gave no answer within ${timeoutMs} ms: is the phone still connected and unlocked?`
-        : `${command} failed: ${messageOf(error)}`,
-      { cause: error },
+
+  const ready = devices.filter((d) => d.state === 'device');
+  const matching = serial ? ready.filter((d) => d.serial === serial) : ready;
+
+  if (matching.length === 0) {
+    return serial
+      ? `\`adb devices\` did not list serial ${serial} (from ANDROID_SERIAL) in state 'device' -- ` +
+          `seen: ${JSON.stringify(devices)}`
+      : `\`adb devices\` listed no device in state 'device' (unplugged, asleep, offline, or ` +
+          `unauthorized otherwise) -- seen: ${JSON.stringify(devices)}`;
+  }
+  if (matching.length > 1) {
+    return (
+      `expected exactly one ready Android device -- found ${matching.length}: ` +
+      `${JSON.stringify(matching)}. Set ANDROID_SERIAL to disambiguate.`
     );
   }
+  return null;
 }

@@ -1,4 +1,4 @@
-import { adb } from '../../scripts/adb.mjs';
+import { adb, androidAbsence } from '../../scripts/adb.mjs';
 import { test, expect } from '@playwright/test';
 import {
   CHROME_PACKAGE,
@@ -27,23 +27,14 @@ import {
 test.describe.configure({ mode: 'serial' });
 
 test.describe('android device preflight', () => {
-  test('1. adb sees exactly one device, ready', () => {
-    const raw = adb(['devices']);
-    const devices = raw
-      .split('\n')
-      .slice(1) // drop the "List of devices attached" header line
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [serial, state] = line.split(/\s+/);
-        return { serial, state };
-      });
-
+  // The same decision the runner made before starting this project, from the
+  // same function: one ready phone, or the one ANDROID_SERIAL names among
+  // several. adb itself targets ANDROID_SERIAL for every later call here.
+  test('1. adb sees exactly one device to drive, ready', () => {
     expect(
-      devices,
-      `expected \`adb devices\` to list exactly one device in state 'device' (unplugged, ` +
-        `offline, or unauthorized otherwise); got: ${JSON.stringify(devices)}`,
-    ).toEqual([expect.objectContaining({ state: 'device' })]);
+      androidAbsence(adb(['devices']), process.env.ANDROID_SERIAL),
+      'why no Android phone can be driven',
+    ).toBeNull();
   });
 
   test('2. the screen is awake and unlocked', () => {
