@@ -77,7 +77,10 @@ const recordOperations = (page: Page) =>
       // written through children (a list, a sentence), and a recorder that
       // watched only the region's own textContent saw them revealed and
       // never written (#390 F109). Credited to the NEAREST live region, so
-      // the summary's write stays the summary's.
+      // the summary's write stays the summary's. textContent is the only
+      // write path recorded: wrapping the four insertion methods too was
+      // mutated away with every test green (AN5), since each region the page
+      // fills through children is cleared through textContent first.
       const liveRegionOf = (node: Node | null): string | null => {
         for (let at = node; at !== null; at = at.parentNode) {
           if (
@@ -101,29 +104,6 @@ const recordOperations = (page: Page) =>
           text.set!.call(this, value);
         },
       });
-      // The four ways a node is put into another, all of which the page's
-      // scripts use somewhere.
-      const insertions: ReadonlyArray<[object, string]> = [
-        [Node.prototype, 'appendChild'],
-        [Node.prototype, 'insertBefore'],
-        [Element.prototype, 'append'],
-        [Element.prototype, 'replaceChildren'],
-      ];
-      for (const [prototype, name] of insertions) {
-        const real = Reflect.get(prototype, name) as (
-          this: Node,
-          ...args: unknown[]
-        ) => unknown;
-        Object.defineProperty(prototype, name, {
-          configurable: true,
-          writable: true,
-          value(this: Node, ...args: unknown[]) {
-            const id = liveRegionOf(this);
-            if (id !== null) log(`${id}:write`);
-            return real.apply(this, args);
-          },
-        });
-      }
     });
   });
 
