@@ -1,9 +1,14 @@
 ---
 import Flag from './Flag.astro';
 import BetaBadge from './BetaBadge.astro';
-import { LOCALES, localisePath, isBetaLocale, type Locale } from '../lib/i18n';
+import {
+  LOCALES,
+  localisePath,
+  isBetaLocale,
+  type Locale,
+  getSiteStrings,
+} from '../lib/i18n';
 import { metadataFor } from '../lib/i18n/metadata';
-import { getSiteStrings } from '../lib/i18n';
 
 interface Props {
   lang: Locale;

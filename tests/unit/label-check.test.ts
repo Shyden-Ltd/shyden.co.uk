@@ -3,13 +3,13 @@ import { nonEmpty, searched } from '../source-files';
 import {
   backTranslationUnits,
   type BackTranslationUnit,
+  TRANSLATED_LOCALES,
 } from '../../src/lib/i18n/back-translate';
 import {
   checkLabels,
   checkNamedLabels,
   renderedOn,
 } from '../../src/lib/i18n/label-check';
-import { TRANSLATED_LOCALES } from '../../src/lib/i18n/back-translate';
 
 /**
  * A short label, cross-checked against how its own locale renders the same

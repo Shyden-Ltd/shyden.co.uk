@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
 import { parseCleanYaml, workflowJobs } from '../workflow-jobs';
