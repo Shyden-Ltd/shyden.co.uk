@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DashboardLog, toDashboardStatus } from '../reporters/dashboard-jsonl';
+import { scratchDir } from '../scratch-dir';
 
-const tmp = () => mkdtempSync(join(tmpdir(), 'dashboard-jsonl-'));
+const tmp = () => scratchDir('dashboard-jsonl-');
 const lines = (file: string) =>
   readFileSync(file, 'utf8')
     .trim()

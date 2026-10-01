@@ -1,18 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { renderCatalogue } from '../../scripts/i18n-scaffold.mjs';
 import { translatableSentences } from '../../src/lib/i18n/translate';
 import { messageOf } from '../../scripts/errors.mjs';
+import { scratchDir } from '../scratch-dir';
 
 /**
  * `scripts/i18n-scaffold.mjs` renders zh, vi and th from `en.ts` and the
@@ -69,7 +63,7 @@ const fail = (catalogue: unknown, locale: ReturnType<typeof ja>) => {
 
 /** Load a rendered source the way a page would: as a module. */
 const load = async (source: string) => {
-  const dir = mkdtempSync(join(tmpdir(), 'scaffold-'));
+  const dir = scratchDir('scaffold-');
   const file = join(dir, 'ja.ts');
   writeFileSync(file, source);
   return ((await import(file)) as { ja: unknown }).ja;
@@ -155,7 +149,7 @@ const REVIEWED = '// reviewed by hand\n';
 /** A working directory holding `cache` as the DeepL cache, and optionally a
  *  catalogue that has already been reviewed. */
 const workspace = (cache?: unknown, reviewed = false) => {
-  const cwd = mkdtempSync(join(tmpdir(), 'scaffold-main-'));
+  const cwd = scratchDir('scaffold-main-');
   mkdirSync(join(cwd, 'src', 'lib', 'i18n'), { recursive: true });
   if (cache !== undefined)
     writeFileSync(

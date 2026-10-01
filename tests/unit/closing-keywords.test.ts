@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +7,7 @@ import { nonEmpty, searched } from '../source-files';
 import { parseCleanYaml, workflowJobs } from '../workflow-jobs';
 import { withoutCommentLines } from './source-text';
 import { closingKeywordOffences } from '../../scripts/closing-keywords.mjs';
+import { scratchDir } from '../scratch-dir';
 
 /**
  * The rule: no message may put a closing keyword next to an issue number, for
@@ -195,7 +195,7 @@ describe('the closing-keyword command line', () => {
   }
 
   function fileHolding(text: string): string {
-    const file = join(mkdtempSync(join(tmpdir(), 'closing-keywords-')), 'MSG');
+    const file = join(scratchDir('closing-keywords-'), 'MSG');
     writeFileSync(file, text);
     return file;
   }

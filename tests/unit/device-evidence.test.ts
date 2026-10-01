@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mediaType } from '../../scripts/build-evidence-page.mjs';
+import { scratchDir } from '../scratch-dir';
 import {
   EVIDENCE_MANIFEST,
   captureFile,
@@ -53,7 +53,7 @@ const fakeDriver = (b64 = PNG_BASE64) => {
   };
 };
 
-const evidenceDir = () => mkdtempSync(join(tmpdir(), 'device-evidence-'));
+const evidenceDir = () => scratchDir('device-evidence-');
 
 const rowsIn = (dir: string) =>
   readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')

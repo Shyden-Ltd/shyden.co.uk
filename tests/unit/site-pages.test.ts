@@ -1,6 +1,3 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   pageNames,
@@ -10,6 +7,7 @@ import {
   HEADING_FOR,
 } from '../site-pages';
 import { LOCALES } from '../../src/lib/i18n';
+import { scratchDir } from '../scratch-dir';
 
 describe('the site page list is derived from src/pages', () => {
   it('reads real pages off disk', () => {
@@ -34,7 +32,7 @@ describe('the page list refuses to answer blind (#84)', () => {
     // A real empty directory, not a mock: `locale-routing.test.ts` loops this
     // list five times and `thai-typography.spec.ts` builds its routes from it,
     // and all six tests passed green while it was empty.
-    const empty = mkdtempSync(join(tmpdir(), 'shyden-pages-'));
+    const empty = scratchDir('shyden-pages-');
     expect(() => pageNames(empty)).toThrow(/broken/);
   });
 });
