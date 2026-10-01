@@ -2052,9 +2052,10 @@ const sexWhyText = sexWhy(roster, t);
     overflow: hidden;
     padding: 0 1rem 1rem;
   }
-  /* Set only when `fitScale` reports the sheet still does not fit at the
-     readable floor -- a class cannot read what is off the board either way,
-     but they can read what scrolls. */
+  /* Set by `refit` (projector.ts) from the stage as rendered, once the type
+     has shrunk as far as the readable floor allows and the sheet still
+     overflows -- a class cannot read what is off the board either way, but
+     they can read what scrolls. */
   .cg-board.scrolls .cg-board-stage {
     overflow: auto;
   }
