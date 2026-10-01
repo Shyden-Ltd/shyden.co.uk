@@ -15,8 +15,7 @@
  * which refuses any other file that spawns `xcrun`.
  */
 
-import { execFileSync } from 'node:child_process';
-import { messageOf } from './errors.mjs';
+import { runWithDeadline } from './run-with-deadline.mjs';
 
 /**
  * How long one listing may take. `devicectl list devices` answers in well under
@@ -39,23 +38,10 @@ const LIST_ARGS = ['devicectl', 'list', 'devices', '--json-output', '-'];
  * @returns {string}
  */
 export function listDevices({ timeoutMs = DEVICECTL_TIMEOUT_MS } = {}) {
-  const command = `xcrun ${LIST_ARGS.join(' ')}`;
-  try {
-    return execFileSync('xcrun', LIST_ARGS, {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (error) {
-    const timedOut =
-      error instanceof Error && 'code' in error && error.code === 'ETIMEDOUT';
-    throw new Error(
-      timedOut
-        ? `${command} gave no answer within ${timeoutMs} ms: is the iPhone still connected and trusted?`
-        : `${command} failed: ${messageOf(error)}`,
-      { cause: error },
-    );
-  }
+  return runWithDeadline('xcrun', LIST_ARGS, {
+    timeoutMs,
+    whenSilent: 'is the iPhone still connected and trusted?',
+  });
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   measureTypedFields,
   measureTypedFieldsScript,
 } from '../typed-fields';
+import { expectClosesOverNothing } from './closes-over-nothing';
 import { withoutTsComments } from './source-text';
 
 /**
@@ -71,26 +72,10 @@ describe('typed fields are defined once, and survive being sent to a phone', () 
   });
 
   it('closes over nothing, because anything it closed over would be undefined at the far end', () => {
-    const source = withoutTsComments(
-      readFileSync('tests/typed-fields.ts', 'utf8'),
-    );
-
-    // The positive control: this is the right file, so "no imports" below is
-    // a fact about the measurement and not about an empty read.
-    expect(source, 'read the module that owns the measurement').toContain(
+    expectClosesOverNothing(
+      'tests/typed-fields.ts',
       'export const measureTypedFields',
     );
-
-    const lines = source.split('\n');
-    const imports = lines.filter((line) => /^\s*import\s/.test(line));
-    expect(
-      searched(imports, {
-        of: lines,
-        what: 'source lines in the measurement module',
-      }),
-      'an import here is a binding that exists while type-checking and is ' +
-        'undefined inside the page',
-    ).toEqual([]);
   });
 
   it('has one spelling of the wrapper the device leg sends', () => {

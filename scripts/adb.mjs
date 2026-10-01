@@ -9,12 +9,12 @@
  * that runs past its deadline is stopped, and the error names the command.
  *
  * One home, imported by `scripts/test-devices.mjs` and by `tests/device/`, and
- * held by `tests/unit/adb.test.ts`, which also refuses any other file that
- * spawns `adb` itself.
+ * held by `tests/unit/adb.test.ts`; `tests/unit/device-tool-homes.test.ts`
+ * refuses any other file that runs `adb` itself. The deadline is
+ * `scripts/run-with-deadline.mjs`, shared with `devicectl`.
  */
 
-import { execFileSync } from 'node:child_process';
-import { messageOf } from './errors.mjs';
+import { runWithDeadline } from './run-with-deadline.mjs';
 
 /**
  * How long one `adb` call may take. The slowest the device leg makes, a cold
@@ -32,23 +32,10 @@ export const ADB_TIMEOUT_MS = 15_000;
  * @returns {string}
  */
 export function adb(args, { timeoutMs = ADB_TIMEOUT_MS } = {}) {
-  const command = `adb ${args.join(' ')}`;
-  try {
-    return execFileSync('adb', [...args], {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (error) {
-    const timedOut =
-      error instanceof Error && 'code' in error && error.code === 'ETIMEDOUT';
-    throw new Error(
-      timedOut
-        ? `${command} gave no answer within ${timeoutMs} ms: is the phone still connected and unlocked?`
-        : `${command} failed: ${messageOf(error)}`,
-      { cause: error },
-    );
-  }
+  return runWithDeadline('adb', args, {
+    timeoutMs,
+    whenSilent: 'is the phone still connected and unlocked?',
+  });
 }
 
 /**

@@ -1,8 +1,6 @@
-import { chmodSync, writeFileSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ADB_TIMEOUT_MS, adb, androidAbsence } from '../../scripts/adb.mjs';
-import { scratchDir } from '../scratch-dir';
+import { standInOnPath } from '../path-stand-in';
 
 /**
  * Every `adb` call the device leg makes goes through `scripts/adb.mjs` (#390).
@@ -22,17 +20,7 @@ echo "answered: $*"
 `;
 
 describe('adb()', () => {
-  let path: string | undefined;
-  beforeEach(() => {
-    const bin = scratchDir('adb-stand-in-');
-    writeFileSync(join(bin, 'adb'), STAND_IN);
-    chmodSync(join(bin, 'adb'), 0o755);
-    path = process.env.PATH;
-    process.env.PATH = `${bin}${delimiter}${path ?? ''}`;
-  });
-  afterEach(() => {
-    process.env.PATH = path;
-  });
+  standInOnPath('adb', STAND_IN);
 
   it('returns what adb printed', () => {
     expect(adb(['shell', 'dumpsys', 'window'])).toBe(

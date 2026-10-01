@@ -1,12 +1,10 @@
-import { chmodSync, writeFileSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   DEVICECTL_TIMEOUT_MS,
   listDevices,
   pickIphone,
 } from '../../scripts/devicectl.mjs';
-import { scratchDir } from '../scratch-dir';
+import { standInOnPath } from '../path-stand-in';
 
 /**
  * Every `xcrun devicectl` read the iOS leg makes, and the one reading of what
@@ -27,16 +25,8 @@ echo "args: $*"
 `;
 
 describe('listDevices()', () => {
-  let path: string | undefined;
-  beforeEach(() => {
-    const bin = scratchDir('xcrun-stand-in-');
-    writeFileSync(join(bin, 'xcrun'), STAND_IN);
-    chmodSync(join(bin, 'xcrun'), 0o755);
-    path = process.env.PATH;
-    process.env.PATH = `${bin}${delimiter}${path ?? ''}`;
-  });
+  standInOnPath('xcrun', STAND_IN);
   afterEach(() => {
-    process.env.PATH = path;
     delete process.env.XCRUN_STAND_IN;
   });
 

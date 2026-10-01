@@ -25,7 +25,7 @@ const files = ['tests', 'scripts'].flatMap((dir) =>
 describe.each(HOMES)('no file spawns $tool but $home', ({ tool, home }) => {
   it('reads every call site through the one home', () => {
     const spawns = new RegExp(
-      String.raw`\b(?:execFileSync|execFile|spawnSync|spawn|execSync|exec)\(\s*['"\`]` +
+      String.raw`\b(?:execFileSync|execFile|spawnSync|spawn|execSync|exec|runWithDeadline)\(\s*['"\`]` +
         tool +
         String.raw`\b`,
     );
