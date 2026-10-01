@@ -490,7 +490,7 @@ main:focus {
  * Ratios against white, all measured: --ink 21:1, --ink-soft 12.63:1,
  * --accent 7.44:1, --accent-ink 10.84:1, --danger 7.41:1, --border-strong
  * 5.33:1 (needs 3:1 for a control boundary). --accent is darkened from mint
- * because #38f5c8 is 1.36:1 on paper — a link that vanishes.
+ * because #38f5c8 is 1.39:1 on paper — a link that vanishes.
  */
 @media print {
   :root {
