@@ -2090,6 +2090,152 @@ describe('recordings travel in the asset store (#268)', () => {
       }),
     ).toBeUndefined();
   });
+
+  /**
+   * The command line, parsed strictly (#390). The hand-rolled reader ignored
+   * an option it did not know, so `--publishd` cost the publish every removal
+   * without a word, and took the next word whatever it was, so
+   * `--evidence --out page` read a directory called `--out`.
+   */
+  const builder = (...args: string[]) =>
+    spawnSync(process.execPath, ['scripts/build-evidence-page.mjs', ...args], {
+      encoding: 'utf8',
+    });
+
+  it('refuses an option it does not know, by name, before reading anything', () => {
+    const dir = runDirectory('unknown-option-');
+    const page = join(dir, 'page.html');
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      page,
+      '--publishd',
+      join(dir, 'listing.json'),
+    );
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      "build-evidence-page: Unknown option '--publishd'",
+    );
+    expect(refused.stderr).toContain('usage: build-evidence-page.mjs');
+    expect(existsSync(`${page}.uploads.json`), 'the plan was written').toBe(
+      false,
+    );
+  });
+
+  it('refuses an option whose value is another option', () => {
+    const dir = runDirectory('ambiguous-');
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      '--out',
+      join(dir, 'page.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      "build-evidence-page: Option '--evidence' argument is ambiguous.",
+    );
+  });
+
+  it('refuses an option given no value, naming it', () => {
+    const dir = runDirectory('no-value-');
+    const refused = builder('--plan', '--evidence', dir, '--out');
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      "build-evidence-page: Option '--out <value>' argument missing",
+    );
+  });
+
+  it('refuses a plan pass that is also handed the answer to it', () => {
+    const dir = runDirectory('both-passes-');
+    const refused = builder(
+      '--plan',
+      '--assets',
+      join(dir, 'assets.json'),
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'page.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      'build-evidence-page: --plan writes the upload list; --assets reads the ' +
+        'answer to it. Passing both asks for one pass to be two.',
+    );
+  });
+
+  it('says a refusal in one line, with no stack under it', () => {
+    // A decision is not a crash: `at main (...)` under it shows the reader an
+    // internal error where the answer belongs (#227).
+    const dir = runDirectory('one-line-');
+    const content = join(dir, 'content.json');
+    writeFileSync(content, JSON.stringify(CONTENT));
+    const refused = builder(
+      '--evidence',
+      dir,
+      '--content',
+      content,
+      '--out',
+      join(dir, 'page.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toMatch(
+      /^✗ build-evidence-page: .*no --assets map was given/,
+    );
+    expect(refused.stderr).not.toMatch(/^\s+at /m);
+  });
+
+  it('names a report that is not JSON', () => {
+    const dir = runDirectory('bad-report-');
+    writeFileSync(join(dir, EVIDENCE_REPORT), '{"stats":');
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'p.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: the evidence report at ${join(dir, EVIDENCE_REPORT)} is not JSON:`,
+    );
+  });
+
+  it('names the manifest line that is not JSON, counting blank lines', () => {
+    const dir = runDirectory('bad-manifest-');
+    const manifest = join(dir, EVIDENCE_MANIFEST);
+    writeFileSync(
+      manifest,
+      `\n${readFileSync(manifest, 'utf8').trim()}\n{"project":\n`,
+    );
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'p.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: the evidence manifest at ${manifest} line 3 is not JSON:`,
+    );
+  });
+
+  it('names an evidence directory with no report in it', () => {
+    const dir = mkdtempSync(join(scratch, 'empty-'));
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'p.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: could not read the evidence report at ${join(dir, EVIDENCE_REPORT)}: ENOENT`,
+    );
+  });
 });
 
 /**
