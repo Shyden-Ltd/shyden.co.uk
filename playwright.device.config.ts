@@ -8,6 +8,8 @@ process.env.PW_REAL_DEVICE = '1';
 
 export default defineConfig({
   testDir: './tests',
+  // A stray `test.only` fails the run in CI rather than narrowing it (#390).
+  forbidOnly: !!process.env.CI,
   // A folder of its own, and a SIBLING of the desktop group's rather than a
   // path inside it: Playwright wipes its whole outputDir at the start of
   // every invocation, so nesting one group's folder under another's would

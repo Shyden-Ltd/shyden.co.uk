@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { adb } from '../../scripts/adb.mjs';
 
 /**
  * Chrome losing foreground mid-run: observed live, at least twice, independently, across this
@@ -35,8 +35,7 @@ export const CHROME_PACKAGE = 'com.android.chrome';
  * match alone. Identical extraction to android-preflight.setup.ts's own precondition 3.
  */
 export function currentFocusLines(): string {
-  return execFileSync('adb', ['shell', 'dumpsys', 'window'])
-    .toString()
+  return adb(['shell', 'dumpsys', 'window'])
     .split('\n')
     .filter((line) => line.includes('mCurrentFocus='))
     .join('\n');
@@ -64,8 +63,7 @@ export const DEVTOOLS_SOCKET = '@chrome_devtools_remote';
  * by substring, so a differently suffixed socket cannot stand in for Chrome's.
  */
 export function devToolsSockets(): string[] {
-  return execFileSync('adb', ['shell', 'cat', '/proc/net/unix'])
-    .toString()
+  return adb(['shell', 'cat', '/proc/net/unix'])
     .split('\n')
     .map((line) => line.trim().split(/\s+/).pop() ?? '')
     .filter((path) => /^@(chrome|webview)_devtools_remote/.test(path));
@@ -85,7 +83,7 @@ export function hasDevToolsSocket(): boolean {
 export async function relaunchChromeAndWaitReady(
   timeoutMs = 5_000,
 ): Promise<void> {
-  execFileSync('adb', [
+  adb([
     'shell',
     'am',
     'start',

@@ -7,6 +7,7 @@ import { parseCleanYaml, workflowJobs } from '../workflow-jobs';
 import { withoutCommentLines } from './source-text';
 import { closingKeywordOffences } from '../../scripts/closing-keywords.mjs';
 import { scratchDir } from '../scratch-dir';
+import { scratchGit, withoutLocalGit } from '../git-env';
 
 /**
  * The rule: no message may put a closing keyword next to an issue number, for
@@ -343,6 +344,62 @@ describe('the rule covers a pull request body, not only a commit message', () =>
     expect(
       commands.filter((command) => /^test -s .*commits\.txt/.test(command)),
     ).toHaveLength(1);
+  });
+
+  it("reads every commit the pull request adds, its merges too, and not the checkout's own", () => {
+    // A pull_request checkout is a synthetic merge of the head into the base,
+    // at HEAD. `--no-merges` left that one out, and with it every merge commit
+    // the branch carries, which lands on develop, the default branch, with
+    // its message intact (#390). The workflow's own command runs here,
+    // against a branch shaped like that.
+    const [only] = workflowsRunningTheRule();
+    const [range] = (only?.commands ?? []).filter((command) =>
+      command.startsWith('git log'),
+    );
+    expect(range, 'the step reads no commit range').toBeDefined();
+
+    const dir = scratchDir('pr-range-');
+    const git = scratchGit(dir);
+    const commit = (message: string) =>
+      git(['commit', '-q', '--allow-empty', '-m', message]);
+    git(['init', '-q', '-b', 'develop']);
+    git(['config', 'user.email', 'fixture@example.test']);
+    git(['config', 'user.name', 'Fixture']);
+    git(['config', 'commit.gpgsign', 'false']);
+    commit('already on the base');
+    git(['checkout', '-q', '-b', 'feature']);
+    commit('the branch work');
+    git(['checkout', '-q', 'develop']);
+    commit('the base moves on');
+    git(['update-ref', 'refs/remotes/origin/develop', 'develop']);
+    git(['checkout', '-q', 'feature']);
+    git([
+      'merge',
+      '-q',
+      '--no-ff',
+      'develop',
+      '-m',
+      'Merge develop, closes #5',
+    ]);
+    git(['checkout', '-q', '--detach', 'develop']);
+    git(['merge', '-q', '--no-ff', 'feature', '-m', 'the checkout merge']);
+
+    const out = scratchDir('pr-range-out-');
+    execFileSync('bash', ['-c', range!], {
+      cwd: dir,
+      env: {
+        ...withoutLocalGit(process.env),
+        BASE_REF: 'develop',
+        RUNNER_TEMP: out,
+      },
+    });
+    // Every message, whole: the base's commit and the checkout's merge are
+    // absent, and the branch's merge is present.
+    const messages = readFileSync(join(out, 'commits.txt'), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .sort();
+    expect(messages).toEqual(['Merge develop, closes #5', 'the branch work']);
   });
 
   it('never expands the body into a shell command', () => {

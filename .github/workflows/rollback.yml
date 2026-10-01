@@ -45,8 +45,10 @@ jobs:
     name: Roll back shyden-site
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    # Its Cloudflare secrets live in `prod-rollback`, which accepts `main` alone
-    # and has no reviewers, so a recovery never waits for an approval (#241).
+    # Its Cloudflare secrets belong in `prod-rollback`, which accepts `main`
+    # alone and has no reviewers, so a recovery never waits for an approval
+    # (#241). Read 2026-10-01: that environment holds none yet, so this job
+    # reads the repository copies until #241's environment secrets exist.
     environment:
       name: prod-rollback
       url: https://shyden.co.uk

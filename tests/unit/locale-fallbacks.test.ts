@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
-import { catalogueLeaves } from '../catalogue-leaves';
+import { catalogueLeaves } from '../../src/lib/catalogue-leaves';
 import { en } from '../../src/lib/i18n/en';
 import { zh } from '../../src/lib/i18n/zh';
 import { vi } from '../../src/lib/i18n/vi';

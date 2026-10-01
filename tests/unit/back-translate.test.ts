@@ -14,7 +14,7 @@ import { zh } from '../../src/lib/i18n/zh';
 import { getSiteStrings, type Locale } from '../../src/lib/i18n';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
-import { stringLeaves } from '../catalogue-leaves';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
 import { searched } from '../source-files';
 import {
   backTranslationUnits,

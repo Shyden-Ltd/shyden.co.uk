@@ -1,5 +1,5 @@
 import { parseDocument } from 'yaml';
-import { stringLeaves } from './catalogue-leaves';
+import { stringLeaves } from '../src/lib/catalogue-leaves';
 import { withoutCommentLines } from './unit/source-text';
 import { isRecord } from '../src/lib/is-record';
 

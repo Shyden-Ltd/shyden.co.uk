@@ -3,8 +3,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts'],
-    // Forgets the repository the run was handed, so no git process a test
-    // starts can act on it (#377).
+    // In every worker: forget the repository the run was handed, so no git
+    // process a test starts can act on it (#377), and refuse a worker whose
+    // TMPDIR is not the run's own (#390 F56).
     setupFiles: ['tests/git-env-setup.ts', 'tests/temporary-files-setup.ts'],
     // A temporary directory of the run's own: anything a test leaves in it
     // fails the run, and it is removed either way (#390 F56).

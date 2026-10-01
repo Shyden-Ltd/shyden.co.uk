@@ -1,4 +1,4 @@
-import { beforeAll, describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -494,21 +494,37 @@ describe('the measuring twin cannot become a gate (#224)', () => {
  * only under an environment flag, so they are appended here, where no flag can
  * hide one.
  */
+const CONFIG = /^playwright.*\.config\.[cm]?[jt]s$/;
+
+/**
+ * A config's module, freshly evaluated under `env` added to the environment,
+ * with every variable put back afterwards, including any its import sets. The
+ * module cache is reset first, because a config reads the environment once,
+ * as it loads.
+ */
+const importConfig = async (
+  file: string,
+  env: Record<string, string> = {},
+): Promise<PlaywrightTestConfig> => {
+  const before = { ...process.env };
+  try {
+    Object.assign(process.env, env);
+    vi.resetModules();
+    return (await import(resolve(file))).default as PlaywrightTestConfig;
+  } finally {
+    for (const key of Object.keys(process.env))
+      if (!(key in before)) delete process.env[key];
+    Object.assign(process.env, before);
+  }
+};
+
+/** Every Playwright config at the repository root, by the name Playwright gives one. */
+const rootConfigs = (): string[] =>
+  nonEmpty(readdirSync('.'), 'entries at the repository root')
+    .filter((name) => CONFIG.test(name))
+    .sort();
+
 describe('every project declares its colour scheme (#142)', () => {
-  const CONFIG = /^playwright.*\.config\.[cm]?[jt]s$/;
-
-  /** A config's module, with any variable its import sets put back. */
-  const importConfig = async (file: string): Promise<PlaywrightTestConfig> => {
-    const before = { ...process.env };
-    try {
-      return (await import(resolve(file))).default as PlaywrightTestConfig;
-    } finally {
-      for (const key of Object.keys(process.env))
-        if (!(key in before)) delete process.env[key];
-      Object.assign(process.env, before);
-    }
-  };
-
   it('finds a config by the name Playwright gives one', () => {
     const names = [
       'playwright.config.ts',
@@ -528,9 +544,7 @@ describe('every project declares its colour scheme (#142)', () => {
   });
 
   it('runs every resolved project light or dark, never the default', async () => {
-    const configs = nonEmpty(readdirSync('.'), 'entries at the repository root')
-      .filter((name) => CONFIG.test(name))
-      .sort();
+    const configs = rootConfigs();
     const projects: string[] = [];
     const undeclared: string[] = [];
     for (const file of configs) {
@@ -552,5 +566,25 @@ describe('every project declares its colour scheme (#142)', () => {
     expect(
       searched(undeclared, { of: projects, what: 'Playwright projects' }),
     ).toEqual([]);
+  });
+});
+
+describe('no CI run can be narrowed to the tests someone focused (#390)', () => {
+  it('refuses test.only under CI, in every Playwright config', async () => {
+    // `--list` ignores `.only` (measured 2026-10-01: 4,159 listed with one
+    // test focused), so in the e2e suite a focused run no longer adds up to
+    // the shards' accounting and fails. tests/dev and tests/prod keep no such
+    // account: a stray `.only` let `sanity-on-build`, and the run that posts
+    // `prod-verified`, run one test and pass. Only the functions config set
+    // `forbidOnly`.
+    const configs = rootConfigs();
+    const lax: string[] = [];
+    for (const file of configs) {
+      const loaded = await importConfig(file, { CI: 'true' });
+      if (loaded.forbidOnly !== true) lax.push(file);
+    }
+    expect(searched(lax, { of: configs, what: 'Playwright configs' })).toEqual(
+      [],
+    );
   });
 });

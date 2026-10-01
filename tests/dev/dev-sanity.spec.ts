@@ -12,6 +12,7 @@ import { expectedBadges } from '../beta-badges';
 import { deployedRoutes } from '../site-pages';
 import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectTheSwitchPersists } from '../themes';
+import { robotsDirectives } from '../robots-directives';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -117,7 +118,8 @@ test(
   async ({ request }) => {
     // Served before the auth gate, so this holds with or without creds.
     const body = await (await request.get('/robots.txt')).text();
-    expect(body).toContain('Disallow: /');
+    // Every directive, whole: `Disallow: /private` contains `Disallow: /`.
+    expect(robotsDirectives(body)).toEqual(['User-agent: *', 'Disallow: /']);
   },
 );
 
@@ -157,8 +159,8 @@ test('every outbound ShyTalk link points at DEV ShyTalk, never prod (no cross-en
  * Dev is the MERGE GATE now, so this suite is what stands between a broken
  * build and `main`. It stays a smoke, not a second copy of the e2e suite:
  * each of these asks only "did this part of the tool arrive at all", which is
- * the question a deploy can answer wrongly. Behaviour is proven by the 2036
- * e2e tests that already ran before the deploy.
+ * the question a deploy can answer wrongly. Behaviour is proven by the e2e
+ * suite, which already ran before the deploy.
  */
 test.describe('the Classroom Group Creator v2 surfaces reached dev', () => {
   test('Student details builds a roster', async ({ page }) => {

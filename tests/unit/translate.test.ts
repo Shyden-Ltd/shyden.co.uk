@@ -17,7 +17,7 @@ import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import { searched } from '../source-files';
-import { stringLeaves } from '../catalogue-leaves';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
 import { messageOf } from '../../scripts/errors.mjs';
 import {
   DO_NOT_TRANSLATE,
