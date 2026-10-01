@@ -53,7 +53,7 @@ export function emptyDeviceDownloads(): void {
  * Quotes one argument for the phone's shell: `adb shell` and `adb exec-out` join their arguments
  * with spaces and hand the result to `sh`, so a filename with a space would otherwise split.
  */
-const forDeviceShell = (value: string): string =>
+export const forDeviceShell = (value: string): string =>
   `'${value.replace(/'/g, `'\\''`)}'`;
 
 /**
