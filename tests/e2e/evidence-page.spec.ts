@@ -880,19 +880,23 @@ test.describe('evidence page sign-off, whatever the write order', () => {
     page,
   }, testInfo) => {
     await openEvidencePage(page, testInfo, { order: 'resolve-then-confirm' });
+    // Measured by the page against its own screen, so it holds on a real
+    // phone too: a phone without the viewport meta lays the page out 980px
+    // wide on a screen half that.
     const read = await page.evaluate(() => ({
       mode: document.compatMode,
       charset: document.characterSet,
-      layoutWidth: document.documentElement.clientWidth,
+      laidOut: document.documentElement.clientWidth,
+      screen: screen.width,
     }));
-    const viewport = page.viewportSize();
-    expect(viewport, 'the project sets a viewport').not.toBeNull();
-    expect(read).toEqual({
+    expect({ mode: read.mode, charset: read.charset }).toEqual({
       mode: 'CSS1Compat',
       charset: 'UTF-8',
-      // A phone without the viewport meta lays the page out 980px wide.
-      layoutWidth: viewport?.width,
     });
+    expect(
+      read.laidOut,
+      `the page is laid out ${read.laidOut}px wide on a ${read.screen}px screen`,
+    ).toBeLessThanOrEqual(read.screen);
     // The copy as written, where WebKit once showed "â€¦" for "…". Read in
     // the click's own task: the page says it there, and its save replaces it.
     const saying = await page.evaluate(() => {
