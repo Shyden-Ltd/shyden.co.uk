@@ -1067,6 +1067,67 @@ test.describe('the Students box becomes a read-out', () => {
     );
   });
 
+  // #390 F68. A locked field cannot be edited, so a refusal of what it holds
+  // cannot hold the shuffle either: the list decides who is grouped. Until
+  // F68 the button went on reading the locked fields, so a number refused
+  // before the list existed kept "Make groups" disabled, described by a
+  // paragraph that had just been hidden and emptied -- a button that will
+  // not move and says nothing about why. Editing a row then re-showed the
+  // refusal, because the form's `input` listener is delegated across the
+  // roster table too. And the recovery direction: once the list is cleared,
+  // the same text is refused again with its reason on screen, not left as a
+  // silently disabled button.
+  test('a locked number field neither holds the shuffle nor shows a refusal', async ({
+    page,
+  }) => {
+    const go = page.getByRole('button', { name: 'Make groups' });
+    const problem = page.locator('#cg-numbers-problem');
+    await page.goto('/classroom-groups');
+
+    // Refused FIRST, so the lock below is a transition away from a standing
+    // refusal rather than a state the page started in.
+    await page.fill('#cg-count', '25');
+    await page.fill('#cg-numbers-absent', '26');
+    await expect(problem).toBeVisible();
+    await expect(go).toBeDisabled();
+
+    await page.locator('#cg-students-toggle').click();
+    await page.getByRole('button', { name: 'Add student' }).click();
+    // The list's own rule, so that only the number fields could hold it.
+    await giveEveryoneASex(page);
+    await expect(page.locator('#cg-numbers-absent')).not.toBeEditable();
+    await expect(problem).toHaveCount(1);
+    await expect(problem).toBeHidden();
+    await expect(go).toBeEnabled();
+    await expect(go).not.toHaveAttribute('aria-describedby', /./);
+    await shoot(
+      page,
+      'locked by the list, the earlier refusal no longer holds the shuffle',
+      page.locator('.number-fields'),
+    );
+
+    // A keystroke in the roster reaches the form's delegated listener.
+    await page
+      .locator('#cg-roster tbody tr')
+      .nth(0)
+      .getByLabel('Name')
+      .fill('Ana');
+    await expect(problem).toBeHidden();
+    await expect(go).toBeEnabled();
+
+    await page.getByRole('button', { name: 'Clear all' }).click();
+    await expect(page.locator('#cg-numbers-absent')).toBeEditable();
+    await expect(problem).toBeVisible();
+    await expect(problem).toHaveText(/^There is no number 26\./);
+    await expect(go).toBeDisabled();
+    await expect(go).toHaveAttribute('aria-describedby', 'cg-numbers-problem');
+    await shoot(
+      page,
+      'unlocked again, the refusal returns with its reason',
+      page.locator('.number-fields'),
+    );
+  });
+
   test('the reason is rendered, not implied', async ({ page }) => {
     await page.goto('/classroom-groups');
     await page.locator('#cg-students-toggle').click();
