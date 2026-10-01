@@ -1196,10 +1196,13 @@ if (form) {
         ? rosterOpenProblem(getRoster().length, readCount(), t)
         : null;
       if (problem) {
+        // Revealed, THEN written: a live region is never announced as
+        // already-populated (updateNumbersValidation's ordering). Written the
+        // other way round, a screen reader said nothing at all (#390 F108).
+        studentsLimitEl.hidden = false;
         if (studentsLimitEl.textContent !== problem) {
           studentsLimitEl.textContent = problem;
         }
-        studentsLimitEl.hidden = false;
         // The section's own open/closed state is untouched: "refuses to
         // open" means exactly that -- `studentsBody.hidden` and
         // `aria-expanded` both stay exactly as they were, so a teacher who

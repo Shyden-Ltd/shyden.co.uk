@@ -113,7 +113,9 @@ test.describe('screen-reader announcements', () => {
     await page.fill('#cg-count', '25');
     await page.fill('#cg-numbers-absent', '26');
 
-    await expect(page.locator('#cg-numbers-problem')).toHaveText(
+    const problem = page.locator('#cg-numbers-problem');
+    await expect(problem).toBeVisible();
+    await expect(problem).toHaveText(
       'There is no number 26. You have 25 students.',
     );
     expect((await opsFor(page, 'cg-numbers-problem')).slice(-2)).toEqual([
@@ -124,6 +126,30 @@ test.describe('screen-reader announcements', () => {
       page,
       'the refusal, revealed before it was written',
       page.locator('#cg-numbers-problem'),
+    );
+  });
+
+  // #390 F108. Student details refuses to open above 100 students, and the
+  // refusal was written into its hidden region and revealed afterwards: the
+  // already-populated appearance screen readers commonly say nothing about.
+  // The whole sequence, because nothing before the click touches the region.
+  test('the refusal to open Student details is announced, not just revealed', async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    await page.fill('#cg-count', '300');
+    await page.locator('#cg-students-toggle').click();
+
+    const limit = page.locator('#cg-students-limit');
+    await expect(limit).toBeVisible();
+    await expect(limit).toHaveText(
+      'Student details holds up to 100 students. Lower the number to list this class individually.',
+    );
+    expect(await opsFor(page, 'cg-students-limit')).toEqual(['show', 'write']);
+    await shoot(
+      page,
+      'the refusal to open Student details, revealed before it was written',
+      limit,
     );
   });
 
@@ -145,12 +171,14 @@ test.describe('screen-reader announcements', () => {
     await page.fill('#cg-count', '8');
     await page.fill('#cg-size', '4');
     // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7. This
-    // click is on #cg-sound-toggle, an element `recordOperations` above
-    // never instruments (it only wraps cg-error/cg-results/cg-summary), so
-    // opening the section here cannot add a spurious entry to `__ops`.
+    // click is on #cg-sound-toggle, which `recordOperations` above never
+    // instruments (it carries no live role and is none of the three named),
+    // and only cg-results and cg-summary are read below, so opening the
+    // section here cannot add a spurious entry to what is compared.
     await page.locator('#cg-sound-toggle').click();
     await page.selectOption('#cg-speed', 'skip');
     await page.click('#cg-go');
+    await expect(page.locator('#cg-summary')).toBeVisible();
     await expect(page.locator('#cg-summary')).toHaveText(
       '2 groups from 8 students.',
     );
