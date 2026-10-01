@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { adb } from '../../scripts/adb.mjs';
 import type { Download } from '@playwright/test';
 
 /**
@@ -46,7 +46,7 @@ export const emptyDeviceDownloadsArgs = (): string[] => [
 ];
 
 export function emptyDeviceDownloads(): void {
-  execFileSync('adb', emptyDeviceDownloadsArgs());
+  adb(emptyDeviceDownloadsArgs());
 }
 
 /**
@@ -69,8 +69,5 @@ export async function deviceDownloadText(download: Download): Promise<string> {
     );
   }
   const path = `${DEVICE_DOWNLOADS}/${download.suggestedFilename()}`;
-  return execFileSync('adb', [
-    'exec-out',
-    `cat ${forDeviceShell(path)}`,
-  ]).toString('utf8');
+  return adb(['exec-out', `cat ${forDeviceShell(path)}`]);
 }

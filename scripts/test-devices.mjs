@@ -53,6 +53,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { constants } from 'node:os';
 import { die, messageOf } from './errors.mjs';
+import { adb } from './adb.mjs';
 import {
   closeSync,
   existsSync,
@@ -582,7 +583,7 @@ export async function confirmServesBuild(url, builtFile) {
 function isAndroidPresent() {
   let raw;
   try {
-    raw = execFileSync('adb', ['devices'], { encoding: 'utf8' });
+    raw = adb(['devices']);
   } catch (error) {
     return `\`adb devices\` failed to run: ${messageOf(error)}`;
   }
@@ -1188,7 +1189,7 @@ async function cleanupAdbTunnels() {
     ['reverse', '--remove-all'],
   ]) {
     try {
-      execFileSync('adb', args, { stdio: 'ignore' });
+      adb(args);
     } catch (error) {
       // No device attached at all makes plain `adb` fail outright -- fine,
       // there is nothing to remove. Anything else is logged, not thrown:

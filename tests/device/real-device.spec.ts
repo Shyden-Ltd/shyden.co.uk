@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { adb } from '../../scripts/adb.mjs';
 import { test, expect } from '../e2e/fixtures';
 
 test('the suite is running on the real phone, not an emulated profile', async ({
@@ -22,8 +22,8 @@ test('the suite is running on the real phone, not an emulated profile', async ({
   // that does print an `Override size` line, the same way `wm density` already does. Using
   // "first match" on one and "last match" on the other -- the original shape of this file --
   // would silently take the wrong value the day a size override appears.
-  const size = execFileSync('adb', ['shell', 'wm', 'size']).toString();
-  const density = execFileSync('adb', ['shell', 'wm', 'density']).toString();
+  const size = adb(['shell', 'wm', 'size']);
+  const density = adb(['shell', 'wm', 'density']);
   const physicalWidth = Number(/(\d+)x\d+\s*$/.exec(size.trim())![1]);
   const physicalDensity = Number(/(\d+)\s*$/.exec(density.trim())![1]);
 
