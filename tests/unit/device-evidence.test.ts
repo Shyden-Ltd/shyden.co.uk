@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -238,6 +244,29 @@ describe('the device leg writes the same evidence every other leg does', () => {
         width: 420,
         height: 912,
       });
+    },
+  );
+
+  // The test above this one never reaches the catch on a Mac: measured,
+  // `sips -g` exits 0 on a file it cannot read (`pixelWidth: <nil>`), so the
+  // size is unknown and the resample is skipped. The catch is reached when the
+  // size reads and the resample itself fails: here a read-only folder, where
+  // `sips -Z` exits 13 and writes nothing.
+  it.runIf(process.platform === 'darwin')(
+    'keeps the capture as it was when the resample itself fails',
+    () => {
+      const dir = join(evidenceDir(), 'read-only');
+      mkdirSync(dir);
+      const capture = join(dir, 'capture.png');
+      const phoneSize = pngOf(1260, 2736);
+      writeFileSync(capture, phoneSize);
+      chmodSync(dir, 0o555);
+      try {
+        expect(shrinkToCssScale(capture)).toBe(false);
+        expect(Buffer.compare(readFileSync(capture), phoneSize)).toBe(0);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
     },
   );
 
