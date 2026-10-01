@@ -350,3 +350,39 @@ test.describe('reduced motion', () => {
     await shoot(page, 'reduced motion: the language band holds still');
   });
 });
+
+test.describe('the ShyTalk phone frame', () => {
+  // #390 F62. The bezel read `var(--line)`, a property defined nowhere, so the
+  // whole border declaration was invalid and computed to `0px none`: the
+  // frame the component describes was never drawn. Its image's aspect-ratio
+  // divided two lengths (`280px / 616px`), which CSS refuses, so it computed
+  // to `auto` and only the width and height attributes held the shape.
+  test('the bezel is drawn and the capture keeps its ratio', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const frame = page.locator('.frame');
+    await expect(frame).toHaveCount(1);
+    const drawn = await frame.evaluate((element) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--border)';
+      document.body.append(probe);
+      const border = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(element);
+      const image = element.querySelector('img');
+      return {
+        width: style.borderTopWidth,
+        style: style.borderTopStyle,
+        color: style.borderTopColor,
+        border,
+        ratio: image ? getComputedStyle(image).aspectRatio : 'no image',
+      };
+    });
+    expect(drawn.style, 'bezel border style').toBe('solid');
+    expect(drawn.width, 'bezel border width').toBe('2px');
+    expect(drawn.color, 'bezel border colour is --border').toBe(drawn.border);
+    expect(drawn.ratio, "the capture's aspect-ratio").toBe('280 / 616');
+    await shoot(page, 'the ShyTalk phone frame draws its bezel');
+  });
+});
