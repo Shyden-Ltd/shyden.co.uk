@@ -454,6 +454,35 @@ export function engineConfig(
 }
 
 /**
+ * The engine's name for the review: `BACK_TRANSLATE_ENGINE` when a run names
+ * one, otherwise the LibreTranslate tag the repo's Dockerfile builds.
+ *
+ * Read from the Dockerfile rather than typed into the workflow (#390 F75):
+ * `back-translation.yml` said `LibreTranslate v1.9.6` by hand, while
+ * Dependabot bumps the image's tag in the Dockerfile, so the first bump would
+ * have published reviews naming an engine that never ran. A Dockerfile that
+ * names no libretranslate image throws: the label is then unknowable, and a
+ * review that guessed it would be the same defect.
+ */
+export function engineName(
+  env: Readonly<Record<string, string | undefined>>,
+  dockerfile: string,
+): string {
+  const named = env.BACK_TRANSLATE_ENGINE;
+  if (named) return named;
+  // A FROM instruction opens its line; a commented-out one does not count.
+  const tag = /^[ \t]*FROM[ \t]+libretranslate\/libretranslate:([^@\s]+)/m.exec(
+    dockerfile,
+  )?.[1];
+  if (tag === undefined)
+    throw new Error(
+      'the Dockerfile names no libretranslate/libretranslate image, so the ' +
+        'review cannot say which engine read it back; set BACK_TRANSLATE_ENGINE',
+    );
+  return `LibreTranslate ${tag}`;
+}
+
+/**
  * Labels are reviewed apart from sentences, at the house rule's boundary:
  * since #114 every label of three words or fewer is audited separately from
  * prose. Measured on #95, this is where the score misleads. Read back word

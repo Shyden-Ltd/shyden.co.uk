@@ -21,6 +21,7 @@ import {
   chrF,
   engineConfig,
   engineLanguages,
+  engineName,
   engineSource,
   isLabel,
   libreTranslateBody,
@@ -531,6 +532,60 @@ describe('sendable: what the engine is sent', () => {
   });
 });
 
+describe('engineName: the engine the Dockerfile builds, unless a run names one', () => {
+  const pinned =
+    'FROM libretranslate/libretranslate:v1.9.6@sha256:' + 'a'.repeat(64);
+
+  it('names the tag the Dockerfile builds, without its digest', () => {
+    expect(engineName({}, `${pinned}\nENV LT_LOAD_ONLY=en\n`)).toBe(
+      'LibreTranslate v1.9.6',
+    );
+  });
+
+  it('reads a tag that carries no digest', () => {
+    expect(
+      engineName({}, 'FROM libretranslate/libretranslate:v2.0.0 AS engine\n'),
+    ).toBe('LibreTranslate v2.0.0');
+  });
+
+  it('never reads a FROM line that is commented out', () => {
+    expect(
+      engineName(
+        {},
+        `# FROM libretranslate/libretranslate:v0.0.1\n  ${pinned}\n`,
+      ),
+    ).toBe('LibreTranslate v1.9.6');
+  });
+
+  it('lets a run name its own engine, and treats an empty name as none', () => {
+    expect(engineName({ BACK_TRANSLATE_ENGINE: 'my-engine' }, pinned)).toBe(
+      'my-engine',
+    );
+    expect(engineName({ BACK_TRANSLATE_ENGINE: '' }, pinned)).toBe(
+      'LibreTranslate v1.9.6',
+    );
+  });
+
+  it('refuses a Dockerfile that names no libretranslate image', () => {
+    expect(() => engineName({}, 'FROM node:24\n')).toThrow(
+      /names no libretranslate\/libretranslate image/,
+    );
+  });
+
+  it("names the repository's own Dockerfile's tag", () => {
+    // Read here by a different route from the one under test: the tag is
+    // what sits between the image's ':' and its '@' on the FROM line.
+    const dockerfile = readFileSync('docker/libretranslate/Dockerfile', 'utf8');
+    const from = dockerfile
+      .split('\n')
+      .find((line) => line.startsWith('FROM libretranslate/libretranslate:'));
+    expect(from, 'the Dockerfile has a FROM line').toBeDefined();
+    const tag = from!.split(':')[1]!.split('@')[0]!;
+    expect(tag).toMatch(/^v\d+\.\d+\.\d+$/);
+    expect(engineName({}, dockerfile)).toBe(`LibreTranslate ${tag}`);
+  });
+});
+
 describe('engineConfig: a missing engine fails loudly', () => {
   it('refuses to run without an engine address', () => {
     expect(() => engineConfig({})).toThrow(/BACK_TRANSLATE_URL/);
@@ -966,6 +1021,20 @@ describe('scripts/i18n-back-translate.mjs', () => {
     ).toBe('libretranslate/libretranslate:v1.6.2');
   });
 
+  // #390 F75. The workflow no longer types the version, so a run that names
+  // no engine must take it from the Dockerfile Dependabot bumps.
+  it('names the engine the Dockerfile builds when a run names none', async () => {
+    const engine = await standIn({});
+    const result = await run({ BACK_TRANSLATE_URL: engine.url });
+    expect(result.status, result.output).toBe(0);
+    const built = engineName(
+      {},
+      readFileSync('docker/libretranslate/Dockerfile', 'utf8'),
+    );
+    expect(built).toMatch(/^LibreTranslate v\d/);
+    expect(summary()).toContain(`read back into English by **${built}**, `);
+  });
+
   it('prints the review when there is no job summary to write it to', async () => {
     const engine = await standIn({});
     const result = await run({
@@ -974,7 +1043,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     });
     expect(result.status, result.output).toBe(0);
     expect(result.output).toMatch(
-      /^Every translated locale, read back into English by \*\*LibreTranslate\*\*, /m,
+      /^Every translated locale, read back into English by \*\*LibreTranslate v\d+\.\d+\.\d+\*\*, /m,
     );
     expect(existsSync(dir)).toBe(true);
     expect(existsSync(join(dir, 'summary.md'))).toBe(false);

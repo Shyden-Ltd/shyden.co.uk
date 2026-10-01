@@ -2270,11 +2270,17 @@ describe('the back-translation review', () => {
   const parsed = () =>
     parseCleanYaml(workflow(FILE), FILE) as {
       on?: Record<string, { paths?: string[] } | null>;
+      env?: Record<string, unknown>;
       jobs?: Record<
         string,
         {
           'continue-on-error'?: unknown;
-          steps?: { 'continue-on-error'?: unknown }[];
+          env?: Record<string, unknown>;
+          steps?: {
+            name?: string;
+            'continue-on-error'?: unknown;
+            env?: Record<string, unknown>;
+          }[];
         }
       >;
     };
@@ -2295,6 +2301,28 @@ describe('the back-translation review', () => {
       /^\s*docker build\b[^\n]*\sdocker\/libretranslate\s*$/m,
     );
     expect(existsSync('docker/libretranslate/Dockerfile')).toBe(true);
+  });
+
+  // #390 F75. The review names its engine from the Dockerfile (`engineName`),
+  // which Dependabot bumps. A version typed here stops being true on the
+  // first bump, so the workflow may not set one at any level.
+  it('lets the script name the engine from its Dockerfile', () => {
+    const workflowFile = parsed();
+    const job = workflowFile.jobs?.review;
+    const steps = job?.steps ?? [];
+    const typed = [
+      ['the workflow', workflowFile.env],
+      ['the review job', job?.env],
+      ...steps.map(
+        (step) => [step.name ?? '(unnamed step)', step.env] as const,
+      ),
+    ]
+      .filter(([, env]) => env?.BACK_TRANSLATE_ENGINE !== undefined)
+      .map(([where]) => where);
+    expect(
+      searched(typed, { of: steps, what: 'review steps' }),
+      'BACK_TRANSLATE_ENGINE typed into the workflow',
+    ).toEqual([]);
   });
 
   it('can go red: nothing in it continues on error', () => {
