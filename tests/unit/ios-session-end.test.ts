@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { endSession } from '../device/ios/session';
+import { withoutTsComments } from './source-text';
 
 /**
  * How the iOS leg lets go of the one session the phone allows (#390).
@@ -89,5 +91,29 @@ describe('endSession', () => {
       'clear the marker',
       'stop safaridriver',
     ]);
+  });
+});
+
+/**
+ * The call sites need the iPhone, so no test here can run them: mutation ES6
+ * rewound one of `startIosSession`'s failure paths to the old defect and every
+ * test above stayed green. What can be held without a phone is the shape: the
+ * marker is cleared by `endSession`, on a confirmed delete, and otherwise only
+ * once, at the start of a run, before any session exists.
+ */
+describe('the session marker is cleared in one place', () => {
+  it('outside endSession, only by the start-of-run clear', () => {
+    const source = withoutTsComments(
+      readFileSync('tests/device/ios/session.ts', 'utf8'),
+    );
+    // The positive control: this is the file that owns the marker.
+    expect(source).toContain('function clearSessionMarker(): void');
+
+    const statements = source.match(/\bclearSessionMarker\(\);/g) ?? [];
+    expect(
+      statements,
+      'a second clear is a path that can erase the marker of a session it ' +
+        'never confirmed deleted; end the session through endSession instead',
+    ).toEqual(['clearSessionMarker();']);
   });
 });
