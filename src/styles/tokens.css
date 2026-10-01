@@ -454,11 +454,19 @@ main:focus {
   outline: none;
 }
 
+/* Reduced motion. A short duration alone does not stop an `infinite`
+   animation: it runs a whole cycle every hundredth of a millisecond, and the
+   homepage's language band was painted at a different offset on every frame
+   in Firefox -- a strobe for exactly the visitors who asked for less motion
+   (#390 F61, 'the language band holds still when motion is reduced' in
+   homepage.spec.ts). One iteration lets every animation finish at once, and
+   its end event still fires for any script that waits on it. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
