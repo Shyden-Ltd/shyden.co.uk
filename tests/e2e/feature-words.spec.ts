@@ -30,8 +30,10 @@ test.use(recorded);
  * language it was corrected in, and photographed for the evidence page.
  *
  * Every expectation is built from the catalogue with the functions the page
- * itself calls -- `renderError` for a refusal, `importFile` for a CSV's
- * problems -- so the pins stay the one place the approved words are written.
+ * itself calls -- `renderError` for a refusal, `importFile` for a faulty
+ * CSV's row problems -- so the pins stay the one place the approved words are
+ * written. A refusal of the whole file is the one key it must be, never
+ * whatever `importFile` returns first.
  *
  * Not reached here, and held by the unit guard and the pins instead: the
  * seven pin messages (the page has no pin control yet), the three
@@ -280,6 +282,9 @@ test.describe('the sentences corrected on #319', () => {
         clash,
       );
 
+      // Every problem the page lists after an import, in order.
+      const listed = tool.locator('#cg-io-problems li');
+
       // A file in the page's own language, with one fault on every row.
       await tool.locator('#cg-io-toggle').click();
       const faulty = [
@@ -296,6 +301,7 @@ test.describe('the sentences corrected on #319', () => {
         : parsed.problems.map(({ message }) => message);
       expect(problems.length).toBeGreaterThan(3);
       await upload(tool, 'faulty.csv', faulty);
+      await expect(listed).toHaveText(problems);
       for (const problem of problems)
         await expectVisibleText(
           tool.getByText(problem, { exact: true }),
@@ -307,16 +313,24 @@ test.describe('the sentences corrected on #319', () => {
         tool.getByText(problems[0] ?? '', { exact: true }).locator('xpath=..'),
       );
 
+      // A whole-file refusal is named by its key, not taken from whatever
+      // importFile puts first: a file in another language that stopped being
+      // recognised would fall through to "no number column", and the page
+      // agreeing with that would still pass (#390 F122). Each stands alone,
+      // and the replace warning a roster with work in it would get never opens.
+      const replaceWarning = tool.locator('#cg-io-confirm');
+
       // A file with no number column at all.
       const numberless = [
         [columns.name, columns.absent].join(','),
         `${NAMES[0]},`,
       ].join('\n');
-      const refused = importFile(numberless, locale, t);
-      const reason = refused.ok ? '' : (refused.problems[0]?.message ?? '');
-      expect(reason).not.toBe('');
+      const reason = t.csvProblemNoNumberColumn;
       await upload(tool, 'numberless.csv', numberless);
       await expectVisibleText(tool.getByText(reason, { exact: true }), reason);
+      await expect(listed).toHaveText([reason]);
+      await expect(replaceWarning).toHaveCount(1);
+      await expect(replaceWarning).toBeHidden();
       await shoot(
         tool,
         `${locale}: a class list with no number column is refused`,
@@ -328,11 +342,15 @@ test.describe('the sentences corrected on #319', () => {
         Object.values(CSV_LOCALES.en.columns).join(','),
         `1,${NAMES[0]},F,,,`,
       ].join('\n');
-      const foreign = importFile(english, locale, t);
-      const why = foreign.ok ? '' : (foreign.problems[0]?.message ?? '');
-      expect(why).not.toBe('');
+      const why = t.csvWrongLanguage({
+        language: t.csvLanguageName.en,
+        version: t.csvLanguageVersion.en,
+      });
       await upload(tool, 'english.csv', english);
       await expectVisibleText(tool.getByText(why, { exact: true }), why);
+      await expect(listed).toHaveText([why]);
+      await expect(replaceWarning).toHaveCount(1);
+      await expect(replaceWarning).toBeHidden();
       await shoot(
         tool,
         `${locale}: an English class list is refused with “${why}”`,
