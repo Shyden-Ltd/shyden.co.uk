@@ -50,3 +50,22 @@ describe.each(HOMES)('no file spawns $tool but $home', ({ tool, home }) => {
     ).toBe(true);
   });
 });
+
+/**
+ * The runner and the Android preflight each read `adb devices` themselves, and
+ * disagreed: the runner takes the phone `ANDROID_SERIAL` names among several,
+ * while the preflight refused any listing that was not exactly one ready
+ * device, so a two-phone setup the runner accepts failed preflight test 1.
+ * Both now ask `androidAbsence`, beside the `adb` it reads (#390).
+ */
+describe('`adb devices` is read in one place', () => {
+  it('only scripts/adb.mjs decides which listed device is ready', () => {
+    const readsState = /\bstate\s*(?:===|:)\s*['"]device['"]/;
+    const reading = files.filter((file) =>
+      readsState.test(withoutTsComments(readFileSync(file, 'utf8'))),
+    );
+    expect(
+      searched(reading, { of: files, what: 'files under tests/ and scripts/' }),
+    ).toEqual(['scripts/adb.mjs']);
+  });
+});

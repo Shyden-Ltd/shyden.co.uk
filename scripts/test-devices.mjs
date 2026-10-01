@@ -53,7 +53,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { constants } from 'node:os';
 import { die, messageOf } from './errors.mjs';
-import { adb } from './adb.mjs';
+import { adb, androidAbsence } from './adb.mjs';
 import { listDevices, pickIphone } from './devicectl.mjs';
 import {
   closeSync,
@@ -564,13 +564,12 @@ export async function confirmServesBuild(url, builtFile) {
 // ── device presence: real checks, not a config flag ────────────────────
 
 /**
- * `adb devices`, parsed the same way `tests/device/android-preflight.setup.ts`
- * asserts it (state must be exactly `device`, not merely present-but-locked
- * or unauthorized). Not imported from that file -- it is a Playwright test,
- * not an exported function, and plain Node cannot load this project's other
- * device-facing TypeScript either way (see `isIosPresent`'s comment
- * for the measured reason). A self-contained, cross-referenced duplicate of
- * this same `adb devices` parsing, kept deliberately small.
+ * `adb devices`, read through `androidAbsence` in `scripts/adb.mjs`, which
+ * `tests/device/android-preflight.setup.ts` asks too (state must be exactly
+ * `device`, not merely present-but-locked or unauthorized). The two used to
+ * parse it separately and disagreed: the preflight refused any listing that
+ * was not exactly one ready device, so a second phone failed it even with
+ * `ANDROID_SERIAL` choosing between them (#390).
  *
  * `ANDROID_SERIAL` (a real, standard adb environment variable) disambiguates
  * when more than one device is attached, the same role `IOS_UDID` plays for
@@ -589,45 +588,6 @@ function isAndroidPresent() {
     return `\`adb devices\` failed to run: ${messageOf(error)}`;
   }
   return androidAbsence(raw, process.env.ANDROID_SERIAL);
-}
-
-/**
- * Why no Android phone can be driven, read from `adb devices` output, or
- * `null` when exactly one is ready. `serial` is `ANDROID_SERIAL`, passed in so
- * the decision can be run without a phone (#390).
- *
- * @param {string} raw
- * @param {string | undefined} serial
- * @returns {string | null}
- */
-export function androidAbsence(raw, serial) {
-  const devices = raw
-    .split('\n')
-    .slice(1) // drop the "List of devices attached" header line
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [serial, state] = line.split(/\s+/);
-      return { serial, state };
-    });
-
-  const ready = devices.filter((d) => d.state === 'device');
-  const matching = serial ? ready.filter((d) => d.serial === serial) : ready;
-
-  if (matching.length === 0) {
-    return serial
-      ? `\`adb devices\` did not list serial ${serial} (from ANDROID_SERIAL) in state 'device' -- ` +
-          `seen: ${JSON.stringify(devices)}`
-      : `\`adb devices\` listed no device in state 'device' (unplugged, asleep, offline, or ` +
-          `unauthorized otherwise) -- seen: ${JSON.stringify(devices)}`;
-  }
-  if (matching.length > 1) {
-    return (
-      `expected exactly one ready Android device -- found ${matching.length}: ` +
-      `${JSON.stringify(matching)}. Set ANDROID_SERIAL to disambiguate.`
-    );
-  }
-  return null;
 }
 
 /**

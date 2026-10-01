@@ -1,7 +1,7 @@
 import { chmodSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ADB_TIMEOUT_MS, adb } from '../../scripts/adb.mjs';
+import { ADB_TIMEOUT_MS, adb, androidAbsence } from '../../scripts/adb.mjs';
 import { scratchDir } from '../scratch-dir';
 
 /**
@@ -57,5 +57,52 @@ describe('adb()', () => {
 
   it('allows fifteen seconds by default', () => {
     expect(ADB_TIMEOUT_MS).toBe(15_000);
+  });
+});
+
+describe('androidAbsence: a phone is present only when adb calls it ready', () => {
+  const listing = (...lines: string[]) =>
+    ['List of devices attached', ...lines, ''].join('\n');
+
+  it('finds one ready phone', () => {
+    expect(androidAbsence(listing('R58M123\tdevice'), undefined)).toBeNull();
+  });
+
+  it('refuses a phone that is attached but not ready, listing what it saw', () => {
+    expect(
+      androidAbsence(
+        listing('R58M123\tunauthorized', 'emulator-5554\toffline'),
+        undefined,
+      ),
+    ).toBe(
+      "`adb devices` listed no device in state 'device' (unplugged, asleep, offline, or unauthorized otherwise) -- seen: " +
+        '[{"serial":"R58M123","state":"unauthorized"},{"serial":"emulator-5554","state":"offline"}]',
+    );
+  });
+
+  it('refuses no phone at all', () => {
+    expect(androidAbsence(listing(), undefined)).toContain('seen: []');
+  });
+
+  it('refuses two ready phones without a serial to choose', () => {
+    expect(
+      androidAbsence(listing('R58M123\tdevice', 'R58M456\tdevice'), undefined),
+    ).toBe(
+      'expected exactly one ready Android device -- found 2: ' +
+        '[{"serial":"R58M123","state":"device"},{"serial":"R58M456","state":"device"}]. Set ANDROID_SERIAL to disambiguate.',
+    );
+  });
+
+  it('takes the phone ANDROID_SERIAL names among two', () => {
+    expect(
+      androidAbsence(listing('R58M123\tdevice', 'R58M456\tdevice'), 'R58M456'),
+    ).toBeNull();
+  });
+
+  it('refuses a serial that is not attached, naming it', () => {
+    expect(androidAbsence(listing('R58M123\tdevice'), 'R58M999')).toBe(
+      "`adb devices` did not list serial R58M999 (from ANDROID_SERIAL) in state 'device' -- " +
+        'seen: [{"serial":"R58M123","state":"device"}]',
+    );
   });
 });
