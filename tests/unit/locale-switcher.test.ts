@@ -5,9 +5,9 @@ import {
   LOCALES,
   otherLocales,
   DEFAULT_LOCALE,
-} from '../../src/lib/i18n/index';
+  getStrings,
+} from '../../src/lib/i18n';
 import { siteEn, siteId } from '../../src/lib/i18n/site';
-import { getStrings } from '../../src/lib/i18n';
 
 // The catalogues as a page receives them: every message compiled into a
 // function of its named slots (#136). A raw catalogue holds templates.

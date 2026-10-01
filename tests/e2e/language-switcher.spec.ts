@@ -5,8 +5,8 @@ import {
   getSiteStrings,
   localisePath,
   type Locale,
+  otherLocales,
 } from '../../src/lib/i18n';
-import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';

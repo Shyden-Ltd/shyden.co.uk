@@ -31,12 +31,22 @@ function repeatedImports(sf: ts.SourceFile): string[] {
     if (clause === undefined) continue;
     if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings))
       continue;
-    const specifier = (statement.moduleSpecifier as ts.StringLiteral).text;
+    const specifier = moduleOf(
+      (statement.moduleSpecifier as ts.StringLiteral).text,
+    );
     const typeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
     const key = `${typeOnly ? 'type ' : ''}${specifier}`;
     seen.set(key, (seen.get(key) ?? 0) + 1);
   }
   return [...seen].filter(([, n]) => n > 1).map(([key]) => key);
+}
+
+/**
+ * One spelling per module: `./i18n`, `./i18n/index` and `./i18n/index.ts` all
+ * name the same file, and a test once imported the same module as two of them.
+ */
+function moduleOf(specifier: string): string {
+  return specifier.replace(/\.(?:ts|mjs|js)$/, '').replace(/\/index$/, '');
 }
 
 const repeatsIn = (text: string, file = 'case.ts'): string[] =>
@@ -110,6 +120,14 @@ describe('repeatedImports reads declarations, not text', () => {
     ].join('\n');
     expect(fileRepeats('case.astro', component)).toEqual([]);
     expect(fileRepeats('case.ts', component)).toEqual(['./m']);
+  });
+
+  it('names one module imported through two spellings', () => {
+    expect(
+      repeatsIn(
+        "import { a } from '../m/index';\nimport { b } from '../m';\nimport { c } from '../m/index.ts';\n",
+      ),
+    ).toEqual(['../m']);
   });
 
   it('keeps different modules apart', () => {
