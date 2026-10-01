@@ -213,7 +213,15 @@ test('/vi/classroom-groups: one report at a time, and Send comes back for the ne
     page.locator('[data-report]'),
   );
 
-  await Promise.all([page.waitForResponse('**/api/report'), send.click()]);
+  // A predicate, not the `'**/api/report'` glob: waitForResponse resolves a
+  // string against baseURL, which the device fixtures do not patch for it
+  // (baseurl-guard.spec.ts).
+  await Promise.all([
+    page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith('/api/report'),
+    ),
+    send.click(),
+  ]);
   expect(routed, 'two submissions at once sent more than one report').toBe(2);
 });
 
