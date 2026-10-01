@@ -158,6 +158,16 @@ describe('the WebDriver wire layer, in the shapes measured from safaridriver', (
     );
   });
 
+  it('refuses JSON with no value envelope, rather than reading it as not ready', async () => {
+    const { url } = await serverAnswering(() =>
+      JSON.stringify({ ready: true }),
+    );
+
+    await expect(WebDriver.isReady(url)).rejects.toThrow(
+      'HTTP 200 with no WebDriver "value" envelope: {"ready":true}',
+    );
+  });
+
   it('refuses a body that is not JSON, naming the status and quoting the body', async () => {
     const { url } = await serverAnswering(() => '<html>proxy error</html>');
 
