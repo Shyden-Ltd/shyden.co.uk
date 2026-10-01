@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { deployedRoutes } from '../site-pages';
+import { withoutMarkupComments } from '../unit/source-text';
 
 /**
  * The production smoke: status codes, page inventory, and strings in the
@@ -37,6 +38,14 @@ test.describe('the production smoke', () => {
       const page = await served(request, path);
       expect(page.status, `${path} HTTP status`).toBe(200);
       expect(page.body.length, `${path} body bytes`).toBeGreaterThan(2000);
+      // A markup comment in `.astro` ships to every visitor; a `{/* */}` one
+      // compiles to nothing. /classroom-groups served 32 KB of engineering
+      // notes, 55% of its English page, and one quoted the form's own tag,
+      // which is the marker the form check below looks for (#390).
+      expect(
+        page.body.length - withoutMarkupComments(page.body).length,
+        `${path} ships bytes of HTML comment`,
+      ).toBe(0);
     });
   }
 
