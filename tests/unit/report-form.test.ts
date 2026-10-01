@@ -29,4 +29,14 @@ describe('outcomeOf', () => {
     expect(await outcomeOf(json(null, 200))).toBe('failed');
     expect(await outcomeOf(json(['sent'], 200))).toBe('failed');
   });
+
+  // #390 RF4. An outcome is one of the record's OWN keys. Read with `in`, the
+  // names every object inherits passed as outcomes, and the page then looked
+  // for a status nobody wrote.
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'reads failed from the inherited name %s',
+    async (outcome) => {
+      expect(await outcomeOf(json({ outcome }, 200))).toBe('failed');
+    },
+  );
 });

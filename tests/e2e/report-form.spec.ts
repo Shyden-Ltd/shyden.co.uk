@@ -170,6 +170,61 @@ test('/vi/classroom-groups submits in place: failed shows, takes focus, and the 
   );
 });
 
+// #390 RF1/RF2. "One submission at a time" and "Send comes back for the next
+// report" were held by nothing: deleting the pending guard, or never
+// re-enabling the button, passed every test. The first submit is held at the
+// network so a second can try to start beside it. Two `requestSubmit` calls
+// reach the script even while the button is disabled, which is the very case
+// the guard exists for. The count is read only after a THIRD submission has
+// answered, so every earlier request has already been routed: 2 means the
+// pair sent one, 3 means it sent two.
+test('/vi/classroom-groups: one report at a time, and Send comes back for the next', async ({
+  page,
+}) => {
+  const t = getSiteStrings('vi').report;
+  let routed = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/report', async (route) => {
+    routed += 1;
+    if (routed === 1) await held;
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ outcome: 'failed' }),
+    });
+  });
+  await page.goto(pagePath('classroom-groups', 'vi'));
+  await page.locator('[data-report] summary').click();
+  await page.getByLabel(t.quoteLabel, { exact: true }).fill(t.open);
+  const send = page.getByRole('button', { name: t.send });
+
+  await page.locator('[data-report-form]').evaluate((form: HTMLFormElement) => {
+    form.requestSubmit();
+    form.requestSubmit();
+  });
+  await expect(send).toBeDisabled();
+  release();
+  await expect(page.locator('#report-failed')).toBeVisible();
+  await expect(send).toBeEnabled();
+  await shoot(
+    page,
+    'Send is back once the answer arrives',
+    page.locator('[data-report]'),
+  );
+
+  // A predicate, not the `'**/api/report'` glob: waitForResponse resolves a
+  // string against baseURL, which the device fixtures do not patch for it
+  // (baseurl-guard.spec.ts).
+  await Promise.all([
+    page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith('/api/report'),
+    ),
+    send.click(),
+  ]);
+  expect(routed, 'two submissions at once sent more than one report').toBe(2);
+});
+
 test('/vi/classroom-groups: sending a report makes no request off the site (AC11)', async ({
   page,
 }) => {

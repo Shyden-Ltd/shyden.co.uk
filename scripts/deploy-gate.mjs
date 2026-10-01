@@ -13,9 +13,10 @@ import { die, messageOf } from './errors.mjs';
  * a failure that posts no red gate and reads as "nothing happened" (#155).
  *
  * The obvious fix does not work, and finding that out first is what produced
- * this design. `ci.yml` triggers on `pull_request` ONLY, so it has never run
- * against a merge commit: there is no `build-and-test` status sitting there to
- * read, and a gate querying `/statuses` would find nothing at all.
+ * this design. `ci.yml` never runs on a push (its triggers are `pull_request`
+ * and the dispatch path's `workflow_call`), so a merge commit that a push
+ * delivers carries no `build-and-test` status to read, and a gate querying
+ * `/statuses` would find nothing at all.
  *
  * What is true is that `develop` sets `strict: true`, so a PR cannot merge
  * unless it is up to date with its base — which makes the merge commit's TREE

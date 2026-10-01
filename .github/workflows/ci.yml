@@ -51,10 +51,11 @@ concurrency:
 # settings rather than in source, and can be widened again by a change no
 # diff here would show. This workflow reads a checkout and runs a suite.
 #
-# `e2e`, `sanity-on-build`, `build-and-test` and `visual` inherit exactly this
-# and need nothing more. `checks` keeps its own block, because a job block REPLACES the
-# inherited set rather than adding to it: dropping it would take `issues: read`
-# with it and blind the dependabot-label step (#299). Every artifact upload is
+# Every job but `checks` inherits exactly this and needs nothing more; a list
+# of them named here once already left out `functions` (#390). `checks` keeps
+# its own block, because a job block REPLACES the inherited set rather than
+# adding to it: dropping it would take `issues: read` with it and blind the
+# dependabot-label step (#299). Every artifact upload is
 # unaffected -- they authenticate with the runner's own runtime token, not this
 # one, which is invisible on a green run and so was proved on a RED one (#301
 # AC2) -- and so is build-and-test's download of this run's own artifacts.

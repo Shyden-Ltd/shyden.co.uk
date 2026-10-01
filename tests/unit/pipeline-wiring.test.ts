@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { LOCALES, DEFAULT_LOCALE, localisePath } from '../../src/lib/i18n';
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
@@ -22,7 +21,6 @@ import playwrightConfig, {
   VISUAL_MEASURE_PROJECT,
   VISUAL_PROJECT,
 } from '../../playwright.config';
-import { sitePaths } from '../site-pages';
 import {
   checkoutSteps,
   inheritedPermissionsFindings,
@@ -409,45 +407,16 @@ describe('the deploy pipeline runs what it claims to', () => {
     expect(prod).toContain("grep -rnIE '\\[\\[[^]]{1,60}\\]\\]' dist/");
   });
 
-  // Every page, every locale. The smoke checked the homepage and the
-  // calculator only, and would have passed with the Classroom Group Creator
-  // 404ing — through the entire release that rebuilt it.
-  //
-  // DERIVED since #21 Stage 4, from LOCALES and from the routes on disk. The
-  // hand-written list this replaces named five paths and was correct for two
-  // locales; it would have gone on passing while `/zh/glory-points` 404'd
-  // through a whole release, because a list cannot check that it is still the
-  // whole list.
-  //
-  // An EXACT SET comparison against the paths the loop actually iterates, not
-  // `prod.includes(path)`. A substring check here is worse than no check: the
-  // English `/glory-points` is a substring of the Indonesian
-  // `/id/glory-points`, so the English assertion passes on the Indonesian
-  // path, and mutating a path to `/id/glory-pointsXX` leaves it green. That
-  // vacuity was real and was caught by mutating this guard, not by reading it.
-  // Set equality also catches a path the routes no longer serve.
-  it('the prod smoke covers every page in every locale', () => {
-    const prod = workflowSteps('deploy-prod.yml');
-    const loop = /for path in ([^;]+); do/.exec(prod);
-    expect(loop, 'the prod smoke no longer loops over a path list').not.toBe(
-      null,
-    );
-    const fetched = new Set(loop![1].trim().split(/\s+/));
-
-    // The default locale's homepage is fetched on its own as `$BASE/`,
-    // because the smoke greps that response for the footer and the ShyTalk
-    // link. Everything else goes through the loop.
-    const home = localisePath('/', DEFAULT_LOCALE);
-    expect(prod, 'the homepage is no longer fetched').toContain('"$BASE/"');
-
-    const expected = new Set<string>();
-    for (const locale of LOCALES) {
-      for (const page of sitePaths()) {
-        const path = localisePath(page, locale);
-        if (path !== home) expected.add(path);
-      }
-    }
-    expect([...fetched].sort()).toEqual([...expected].sort());
+  // Every page, every locale, and before a release as well as after one. The
+  // smoke was a curl step in deploy-prod.yml with a hand-written path list,
+  // held to LOCALES by a guard here, and it first met a build that was already
+  // live: #370 took the company number off the site and the smoke went on
+  // requiring it (#390). It is tests/prod/prod-smoke.spec.ts now, deriving its
+  // routes, so the prod config's run carries it after a deploy and
+  // `sanity-on-build` carries it on every pull request.
+  it('the prod smoke is a spec in the suite that gates prod-verified', () => {
+    expect(existsSync('tests/prod/prod-smoke.spec.ts')).toBe(true);
+    expect(workflowSteps('deploy-prod.yml')).not.toMatch(/curl /);
   });
 
   // The deploy-before-merge workflow is GONE. It survived exactly one merge
@@ -1125,9 +1094,6 @@ describe('the deploy pipeline runs what it claims to', () => {
       prod,
       'a prod check still runs against the Basic-auth-locked deployment alias',
     ).not.toMatch(/shyden-site\.pages\.dev/);
-    expect(prod, 'the curl smoke does not target the apex').toMatch(
-      /BASE="https:\/\/shyden\.co\.uk"/,
-    );
     expect(prod, 'the browser run does not target the apex').toMatch(
       /WEB_BASE_URL:\s*https:\/\/shyden\.co\.uk/,
     );
@@ -1242,9 +1208,24 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     const { version } = JSON.parse(
       readFileSync('node_modules/@playwright/test/package.json', 'utf8'),
     ) as { version: string };
+    const pinned = `mcr.microsoft.com/playwright:v${version}-noble`;
     expect(withoutCommentLines(workflow('ci.yml'), '#')).toContain(
-      `image: mcr.microsoft.com/playwright:v${version}-noble`,
+      `image: ${pinned}`,
     );
+    // And every other place a workflow names it says the same. The visual
+    // job's step summary types the image a second time, and a bump that
+    // reaches only the `container:` line leaves that summary recording an
+    // image the run never used (#390). The `image:` line above guarantees
+    // at least one name, so the set cannot be empty.
+    const named = workflowFileNames()
+      .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+      .flatMap(
+        (name) =>
+          withoutCommentLines(workflow(name), '#').match(
+            /mcr\.microsoft\.com\/playwright:[\w.-]+/g,
+          ) ?? [],
+      );
+    expect(new Set(named)).toEqual(new Set([pinned]));
   });
 
   it('runs the visual project, with the switch that declares it', () => {
@@ -2270,11 +2251,17 @@ describe('the back-translation review', () => {
   const parsed = () =>
     parseCleanYaml(workflow(FILE), FILE) as {
       on?: Record<string, { paths?: string[] } | null>;
+      env?: Record<string, unknown>;
       jobs?: Record<
         string,
         {
           'continue-on-error'?: unknown;
-          steps?: { 'continue-on-error'?: unknown }[];
+          env?: Record<string, unknown>;
+          steps?: {
+            name?: string;
+            'continue-on-error'?: unknown;
+            env?: Record<string, unknown>;
+          }[];
         }
       >;
     };
@@ -2295,6 +2282,33 @@ describe('the back-translation review', () => {
       /^\s*docker build\b[^\n]*\sdocker\/libretranslate\s*$/m,
     );
     expect(existsSync('docker/libretranslate/Dockerfile')).toBe(true);
+  });
+
+  // #390 F75. The review names its engine from the Dockerfile (`engineName`),
+  // which Dependabot bumps. A version typed here stops being true on the
+  // first bump, so the workflow may not set one at any level.
+  it('lets the script name the engine from its Dockerfile', () => {
+    const workflowFile = parsed();
+    const job = workflowFile.jobs?.review;
+    const steps = job?.steps ?? [];
+    const typed = [
+      ['the workflow', workflowFile.env],
+      ['the review job', job?.env],
+      ...steps.map(
+        (step) => [step.name ?? '(unnamed step)', step.env] as const,
+      ),
+    ]
+      // `env` may also be one expression string, which can carry it too.
+      .filter(([, env]) =>
+        typeof env === 'string'
+          ? env.includes('BACK_TRANSLATE_ENGINE')
+          : env?.BACK_TRANSLATE_ENGINE !== undefined,
+      )
+      .map(([where]) => where);
+    expect(
+      searched(typed, { of: steps, what: 'review steps' }),
+      'BACK_TRANSLATE_ENGINE typed into the workflow',
+    ).toEqual([]);
   });
 
   it('can go red: nothing in it continues on error', () => {

@@ -68,7 +68,6 @@ jobs:
       - name: Read every locale back into English
         env:
           BACK_TRANSLATE_URL: http://localhost:5000
-          BACK_TRANSLATE_ENGINE: LibreTranslate v1.9.6
           BACK_TRANSLATE_REPORT: back-translation.json
         run: node scripts/i18n-back-translate.mjs
       - name: Keep every comparison

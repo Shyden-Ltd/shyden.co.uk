@@ -106,6 +106,9 @@ export interface RosterHandlers {
 export type PrintColumn =
   'number' | 'name' | 'sex' | 'absent' | 'together' | 'apart';
 
+/** Every column a roster row has: the six that print, and Remove, which never does. */
+type RosterColumn = PrintColumn | 'remove';
+
 /**
  * A roster cell that carries the column it belongs to.
  *
@@ -114,9 +117,11 @@ export type PrintColumn =
  * and printed Absent, "a sheet that silently answered a different question
  * than the tick box asked" -- and #253 then shipped the same defect class in
  * the mirror mapping. A cell that declares its own identity cannot be
- * re-pointed by reordering the row, which is what #253 AC2 asks for.
+ * re-pointed by reordering the row, which is what #253 AC2 asks for. #253
+ * named only the Absent rule; the letters box and Remove kept their ordinals
+ * until #390 F73.
  */
-const columnCell = (column: PrintColumn): HTMLTableCellElement => {
+const columnCell = (column: RosterColumn): HTMLTableCellElement => {
   const td = document.createElement('td');
   td.dataset.col = column;
   return td;
@@ -568,7 +573,7 @@ function buildRow(
   // uncommitted edit to a DIFFERENT row (a name or number mid-keystroke,
   // which never itself re-renders) must still be in the array this filter
   // runs against, or removing one row would silently discard it.
-  const removeTd = document.createElement('td');
+  const removeTd = columnCell('remove');
   const removeButton = button(t.rosterRemove, 'cg-remove-student');
   removeButton.addEventListener('click', () => {
     handlers.onRemove(getRoster().filter((_, i) => i !== index));
@@ -646,9 +651,10 @@ export function renderRoster(
   // Absent FIRST (operator, 2026-08-13). It is the column a teacher touches
   // at the start of a lesson, before anything else on the row matters, and it
   // was buried in the middle. Every positional rule that depends on this
-  // order — the card layout's `.cg-student > td:nth-child(1..7)`, the table's
-  // `col:nth-child(1..7)` widths, and the print letters rule — moves with it,
-  // in ClassroomGroupsPage.astro.
+  // order — the card layout's `.cg-student > td:nth-child(1..7)` and the
+  // table's `col:nth-child(1..7)` widths — moves with it, in
+  // ClassroomGroupsPage.astro. The print rules do not: they name each column
+  // by its `data-col` (#253, #390 F73).
   const headings: readonly (readonly [PrintColumn, string])[] = [
     ['absent', t.rosterColAbsent],
     ['number', t.rosterColNumber],
@@ -703,6 +709,7 @@ export function renderRoster(
   // loop just above).
   const removeTh = document.createElement('th');
   removeTh.scope = 'col';
+  removeTh.dataset.col = 'remove' satisfies RosterColumn;
   const removeHeading = document.createElement('span');
   removeHeading.className = 'cg-roster-remove-heading';
   removeHeading.textContent = t.rosterRemove;
