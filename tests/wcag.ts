@@ -85,3 +85,17 @@ export const over = (fg: RGBA, ground: RGB): RGB =>
   [0, 1, 2].map((i) =>
     Math.round(fg.alpha * fg.rgb[i] + (1 - fg.alpha) * ground[i]),
   ) as unknown as RGB;
+
+/**
+ * The ground text is actually painted on. `grounds` is every background from
+ * the text's own element outward, nearest first, as the browser computes
+ * them: each is composited over the layers behind it, and the deepest over
+ * the white canvas, so an opaque layer hides whatever it covers. Stopping at
+ * the first background and putting it over white scored a translucent layer
+ * as if it sat on paper (#390 F127).
+ */
+export const paintedGround = (grounds: readonly RGBA[]): RGB =>
+  grounds.reduceRight<RGB>(
+    (behind, layer) => over(layer, behind),
+    [255, 255, 255],
+  );

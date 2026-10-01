@@ -14,6 +14,10 @@ import {
   onRealDevice,
 } from '../device/device-downloads';
 import type { BaseUrlAwareApi } from '../base-url-calls';
+import {
+  disposeAll,
+  type InitScriptDisposable,
+} from '../device/init-script-disposals';
 
 const CDP_URL = process.env.ANDROID_CDP_URL ?? 'http://127.0.0.1:9222';
 
@@ -129,15 +133,6 @@ export const BASE_URL_AWARE_APIS: readonly BaseUrlAwareApi[] = [
 // itself, which context.newPage() recreates fresh each test), so without this guard every test
 // would wrap the previous test's wrapper again, nesting deeper each time.
 const REQUEST_PATCHED = Symbol('shyden-baseurl-request-patch');
-
-// Structural subset of Playwright's own `Disposable` (playwright-core/types/types.d.ts) --
-// returned by `context.addInitScript`/`page.addInitScript`. Declared locally rather than
-// imported: `@playwright/test`'s re-export chain (-> `playwright/test` -> `playwright-core`)
-// does not surface the type under that name at the package's own top level, and the two-method
-// shape this file actually uses is not worth chasing an import path for.
-interface InitScriptDisposable {
-  dispose(): Promise<void>;
-}
 
 /** Guards the one-time `context.addInitScript` patch below, same role and same reasoning as REQUEST_PATCHED. */
 const INIT_SCRIPT_PATCHED = Symbol('shyden-context-addinitscript-patch');
@@ -267,13 +262,14 @@ const realDeviceTest = base.extend<{ context: BrowserContext; page: Page }>({
     await use(context);
 
     // Undo every init script THIS test added -- see the patch comment above. Order does not
-    // matter: each disposal only ever removes its own script.
-    for (const disposable of currentTestInitScriptDisposals.splice(0)) {
-      await disposable.dispose().catch(() => {});
+    // matter: each disposal only ever removes its own script. A refusal fails the test once
+    // the pages are closed, never in silence: a script left behind runs on every later page.
+    try {
+      await disposeAll(currentTestInitScriptDisposals.splice(0));
+    } finally {
+      // Leave the context open -- it belongs to the device, not to the test.
+      for (const page of context.pages()) await page.close().catch(() => {});
     }
-
-    // Leave the context open -- it belongs to the device, not to the test.
-    for (const page of context.pages()) await page.close().catch(() => {});
   },
 
   page: async ({ context, baseURL, colorScheme }, use, testInfo) => {
