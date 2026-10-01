@@ -73,6 +73,12 @@ describe('removing the init scripts a test added on the phone', () => {
     );
   });
 
+  it('rejects when only one of them refuses', async () => {
+    const only = new Error('Protocol error');
+    const error = await rejection([removes([], 'a'), refuses([], 'b', only)]);
+    expect(error.errors).toEqual([only]);
+  });
+
   it('has nothing to do for a test that added none', async () => {
     await expect(disposeAll([])).resolves.toBeUndefined();
   });
