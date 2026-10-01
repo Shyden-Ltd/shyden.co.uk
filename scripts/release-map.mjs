@@ -32,6 +32,49 @@ import { esc, slugOf } from './build-evidence-page.mjs';
  * @property {[string, number][]} otherAreas
  */
 
+/**
+ * A release file as JSON gives it, checked field by field before anything
+ * reads it. Every field here reaches the page the operator signs: a missing
+ * headline would title it "undefined". `changeMapOf` checks the entries
+ * themselves, against the release they describe.
+ *
+ * @param {unknown} value
+ * @returns {Release}
+ */
+export const releaseOf = (value) => {
+  /** @param {unknown} field */
+  const isWords = (field) => typeof field === 'string' && field.trim() !== '';
+  /** @param {unknown} field */
+  const isObject = (field) =>
+    typeof field === 'object' && field !== null && !Array.isArray(field);
+  if (!isObject(value)) refuseRelease('is not an object');
+  const file = /** @type {Record<string, unknown>} */ (value);
+  for (const key of ['base', 'headline', 'lede', 'gapGroup'])
+    if (!isWords(file[key])) refuseRelease(`${key} is not words`);
+  const { checks, signoff, entries } = file;
+  if (!Array.isArray(checks)) refuseRelease('checks is not a list');
+  checks.forEach((check, i) => {
+    for (const key of ['id', 'group', 'label'])
+      if (!isWords(/** @type {Record<string, unknown>} */ (Object(check))[key]))
+        refuseRelease(`checks[${i}].${key} is not words`);
+  });
+  if (!isObject(signoff)) refuseRelease('signoff is not an object');
+  const said = /** @type {Record<string, unknown>} */ (signoff);
+  for (const key of ['lede', 'approve'])
+    if (key in said && !isWords(said[key]))
+      refuseRelease(`signoff.${key} is not words`);
+  if (!isObject(entries)) refuseRelease('entries is not an object');
+  return /** @type {Release} */ (value);
+};
+
+/**
+ * @param {string} what
+ * @returns {never}
+ */
+function refuseRelease(what) {
+  throw new Error(`release file: ${what}`);
+}
+
 /** @param {Entry} entry */
 const named = (entry) => `${entry.sha} (${entry.subject})`;
 
@@ -59,47 +102,56 @@ export const changeMapOf = ({ inventory, release, journeys, statuses }) => {
 
   /** @type {Row[]} */
   const rows = visitor.map((entry) => {
-    /** @type {any} */
-    const classification = release.entries[entry.sha];
-    if (!classification)
-      throw new Error(`release-map: ${named(entry)} is unclassified`);
-    if (classification.kind === 'none') {
-      if (!String(classification.reason ?? '').trim())
+    const given = release.entries[entry.sha];
+    if (!given) throw new Error(`release-map: ${named(entry)} is unclassified`);
+    // The file is untrusted, so each field is checked for its type as well as
+    // its content: a reason of `{}` is not words, whatever String() makes of it.
+    const {
+      kind,
+      reason,
+      check,
+      journeys: cited,
+    } = typeof given === 'object'
+      ? /** @type {Record<string, unknown>} */ (given)
+      : {};
+    if (kind === 'none') {
+      if (typeof reason !== 'string' || !reason.trim())
         throw new Error(`release-map: ${named(entry)} gives no reason`);
-      return { entry, classification, flagged: null };
+      return { entry, classification: { kind, reason }, flagged: null };
     }
-    if (classification.kind === 'gap') {
-      if (!String(classification.check ?? '').trim())
+    if (kind === 'gap') {
+      if (typeof check !== 'string' || !check.trim())
         throw new Error(`release-map: ${named(entry)} says nothing to check`);
-      return { entry, classification, flagged: null };
+      return { entry, classification: { kind, check }, flagged: null };
     }
-    if (classification.kind !== 'visible')
+    if (kind !== 'visible')
       throw new Error(
-        `release-map: ${named(entry)} has kind ${JSON.stringify(classification.kind)}, which is none of visible, gap and none`,
+        `release-map: ${named(entry)} has kind ${JSON.stringify(kind)}, which is none of visible, gap and none`,
       );
-    if (
-      !Array.isArray(classification.journeys) ||
-      classification.journeys.length === 0
-    )
+    if (!Array.isArray(cited) || cited.length === 0)
       throw new Error(
         `release-map: ${entry.sha} is visible but cites no journey`,
       );
-    for (const title of classification.journeys)
-      if (!journeys.has(title))
+    /** @type {string[]} */
+    const titles = [];
+    for (const title of cited) {
+      if (typeof title !== 'string' || !journeys.has(title))
         throw new Error(
           `release-map: ${JSON.stringify(title)}, cited by ${entry.sha}, is not a journey of this run`,
         );
+      titles.push(title);
+    }
     const flagged =
       statuses === null
         ? null
-        : classification.journeys.some((/** @type {string} */ title) => {
+        : titles.some((title) => {
             const seen = statuses.get(title) ?? [];
             return (
               seen.some((s) => s !== 'passed' && s !== 'skipped') ||
               !seen.includes('passed')
             );
           });
-    return { entry, classification, flagged };
+    return { entry, classification: { kind, journeys: titles }, flagged };
   });
 
   /** @type {Map<string, number>} */

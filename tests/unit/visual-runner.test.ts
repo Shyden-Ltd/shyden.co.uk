@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { dockerArgs } from '../../scripts/visual.mjs';
+import { dockerArgs, splitArgs } from '../../scripts/visual.mjs';
 
 /**
  * `npm run test:visual -- --grep "student added"` reached Playwright as
@@ -147,5 +147,41 @@ describe('the visual container renders on CI architecture (#224)', () => {
     const argv = argsFor(false);
     expect(argv.indexOf('--platform')).toBeGreaterThan(-1);
     expect(argv.indexOf('--platform')).toBeLessThan(argv.indexOf(IMAGE));
+  });
+});
+
+describe("Playwright's own update flag, forwarded (#390)", () => {
+  it('takes the runner’s --update out, and forwards the rest in order', () => {
+    expect(splitArgs(['-g', 'home', '--update', '--headed'])).toEqual({
+      update: true,
+      forwarded: ['-g', 'home', '--headed'],
+    });
+    expect(splitArgs(['-g', 'home'])).toEqual({
+      update: false,
+      forwarded: ['-g', 'home'],
+    });
+  });
+
+  it.each([['--update-snapshots'], ['--update-snapshots=changed'], ['-u']])(
+    'refuses %s, which would rewrite baselines past test:visual:update',
+    (flag) => {
+      expect(() => splitArgs(['-g', 'home', flag])).toThrow(
+        `visual: ${flag} is Playwright's own update flag`,
+      );
+    },
+  );
+
+  it('refuses it from the command line, before it looks for Docker', () => {
+    const run = spawnSync(
+      process.execPath,
+      ['scripts/visual.mjs', '--update-snapshots'],
+      { encoding: 'utf8', env: { PATH: '/nonexistent' } },
+    );
+    expect(run.stderr).toContain(
+      "visual: --update-snapshots is Playwright's own update flag",
+    );
+    expect(run.stderr).toContain('npm run test:visual:update');
+    expect(run.stderr).not.toContain('docker is not available');
+    expect(run.status).toBe(2);
   });
 });

@@ -1,13 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
 import { parseCleanYaml, workflowJobs } from '../workflow-jobs';
 import { withoutCommentLines } from './source-text';
 import { closingKeywordOffences } from '../../scripts/closing-keywords.mjs';
+import { scratchDir } from '../scratch-dir';
 
 /**
  * The rule: no message may put a closing keyword next to an issue number, for
@@ -72,6 +71,14 @@ const REFUSED: readonly Fixture[] = [
   },
   { text: 'closes GH-12', why: 'the GH- reference form' },
   {
+    text: 'fixes https://github.com/Shyden-Ltd/shyden.co.uk/issues/12',
+    why: 'the full issue URL — undocumented by GitHub, so refused rather than trusted',
+  },
+  {
+    text: 'Closes: http://github.com/Shyden-Ltd/shyden.co.uk/pull/12',
+    why: 'the URL form with a colon, over http, naming a pull request',
+  },
+  {
     text: 'and never write close #7 while explaining this very rule',
     why: 'explaining the rule is how the standing note says it happens',
   },
@@ -96,6 +103,18 @@ const ACCEPTED: readonly Fixture[] = [
   {
     text: 'renamed the prefix#5 identifier',
     why: 'fix inside a longer word: there is no word boundary before it',
+  },
+  {
+    text: 'never write `close #<n>` in a message',
+    why: 'a placeholder, not a number — how the rule itself is documented',
+  },
+  {
+    text: 'see https://github.com/Shyden-Ltd/shyden.co.uk/issues/12',
+    why: 'an issue URL with no keyword before it',
+  },
+  {
+    text: 'the fix is in https://github.com/Shyden-Ltd/shyden.co.uk/pull/5',
+    why: 'a keyword and a URL in one sentence, but NOT adjacent',
   },
   {
     text: 'affixes #9 to the header',
@@ -156,7 +175,7 @@ describe('the closing-keyword rule, in its one home', () => {
 
 /**
  * The command line, which is how BOTH media reach the rule: `.githooks/
- * commit-msg` hands it a message file, and `build-and-test` hands it the pull
+ * commit-msg` hands it a message file, and `pr-body.yml` hands it the pull
  * request body. A script that exits 0 in silence is indistinguishable from
  * one whose entry point never ran, so its refusals are asserted too (#221,
  * #276).
@@ -175,7 +194,7 @@ describe('the closing-keyword command line', () => {
   }
 
   function fileHolding(text: string): string {
-    const file = join(mkdtempSync(join(tmpdir(), 'closing-keywords-')), 'MSG');
+    const file = join(scratchDir('closing-keywords-'), 'MSG');
     writeFileSync(file, text);
     return file;
   }

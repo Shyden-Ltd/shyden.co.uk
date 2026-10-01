@@ -18,6 +18,7 @@ import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import { searched } from '../source-files';
 import { stringLeaves } from '../catalogue-leaves';
+import { messageOf } from '../../scripts/errors.mjs';
 import {
   DO_NOT_TRANSLATE,
   buildRequestBody,
@@ -347,7 +348,7 @@ describe('protected terms are wrapped before they are sent', () => {
     try {
       deeplDrafts({ translations: [{ text: 'Pupil copy, echoed' }] }, 2);
     } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
+      message = messageOf(error);
     }
     expect(message).toBe('DeepL returned 1 translations for 2 texts');
   });
@@ -724,6 +725,16 @@ describe('the harness prunes the cache it writes', () => {
     expect(run.status, run.output).toBe(1);
     expect(readFileSync(cachePath, 'utf8'), 'a refused run wrote').toBe(before);
     expect(run.output).toMatch(/^✗ --send and --prune cannot be combined: /m);
+  });
+
+  it('refuses a second locale, rather than drafting only the first', () => {
+    const before = writeFixture();
+    const run = harness(['zh', 'th', '--send'], 'test-key:fx');
+    expect(run.status, run.output).toBe(1);
+    expect(readFileSync(cachePath, 'utf8'), 'a refused run wrote').toBe(before);
+    expect(run.output).toMatch(
+      /^✗ name one locale, not 2 \(zh, th\) — usage: npm run i18n:translate -- /m,
+    );
   });
 
   it('refuses an option it does not know, rather than dry-running past a typo', () => {

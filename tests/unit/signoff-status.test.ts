@@ -213,6 +213,9 @@ describe('run before a merge, it answers in its exit status', () => {
       [page, join(dir, 'missing.json')],
       [join(dir, 'missing.html'), doc],
       [page, fileOf('broken.json', '{')],
+      // Readable inputs and one argument too many: ignoring it would answer
+      // a question the caller did not ask (#227).
+      [page, doc, '--strict'],
       [fileOf('not-a-page.html', '<title>not an evidence page</title>'), doc],
       // An approval of nothing, on a page of nothing, is not a sign-off.
       [

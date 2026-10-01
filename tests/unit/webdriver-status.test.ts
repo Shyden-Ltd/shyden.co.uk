@@ -1,6 +1,7 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { createServer, type Server } from 'node:http';
+import { describe, it, expect } from 'vitest';
+import { createServer } from 'node:http';
 import { WebDriver } from '../device/ios/webdriver';
+import { serversClosedAfterEach } from '../http-stand-in';
 
 /**
  * `WebDriver.isReady` is the readiness check `startSafaridriver` polls
@@ -8,17 +9,7 @@ import { WebDriver } from '../device/ios/webdriver';
  * shape measured from `safaridriver`, `{"value":{"message":"","ready":true}}`.
  */
 
-const servers: Server[] = [];
-afterEach(async () => {
-  await Promise.all(
-    servers
-      .splice(0)
-      .map(
-        (server) =>
-          new Promise<void>((resolve) => server.close(() => resolve())),
-      ),
-  );
-});
+const servers = serversClosedAfterEach();
 
 /** A server answering every request with `body`; resolves to its base URL. */
 async function answering(body: unknown): Promise<string> {

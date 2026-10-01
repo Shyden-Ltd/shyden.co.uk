@@ -1,20 +1,20 @@
 # Pre-release review ledger (#390)
 
-Derived by `ledger.py` from `git diff a3a5adb1c6ae015a50fcdc391f8520c017a51159..fb986ce53d0dda8edee60711223f6a51005cd7b5` — 401 rows, equal to
+Derived by `ledger.py` from `git diff a3a5adb1c6ae015a50fcdc391f8520c017a51159..c48ed4414b417fa3951f4a41a0ef66ed083b1256` — 401 rows, equal to
 `git diff --name-only | wc -l`. Never edit the file list by hand: re-derive it if `develop` moves.
 
 Columns: **Review** is `—` until the file is read in full; **Mutations** is `n/n RED` (run/red).
 
 | # | Kind | St | File | +/- | Review | Findings | Mutations |
 |---|---|---|---|---|---|---|---|
-| 1 | src | A | `src/components/BetaBadge.astro` | +76/-0 | — |  |  |
-| 2 | src | M | `src/components/Button.astro` | +13/-5 | — |  |  |
-| 3 | src | A | `src/components/Flag.astro` | +59/-0 | — |  |  |
-| 4 | src | M | `src/components/Footer.astro` | +32/-30 | — |  |  |
-| 5 | src | M | `src/components/Header.astro` | +45/-42 | — |  |  |
-| 6 | src | A | `src/components/LanguageSwitcher.astro` | +200/-0 | — |  |  |
-| 7 | src | A | `src/components/Marquee.astro` | +103/-0 | — |  |  |
-| 8 | src | A | `src/components/PhoneFrame.astro` | +100/-0 | — |  |  |
+| 1 | src | A | `src/components/BetaBadge.astro` | +76/-0 | read in full (tranche 4) | F58 the comment quoted --accent-ink at 6.6:1 on --bg and 7.1:1 on --surface; measured today 8.7/9.9 in light and 16.6/16.0 in dark, so neither theme matched. It now names the computing test (locale-beta.spec.ts) and no ratio | none: comments only |
+| 2 | src | M | `src/components/Button.astro` | +13/-5 | diff read (tranche 4) | none: external links take noopener noreferrer like WorkCard; used once (HomePage ShyTalk CTA) | n/a |
+| 3 | src | A | `src/components/Flag.astro` | +59/-0 | read in full (tranche 4) | none: shapes have one home in flags.ts (io-ui.ts imports it), set:html takes a five-member union | n/a |
+| 4 | src | M | `src/components/Footer.astro` | +32/-30 | diff read (tranche 4) | F59 two imports from lib/i18n merged (see duplicate-imports.test.ts); company disclosure removed with #370 as its comment says | DI1-DI4 RED (DI4 after a frontmatter/script case was added); DI5 residual: dropping a directory from the walk needs a planted repeat |
+| 5 | src | M | `src/components/Header.astro` | +45/-42 | diff read (tranche 4) | F59 two imports from lib/i18n merged. Swept: eight files in all, six in src and two tests; four namespace-beside-named imports in tests are deliberate and allowed | DI1-DI4 RED |
+| 6 | src | A | `src/components/LanguageSwitcher.astro` | +200/-0 | read in full (tranche 4) | F60 the docblock said the native details closes on Escape: measured false in Chromium, Firefox and WebKit (summary and link focus); Enter and Space toggle it (measured). Corrected; Escape would need a script the switcher refuses. F59 duplicate import merged; one docblock line re-wrapped | none: comments only (behaviour measured by probe, not pinned) |
+| 7 | src | A | `src/components/Marquee.astro` | +103/-0 | read in full (tranche 4) | F61 BUG: tokens.css's reduced-motion rule set animation-duration 0.01ms and left this band's infinite count, so it ran a cycle every 0.01ms: on the built page Firefox painted a new random offset every frame (a strobe), WebKit jumped ends, Chromium froze mid-cycle still running. animation-iteration-count: 1 added to the global rule; homepage.spec.ts 'the language band holds still' red on 5 engines, green on 5. F58 the --ink-on-accent comment said 1.4:1 and 'mint is a light ground'; measured 1.24 dark, 2.57 light (where the accent is dark); reworded to name contrast.test.ts | F61: the test's own red run on the unfixed rule (5/5 RED) is the mutation |
+| 8 | src | A | `src/components/PhoneFrame.astro` | +100/-0 | read in full (tranche 4) | F62 BUG: border: 2px solid var(--line), and --line is defined nowhere, so the border computed to 0px none on the built page: the bezel was never drawn. aspect-ratio divided two lengths (280px / 616px), refused by CSS, computed auto. Now var(--border) and a unitless frameRatio; e2e 'the bezel is drawn' red then green on 5 engines. New custom-properties.test.ts refuses any undefined var() in src, fallback or not (red on exactly --line) | CP1-CP5 RED (CP1 also reddens the whole-src guard via the --muted comment) |
 | 9 | src | A | `src/components/ReportForm.astro` | +187/-0 | — |  |  |
 | 10 | src | D | `src/components/ServiceCard.astro` | +0/-22 | — |  |  |
 | 11 | src | A | `src/components/ThemeSwitch.astro` | +78/-0 | — |  |  |
@@ -32,19 +32,19 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 23 | src | M | `src/lib/gloryPoints.ts` | +10/-7 | diff read (rename + locale metadata) | none | 2 run: 2 RED |
 | 24 | src | M | `src/lib/grouping.ts` | +17/-2 | diff read (anonymousStudent exported) | none | 1 run: 1 RED |
 | 25 | src | A | `src/lib/i18n/.translations.json` | +830/-0 | — | drafts held the wrong senses too (id "sisa makanan", "dibagi" beside a hand-corrected catalogue): corrected with every catalogue fix, so a re-seed cannot restore them |  |
-| 26 | src | A | `src/lib/i18n/back-translate.ts` | +538/-0 | read in full (tranche 3) | F30 (20 test gaps); two codes in one script misreported as unreadable (fixed); F23 csvCopy reason | 67 run (44 RED); the 20 whole-suite-confirmed gaps now RED (BT48 as BT48n, BT48z); BT1 BT14 BT49 equivalent; BT59 RED |
-| 27 | src | M | `src/lib/i18n/en.ts` | +359/-166 | — |  |  |
+| 26 | src | A | `src/lib/i18n/back-translate.ts` | +542/-0 | read in full (tranche 3) | F30 (20 test gaps); two codes in one script misreported as unreadable (fixed); F23 csvCopy reason | 67 run (44 RED); the 20 whole-suite-confirmed gaps now RED (BT48 as BT48n, BT48z); BT1 BT14 BT49 equivalent; BT59 RED |
+| 27 | src | M | `src/lib/i18n/en.ts` | +361/-168 | — |  |  |
 | 28 | src | A | `src/lib/i18n/feature-terms.ts` | +130/-0 | — | F11/F18/F20 guards: mix, leftovers, sound, classList, gloryPoints, bean, coin added from their controls' words (glossary awaits the operator's read) | FTa-FTh, GLc GLd: RED |
 | 29 | src | A | `src/lib/i18n/flags.ts` | +115/-0 | read in full (tranche 3) | none | in lmf: FL1 FL2 equivalent (sprite and <use> share flagSymbolId); FL5 is the visual suite's |
 | 30 | src | M | `src/lib/i18n/id.ts` | +152/-132 | — |  |  |
-| 31 | src | M | `src/lib/i18n/index.ts` | +252/-53 | read in full (tranche 3) | F25 comments; F27 bare prefix untested, ternary built one string twice (simplified); F29 | 63 run (58 RED); IX11 RE9 RE10 GREEN over 2,924, now RED; IX4 IX13 equivalent (IX13's code removed); new IXs1 RED |
+| 31 | src | M | `src/lib/i18n/index.ts` | +256/-58 | read in full (tranche 3) | F25 comments; F27 bare prefix untested, ternary built one string twice (simplified); F29 | 63 run (58 RED); IX11 RE9 RE10 GREEN over 2,924, now RED; IX4 IX13 equivalent (IX13's code removed); new IXs1 RED |
 | 32 | src | A | `src/lib/i18n/label-check.ts` | +270/-0 | read in full; checkNamedLabels added | F17 guard: checkLabels' any-witness rule hid 23 sentences naming a label in other words | NLa-NLg: 6 RED, NLf GREEN (fixture carried the first rendering): fixed, NLfb RED |
 | 33 | src | A | `src/lib/i18n/locales.ts` | +22/-0 | read in full (tranche 3) | none | in lmf |
 | 34 | src | A | `src/lib/i18n/message.ts` | +431/-0 | read in full (tranche 3) | F21 (tests only; parser correct) | 37 run: 34 RED after F21 (was 23: MS3 MS5-8 MS11 MS12 MS14 MS14b MS20 MS35 now RED); 3 equivalent (MS22, MS39/MS40 caches) |
 | 35 | src | A | `src/lib/i18n/metadata.ts` | +116/-0 | read in full (tranche 3) | F26 marquee named MVP_LOCALES, not LOCALES (fixed); F28; F25 | lmf 16 run (9 RED); MD2 and MD7 RED over the whole suite (sitemap-config, marquee); MD6 gap, RED after F28; new MD7n MF1 RED; MD8 equivalent |
 | 36 | src | M | `src/lib/i18n/site.ts` | +464/-61 | translated units read (home, glory, report, nav, 404) | F20: zh/vi/th Glory result line was English's own function: each now its own. Glory currency names inconsistent in all three: operator decision 2026-09-30 (English app names, coin translated), applied; th glory lead named its input differently (F17) | GLa GLb GLc GLd: RED |
 | 37 | src | A | `src/lib/i18n/th.ts` | +278/-0 | every translated unit read beside en | F11 (stateMixed equal to stateSeparated). F12 class loanword. F17: 7 sentences named Student details unlike its heading, 2 named Shuffle again unlike its button. F18: Sound off = express an opinion, Export groups a noun, Group results = company earnings, university students, "pieces", printed-from. F19: สาวๆ, เปลี่ยนมัน. All fixed | FTb NLb GLd: RED |
-| 38 | src | A | `src/lib/i18n/translate.ts` | +599/-0 | read in full (tranche 3) | F22 protectTerms double-wrapped a middle term and wrapped every position for an empty one (fixed); F23 CSV sex hold-back a no-op (removed); F24 deeplDrafts added; F25; F31 walk via catalogueLeaves | 51 run (37 RED); after fixes TR4 TR5a-c TR13 TR35 TR36 TR47 TR48 RED; TR8 TR11 TR23 TR26 left with their code; TR43 equivalent; new NP1-3 CS1-2 DD1-4 9/9 RED |
+| 38 | src | A | `src/lib/i18n/translate.ts` | +577/-0 | read in full (tranche 3) | F22 protectTerms double-wrapped a middle term and wrapped every position for an empty one (fixed); F23 CSV sex hold-back a no-op (removed); F24 deeplDrafts added; F25; F31 walk via catalogueLeaves | 51 run (37 RED); after fixes TR4 TR5a-c TR13 TR35 TR36 TR47 TR48 RED; TR8 TR11 TR23 TR26 left with their code; TR43 equivalent; new NP1-3 CS1-2 DD1-4 9/9 RED |
 | 39 | src | A | `src/lib/i18n/vi.ts` | +286/-0 | every translated unit read beside en | F11 state labels. F17: 4 sentences named Student details unlike the pinned heading. F18: Sound off = speak up, nhập khẩu/xuất khẩu (trade), Export groups a noun, list of classes x2, printed-at, number-blank lost "number". F19: hoạt hình, a capitalised state, Hàng/Dòng, slot order. All fixed | FTc FTg GLc: RED |
 | 40 | src | A | `src/lib/i18n/zh.ts` | +258/-0 | every translated unit read beside en (265 keys across zh/vi/th) | F11 state labels (mixed = sorted by sex, leftover food). F17: 7 sentences named Student details unlike its heading, 2 named Shuffle again unlike its button. F18: Sound off = speak freely, 进出口 (trade), list "now open to the public", list "still in that tab", course list x3, 分班/座位, printed-from. F19: 群组, 男孩/女孩, 已恢复, 保留我所拥有的. All fixed | FTa FTf NLa FTh and seeded regressions: RED |
 | 41 | src | A | `src/lib/is-record.ts` | +11/-0 | read in full | none | 2 run: 2 RED |
@@ -78,34 +78,34 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 69 | functions | M | `functions/_middleware.js` | +3/-0 | read in full; diff is JSDoc only | FN3 GREEN in every pre-merge suite: #394 | FN3 GREEN, filed #394 |
 | 70 | functions | A | `functions/api/report/health.js` | +12/-0 | read in full | as index.js | FN2 RED (after fix) |
 | 71 | functions | A | `functions/api/report/index.js` | +13/-0 | read in full | plumbing test asserted the import only: body now pinned | FN1 RED (after fix) |
-| 72 | scripts | A | `.githooks/commit-msg` | +33/-0 | — |  |  |
-| 73 | scripts | A | `.githooks/pre-push` | +30/-0 | — |  |  |
-| 74 | scripts | A | `scripts/back-translate-client.mjs` | +67/-0 | — |  |  |
-| 75 | scripts | A | `scripts/build-evidence-page.mjs` | +1584/-0 | — |  |  |
-| 76 | scripts | A | `scripts/build-release-content.mjs` | +214/-0 | — |  |  |
-| 77 | scripts | A | `scripts/closing-keywords.mjs` | +123/-0 | — |  |  |
-| 78 | scripts | M | `scripts/dashboard.mjs` | +48/-86 | — |  |  |
-| 79 | scripts | A | `scripts/dependabot-labels.mjs` | +194/-0 | — |  |  |
-| 80 | scripts | A | `scripts/deploy-gate.mjs` | +222/-0 | — |  |  |
-| 81 | scripts | A | `scripts/e2e-shards.mjs` | +366/-0 | — |  |  |
-| 82 | scripts | A | `scripts/errors.mjs` | +73/-0 | — |  |  |
-| 83 | scripts | A | `scripts/evidence-files.mjs` | +124/-0 | — |  |  |
-| 84 | scripts | A | `scripts/evidence-signoff.mjs` | +132/-0 | — |  |  |
-| 85 | scripts | A | `scripts/i18n-back-translate.mjs` | +122/-0 | — |  |  |
-| 86 | scripts | A | `scripts/i18n-scaffold.mjs` | +200/-0 | — |  |  |
-| 87 | scripts | A | `scripts/i18n-translate.mjs` | +280/-0 | read in full (tranche 3) | F24 drafts paired by index with no count check (deeplDrafts); misleading needs-a-human report removed; F25 | none: network wiring; its decisions moved to deeplDrafts (DD1-4 RED) |
-| 88 | scripts | A | `scripts/install-hooks.mjs` | +86/-0 | — |  |  |
-| 89 | scripts | A | `scripts/release-inventory.mjs` | +299/-0 | — |  |  |
-| 90 | scripts | A | `scripts/release-map.mjs` | +165/-0 | — |  |  |
+| 72 | scripts | A | `.githooks/commit-msg` | +33/-0 | read in full (tranche 4) | Sound: the rule has one home (closing-keywords.mjs) and the hook is wiring, driven end to end by commit-msg-hook.test.ts. F56 found from its test: runHook made a temporary directory per call and never removed it (492 in $TMPDIR). Swept by deriving, not grepping: a whole-suite run in an empty TMPDIR left 34 entries from seven test files (dashboard-jsonl removes some of its directories, so a file-level grep for rmSync missed it), 2,717 on the laptop. vitest's globalSetup (tests/temporary-files.ts) now gives each run its own TMPDIR, fails the run on anything left in it, and removes it; a setup file refuses a worker not using it; scratchDir() removes a test's directory when it ends. The 2,717 were removed by exact prefix | 10 run: TF1-TF9 RED (TF2 re-run by hand: every file refused, so no totals line), TF10 GREEN as predicted (the worker check alone, when the run still uses its directory) |
+| 73 | scripts | A | `.githooks/pre-push` | +30/-0 | read in full (tranche 4) | F57 the hook and git-hooks.test.ts both said format was the first step of build-and-test and that a format failure skipped the e2e corpus; since #163 the shards run beside the checks job. Rationale corrected; what it runs (format, test:unit) is unchanged and pinned. Not added: typecheck, which the checks job also runs and the hook does not (a third check is a deliberate edit to the pinned list, and about a minute on every push) | none: comments only |
+| 74 | scripts | A | `scripts/back-translate-client.mjs` | +67/-0 | read in full (tranche 4) | F34 an unreachable engine printed only 'fetch failed' (ECONNREFUSED sat on cause): call() now names the request and the cause. Non-JSON refusal excerpt, method in the message, 200-not-JSON and short-answer refusals were untested | 7 run: CL4 CL5 RED before; CL1-3 CL6 GREEN now RED; CL7 (cause dropped) RED |
+| 75 | scripts | A | `scripts/build-evidence-page.mjs` | +1584/-0 | main() read in full, the exports by their tests (tranche 4) | F55 the last hand-rolled argv reader in scripts/ (F36's sweep finding): it ignored an option it did not know (a mistyped --publishd cost the publish every removal in silence) and took the next word whatever it was (--evidence --out p read a directory called --out). Now parseArgs. Every refusal past the argument check is one line through die(), not a stack. A report, manifest line (numbered as an editor shows it), content, listing or asset map that is not JSON is named. The --plan/--assets refusal and --published itself were driven by no test; both are now, and a listing that is not a list of paths is refused by name (an object in it failed as path.startsWith is not a function). An unreachable --content check is gone. The command tests run from their scratch directory: the BP1 mutant wrote true.uploads.json into the checkout | 10 run: 10 RED (BP1-BP10) |
+| 76 | scripts | A | `scripts/build-release-content.mjs` | +214/-0 | read in full (tranche 4) | F46 main() was run by no test: a refused build exiting 0, --check printing nothing, the wrong status context read, the content never written, --check without a listing, all free. build-release-content-script.test.ts runs it in a scratch checkout with the stand-in gh, now one home (tests/gh-stand-in.ts) shared with dependabot-labels. The release file reached the page unchecked (a missing headline titled it "undefined"): releaseOf() in release-map.mjs checks every field, and every committed release file passes it. An unknown option is now named. F35: its private messageOf copy replaced by the shared import | 20 run: 20 RED (BC1-BC4, BC6-BC11 green before; BC5, BC12 and RV1-RV8 pin the fixes) |
+| 77 | scripts | A | `scripts/closing-keywords.mjs` | +123/-0 | read in full (tranche 4) | F37 a keyword before a full issue or pull request URL was accepted (a form GitHub does not document, so it is not relied on): refused now, and a bare URL is still accepted. Two comments named build-and-test as the pull-request-body check (it is pr-body.yml's closing-keywords job). The docblock's claim that \d+ keeps #<n> placeholders out was unpinned (CK7 green): fixture added | 8 run: 8 RED (CK1-CK8; CK7 green until its fixture landed) |
+| 78 | scripts | M | `scripts/dashboard.mjs` | +48/-86 | diff read (tranche 4: errors.mjs, killByPort import, types, argv refusal) | F38 the dashboard kept its own copy of every path test-devices.mjs writes (dashboard-state dir, groups/final/jsonl, ios-mode.json, report dirs), each 'kept in sync' and held by nothing; the reason (the harness had no exports) no longer held. Now imported, and dashboard-paths.test.ts refuses a path literal. Typing the imports exposed JSONL_FILE indexed by a plain string (GROUP_NAMES now derived and typed). Smoke: started on 4399, page 200, state stream carries all groups, SIGTERM clean | 5 run: 4 RED, DP2 GREEN as predicted (a comment is not a copy) |
+| 79 | scripts | A | `scripts/dependabot-labels.mjs` | +194/-0 | read in full (tranche 4) | F39 every refusal in main() was untested (DL1-DL5 green: no labels declared, gh answered nothing, gh failed, gh missing, --paginate): dependabot-labels-script.test.ts drives the script against a stand-in gh. Bug: a label YAML reads as a number/null/boolean (7, 1.0, ~, true) was silently dropped, now refused by name. declaredLabels called process.exit on a parse failure (untestable in-process): it throws, main() refuses. Two comments named build-and-test as the job running it (checks, since #163) | 13 run: 13 RED (DL1-DL12; DL1-DL6 green before the tests) |
+| 80 | scripts | A | `scripts/deploy-gate.mjs` | +222/-0 | read in full (tranche 4) | F40 main() entirely unguarded (DG1-DG7 green), incl. the exit on a refusal: a REFUSE exiting 0 lets deploy-dev proceed on untested bytes. deploy-gate-script.test.ts runs the script in a scratch repo with a real merge commit against a stand-in checks API (async spawn: spawnSync deadlocked the in-process server). API base from GITHUB_API_URL (Actions sets it); an unreachable API refused with a bare 'fetch failed' and a stack, now names the request and cause (F34 class); refusals go through die(). REQUIRED_CHECKS confirmed equal to develop's live protection contexts (build-and-test, visual; strict) | 9 run: 9 RED (DG1-DG9; DG1-DG7 green before the tests) |
+| 81 | scripts | A | `scripts/e2e-shards.mjs` | +366/-0 | read in full (tranche 4) | F41 logic sound; three refusals were held only by refusing, not by their reason (ES1 --shard with no value matched by toThrow(/--shard/), which the generic '--shard=undefined' error also satisfies; ES8 a non-integer exit code reported as 'Playwright exited null'; ES13 an unknown suite size reported as 'ran N of the null tests'): each reason now pinned | 18 run: 18 RED (ES1-ES18; ES1 ES8 ES13 green before) |
+| 82 | scripts | A | `scripts/errors.mjs` | +73/-0 | read in full (tranche 4) | F35 five private copies of messageOf's line (build-release-content, signoff-status, tests/device/ios/webdriver.ts, translate.test.ts, and one this review wrote into i18n-scaffold.test.ts) now import it; one-home.test.ts rule readsACaughtMessage keeps it single, one fixture per clause | 7 run on the rule: OH1 (copy re-added) RED, OH2 (copy as a comment) GREEN as intended, OH3-OH7 (each clause dropped) RED |
+| 83 | scripts | A | `scripts/evidence-files.mjs` | +124/-0 | read in full (tranche 4) | F42 Latent bug: a capture was named slug(title)__NN-slug(label), and slug keeps 80 chars of a title path and drops case/punctuation; 650 of 4,109 listed tests shared a slug with another in the same project, so two such tests shooting the same order and label would write one file and the evidence page would show the wrong picture. captureFile() adds an 8-char hash of project+title and is the one naming home for both capture legs (the template was spelled twice). Proved on a real chromium capture (manifest row -> existing file). EVIDENCE_JPEG_QUALITY out of range or fractional silently became 90 and the range was untested: jpegQuality() refuses it. Name held inside 255 bytes | 11 run: 11 RED (EF1-EF9, earlier EF5/EF6 green before the tests) |
+| 84 | scripts | A | `scripts/evidence-signoff.mjs` | +132/-0 | read in full (tranche 4) | none. ES5 style is deliberate (embedded by source text into the page) | 10 run: 9 RED, EV1 equivalent (a truthy non-object body has none of the fields read) |
+| 85 | scripts | A | `scripts/i18n-back-translate.mjs` | +122/-0 | read in full (tranche 4) | F33 the stand-in harness asserted refusals only: score, once-per-locale sending, engine name, printed review, cannot-be-believed header, progress line and error prefix now pinned. Private messageOf copy replaced by the import; its new errors.mjs import was outside back-translation.yml path filter (pipeline-wiring.test.ts caught it in the whole suite), now watched | 12 run: 3 RED before (BS8 BS10 BS11), 8 GREEN now RED (BS1-6 BS9, BS12 new); BS7 GREEN, residual: no catalogue has a slot-only translation, so the empty-text filter guards a case today's data cannot reach |
+| 86 | scripts | A | `scripts/i18n-scaffold.mjs` | +200/-0 | read in full (tranche 4) | F32 rendering untested past the argv refusal, incl. the overwrite refusal its docblock calls the important one: render throws, renderCatalogue exported, main driven in a scratch cwd. Bug: drafts and the locale read through Object.prototype ('constructor' rendered as undefined; i18n:scaffold -- constructor crashed in Intl.PluralRules), now Object.hasOwn. plainKey docblock inverted; F36 sweep: a second locale and an unknown option were ignored, now refused | 19 run: 19 RED (SC1-SC17, SC2a/b, SC5a/b), re-run after the anchored-presence fix: 19 RED; AR1 AR2 RED |
+| 87 | scripts | A | `scripts/i18n-translate.mjs` | +268/-0 | read in full (tranche 3) | F24 drafts paired by index with no count check (deeplDrafts); misleading needs-a-human report removed; F25; F36 sweep (tranche 4): a second locale was ignored (zh th --send drafted zh only), now refused | none: network wiring; its decisions moved to deeplDrafts (DD1-4 RED); AR3 RED |
+| 88 | scripts | A | `scripts/install-hooks.mjs` | +86/-0 | read in full (tranche 4) | F43 the success line named only pre-push while .githooks/ also installs commit-msg (the closing-keyword refusal); the no-.git line likewise. The lines now name the directory and no hook (deriving the names needed a directory read, which one-home.test.ts holds to its one home). None of the installer's output was tested: install-hooks.test.ts runs it in a scratch checkout, with no .git, and where git refuses the config | 3 run: 3 RED (IH4-IH6; IH6 green until the refusal was pinned as the only line) |
+| 89 | scripts | A | `scripts/release-inventory.mjs` | +299/-0 | read in full (tranche 4) | F44 readCommits called any git failure "not an ancestor" (a name that is no commit included), and main() discarded parseArgs' error, so an unknown option printed bare usage; both now say what git or parseArgs said. Held by nothing: each area once and sorted (git's byte order hid both), a prefix that opens the path only, the root-commit refusal, the command's JSON. New guard: no helper module under tests/ calls shoot(, since the selection reads specs alone | 9 run: 9 RED (RI1-RI4 and RI6 green before; RI5 held by script-entry; RI7, RI8 and GD1 pin the fixes and the guard) |
+| 90 | scripts | A | `scripts/release-map.mjs` | +165/-0 | read in full (tranche 4) | F45 the release file's classifications were read through `any`, so a reason of {} or a check of ["x"] passed as words by String(); each field is now checked for its type and the row carries the checked fields. Nothing held the rendered map: refs, totals, the flag, the area counts, three esc() calls and a journey with no result at all | 12 run: 12 RED (RM1-RM10 green before; RM11-RM12 pin the type checks). A non-string journey title is equivalent: journeys.has() refuses it either way |
 | 91 | scripts | A | `scripts/reports-review.mjs` | +132/-0 | read in full (132 lines) | none | 5 run: 5 RED |
-| 92 | scripts | A | `scripts/signoff-status.mjs` | +113/-0 | — |  |  |
-| 93 | scripts | M | `scripts/test-devices.mjs` | +238/-69 | — |  |  |
-| 94 | scripts | A | `scripts/test-e2e.mjs` | +842/-0 | — |  |  |
-| 95 | scripts | A | `scripts/upload-evidence-assets.mjs` | +237/-0 | — |  |  |
-| 96 | scripts | A | `scripts/visual.mjs` | +169/-0 | — |  |  |
+| 92 | scripts | A | `scripts/signoff-status.mjs` | +113/-0 | read in full (tranche 4) | F35 private messageOf copy replaced; F36 a third argument was ignored: `page doc --strict` printed SIGNED OFF and exited 0, now exits 2 with usage | 13 run: 13 RED (SS1-SS13; SS2 SS7 SS12 predicted GREEN, the suite already pinned them) |
+| 93 | scripts | M | `scripts/test-devices.mjs` | +238/-69 | read in full (tranche 4) | F50 waitUntil checked its deadline only once an answer arrived, so a predicate that never settles held it past any timeout (measured: still waiting at 2s on 100ms); it now races the time left. F51 the verdicts were unreachable by any test: now pure and exported (playwrightVerdict, vitestVerdict), every count checked, a group in which nothing passed fails, and a vitest file that fails to load is named (measured: 0 failed tests, 1 failed file, success false, exit 1). One group's unreadable report rejected the shared Promise.all and lost the other two verdicts; contained() makes it that group's failed row. F52 the freshness check looked for /_astro/, which every build carries; the served page is compared with dist/ byte for byte (measured equal, 58,854 characters). F53 cleanup was guarded by a flag set as it began, so Ctrl+C mid-cleanup exited under it (once() shares the run); SIGTERM exited 130 (exitCodeFor gives 143); a leaked session was reported deleted on any answer and its marker read blind (deleteSession, leakedSessionOf). F54 device presence is androidAbsence/iphoneAbsence, pure; a devicectl listing of another shape is named, and the unused device-name read that could throw is gone. The teardown copy the new test file carried has one home (tests/http-stand-in.ts, duplication.test.ts) | 11 baseline run: 11 GREEN over the whole suite (TB1-TB11). 26 after: TD1-TD23 RED; TR1-TR3 GREEN as predicted and confirmed over the whole suite (main()'s wiring, which no test runs: it needs a build, a preview on 4321 and the phones) |
+| 94 | scripts | A | `scripts/test-e2e.mjs` | +842/-0 | main() read in full, the pure exports by their tests (tranche 4) | F49 main() ended in process.exit() inside a try whose finally removed the temporary report directory, and process.exit() runs no finally: every run without EVIDENCE_DIR left e2e-reconcile-<pid> behind (739 in one session's $TMPDIR, a whole report in each after a real run). main() now sets process.exitCode and returns. Its verdict path was reached by no test (EC5 green): a stand-in npx now writes a report for a whole-suite pass and a short run. Swept every try with a finally in scripts/, src/ and tests/ for an exit, die, fail or abort, with the unfixed file as the positive control: none | 5 run: 5 RED (EC5 green until the verdict tests landed) |
+| 95 | scripts | A | `scripts/upload-evidence-assets.mjs` | +237/-0 | read in full (tranche 4) | F47 the hand-rolled arg() ignored a mistyped --outt (the run printed batches instead of writing the map) and took a following flag as a value; parseArgs now names both. An empty plan wrote an empty map, and a recording named twice or byte-identical to another was uploaded twice: planOf() and a digest-once pending list close both. Nothing held the command's three outputs, the headerless refusal or a CRLF listing. UA12 showed the path Set redundant beside the digest, and it was removed | 14 run: 13 RED, UA12 equivalent and its code removed (UA1-UA7 green before) |
+| 96 | scripts | A | `scripts/visual.mjs` | +169/-0 | read in full (tranche 4) | F48 `npm run test:visual -- --update-snapshots` forwarded Playwright's bare flag, which means `changed`: it rewrites only failing baselines and keeps a stale-but-passing one (#134), past the one way baselines are meant to change. splitArgs() refuses it, -u and --update-snapshots=<preset>, before the Docker check. The whole suite caught the first spelling: browser-matrix refuses the quoted bare flag anywhere in visual.mjs's code, and the refusal compared against it; one pattern now names -u, bare and =<preset> | 6 run: 6 RED (VR1-VR6, re-anchored on the pattern and re-run with browser-matrix in the command) |
 | 97 | scripts | A | `scripts/waiting-reports.mjs` | +196/-0 | read in full (196 lines) | S2 S3 S6 S9 S12 untested; S6 was real: a GitHub 403 in JSON printed 'Posted.' and exited 0. Tests added | 16 run: 11 RED + 5 re-run RED |
 | 98 | workflow | A | `.github/dependabot.yml` | +110/-0 | — |  |  |
-| 99 | workflow | A | `.github/workflows/back-translation.yml` | +82/-0 | — |  |  |
+| 99 | workflow | A | `.github/workflows/back-translation.yml` | +83/-0 | — |  |  |
 | 100 | workflow | M | `.github/workflows/ci.yml` | +394/-9 | — |  |  |
 | 101 | workflow | A | `.github/workflows/deploy-dev.yml` | +203/-0 | — |  |  |
 | 102 | workflow | R from '.github/workflows/release-prod.yml' | `.github/workflows/deploy-prod.yml` | +73/-26 | — |  |  |
@@ -153,8 +153,8 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 144 | test | M | `tests/e2e/classroom-groups-print.spec.ts` | +401/-1 | — |  |  |
 | 145 | test | M | `tests/e2e/classroom-groups-privacy.spec.ts` | +151/-61 | — |  |  |
 | 146 | test | M | `tests/e2e/classroom-groups-projector.spec.ts` | +220/-5 | — |  |  |
-| 147 | test | M | `tests/e2e/classroom-groups-roster.spec.ts` | +476/-105 | — |  |  |
-| 148 | test | M | `tests/e2e/classroom-groups.spec.ts` | +739/-251 | — |  |  |
+| 147 | test | M | `tests/e2e/classroom-groups-roster.spec.ts` | +477/-106 | — |  |  |
+| 148 | test | M | `tests/e2e/classroom-groups.spec.ts` | +743/-255 | — |  |  |
 | 149 | test | A | `tests/e2e/copy-reaches-a-page.spec.ts` | +351/-0 | — |  |  |
 | 150 | test | A | `tests/e2e/db-stand-in.ts` | +354/-0 | — |  |  |
 | 151 | test | A | `tests/e2e/disabled-controls.spec.ts` | +555/-0 | — |  |  |
@@ -223,7 +223,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 214 | test | A | `tests/unit/ast.ts` | +592/-0 | — |  |  |
 | 215 | test | A | `tests/unit/astro-css-strip.test.ts` | +150/-0 | — |  |  |
 | 216 | test | M | `tests/unit/avatars.test.ts` | +1/-1 | — |  |  |
-| 217 | test | A | `tests/unit/back-translate.test.ts` | +824/-0 | read in full (tranche 3) | F30 | via back-translate.ts |
+| 217 | test | A | `tests/unit/back-translate.test.ts` | +975/-0 | read in full (tranche 3) | F30 | via back-translate.ts |
 | 218 | test | A | `tests/unit/base-url-calls.test.ts` | +441/-0 | — |  |  |
 | 219 | test | A | `tests/unit/board-geometry.test.ts` | +110/-0 | — |  |  |
 | 220 | test | A | `tests/unit/browser-matrix.test.ts` | +556/-0 | — |  |  |
@@ -272,7 +272,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 263 | test | A | `tests/unit/git-hooks.test.ts` | +129/-0 | — |  |  |
 | 264 | test | M | `tests/unit/gloryPoints.test.ts` | +85/-2 | — |  |  |
 | 265 | test | M | `tests/unit/grouping.test.ts` | +83/-41 | — |  |  |
-| 266 | test | M | `tests/unit/i18n.test.ts` | +382/-390 | — |  |  |
+| 266 | test | M | `tests/unit/i18n.test.ts` | +400/-391 | — |  |  |
 | 267 | test | A | `tests/unit/install-scripts.test.ts` | +138/-0 | — |  |  |
 | 268 | test | A | `tests/unit/is-record.test.ts` | +19/-0 | — |  |  |
 | 269 | test | M | `tests/unit/isolated-context-tagging.test.ts` | +268/-256 | — |  |  |
@@ -281,15 +281,15 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 272 | test | A | `tests/unit/literal-grounds.test.ts` | +363/-0 | — |  |  |
 | 273 | test | A | `tests/unit/locale-beta.test.ts` | +104/-0 | — |  |  |
 | 274 | test | A | `tests/unit/locale-fallbacks.test.ts` | +141/-0 | — |  |  |
-| 275 | test | A | `tests/unit/locale-metadata.test.ts` | +183/-0 | read in full (tranche 3) | F28; F25 | via metadata.ts |
+| 275 | test | A | `tests/unit/locale-metadata.test.ts` | +206/-0 | read in full (tranche 3) | F28; F25 | via metadata.ts |
 | 276 | test | A | `tests/unit/locale-routing.test.ts` | +104/-0 | — |  |  |
 | 277 | test | A | `tests/unit/locale-switcher.test.ts` | +187/-0 | — |  |  |
 | 278 | test | M | `tests/unit/lockdown.test.ts` | +2/-2 | — |  |  |
-| 279 | test | A | `tests/unit/marquee.test.ts` | +40/-0 | read in full | F26 staged-locale case | via metadata.ts |
+| 279 | test | A | `tests/unit/marquee.test.ts` | +65/-0 | read in full | F26 staged-locale case | via metadata.ts |
 | 280 | test | A | `tests/unit/message-catalogue.test.ts` | +77/-0 | — |  |  |
 | 281 | test | A | `tests/unit/message-characterisation.test.ts` | +144/-0 | — |  |  |
 | 282 | test | A | `tests/unit/message-parity.test.ts` | +243/-0 | — |  |  |
-| 283 | test | A | `tests/unit/message.test.ts` | +243/-0 | read in full (tranche 3) | F21 reasons and positions pinned; 7 edge cases | via message.ts |
+| 283 | test | A | `tests/unit/message.test.ts` | +326/-0 | read in full (tranche 3) | F21 reasons and positions pinned; 7 edge cases | via message.ts |
 | 284 | test | A | `tests/unit/nav-timings.test.ts` | +413/-0 | — |  |  |
 | 285 | test | A | `tests/unit/no-dated-render.test.ts` | +38/-0 | — |  |  |
 | 286 | test | A | `tests/unit/node-contract.test.ts` | +157/-0 | — |  |  |
@@ -308,7 +308,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 299 | test | A | `tests/unit/report-form.test.ts` | +32/-0 | — |  |  |
 | 300 | test | A | `tests/unit/report-review.test.ts` | +568/-0 | — |  |  |
 | 301 | test | A | `tests/unit/report.test.ts` | +488/-0 | — |  |  |
-| 302 | test | M | `tests/unit/roster.test.ts` | +7/-2 | — |  |  |
+| 302 | test | M | `tests/unit/roster.test.ts` | +8/-3 | — |  |  |
 | 303 | test | A | `tests/unit/route-coverage.test.ts` | +165/-0 | — |  |  |
 | 304 | test | A | `tests/unit/sanity-on-build.test.ts` | +217/-0 | — |  |  |
 | 305 | test | A | `tests/unit/scoped-classes.test.ts` | +272/-0 | — |  |  |
@@ -337,8 +337,8 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 328 | test | A | `tests/unit/supply-chain.test.ts` | +456/-0 | — |  |  |
 | 329 | test | A | `tests/unit/tokens.test.ts` | +153/-0 | — |  |  |
 | 330 | test | A | `tests/unit/tracked-paths.test.ts` | +68/-0 | — |  |  |
-| 331 | test | A | `tests/unit/translate-messages.test.ts` | +312/-0 | read in full (tranche 3) | F22 (TR35 TR36 TR47 TR48; /=0/ matched the template) | via translate.ts |
-| 332 | test | A | `tests/unit/translate.test.ts` | +663/-0 | read in full (tranche 3) | F22 F24 F25 | via translate.ts |
+| 331 | test | A | `tests/unit/translate-messages.test.ts` | +362/-0 | read in full (tranche 3) | F22 (TR35 TR36 TR47 TR48; /=0/ matched the template) | via translate.ts |
+| 332 | test | A | `tests/unit/translate.test.ts` | +748/-0 | read in full (tranche 3) | F22 F24 F25 | via translate.ts |
 | 333 | test | A | `tests/unit/typecheck-scope.test.ts` | +87/-0 | — |  |  |
 | 334 | test | A | `tests/unit/unit-budget.test.ts` | +24/-0 | — |  |  |
 | 335 | test | A | `tests/unit/upload-assets.test.ts` | +233/-0 | — |  |  |
@@ -358,7 +358,7 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 349 | doc | A | `HANDOVER.md` | +83/-0 | not code: prose, read for claims the code contradicts |  |  |
 | 350 | doc | M | `README.md` | +134/-17 | not code: prose, read for claims the code contradicts |  |  |
 | 351 | doc | A | `docs/releases/a3a5adb.json` | +367/-0 | not code: prose, read for claims the code contradicts |  |  |
-| 352 | doc | A | `docs/reviews/2026-09-30-release-review.md` | +407/-0 | not code: prose, read for claims the code contradicts |  |  |
+| 352 | doc | A | `docs/reviews/2026-09-30-release-review.md` | +410/-0 | not code: prose, read for claims the code contradicts |  |  |
 | 353 | doc | A | `docs/runbooks/translation-reports.md` | +93/-0 | not code: prose, read for claims the code contradicts |  |  |
 | 354 | doc | A | `docs/superpowers/plans/2026-09-24-light-mode-1-groundwork.md` | +1553/-0 | not code: prose, read for claims the code contradicts |  |  |
 | 355 | doc | A | `docs/superpowers/plans/2026-09-24-light-mode-2-studio.md` | +3592/-0 | not code: prose, read for claims the code contradicts |  |  |

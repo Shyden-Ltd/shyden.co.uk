@@ -445,3 +445,72 @@ describe('a directory read cannot reach a guard unproved', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * Reading what a caught value says lives in `scripts/errors.mjs` too
+ * (`messageOf`), for the reason its docblock gives: `catch` binds `unknown`.
+ *
+ * #390's review found five private copies of its one line -- two scripts,
+ * two tests and a device helper -- after the review itself had written one
+ * into a new test. Each was correct, and a correct copy is still how the
+ * directory walkers above came to disagree.
+ *
+ * Structural: a conditional whose test is `x instanceof Error` and whose
+ * true branch reads `x.message`, whatever `x` is called. A comment naming
+ * the pattern never reaches the parse.
+ */
+export function readsACaughtMessage(source: string): boolean {
+  return nodesWithin(parseSource(source)).some(
+    (node) =>
+      ts.isConditionalExpression(node) &&
+      ts.isBinaryExpression(node.condition) &&
+      node.condition.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+      node.condition.right.getText() === 'Error' &&
+      ts.isPropertyAccessExpression(node.whenTrue) &&
+      node.whenTrue.name.text === 'message' &&
+      node.whenTrue.expression.getText() === node.condition.left.getText(),
+  );
+}
+
+describe("reading a caught value's message has exactly one home", () => {
+  it('is implemented only in scripts/errors.mjs', () => {
+    expect(
+      SCANNED.filter((path) => readsACaughtMessage(readFileSync(path, 'utf8'))),
+    ).toEqual(['scripts/errors.mjs']);
+  });
+
+  it('catches a copy whatever the value is called', () => {
+    expect(
+      readsACaughtMessage(
+        'try { run(); } catch (e) { console.error(e instanceof Error ? e.message : String(e)); }',
+      ),
+    ).toBe(true);
+  });
+
+  it('is not fired by a comment describing one', () => {
+    expect(
+      readsACaughtMessage(
+        '// error instanceof Error ? error.message : String(error)\nconst x = 1;',
+      ),
+    ).toBe(false);
+  });
+
+  it('is not fired by reading the message of something else', () => {
+    expect(
+      readsACaughtMessage(
+        'const s = error instanceof Error ? fallback.message : "";',
+      ),
+    ).toBe(false);
+  });
+
+  // One fixture per clause of the detector, each refused by that clause
+  // alone, so a mutation dropping any one of them goes red.
+  it.each([
+    ['another property', 'error instanceof Error ? error.stack : ""'],
+    ['a narrower class', 'error instanceof TypeError ? error.message : ""'],
+    ['a test that is not instanceof', 'error === Error ? error.message : ""'],
+    ['a guard, not a choice', 'error instanceof Error && error.stack'],
+  ])('is not fired by %s', (_, code) => {
+    expect(readsACaughtMessage(`const s = ${code};`)).toBe(false);
+  });
+});

@@ -495,6 +495,7 @@ const CONTROL_SELECTORS = [
 
 /** Selectors whose border separates or outlines but identifies no control. */
 const DECORATIVE_SELECTORS = [
+  'components/PhoneFrame.astro :: .frame',
   'components/WorkCard.astro :: .work-card',
   'components/WorkCard.astro :: .work-card-badge',
   'components/pages/HomePage.astro :: .contact',

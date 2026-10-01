@@ -314,3 +314,75 @@ test.describe('mobile-first layout', () => {
     await reported.expectNone('the homepage loads without console errors');
   });
 });
+
+test.describe('reduced motion', () => {
+  // #390 F61. The global reduced-motion rule in tokens.css shortened every
+  // animation to 0.01ms and left the marquee's `infinite` in place, so the
+  // band ran a whole cycle every hundredth of a millisecond. Firefox painted
+  // it at a different offset on every frame (measured: -1734, -437, -2744,
+  // -1161 …), a strobe for exactly the visitors who asked for less motion;
+  // Chromium froze it mid-cycle with the animation still running.
+  test('the language band holds still when motion is reduced', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/');
+    const track = page.locator('.marquee-track');
+    await expect(track).toHaveCount(1);
+    const offsets = await track.evaluate(async (element) => {
+      const frame = () => new Promise((done) => requestAnimationFrame(done));
+      const seen: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        await frame();
+        seen.push(new DOMMatrix(getComputedStyle(element).transform).m41);
+      }
+      return seen;
+    });
+    expect(
+      new Set(offsets).size,
+      `the band's offset on six frames: ${offsets.join(', ')}`,
+    ).toBe(1);
+    const running = await track.evaluate(
+      (element) =>
+        element.getAnimations().filter((a) => a.playState === 'running').length,
+    );
+    expect(running, 'animations still running on the band').toBe(0);
+    await shoot(page, 'reduced motion: the language band holds still');
+  });
+});
+
+test.describe('the ShyTalk phone frame', () => {
+  // #390 F62. The bezel read `var(--line)`, a property defined nowhere, so the
+  // whole border declaration was invalid and computed to `0px none`: the
+  // frame the component describes was never drawn. Its image's aspect-ratio
+  // divided two lengths (`280px / 616px`), which CSS refuses, so it computed
+  // to `auto` and only the width and height attributes held the shape.
+  test('the bezel is drawn and the capture keeps its ratio', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const frame = page.locator('.frame');
+    await expect(frame).toHaveCount(1);
+    const drawn = await frame.evaluate((element) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--border)';
+      document.body.append(probe);
+      const border = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(element);
+      const image = element.querySelector('img');
+      return {
+        width: style.borderTopWidth,
+        style: style.borderTopStyle,
+        color: style.borderTopColor,
+        border,
+        ratio: image ? getComputedStyle(image).aspectRatio : 'no image',
+      };
+    });
+    expect(drawn.style, 'bezel border style').toBe('solid');
+    expect(drawn.width, 'bezel border width').toBe('2px');
+    expect(drawn.color, 'bezel border colour is --border').toBe(drawn.border);
+    expect(drawn.ratio, "the capture's aspect-ratio").toBe('280 / 616');
+    await shoot(page, 'the ShyTalk phone frame draws its bezel');
+  });
+});

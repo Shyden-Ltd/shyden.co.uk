@@ -23,6 +23,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { messageOf } from './errors.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -123,10 +124,40 @@ export function dockerArgs({ image, cwd, update, forwarded }) {
   ];
 }
 
-function main() {
-  const argv = process.argv.slice(2);
-  const update = argv.includes('--update');
+/** Playwright's update flag in each spelling: `-u`, bare, and `=<preset>`. */
+const PLAYWRIGHT_UPDATE = /^(-u|--update-snapshots(=.*)?)$/;
+
+/**
+ * The runner's own `--update`, and every other argument, forwarded to
+ * Playwright in order. Playwright's own update flag is refused: forwarded
+ * bare it means `changed`, which rewrites only the baselines whose comparison
+ * failed and keeps a stale-but-passing one (#134), and in any spelling it is
+ * a way to rewrite baselines that is not `test:visual:update`.
+ *
+ * @param {readonly string[]} argv
+ * @returns {{ update: boolean, forwarded: string[] }}
+ */
+export function splitArgs(argv) {
   const forwarded = argv.filter((arg) => arg !== '--update');
+  const rewrite = forwarded.find((arg) => PLAYWRIGHT_UPDATE.test(arg));
+  if (rewrite !== undefined)
+    throw new Error(
+      `visual: ${rewrite} is Playwright's own update flag. Baselines change one ` +
+        'way: npm run test:visual:update, which passes --update-snapshots=all.',
+    );
+  return { update: forwarded.length !== argv.length, forwarded };
+}
+
+function main() {
+  /** @type {{ update: boolean, forwarded: string[] }} */
+  let split;
+  try {
+    split = splitArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(messageOf(error));
+    process.exit(2);
+  }
+  const { update, forwarded } = split;
 
   if (spawnSync('docker', ['--version'], { stdio: 'ignore' }).status !== 0) {
     console.error(

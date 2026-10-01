@@ -55,7 +55,7 @@ if (!shot) {
 <style
   define:vars={{
     frameWidth: `${ROOM_CAPTURE.CSS_WIDTH}px`,
-    frameHeight: `${ROOM_CAPTURE.CSS_HEIGHT}px`,
+    frameRatio: `${ROOM_CAPTURE.CSS_WIDTH} / ${ROOM_CAPTURE.CSS_HEIGHT}`,
   }}
 >
   /* A minimal bezel: a rounded border and nothing else. No notch, no speaker
@@ -65,7 +65,11 @@ if (!shot) {
   .frame {
     width: var(--frameWidth);
     max-width: 100%;
-    border: 2px solid var(--line);
+    /* --border: the bezel is decorative, and the token is the site's own
+       hairline in both themes. It read `var(--line)` until #390 F62, a
+       property defined nowhere, so the declaration was invalid and the
+       border computed to none: the bezel was never drawn. */
+    border: 2px solid var(--border);
     border-radius: 28px;
     padding: 6px;
     background: var(--surface);
@@ -82,7 +86,10 @@ if (!shot) {
     display: block;
     width: 100%;
     height: auto;
-    aspect-ratio: var(--frameWidth) / var(--frameHeight);
+    /* Unitless: aspect-ratio takes numbers, and `280px / 616px` is refused
+       outright, so the shape used to come from the width and height
+       attributes alone (#390 F62). */
+    aspect-ratio: var(--frameRatio);
     border-radius: 22px;
   }
 

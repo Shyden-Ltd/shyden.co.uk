@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { bind, callGraph, derivationOf, type Bound } from './ast';
+import { scratchDir } from '../scratch-dir';
 
 /**
  * The resolver both meta-guards stand on (#184).
@@ -425,7 +425,7 @@ describe('a parameter binds its name, like any other local (#277)', () => {
    * alarm that gets a working control deleted.
    */
   const corpus = () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ast-binding-'));
+    const dir = scratchDir('ast-binding-');
     const reader = join(dir, 'reader.ts');
     const user = join(dir, 'user.ts');
     writeFileSync(

@@ -36,6 +36,8 @@ import {
 import { en } from '../src/lib/i18n/en.ts';
 
 const CACHE = 'src/lib/i18n/.translations.json';
+const OPTIONS = ['--force'];
+const USAGE = `usage: npm run i18n:scaffold -- <locale> [${OPTIONS.join(' | ')}]`;
 
 /**
  * One locale's rendering context: which locale, the drafts cached for it, and
@@ -50,11 +52,24 @@ const CACHE = 'src/lib/i18n/.translations.json';
  */
 
 /**
- *  A key that needs quoting in an object literal (`'class-list'`).
+ * Whether a key can stand bare in an object literal. `class-list` cannot, and
+ * is quoted.
  *
- *  @param {string} key
+ * @param {string} key
  */
 const plainKey = (key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key);
+
+/**
+ * The cached draft of `sentence`, read from the cache itself. The cache is
+ * parsed JSON, so a plain index also reaches `Object.prototype`: the English
+ * word "constructor" found `Object` there and rendered it as `undefined`.
+ *
+ * @param {Record<string, string>} known
+ * @param {string} sentence
+ * @returns {string | undefined}
+ */
+const draftOf = (known, sentence) =>
+  Object.hasOwn(known, sentence) ? known[sentence] : undefined;
 
 /**
  * The TypeScript source for one value. `path` is carried so a refusal names
@@ -72,7 +87,9 @@ function render(value, path, indent, locale) {
   const inner = '  '.repeat(indent + 1);
 
   if (typeof value === 'function')
-    die(`${path} is a function. A catalogue holds copy and templates (#136).`);
+    throw new Error(
+      `${path} is a function. A catalogue holds copy and templates (#136).`,
+    );
 
   if (Array.isArray(value)) {
     const items = value.map(
@@ -103,12 +120,12 @@ function render(value, path, indent, locale) {
       return JSON.stringify(
         assembleMessage(
           value,
-          (sentence) => locale.known[sentence],
+          (sentence) => draftOf(locale.known, sentence),
           locale.pluralForms,
         ),
       );
     } catch (error) {
-      die(
+      throw new Error(
         `${path}: ${messageOf(error)} — "npm run i18n:translate -- ${locale.target} ` +
           '--send" drafts any sentence that is missing',
       );
@@ -116,9 +133,9 @@ function render(value, path, indent, locale) {
   }
 
   if (needsTranslation(value)) {
-    const translated = locale.known[value];
+    const translated = draftOf(locale.known, value);
     if (translated === undefined)
-      die(
+      throw new Error(
         `no translation cached for ${path}: ${JSON.stringify(value)} — ` +
           `run "npm run i18n:translate -- ${locale.target} --send" first`,
       );
@@ -150,6 +167,21 @@ const headerFor = (
 export const ${target}: Catalogue = `;
 
 /**
+ * The source of `<target>.ts`: the header, then `catalogue` with every string
+ * replaced by its cached draft and every message rebuilt from its drafts.
+ *
+ * Throws, naming the key, where a draft is missing or a message cannot be
+ * rebuilt; `main` reports it. Pure, so the rendering is tested without a
+ * process to exit (#390).
+ *
+ * @param {unknown} catalogue the English catalogue: `en`, or a test's fixture
+ * @param {Locale} locale the target, its drafts and its plural forms
+ * @returns {string}
+ */
+export const renderCatalogue = (catalogue, locale) =>
+  `${headerFor(locale.target)}${render(catalogue, '', 0, locale)};\n`;
+
+/**
  * Render the catalogue for the locale named on the command line.
  *
  * EVERY EFFECT IS IN HERE, reached only under `import.meta.main` (#276).
@@ -161,14 +193,27 @@ export const ${target}: Catalogue = `;
  */
 export function main() {
   const args = argv.slice(2);
+  // Refused, not ignored, as i18n-translate.mjs does: `--froce` read as no
+  // option refuses a reviewed file for the wrong reason, and a second locale
+  // read as nothing renders one catalogue where two were asked for.
+  const unknown = args.filter(
+    (a) => a.startsWith('--') && !OPTIONS.includes(a),
+  );
+  if (unknown.length > 0)
+    die(`unknown option ${unknown.join(', ')} — ${USAGE}`);
   const force = args.includes('--force');
-  const target = args.find((a) => !a.startsWith('--'));
+  const locales = args.filter((a) => !a.startsWith('--'));
+  if (locales.length > 1)
+    die(
+      `name one locale, not ${locales.length} (${locales.join(', ')}) — ${USAGE}`,
+    );
+  const [target] = locales;
   if (!target) die('name a locale: npm run i18n:scaffold -- zh');
 
   if (!existsSync(CACHE))
     die(`${CACHE} does not exist — run i18n:translate first`);
   const cache = JSON.parse(readFileSync(CACHE, 'utf8'));
-  const known = cache[target];
+  const known = Object.hasOwn(cache, target) ? cache[target] : undefined;
   if (!known)
     die(`no cached translations for "${target}" — run i18n:translate`);
 
@@ -188,12 +233,14 @@ export function main() {
   const PLURAL_FORMS = new Intl.PluralRules(target).resolvedOptions()
     .pluralCategories;
 
-  const body = render(en, '', 0, {
-    target,
-    known,
-    pluralForms: PLURAL_FORMS,
-  });
-  writeFileSync(out, `${headerFor(target)}${body};\n`);
+  /** @type {string} */
+  let source;
+  try {
+    source = renderCatalogue(en, { target, known, pluralForms: PLURAL_FORMS });
+  } catch (error) {
+    die(messageOf(error));
+  }
+  writeFileSync(out, source);
   console.log(`✓ ${out}`);
 }
 

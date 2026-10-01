@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   EVIDENCE_MANIFEST,
+  captureFile,
   manifestRow,
-  slug,
 } from '../../../scripts/evidence-files.mjs';
 
 /**
@@ -151,12 +151,9 @@ export const shootDevice = async (
   const order = (counters.get(key) ?? 0) + 1;
   counters.set(key, order);
 
-  const file = join(
-    slug(project),
-    `${slug(title)}__${String(order).padStart(2, '0')}-${slug(label)}.png`,
-  );
+  const file = captureFile({ project, title, order, label, ext: 'png' });
 
-  mkdirSync(join(dir, slug(project)), { recursive: true });
+  mkdirSync(dirname(join(dir, file)), { recursive: true });
   writeFileSync(
     join(dir, file),
     Buffer.from(await driver.screenshot(), 'base64'),

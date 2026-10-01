@@ -1,11 +1,11 @@
 import { test, type Locator, type Page } from '@playwright/test';
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   EVIDENCE_JPEG_QUALITY,
   EVIDENCE_MANIFEST,
+  captureFile,
   manifestRow,
-  slug,
 } from '../../scripts/evidence-files.mjs';
 
 /**
@@ -57,12 +57,8 @@ export const shoot = async (
   const n = (counters.get(key) ?? 0) + 1;
   counters.set(key, n);
 
-  const dir = join(DIR, slug(project));
-  mkdirSync(dir, { recursive: true });
-  const file = join(
-    slug(project),
-    `${slug(title)}__${String(n).padStart(2, '0')}-${slug(label)}.jpg`,
-  );
+  const file = captureFile({ project, title, order: n, label, ext: 'jpg' });
+  mkdirSync(dirname(join(DIR, file)), { recursive: true });
 
   const shot = target ?? page;
   await shot.screenshot(captureOptions(join(DIR, file)));

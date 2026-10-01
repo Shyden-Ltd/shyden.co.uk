@@ -757,6 +757,8 @@ describe('scripts/i18n-back-translate.mjs', () => {
     log: string[];
     /** Every text the engine was asked to read, in order. */
     sent: string[];
+    /** The same, each as `<source> <text>`: which language it was sent as. */
+    sentFrom: string[];
   }
 
   async function standIn(options: {
@@ -766,6 +768,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
   }): Promise<StandIn> {
     const log: string[] = [];
     const sent: string[] = [];
+    const sentFrom: string[] = [];
     server = createServer((request, response) => {
       // Decoded as a stream, so a Thai character split across two chunks
       // arrives whole rather than as two replacement characters.
@@ -789,6 +792,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
           };
           log.push(`POST /translate ${source} ${q.length}`);
           sent.push(...q);
+          sentFrom.push(...q.map((text) => `${source} ${text}`));
           if (options.refuse) {
             reply(options.refuse.status, { error: options.refuse.error });
             return;
@@ -805,7 +809,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     await new Promise<void>((done) => listening.listen(0, '127.0.0.1', done));
     log.push('listening');
     const { port } = listening.address() as AddressInfo;
-    return { url: `http://127.0.0.1:${port}`, log, sent };
+    return { url: `http://127.0.0.1:${port}`, log, sent, sentFrom };
   }
 
   /** One run of the real script, with only the environment a test gives it. */
@@ -894,6 +898,88 @@ describe('scripts/i18n-back-translate.mjs', () => {
     ).toBe(true);
   });
 
+  it('says how many it compared per locale, and as what', async () => {
+    const engine = await standIn({});
+    const result = await run({ BACK_TRANSLATE_URL: engine.url });
+    expect(result.status, result.output).toBe(0);
+    for (const locale of TRANSLATED)
+      expect(result.output, locale).toMatch(
+        new RegExp(
+          `^${locale}: ${backTranslationUnits(locale).length} compared, \\d+ distinct, read as ${locale === 'zh' ? 'zh-Hans' : locale}$`,
+          'm',
+        ),
+      );
+  });
+
+  it('scores each back-translation against its English', async () => {
+    const engine = await standIn({});
+    const result = await run({
+      BACK_TRANSLATE_URL: engine.url,
+      BACK_TRANSLATE_REPORT: join(dir, 'back-translation.json'),
+    });
+    expect(result.status, result.output).toBe(0);
+    const rows = report().comparisons;
+    expect(rows.filter(({ score }) => score > 0).length).toBeGreaterThan(0);
+    for (const row of rows)
+      expect(row.score, `${row.locale} ${row.key}`).toBe(
+        chrF(row.english, row.backTranslation),
+      );
+  });
+
+  it('sends a text once per locale, however many keys share it', async () => {
+    // Liveness: the catalogues do repeat a translation under several keys,
+    // so sending one per key would show here.
+    expect(
+      TRANSLATED.some((locale) => {
+        const units = backTranslationUnits(locale);
+        return (
+          new Set(units.map(({ translation }) => sendable(translation))).size <
+          units.length
+        );
+      }),
+    ).toBe(true);
+    const engine = await standIn({});
+    await run({ BACK_TRANSLATE_URL: engine.url });
+    expect(engine.sentFrom.length).toBeGreaterThan(0);
+    expect(new Set(engine.sentFrom).size).toBe(engine.sentFrom.length);
+  });
+
+  it('names the engine it was given, in the review and the report', async () => {
+    const engine = await standIn({});
+    const result = await run({
+      BACK_TRANSLATE_URL: engine.url,
+      BACK_TRANSLATE_ENGINE: 'libretranslate/libretranslate:v1.6.2',
+      BACK_TRANSLATE_REPORT: join(dir, 'back-translation.json'),
+    });
+    expect(result.status, result.output).toBe(0);
+    expect(summary()).toMatch(
+      /^Every translated locale, read back into English by \*\*libretranslate\/libretranslate:v1\.6\.2\*\*, /m,
+    );
+    expect(
+      (
+        JSON.parse(
+          readFileSync(join(dir, 'back-translation.json'), 'utf8'),
+        ) as {
+          engine: string;
+        }
+      ).engine,
+    ).toBe('libretranslate/libretranslate:v1.6.2');
+  });
+
+  it('prints the review when there is no job summary to write it to', async () => {
+    const engine = await standIn({});
+    const result = await run({
+      BACK_TRANSLATE_URL: engine.url,
+      GITHUB_STEP_SUMMARY: '',
+    });
+    expect(result.status, result.output).toBe(0);
+    expect(result.output).toMatch(
+      /^Every translated locale, read back into English by \*\*LibreTranslate\*\*, /m,
+    );
+    expect(existsSync(dir)).toBe(true);
+    expect(existsSync(join(dir, 'summary.md'))).toBe(false);
+  });
+
   it('never fails on a score, however bad', async () => {
     const engine = await standIn({ answer: () => 'zzz' });
     const result = await run({ BACK_TRANSLATE_URL: engine.url });
@@ -926,6 +1012,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     const result = await run({ BACK_TRANSLATE_URL: engine.url });
     expect(result.status, result.output).toBe(1);
     expect(result.output).toMatch(/^th: /m);
+    expect(summary()).toMatch(/^\*\*This run cannot be believed:\*\*$/m);
     expect(summary()).toMatch(/^th: /m);
   });
 
@@ -935,7 +1022,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     });
     const result = await run({ BACK_TRANSLATE_URL: engine.url });
     expect(result.status).toBe(1);
-    expect(result.output).toMatch(/Invalid API key/);
+    expect(result.output).toMatch(/^✗ .*Invalid API key/m);
   });
 
   it('refuses an engine that cannot read a locale, before sending anything', async () => {
