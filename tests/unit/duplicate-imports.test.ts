@@ -43,10 +43,14 @@ const repeatsIn = (text: string, file = 'case.ts'): string[] =>
   repeatedImports(parseSource(text, file));
 
 /** Each module the file holds: an `.astro` file's frontmatter and scripts are separate programs. */
-function programsOf(path: string): string[] {
-  const text = readFileSync(path, 'utf8');
+function programsOf(path: string, text: string): string[] {
   return path.endsWith('.astro') ? astroCodeViews(text) : [text];
 }
+
+const fileRepeats = (path: string, text: string): string[] =>
+  programsOf(path, text).flatMap((program) =>
+    repeatedImports(parseSource(program, path)),
+  );
 
 describe('repeatedImports reads declarations, not text', () => {
   it('names a module imported twice by name', () => {
@@ -93,6 +97,21 @@ describe('repeatedImports reads declarations, not text', () => {
     ).toEqual([]);
   });
 
+  it("reads an .astro file's frontmatter and script as separate programs", () => {
+    const component = [
+      '---',
+      "import { a } from './m';",
+      '---',
+      '<p>{a}</p>',
+      '<script>',
+      "  import { b } from './m';",
+      '</script>',
+      '',
+    ].join('\n');
+    expect(fileRepeats('case.astro', component)).toEqual([]);
+    expect(fileRepeats('case.ts', component)).toEqual(['./m']);
+  });
+
   it('keeps different modules apart', () => {
     expect(
       repeatsIn("import { a } from './m';\nimport { b } from './n';\n"),
@@ -106,10 +125,8 @@ describe('no source imports one module twice (#390 F59)', () => {
       filesUnder(dir, (path) => /\.(astro|ts|mjs|js)$/.test(path)),
     );
     const repeated = sources.flatMap((path) =>
-      programsOf(path).flatMap((program) =>
-        repeatedImports(parseSource(program, path)).map(
-          (specifier) => `${path}: ${specifier}`,
-        ),
+      fileRepeats(path, readFileSync(path, 'utf8')).map(
+        (specifier) => `${path}: ${specifier}`,
       ),
     );
     expect(searched(repeated, { of: sources, what: 'source files' })).toEqual(
