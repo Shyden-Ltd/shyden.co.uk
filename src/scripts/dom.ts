@@ -12,9 +12,11 @@
  * A button with its text and class, never a submit.
  *
  * `type` matters and is the whole reason this is a helper rather than three
- * lines at each call site: every one of these controls sits inside
- * `#cg-form`, and a `<button>` with no type IS a submit button — clicking
- * "Download template" would shuffle the class.
+ * lines at each call site: the roster's and the import section's controls
+ * sit inside `#cg-form`, and a `<button>` with no type IS a submit button —
+ * clicking "Download template" would shuffle the class. The board's two sit
+ * in `#cg-board`, outside any form today, and get the same type so that
+ * moving one inside a form can never turn it into a shuffle.
  *
  * `doc` is a parameter because `renderProjector` takes the document it
  * builds into rather than reaching for the global, and a helper that reached

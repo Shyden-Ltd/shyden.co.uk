@@ -47,6 +47,15 @@ export interface LocaleMetadata {
   readonly ogLocale: string;
   /** BCP-47 tag for `Intl` / `toLocaleString`. */
   readonly numberLocale: string;
+  /**
+   * What joins two sentences, and what ends one, where a page assembles a
+   * sentence around markup instead of taking it whole from a catalogue (the
+   * 404's back-home link, #390 F65). Chinese ends with a full-width 。 that
+   * carries its own space, so it takes no gap; Thai separates phrases with a
+   * space and ends none with a full stop.
+   */
+  readonly sentenceGap: string;
+  readonly fullStop: string;
 }
 
 export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
@@ -58,6 +67,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'gb',
     ogLocale: 'en_GB',
     numberLocale: 'en-GB',
+    sentenceGap: ' ',
+    fullStop: '.',
   },
   id: {
     nativeName: 'Bahasa Indonesia',
@@ -65,6 +76,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'id',
     ogLocale: 'id_ID',
     numberLocale: 'id-ID',
+    sentenceGap: ' ',
+    fullStop: '.',
   },
   zh: {
     nativeName: '中文',
@@ -73,6 +86,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'cn',
     ogLocale: 'zh_CN',
     numberLocale: 'zh-CN',
+    sentenceGap: '',
+    fullStop: '。',
   },
   vi: {
     nativeName: 'Tiếng Việt',
@@ -80,6 +95,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'vn',
     ogLocale: 'vi_VN',
     numberLocale: 'vi-VN',
+    sentenceGap: ' ',
+    fullStop: '.',
   },
   th: {
     nativeName: 'ไทย',
@@ -87,6 +104,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'th',
     ogLocale: 'th_TH',
     numberLocale: 'th-TH',
+    sentenceGap: ' ',
+    fullStop: '',
   },
 };
 

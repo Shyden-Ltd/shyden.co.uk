@@ -766,6 +766,19 @@ if (form) {
   };
 
   /**
+   * The fields' problem, but only while a teacher can act on it.
+   *
+   * A list locks the fields (AC14) and then decides alone who is grouped, so
+   * whatever text the locked fields still hold refuses nothing: it neither
+   * holds the shuffle nor shows a refusal. Both readers ask HERE rather than
+   * checking the lock themselves (#390 F68): the button used to read the
+   * locked fields directly, and a number refused before the list existed
+   * kept it disabled with its stated reason hidden.
+   */
+  const standingNumbersProblem = (): NumberSetsProblem | null =>
+    studentsBoxLocked(getRoster()) ? null : readNumberFields().problem;
+
+  /**
    * The ONE writer of `goButton.disabled`, reading BOTH things that can
    * stand between a teacher and a shuffle.
    *
@@ -779,7 +792,7 @@ if (form) {
     // `readonly Student[]` and `rosterProblems` takes a mutable one, which
     // is the same reason `updateRosterValidation` below spreads it too.
     const rosterStops = rosterProblems([...getRoster()], t).length > 0;
-    const numbersStop = readNumberFields().problem !== null;
+    const numbersStop = standingNumbersProblem() !== null;
     goButton.disabled = rosterStops || numbersStop;
     // ...and the ONE writer of the reason too, for the reason it is the one
     // writer of `disabled`: two writers would be rivals, and a button that
@@ -805,7 +818,7 @@ if (form) {
    * already-populated.
    */
   const updateNumbersValidation = () => {
-    const { problem } = readNumberFields();
+    const problem = standingNumbersProblem();
     if (problem === null) {
       numbersProblemEl.hidden = true;
       numbersProblemEl.textContent = '';
@@ -826,8 +839,10 @@ if (form) {
    * than deciding for itself.
    *
    * A locked field cannot be edited, so a refusal it was showing is about
-   * text nobody can change any more: it is cleared, leaving the roster's own
-   * problems as the only thing that can hold the button.
+   * text nobody can change any more: `standingNumbersProblem` drops it,
+   * leaving the roster's own problems as the only thing that can hold the
+   * button. Unlocking re-validates the same way, so text the class can no
+   * longer hold is refused again with its reason on screen.
    */
   const updateNumberFields = () => {
     const locked = studentsBoxLocked(getRoster());
@@ -840,11 +855,7 @@ if (form) {
       field.help.hidden = locked;
     }
     numbersLockedEl.hidden = !locked;
-    if (locked) {
-      numbersProblemEl.hidden = true;
-      numbersProblemEl.textContent = '';
-    }
-    updateGoButton();
+    updateNumbersValidation();
   };
 
   const updateStudentsBox = () => {

@@ -181,7 +181,7 @@ const features = [
     padding-left: 1.6rem;
     color: var(--ink-soft);
   }
-  /* Decorative tick: the text beside it carries the meaning, so it is a
+  /* Decorative dot: the text beside it carries the meaning, so it is a
      pseudo-element rather than a character a screen reader would announce. */
   .features li::before {
     content: '';
@@ -200,7 +200,9 @@ const features = [
     gap: 1rem;
   }
   /* The closing band. Its own rule rather than a Footer concern: the footer
-     carries the registration details, this carries the invitation. */
+     carries the support address on every page, this carries the homepage's
+     invitation. (It named the registration details until #370 removed them
+     with the dissolved company.) */
   .contact {
     border-top: 1px solid var(--border);
     text-align: center;
