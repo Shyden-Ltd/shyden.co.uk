@@ -2098,11 +2098,17 @@ describe('recordings travel in the asset store (#268)', () => {
    * an option it did not know, so `--publishd` cost the publish every removal
    * without a word, and took the next word whatever it was, so
    * `--evidence --out page` read a directory called `--out`.
+   *
+   * Run from the scratch directory: a builder that misreads its command
+   * writes wherever it was started, and a mutation that brought the loose
+   * parser back left a plan called `true.uploads.json` in the checkout.
    */
   const builder = (...args: string[]) =>
-    spawnSync(process.execPath, ['scripts/build-evidence-page.mjs', ...args], {
-      encoding: 'utf8',
-    });
+    spawnSync(
+      process.execPath,
+      [resolve('scripts/build-evidence-page.mjs'), ...args],
+      { encoding: 'utf8', cwd: scratch },
+    );
 
   it('refuses an option it does not know, by name, before reading anything', () => {
     const dir = runDirectory('unknown-option-');
