@@ -44,8 +44,9 @@ permissions:
 jobs:
   # ---- Gate 1a (push): the tree being deployed already passed -------------
   # A merge into `develop` arrives with its suite already run — on the PR, not
-  # on this commit. `ci.yml` triggers on `pull_request` ONLY, so there is no
-  # status here to read; what there IS, because `develop` sets `strict: true`,
+  # on this commit. `ci.yml` never runs on a push (pull_request and this
+  # file's own workflow_call are its only triggers), so there is no status
+  # here to read; what there IS, because `develop` sets `strict: true`,
   # is a second parent whose TREE is identical to this one. `deploy-gate.mjs`
   # proves that equality and reads the check-runs from that parent, refusing on
   # anything ambiguous. See scripts/deploy-gate.mjs for why every doubtful case
