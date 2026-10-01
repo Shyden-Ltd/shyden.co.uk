@@ -2,6 +2,8 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { DISSOLVED_COMPANY, dissolvedIn } from '../dissolved-company';
+import { searched } from '../source-files';
 
 test.use(recorded);
 
@@ -68,17 +70,8 @@ test.describe('header + footer', () => {
 
   // Shyden Ltd is dissolved (operator, 2026-09-27, #370): the footer names no
   // company, no number and no registered office, in any language. What stays
-  // is the way to reach a person. The facts are listed once, here, as the
-  // things that must not come back; each is a string a visitor once read.
-  const DISSOLVED = [
-    'Ltd',
-    '17110487',
-    'Shelton Street',
-    'Registered',
-    'Terdaftar',
-    'Company No',
-    'Perusahaan',
-  ];
+  // is the way to reach a person. The forms it must not print have one home,
+  // tests/dissolved-company.ts, shared with the every-page scan (#390 F116).
 
   for (const locale of LOCALES)
     test(`${locale}: the footer names no company, and still reaches a person`, async ({
@@ -88,11 +81,15 @@ test.describe('header + footer', () => {
       const footer = page.locator('footer');
       await expect(footer).toBeVisible();
       await expect(footer.locator('.disclosure')).toHaveCount(0);
-      for (const fact of DISSOLVED)
-        await expect(
-          footer,
-          `${locale} footer still says ${fact}`,
-        ).not.toContainText(fact);
+      // textContent, not innerText: a form hidden from sight is still printed.
+      const printed = dissolvedIn((await footer.textContent()) ?? '');
+      expect(
+        searched(printed, {
+          of: DISSOLVED_COMPANY,
+          what: 'dissolved-company forms',
+        }),
+        `${locale} footer still names the company`,
+      ).toEqual([]);
       await expect(
         footer.locator('a[href="mailto:support@shyden.co.uk"]'),
       ).toBeVisible();
