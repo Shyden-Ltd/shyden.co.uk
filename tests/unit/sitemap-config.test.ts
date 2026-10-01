@@ -42,6 +42,16 @@ const sitemapLocales = (): Record<string, string> => {
 };
 
 describe('the sitemap declares every locale the site serves', () => {
+  it('is the only locale list the config writes out', () => {
+    // Astro's own `i18n` block listed en and id long after #22 shipped five,
+    // and nothing read it: the site localises paths itself, and the build was
+    // byte-identical with it, without it and with all five (61 files,
+    // measured 2026-10-01). It is gone, so no second hand-written list can go
+    // stale beside the one this file checks (#390).
+    const source = withoutTsComments(readFileSync(CONFIG, 'utf8'));
+    expect(source.match(/\blocales\s*:/g)).toEqual(['locales:']);
+  });
+
   it('maps exactly the locales in LOCALES, with no extras', () => {
     expect(Object.keys(sitemapLocales()).sort()).toEqual([...LOCALES].sort());
   });
