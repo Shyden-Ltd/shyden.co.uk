@@ -154,6 +154,17 @@ const loopParts = (
 };
 
 /**
+ * Every test this detector reads in `sf`, by title, from the one reader every
+ * guard shares. Exported as the population the suite counts: a detector that
+ * finds no loop has said nothing unless it also found the tests (#390).
+ */
+export function testsRead(sf: ts.SourceFile): string[] {
+  return declarationsIn(sf)
+    .filter(({ kind }) => kind === 'test')
+    .map(({ call }) => titleOf(sf, call));
+}
+
+/**
  * Every loop inside a test body that changes page state on each pass, unless
  * it declares a runtime population. A loop OUTSIDE a test that generates one
  * test per case is the shape this asks for, so it is never reported.
