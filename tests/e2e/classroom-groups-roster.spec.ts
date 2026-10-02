@@ -330,18 +330,15 @@ test.describe('an absent student', () => {
     await expect(row.getByLabel('Sex')).toHaveValue('F');
   });
 
-  test('is tinted, striped and labelled', async ({ page }) => {
-    await markAbsent(page);
-    const row = page.locator('.cg-student').first();
-    for (const theme of THEMES) {
+  // One test per theme (#418).
+  for (const theme of THEMES)
+    test(`${theme}: is tinted, striped and labelled`, async ({ page }) => {
+      await markAbsent(page);
+      const row = page.locator('.cg-student').first();
       await emulateTheme(page, theme);
-      await expect(row, theme).toHaveCSS(
-        'background-color',
-        'rgb(255, 246, 227)',
-      );
-    }
-    await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
-  });
+      await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
+      await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
+    });
 
   test('is still readable with colour removed', async ({ page }) => {
     await markAbsent(page);
@@ -397,36 +394,33 @@ test.describe('an absent student', () => {
   // comment on `.cg-student.is-absent` for why box-shadow cannot paint on
   // a `display: table-row` box at all), so a single exact string could
   // never describe both correctly.
+  // One test per layout per theme (#418).
   for (const { name, width } of [
     { name: 'cards', width: 320 },
     { name: 'table', width: 1280 },
-  ] as const) {
-    test(
-      `${name}: absence carries the tint, the stripe and the pill -- same element as the table`,
-      { tag: '@emulated-viewport' },
-      async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
-        await markAbsent(page);
-        const row = page.locator('.cg-student').first();
-        for (const theme of THEMES) {
+  ] as const)
+    for (const theme of THEMES) {
+      test(
+        `${name}, ${theme}: absence carries the tint, the stripe and the pill -- same element as the table`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await markAbsent(page);
+          const row = page.locator('.cg-student').first();
           await emulateTheme(page, theme);
-          await expect(row, theme).toHaveCSS(
-            'background-color',
-            'rgb(255, 246, 227)',
+          await expect(row).toHaveCSS('background-color', 'rgb(255, 246, 227)');
+          await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
+          const cards = await page
+            .locator('#cg-roster')
+            .evaluate((el) => getComputedStyle(el).display !== 'table');
+          const stripeTarget = cards ? row : row.locator('td').first();
+          const boxShadow = await stripeTarget.evaluate(
+            (el) => getComputedStyle(el).boxShadow,
           );
-        }
-        await expect(row.locator('.cg-absent-pill')).toHaveText('absent');
-        const cards = await page
-          .locator('#cg-roster')
-          .evaluate((el) => getComputedStyle(el).display !== 'table');
-        const stripeTarget = cards ? row : row.locator('td').first();
-        const boxShadow = await stripeTarget.evaluate(
-          (el) => getComputedStyle(el).boxShadow,
-        );
-        expect(boxShadow, `${name} stripe`).not.toBe('none');
-      },
-    );
-  }
+          expect(boxShadow, `${name} stripe`).not.toBe('none');
+        },
+      );
+    }
 
   // L-09-shaped, mirroring classroom-groups.spec.ts's own "the accent
   // colour still meets the WCAG AA contrast floor" test: computes the REAL
@@ -434,16 +428,17 @@ test.describe('an absent student', () => {
   // #8a6a10/#fff hex pair by eye. "Any tint you add must keep text on it
   // at AA" (this task's own constraint) applies to the pill's own
   // background just as much as the row's.
-  test('the pill text meets the WCAG AA contrast floor', async ({ page }) => {
-    await markAbsent(page);
-    for (const theme of THEMES) {
+  for (const theme of THEMES)
+    test(`${theme}: the pill text meets the WCAG AA contrast floor`, async ({
+      page,
+    }) => {
+      await markAbsent(page);
       await emulateTheme(page, theme);
       const contrast = await contrastRatio(
         page.locator('.cg-absent-pill').first(),
       );
-      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
-    }
-  });
+      expect(contrast).toBeGreaterThanOrEqual(4.5);
+    });
 
   test(
     'cards: no horizontal scroll at 320px once a student is marked absent',
@@ -723,23 +718,25 @@ test.describe('validation as it is typed', () => {
   // #332, the stale notice's twin. The warning paints its own cream ground
   // and took --ink, which Aurora made near-white: 1.05:1. Scored the way the
   // browser paints it, with the warning in its real state.
-  test('the gap warning meets the WCAG AA contrast floor', async ({ page }) => {
-    await openRoster(page);
-    await page.getByRole('button', { name: 'Add student' }).click();
-    await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
-    const warning = page.locator('#cg-roster-warning');
-    await expect(warning).toBeVisible();
-    await expect(warning).toContainText('Your class list looks incomplete.');
-    for (const theme of THEMES) {
+  // One test per theme (#418).
+  for (const theme of THEMES)
+    test(`${theme}: the gap warning meets the WCAG AA contrast floor`, async ({
+      page,
+    }) => {
+      await openRoster(page);
+      await page.getByRole('button', { name: 'Add student' }).click();
+      await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
+      const warning = page.locator('#cg-roster-warning');
+      await expect(warning).toBeVisible();
+      await expect(warning).toContainText('Your class list looks incomplete.');
       await emulateTheme(page, theme);
-      expect(await contrastRatio(warning), theme).toBeGreaterThanOrEqual(4.5);
+      expect(await contrastRatio(warning)).toBeGreaterThanOrEqual(4.5);
       await shoot(
         page,
         `${theme}: the gap warning on its cream ground`,
         warning,
       );
-    }
-  });
+    });
 
   // The block is a COMPARISON, not a one-way latch -- the same "a
   // dirty/stale flag must be able to clear again" philosophy this page
@@ -1676,28 +1673,37 @@ test.describe('an unset roster dropdown says which column it is for', () => {
    * here already accounts for it -- there is no native chrome left to guess.
    */
   // Every locale (#390 F113): a column name is the very text whose width
-  // varies by language, and this measured English alone.
+  // varies by language, and this measured English alone. One test per locale
+  // per width (#418), so each has its own budget and a park names exactly the
+  // cases that do not fit. 768px is where the card layout gives way to the
+  // table, so both layouts are measured, and 600px and 430px sit inside the
+  // card band that used to be the table's.
+  const TRUNCATION_WIDTHS = [320, 375, 390, 430, 600, 768, 1024, 1280];
+  /**
+   * Where a column name does not fit today (#409), measured on CI's platform
+   * (the pinned Linux image, all five engines) when this split was made.
+   * Expected to FAIL there, not skipped: the day the layout is fixed the case
+   * goes red and its entry has to go, so the park cannot outlive its fix.
+   * CI run 36965820730 failed exactly these five cases on every engine,
+   * so an entry names the case and holds for all five.
+   */
+  const DOES_NOT_FIT_YET: ReadonlySet<string> = new Set([
+    '/id/classroom-groups 320',
+    '/id/classroom-groups 768',
+    '/id/classroom-groups 1024',
+    '/id/classroom-groups 1280',
+    '/vi/classroom-groups 768',
+  ]);
   for (const path of localePaths('/classroom-groups'))
-    test(
-      `no dropdown ever truncates its own column name -- ${path}`,
-      { tag: '@emulated-viewport' },
-      async ({ page }) => {
-        // Indonesian and Vietnamese do not fit today (#409), measured when this
-        // test first ran in every locale. Expected to FAIL there, not skipped:
-        // the day the layout is fixed this goes red and the line has to go, so
-        // the park cannot outlive its fix.
-        test.fail(
-          path === '/id/classroom-groups' || path === '/vi/classroom-groups',
-          'the column names do not fit in Indonesian and Vietnamese (#409)',
-        );
-        // 768px is where the card layout gives way to the table, so both
-        // layouts are measured, and 600px and 430px sit inside the card band
-        // that used to be the table's.
-        const widths = [320, 375, 390, 430, 600, 768, 1024, 1280];
-        const findings: string[] = [];
-        const measured: string[] = [];
-
-        for (const width of widths) {
+    for (const width of TRUNCATION_WIDTHS)
+      test(
+        `no dropdown ever truncates its own column name -- ${path} at ${width}px`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          test.fail(
+            DOES_NOT_FIT_YET.has(`${path} ${width}`),
+            'a column name does not fit here yet (#409)',
+          );
           await page.setViewportSize({ width, height: 900 });
           await openRoster(page, path);
           const row = page.locator('.cg-student').first();
@@ -1726,24 +1732,20 @@ test.describe('an unset roster dropdown says which column it is for', () => {
             }),
           );
 
-          for (const box of boxes) {
-            measured.push(`${width}px ${box.label}`);
-            if (box.needs > box.box) {
-              findings.push(
-                `${width}px ${box.label}: shows "${box.shows}" in ${box.box}px, needs ${box.needs}px`,
-              );
-            }
-          }
-        }
-
-        expect(
-          searched(findings, {
-            of: measured,
-            what: 'roster dropdowns measured across widths',
-          }),
-        ).toEqual([]);
-      },
-    );
+          const findings = boxes
+            .filter((box) => box.needs > box.box)
+            .map(
+              (box) =>
+                `${box.label}: shows "${box.shows}" in ${box.box}px, needs ${box.needs}px`,
+            );
+          expect(
+            searched(findings, {
+              of: boxes.map((box) => box.label),
+              what: 'roster dropdowns measured',
+            }),
+          ).toEqual([]);
+        },
+      );
 
   test("the empty option keeps each column's own behaviour", async ({
     page,
