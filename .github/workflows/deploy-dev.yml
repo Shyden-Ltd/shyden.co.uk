@@ -178,7 +178,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: node scripts/install-browsers.mjs chromium
       - name: Sanity-check the live dev site
         env:
           # The dev site is behind Basic auth; the username half is ignored by

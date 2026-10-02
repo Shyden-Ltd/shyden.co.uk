@@ -144,7 +144,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps
+      - run: node scripts/install-browsers.mjs
       # No build step, on purpose: the web server builds for the run, and the
       # unfiltered `--list` each shard is held to runs first, on a tree with
       # no `dist/`. That makes every shard prove collection needs no build
@@ -206,7 +206,7 @@ jobs:
           cache: npm
       - run: npm ci
       # Both sanity configs declare one project, chromium.
-      - run: npx playwright install --with-deps chromium
+      - run: node scripts/install-browsers.mjs chromium
       - run: npm run test:sanity
       - name: Keep the failing run's Playwright traces
         if: failure()
@@ -234,7 +234,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps
+      - run: node scripts/install-browsers.mjs
       - run: npm run test:functions
       - name: Keep the failing run's Playwright traces
         if: failure()

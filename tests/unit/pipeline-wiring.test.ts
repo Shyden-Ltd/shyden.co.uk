@@ -2433,9 +2433,40 @@ describe('wrangler comes from the lockfile (#97)', () => {
     expect(jobNamed('ci.yml', 'functions').runs).toEqual([
       'npm ci',
       // Every engine: the suite posts the 404's forms from all five (#350).
-      'npx playwright install --with-deps',
+      'node scripts/install-browsers.mjs',
       'npm run test:functions',
     ]);
+  });
+});
+
+// ---- the browser install (#431) -------------------------------------------
+//
+// A raw `playwright install` has no limit and no retry of its own: run
+// 36973026350's shard 2 spent its job's whole 20 minutes in one while a
+// package mirror stalled. Derived from every parsed workflow, and each run
+// read without its shell comments, so a sixth install step is judged the day
+// it is written and a comment naming the wrapper cannot stand in for it.
+describe('every browser install has a limit and a retry (#431)', () => {
+  it('installs browsers only through scripts/install-browsers.mjs', () => {
+    const installs = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs.flatMap(({ id, runs }) =>
+        runs
+          .map((run) => withoutCommentLines(run).trim())
+          .filter((run) =>
+            /playwright\s+install|install-browsers\.mjs/.test(run),
+          )
+          .map((run) => `${name} › ${id}: ${run}`),
+      ),
+    );
+    // The whole step is the wrapper and its browsers, nothing around it: a
+    // raw install chained after it would still run unbounded.
+    const unbounded = installs.filter(
+      (install) =>
+        !/: node scripts\/install-browsers\.mjs( [a-z-]+)*$/.test(install),
+    );
+    expect(
+      searched(unbounded, { of: installs, what: 'browser install steps' }),
+    ).toEqual([]);
   });
 });
 

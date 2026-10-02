@@ -121,7 +121,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: node scripts/install-browsers.mjs chromium
       - name: Smoke and verify the live prod site
         env:
           WEB_BASE_URL: https://shyden.co.uk
