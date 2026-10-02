@@ -14,6 +14,7 @@ import {
   stylesheetsIn,
   withoutAstroStyles,
   withoutCssComments,
+  withoutSqlComments,
   withoutYamlComments,
   withoutYamlQuotes,
   withoutCommentLines,
@@ -469,6 +470,36 @@ describe('astroTemplate reads the markup a page is written in', () => {
  * proves the strippers work proved every dialect but this one, and the defect
  * #203 records lived in its callers for as long.
  */
+describe('withoutSqlComments (#390 F160)', () => {
+  // An anchored match over raw SQL was taken as proof the line is real, and a
+  // block comment holding the old line satisfied it while the column below
+  // had changed. SQL has both comment forms and quotes that double to escape.
+  it('removes a line comment and keeps the line break', () => {
+    expect(withoutSqlComments('a INT, -- gone\nb INT')).toBe('a INT, \nb INT');
+  });
+
+  it('removes a block comment, across lines', () => {
+    expect(withoutSqlComments('a INT,\n/*\n  b INT,\n*/\nc INT')).toBe(
+      'a INT,\n\nc INT',
+    );
+  });
+
+  it('keeps comment syntax inside a string, through a doubled quote', () => {
+    const sql = "SELECT '--x', 'it''s /* kept */' -- gone";
+    expect(withoutSqlComments(sql)).toBe("SELECT '--x', 'it''s /* kept */' ");
+  });
+
+  it('keeps comment syntax inside a quoted identifier', () => {
+    expect(withoutSqlComments('SELECT "a--b" FROM t /* gone */')).toBe(
+      'SELECT "a--b" FROM t ',
+    );
+  });
+
+  it('reads an unclosed block comment to the end, as SQLite does', () => {
+    expect(withoutSqlComments('a INT /* never closed\nb INT')).toBe('a INT ');
+  });
+});
+
 describe('withoutCssComments', () => {
   it('removes a block comment and keeps the declarations around it', () => {
     expect(withoutCssComments('a{b:c} /* gone */ d{e:f}')).toBe(

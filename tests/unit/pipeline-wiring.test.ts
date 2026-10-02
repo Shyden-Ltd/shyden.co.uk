@@ -2433,9 +2433,100 @@ describe('wrangler comes from the lockfile (#97)', () => {
     expect(jobNamed('ci.yml', 'functions').runs).toEqual([
       'npm ci',
       // Every engine: the suite posts the 404's forms from all five (#350).
-      'npx playwright install --with-deps',
+      // No browser install: the job runs in the pinned image (#431).
       'npm run test:functions',
     ]);
+  });
+});
+
+// ---- browsers come with the pinned image (#431) ---------------------------
+//
+// Run 36973026350's shard 2 spent its whole job in `npx playwright install
+// --with-deps` while an apt mirror stalled. A retry would only hide that, so
+// the download is gone instead: every job that runs Playwright runs inside the
+// Playwright image, which carries the browsers and their system packages. Read
+// from the parsed workflows, so a new browser job is judged the day it is
+// written and a comment naming the image cannot stand in for it.
+describe('browsers come with the pinned Playwright image, never a download (#431)', () => {
+  const installed = (
+    JSON.parse(
+      readFileSync('node_modules/@playwright/test/package.json', 'utf8'),
+    ) as { version: string }
+  ).version;
+  /** The image for the installed Playwright, pinned by digest: a tag can move. */
+  const PINNED = new RegExp(
+    `^mcr\\.microsoft\\.com/playwright:v${installed.replaceAll('.', '\\.')}-noble@sha256:[0-9a-f]{64}$`,
+  );
+  /**
+   * The two deploy verify jobs still install, until they can post their status
+   * without `gh`, which the image lacks (#444). Shrink-only: each entry must
+   * still be found, so a fixed job leaves the list instead of staying excused.
+   */
+  const STILL_INSTALLING = [
+    'deploy-dev.yml › verify-dev',
+    'deploy-prod.yml › smoke-and-verify',
+  ];
+  type Jobs = Record<string, { container?: unknown }>;
+  const imageOf = (file: string, id: string): string | undefined => {
+    const { jobs } = parseCleanYaml(workflow(file), file) as { jobs: Jobs };
+    const container = jobs[id]?.container;
+    if (typeof container === 'string') return container;
+    if (container && typeof container === 'object' && 'image' in container)
+      return String((container as { image: unknown }).image);
+    return undefined;
+  };
+  const runsPlaywright = (runs: readonly string[]) =>
+    runs
+      .map((run) => withoutCommentLines(run))
+      .some((run) =>
+        /playwright\s+test|npm run test:(e2e|functions|sanity|visual)\b/.test(
+          run,
+        ),
+      );
+  const browserJobs = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter(({ runs }) => runsPlaywright(runs))
+        .map(({ id }) => ({ file: name, id, where: `${name} › ${id}` })),
+    );
+
+  it('downloads browsers in no step but the excused deploy verify jobs', () => {
+    const installing = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter(({ runs }) =>
+          runs.some((run) =>
+            /playwright\s+install/.test(withoutCommentLines(run)),
+          ),
+        )
+        .map(({ id }) => `${name} › ${id}`),
+    );
+    expect(installing).toEqual(STILL_INSTALLING);
+  });
+
+  it('runs every other Playwright job inside the pinned image', () => {
+    const jobs = browserJobs();
+    const unpinned = jobs
+      .filter(({ where }) => !STILL_INSTALLING.includes(where))
+      .filter(({ file, id }) => !PINNED.test(imageOf(file, id) ?? ''))
+      .map(
+        ({ where, file, id }) =>
+          `${where}: ${imageOf(file, id) ?? 'no container'}`,
+      );
+    expect(
+      searched(unpinned, {
+        of: jobs.map(({ where }) => where),
+        what: 'jobs running Playwright',
+      }),
+    ).toEqual([]);
+  });
+
+  it('runs them all in one image, so a bump moves every job at once', () => {
+    const images = new Set(
+      browserJobs()
+        .filter(({ where }) => !STILL_INSTALLING.includes(where))
+        .map(({ file, id }) => imageOf(file, id)),
+    );
+    expect(images.size).toBe(1);
   });
 });
 

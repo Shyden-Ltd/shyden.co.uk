@@ -208,17 +208,17 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 199 | test | A | `tests/report-health.ts` | +14/-0 | read whole (tranche 14) | clean | — |
 | 200 | test | A | `tests/reporters/dashboard-jsonl.ts` | +136/-0 | read whole (tranche 14) | F158's doc half: the fold's comment named summarizePlaywrightGroup, which b43d7a3 removed; it now names playwrightVerdict, which counts expected and unexpected | — |
 | 201 | test | M | `tests/reporters/jsonl-reporter.ts` | +8/-79 | read whole (tranche 14) | F158 the live dashboard read result.status alone, so a test.fail() test failing as declared showed failed and one passing, which fails the run, showed passed (/classroom-groups carries five, #409); now Playwright's verdict, proven by a real Playwright run of four tests, one per outcome | jsonl-reporter.test.ts RED on develop's reporter (both directions); JR1 RED (1 of 11) |
-| 202 | test | M | `tests/reporters/jsonl-vitest.ts` | +17/-63 | — |  |  |
-| 203 | test | A | `tests/reporters/nav-timing-reporter.ts` | +161/-0 | — |  |  |
-| 204 | test | A | `tests/reporters/test-identity.ts` | +42/-0 | — |  |  |
-| 205 | test | A | `tests/sanity-on-build.ts` | +70/-0 | — |  |  |
-| 206 | test | A | `tests/shytalk-links.ts` | +60/-0 | — |  |  |
+| 202 | test | M | `tests/reporters/jsonl-vitest.ts` | +17/-63 | read whole (tranche 15) | clean: measured with a real vitest run through this reporter, it.fails failing reports passed and it.fails passing reports failed, so F158's inversion does not reach the vitest half | — |
+| 203 | test | A | `tests/reporters/nav-timing-reporter.ts` | +161/-0 | read whole (tranche 15) | clean: counts Playwright's own 'Navigate' steps (page.goto), and navTimingVerdict turns a collector that matched nothing into a failure | — |
+| 204 | test | A | `tests/reporters/test-identity.ts` | +42/-0 | read whole (tranche 15) | clean | — |
+| 205 | test | A | `tests/sanity-on-build.ts` | +70/-0 | read whole (tranche 15) | clean | — |
+| 206 | test | A | `tests/shytalk-links.ts` | +60/-0 | read whole (tranche 15) | clean: links are selected by resolved host, and the absence goes through searched over the hosts found | — |
 | 207 | test | A | `tests/site-pages.ts` | +102/-0 | read whole (tranche 12) | F130 TITLE_FOR added beside HEADING_FOR, keyed by page for the same reason | LP1 RED |
-| 208 | test | A | `tests/source-files.ts` | +211/-0 | — |  |  |
+| 208 | test | A | `tests/source-files.ts` | +211/-0 | read whole (tranche 15) | clean: its git spawns throw on any status but 0 (and 1 for check-ignore), so a null status from a buffer overflow (#438's class) fails closed | — |
 | 209 | test | A | `tests/spec-dirs.ts` | +20/-0 | read whole (tranche 9) | F106 a docblock for a function taking dir was left behind when specFilesUnder moved to tests/source-files.ts (which carries its own), stacked above specDirs' real docblock: removed. | SD1: 1/1 RED |
-| 210 | test | A | `tests/themes.ts` | +62/-0 | — |  |  |
-| 211 | test | A | `tests/unit/absence-liveness.test.ts` | +186/-0 | — |  |  |
-| 212 | test | A | `tests/unit/anchored-presence.test.ts` | +303/-0 | — |  |  |
+| 210 | test | A | `tests/themes.ts` | +62/-0 | read whole (tranche 15) | clean: both saveTheme callers save the opposite of the device's theme, so neither assertion can pass on the device's own | — |
+| 211 | test | A | `tests/unit/absence-liveness.test.ts` | +186/-0 | read whole (tranche 15) | F159 only toEqual([]) and toHaveLength(0) were read, so an absence spelled expect(x.length).toBe(0), .size, or toStrictEqual([]) was never judged (AL1b green); now every spelling, with a fixture test. F161 its liveness floor sat at 153 under a real 391, so a dead toHaveLength(0) branch stayed green (AL2 green); now 394, floor 393. A subject bound by destructuring is still not traced (AL3 green), filed as #446 AC6 | AL1b-before GREEN; AL1b RED (1 of 3). AL2-before GREEN; AL2b RED (2 of 3) |
+| 212 | test | A | `tests/unit/anchored-presence.test.ts` | +303/-0 | read whole (tranche 15) | F160 an anchor is not a stripper: report-endpoint stripped only `--` with a private replace, and its anchored check passed a block comment below the table holding the old quote line while the column allowed 100000 characters (RE1 green); now withoutSqlComments in source-text.ts, quote-aware, and the doc no longer calls an anchor stronger than stripping. Its floor sat at 47 under a real 77, now 76 (AP2 red before: its fixtures cover toMatch, so the slack had no proven cost) | RE1-before GREEN; RE1 RED (1 of 3364) |
 | 213 | test | A | `tests/unit/ast.test.ts` | +452/-0 | — |  |  |
 | 214 | test | A | `tests/unit/ast.ts` | +592/-0 | — |  |  |
 | 215 | test | A | `tests/unit/astro-css-strip.test.ts` | +150/-0 | — |  |  |
