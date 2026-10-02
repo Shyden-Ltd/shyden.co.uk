@@ -189,22 +189,23 @@ test.describe('language switcher', () => {
   // Every page, every language, every entry (#390 F131). Both tests read the
   // first entry on /glory-points and nothing else, so a Thai entry that sent
   // the visitor to the homepage, or a /classroom-groups switcher pointing at
-  // the wrong page, passed.
-  test('keeps you on the page you were reading, from every page in every language', async ({
-    page,
-  }) => {
-    // The classic i18n bug is a switcher that dumps the visitor on the
-    // homepage instead of translating the page in front of them.
-    // Trailing slash included deliberately: Astro serves these paths with one,
-    // so this asserts the href a visitor actually gets rather than a tidied
-    // version of it. `every target is a real page` proves it resolves.
-    for (const path of sitePaths())
-      for (const locale of LOCALES) {
-        await page.goto(localisePath(path, locale));
-        expect(
-          await switcherTargets(page),
-          `the switcher on ${localisePath(path, locale)}`,
-        ).toEqual(
+  // the wrong page, passed. One test per page per language, so each has its
+  // own budget and a failure names the page in its title.
+  for (const path of sitePaths())
+    for (const locale of LOCALES) {
+      const here = localisePath(path, locale);
+
+      test(`${here}: keeps you on the page you were reading`, async ({
+        page,
+      }) => {
+        // The classic i18n bug is a switcher that dumps the visitor on the
+        // homepage instead of translating the page in front of them.
+        // Trailing slash included deliberately: Astro serves these paths with
+        // one, so this asserts the href a visitor actually gets rather than a
+        // tidied version of it. `every target is a real page` proves it
+        // resolves.
+        await page.goto(here);
+        expect(await switcherTargets(page)).toEqual(
           Object.fromEntries(
             otherLocales(locale).map((other) => [
               other,
@@ -212,23 +213,19 @@ test.describe('language switcher', () => {
             ]),
           ),
         );
-      }
-  });
+      });
 
-  test('every target is a real page, not a 404', async ({ page }) => {
-    const targets = new Set<string>();
-    for (const path of sitePaths())
-      for (const locale of LOCALES) {
-        await page.goto(localisePath(path, locale));
-        for (const href of Object.values(await switcherTargets(page)))
-          targets.add(href);
-      }
-    // Every page in every language is somebody's target, so this is the
-    // population: fewer means a page was never requested below.
-    expect(targets.size).toBe(sitePaths().length * LOCALES.length);
-    for (const href of targets)
-      expect((await page.request.get(href)).status(), href).toBe(200);
-  });
+      test(`${here}: every target is a real page, not a 404`, async ({
+        page,
+      }) => {
+        await page.goto(here);
+        const targets = Object.values(await switcherTargets(page));
+        // The population: one entry for every other language.
+        expect(targets).toHaveLength(otherLocales(locale).length);
+        for (const href of targets)
+          expect((await page.request.get(href)).status(), href).toBe(200);
+      });
+    }
 
   test('the control and its entries are touchable', async ({ page }) => {
     await page.goto('/');
@@ -268,30 +265,27 @@ test.describe('language switcher', () => {
     },
   );
 
-  test(
-    'the open dropdown stays inside the viewport at 320px',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // Page-level scrollWidth is not containment: a panel can escape its own
-      // container and still produce zero document scroll.
-      //
-      // Every language (#390 F131): the panel hangs off a summary whose width
-      // is each language's own, so this is a fit test and read English only.
-      await page.setViewportSize({ width: 320, height: 720 });
-      for (const locale of LOCALES) {
+  // Every language (#390 F131): the panel hangs off a summary whose width is
+  // each language's own, so this is a fit test, and it read English only.
+  for (const locale of LOCALES)
+    test(
+      `${locale}: the open dropdown stays inside the viewport at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        // Page-level scrollWidth is not containment: a panel can escape its
+        // own container and still produce zero document scroll.
+        await page.setViewportSize({ width: 320, height: 720 });
         await page.goto(localisePath('/', locale));
         await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
         await page.locator(`${SWITCHER} > summary`).click();
         const box = (await page.locator(`${SWITCHER} ul`).boundingBox())!;
-        expect(
-          box.x,
-          `${locale}: dropdown escapes the left edge`,
-        ).toBeGreaterThanOrEqual(0);
+        expect(box.x, 'dropdown escapes the left edge').toBeGreaterThanOrEqual(
+          0,
+        );
         expect(
           box.x + box.width,
-          `${locale}: dropdown escapes the right edge`,
+          'dropdown escapes the right edge',
         ).toBeLessThanOrEqual(320);
-      }
-    },
-  );
+      },
+    );
 });

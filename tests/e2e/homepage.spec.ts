@@ -262,31 +262,30 @@ test.describe('homepage content', () => {
   // Every locale (#390 F129). On `/` the English path is also the right one,
   // so English alone cannot fail "in-locale"; this read only `/`, and the
   // Indonesian half sat in classroom-groups.spec.ts with zh, vi and th unread.
-  test('exactly two tool cards, each badged and linked in-locale', async ({
-    page,
-  }) => {
-    for (const locale of LOCALES) {
+  // One test per locale, so each has its own budget and names its language.
+  for (const locale of LOCALES)
+    test(`${locale}: exactly two tool cards, each badged and linked in-locale`, async ({
+      page,
+    }) => {
       await page.goto(localisePath('/', locale));
       const tools = page.locator('#tools');
-      await expect(tools.locator('.work-card'), locale).toHaveCount(2);
-      await expect(tools.locator('.work-card-badge'), locale).toHaveCount(2);
+      await expect(tools.locator('.work-card')).toHaveCount(2);
+      await expect(tools.locator('.work-card-badge')).toHaveCount(2);
       // The exact set: each tool once, in this locale, and nothing else.
       const hrefs = await tools
         .locator('a[href]')
         .evaluateAll((links) => links.map((l) => l.getAttribute('href')));
-      expect(hrefs.sort(), `${locale}: the tool links`).toEqual(
+      expect(hrefs.sort(), 'the tool links').toEqual(
         ['/classroom-groups', '/glory-points'].map((tool) =>
           localisePath(tool, locale),
         ),
       );
-    }
-    await page.goto('/');
-    await shoot(
-      page,
-      'both tool cards, badged and in-locale',
-      page.locator('#tools'),
-    );
-  });
+      await shoot(
+        page,
+        `${locale}: both tool cards, badged and in-locale`,
+        tools,
+      );
+    });
 
   test('contact section CTA links to the support mailbox', async ({ page }) => {
     await page.goto('/');
@@ -365,13 +364,12 @@ test.describe('mobile-first layout', () => {
   }
   // Every locale (#390 F129): each loads its own capture and copy, and this
   // read only the English page.
-  test('no console errors on load, in any locale', async ({ page }) => {
-    const reported = recordErrors(page);
-    for (const locale of LOCALES) {
+  for (const locale of LOCALES)
+    test(`${locale}: no console errors on load`, async ({ page }) => {
+      const reported = recordErrors(page);
       await page.goto(localisePath('/', locale));
       await reported.expectNone(`the ${locale} homepage loads without errors`);
-    }
-  });
+    });
 });
 
 test.describe('reduced motion', () => {
