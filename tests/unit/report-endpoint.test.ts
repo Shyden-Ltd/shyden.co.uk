@@ -10,7 +10,7 @@ import {
   type ReportsDatabase,
 } from '../../src/lib/report';
 import { getSiteStrings } from '../../src/lib/i18n';
-import { codeWithoutComments } from './source-text';
+import { codeWithoutComments, withoutSqlComments } from './source-text';
 
 /**
  * Real `Request` objects, no stand-in database (spec 10). Checks 1–8 return
@@ -523,12 +523,12 @@ describe('the health check', () => {
 });
 
 describe('the migration', () => {
-  // SQL line comments stripped: the migration's own column notes must not satisfy this.
+  // Comments stripped, both forms: the migration's own column notes must not
+  // satisfy this. A private `--` replace stood here, and a block comment below
+  // the table holding the old `quote` line passed the anchored check while the
+  // column itself allowed 100000 characters (#390 F160).
   const sql = () =>
-    readFileSync('migrations/0001_reports.sql', 'utf8')
-      .split('\n')
-      .map((line) => line.replace(/--.*$/, ''))
-      .join('\n');
+    withoutSqlComments(readFileSync('migrations/0001_reports.sql', 'utf8'));
 
   it('creates exactly the columns the endpoint writes and the health check expects', () => {
     const body = /CREATE TABLE reports \(([\s\S]*)\);/.exec(sql())?.[1];
