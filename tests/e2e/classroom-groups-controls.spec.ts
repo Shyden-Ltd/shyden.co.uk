@@ -1646,10 +1646,10 @@ test.describe('classroom groups — what a teacher actually sees', () => {
   // One test per width (#418). The cell holds digits, the same width in
   // every language, so widths are the population and locales are not.
   for (const width of [390, 768, 1024, 1280, 1512])
-  test(
-    `a student number has room to be drawn, not just a value, at ${width}px`,
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
+    test(
+      `a student number has room to be drawn, not just a value, at ${width}px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         await page.setViewportSize({ width, height: 950 });
         await openRoster(page);
         await page.locator('.cg-add-student').click();
@@ -1674,8 +1674,8 @@ test.describe('classroom groups — what a teacher actually sees', () => {
           box,
           `@${width}px the # input has ${box.toFixed(1)}px of content box`,
         ).toBeGreaterThan(16);
-    },
-  );
+      },
+    );
 
   // The Remove button is 76px of min-content in a `table-layout: fixed` cell.
   // At 10% it did not fit and spilled 34.5px past the card's RIGHT BORDER at
