@@ -24,7 +24,13 @@ const STATEFUL = new Set([
 ]);
 
 /** The one loop allowed inside a test: a population only the page knows. */
-const RUNTIME = /^\/\/\s*runtime population:/;
+const RUNTIME = 'runtime population:';
+
+/** A line comment's own text: its marker's two characters and outer space dropped. */
+const lineCommentText = (sf: ts.SourceFile, range: ts.CommentRange): string =>
+  range.kind === ts.SyntaxKind.SingleLineCommentTrivia
+    ? sf.text.slice(range.pos + 2, range.end).trim()
+    : '';
 
 /** `test(…)` and its run modifiers; `test.describe`, `.use` and `.step` are not tests. */
 const TEST_MODIFIERS = new Set(['only', 'skip', 'fixme', 'fail', 'slow']);
@@ -84,7 +90,7 @@ const changesState = (node: ts.Node): boolean => {
 const declaresRuntime = (sf: ts.SourceFile, node: ts.Node): boolean =>
   [node, node.parent].some((at) =>
     (ts.getLeadingCommentRanges(sf.text, at.getFullStart()) ?? []).some(
-      (range) => RUNTIME.test(sf.text.slice(range.pos, range.end)),
+      (range) => lineCommentText(sf, range).startsWith(RUNTIME),
     ),
   );
 
