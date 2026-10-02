@@ -1736,14 +1736,9 @@ test.describe('site-wide language switching', () => {
     }
   });
 
-  test('the 404 answers in both languages', async ({ page }) => {
-    // Cloudflare Pages serves this one file for any unknown path, including
-    // /id/*, so an Indonesian visitor must not be stranded in English.
-    const response = await page.goto('/definitely-not-a-page');
-    expect(response?.status()).toBe(404);
-    await expect(page.locator('body')).toContainText('Page not found');
-    await expect(page.locator('body')).toContainText('Halaman tidak ditemukan');
-  });
+  // The 404 answering in every language is held by not-found.spec.ts, and its
+  // status code by site-meta.spec.ts. An English-and-Indonesian copy titled
+  // "in both languages" stood here from before the page served five (#390 F132).
 });
 
 // Stage 2, Task 7. Design spec section 2: "The default, collapsed state must

@@ -7,25 +7,10 @@ test('custom 404 renders branded not-found copy', async ({ page }) => {
   await expect(page.locator('main a[href="/"]')).toBeVisible();
 });
 
-// One 404 serves both languages (Cloudflare Pages returns the single 404.html
-// for /id/* too), so BOTH halves are read by real visitors and both are
-// asserted as whole sentences. The two halves are identical markup that differ
-// only in line wrapping, and the wrapped half silently lost the space before
-// its link — the kind of defect a `toBeVisible()` on the link cannot see.
-// Each block also carries a report form whose status lines are sibling
-// paragraphs in the block's language (#350), so the sentence is found by the
-// home link it holds, and strict mode proves there is exactly one.
-test('the 404 offers a way home, as a readable sentence, in both languages', async ({
-  page,
-}) => {
-  await page.goto('/no-such-page-xyz');
-  await expect(
-    page.locator('main p:not([lang]):has(> a[href="/"])'),
-  ).toHaveText("That page doesn't exist. Back to the homepage.");
-  await expect(
-    page.locator('main p[lang="id"]:has(> a[hreflang="id"])'),
-  ).toHaveText('Halaman itu tidak ada. Kembali ke beranda.');
-});
+// The 404's back-home sentence, read whole in every language, is held by
+// 'ends each back-home sentence in its own language' in not-found.spec.ts.
+// This file kept an English-and-Indonesian copy titled "in both languages",
+// written before the page served five (#390 F132).
 test('robots.txt references the sitemap', async ({ request }) => {
   const body = await (await request.get('/robots.txt')).text();
   expect(body).toMatch(
