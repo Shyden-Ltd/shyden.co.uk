@@ -1494,6 +1494,7 @@ for (const { name, width } of LAYOUTS) {
       // F133): a hand list of five never named the number field, so either
       // layout could lose it and pass.
       const controls = row.locator('input, select');
+      await expect(controls).toHaveCount(6);
       const names = await controls.evaluateAll((all) =>
         all.map((c) => c.getAttribute('aria-label')),
       );
