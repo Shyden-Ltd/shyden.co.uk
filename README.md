@@ -1,6 +1,6 @@
 # shyden.co.uk
 
-The **Shyden Ltd** company website, plus two free tools it hosts.
+The **Shyden Labs** website, plus two free tools it hosts.
 
 Live at [shyden.co.uk](https://shyden.co.uk). Staged at `dev.shyden.co.uk`, which
 sits behind Basic auth and disallows crawling.

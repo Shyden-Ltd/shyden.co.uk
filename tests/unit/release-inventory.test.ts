@@ -72,6 +72,7 @@ describe('the release inventory (#362)', () => {
       '-q',
       '--no-ff',
       '-m',
+      // Merges before #413 name the org's old handle, and develop's history keeps them.
       'Merge pull request #347 from Shyden-Ltd/97-report',
       '97-report',
     ]);
@@ -87,7 +88,7 @@ describe('the release inventory (#362)', () => {
       '-q',
       '--no-ff',
       '-m',
-      'Merge pull request #298 from Shyden-Ltd/dependabot/npm/x',
+      'Merge pull request #298 from shyden-labs/dependabot/npm/x',
       'dependabot/npm/x',
     ]);
     sha.head = git(['rev-parse', 'HEAD']).trim();
