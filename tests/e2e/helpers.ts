@@ -543,3 +543,33 @@ export const expectNothingStored = async (
     for (const name of names)
       expect(value, `${where} — ${when}`).not.toContain(name);
 };
+
+/**
+ * Every text a report form shows that falls under AA: its summary, every
+ * label and paragraph it renders, and its send button, read from the DOM.
+ * Naming the quote label and two hints passed a note label painted in
+ * --border, on the 404 and in the footer alike (#390 F138, F146). The
+ * honeypot's label sits in its own div, so `form > label` leaves it out.
+ * Returns what was read too, so the caller's absence assertion can count it.
+ */
+export const formTextsUnderAA = async (
+  details: Locator,
+  send: Locator,
+): Promise<{ failing: string[]; read: string[] }> => {
+  const words = details.locator('form > label, form > p');
+  await expect(words.first()).toBeVisible();
+  const failing: string[] = [];
+  const read: string[] = [];
+  // runtime population: the labels and paragraphs this form rendered.
+  for (const text of [
+    details.locator('summary'),
+    ...(await words.all()),
+    send,
+  ]) {
+    const said = await text.innerText();
+    read.push(said);
+    const ratio = await contrastRatio(text);
+    if (ratio < 4.5) failing.push(`'${said}' ${ratio.toFixed(2)}:1`);
+  }
+  return { failing, read };
+};

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
-import { contrastRatio } from './helpers';
+import { contrastRatio, formTextsUnderAA } from './helpers';
 import { THEMES } from '../palette';
 import { searched } from '../source-files';
 import {
@@ -166,25 +166,11 @@ for (const theme of THEMES)
           await atLeast44(target);
         // On the 404 the form sits on the page's ground, not the footer's,
         // so its words are measured here too (#97 measured them in the
-        // footer). Every label and paragraph the form renders, read from the
-        // DOM: a list naming the quote label and two hints passed a note
-        // label painted in --border. The honeypot's label sits in its own div,
-        // so `form > label` leaves it out.
-        const words = details.locator('form > label, form > p');
-        await expect(words.first()).toBeVisible();
-        const failing: string[] = [];
-        const read: string[] = [];
-        // runtime population: the labels and paragraphs this form rendered.
-        for (const text of [
-          details.locator('summary'),
-          ...(await words.all()),
+        // footer).
+        const { failing, read } = await formTextsUnderAA(
+          details,
           details.getByRole('button', { name: t.send }),
-        ]) {
-          const said = await text.innerText();
-          read.push(said);
-          const ratio = await contrastRatio(text);
-          if (ratio < 4.5) failing.push(`'${said}' ${ratio.toFixed(2)}:1`);
-        }
+        );
         expect(
           searched(failing, { of: read, what: `${locale} form texts` }),
         ).toEqual([]);
