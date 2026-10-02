@@ -3,7 +3,6 @@ import { makeGroups } from '../make-groups';
 import { LOCALES, getStrings, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import { recorded, shoot } from './evidence';
-import { recordErrors } from './recorders';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -314,14 +313,20 @@ test.describe('privacy — when the script dies half-way', () => {
   test('a mid-module failure still cannot leak the class list', async ({
     page,
   }) => {
-    const reported = recordErrors(page);
+    // Where each matchMedia failure was raised: the theme script in <head>
+    // calls it too, so the message alone cannot say the MODULE died.
+    const raisedIn: string[] = [];
+    page.on('pageerror', (error) => {
+      if (error.message.includes('matchMedia unavailable'))
+        raisedIn.push(error.stack ?? '');
+    });
     await page.goto('/classroom-groups');
     // The module really did die half-way (#424). Had it stopped calling
     // matchMedia, the tool would work, its own handler would keep the URL
     // clean, and this would pass without any failure having happened.
     await expect
-      .poll(() => reported.uncaught.join('\n'))
-      .toContain('matchMedia unavailable');
+      .poll(() => raisedIn.join('\n'))
+      .toContain('ClassroomGroupsPage');
     await page.fill('#cg-count', '8');
     await page.click('#cg-go');
 
