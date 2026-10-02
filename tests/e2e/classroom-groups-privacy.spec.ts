@@ -274,6 +274,11 @@ test.describe('privacy — with JavaScript blocked', () => {
       await page.fill('#cg-count', '24');
       await page.fill('#cg-class', 'PrivacyProbeClassName7B');
       await page.click('#cg-go');
+      // WebKit schedules the form's GET after the click has returned, so the
+      // click's own wait for navigations can end before it starts, and the URL
+      // read next was the old one (#449, run 37026039545). Wait for the
+      // submission's URL itself: no submit at all fails here, by timing out.
+      await page.waitForURL((submitted) => submitted.search !== '');
 
       // Over the keys the submit actually wrote (#424): with no submit at all
       // the URL is empty, and an empty URL passed this as a clean one.
@@ -329,7 +334,23 @@ test.describe('privacy — when the script dies half-way', () => {
     // would pass without any failure having happened.
     await expect.poll(failures).toBe(2);
     await page.fill('#cg-count', '8');
+    // Whether the submit was CANCELLED, read from the event itself (#449). The
+    // URL alone cannot say: WebKit starts a native submit's navigation after
+    // the click returns, so an unchanged URL read straight away passed even
+    // when nothing stopped the submit. A listener on window runs after the
+    // form's own, so it sees the guard's preventDefault.
+    await page.evaluate(() => {
+      window.addEventListener('submit', (event) => {
+        document.documentElement.dataset.submitPrevented = String(
+          event.defaultPrevented,
+        );
+      });
+    });
     await page.click('#cg-go');
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-submit-prevented',
+      'true',
+    );
 
     // No native submit happened, so no query string exists at all — not even
     // the harmless radio values. That is the unconditional guard registered
