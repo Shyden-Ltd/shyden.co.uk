@@ -1498,47 +1498,46 @@ test.describe('out-of-date groups', () => {
   // without anyone re-running a contrast checker by hand (tokens.css's own
   // "do NOT lighten past AA" on --accent is why that retuning is a real
   // risk on this page, not a hypothetical one).
-  test('the dim stays above the WCAG AA contrast floor for normal text', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await shuffle(page);
-    await page.getByLabel('Students in each group').fill('3');
-    await expect(page.locator('#cg-results')).toHaveClass(/stale/);
-    for (const theme of THEMES) {
+  // One test per theme (#419).
+  for (const theme of THEMES)
+    test(`${theme}: the dim stays above the WCAG AA contrast floor for normal text`, async ({
+      page,
+    }) => {
+      await page.goto('/classroom-groups');
+      await shuffle(page);
+      await page.getByLabel('Students in each group').fill('3');
+      await expect(page.locator('#cg-results')).toHaveClass(/stale/);
       await emulateTheme(page, theme);
       const contrast = await contrastRatio(
         page.locator('#cg-results .group').first(),
       );
-      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
-    }
-  });
+      expect(contrast).toBeGreaterThanOrEqual(4.5);
+    });
 
   // #332. The notice paints its own cream ground (#fff6e3) but took its ink
   // from --ink, which Aurora made near-white: 1.05:1, a sentence nobody could
   // read. Scored the way the browser paints it, in the real state, so the
   // ground is the one the sentence actually sits on rather than a token pair.
-  test('the out-of-date sentence meets the WCAG AA contrast floor', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await shuffle(page);
-    await page.getByLabel('Students in each group').fill('3');
-    const sentence = page.locator('#cg-stale-text');
-    await expect(sentence).toBeVisible();
-    await expect(sentence).toHaveText(
-      'These groups are out of date — the group size changed.',
-    );
-    for (const theme of THEMES) {
+  for (const theme of THEMES)
+    test(`${theme}: the out-of-date sentence meets the WCAG AA contrast floor`, async ({
+      page,
+    }) => {
+      await page.goto('/classroom-groups');
+      await shuffle(page);
+      await page.getByLabel('Students in each group').fill('3');
+      const sentence = page.locator('#cg-stale-text');
+      await expect(sentence).toBeVisible();
+      await expect(sentence).toHaveText(
+        'These groups are out of date — the group size changed.',
+      );
       await emulateTheme(page, theme);
-      expect(await contrastRatio(sentence), theme).toBeGreaterThanOrEqual(4.5);
+      expect(await contrastRatio(sentence)).toBeGreaterThanOrEqual(4.5);
       await shoot(
         page,
         `${theme}: the out-of-date sentence on its cream notice`,
         page.locator('#cg-stale'),
       );
-    }
-  });
+    });
 
   // CLAUDE.md's binding rules apply to anything this task adds: no
   // horizontal scroll at 320px in any state, and every interactive target
@@ -1974,30 +1973,25 @@ test.describe('the no-scroll rule, measured', () => {
   // stopped applying somewhere in the middle -- a stray `min-width`, a
   // specificity fight with a later block -- would leave the pixel tests
   // passing wherever the page happened to fit anyway.
-  test(
-    'the action row is sticky at every width, so the primary action is never below the fold',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      const positionAt = async (width: number, height: number) => {
+  // One test per viewport (#419): this spelled the four sizes out by hand,
+  // and the two below looped them, under one budget.
+  for (const { width, height } of VIEWPORTS)
+    test(
+      `the action row is sticky at ${width}x${height}, so the primary action is never below the fold`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
-        return page.evaluate(
+        const position = await page.evaluate(
           () =>
             getComputedStyle(
               document.getElementById('cg-go')!.closest('.actions')!,
             ).position,
         );
-      };
-      expect(await positionAt(320, 568)).toBe('sticky');
-      await shoot(page, '320x568, the action row is sticky');
-      expect(await positionAt(375, 667)).toBe('sticky');
-      await shoot(page, '375x667, the action row is sticky');
-      expect(await positionAt(768, 1024)).toBe('sticky');
-      await shoot(page, '768x1024, the action row is sticky');
-      expect(await positionAt(1280, 800)).toBe('sticky');
-      await shoot(page, '1280x800, the action row is sticky');
-    },
-  );
+        expect(position).toBe('sticky');
+        await shoot(page, `${width}x${height}, the action row is sticky`);
+      },
+    );
 
   // The bar's COMPANION rule, which had no test at all until #188.
   // `scroll-padding-bottom` on `html` exists for one reason: to stop the
@@ -2012,11 +2006,11 @@ test.describe('the no-scroll rule, measured', () => {
   // pinning the literal would go on passing if the bar grew and the padding
   // did not, which is the one failure this rule exists to prevent, and it
   // would restate a value that already has a home in the stylesheet.
-  test(
-    'the scroll padding clears the pinned action row at every width',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      for (const { width, height } of VIEWPORTS) {
+  for (const { width, height } of VIEWPORTS)
+    test(
+      `the scroll padding clears the pinned action row at ${width}x${height}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
         const { padding, bar } = await page.evaluate(() => ({
@@ -2032,15 +2026,14 @@ test.describe('the no-scroll rule, measured', () => {
         // every padding value would then clear it.
         expect(
           bar,
-          `${width}x${height}: the action row must have a height to clear`,
+          'the action row must have a height to clear',
         ).toBeGreaterThan(0);
         expect(
           padding,
-          `${width}x${height}: scroll padding must clear the pinned bar`,
+          'scroll padding must clear the pinned bar',
         ).toBeGreaterThanOrEqual(bar);
-      }
-    },
-  );
+      },
+    );
 
   // #188, operator decision 2026-09-17. Pinned at every width, the row
   // covers the edge of whatever sits above it before any scrolling -- at
@@ -2049,11 +2042,11 @@ test.describe('the no-scroll rule, measured', () => {
   // clipped. Asserted as the property that does that work -- visible, soft,
   // offset upward -- because a pinned literal would go on passing with the
   // offset flipped below the row, off the fold where nobody sees it.
-  test(
-    'the pinned action row casts a soft shadow upward at every width',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      for (const { width, height } of VIEWPORTS) {
+  for (const { width, height } of VIEWPORTS)
+    test(
+      `the pinned action row casts a soft shadow upward at ${width}x${height}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
         const shadow = await page.evaluate(
@@ -2085,9 +2078,8 @@ test.describe('the no-scroll rule, measured', () => {
           page,
           `${width}x${height}, the row casts its shadow upward`,
         );
-      }
-    },
-  );
+      },
+    );
 
   // L-08. The brief's own literal query measured only what page LOAD
   // already shows -- nothing inside any of the four sections is on screen
@@ -2176,16 +2168,15 @@ test.describe('the no-scroll rule, measured', () => {
   // AA. What would redden this: those custom properties moving closer
   // together, or `.actions button`'s own background/color rules drifting
   // from the variables entirely.
-  test('the accent colour still meets the WCAG AA contrast floor', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    for (const theme of THEMES) {
+  for (const theme of THEMES)
+    test(`${theme}: the accent colour still meets the WCAG AA contrast floor`, async ({
+      page,
+    }) => {
+      await page.goto('/classroom-groups');
       await emulateTheme(page, theme);
       const contrast = await contrastRatio(page.locator('#cg-go'));
-      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
-    }
-  });
+      expect(contrast).toBeGreaterThanOrEqual(4.5);
+    });
 
   // M-11. The one test in this file that never touches /classroom-groups --
   // CLAUDE.md's promise about what the homepage ships (one script, the theme

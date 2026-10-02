@@ -135,13 +135,6 @@ describe('the detector', () => {
  * only shrink: a conversion removes its entries in the same pull request.
  */
 const BURN_DOWN: readonly string[] = [
-  'tests/e2e/classroom-groups.spec.ts :: the accent colour still meets the WCAG AA contrast floor :: for (const theme of THEMES)',
-  'tests/e2e/classroom-groups.spec.ts :: the dim stays above the WCAG AA contrast floor for normal text :: for (const theme of THEMES)',
-  'tests/e2e/classroom-groups.spec.ts :: the out-of-date sentence meets the WCAG AA contrast floor :: for (const theme of THEMES)',
-  'tests/e2e/classroom-groups.spec.ts :: the pinned action row casts a soft shadow upward at every width :: for (const { width, height } of VIEWPORTS)',
-  'tests/e2e/classroom-groups.spec.ts :: the scroll padding clears the pinned action row at every width :: for (const { width, height } of VIEWPORTS)',
-  'tests/e2e/disabled-controls.spec.ts :: roster at the limit — the add buttons and Make groups too :: for (const theme of THEMES)',
-  'tests/e2e/disabled-controls.spec.ts :: the disabled placeholder option is excluded deliberately, and it exists :: for (const theme of THEMES)',
   'tests/e2e/head-and-sitemap.spec.ts :: declares exactly one viewport, at the device width :: for (const path of paths)',
   'tests/e2e/header-room.spec.ts :: ${locale}: no header item overlaps another, at any width :: for (const path of paths)',
   'tests/e2e/header-room.spec.ts :: ${locale}: no header item overlaps another, at any width :: for (const width of await header.open(page, path))',
