@@ -94,7 +94,8 @@ export async function installWithRetry({
   for (let n = 1; n <= attempts; n += 1) {
     if (n > 1) await beforeRetry();
     const { stalled, code, signal } = await attempt(command, args, limitMs);
-    if (!stalled && code === 0) return;
+    // Success is success, even from an attempt the limit was racing.
+    if (code === 0) return;
     const failure = `attempt ${n} of ${attempts} ${
       stalled
         ? `stopped at its ${seconds(limitMs)} limit`
