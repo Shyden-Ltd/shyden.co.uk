@@ -377,20 +377,26 @@ test.describe('homepage content', () => {
 });
 
 test.describe('mobile-first layout', () => {
+  // Every locale at every width (#423): theme-gallery reads every locale at
+  // 320 and 1280px only, so 375 and 768px were read in English alone.
   for (const width of [320, 375, 768, 1280]) {
-    test(
-      `no horizontal scroll at ${width}px`,
-      { tag: '@emulated-viewport' },
-      async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
-        await page.goto('/');
-        const overflow = await expectNoHorizontalScroll(page);
-        // This is the guard the marquee tripped: a rotated-and-scaled element
-        // is not clipped by an ancestor's `overflow`, so it pushed 10px of
-        // sideways scroll at every width. 1217 unit tests could not see it.
-        await shoot(page, `${width}px: horizontal overflow is ${overflow}px`);
-      },
-    );
+    for (const locale of LOCALES)
+      test(
+        `${locale}: no horizontal scroll at ${width}px`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(localisePath('/', locale));
+          const overflow = await expectNoHorizontalScroll(page);
+          // This is the guard the marquee tripped: a rotated-and-scaled element
+          // is not clipped by an ancestor's `overflow`, so it pushed 10px of
+          // sideways scroll at every width. 1217 unit tests could not see it.
+          await shoot(
+            page,
+            `${locale} ${width}px: horizontal overflow is ${overflow}px`,
+          );
+        },
+      );
   }
   // Every locale (#390 F129): each loads its own capture and copy, and this
   // read only the English page.

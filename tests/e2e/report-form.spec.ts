@@ -56,39 +56,42 @@ test('the disclosure opens from the keyboard and walks its fields in order', asy
   );
 });
 
-test('every control is at least 44px, every text meets AA, every field has a 3:1 boundary', async ({
-  page,
-}) => {
-  await page.goto(pagePath('glory-points', 'th'));
-  const t = getSiteStrings('th').report;
-  await page.locator('[data-report] summary').click();
-  for (const target of [
-    page.locator('[data-report] summary'),
-    page.getByLabel(t.quoteLabel, { exact: true }),
-    page.getByLabel(t.suggestionLabel, { exact: true }),
-    page.getByLabel(t.noteLabel, { exact: true }),
-    page.getByRole('button', { name: t.send }),
-  ])
-    await atLeast44(target);
-  for (const text of [
-    page.locator('[data-report] summary'),
-    page.locator('[data-report] form > p').first(),
-    page.locator('#report-quote-hint'),
-    page.locator('#report-note-hint'),
-    page.locator('label[for="report-quote"]'),
-    page.getByRole('button', { name: t.send }),
-  ])
-    expect(await contrastRatio(text)).toBeGreaterThanOrEqual(4.5);
-  // WCAG 1.4.11: each field's boundary is --border-strong, the token
-  // contrast.test.ts scores at 3:1. #133 shipped --border (1.17:1) on every
-  // control. Resolved by the browser, so both sides are computed rgb.
-  const strong = await resolvedColour(page, 'var(--border-strong)');
-  for (const label of [t.quoteLabel, t.suggestionLabel, t.noteLabel])
-    await expect(page.getByLabel(label, { exact: true })).toHaveCSS(
-      'border-top-color',
-      strong,
-    );
-});
+// Every locale that carries the form (#423): the 44px half measures its
+// localised labels, and this read Thai alone.
+for (const locale of PREFIXED_LOCALES)
+  test(`${locale}: every control is at least 44px, every text meets AA, every field has a 3:1 boundary`, async ({
+    page,
+  }) => {
+    await page.goto(pagePath('glory-points', locale));
+    const t = getSiteStrings(locale).report;
+    await page.locator('[data-report] summary').click();
+    for (const target of [
+      page.locator('[data-report] summary'),
+      page.getByLabel(t.quoteLabel, { exact: true }),
+      page.getByLabel(t.suggestionLabel, { exact: true }),
+      page.getByLabel(t.noteLabel, { exact: true }),
+      page.getByRole('button', { name: t.send }),
+    ])
+      await atLeast44(target);
+    for (const text of [
+      page.locator('[data-report] summary'),
+      page.locator('[data-report] form > p').first(),
+      page.locator('#report-quote-hint'),
+      page.locator('#report-note-hint'),
+      page.locator('label[for="report-quote"]'),
+      page.getByRole('button', { name: t.send }),
+    ])
+      expect(await contrastRatio(text)).toBeGreaterThanOrEqual(4.5);
+    // WCAG 1.4.11: each field's boundary is --border-strong, the token
+    // contrast.test.ts scores at 3:1. #133 shipped --border (1.17:1) on every
+    // control. Resolved by the browser, so both sides are computed rgb.
+    const strong = await resolvedColour(page, 'var(--border-strong)');
+    for (const label of [t.quoteLabel, t.suggestionLabel, t.noteLabel])
+      await expect(page.getByLabel(label, { exact: true })).toHaveCSS(
+        'border-top-color',
+        strong,
+      );
+  });
 
 for (const locale of PREFIXED_LOCALES)
   for (const pageId of FOOTER_PAGE_IDS)

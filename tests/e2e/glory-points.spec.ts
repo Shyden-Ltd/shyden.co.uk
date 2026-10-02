@@ -3,6 +3,7 @@ import { recorded } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { getSiteStrings } from '../../src/lib/i18n/index';
 import { expectVisibleText } from './helpers';
+import { localePaths } from './locale-sampling';
 
 const en = getSiteStrings('en').glory;
 const id = getSiteStrings('id').glory;
@@ -138,29 +139,34 @@ test.describe('glory points — explains what it does and how to use it', () => 
 });
 
 test.describe('glory points — touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
-  test(
-    'mobile: attribution link, input and submit button are ≥44px',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 800 });
-      await page.goto('/glory-points');
-      await atLeast44(page.locator('a[href="https://yeetalkapp.com/"]'));
-      await atLeast44(page.locator('#glory-input'));
-      await atLeast44(page.locator('#glory-submit'));
-    },
-  );
-});
-
-test.describe('glory points — mobile-first layout', () => {
-  for (const width of [320, 375, 768, 1280]) {
+  // Every locale (#423): the submit button's label is the page's own copy.
+  for (const path of localePaths('/glory-points'))
     test(
-      `no horizontal scroll at ${width}px`,
+      `mobile: attribution link, input and submit button are ≥44px -- ${path}`,
       { tag: '@emulated-viewport' },
       async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
-        await page.goto('/glory-points');
-        await expectNoHorizontalScroll(page);
+        await page.setViewportSize({ width: 375, height: 800 });
+        await page.goto(path);
+        await atLeast44(page.locator('a[href="https://yeetalkapp.com/"]'));
+        await atLeast44(page.locator('#glory-input'));
+        await atLeast44(page.locator('#glory-submit'));
       },
     );
+});
+
+// Every locale at every width (#423): theme-gallery reads every locale at 320
+// and 1280px only, so 375 and 768px were read in English alone.
+test.describe('glory points — mobile-first layout', () => {
+  for (const width of [320, 375, 768, 1280]) {
+    for (const path of localePaths('/glory-points'))
+      test(
+        `no horizontal scroll at ${width}px -- ${path}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(path);
+          await expectNoHorizontalScroll(page);
+        },
+      );
   }
 });

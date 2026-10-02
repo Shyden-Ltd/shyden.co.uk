@@ -2124,38 +2124,46 @@ test.describe('the no-scroll rule, measured', () => {
   // on: the label for a radio/checkbox, the element itself for everything
   // else. It can still fail for real: any control whose min-height/padding
   // regresses below 44px, radio/checkbox label included, still shows up.
-  test(
-    'every interactive target is at least 44px, collapsed and with every section open',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 320, height: 900 });
-      await page.goto('/classroom-groups');
-      for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
-        await page.locator(`#${id}-toggle`).click();
-      }
-      const small = await page.evaluate(() =>
-        [
-          ...document.querySelectorAll(
-            'button, input, select, textarea, summary, a',
-          ),
-        ]
-          .map((el) => {
-            const isBoxControl =
-              el instanceof HTMLInputElement &&
-              (el.type === 'radio' || el.type === 'checkbox');
-            const target = isBoxControl ? (el.closest('label') ?? el) : el;
-            return {
-              tag: el.tagName,
-              id: el.id,
-              r: target.getBoundingClientRect(),
-            };
-          })
-          .filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
-          .map(({ tag, id }) => `${tag}#${id}`),
-      );
-      expect(small).toEqual([]);
-    },
-  );
+  //
+  // Every locale (#423): every control on the page holds the page's own copy.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `every interactive target is at least 44px, collapsed and with every section open -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await page.goto(path);
+        for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
+          await page.locator(`#${id}-toggle`).click();
+        }
+        const small = await page.evaluate(() =>
+          [
+            ...document.querySelectorAll(
+              'button, input, select, textarea, summary, a',
+            ),
+          ]
+            // Not the report form's honeypot, which no person is meant to
+            // reach: it sits under `aria-hidden` with `tabindex="-1"`, the
+            // same exclusion tests/typed-fields.ts makes. It is in every
+            // locale but English, so only the per-locale cases met it (#423).
+            .filter((el) => !el.closest('[aria-hidden="true"]'))
+            .map((el) => {
+              const isBoxControl =
+                el instanceof HTMLInputElement &&
+                (el.type === 'radio' || el.type === 'checkbox');
+              const target = isBoxControl ? (el.closest('label') ?? el) : el;
+              return {
+                tag: el.tagName,
+                id: el.id,
+                r: target.getBoundingClientRect(),
+              };
+            })
+            .filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
+            .map(({ tag, id }) => `${tag}#${id}`),
+        );
+        expect(small).toEqual([]);
+      },
+    );
 
   // L-09. The accent colour is the AA floor by design ("never lighten
   // without re-checking contrast", CLAUDE.md) -- this computes the REAL

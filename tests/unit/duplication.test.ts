@@ -87,11 +87,19 @@ const SEPARATE: ReadonlyMap<string, string> = new Map([
     TEST_BODY_STAYS_IN_THE_SPEC,
   ],
   [
+    'tests/e2e/classroom-groups-roster.spec.ts:anonymous  <->  tests/e2e/glory-points.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+  [
     'tests/e2e/classroom-groups-roster.spec.ts:anonymous  <->  tests/prod/prod-sanity.spec.ts:anonymous',
     TEST_BODY_STAYS_IN_THE_SPEC,
   ],
   [
     'tests/e2e/glory-points.spec.ts:anonymous  <->  tests/e2e/site-meta.spec.ts:anonymous',
+    TEST_BODY_STAYS_IN_THE_SPEC,
+  ],
+  [
+    'tests/e2e/glory-points.spec.ts:anonymous  <->  tests/prod/prod-sanity.spec.ts:anonymous',
     TEST_BODY_STAYS_IN_THE_SPEC,
   ],
 ]);
