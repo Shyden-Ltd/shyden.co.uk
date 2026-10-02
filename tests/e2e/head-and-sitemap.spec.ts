@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { LOCALES, localisePath } from '../../src/lib/i18n/index';
-import { filesUnder, searched } from '../source-files';
-import { publishedPaths } from './published-paths';
+import { filesUnder } from '../source-files';
+import { PUBLISHED_ROUTES } from './published-paths';
 
 /**
  * The hreflang set every page in the sitemap must declare.
@@ -24,9 +24,10 @@ test.describe('the sitemap', () => {
       new URL(m[1]).pathname.replace(/\/$/, ''),
     );
 
-    // Every page the build wrote, not a list. publishedPaths, and every guard
-    // that visits "every published page", reads its pages FROM this sitemap,
-    // so this is the one check that the sitemap is complete; a hand-written
+    // Every page the build wrote, not a list. The guards that visit "every
+    // published page" generate one test per entry of PUBLISHED_ROUTES, which
+    // rendered-text.spec.ts holds to this sitemap (#422), so this is the one
+    // check that the sitemap is complete; a hand-written
     // list of three pages could only agree with itself, and a fourth page
     // the sitemap left out would have been invisible to all of them (#390
     // F126). The 404 is the one page deliberately left out. Read here, not
@@ -133,13 +134,12 @@ test.describe('the 404 head', () => {
 const DEVICE_WIDTH = 'width=device-width, initial-scale=1';
 
 test.describe('every published page', () => {
-  test('declares exactly one viewport, at the device width', async ({
-    page,
-  }) => {
-    const paths = await publishedPaths(page);
-    const findings: string[] = [];
-
-    for (const path of paths) {
+  // One test per published page (#422); `the published routes are the
+  // sitemap's` in rendered-text.spec.ts holds the list to the build.
+  for (const path of PUBLISHED_ROUTES)
+    test(`${path}: declares exactly one viewport, at the device width`, async ({
+      page,
+    }) => {
       await page.goto(path);
       // `i`: HTML compares meta names without regard to case, so a second tag
       // spelled `Viewport` is still a second viewport.
@@ -148,14 +148,6 @@ test.describe('every published page', () => {
         .evaluateAll((metas) =>
           metas.map((meta) => meta.getAttribute('content')),
         );
-      if (contents.length !== 1 || contents[0] !== DEVICE_WIDTH)
-        findings.push(`${path}: ${JSON.stringify(contents)}`);
-    }
-
-    // Reported all at once, every page that is wrong and how.
-    expect(
-      searched(findings, { of: paths, what: 'built pages visited' }),
-      findings.join('\n'),
-    ).toEqual([]);
-  });
+      expect(contents).toEqual([DEVICE_WIDTH]);
+    });
 });

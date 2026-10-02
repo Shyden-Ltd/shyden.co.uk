@@ -4,8 +4,11 @@ import { shoot } from './evidence';
 import { filesUnder, searched } from '../source-files';
 import { THEMES, ribbonLayers, tokensCss } from '../palette';
 import { emulateTheme } from '../themes';
-import { sitePaths } from '../site-pages';
-import { LOCALES, localisePath } from '../../src/lib/i18n';
+import {
+  NOT_FOUND_PATH,
+  PUBLISHED_ROUTES,
+  withoutTrailingSlash,
+} from './published-paths';
 import { contrast, over, parseColour, type RGB } from '../wcag';
 
 /**
@@ -31,7 +34,7 @@ const WIDTHS = [390, 1280] as const;
 const builtPaths = (): string[] =>
   filesUnder('dist', (path) => path.endsWith('.html')).map((file) =>
     file === 'dist/404.html'
-      ? '/no-such-page-for-the-ribbon-check'
+      ? NOT_FOUND_PATH
       : file.replace(/^dist/, '').replace(/index\.html$/, ''),
   );
 
@@ -184,27 +187,9 @@ const scoreRuns = async (
   return { runs: scored, seen };
 };
 
-/**
- * Every page the site serves, in every language, and the 404: derived from
- * the source, because a generated test is created when the file is COLLECTED,
- * before the web server has built `dist/`. A list read from `dist/` here
- * would be empty on a cold tree and generate no tests at all. The test below
- * holds the derivation to the built pages, so a page that is built and never
- * measured still goes red.
- */
-const RIBBON_PATHS = [
-  ...sitePaths().flatMap((path) =>
-    LOCALES.map((locale) => localisePath(path, locale)),
-  ),
-  '/no-such-page-for-the-ribbon-check',
-];
-
-const normalised = (path: string): string =>
-  path.length > 1 ? path.replace(/\/$/, '') : path;
-
 test('the ribbon is measured on every built page', () => {
-  expect(RIBBON_PATHS.map(normalised).sort()).toEqual(
-    builtPaths().map(normalised).sort(),
+  expect(PUBLISHED_ROUTES.map(withoutTrailingSlash).sort()).toEqual(
+    builtPaths().map(withoutTrailingSlash).sort(),
   );
 });
 
@@ -212,7 +197,7 @@ test('the ribbon is measured on every built page', () => {
 // test under a 120 s budget.
 for (const theme of THEMES)
   for (const width of WIDTHS)
-    for (const path of RIBBON_PATHS)
+    for (const path of PUBLISHED_ROUTES)
       test(
         `${theme} at ${width}px: every text run over the ribbon clears AA -- ${path}`,
         { tag: '@emulated-viewport' },
