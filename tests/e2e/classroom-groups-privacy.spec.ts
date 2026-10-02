@@ -3,6 +3,7 @@ import { makeGroups } from '../make-groups';
 import { LOCALES, getStrings, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import { recorded, shoot } from './evidence';
+import { recordErrors } from './recorders';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -316,16 +317,17 @@ test.describe('privacy — when the script dies half-way', () => {
     // Every matchMedia failure the page raised. Counted, not located: the
     // theme script in <head> calls it too, and WebKit reports the module's
     // failure with no frame from the module in its stack.
-    let failures = 0;
-    page.on('pageerror', (error) => {
-      if (error.message.includes('matchMedia unavailable')) failures += 1;
-    });
+    const reported = recordErrors(page);
+    const failures = () =>
+      reported.uncaught.filter((error) =>
+        error.includes('matchMedia unavailable'),
+      ).length;
     await page.goto('/classroom-groups');
     // The module really did die half-way (#424): one failure from the theme
     // script, one from the module. Had the module stopped calling matchMedia,
     // the tool would work, its own handler would keep the URL clean, and this
     // would pass without any failure having happened.
-    await expect.poll(() => failures).toBe(2);
+    await expect.poll(failures).toBe(2);
     await page.fill('#cg-count', '8');
     await page.click('#cg-go');
 
