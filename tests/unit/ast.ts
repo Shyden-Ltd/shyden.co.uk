@@ -278,7 +278,14 @@ const destructuredProperty = (
   const source = ts.isVariableDeclaration(at) ? at.initializer : undefined;
   if (!source) return undefined;
   const literal = objectSourceOf(source);
-  if (!literal) return undefined;
+  // A source whose shape this cannot see into -- `const { specs, sites } =
+  // scan()` -- answers with the WHOLE source rather than with nothing. Nothing
+  // made the name opaque, and an opaque name is judged by no derivation at
+  // all, so `expect(sites).toEqual([])` over a file walk passed absence-
+  // liveness unproved (#446 AC6, probe AL3). The whole source may carry a
+  // sibling's derivation too; over-judging a name fails closed, where under-
+  // judging it failed open.
+  if (!literal) return source;
   for (const property of literal.properties) {
     const name = property.name;
     if (!name || !ts.isIdentifier(name) || name.text !== wanted.text) continue;
