@@ -224,6 +224,6 @@ describe('the suite', () => {
     // Liveness for the scan above: openRoster's goto is one call away from
     // every loop that uses it, so it must be among the names the scan treats
     // as navigating, or the shared half of the detector is not running.
-    expect(sharedStateful()).toContain('openRoster');
+    expect(sharedStateful().has('openRoster')).toBe(true);
   });
 });

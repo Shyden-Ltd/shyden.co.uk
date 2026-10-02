@@ -396,7 +396,7 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
       // and a line that is covered is not one anybody reads as touching.
       await page.evaluate(() =>
         document
-          .querySelectorAll('details:not(header details)')
+          .querySelectorAll<HTMLDetailsElement>('details:not(header details)')
           .forEach((details) => (details.open = true)),
       );
       const width = await page.evaluate(

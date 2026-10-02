@@ -34,11 +34,9 @@ import { PUBLISHED_ROUTES } from './published-paths';
  * transparent. `accent-color` is what governs those, and it is asserted
  * separately below.
  */
-/**
- * Every published page in every locale, and the 404. A hand-written four
- * missed the 404's four report forms, /id/classroom-groups and every zh, vi
- * and th page, so a textarea painted off-palette on the 404 passed (PC1).
- */
+// Every published page in every locale, and the 404. A hand-written four
+// missed the 404's four report forms, /id/classroom-groups and every zh, vi
+// and th page, so a textarea painted off-palette on the 404 passed (PC1).
 const PAGES = PUBLISHED_ROUTES;
 
 /** Controls the page paints itself, as opposed to the ones the UA draws. */
