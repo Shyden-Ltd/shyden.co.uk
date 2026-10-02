@@ -433,34 +433,34 @@ test.describe('a disabled control affords that it is disabled', () => {
     expectAReasonWithoutHover(await reasons(page), 'default');
   });
 
-  test('roster at the limit — the add buttons and Make groups too', async ({
-    page,
-  }) => {
-    await openRoster(page);
-    // `openRoster` already added one, so this lands exactly ON the limit
-    // rather than asking the page to clamp an overshoot.
-    await addSeveral(page, MAX_ROSTER - 1);
-    await openEveryDisclosure(page);
-
-    for (const theme of THEMES) {
+  // One test per theme (#419): a hundred-row roster under two themes was one
+  // budget.
+  for (const theme of THEMES)
+    test(`${theme}: roster at the limit — the add buttons and Make groups too`, async ({
+      page,
+    }) => {
+      await openRoster(page);
+      // `openRoster` already added one, so this lands exactly ON the limit
+      // rather than asking the page to clamp an overshoot.
+      await addSeveral(page, MAX_ROSTER - 1);
+      await openEveryDisclosure(page);
       await emulateTheme(page, theme);
       const { reachable, fill, ink } = await affordances(page);
       expectNoEntryCursor(reachable, `at-limit, ${theme}`);
       expectDisabledPaint(reachable, fill, ink, `at-limit, ${theme}`);
-    }
-    expectAReasonWithoutHover(await reasons(page), 'at-limit');
-  });
+      // `reasons` reads the tags `affordances` just wrote, so it runs after.
+      expectAReasonWithoutHover(await reasons(page), 'at-limit');
+    });
 
-  test('the disabled placeholder option is excluded deliberately, and it exists', async ({
-    page,
-  }) => {
-    await openRoster(page);
-    // Choosing a sex is what disables that row's "—" option (roster-ui.ts).
-    // Without this the exclusion branch never fires, and a detector branch
-    // that has never matched anything is itself vacuous (#118).
-    await setSex(page, 0, 'M');
-
-    for (const theme of THEMES) {
+  for (const theme of THEMES)
+    test(`${theme}: the disabled placeholder option is excluded deliberately, and it exists`, async ({
+      page,
+    }) => {
+      await openRoster(page);
+      // Choosing a sex is what disables that row's "—" option (roster-ui.ts).
+      // Without this the exclusion branch never fires, and a detector branch
+      // that has never matched anything is itself vacuous (#118).
+      await setSex(page, 0, 'M');
       await emulateTheme(page, theme);
       const { reachable, excluded, fill, ink } = await affordances(page);
       searched(excluded, {
@@ -472,8 +472,7 @@ test.describe('a disabled control affords that it is disabled', () => {
       expect(excluded).toEqual(['option']);
       expectNoEntryCursor(reachable, `a sex chosen, ${theme}`);
       expectDisabledPaint(reachable, fill, ink, `a sex chosen, ${theme}`);
-    }
-  });
+    });
 
   test('only checkbox, radio and file inputs are left to the UA to paint', async ({
     page,
