@@ -3,6 +3,7 @@ import { makeGroups } from '../make-groups';
 import { LOCALES, getStrings, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import { recorded, shoot } from './evidence';
+import { recordErrors } from './recorders';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -274,10 +275,16 @@ test.describe('privacy — with JavaScript blocked', () => {
       await page.fill('#cg-class', 'PrivacyProbeClassName7B');
       await page.click('#cg-go');
 
+      // Over the keys the submit actually wrote (#424): with no submit at all
+      // the URL is empty, and an empty URL passed this as a clean one.
       const url = new URL(page.url());
-      for (const key of url.searchParams.keys()) {
-        expect(NON_PERSONAL_NAMES).toContain(key);
-      }
+      const keys = [...url.searchParams.keys()];
+      expect(
+        searched(
+          keys.filter((key) => !NON_PERSONAL_NAMES.includes(key)),
+          { of: keys, what: 'query keys a native submit wrote' },
+        ),
+      ).toEqual([]);
       expect(url.search).not.toContain('PrivacyProbeClassName7B');
     },
   );
@@ -307,7 +314,20 @@ test.describe('privacy — when the script dies half-way', () => {
   test('a mid-module failure still cannot leak the class list', async ({
     page,
   }) => {
+    // Every matchMedia failure the page raised. Counted, not located: the
+    // theme script in <head> calls it too, and WebKit reports the module's
+    // failure with no frame from the module in its stack.
+    const reported = recordErrors(page);
+    const failures = () =>
+      reported.uncaught.filter((error) =>
+        error.includes('matchMedia unavailable'),
+      ).length;
     await page.goto('/classroom-groups');
+    // The module really did die half-way (#424): one failure from the theme
+    // script, one from the module. Had the module stopped calling matchMedia,
+    // the tool would work, its own handler would keep the URL clean, and this
+    // would pass without any failure having happened.
+    await expect.poll(failures).toBe(2);
     await page.fill('#cg-count', '8');
     await page.click('#cg-go');
 
