@@ -89,38 +89,36 @@ const withSlash = (path: string): string =>
   path.endsWith('/') ? path : `${path}/`;
 
 test.describe('language switcher', () => {
-  test('names the current language in its own language, as its width calls for', async ({
-    page,
-  }) => {
-    // No viewport is set, so this runs at each project's own width -- and on a
-    // real phone, which emulates nothing: the desktop projects see the full
-    // name and the phone projects the short code, so both branches run.
-    for (const locale of LOCALES) {
+  // One test per case below (#420): per locale, and per locale and width.
+  for (const locale of LOCALES)
+    test(`${locale}: names the current language in its own language, as its width calls for`, async ({
+      page,
+    }) => {
+      // No viewport is set, so this runs at each project's own width -- and on
+      // a real phone, which emulates nothing: the desktop projects see the full
+      // name and the phone projects the short code, so both branches run.
       await page.goto(localisePath('/', locale));
       const width = await page.evaluate(() => window.innerWidth);
       await expectLabel(page, locale, width);
-    }
-  });
+    });
 
-  test(
-    'shows the short code below 720px and the full name from 720px, in every language',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // Both sides of the edge, and both ends of the range (#329).
-      for (const locale of LOCALES) {
-        await page.goto(localisePath('/', locale));
-        for (const width of [320, COMPACT_BELOW - 1, COMPACT_BELOW, 1280]) {
+  // Both sides of the edge, and both ends of the range (#329).
+  for (const locale of LOCALES)
+    for (const width of [320, COMPACT_BELOW - 1, COMPACT_BELOW, 1280])
+      test(
+        `${locale} at ${width}px: shows the short code below 720px and the full name from 720px`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
           await page.setViewportSize({ width, height: 720 });
+          await page.goto(localisePath('/', locale));
           await expectLabel(page, locale, width);
-        }
-      }
-    },
-  );
+        },
+      );
 
-  test('lists every language in one fixed order, the current one ticked in place, every other a link', async ({
-    page,
-  }) => {
-    for (const locale of LOCALES) {
+  for (const locale of LOCALES)
+    test(`${locale}: lists every language in one fixed order, the current one ticked in place, every other a link`, async ({
+      page,
+    }) => {
       await page.goto(localisePath('/', locale));
       await page.locator(`${SWITCHER} > summary`).click();
       // Every language, derived. A count of 1 and a single hard-coded name
@@ -170,8 +168,7 @@ test.describe('language switcher', () => {
         `${locale}: every language listed in one order, ${LOCALE_METADATA[locale].nativeName} ticked in place`,
         page.locator(`${SWITCHER} ul`),
       );
-    }
-  });
+    });
 
   test('opens and closes without JavaScript', async ({ page }) => {
     // A native <details>, with no script of its own: a language switcher is
@@ -241,17 +238,18 @@ test.describe('language switcher', () => {
     );
   });
 
-  test(
-    'adds no horizontal scroll at 320px, in every language',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // Derived from LOCALES (#75). This read `['/', '/id/']`, written when
-      // those were the only two. Width at 320px is one of the few genuinely
-      // locale-sensitive things here — Thai and Chinese set to different
-      // widths than English — so the three locales #22 added are exactly the
-      // ones this test most needed to see. The loop is inside the test, so
-      // covering them costs iterations, not tests.
-      for (const path of LOCALES.map((locale) => localisePath('/', locale))) {
+  // Derived from LOCALES (#75). This read `['/', '/id/']`, written when those
+  // were the only two. Width at 320px is one of the few genuinely
+  // locale-sensitive things here — Thai and Chinese set to different widths
+  // than English — so the three locales #22 added are exactly the ones this
+  // test most needed to see. One test per locale (#420): the loop that once
+  // lived inside this test shared one budget across all five.
+  for (const locale of LOCALES)
+    test(
+      `${locale}: adds no horizontal scroll at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        const path = localisePath('/', locale);
         await page.setViewportSize({ width: 320, height: 720 });
         await page.goto(path);
         // Not vacuous: a switcher hidden at 320px would satisfy "no overflow"
@@ -261,9 +259,8 @@ test.describe('language switcher', () => {
           page,
           `${path} scrolls sideways at 320px`,
         );
-      }
-    },
-  );
+      },
+    );
 
   // Every language (#390 F131): the panel hangs off a summary whose width is
   // each language's own, so this is a fit test, and it read English only.
