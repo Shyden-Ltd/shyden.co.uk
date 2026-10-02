@@ -134,15 +134,7 @@ describe('the detector', () => {
  * this list AND on an entry that no longer matches a site, so the list can
  * only shrink: a conversion removes its entries in the same pull request.
  */
-const BURN_DOWN: readonly string[] = [
-  'tests/e2e/head-and-sitemap.spec.ts :: declares exactly one viewport, at the device width :: for (const path of paths)',
-  'tests/e2e/header-room.spec.ts :: ${locale}: no header item overlaps another, at any width :: for (const path of paths)',
-  'tests/e2e/header-room.spec.ts :: ${locale}: no header item overlaps another, at any width :: for (const width of await header.open(page, path))',
-  'tests/e2e/rendered-text.spec.ts :: every published page, in every language :: for (const path of paths)',
-  'tests/e2e/rendered-text.spec.ts :: no two words are rendered touching, on any page :: for (const path of paths)',
-  'tests/e2e/rendered-text.spec.ts :: no unfilled [[placeholder]] reaches a page :: for (const path of paths)',
-  'tests/prod/prod-sanity.spec.ts :: every locale the site claims to serve is live, and in that language :: for (const { locale, path, heading, englishHeading } of ROUTES)',
-];
+const BURN_DOWN: readonly string[] = [];
 
 /** Every looped site in the suite, scanned inside each test, never at collection. */
 const scan = (): { specs: string[]; sites: string[] } => {

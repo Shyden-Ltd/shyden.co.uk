@@ -1,11 +1,10 @@
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
+import { PUBLISHED_ROUTES } from './published-paths';
 import { refuseFullscreen, withGroups } from './helpers';
 import { THEMES } from '../palette';
-import { sitePaths } from '../site-pages';
 import { expectTheme } from '../themes';
 import { expectNoHorizontalScroll } from '../viewport';
-import { LOCALES, localisePath } from '../../src/lib/i18n';
 
 /**
  * Every built page in both themes (#142 §6.7), in every locale, at the
@@ -26,14 +25,8 @@ for (const theme of THEMES) {
 
     // One test per page, width and theme (#421): every page in a locale was
     // one test, so the 404 rode along with the English pages' budget.
-    const GALLERY_PATHS = [
-      ...LOCALES.flatMap((locale) =>
-        sitePaths().map((path) => localisePath(path, locale)),
-      ),
-      '/definitely-not-a-page',
-    ];
     for (const width of WIDTHS)
-      for (const path of GALLERY_PATHS)
+      for (const path of PUBLISHED_ROUTES)
         test(
           `${path} at ${width}px: renders the theme, with no sideways scroll`,
           { tag: '@emulated-viewport' },

@@ -122,19 +122,18 @@ test.describe('no page scrolls sideways at 320px', () => {
   }
 });
 
-test('every locale the site claims to serve is live, and in that language', async ({
-  page,
-}) => {
-  // The original note here said a heading assertion must not be able to redden
-  // a release gate, because the COPY is changing and a hand-written table of
-  // headings would drift from it. That concern is answered rather than
-  // overridden: the expectation comes from the SAME catalogue the page renders
-  // from, so a copy change updates both in one commit and cannot drift.
-  //
-  // What it cannot catch on its own is a catalogue left as English -- it would
-  // agree with itself. The comparison against the English string is the
-  // independent half, so the two cannot fail together silently.
-  for (const { locale, path, heading, englishHeading } of ROUTES) {
+// The original note here said a heading assertion must not be able to redden
+// a release gate, because the COPY is changing and a hand-written table of
+// headings would drift from it. That concern is answered rather than
+// overridden: the expectation comes from the SAME catalogue the page renders
+// from, so a copy change updates both in one commit and cannot drift.
+//
+// What it cannot catch on its own is a catalogue left as English -- it would
+// agree with itself. The comparison against the English string is the
+// independent half, so the two cannot fail together silently. One test per
+// route, as dev-sanity.spec.ts already does (#422).
+for (const { locale, path, heading, englishHeading } of ROUTES)
+  test(`${path} is live, and in ${locale}`, async ({ page }) => {
     const res = await page.goto(path);
     expect(res?.status(), `${path} did not return 200`).toBe(200);
     await expect(page.locator('html')).toHaveAttribute('lang', locale);
@@ -142,8 +141,7 @@ test('every locale the site claims to serve is live, and in that language', asyn
     if (locale !== 'en') {
       await expect(page.locator('h1')).not.toHaveText(englishHeading);
     }
-  }
-});
+  });
 
 test('the outbound ShyTalk link points at PROD ShyTalk, never dev', async ({
   page,
