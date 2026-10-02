@@ -2433,40 +2433,100 @@ describe('wrangler comes from the lockfile (#97)', () => {
     expect(jobNamed('ci.yml', 'functions').runs).toEqual([
       'npm ci',
       // Every engine: the suite posts the 404's forms from all five (#350).
-      'node scripts/install-browsers.mjs',
+      // No browser install: the job runs in the pinned image (#431).
       'npm run test:functions',
     ]);
   });
 });
 
-// ---- the browser install (#431) -------------------------------------------
+// ---- browsers come with the pinned image (#431) ---------------------------
 //
-// A raw `playwright install` has no limit and no retry of its own: run
-// 36973026350's shard 2 spent its job's whole 20 minutes in one while a
-// package mirror stalled. Derived from every parsed workflow, and each run
-// read without its shell comments, so a sixth install step is judged the day
-// it is written and a comment naming the wrapper cannot stand in for it.
-describe('every browser install has a limit and a retry (#431)', () => {
-  it('installs browsers only through scripts/install-browsers.mjs', () => {
-    const installs = workflowGraphs().flatMap(({ name, jobs }) =>
-      jobs.flatMap(({ id, runs }) =>
-        runs
-          .map((run) => withoutCommentLines(run).trim())
-          .filter((run) =>
-            /playwright\s+install|install-browsers\.mjs/.test(run),
-          )
-          .map((run) => `${name} › ${id}: ${run}`),
-      ),
+// Run 36973026350's shard 2 spent its whole job in `npx playwright install
+// --with-deps` while an apt mirror stalled. A retry would only hide that, so
+// the download is gone instead: every job that runs Playwright runs inside the
+// Playwright image, which carries the browsers and their system packages. Read
+// from the parsed workflows, so a new browser job is judged the day it is
+// written and a comment naming the image cannot stand in for it.
+describe('browsers come with the pinned Playwright image, never a download (#431)', () => {
+  const installed = (
+    JSON.parse(
+      readFileSync('node_modules/@playwright/test/package.json', 'utf8'),
+    ) as { version: string }
+  ).version;
+  /** The image for the installed Playwright, pinned by digest: a tag can move. */
+  const PINNED = new RegExp(
+    `^mcr\\.microsoft\\.com/playwright:v${installed.replaceAll('.', '\\.')}-noble@sha256:[0-9a-f]{64}$`,
+  );
+  /**
+   * The two deploy verify jobs still install, until they can post their status
+   * without `gh`, which the image lacks (#444). Shrink-only: each entry must
+   * still be found, so a fixed job leaves the list instead of staying excused.
+   */
+  const STILL_INSTALLING = [
+    'deploy-dev.yml › verify-dev',
+    'deploy-prod.yml › smoke-and-verify',
+  ];
+  type Jobs = Record<string, { container?: unknown }>;
+  const imageOf = (file: string, id: string): string | undefined => {
+    const { jobs } = parseCleanYaml(workflow(file), file) as { jobs: Jobs };
+    const container = jobs[id]?.container;
+    if (typeof container === 'string') return container;
+    if (container && typeof container === 'object' && 'image' in container)
+      return String((container as { image: unknown }).image);
+    return undefined;
+  };
+  const runsPlaywright = (runs: readonly string[]) =>
+    runs
+      .map((run) => withoutCommentLines(run))
+      .some((run) =>
+        /playwright\s+test|npm run test:(e2e|functions|sanity|visual)\b/.test(
+          run,
+        ),
+      );
+  const browserJobs = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter(({ runs }) => runsPlaywright(runs))
+        .map(({ id }) => ({ file: name, id, where: `${name} › ${id}` })),
     );
-    // The whole step is the wrapper and its browsers, nothing around it: a
-    // raw install chained after it would still run unbounded.
-    const unbounded = installs.filter(
-      (install) =>
-        !/: node scripts\/install-browsers\.mjs( [a-z-]+)*$/.test(install),
+
+  it('downloads browsers in no step but the excused deploy verify jobs', () => {
+    const installing = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter(({ runs }) =>
+          runs.some((run) =>
+            /playwright\s+install/.test(withoutCommentLines(run)),
+          ),
+        )
+        .map(({ id }) => `${name} › ${id}`),
     );
+    expect(installing).toEqual(STILL_INSTALLING);
+  });
+
+  it('runs every other Playwright job inside the pinned image', () => {
+    const jobs = browserJobs();
+    const unpinned = jobs
+      .filter(({ where }) => !STILL_INSTALLING.includes(where))
+      .filter(({ file, id }) => !PINNED.test(imageOf(file, id) ?? ''))
+      .map(
+        ({ where, file, id }) =>
+          `${where}: ${imageOf(file, id) ?? 'no container'}`,
+      );
     expect(
-      searched(unbounded, { of: installs, what: 'browser install steps' }),
+      searched(unpinned, {
+        of: jobs.map(({ where }) => where),
+        what: 'jobs running Playwright',
+      }),
     ).toEqual([]);
+  });
+
+  it('runs them all in one image, so a bump moves every job at once', () => {
+    const images = new Set(
+      browserJobs()
+        .filter(({ where }) => !STILL_INSTALLING.includes(where))
+        .map(({ file, id }) => imageOf(file, id)),
+    );
+    expect(images.size).toBe(1);
   });
 });
 

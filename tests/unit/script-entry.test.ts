@@ -594,13 +594,6 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'usage: node scripts/dependabot-labels.mjs',
   },
-  // It names its browsers and nothing else, and refuses anything else before
-  // it reaches for npx, apt or the network (#431).
-  'install-browsers.mjs': {
-    args: ['--no-such-flag'],
-    status: 1,
-    says: 'usage: node scripts/install-browsers.mjs [chromium|firefox|webkit ...]',
-  },
   // It had no refusal at all, being written never to fail an install, so #276
   // gave it the one the other argument-free scripts have. `prepare` passes
   // nothing, so nothing that is not already a mistake reaches it.

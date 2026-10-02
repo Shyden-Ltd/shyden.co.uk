@@ -100,9 +100,10 @@ jobs:
     steps:
       # ---- Gate: the smoke and a real browser, before the status ----------
       #
-      # One Playwright run holds both. tests/prod/prod-smoke.spec.ts runs the
-      # curl smoke (scripts/prod-smoke.sh): every page answers, and certain
-      # strings are among the bytes. That cannot prove a page RENDERS, and
+      # One Playwright run holds both. tests/prod/prod-smoke.spec.ts is the
+      # smoke, requested without a browser: every page answers, an unknown
+      # path gets the not-found page, and certain strings are among the
+      # bytes. That cannot prove a page RENDERS, and
       # this repo shipped a bug for an entire release that no text assertion
       # could see: `display: flex` ate authored whitespace while `textContent`
       # still contained it. prod-sanity.spec.ts asserts what only rendering
@@ -121,7 +122,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: node scripts/install-browsers.mjs chromium
+      - run: npx playwright install --with-deps chromium
       - name: Smoke and verify the live prod site
         env:
           WEB_BASE_URL: https://shyden.co.uk
