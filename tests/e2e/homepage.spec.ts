@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordErrors } from './recorders';
 import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
-import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { LOCALES, localisePath, type Locale } from '../../src/lib/i18n';
 import { expectNoHorizontalScroll } from '../viewport';
 import { THEMES } from '../palette';
 import { emulateTheme, expectTheme, saveTheme } from '../themes';
@@ -72,11 +72,11 @@ test.describe('homepage content', () => {
   // served on /id/ would resolve its fragment here and throw a real visitor
   // back to the ENGLISH homepage. Header.astro documents that hazard in a
   // comment and nothing tested it.
-  for (const [locale, home] of [
-    ['English', '/'],
-    ['Indonesian', '/id/'],
-    ['Thai', '/th/'],
-  ]) {
+  //
+  // Every locale, derived (#390 F128): this read en, id and th by hand, so a
+  // Chinese or Vietnamese header sending visitors to the English page passed.
+  for (const locale of LOCALES) {
+    const home = localisePath('/', locale);
     test(`${locale}: every header nav item lands on a section of this page`, async ({
       page,
     }) => {
@@ -259,23 +259,33 @@ test.describe('homepage content', () => {
     }
   });
 
-  test('exactly two tool cards, each badged and linked in-locale', async ({
-    page,
-  }) => {
-    await page.goto('/');
-    const cards = page.locator('#tools .work-card');
-    await expect(cards).toHaveCount(2);
-    await expect(page.locator('#tools .work-card-badge')).toHaveCount(2);
-    await expect(page.locator('#tools a[href="/glory-points"]')).toHaveCount(1);
-    await expect(
-      page.locator('#tools a[href="/classroom-groups"]'),
-    ).toHaveCount(1);
-    await shoot(
+  // Every locale (#390 F129). On `/` the English path is also the right one,
+  // so English alone cannot fail "in-locale"; this read only `/`, and the
+  // Indonesian half sat in classroom-groups.spec.ts with zh, vi and th unread.
+  // One test per locale, so each has its own budget and names its language.
+  for (const locale of LOCALES)
+    test(`${locale}: exactly two tool cards, each badged and linked in-locale`, async ({
       page,
-      'both tool cards, badged and in-locale',
-      page.locator('#tools'),
-    );
-  });
+    }) => {
+      await page.goto(localisePath('/', locale));
+      const tools = page.locator('#tools');
+      await expect(tools.locator('.work-card')).toHaveCount(2);
+      await expect(tools.locator('.work-card-badge')).toHaveCount(2);
+      // The exact set: each tool once, in this locale, and nothing else.
+      const hrefs = await tools
+        .locator('a[href]')
+        .evaluateAll((links) => links.map((l) => l.getAttribute('href')));
+      expect(hrefs.sort(), 'the tool links').toEqual(
+        ['/classroom-groups', '/glory-points'].map((tool) =>
+          localisePath(tool, locale),
+        ),
+      );
+      await shoot(
+        page,
+        `${locale}: both tool cards, badged and in-locale`,
+        tools,
+      );
+    });
 
   test('contact section CTA links to the support mailbox', async ({ page }) => {
     await page.goto('/');
@@ -289,15 +299,23 @@ test.describe('homepage content', () => {
   // dropped whenever a formatter puts them on separate lines — which shipped
   // "building.support@shyden.co.uk" to real phones on the old contact copy.
   // Checking either node alone cannot see that; only the rendered text can.
-  for (const { locale, path, sentence } of [
-    { locale: 'English', path: '/', sentence: `opens ${SHYTALK_HOST}` },
-    { locale: 'Indonesian', path: '/id/', sentence: `membuka ${SHYTALK_HOST}` },
-  ]) {
+  //
+  // Keyed by Locale, so a sixth language fails to compile until its sentence
+  // is written here (#390 F128): this listed English and Indonesian, the two
+  // locales there were when it was written, and never read the other three.
+  const OPENS: Record<Locale, string> = {
+    en: `opens ${SHYTALK_HOST}`,
+    id: `membuka ${SHYTALK_HOST}`,
+    zh: `打开 ${SHYTALK_HOST}`,
+    vi: `mở ${SHYTALK_HOST}`,
+    th: `เปิด ${SHYTALK_HOST}`,
+  };
+  for (const locale of LOCALES) {
     test(`${locale}: the hero link annotation reads as one line`, async ({
       page,
     }) => {
-      await page.goto(path);
-      await expect(page.locator('.hero .opens')).toHaveText(sentence);
+      await page.goto(localisePath('/', locale));
+      await expect(page.locator('.hero .opens')).toHaveText(OPENS[locale]);
     });
   }
 
@@ -344,11 +362,14 @@ test.describe('mobile-first layout', () => {
       },
     );
   }
-  test('no console errors on load', async ({ page }) => {
-    const reported = recordErrors(page);
-    await page.goto('/');
-    await reported.expectNone('the homepage loads without console errors');
-  });
+  // Every locale (#390 F129): each loads its own capture and copy, and this
+  // read only the English page.
+  for (const locale of LOCALES)
+    test(`${locale}: no console errors on load`, async ({ page }) => {
+      const reported = recordErrors(page);
+      await page.goto(localisePath('/', locale));
+      await reported.expectNone(`the ${locale} homepage loads without errors`);
+    });
 });
 
 test.describe('reduced motion', () => {

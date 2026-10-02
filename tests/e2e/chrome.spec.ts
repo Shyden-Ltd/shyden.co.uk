@@ -240,74 +240,89 @@ test.describe('header + footer', () => {
   });
 });
 
+// Every locale (#390 F134): these read English only, and a target's WIDTH is
+// its label's, so a two-character Chinese nav label is exactly the case a
+// "including width" check exists for. The open phone menu lays out each
+// language's own labels at 320px for the same reason. One test per locale:
+// each has its own budget, and a failure names its language in the title.
 test.describe('touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
-  test(
-    'mobile: wordmark, menu button, nav links and footer email are ≥44px',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 800 });
-      await page.goto('/');
-      await atLeast44(page.locator('.wordmark'));
-      // Derived, not named: the header gained a second disclosure (the
-      // language switcher) after this test was written, and a hand-written
-      // list would have kept passing while missing it. The selector was then
-      // narrowed to `details.menu`, which measured the menu alone under this
-      // same comment (#390 F107), so the count is held to every disclosure.
-      const summaries = page.locator('header details > summary');
-      const howMany = await summaries.count();
-      expect(howMany, 'no header disclosures found to measure').toBeGreaterThan(
-        0,
-      );
-      expect(howMany, 'a header disclosure left unmeasured').toBe(
-        await page.locator('header details').count(),
-      );
-      for (let i = 0; i < howMany; i += 1) await atLeast44(summaries.nth(i));
-      await page.locator('header details.menu > summary').click(); // open the nav
-      const links = page.locator('header nav a');
-      // `.all()` resolves to [] when nothing matches -- it neither waits nor
-      // fails -- so without this count the loop below iterates zero times and
-      // the test goes green having checked none of the links its own title
-      // claims to check. Proven, not assumed: pointing this locator at a
-      // non-existent class left the test passing. The desktop case alongside
-      // has always guarded this; the mobile one did not.
-      await expect(links).toHaveCount(3);
-      for (const a of await links.all()) await atLeast44(a);
-      await atLeast44(
-        page.locator('footer a[href="mailto:support@shyden.co.uk"]'),
-      );
-    },
-  );
+  for (const locale of LOCALES) {
+    test(
+      `${locale} mobile: wordmark, menu button, nav links and footer email are ≥44px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 375, height: 800 });
+        await page.goto(localisePath('/', locale));
+        await atLeast44(page.locator('.wordmark'), 'the wordmark');
+        // Derived, not named: the header gained a second disclosure (the
+        // language switcher) after this test was written, and a hand-written
+        // list would have kept passing while missing it. The selector was then
+        // narrowed to `details.menu`, which measured the menu alone under this
+        // same comment (#390 F107), so the count is held to every disclosure.
+        const summaries = page.locator('header details > summary');
+        const howMany = await summaries.count();
+        expect(
+          howMany,
+          'no header disclosures found to measure',
+        ).toBeGreaterThan(0);
+        expect(howMany, 'a header disclosure left unmeasured').toBe(
+          await page.locator('header details').count(),
+        );
+        for (let i = 0; i < howMany; i += 1)
+          await atLeast44(summaries.nth(i), `header disclosure ${i}`);
+        await page.locator('header details.menu > summary').click(); // open the nav
+        const links = page.locator('header nav a');
+        // `.all()` resolves to [] when nothing matches -- it neither waits nor
+        // fails -- so without this count the loop below iterates zero times and
+        // the test goes green having checked none of the links its own title
+        // claims to check. Proven, not assumed: pointing this locator at a
+        // non-existent class left the test passing. The desktop case alongside
+        // has always guarded this; the mobile one did not.
+        await expect(links).toHaveCount(3);
+        for (const a of await links.all())
+          await atLeast44(a, `"${await a.textContent()}"`);
+        await atLeast44(
+          page.locator('footer a[href="mailto:support@shyden.co.uk"]'),
+          'the footer email',
+        );
+      },
+    );
 
-  test(
-    'desktop: nav links are visible, on-screen and ≥44px including width',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto('/');
-      const links = page.locator('header nav a');
-      await expect(links).toHaveCount(3);
-      for (const a of await links.all()) {
-        // Guards the all-browser desktop-nav regression: a collapsed wrapper made
-        // these links render off-screen / non-visible on every engine.
-        await expect(a).toBeVisible();
-        await atLeast44(a);
-      }
-      // The last link (Contact) previously overflowed past the viewport edge.
-      const lastBox = await links.last().boundingBox();
-      expect(lastBox!.x + lastBox!.width).toBeLessThanOrEqual(1280);
-    },
-  );
+    test(
+      `${locale} desktop: nav links are visible, on-screen and ≥44px including width`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.goto(localisePath('/', locale));
+        const links = page.locator('header nav a');
+        await expect(links).toHaveCount(3);
+        for (const a of await links.all()) {
+          // Guards the all-browser desktop-nav regression: a collapsed wrapper
+          // made these links render off-screen / non-visible on every engine.
+          await expect(a).toBeVisible();
+          await atLeast44(a, `"${await a.textContent()}"`);
+        }
+        // The last link (Contact) previously overflowed past the viewport edge.
+        const lastBox = await links.last().boundingBox();
+        expect(lastBox!.x + lastBox!.width).toBeLessThanOrEqual(1280);
+      },
+    );
+  }
 });
 
 test.describe('mobile layout: no horizontal overflow', () => {
-  test(
-    'no horizontal scroll at 320px with the menu open',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 320, height: 800 });
-      await page.goto('/');
-      await page.locator('header details.menu > summary').click();
-      await expectNoHorizontalScroll(page);
-    },
-  );
+  for (const locale of LOCALES)
+    test(
+      `${locale}: no horizontal scroll at 320px with the menu open`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 800 });
+        await page.goto(localisePath('/', locale));
+        await page.locator('header details.menu > summary').click();
+        await expectNoHorizontalScroll(
+          page,
+          `${locale}: sideways scroll at 320px with the menu open`,
+        );
+      },
+    );
 });

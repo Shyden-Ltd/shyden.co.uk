@@ -8,6 +8,7 @@ import {
   siteTh,
   type SiteStrings,
 } from '../../src/lib/i18n/site';
+import { sitePaths, TITLE_FOR } from '../site-pages';
 
 /**
  * Every published page is served in every locale it claims to ship.
@@ -33,10 +34,12 @@ const SITE: Record<string, SiteStrings> = {
   th: siteTh,
 };
 
-const PAGES = [
-  { path: '/', title: (s: SiteStrings) => s.home.title },
-  { path: '/glory-points', title: (s: SiteStrings) => s.glory.title },
-] as const;
+/**
+ * Every page the site serves, read off disk, with the title each renders.
+ * This was a hand-written two of three: `/classroom-groups` could ship an
+ * English title in zh, vi and th with every suite green (#390 F130).
+ */
+const PAGES = sitePaths().map((path) => ({ path, title: TITLE_FOR[path] }));
 
 /**
  * Where a page lives in a given locale, derived from the route layout
@@ -54,11 +57,11 @@ const urlFor = (path: string, locale: Locale) =>
 
 test.describe('every locale, every page', () => {
   test('every shipped locale has site copy', () => {
-    // The page components each pick a dictionary with
-    // `lang === 'id' ? siteId : siteEn` (Header, Footer, HomePage,
-    // GloryPointsPage). That ternary returns ENGLISH for any locale added to
-    // LOCALES without wiring — silently, on a page that looks fine. This is
-    // the assertion that makes that loud.
+    // A locale added to LOCALES with no catalogue would otherwise reach the
+    // pages as a missing dictionary. When this was written the components
+    // picked one with `lang === 'id' ? siteId : siteEn`, which returned
+    // ENGLISH silently; they now go through getSiteStrings, and this is still
+    // the assertion that makes a missing catalogue loud.
     expect(LOCALES.filter((l) => !SITE[l])).toEqual([]);
   });
 
@@ -78,8 +81,8 @@ test.describe('every locale, every page', () => {
     // English entirely and prove nothing.
     for (const locale of LOCALES.filter((l) => l !== 'en'))
       for (const { path, title } of PAGES)
-        expect(title(SITE[locale]), `${path} title in ${locale}`).not.toBe(
-          title(siteEn),
+        expect(title(locale), `${path} title in ${locale}`).not.toBe(
+          title('en'),
         );
   });
 
@@ -89,7 +92,7 @@ test.describe('every locale, every page', () => {
       test(`${url} is served in ${locale}`, async ({ page }) => {
         await page.goto(url);
         await expect(page.locator('html')).toHaveAttribute('lang', locale);
-        await expect(page).toHaveTitle(title(SITE[locale]));
+        await expect(page).toHaveTitle(title(locale));
       });
     }
 });

@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { makeGroups } from '../make-groups';
+import { MAX_STUDENTS } from '../../src/lib/grouping';
 import { recordErrors } from './recorders';
 import { localePaths, sampledPaths } from './locale-sampling';
 import { searched } from '../source-files';
@@ -409,17 +410,30 @@ test.describe('classroom groups — mobile-first layout', () => {
   // state nothing above checked. A hundred students maximises the number of
   // group cards and avatars actually on screen, the real-content analogue
   // of the long-class-name check elsewhere in this file.
+  //
+  // Every locale (#390 F135): each card's group name and "Student N" labels
+  // are the page's own language, and this read English only.
+  //
+  // And with results actually shown (#390 F136). This asked for 120 students
+  // against a ceiling of 100, so the page refused, rendered no results, and
+  // the overflow check measured a page without them, since #9. The count is
+  // the ceiling itself now, and the cards are counted before anything is
+  // measured, so a refusal fails here instead of passing.
   for (const width of [320, 768]) {
-    test(
-      `no horizontal scroll with results shown, at ${width}px`,
-      { tag: '@emulated-viewport' },
-      async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
-        await page.goto('/classroom-groups');
-        await makeGroups(page, '120', '4');
-        await expectNoHorizontalScroll(page);
-      },
-    );
+    for (const path of localePaths('/classroom-groups'))
+      test(
+        `no horizontal scroll with results shown, at ${width}px -- ${path}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(path);
+          await makeGroups(page, String(MAX_STUDENTS), '4');
+          await expect(page.locator('#cg-results .group')).toHaveCount(
+            Math.ceil(MAX_STUDENTS / 4),
+          );
+          await expectNoHorizontalScroll(page, `${path} with results shown`);
+        },
+      );
   }
 
   test(

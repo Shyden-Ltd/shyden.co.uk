@@ -10,6 +10,7 @@ import {
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+import { sitePaths } from '../site-pages';
 
 test.use(recorded);
 
@@ -69,6 +70,23 @@ const expectLabel = async (
     page.locator('header'),
   );
 };
+
+/** Each switcher entry's href, keyed by the language it offers. */
+const switcherTargets = (page: Page): Promise<Record<string, string>> =>
+  page
+    .locator(`${SWITCHER} li a`)
+    .evaluateAll((links) =>
+      Object.fromEntries(
+        links.map((l) => [
+          l.getAttribute('hreflang') ?? '',
+          l.getAttribute('href') ?? '',
+        ]),
+      ),
+    );
+
+/** A path as Astro serves it, with its trailing slash. */
+const withSlash = (path: string): string =>
+  path.endsWith('/') ? path : `${path}/`;
 
 test.describe('language switcher', () => {
   test('names the current language in its own language, as its width calls for', async ({
@@ -168,34 +186,46 @@ test.describe('language switcher', () => {
     await expect(entry).toBeVisible();
   });
 
-  test('keeps you on the page you were reading', async ({ page }) => {
-    // The classic i18n bug is a switcher that dumps the visitor on the
-    // homepage instead of translating the page in front of them.
-    // Trailing slash included deliberately: Astro serves these paths with one,
-    // so this asserts the href a visitor actually gets rather than a tidied
-    // version of it. `every target is a real page` proves it resolves.
-    await page.goto('/glory-points');
-    await expect(page.locator(`${SWITCHER} li a`).first()).toHaveAttribute(
-      'href',
-      '/id/glory-points/',
-    );
+  // Every page, every language, every entry (#390 F131). Both tests read the
+  // first entry on /glory-points and nothing else, so a Thai entry that sent
+  // the visitor to the homepage, or a /classroom-groups switcher pointing at
+  // the wrong page, passed. One test per page per language, so each has its
+  // own budget and a failure names the page in its title.
+  for (const path of sitePaths())
+    for (const locale of LOCALES) {
+      const here = localisePath(path, locale);
 
-    await page.goto('/id/glory-points');
-    await expect(page.locator(`${SWITCHER} li a`).first()).toHaveAttribute(
-      'href',
-      '/glory-points/',
-    );
-  });
+      test(`${here}: keeps you on the page you were reading`, async ({
+        page,
+      }) => {
+        // The classic i18n bug is a switcher that dumps the visitor on the
+        // homepage instead of translating the page in front of them.
+        // Trailing slash included deliberately: Astro serves these paths with
+        // one, so this asserts the href a visitor actually gets rather than a
+        // tidied version of it. `every target is a real page` proves it
+        // resolves.
+        await page.goto(here);
+        expect(await switcherTargets(page)).toEqual(
+          Object.fromEntries(
+            otherLocales(locale).map((other) => [
+              other,
+              withSlash(localisePath(path, other)),
+            ]),
+          ),
+        );
+      });
 
-  test('every target is a real page, not a 404', async ({ page }) => {
-    await page.goto('/glory-points');
-    const href = await page
-      .locator(`${SWITCHER} li a`)
-      .first()
-      .getAttribute('href');
-    const response = await page.request.get(href!);
-    expect(response.status()).toBe(200);
-  });
+      test(`${here}: every target is a real page, not a 404`, async ({
+        page,
+      }) => {
+        await page.goto(here);
+        const targets = Object.values(await switcherTargets(page));
+        // The population: one entry for every other language.
+        expect(targets).toHaveLength(otherLocales(locale).length);
+        for (const href of targets)
+          expect((await page.request.get(href)).status(), href).toBe(200);
+      });
+    }
 
   test('the control and its entries are touchable', async ({ page }) => {
     await page.goto('/');
@@ -235,22 +265,27 @@ test.describe('language switcher', () => {
     },
   );
 
-  test(
-    'the open dropdown stays inside the viewport at 320px',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // Page-level scrollWidth is not containment: a panel can escape its own
-      // container and still produce zero document scroll.
-      await page.setViewportSize({ width: 320, height: 720 });
-      await page.goto('/');
-      await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
-      await page.locator(`${SWITCHER} > summary`).click();
-      const box = (await page.locator(`${SWITCHER} ul`).boundingBox())!;
-      expect(box.x, 'dropdown escapes the left edge').toBeGreaterThanOrEqual(0);
-      expect(
-        box.x + box.width,
-        'dropdown escapes the right edge',
-      ).toBeLessThanOrEqual(320);
-    },
-  );
+  // Every language (#390 F131): the panel hangs off a summary whose width is
+  // each language's own, so this is a fit test, and it read English only.
+  for (const locale of LOCALES)
+    test(
+      `${locale}: the open dropdown stays inside the viewport at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        // Page-level scrollWidth is not containment: a panel can escape its
+        // own container and still produce zero document scroll.
+        await page.setViewportSize({ width: 320, height: 720 });
+        await page.goto(localisePath('/', locale));
+        await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
+        await page.locator(`${SWITCHER} > summary`).click();
+        const box = (await page.locator(`${SWITCHER} ul`).boundingBox())!;
+        expect(box.x, 'dropdown escapes the left edge').toBeGreaterThanOrEqual(
+          0,
+        );
+        expect(
+          box.x + box.width,
+          'dropdown escapes the right edge',
+        ).toBeLessThanOrEqual(320);
+      },
+    );
 });

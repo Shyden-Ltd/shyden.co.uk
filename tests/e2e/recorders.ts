@@ -104,7 +104,11 @@ export interface ErrorRecorder {
  * shared ordering, not by exercising it.
  */
 export function recordErrors(page: Page): ErrorRecorder {
-  const SENTINEL = `__liveness_${Math.random().toString(36).slice(2)}__`;
+  // One sentinel PER VERDICT, not per recorder (#390 F129). With one, a flag
+  // set by the first verdict's sentinel stayed set, and every later verdict
+  // returned at once, before anything raised since had been delivered.
+  const SENTINEL = `__liveness_${Math.random().toString(36).slice(2)}n`;
+  let verdicts = 0;
   // Any sentinel, not just this recorder's own. `classroom-groups-controls`
   // once built one recorder per sampled path against the same page, so
   // recorder A could still be listening when recorder B emits — and A, not
@@ -122,11 +126,11 @@ export function recordErrors(page: Page): ErrorRecorder {
    * see what was searched without tracing back to the poll.
    */
   const delivered: string[] = [];
-  let sentinelSeen = false;
+  const sentinelsSeen = new Set<string>();
   page.on('console', (message) => {
     const text = message.text();
     delivered.push(text);
-    if (text.includes(SENTINEL)) sentinelSeen = true;
+    if (text.startsWith(SENTINEL)) sentinelsSeen.add(text);
     else if (message.type() === 'error' && !ANY_SENTINEL.test(text))
       consoleErrors.push(text);
   });
@@ -136,9 +140,10 @@ export function recordErrors(page: Page): ErrorRecorder {
     // Emitted through `console.error`, not `console.log`, so the sentinel
     // travels the same filter as a real error. A control that took an easier
     // path than the thing it vouches for proves nothing about it.
-    await page.evaluate((s) => console.error(s), SENTINEL);
+    const sentinel = `${SENTINEL}${++verdicts}__`;
+    await page.evaluate((s) => console.error(s), sentinel);
     await expect
-      .poll(() => sentinelSeen, {
+      .poll(() => sentinelsSeen.has(sentinel), {
         message: `${because}: the console channel never delivered this helper's own sentinel, so an empty error list would mean nothing (#79)`,
       })
       .toBe(true);

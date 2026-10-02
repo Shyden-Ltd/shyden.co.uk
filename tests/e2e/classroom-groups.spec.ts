@@ -16,6 +16,7 @@ import { recorded, shoot } from './evidence';
 import { THEMES } from '../palette';
 import { THEME_SCRIPT_SOURCE, emulateTheme } from '../themes';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+import { localePaths } from './locale-sampling';
 import {
   openRoster,
   addSeveral,
@@ -1545,22 +1546,29 @@ test.describe('out-of-date groups', () => {
   // the page is a later task's own (this task owns staleness, not the
   // no-scroll rule as a whole) -- this defends the one new element this
   // task is actually adding.
-  test(
-    'the notice fits at 320px with no horizontal scroll, and its button meets the touch-target minimum',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 320, height: 900 });
-      await page.goto('/classroom-groups');
-      await shuffle(page);
-      await page.getByLabel('Students in each group').fill('3');
-      await expect(page.locator('#cg-stale')).toBeVisible();
-      await expectNoHorizontalScroll(page);
-      await atLeast44(
-        page.locator('#cg-stale button'),
-        'the stale notice button',
-      );
-    },
-  );
+  //
+  // Every locale (#390 F135): the notice is a sentence naming the change, in
+  // each language's own words and widths, and this read English only. The
+  // fields go by id, since their labels are each language's own.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `the notice fits at 320px with no horizontal scroll, and its button meets the touch-target minimum -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await page.goto(path);
+        await page.locator('#cg-count').fill('12');
+        await page.click('#cg-go');
+        await expect(page.locator('#cg-results .group')).toHaveCount(3);
+        await page.locator('#cg-size').fill('3');
+        await expect(page.locator('#cg-stale')).toBeVisible();
+        await expectNoHorizontalScroll(page, `${path}: the stale notice`);
+        await atLeast44(
+          page.locator('#cg-stale button'),
+          `${path}: the stale notice button`,
+        );
+      },
+    );
 
   // "Assert whole rendered sentences, in both locales" (CLAUDE.md) -- every
   // test above is English-only, and the reason TEXT itself is
@@ -1680,23 +1688,9 @@ test.describe('site-wide language switching', () => {
     ]);
   });
 
-  test('the Indonesian homepage links to the Indonesian tools', async ({
-    page,
-  }) => {
-    // localisePath's own doc comment calls this "the classic i18n bug", and
-    // nothing asserted it anywhere: an Indonesian visitor clicking a work
-    // card landed on the English page.
-    await page.goto('/id/');
-    await expect(
-      page.locator('#tools a[href="/id/classroom-groups"]'),
-    ).toHaveCount(1);
-    await expect(page.locator('#tools a[href="/id/glory-points"]')).toHaveCount(
-      1,
-    );
-    await expect(
-      page.locator('#tools a[href="/classroom-groups"]'),
-    ).toHaveCount(0);
-  });
+  // Where the homepage's tool cards link, in every locale, is held by
+  // 'exactly two tool cards, each badged and linked in-locale' in
+  // homepage.spec.ts (#390 F129).
 
   test.describe('what each page tells a search engine', () => {
     // Asserted by VALUE. Counting the tags cannot tell the difference between
@@ -1750,14 +1744,9 @@ test.describe('site-wide language switching', () => {
     }
   });
 
-  test('the 404 answers in both languages', async ({ page }) => {
-    // Cloudflare Pages serves this one file for any unknown path, including
-    // /id/*, so an Indonesian visitor must not be stranded in English.
-    const response = await page.goto('/definitely-not-a-page');
-    expect(response?.status()).toBe(404);
-    await expect(page.locator('body')).toContainText('Page not found');
-    await expect(page.locator('body')).toContainText('Halaman tidak ditemukan');
-  });
+  // The 404 answering in every language is held by not-found.spec.ts, and its
+  // status code by site-meta.spec.ts. An English-and-Indonesian copy titled
+  // "in both languages" stood here from before the page served five (#390 F132).
 });
 
 // Stage 2, Task 7. Design spec section 2: "The default, collapsed state must
