@@ -43,25 +43,25 @@ test.describe('Thai typography', () => {
     expect(LOCALES).toContain('th');
   });
 
-  for (const width of WIDTHS) {
-    test(
-      `no Thai glyph draws beyond its line box at ${width}px`,
-      { tag: '@emulated-viewport' },
-      async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
+  // One test per width, route and theme (#421).
+  for (const width of WIDTHS)
+    for (const route of THAI_ROUTES)
+      for (const theme of THEMES)
+        test(
+          `no Thai glyph draws beyond its line box -- ${route} at ${width}px, ${theme}`,
+          { tag: '@emulated-viewport' },
+          async ({ page }) => {
+            await page.setViewportSize({ width, height: 900 });
+            const response = await page.goto(route);
 
-        for (const route of THAI_ROUTES) {
-          const response = await page.goto(route);
-
-          // Assert the SEAM: that this route served at all. The site's own
-          // 404 page carries Thai text (3 characters of it), so a missing
-          // route renders Thai, measures clean, and passes — which is how a
-          // page with no `/th` twin slipped through before #68.
-          expect(
-            response?.status(),
-            `${route} at ${width}px: route did not serve`,
-          ).toBe(200);
-          for (const theme of THEMES) {
+            // Assert the SEAM: that this route served at all. The site's own
+            // 404 page carries Thai text (3 characters of it), so a missing
+            // route renders Thai, measures clean, and passes — which is how a
+            // page with no `/th` twin slipped through before #68.
+            expect(
+              response?.status(),
+              `${route} at ${width}px: route did not serve`,
+            ).toBe(200);
             await emulateTheme(page, theme);
             const { offenders, examined } = await page.evaluate(() => {
               const THAI = /[฀-๿]/;
@@ -129,9 +129,6 @@ test.describe('Thai typography', () => {
               `${route} at ${width}px, ${theme}: ${examined} Thai runs clear of the line above`,
               page.locator('h1').first(),
             );
-          }
-        }
-      },
-    );
-  }
+          },
+        );
 });

@@ -138,18 +138,9 @@ const BURN_DOWN: readonly string[] = [
   'tests/e2e/head-and-sitemap.spec.ts :: declares exactly one viewport, at the device width :: for (const path of paths)',
   'tests/e2e/header-room.spec.ts :: ${locale}: no header item overlaps another, at any width :: for (const path of paths)',
   'tests/e2e/header-room.spec.ts :: ${locale}: no header item overlaps another, at any width :: for (const width of await header.open(page, path))',
-  'tests/e2e/palette-controls.spec.ts :: ${path}: every control it paints uses a palette colour, in both themes :: for (const theme of THEMES)',
-  'tests/e2e/palette-controls.spec.ts :: the controls the browser draws use the brand accent, in both themes :: for (const theme of THEMES)',
-  'tests/e2e/print-legibility.spec.ts :: ${path}: every printed ink is readable on white paper, whatever the screen shows :: for (const { device, saved } of PRINT_RUNS)',
-  'tests/e2e/print-legibility.spec.ts :: a disabled control never depends on its fill reaching paper :: for (const theme of THEMES)',
-  'tests/e2e/print-legibility.spec.ts :: the screen palette is not dragged down with the print one :: for (const theme of THEMES)',
   'tests/e2e/rendered-text.spec.ts :: every published page, in every language :: for (const path of paths)',
   'tests/e2e/rendered-text.spec.ts :: no two words are rendered touching, on any page :: for (const path of paths)',
   'tests/e2e/rendered-text.spec.ts :: no unfilled [[placeholder]] reaches a page :: for (const path of paths)',
-  'tests/e2e/text-over-ribbon.spec.ts :: ${theme} at ${width}px: every text run over the ribbon clears AA, on every page :: for (const path of paths)',
-  'tests/e2e/thai-typography.spec.ts :: no Thai glyph draws beyond its line box at ${width}px :: for (const route of THAI_ROUTES)',
-  'tests/e2e/thai-typography.spec.ts :: no Thai glyph draws beyond its line box at ${width}px :: for (const theme of THEMES)',
-  'tests/e2e/theme-gallery.spec.ts :: ${locale} at ${width}px: every page renders the theme, with no sideways scroll :: for (const path of paths)',
   'tests/prod/prod-sanity.spec.ts :: every locale the site claims to serve is live, and in that language :: for (const { locale, path, heading, englishHeading } of ROUTES)',
 ];
 

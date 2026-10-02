@@ -46,11 +46,12 @@ type Reading = {
 };
 
 for (const path of PAGES) {
-  test(`${path}: every control it paints uses a palette colour, in both themes`, async ({
-    page,
-  }) => {
-    await page.goto(path);
-    for (const theme of THEMES) {
+  // One test per page per theme (#421).
+  for (const theme of THEMES)
+    test(`${path}, ${theme}: every control it paints uses a palette colour`, async ({
+      page,
+    }) => {
+      await page.goto(path);
       await emulateTheme(page, theme);
 
       const { allowed, readings } = await page.evaluate((selector) => {
@@ -112,9 +113,9 @@ for (const path of PAGES) {
         // `allowed` is built by the SAME `page.evaluate` call, from the custom
         // properties `:root` actually serves, so a non-empty palette is proof
         // that the page loaded and the script ran to completion. The
-        // SELECTOR's own liveness is carried by the sibling paths in this very
-        // loop, which assert `readings.length > 0` against the same constant --
-        // a typo there fails three of the four cases, not none of them.
+        // SELECTOR's own liveness is carried by the sibling tests for the
+        // other paths, which assert `readings.length > 0` against the same
+        // constant -- a typo there fails three of the four pages, not none.
         expect(
           allowed.length,
           'the homepage served no palette, so nothing was measured at all',
@@ -122,7 +123,7 @@ for (const path of PAGES) {
         expect(readings, 'the homepage paints no form controls').toHaveLength(
           0,
         );
-        continue;
+        return;
       }
       expect(
         readings.length,
@@ -155,21 +156,21 @@ for (const path of PAGES) {
         `${path}, ${theme}: all ${readings.length} controls drawn from the palette's ${allowed.length} values`,
         page.locator(PAINTED).first(),
       );
-    }
-  });
+    });
 }
 
-test('the controls the browser draws use the brand accent, in both themes', async ({
-  page,
-}) => {
-  await page.goto('/classroom-groups');
-  const boxes = page.locator('input[type="checkbox"], input[type="radio"]');
-  // Liveness: an empty list and a correct one both report zero offenders.
-  // Written as a locator assertion rather than `expect(await boxes.count())`
-  // because that is the form tests/unit/event-collectors.test.ts recognises,
-  // and a proof a guard cannot see is not a proof.
-  await expect(boxes.first()).toBeVisible();
-  for (const theme of THEMES) {
+// One test per theme (#421).
+for (const theme of THEMES)
+  test(`${theme}: the controls the browser draws use the brand accent`, async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
+    const boxes = page.locator('input[type="checkbox"], input[type="radio"]');
+    // Liveness: an empty list and a correct one both report zero offenders.
+    // Written as a locator assertion rather than `expect(await boxes.count())`
+    // because that is the form tests/unit/event-collectors.test.ts recognises,
+    // and a proof a guard cannot see is not a proof.
+    await expect(boxes.first()).toBeVisible();
     await emulateTheme(page, theme);
 
     const accent = await page.evaluate(() =>
@@ -192,5 +193,4 @@ test('the controls the browser draws use the brand accent, in both themes', asyn
       `${theme}: all ${await boxes.count()} browser-drawn controls use --accent ${resolved}`,
       boxes.first(),
     );
-  }
-});
+  });

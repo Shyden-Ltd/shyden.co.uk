@@ -4,6 +4,8 @@ import { shoot } from './evidence';
 import { filesUnder, searched } from '../source-files';
 import { THEMES, ribbonLayers, tokensCss } from '../palette';
 import { emulateTheme } from '../themes';
+import { sitePaths } from '../site-pages';
+import { LOCALES, localisePath } from '../../src/lib/i18n';
 import { contrast, over, parseColour, type RGB } from '../wcag';
 
 /**
@@ -182,35 +184,73 @@ const scoreRuns = async (
   return { runs: scored, seen };
 };
 
+/**
+ * Every page the site serves, in every language, and the 404: derived from
+ * the source, because a generated test is created when the file is COLLECTED,
+ * before the web server has built `dist/`. A list read from `dist/` here
+ * would be empty on a cold tree and generate no tests at all. The test below
+ * holds the derivation to the built pages, so a page that is built and never
+ * measured still goes red.
+ */
+const RIBBON_PATHS = [
+  ...sitePaths().flatMap((path) =>
+    LOCALES.map((locale) => localisePath(path, locale)),
+  ),
+  '/no-such-page-for-the-ribbon-check',
+];
+
+const normalised = (path: string): string =>
+  path.length > 1 ? path.replace(/\/$/, '') : path;
+
+test('the ribbon is measured on every built page', () => {
+  expect(RIBBON_PATHS.map(normalised).sort()).toEqual(
+    builtPaths().map(normalised).sort(),
+  );
+});
+
+// One test per theme, width and page (#421). These were sixteen pages in one
+// test under a 120 s budget.
 for (const theme of THEMES)
   for (const width of WIDTHS)
-    test(
-      `${theme} at ${width}px: every text run over the ribbon clears AA, on every page`,
-      { tag: '@emulated-viewport' },
-      async ({ page }) => {
-        // Sixteen pages, each rendered and photographed: more than the default
-        // 30 s on the emulated phones.
-        test.setTimeout(120_000);
-        await page.setViewportSize({ width, height: 900 });
-        // The ribbon exists and paints its tokens, or there is nothing here
-        // to measure and a clean result would mean nothing.
-        expect(ribbonLayers(tokensCss()).length).toBe(3);
-        const paths = builtPaths();
-        const runs: Run[] = [];
-        const unread: string[] = [];
-        const belowTheBand: string[] = [];
-        for (const path of paths) {
+    for (const path of RIBBON_PATHS)
+      test(
+        `${theme} at ${width}px: every text run over the ribbon clears AA -- ${path}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          // The ribbon exists and paints its tokens, or there is nothing here
+          // to measure and a clean result would mean nothing.
+          expect(ribbonLayers(tokensCss()).length).toBe(3);
           await page.goto(path);
           await emulateTheme(page, theme);
           const scan = await scoreRuns(page, path);
-          if (scan.seen === 0) unread.push(path);
+          // The page was read: its first screen held text the scan could see.
+          // A page can have nothing over the band, but a page with nothing seen
+          // at all is a scan that did not run there.
+          expect(scan.seen, `${path}: the scan read nothing`).toBeGreaterThan(
+            0,
+          );
+          const tightest = [...scan.runs].sort((a, b) => a.ratio - b.ratio)[0];
+          test.info().annotations.push({
+            type: 'tightest',
+            description: tightest
+              ? `${tightest.where} ${shown(tightest.ratio)}`
+              : // Layout, not a fault: at this width this page's text all
+                // starts below the band, so none of it is over the ribbon.
+                'no text over the ribbon',
+          });
+          const failing = scan.runs
+            .filter((run) => run.ratio < AA)
+            .map((run) => `${run.where} ${shown(run.ratio)}`);
+          expect(
+            searched(failing, {
+              of: scan.seen,
+              what: `text runs read on ${path}`,
+            }),
+          ).toEqual([]);
           if (path === '/') {
             // The release evidence (#362) pictures the ribbon here: the
             // homepage's first screen, where the band sits behind the hero.
-            expect(
-              scan.seen,
-              "the homepage's first screen was read",
-            ).toBeGreaterThan(0);
             // The scan left every glyph transparent to photograph the ground,
             // so the picture is of a fresh load, as a visitor sees it.
             await page.goto(path);
@@ -221,35 +261,5 @@ for (const theme of THEMES)
               `${theme} at ${width}px: the homepage under the ribbon`,
             );
           }
-          if (scan.runs.length === 0) belowTheBand.push(path);
-          runs.push(...scan.runs);
-        }
-        const tightest = [...runs].sort((a, b) => a.ratio - b.ratio)[0];
-        test.info().annotations.push(
-          {
-            type: 'tightest',
-            description: tightest
-              ? `${tightest.where} ${shown(tightest.ratio)}`
-              : 'none',
-          },
-          // Layout, not a fault: at this width these pages' text all starts
-          // below the band, so none of it is over the ribbon.
-          {
-            type: 'no text over the ribbon',
-            description: belowTheBand.join(' ') || 'none',
-          },
-        );
-        const failing = runs
-          .filter((run) => run.ratio < AA)
-          .map((run) => `${run.where} ${shown(run.ratio)}`);
-        expect(
-          searched(failing, { of: runs, what: 'text runs over the ribbon' }),
-        ).toEqual([]);
-        // Every page was read: its first screen held text the scan could see.
-        // A page can have nothing over the band, but a page with nothing seen
-        // at all is a scan that did not run there.
-        expect(searched(unread, { of: paths, what: 'built pages' })).toEqual(
-          [],
-        );
-      },
-    );
+        },
+      );
