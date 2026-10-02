@@ -29,6 +29,75 @@ const panel = (page: import('@playwright/test').Page) =>
   page.locator('#cg-print-panel');
 
 /**
+ * The four remembered choices, in each language the panel is tested in. Each
+ * moves off its default one way: the class-list radio is chosen (Both is the
+ * default), and each tick box, ticked by default, is cleared.
+ */
+const REMEMBERED = {
+  en: {
+    path: '/classroom-groups',
+    cancel: 'Cancel',
+    choices: [
+      { label: 'Class list', radio: true },
+      { label: 'Include avatars', radio: false },
+      { label: 'Show students who are absent', radio: false },
+      { label: 'Show sex and the together/apart letters', radio: false },
+    ],
+  },
+  id: {
+    path: '/id/classroom-groups',
+    cancel: 'Batal',
+    choices: [
+      { label: 'Daftar kelas', radio: true },
+      { label: 'Sertakan avatar', radio: false },
+      { label: 'Tampilkan siswa yang tidak hadir', radio: false },
+      {
+        label: 'Tampilkan jenis kelamin dan huruf bersama/terpisah',
+        radio: false,
+      },
+    ],
+  },
+} as const;
+
+/**
+ * Moves ONE remembered choice off its default, reloads, and reads all four
+ * back: the changed one survives and the three left alone keep their
+ * defaults (#426). The test it replaced changed three of the four, so the
+ * letters choice could go unstored and still pass, and its Indonesian twin
+ * changed two. One test per choice calls this, and "remembers nothing" and
+ * "stores every box as cleared" both fail it too.
+ *
+ * TWO students, not the default twelve: the roster only has to be big
+ * enough for the Print button to exist, and building twelve twice crashed
+ * WebKit on CI ("WebKit encountered an internal error" inside `page.goto`,
+ * before any assertion ran) while passing on the other four projects.
+ */
+const changeOneAndReload = async (
+  page: import('@playwright/test').Page,
+  language: (typeof REMEMBERED)[keyof typeof REMEMBERED],
+  changed: string,
+) => {
+  await withGroups(page, 2, language.path);
+  await openPrintPanel(page);
+  const choice = (label: string) => panel(page).getByLabel(label);
+  if (language.choices.find((c) => c.label === changed)!.radio)
+    await choice(changed).check();
+  else await choice(changed).uncheck();
+  await panel(page).getByRole('button', { name: language.cancel }).click();
+
+  await page.reload();
+  await withGroups(page, 2, language.path);
+  await openPrintPanel(page);
+  // Not a population: the four fixed choices of one panel, read back.
+  for (const { label, radio } of language.choices) {
+    const moved = label === changed;
+    await expect(choice(label), label).toBeChecked({
+      checked: radio ? moved : !moved,
+    });
+  }
+};
+
+/**
  * Stage 5, Task 1. The print panel and its four remembered choices.
  * Q-01…Q-04, Q-21, Y-06, Y-07.
  *
@@ -61,35 +130,12 @@ test.describe('the print panel', () => {
     }
   });
 
-  test('all four choices survive a reload', async ({ page }) => {
-    // TWO students, not the default twelve. This test is about four
-    // checkbox states surviving a reload; the roster only has to be big
-    // enough for the Print button to exist. Building twelve, shuffling
-    // them, reloading and building twelve again is a great deal of DOM for
-    // an assertion that touches none of it -- and it crashed WebKit on CI
-    // ("WebKit encountered an internal error" inside `page.goto`, before
-    // any assertion ran) while passing on the other four projects.
-    await withGroups(page, 2);
-    await openPrintPanel(page);
-    await panel(page).getByLabel('Class list').check();
-    await panel(page).getByLabel('Include avatars').uncheck();
-    await panel(page).getByLabel('Show students who are absent').uncheck();
-    await panel(page).getByRole('button', { name: 'Cancel' }).click();
-
-    await page.reload();
-    await withGroups(page, 2);
-    await openPrintPanel(page);
-    await expect(panel(page).getByLabel('Class list')).toBeChecked();
-    await expect(panel(page).getByLabel('Include avatars')).not.toBeChecked();
-    await expect(
-      panel(page).getByLabel('Show students who are absent'),
-    ).not.toBeChecked();
-    // …and the one left alone is still on, so "remembers all four" is not
-    // satisfied by a wrapper that simply forgets everything.
-    await expect(
-      panel(page).getByLabel('Show sex and the together/apart letters'),
-    ).toBeChecked();
-  });
+  for (const { label } of REMEMBERED.en.choices)
+    test(`${label}: the choice survives a reload, and only it moves`, async ({
+      page,
+    }) => {
+      await changeOneAndReload(page, REMEMBERED.en, label);
+    });
 
   test('only preferences are stored — no class data', async ({ page }) => {
     await withGroups(page);
@@ -228,21 +274,12 @@ test.describe('the print panel — Indonesian', () => {
     }
   });
 
-  test('all four choices survive a reload', async ({ page }) => {
-    // Two students, for the reason given on the English case above -- this
-    // is the test that crashed WebKit on CI.
-    await withGroups(page, 2, '/id/classroom-groups');
-    await openPrintPanel(page);
-    await panel(page).getByLabel('Daftar kelas').check();
-    await panel(page).getByLabel('Sertakan avatar').uncheck();
-    await panel(page).getByRole('button', { name: 'Batal' }).click();
-
-    await page.reload();
-    await withGroups(page, 2, '/id/classroom-groups');
-    await openPrintPanel(page);
-    await expect(panel(page).getByLabel('Daftar kelas')).toBeChecked();
-    await expect(panel(page).getByLabel('Sertakan avatar')).not.toBeChecked();
-  });
+  for (const { label } of REMEMBERED.id.choices)
+    test(`${label}: the choice survives a reload, and only it moves`, async ({
+      page,
+    }) => {
+      await changeOneAndReload(page, REMEMBERED.id, label);
+    });
 });
 
 /**

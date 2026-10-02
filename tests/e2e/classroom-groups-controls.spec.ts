@@ -1595,8 +1595,13 @@ test.describe('Grouping options, live from the roster — Indonesian', () => {
       .getByLabel('Jenis kelamin')
       .selectOption('F');
     await page.locator('#cg-grouping-toggle').click();
+    // Both switches, as its English twin reads (#426): this read Mix alone,
+    // so a Separate switch that never enabled passed in Indonesian.
     await expect(
       page.getByLabel('Campur siswa laki-laki dan perempuan secara merata'),
+    ).toBeEnabled();
+    await expect(
+      page.getByLabel('Pisahkan siswa laki-laki dan perempuan'),
     ).toBeEnabled();
     await expect(page.locator('#cg-sex-why')).toBeHidden();
   });
