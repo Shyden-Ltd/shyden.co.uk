@@ -10,6 +10,7 @@ import {
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+import { sitePaths } from '../site-pages';
 
 test.use(recorded);
 
@@ -69,6 +70,23 @@ const expectLabel = async (
     page.locator('header'),
   );
 };
+
+/** Each switcher entry's href, keyed by the language it offers. */
+const switcherTargets = (page: Page): Promise<Record<string, string>> =>
+  page
+    .locator(`${SWITCHER} li a`)
+    .evaluateAll((links) =>
+      Object.fromEntries(
+        links.map((l) => [
+          l.getAttribute('hreflang') ?? '',
+          l.getAttribute('href') ?? '',
+        ]),
+      ),
+    );
+
+/** A path as Astro serves it, with its trailing slash. */
+const withSlash = (path: string): string =>
+  path.endsWith('/') ? path : `${path}/`;
 
 test.describe('language switcher', () => {
   test('names the current language in its own language, as its width calls for', async ({
@@ -168,33 +186,48 @@ test.describe('language switcher', () => {
     await expect(entry).toBeVisible();
   });
 
-  test('keeps you on the page you were reading', async ({ page }) => {
+  // Every page, every language, every entry (#390 F131). Both tests read the
+  // first entry on /glory-points and nothing else, so a Thai entry that sent
+  // the visitor to the homepage, or a /classroom-groups switcher pointing at
+  // the wrong page, passed.
+  test('keeps you on the page you were reading, from every page in every language', async ({
+    page,
+  }) => {
     // The classic i18n bug is a switcher that dumps the visitor on the
     // homepage instead of translating the page in front of them.
     // Trailing slash included deliberately: Astro serves these paths with one,
     // so this asserts the href a visitor actually gets rather than a tidied
     // version of it. `every target is a real page` proves it resolves.
-    await page.goto('/glory-points');
-    await expect(page.locator(`${SWITCHER} li a`).first()).toHaveAttribute(
-      'href',
-      '/id/glory-points/',
-    );
-
-    await page.goto('/id/glory-points');
-    await expect(page.locator(`${SWITCHER} li a`).first()).toHaveAttribute(
-      'href',
-      '/glory-points/',
-    );
+    for (const path of sitePaths())
+      for (const locale of LOCALES) {
+        await page.goto(localisePath(path, locale));
+        expect(
+          await switcherTargets(page),
+          `the switcher on ${localisePath(path, locale)}`,
+        ).toEqual(
+          Object.fromEntries(
+            otherLocales(locale).map((other) => [
+              other,
+              withSlash(localisePath(path, other)),
+            ]),
+          ),
+        );
+      }
   });
 
   test('every target is a real page, not a 404', async ({ page }) => {
-    await page.goto('/glory-points');
-    const href = await page
-      .locator(`${SWITCHER} li a`)
-      .first()
-      .getAttribute('href');
-    const response = await page.request.get(href!);
-    expect(response.status()).toBe(200);
+    const targets = new Set<string>();
+    for (const path of sitePaths())
+      for (const locale of LOCALES) {
+        await page.goto(localisePath(path, locale));
+        for (const href of Object.values(await switcherTargets(page)))
+          targets.add(href);
+      }
+    // Every page in every language is somebody's target, so this is the
+    // population: fewer means a page was never requested below.
+    expect(targets.size).toBe(sitePaths().length * LOCALES.length);
+    for (const href of targets)
+      expect((await page.request.get(href)).status(), href).toBe(200);
   });
 
   test('the control and its entries are touchable', async ({ page }) => {
@@ -241,16 +274,24 @@ test.describe('language switcher', () => {
     async ({ page }) => {
       // Page-level scrollWidth is not containment: a panel can escape its own
       // container and still produce zero document scroll.
+      //
+      // Every language (#390 F131): the panel hangs off a summary whose width
+      // is each language's own, so this is a fit test and read English only.
       await page.setViewportSize({ width: 320, height: 720 });
-      await page.goto('/');
-      await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
-      await page.locator(`${SWITCHER} > summary`).click();
-      const box = (await page.locator(`${SWITCHER} ul`).boundingBox())!;
-      expect(box.x, 'dropdown escapes the left edge').toBeGreaterThanOrEqual(0);
-      expect(
-        box.x + box.width,
-        'dropdown escapes the right edge',
-      ).toBeLessThanOrEqual(320);
+      for (const locale of LOCALES) {
+        await page.goto(localisePath('/', locale));
+        await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
+        await page.locator(`${SWITCHER} > summary`).click();
+        const box = (await page.locator(`${SWITCHER} ul`).boundingBox())!;
+        expect(
+          box.x,
+          `${locale}: dropdown escapes the left edge`,
+        ).toBeGreaterThanOrEqual(0);
+        expect(
+          box.x + box.width,
+          `${locale}: dropdown escapes the right edge`,
+        ).toBeLessThanOrEqual(320);
+      }
     },
   );
 });
