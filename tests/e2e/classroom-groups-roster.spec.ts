@@ -232,6 +232,9 @@ test.describe('the roster table', () => {
     await row.getByLabel('Together').selectOption('A');
     await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make groups' }).click();
+    // The groups arrived (#425): a silence over a press that made nothing
+    // has not run the code that renders them.
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
 
     await reported.expectNone('building a roster reports nothing');
   });
@@ -405,8 +408,12 @@ test.describe('an absent student', () => {
 
   test('the word is never "away", anywhere', async ({ page }) => {
     await markAbsent(page);
+    // Three who are here (#425): with the only student absent the page
+    // refused to group, so "anywhere" never included the results.
+    await addSeveral(page, 3);
     await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make groups' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(/\baway\b/);
   });
 
@@ -755,9 +762,12 @@ test.describe('validation as it is typed', () => {
     await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
     await expect(page.getByText(/looks incomplete/)).toBeVisible();
     await giveEveryoneASex(page);
-    await expect(
-      page.getByRole('button', { name: 'Make groups' }),
-    ).toBeEnabled();
+    const go = page.getByRole('button', { name: 'Make groups' });
+    await expect(go).toBeEnabled();
+    // And pressing it makes groups (#425): an enabled button that then
+    // refused would still be a block.
+    await go.click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
   });
 
   // R-06 -- "…naming who already holds it" -- proven with a REAL typed
@@ -1439,8 +1449,12 @@ test.describe('Indonesian', () => {
   test('the word is never "away", anywhere', async ({ page }) => {
     await openRoster(page, '/id/classroom-groups');
     await page.locator('.cg-student').first().getByLabel('Tidak hadir').check();
+    // Three who are here, as in English (#425): with the only student absent
+    // the page refused to group, and the results were never read.
+    await addSeveral(page, 3);
     await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Buat Kelompok' }).click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(/\baway\b/);
   });
 
@@ -1486,9 +1500,11 @@ test.describe('Indonesian', () => {
     await page.locator('.cg-student').nth(1).getByLabel('#').fill('4');
     await expect(page.getByText(/tampak belum lengkap/)).toBeVisible();
     await giveEveryoneASex(page);
-    await expect(
-      page.getByRole('button', { name: 'Buat Kelompok' }),
-    ).toBeEnabled();
+    const go = page.getByRole('button', { name: 'Buat Kelompok' });
+    await expect(go).toBeEnabled();
+    // And pressing it makes groups, as in English (#425).
+    await go.click();
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
   });
 
   // Stage 3, Task 6's own i18n requirement. Mirrors 'Student details
