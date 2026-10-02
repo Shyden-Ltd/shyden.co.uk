@@ -17,6 +17,12 @@ export interface LoopedCase {
  */
 const STATEFUL = new Set([
   'goto',
+  // A navigation by another name: theme.spec.ts reloaded six stale values in
+  // one test, unseen while only `goto` was listed (#390 F150).
+  'reload',
+  'goBack',
+  'goForward',
+  'setContent',
   'setViewportSize',
   'emulateTheme',
   'emulateMedia',

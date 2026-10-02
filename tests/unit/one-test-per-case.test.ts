@@ -69,6 +69,23 @@ describe('the detector', () => {
     expect(titles).toEqual(['widths', 'themes', 'media', 'saved']);
   });
 
+  it('refuses a navigation by any of its names, not only goto (#390 F150)', () => {
+    const titles = found(`
+      test('reloaded', async ({ page }) => {
+        for (const stale of ['Dark', 'auto']) await page.reload();
+      });
+      test('back', async ({ page }) => {
+        for (const step of STEPS) await page.goBack();
+      });
+      test('forward', async ({ page }) => {
+        for (const step of STEPS) await page.goForward();
+      });
+      test('content', async ({ page }) => {
+        for (const html of PAGES) await page.setContent(html);
+      });`).map((site) => site.test);
+    expect(titles).toEqual(['reloaded', 'back', 'forward', 'content']);
+  });
+
   it('passes a loop that changes no page state', () => {
     expect(
       found(`
