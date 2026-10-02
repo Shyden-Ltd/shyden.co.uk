@@ -56,9 +56,26 @@ const MIRRORED: Readonly<Record<Comparison, Comparison>> = {
 const FEATURE = /(min|max)-width\s*:\s*(\d*\.?\d+)(px|r?em)/gi;
 const WIDTH_FIRST = /(?<![\w-])width\s*(>=|<=|>|<)\s*(\d*\.?\d+)(px|r?em)/gi;
 const VALUE_FIRST = /(\d*\.?\d+)(px|r?em)\s*(>=|<=|>|<)\s*width/gi;
+/** A viewport-width feature named at all, read or not: never `device-width`. */
+const MENTION = /(?<![\w-])(?:min-|max-)?width(?![\w-])/i;
 
-/** Every width condition in one media query list, as `width <op> px`. */
+/**
+ * Every width condition in one media query list, as `width <op> px`.
+ *
+ * A condition none of the three patterns reads (`min-width: 45ch`, `30vw <
+ * width`) is refused rather than skipped: read as nothing, it would drop both
+ * widths beside its breakpoint, and every guard measuring each layout would
+ * pass over that one (#390 F154).
+ */
 const conditions = (mediaText: string) => {
+  const unread = mediaText
+    .replace(FEATURE, '')
+    .replace(WIDTH_FIRST, '')
+    .replace(VALUE_FIRST, '');
+  if (MENTION.test(unread))
+    throw new Error(
+      `cannot read a width condition in "${mediaText}": write it in px, em or rem`,
+    );
   const px = (value: string, unit: string) =>
     Number(value) * (unit.toLowerCase() === 'px' ? 1 : PX_PER_EM);
   return [

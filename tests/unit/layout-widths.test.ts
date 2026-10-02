@@ -80,6 +80,19 @@ describe('the widths a stylesheet can lay out', () => {
     expect(edgesOf(...others, '(min-width: 720px)')).toEqual([719, 720]);
   });
 
+  it('refuses a width condition it cannot read, rather than measuring around it', () => {
+    // A breakpoint read as nothing loses both widths beside it, and every
+    // guard measuring "every layout" then passes over that one (#390 F154).
+    expect(() => edgesOf('(min-width: 660pt)')).toThrow(
+      'cannot read a width condition in "(min-width: 660pt)"',
+    );
+    expect(() => edgesOf('(width >= 45ch)')).toThrow(/45ch/);
+    expect(() => edgesOf('(30vw < width)')).toThrow(/30vw/);
+    expect(() =>
+      edgesOf('(min-width: 720px)', 'screen and (max-width: 40ex)'),
+    ).toThrow(/40ex/);
+  });
+
   it('lists each edge once, in order, strictly inside 320px to 1280px', () => {
     expect(
       layoutWidthsFrom([

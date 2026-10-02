@@ -56,6 +56,17 @@ describe('the detector', () => {
     ).toEqual([]);
   });
 
+  it('reads a test however Playwright declares it, focused and failing too', () => {
+    // This file kept its own list of test callees, which had no
+    // `test.fail.only`, so a looped body under one was never read (#390 F155).
+    expect(
+      found(`
+        test.fail.only('focused and failing', async ({ page }) => {
+          for (const path of ['/', '/id/']) await page.goto(path);
+        });`).map(({ test }) => test),
+    ).toEqual(['focused and failing']);
+  });
+
   it('refuses each state change the budget pays for, not only goto', () => {
     const titles = found(`
       test('widths', async ({ page }) => {

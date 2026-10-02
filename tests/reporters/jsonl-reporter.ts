@@ -44,6 +44,17 @@ import type {
 import { projectNameOf } from './test-identity';
 import { DashboardLog, toDashboardStatus } from './dashboard-jsonl';
 
+/**
+ * Playwright's verdict on one attempt, not how its body ended (#390 F158).
+ * A test declared to fail with `test.fail()` and failing is expected, a pass
+ * to the run; one that passes instead fails the run. Read from `status`
+ * alone, the dashboard showed the first as failed and the second as passed.
+ */
+const verdictOf = (test: TestCase, result: TestResult): string => {
+  if (result.status === 'skipped') return 'skipped';
+  return result.status === test.expectedStatus ? 'passed' : 'failed';
+};
+
 export default class JsonlReporter implements Reporter {
   private readonly log = new DashboardLog('jsonl-reporter');
 
@@ -72,7 +83,7 @@ export default class JsonlReporter implements Reporter {
       id: test.id,
       title: test.title,
       project: projectNameOf(test),
-      status: toDashboardStatus(result.status),
+      status: toDashboardStatus(verdictOf(test, result)),
       durationMs: result.duration,
       at: Date.now(),
     });

@@ -23,8 +23,10 @@ export type DashboardStatus = 'passed' | 'failed' | 'skipped';
  * Playwright distinguishes `timedOut` and `interrupted` from `failed`, and
  * vitest has a `pending` its own docs say cannot reach a finished test —
  * real distinctions for a human reading a runner's output, and not ones the
- * dashboard's counters draw. `summarizePlaywrightGroup` in
- * `scripts/test-devices.mjs` already folds the same way.
+ * dashboard's counters draw. The Playwright reporter hands this the run's
+ * verdict on a test rather than how its body ended, the way
+ * `playwrightVerdict` in `scripts/test-devices.mjs` counts `expected` and
+ * `unexpected`: a `test.fail()` that fails is a pass (#390 F158).
  *
  * Takes a `string` rather than either framework's union so this module
  * imports neither. Both unions are assignable to it, and the mapping is

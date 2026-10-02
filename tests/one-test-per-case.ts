@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { declarationsIn } from './playwright-declarations';
 
 /** A loop inside one test that changes page state on each pass. */
 export interface LoopedCase {
@@ -37,29 +38,6 @@ const lineCommentText = (sf: ts.SourceFile, range: ts.CommentRange): string =>
   range.kind === ts.SyntaxKind.SingleLineCommentTrivia
     ? sf.text.slice(range.pos + 2, range.end).trim()
     : '';
-
-/** `test(…)` and its run modifiers; `test.describe`, `.use` and `.step` are not tests. */
-const TEST_MODIFIERS = new Set(['only', 'skip', 'fixme', 'fail', 'slow']);
-
-const isTestCall = (call: ts.CallExpression): boolean => {
-  const callee = call.expression;
-  if (ts.isIdentifier(callee)) return callee.text === 'test';
-  return (
-    ts.isPropertyAccessExpression(callee) &&
-    ts.isIdentifier(callee.expression) &&
-    callee.expression.text === 'test' &&
-    TEST_MODIFIERS.has(callee.name.text)
-  );
-};
-
-const callbackOf = (
-  call: ts.CallExpression,
-): ts.FunctionLikeDeclaration | null => {
-  const last = call.arguments[call.arguments.length - 1];
-  return last && (ts.isArrowFunction(last) || ts.isFunctionExpression(last))
-    ? last
-    : null;
-};
 
 /** A title as written: a template keeps its `${…}`, so an entry naming it is stable. */
 const titleOf = (sf: ts.SourceFile, call: ts.CallExpression): string => {
@@ -198,16 +176,10 @@ export function loopedCases(
       });
     ts.forEachChild(node, (child) => inTest(title, child));
   };
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && isTestCall(node)) {
-      const callback = callbackOf(node);
-      if (callback?.body) {
-        inTest(titleOf(sf, node), callback.body);
-        return;
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
+  // Tests as Playwright declares them, from the one reader every guard
+  // shares: this file's own list of test callees missed `test.fail.only`,
+  // so a looped body under it passed unread (#390 F155).
+  for (const { kind, call, body } of declarationsIn(sf))
+    if (kind === 'test') inTest(titleOf(sf, call), body.body);
   return cases;
 }

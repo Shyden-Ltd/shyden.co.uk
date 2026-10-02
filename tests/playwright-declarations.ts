@@ -94,6 +94,9 @@ const DECLARING: ReadonlyMap<string, readonly [Kind, Modifier]> = new Map([
   ['skip', ['test', 'skip']],
   ['fixme', ['test', 'fixme']],
   ['fail', ['test', 'fail']],
+  // Focused AND expected to fail (Playwright 1.49); focus is what a run
+  // narrows to, so it is the modifier this one carries (#390 F155).
+  ['fail.only', ['test', 'only']],
   ['describe', ['describe', '']],
   ['describe.only', ['describe', 'only']],
   ['describe.skip', ['describe', 'skip']],

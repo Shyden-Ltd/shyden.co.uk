@@ -33,6 +33,11 @@ describe('declarationsIn() reads Playwright declarations from the parse tree', (
       "test.describe.serial('serial group', () => {});",
       "test.describe.parallel.only('parallel only group', () => {});",
       'test.describe(() => {});',
+      // Playwright 1.49's focused expected failure, and the two group forms
+      // no line above declared: each is an entry no test read (#390 F155).
+      "test.fail.only('focused, expected to fail', async () => {});",
+      "test.describe.serial.only('serial only group', () => {});",
+      "test.describe.parallel('parallel group', () => {});",
     );
 
     expect(
@@ -55,6 +60,9 @@ describe('declarationsIn() reads Playwright declarations from the parse tree', (
       ['describe', '', 'serial group', 10],
       ['describe', 'only', 'parallel only group', 11],
       ['describe', '', '', 12],
+      ['test', 'only', 'focused, expected to fail', 13],
+      ['describe', 'only', 'serial only group', 14],
+      ['describe', '', 'parallel group', 15],
     ]);
   });
 
