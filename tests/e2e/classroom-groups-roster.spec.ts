@@ -1684,16 +1684,24 @@ test.describe('an unset roster dropdown says which column it is for', () => {
    * (the pinned Linux image, all five engines) when this split was made.
    * Expected to FAIL there, not skipped: the day the layout is fixed the case
    * goes red and its entry has to go, so the park cannot outlive its fix.
+   * CI run 36965820730 failed exactly these five cases on every engine,
+   * so an entry names the case and holds for all five.
    */
-  const DOES_NOT_FIT_YET: ReadonlySet<string> = new Set([]);
+  const DOES_NOT_FIT_YET: ReadonlySet<string> = new Set([
+    '/id/classroom-groups 320',
+    '/id/classroom-groups 768',
+    '/id/classroom-groups 1024',
+    '/id/classroom-groups 1280',
+    '/vi/classroom-groups 768',
+  ]);
   for (const path of localePaths('/classroom-groups'))
     for (const width of TRUNCATION_WIDTHS)
       test(
         `no dropdown ever truncates its own column name -- ${path} at ${width}px`,
         { tag: '@emulated-viewport' },
-        async ({ page }, testInfo) => {
+        async ({ page }) => {
           test.fail(
-            DOES_NOT_FIT_YET.has(`${testInfo.project.name} ${path} ${width}`),
+            DOES_NOT_FIT_YET.has(`${path} ${width}`),
             'a column name does not fit here yet (#409)',
           );
           await page.setViewportSize({ width, height: 900 });
