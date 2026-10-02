@@ -5,6 +5,7 @@ import { searched } from '../source-files';
 import { localePaths } from './locale-sampling';
 import { THEMES } from '../palette';
 import { emulateTheme } from '../themes';
+import { getStrings, localeFromPath } from '../../src/lib/i18n';
 import {
   atLeast44,
   expectNoHorizontalScroll,
@@ -112,28 +113,27 @@ test.describe('the roster table', () => {
     await expect(page.locator('#cg-results')).toContainText('Student 1');
   });
 
-  test('an empty name box is exactly as wide as a full one', async ({
-    page,
-  }) => {
-    await openRoster(page);
-    await page.getByRole('button', { name: 'Add student' }).click();
-    await page
-      .locator('#cg-roster tbody tr')
-      .nth(0)
-      .getByLabel('Name')
-      .fill('Sebastianus');
-    const a = (await page
-      .locator('#cg-roster tbody tr')
-      .nth(0)
-      .getByLabel('Name')
-      .boundingBox())!;
-    const b = (await page
-      .locator('#cg-roster tbody tr')
-      .nth(1)
-      .getByLabel('Name')
-      .boundingBox())!;
-    expect(b.width).toBeCloseTo(a.width, 0);
-  });
+  // Every locale (#423): the table's column widths come from its localised
+  // column names.
+  for (const path of localePaths('/classroom-groups'))
+    test(`an empty name box is exactly as wide as a full one -- ${path}`, async ({
+      page,
+    }) => {
+      await openRoster(page, path);
+      const t = getStrings(localeFromPath(path));
+      await page
+        .getByRole('button', { name: t.rosterAddStudent, exact: true })
+        .click();
+      const nameBox = (row: number) =>
+        page
+          .locator('#cg-roster tbody tr')
+          .nth(row)
+          .getByLabel(t.rosterColName, { exact: true });
+      await nameBox(0).fill('Sebastianus');
+      const a = (await nameBox(0).boundingBox())!;
+      const b = (await nameBox(1).boundingBox())!;
+      expect(b.width).toBeCloseTo(a.width, 0);
+    });
 
   test(
     'a long name does not push the letters out of view',
@@ -159,48 +159,65 @@ test.describe('the roster table', () => {
   // MEASURED which controls can carry it. Every control here does, in both
   // layouts, with ONE exception that is a design decision rather than an
   // omission -- see `#` below.
-  test('per-row controls meet the 44px touch target', async ({ page }) => {
-    await openRoster(page);
-    const row = page.locator('.cg-student').first();
-    for (const label of ['Name', 'Sex', 'Together', 'Apart']) {
-      await atLeast44(row.getByLabel(label), label);
-    }
-    // `#` is the one control on this page held to the HEIGHT half alone.
-    // The card layout gives it 2 of 12 columns on purpose -- "a class
-    // register number is rarely more than 3 digits", and design spec
-    // section 3 is explicit that no arrangement of six full-width targets
-    // fits a phone at all, which is the whole reason the reflow exists.
-    // ClassroomGroupsPage.astro's `td:nth-child(2)` rule says so and names
-    // this test; this is the other half of that cross-reference.
-    //
-    // Measured under #294, which is why the exception is this narrow
-    // rather than the whole row: 43.28px wide on mobile-chrome and 42.80px
-    // on mobile-safari, against 80.78px on chromium's desktop default. The
-    // other four controls clear the floor in BOTH layouts. Kept as an
-    // inline exception, spelled out, rather than a height-only export from
-    // tests/viewport.ts -- a weaker helper anyone could reach for is the
-    // trivial escape hatch #118 was filed about, and an exception a reader
-    // meets at the site cannot be reached for by accident.
-    //
-    // It is ordered AFTER the loop deliberately. As the loop's first entry
-    // it failed first and Playwright stopped the test there, so the four
-    // controls behind it were never measured on a phone at all.
-    const number = (await row.getByLabel('#').boundingBox())!;
-    expect(Math.round(number.height), '# height').toBeGreaterThanOrEqual(44);
-    // The checkbox itself is drawn small on purpose, matching this page's
-    // existing `.switch input` convention -- its REAL tap target is the
-    // <label> wrapping it. Measuring the bare input here would repeat the
-    // exact false failure classroom-groups-controls.spec.ts's own "the two
-    // sex switches meet the 44px touch target once open" test already
-    // documents hitting once, and already works around the same way: via
-    // `.closest('label')`, not the input's own rect.
-    const absent = await row.getByLabel('Absent').evaluate((el) => {
-      const target = el.closest('label') ?? el;
-      const { width, height } = target.getBoundingClientRect();
-      return { width, height };
+  //
+  // Every locale (#423): the dropdowns show localised placeholders (#249).
+  for (const path of localePaths('/classroom-groups'))
+    test(`per-row controls meet the 44px touch target -- ${path}`, async ({
+      page,
+    }) => {
+      await openRoster(page, path);
+      const t = getStrings(localeFromPath(path));
+      const row = page.locator('.cg-student').first();
+      // The four column names, read in the page's own language. Not a
+      // population: the inner loop names four fixed controls of one row.
+      for (const label of [
+        t.rosterColName,
+        t.rosterColSex,
+        t.rosterColTogether,
+        t.rosterColApart,
+      ]) {
+        await atLeast44(row.getByLabel(label, { exact: true }), label);
+      }
+      // `#` is the one control on this page held to the HEIGHT half alone.
+      // The card layout gives it 2 of 12 columns on purpose -- "a class
+      // register number is rarely more than 3 digits", and design spec
+      // section 3 is explicit that no arrangement of six full-width targets
+      // fits a phone at all, which is the whole reason the reflow exists.
+      // ClassroomGroupsPage.astro's `td:nth-child(2)` rule says so and names
+      // this test; this is the other half of that cross-reference.
+      //
+      // Measured under #294, which is why the exception is this narrow
+      // rather than the whole row: 43.28px wide on mobile-chrome and 42.80px
+      // on mobile-safari, against 80.78px on chromium's desktop default. The
+      // other four controls clear the floor in BOTH layouts. Kept as an
+      // inline exception, spelled out, rather than a height-only export from
+      // tests/viewport.ts -- a weaker helper anyone could reach for is the
+      // trivial escape hatch #118 was filed about, and an exception a reader
+      // meets at the site cannot be reached for by accident.
+      //
+      // It is ordered AFTER the loop deliberately. As the loop's first entry
+      // it failed first and Playwright stopped the test there, so the four
+      // controls behind it were never measured on a phone at all.
+      const number = (await row
+        .getByLabel(t.rosterColNumber, { exact: true })
+        .boundingBox())!;
+      expect(Math.round(number.height), '# height').toBeGreaterThanOrEqual(44);
+      // The checkbox itself is drawn small on purpose, matching this page's
+      // existing `.switch input` convention -- its REAL tap target is the
+      // <label> wrapping it. Measuring the bare input here would repeat the
+      // exact false failure classroom-groups-controls.spec.ts's own "the two
+      // sex switches meet the 44px touch target once open" test already
+      // documents hitting once, and already works around the same way: via
+      // `.closest('label')`, not the input's own rect.
+      const absent = await row
+        .getByLabel(t.rosterColAbsent, { exact: true })
+        .evaluate((el) => {
+          const target = el.closest('label') ?? el;
+          const { width, height } = target.getBoundingClientRect();
+          return { width, height };
+        });
+      rectAtLeast44(absent, 'Absent (label)');
     });
-    rectAtLeast44(absent, 'Absent (label)');
-  });
 
   test('no console errors while building a roster', async ({ page }) => {
     const reported = recordErrors(page);
@@ -440,15 +457,17 @@ test.describe('an absent student', () => {
       expect(contrast).toBeGreaterThanOrEqual(4.5);
     });
 
-  test(
-    'cards: no horizontal scroll at 320px once a student is marked absent',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 320, height: 900 });
-      await markAbsent(page);
-      await expectNoHorizontalScroll(page);
-    },
-  );
+  // Every locale (#423): the absent state shows the page's own copy.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `cards: no horizontal scroll at 320px once a student is marked absent -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await markAbsent(page, path);
+        await expectNoHorizontalScroll(page);
+      },
+    );
 });
 
 // T-06 -- claimed by no task's own traceability line (checked: it appears
@@ -990,16 +1009,21 @@ test.describe('removing a student', () => {
     ).toBeHidden();
   });
 
-  test('the Remove button meets the 44px touch target', async ({ page }) => {
-    await openRoster(page);
-    await atLeast44(
-      page
-        .locator('.cg-student')
-        .first()
-        .getByRole('button', { name: 'Remove' }),
-      'Remove',
-    );
-  });
+  // Every locale (#423): the button's label is the page's own copy.
+  for (const path of localePaths('/classroom-groups'))
+    test(`the Remove button meets the 44px touch target -- ${path}`, async ({
+      page,
+    }) => {
+      await openRoster(page, path);
+      const { rosterRemove } = getStrings(localeFromPath(path));
+      await atLeast44(
+        page
+          .locator('.cg-student')
+          .first()
+          .getByRole('button', { name: rosterRemove }),
+        rosterRemove,
+      );
+    });
 });
 
 // Stage 3, Task 7 (design spec section 4, "The Students box -- an input,
@@ -1229,13 +1253,18 @@ test.describe('the Students box becomes a read-out', () => {
   // gets its own measured touch-target test (see 'the Remove button meets
   // the 44px touch target'), so Clear all does too rather than trusting it
   // by inspection because it shares a CSS class with one that is measured.
-  test('the Clear all button meets the 44px touch target', async ({ page }) => {
-    await openRoster(page);
-    await atLeast44(
-      page.getByRole('button', { name: 'Clear all' }),
-      'Clear all',
-    );
-  });
+  // Every locale (#423): the button's label is the page's own copy.
+  for (const path of localePaths('/classroom-groups'))
+    test(`the Clear all button meets the 44px touch target -- ${path}`, async ({
+      page,
+    }) => {
+      await openRoster(page, path);
+      const { rosterClearAll } = getStrings(localeFromPath(path));
+      await atLeast44(
+        page.getByRole('button', { name: rosterClearAll }),
+        rosterClearAll,
+      );
+    });
 
   // Not in the brief -- design spec section 4's own example shows exactly
   // ONE explanatory line under a locked box ("Set by your list..."), and
@@ -1551,34 +1580,40 @@ test('editing two different rows by text, neither of which re-renders on its own
   await expect(rows.nth(1).getByLabel('Name')).toHaveValue('Budi');
 });
 
-test(
-  'cards: the name field takes the full remaining width',
-  { tag: '@emulated-viewport' },
-  async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 900 });
-    await openRoster(page);
-    const card = (await page.locator('.cg-student').first().boundingBox())!;
-    const name = (await page
-      .locator('.cg-student')
-      .first()
-      .getByLabel('Name')
-      .boundingBox())!;
-    expect(name.width).toBeGreaterThan(card.width * 0.6);
-  },
-);
+// Every locale (#423): the card's other controls carry localised
+// placeholders, and they share the row with the name field.
+for (const path of localePaths('/classroom-groups'))
+  test(
+    `cards: the name field takes the full remaining width -- ${path}`,
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 900 });
+      await openRoster(page, path);
+      const { rosterColName } = getStrings(localeFromPath(path));
+      const card = (await page.locator('.cg-student').first().boundingBox())!;
+      const name = (await page
+        .locator('.cg-student')
+        .first()
+        .getByLabel(rosterColName, { exact: true })
+        .boundingBox())!;
+      expect(name.width).toBeGreaterThan(card.width * 0.6);
+    },
+  );
 
 // L-06, re-homed from stage 2: that stage could not open Student details
-// because it had no body, so the row was untestable there.
-test(
-  'cards: no horizontal scroll at 320px with 100 students',
-  { tag: '@emulated-viewport' },
-  async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 900 });
-    await openRoster(page);
-    await addSeveral(page, 99);
-    await expectNoHorizontalScroll(page);
-  },
-);
+// because it had no body, so the row was untestable there. Every locale
+// (#423): each row's controls and the count carry the page's own copy.
+for (const path of localePaths('/classroom-groups'))
+  test(
+    `cards: no horizontal scroll at 320px with 100 students -- ${path}`,
+    { tag: '@emulated-viewport' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 900 });
+      await openRoster(page, path);
+      await addSeveral(page, 99);
+      await expectNoHorizontalScroll(page);
+    },
+  );
 
 /**
  * #249. The three roster dropdowns each carried a correct `aria-label` and
@@ -1774,66 +1809,69 @@ test.describe('an unset roster dropdown says which column it is for', () => {
 });
 
 test.describe('the roster dropdowns are still reachable by thumb (#249)', () => {
-  test(
-    'every roster control meets the 44px touch target with a placeholder showing',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // #249 put a WORD where a dash used to be, and a `<select>` sizes
-      // itself to its widest option. The existing 44px sweep
-      // ('every control meets the 44px touch target',
-      // classroom-groups-controls.spec.ts) measures `#cg-form` only, and runs
-      // before any roster exists -- so nothing had ever measured these three.
-      //
-      // Measured with the placeholder SHOWING, which is the state this ticket
-      // created: a chosen value is one or two characters, the placeholder is
-      // a whole column name, and only the wider one can push a row.
-      await page.setViewportSize({ width: 375, height: 900 });
-      await openRoster(page);
-      await addSeveral(page, 3);
+  // Every locale (#423): the placeholders ARE the localised copy, and each
+  // language's column names differ in width.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `every roster control meets the 44px touch target with a placeholder showing -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        // #249 put a WORD where a dash used to be, and a `<select>` sizes
+        // itself to its widest option. The existing 44px sweep
+        // ('every control meets the 44px touch target',
+        // classroom-groups-controls.spec.ts) measures `#cg-form` only, and runs
+        // before any roster exists -- so nothing had ever measured these three.
+        //
+        // Measured with the placeholder SHOWING, which is the state this ticket
+        // created: a chosen value is one or two characters, the placeholder is
+        // a whole column name, and only the wider one can push a row.
+        await page.setViewportSize({ width: 375, height: 900 });
+        await openRoster(page, path);
+        await addSeveral(page, 3);
 
-      const controls = page.locator(
-        '#cg-roster tbody tr select, #cg-roster tbody tr input',
-      );
-      // Liveness first: three rows carry controls, so an empty set below
-      // would be a broken selector rather than a page that passes.
-      expect(await controls.count()).toBeGreaterThan(0);
+        const controls = page.locator(
+          '#cg-roster tbody tr select, #cg-roster tbody tr input',
+        );
+        // Liveness first: three rows carry controls, so an empty set below
+        // would be a broken selector rather than a page that passes.
+        expect(await controls.count()).toBeGreaterThan(0);
 
-      const small = await controls.evaluateAll((els) =>
-        els
-          // `getClientRects()`, never the element's own computed display: a
-          // `display: none` ANCESTOR leaves a descendant's computed display
-          // untouched, so a per-element check reports hidden content as
-          // rendered.
-          .filter((el) => el.getClientRects().length > 0)
-          .map((el) => {
-            // A checkbox is deliberately small: the LABEL around it is the
-            // tap target, the same convention as `.switch` and every radio
-            // on this page ('the two sex switches meet the 44px touch
-            // target once open', classroom-groups-controls.spec.ts).
-            // Measuring the raw input reports a defect the page does not
-            // have -- it read 20.8px here before this was written.
-            const target =
-              el instanceof HTMLInputElement && el.type === 'checkbox'
-                ? (el.closest('label') ?? el)
-                : el;
-            return {
-              what: `${el.tagName.toLowerCase()}[${
-                el.getAttribute('aria-label') ?? el.id ?? '?'
-              }]`,
-              height:
-                Math.round(target.getBoundingClientRect().height * 10) / 10,
-            };
-          })
-          .filter((c) => c.height < 44),
-      );
+        const small = await controls.evaluateAll((els) =>
+          els
+            // `getClientRects()`, never the element's own computed display: a
+            // `display: none` ANCESTOR leaves a descendant's computed display
+            // untouched, so a per-element check reports hidden content as
+            // rendered.
+            .filter((el) => el.getClientRects().length > 0)
+            .map((el) => {
+              // A checkbox is deliberately small: the LABEL around it is the
+              // tap target, the same convention as `.switch` and every radio
+              // on this page ('the two sex switches meet the 44px touch
+              // target once open', classroom-groups-controls.spec.ts).
+              // Measuring the raw input reports a defect the page does not
+              // have -- it read 20.8px here before this was written.
+              const target =
+                el instanceof HTMLInputElement && el.type === 'checkbox'
+                  ? (el.closest('label') ?? el)
+                  : el;
+              return {
+                what: `${el.tagName.toLowerCase()}[${
+                  el.getAttribute('aria-label') ?? el.id ?? '?'
+                }]`,
+                height:
+                  Math.round(target.getBoundingClientRect().height * 10) / 10,
+              };
+            })
+            .filter((c) => c.height < 44),
+        );
 
-      expect(
-        searched(small, {
-          of: await controls.count(),
-          what: 'roster controls',
-        }),
-        small.map((c) => `${c.what} is ${c.height}px`).join('\n'),
-      ).toEqual([]);
-    },
-  );
+        expect(
+          searched(small, {
+            of: await controls.count(),
+            what: 'roster controls',
+          }),
+          small.map((c) => `${c.what} is ${c.height}px`).join('\n'),
+        ).toEqual([]);
+      },
+    );
 });

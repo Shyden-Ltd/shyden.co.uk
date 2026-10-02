@@ -123,25 +123,29 @@ test.describe('header + footer', () => {
     },
   );
 
-  test(
-    'nav stays a horizontal row at desktop even if opened at mobile first',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 800 });
-      await page.goto('/');
-      await page.locator('header details.menu > summary').click(); // open at mobile
-      await expect(page.locator('header details.menu')).toHaveJSProperty(
-        'open',
-        true,
-      );
-      await page.setViewportSize({ width: 1280, height: 800 }); // resize WITHOUT reload
-      const nav = page.locator('header nav');
-      await expect(nav).toHaveCSS('flex-direction', 'row');
-      await expect(nav).toHaveCSS('position', 'static');
-      const lastBox = await page.locator('header nav a').last().boundingBox();
-      expect(lastBox!.x + lastBox!.width).toBeLessThanOrEqual(1280);
-    },
-  );
+  // Every locale (#423): the last link's right edge is set by the nav's
+  // localised labels. `${locale} desktop` below reads each locale at 1280px,
+  // but never after the menu was opened at a phone width first.
+  for (const locale of LOCALES)
+    test(
+      `${locale}: nav stays a horizontal row at desktop even if opened at mobile first`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 375, height: 800 });
+        await page.goto(localisePath('/', locale));
+        await page.locator('header details.menu > summary').click(); // open at mobile
+        await expect(page.locator('header details.menu')).toHaveJSProperty(
+          'open',
+          true,
+        );
+        await page.setViewportSize({ width: 1280, height: 800 }); // resize WITHOUT reload
+        const nav = page.locator('header nav');
+        await expect(nav).toHaveCSS('flex-direction', 'row');
+        await expect(nav).toHaveCSS('position', 'static');
+        const lastBox = await page.locator('header nav a').last().boundingBox();
+        expect(lastBox!.x + lastBox!.width).toBeLessThanOrEqual(1280);
+      },
+    );
 
   // Keyboard access in the header is TWO separate contracts, because engines
   // genuinely disagree about one of them and agree about the other.
