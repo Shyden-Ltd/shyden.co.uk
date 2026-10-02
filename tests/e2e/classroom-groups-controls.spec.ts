@@ -3,6 +3,7 @@ import { makeGroups } from '../make-groups';
 import { MAX_STUDENTS } from '../../src/lib/grouping';
 import { recordErrors } from './recorders';
 import { localePaths, sampledPaths } from './locale-sampling';
+import { getStrings, localeFromPath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import {
   addSeveral,
@@ -515,20 +516,18 @@ test.describe('classroom groups — mobile-first layout', () => {
     },
   );
 
-  test('no console errors on either language', async ({ page }) => {
-    // This is the page that ships a script, and it was the page without this
-    // test.
-    // ONE recorder for the whole loop. The previous shape subscribed a fresh
-    // pair of listeners on every iteration against the same page, so by the
-    // last sampled path five were live at once.
-    const reported = recordErrors(page);
-    for (const path of sampledPaths('/classroom-groups')) {
+  // This is the page that ships a script, and it was the page without this
+  // test. One test per language (#418): each has its own recorder and its own
+  // budget, and every language, since a catalogue lookup that throws in one
+  // of them is exactly what a sample of two cannot see.
+  for (const path of localePaths('/classroom-groups'))
+    test(`${path}: no console errors`, async ({ page }) => {
+      const reported = recordErrors(page);
       await page.goto(path);
       await makeGroups(page, '12', '4');
       await expect(page.locator('#cg-results .student')).toHaveCount(12);
       await reported.expectNone(path);
-    }
-  });
+    });
 
   // ── The gap that let a real overflow ship ──────────────────────────────
   //
@@ -609,10 +608,10 @@ test.describe('classroom groups — mobile-first layout', () => {
   // This has to be measured, not read: `textContent` still contains both
   // spaces, so every text assertion on this page passed while it looked
   // broken. Geometry is the only witness.
-  test('a disclosure label keeps a visible gap between marker, label and state', async ({
-    page,
-  }) => {
-    for (const path of localePaths('/classroom-groups')) {
+  for (const path of localePaths('/classroom-groups'))
+    test(`${path}: a disclosure label keeps a visible gap between marker, label and state`, async ({
+      page,
+    }) => {
       await page.goto(path);
       const gaps = await page.evaluate(() => {
         const out: {
@@ -663,8 +662,7 @@ test.describe('classroom groups — mobile-first layout', () => {
             `${path} #${g.id}: state is flush against the label`,
           ).toBeGreaterThan(1);
       }
-    }
-  });
+    });
 });
 
 // Stage 2, Task 2's own RED tests (H-01…H-08, Y-05). The plan's literal
@@ -1634,23 +1632,24 @@ test.describe('Grouping options, live from the roster — Indonesian', () => {
 // grouped together because they share one cause: the checks here asserted DOM
 // and text, and all four are things you can only see.
 test.describe('classroom groups — what a teacher actually sees', () => {
-  test('the class size starts at 30', async ({ page }) => {
-    for (const path of sampledPaths('/classroom-groups')) {
+  for (const path of sampledPaths('/classroom-groups'))
+    test(`${path}: the class size starts at 30`, async ({ page }) => {
       await page.goto(path);
       await expect(page.locator('#cg-count')).toHaveValue('30');
-    }
-  });
+    });
 
   // The roster's `#` cell is ~40px wide. It used to inherit `select`'s chevron
   // rule — `padding: 0.5rem 2.2rem 0.5rem 0.6rem`, 44.8px of horizontal
   // padding — which with `box-sizing: border-box` left a NEGATIVE content box.
   // The value was in the DOM the whole time, so `toHaveValue` passed while the
   // number could not be seen at all. Only the content box proves it.
+  // One test per width (#418). The cell holds digits, the same width in
+  // every language, so widths are the population and locales are not.
+  for (const width of [390, 768, 1024, 1280, 1512])
   test(
-    'a student number has room to be drawn, not just a value',
+    `a student number has room to be drawn, not just a value, at ${width}px`,
     { tag: '@emulated-viewport' },
     async ({ page }) => {
-      for (const width of [390, 768, 1024, 1280, 1512]) {
         await page.setViewportSize({ width, height: 950 });
         await openRoster(page);
         await page.locator('.cg-add-student').click();
@@ -1675,7 +1674,6 @@ test.describe('classroom groups — what a teacher actually sees', () => {
           box,
           `@${width}px the # input has ${box.toFixed(1)}px of content box`,
         ).toBeGreaterThan(16);
-      }
     },
   );
 
@@ -1868,26 +1866,30 @@ test.describe('the five the operator asked for', () => {
     );
   });
 
-  test('the Add several field says what the number is for', async ({
-    page,
-  }) => {
-    for (const [path, label] of [
-      ['/classroom-groups', 'How many to add?'],
-      ['/id/classroom-groups', 'Berapa yang ditambahkan?'],
-    ] as const) {
+  // One test per language (#418). This listed English and Indonesian, and
+  // found the button by an en-or-id pattern that could not open the field in
+  // zh, vi or th. The names come from each page's own catalogue: the copy is
+  // the i18n suites' to hold; this holds that a visible label is there.
+  for (const path of localePaths('/classroom-groups'))
+    test(`${path}: the Add several field says what the number is for`, async ({
+      page,
+    }) => {
+      const t = getStrings(localeFromPath(path));
       await page.goto(path);
       await page.locator('#cg-students-toggle').click();
       await page
-        .getByRole('button', { name: /Add several|Tambah beberapa/ })
+        .getByRole('button', { name: t.rosterAddSeveral, exact: true })
         .click();
       // A VISIBLE label, not only an aria-label: the field used to appear as
       // a bare number box with nothing on screen saying what it counted.
+      await expect(page.locator('label.cg-add-several-label')).toBeVisible();
       await expect(page.locator('label.cg-add-several-label')).toHaveText(
-        label,
+        t.rosterHowMany,
       );
-      await expect(page.getByLabel(label)).toBeVisible();
-    }
-  });
+      await expect(
+        page.getByLabel(t.rosterHowMany, { exact: true }),
+      ).toBeVisible();
+    });
 });
 
 /**

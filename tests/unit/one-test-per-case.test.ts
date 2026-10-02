@@ -135,16 +135,6 @@ describe('the detector', () => {
  * only shrink: a conversion removes its entries in the same pull request.
  */
 const BURN_DOWN: readonly string[] = [
-  "tests/e2e/classroom-groups-controls.spec.ts :: a disclosure label keeps a visible gap between marker, label and state :: for (const path of localePaths('/classroom-groups'))",
-  'tests/e2e/classroom-groups-controls.spec.ts :: a student number has room to be drawn, not just a value :: for (const width of [390, 768, 1024, 1280, 1512])',
-  "tests/e2e/classroom-groups-controls.spec.ts :: no console errors on either language :: for (const path of sampledPaths('/classroom-groups'))",
-  "tests/e2e/classroom-groups-controls.spec.ts :: the Add several field says what the number is for :: for (const [path, label] of [ ['/classroom-groups', 'How many to add?'], ['/id/classroom-groups', 'Berapa yang ditambahkan?'], ] as const)",
-  "tests/e2e/classroom-groups-controls.spec.ts :: the class size starts at 30 :: for (const path of sampledPaths('/classroom-groups'))",
-  'tests/e2e/classroom-groups-roster.spec.ts :: ${name}: absence carries the tint, the stripe and the pill -- same element as the table :: for (const theme of THEMES)',
-  'tests/e2e/classroom-groups-roster.spec.ts :: is tinted, striped and labelled :: for (const theme of THEMES)',
-  'tests/e2e/classroom-groups-roster.spec.ts :: no dropdown ever truncates its own column name -- ${path} :: for (const width of widths)',
-  'tests/e2e/classroom-groups-roster.spec.ts :: the gap warning meets the WCAG AA contrast floor :: for (const theme of THEMES)',
-  'tests/e2e/classroom-groups-roster.spec.ts :: the pill text meets the WCAG AA contrast floor :: for (const theme of THEMES)',
   'tests/e2e/classroom-groups.spec.ts :: the accent colour still meets the WCAG AA contrast floor :: for (const theme of THEMES)',
   'tests/e2e/classroom-groups.spec.ts :: the dim stays above the WCAG AA contrast floor for normal text :: for (const theme of THEMES)',
   'tests/e2e/classroom-groups.spec.ts :: the out-of-date sentence meets the WCAG AA contrast floor :: for (const theme of THEMES)',
