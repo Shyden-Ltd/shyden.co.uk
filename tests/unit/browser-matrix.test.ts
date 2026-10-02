@@ -13,8 +13,10 @@ import {
   nonEmpty,
   searched,
   specFilesUnder,
+  trackedFiles,
 } from '../source-files';
-import { withoutTsComments } from './source-text';
+import { withoutCommentLines, withoutTsComments } from './source-text';
+import { workflowJobs } from '../workflow-jobs';
 import { engineDependence } from './engine-dependence';
 
 /**
@@ -602,5 +604,59 @@ describe('the functions suite renders on every engine (#350)', () => {
     const functions = await importConfig('playwright.functions.config.ts');
 
     expect(devicesOf(functions.projects)).toEqual(devicesOf(config.projects));
+  });
+});
+
+describe('no test run retries (#445)', () => {
+  // The operator's rule, 2026-10-02: "retries are not acceptable. if retries
+  // are required that means it's flaky, adding a retry is NOT a fix". A retry
+  // turns a failure into a pass: playwright.prod.config.ts's one let a check
+  // that failed once verify a release.
+  it('resolves retries to 0 in every Playwright config and project, under CI', async () => {
+    const configs = rootConfigs();
+    const retrying: string[] = [];
+    for (const file of configs) {
+      const loaded = await importConfig(file, { CI: 'true' });
+      if ((loaded.retries ?? 0) !== 0)
+        retrying.push(`${file}: retries ${String(loaded.retries)}`);
+      for (const project of loaded.projects ?? [])
+        if ((project.retries ?? 0) !== 0)
+          retrying.push(
+            `${file} › ${project.name}: retries ${String(project.retries)}`,
+          );
+    }
+    expect(
+      searched(retrying, { of: configs, what: 'Playwright configs' }),
+    ).toEqual([]);
+  });
+
+  it('passes no --retries but 0 in any workflow step or package script', () => {
+    // `trackedFiles`, the walk's home for dot-directories, which proves its
+    // list non-empty before anything is judged over it.
+    const workflows = trackedFiles(
+      (path) => path.startsWith('.github/workflows/') && path.endsWith('.yml'),
+    );
+    const steps = workflows.flatMap((path) =>
+      workflowJobs(readFileSync(path, 'utf8'), path).flatMap(({ id, runs }) =>
+        runs.map((run) => `${path} › ${id}: ${withoutCommentLines(run)}`),
+      ),
+    );
+    const scripts = Object.entries(
+      (
+        JSON.parse(readFileSync('package.json', 'utf8')) as {
+          scripts: Record<string, string>;
+        }
+      ).scripts,
+    ).map(([name, script]) => `package.json › ${name}: ${script}`);
+    const commands = [...steps, ...scripts];
+    const retrying = commands.filter((command) =>
+      /--retries(?:=|\s+)(?!0(?![\w.]))\S/.test(command),
+    );
+    expect(
+      searched(retrying, {
+        of: commands,
+        what: 'workflow steps and package scripts',
+      }),
+    ).toEqual([]);
   });
 });
