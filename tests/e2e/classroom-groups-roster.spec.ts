@@ -1490,11 +1490,18 @@ for (const { name, width } of LAYOUTS) {
       await page.setViewportSize({ width, height: 900 });
       await openRoster(page);
       const row = page.locator('.cg-student').first();
-      await expect(row.getByLabel('Name')).toBeVisible();
-      await expect(row.getByLabel('Sex')).toBeVisible();
-      await expect(row.getByLabel('Absent')).toBeVisible();
-      await expect(row.getByLabel('Together')).toBeVisible();
-      await expect(row.getByLabel('Apart')).toBeVisible();
+      // Read off the row, then compared with the six columns as a set (#390
+      // F133): a hand list of five never named the number field, so either
+      // layout could lose it and pass.
+      const controls = row.locator('input, select');
+      const names = await controls.evaluateAll((all) =>
+        all.map((c) => c.getAttribute('aria-label')),
+      );
+      expect(names.sort()).toEqual(
+        ['#', 'Name', 'Sex', 'Absent', 'Together', 'Apart'].sort(),
+      );
+      for (const control of await controls.all())
+        await expect(control).toBeVisible();
     },
   );
 
@@ -1505,13 +1512,18 @@ for (const { name, width } of LAYOUTS) {
       await page.setViewportSize({ width, height: 900 });
       await openRoster(page);
       const row = page.locator('.cg-student').first();
+      // All six (#390 F133): this edited four, never the number or Apart.
+      await row.getByLabel('#', { exact: true }).fill('7');
       await row.getByLabel('Name').fill('Ana');
       await row.getByLabel('Sex').selectOption('F');
       await row.getByLabel('Together').selectOption('A');
+      await row.getByLabel('Apart').selectOption('A');
       await row.getByLabel('Absent').check();
+      await expect(row.getByLabel('#', { exact: true })).toHaveValue('7');
       await expect(row.getByLabel('Name')).toHaveValue('Ana');
       await expect(row.getByLabel('Sex')).toHaveValue('F');
       await expect(row.getByLabel('Together')).toHaveValue('A');
+      await expect(row.getByLabel('Apart')).toHaveValue('A');
       await expect(row.getByLabel('Absent')).toBeChecked();
     },
   );
