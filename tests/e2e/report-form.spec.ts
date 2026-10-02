@@ -2,7 +2,8 @@ import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
 import { recordRequests, urlMatching } from './recorders';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
-import { contrastRatio, resolvedColour } from './helpers';
+import { formTextsUnderAA, resolvedColour } from './helpers';
+import { searched } from '../source-files';
 import {
   PREFIXED_LOCALES,
   getSiteStrings,
@@ -73,15 +74,13 @@ for (const locale of PREFIXED_LOCALES)
       page.getByRole('button', { name: t.send }),
     ])
       await atLeast44(target);
-    for (const text of [
-      page.locator('[data-report] summary'),
-      page.locator('[data-report] form > p').first(),
-      page.locator('#report-quote-hint'),
-      page.locator('#report-note-hint'),
-      page.locator('label[for="report-quote"]'),
+    const { failing, read } = await formTextsUnderAA(
+      page.locator('[data-report]'),
       page.getByRole('button', { name: t.send }),
-    ])
-      expect(await contrastRatio(text)).toBeGreaterThanOrEqual(4.5);
+    );
+    expect(
+      searched(failing, { of: read, what: `${locale} form texts` }),
+    ).toEqual([]);
     // WCAG 1.4.11: each field's boundary is --border-strong, the token
     // contrast.test.ts scores at 3:1. #133 shipped --border (1.17:1) on every
     // control. Resolved by the browser, so both sides are computed rgb.

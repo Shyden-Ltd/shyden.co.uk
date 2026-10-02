@@ -40,7 +40,10 @@ import { expectTheme } from '../themes';
  * test that its reader cannot check.
  */
 
-/** The four the ticket names: both languages, and both tools. */
+/**
+ * The four the ticket named (both languages, and both tools), and the 404. A
+ * sample by decision: every page here is a baseline per width and theme.
+ */
 const PAGES = [
   { name: 'home-en', path: '/' },
   { name: 'home-id', path: '/id/' },

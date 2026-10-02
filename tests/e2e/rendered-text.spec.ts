@@ -69,13 +69,18 @@ const scan = (text: string) =>
  * no separator at all, so every `</p><p>` would look like a defect. innerText
  * inserts the line breaks the layout implies, which is precisely the join
  * being tested. `hidden` is stripped first so the fields behind the radio
- * buttons are scanned too.
+ * buttons are scanned too, and every `<details>` is opened: innerText leaves
+ * a closed one's content out, so every report form's words passed both scans
+ * below on all thirteen beta pages (RT1, RT2).
  */
 const renderedText = (page: Page) =>
   page.evaluate(() => {
     document
       .querySelectorAll('[hidden]')
       .forEach((el) => el.removeAttribute('hidden'));
+    document
+      .querySelectorAll('details')
+      .forEach((details) => (details.open = true));
     return document.body.innerText;
   });
 
@@ -384,6 +389,16 @@ test.describe('rendered text — no sentence may lose a space to the formatter',
   for (const path of PUBLISHED_ROUTES)
     test(`${path}: no two words are rendered touching`, async ({ page }) => {
       await page.goto(path);
+      // Every disclosure in the page's flow open, as a visitor can: a closed
+      // one paints nothing, so a report form's words were never laid out to
+      // be measured (RT3). Not the header's two: they are menus that drop
+      // OVER the page, so their last item lies on top of the line beneath,
+      // and a line that is covered is not one anybody reads as touching.
+      await page.evaluate(() =>
+        document
+          .querySelectorAll<HTMLDetailsElement>('details:not(header details)')
+          .forEach((details) => (details.open = true)),
+      );
       const width = await page.evaluate(
         () => document.documentElement.clientWidth,
       );

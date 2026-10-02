@@ -1809,13 +1809,19 @@ test.describe('the five the operator asked for', () => {
     await expect(page.locator('#cg-error')).toContainText('The most is 100');
   });
 
-  test('Absent is the first column and its tick is left-aligned', async ({
-    page,
-  }) => {
-    for (const path of sampledPaths('/classroom-groups')) {
+  // One test per sampled page (#390 F152): a loop through openRoster
+  // navigated on each pass inside one budget, out of the guard's sight while
+  // it matched names alone. The header is the page's own word, where
+  // /Absent|Tidak hadir/ took either word on either page.
+  for (const path of sampledPaths('/classroom-groups'))
+    test(`${path}: Absent is the first column and its tick is left-aligned`, async ({
+      page,
+    }) => {
       await openRoster(page, path);
       const heads = page.locator('#cg-roster thead th');
-      await expect(heads.first()).toHaveText(/Absent|Tidak hadir/);
+      await expect(heads.first()).toHaveText(
+        getStrings(localeFromPath(path)).rosterColAbsent,
+      );
       // A RATIO of the cell, not an absolute pixel offset. A checkbox is a
       // native widget and Firefox, WebKit and Chromium each give it a
       // different intrinsic size and margin, so a `< 4px` threshold passed on
@@ -1841,8 +1847,7 @@ test.describe('the five the operator asked for', () => {
         ratio,
         `${path}: the tick's centre sits ${(ratio * 100).toFixed(0)}% across its cell`,
       ).toBeLessThan(0.35);
-    }
-  });
+    });
 
   test('a sex is required, and cannot be taken back once given', async ({
     page,

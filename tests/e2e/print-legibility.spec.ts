@@ -4,6 +4,7 @@ import { contrast, over, parseColour, type RGB } from '../wcag';
 import { recorded, shoot } from './evidence';
 import { THEMES } from '../palette';
 import { emulateTheme, expectTheme, saveTheme } from '../themes';
+import { PUBLISHED_ROUTES } from './published-paths';
 
 test.use(recorded);
 
@@ -96,19 +97,24 @@ const inkInUse = async (page: import('@playwright/test').Page) =>
     return [...seen].map(([colour, where]) => ({ colour, where }));
   });
 
-for (const { path, prepare } of [
-  { path: '/', prepare: async () => {} },
-  { path: '/glory-points', prepare: async () => {} },
-  {
-    path: '/classroom-groups',
-    // The sheet a teacher actually prints has groups on it. Without this the
-    // guard measures the empty form and never sees the results at all.
-    prepare: async (page: import('@playwright/test').Page) => {
-      await page.click('#cg-go');
-      await expect(page.locator('#cg-results .group').first()).toBeVisible();
-    },
-  },
-]) {
+/**
+ * Every published page in every locale, and the 404. Three hand-written
+ * English pages never sent the 404 or any other language to paper, so 404
+ * headings printing near-white passed (PL1).
+ */
+const PRINTED = PUBLISHED_ROUTES.map((path) => ({
+  path,
+  prepare: path.endsWith('/classroom-groups')
+    ? // The sheet a teacher actually prints has groups on it. Without this
+      // the guard measures the empty form and never sees the results at all.
+      async (page: import('@playwright/test').Page) => {
+        await page.click('#cg-go');
+        await expect(page.locator('#cg-results .group').first()).toBeVisible();
+      }
+    : async () => {},
+}));
+
+for (const { path, prepare } of PRINTED) {
   // One test per page per print run (#421). Each starts from a fresh context,
   // so a choice one run saved to localStorage cannot follow it into the next.
   for (const { device, saved } of PRINT_RUNS)
