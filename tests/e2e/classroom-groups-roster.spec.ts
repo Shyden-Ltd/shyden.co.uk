@@ -344,7 +344,9 @@ test.describe('an absent student', () => {
     const row = page.locator('.cg-student').first();
     // All five of the row's other fields (#426): this edited two, so an
     // absent row that locked its number or its letters still passed.
-    // Absent itself is the field that made the row absent.
+    // Absent itself is the field that made the row absent. Counted off the
+    // row, so a seventh field fails here until it is edited below too.
+    await expect(row.locator('input, select')).toHaveCount(6);
     await row.getByLabel('#', { exact: true }).fill('7');
     await row.getByLabel('Name').fill('Dewi');
     await row.getByLabel('Sex').selectOption('F');
@@ -945,7 +947,11 @@ test.describe('adding, removing, and the two limits', () => {
       page.getByRole('button', { name: 'Add student' }),
     ).toBeDisabled();
     // Both (#426): this read Add student alone, and Add several could stay
-    // live at the limit.
+    // live at the limit. Counted off the page, so a third add control fails
+    // here until it is read too.
+    await expect(page.locator('.cg-add-student, .cg-add-several')).toHaveCount(
+      2,
+    );
     await expect(
       page.getByRole('button', { name: 'Add several' }),
     ).toBeDisabled();
@@ -1514,6 +1520,9 @@ test.describe('Indonesian', () => {
       page.getByRole('button', { name: 'Tambah siswa' }),
     ).toBeDisabled();
     // Both, as in English (#426).
+    await expect(page.locator('.cg-add-student, .cg-add-several')).toHaveCount(
+      2,
+    );
     await expect(
       page.getByRole('button', { name: 'Tambah beberapa' }),
     ).toBeDisabled();
