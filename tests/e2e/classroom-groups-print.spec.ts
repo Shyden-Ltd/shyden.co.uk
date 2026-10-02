@@ -587,6 +587,10 @@ test.describe('the printed groups', () => {
     ]);
     await giveEveryoneASex(page);
     await page.getByRole('button', { name: 'Make Groups' }).click();
+    // The groups arrived before anything is judged legible (#424). The class
+    // list prints these names too, so with the roster refused this read the
+    // class list alone and passed with no groups on the sheet at all.
+    await expect(page.locator('#cg-results .group').first()).toBeVisible();
     await sheet(page, {
       what: 'Both',
       absent: true,
