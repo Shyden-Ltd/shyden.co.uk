@@ -14,6 +14,7 @@ import {
 import {
   addSeveral,
   contrastRatio,
+  downloadName,
   expectNothingStored,
   expectStudentsBoxReports,
   giveEveryoneASex,
@@ -341,10 +342,19 @@ test.describe('an absent student', () => {
   test('and every field can still be edited', async ({ page }) => {
     await markAbsent(page);
     const row = page.locator('.cg-student').first();
+    // All five of the row's other fields (#426): this edited two, so an
+    // absent row that locked its number or its letters still passed.
+    // Absent itself is the field that made the row absent.
+    await row.getByLabel('#', { exact: true }).fill('7');
     await row.getByLabel('Name').fill('Dewi');
     await row.getByLabel('Sex').selectOption('F');
+    await row.getByLabel('Together').selectOption('A');
+    await row.getByLabel('Apart').selectOption('A');
+    await expect(row.getByLabel('#', { exact: true })).toHaveValue('7');
     await expect(row.getByLabel('Name')).toHaveValue('Dewi');
     await expect(row.getByLabel('Sex')).toHaveValue('F');
+    await expect(row.getByLabel('Together')).toHaveValue('A');
+    await expect(row.getByLabel('Apart')).toHaveValue('A');
   });
 
   // One test per theme (#418).
@@ -577,12 +587,95 @@ test.describe('headers follow the roster, live', () => {
   // not exist yet -- picked up here now that it does. Test 1 of that same
   // step ("nothing to save yet" on load) is already covered by Stage 2's
   // classroom-groups-controls.spec.ts.
-  test('any roster change makes it unsaved', async ({ page }) => {
+  test('a new roster is unsaved', async ({ page }) => {
     await openRoster(page);
     await expect(page.locator('#cg-io .state')).toHaveText(
       'unsaved changes — export to keep them',
     );
   });
+
+  // "Any" change, one test per kind (#426). The single test that stood here
+  // read one change, the first student added, from a roster that had never
+  // been saved, so a comparison that saw only names, or only how many, still
+  // passed. Each case starts from a SAVED roster of two (an export), so the
+  // one change it makes is the only thing that can make it unsaved again.
+  const ROSTER_CHANGES: ReadonlyArray<
+    readonly [string, (page: import('@playwright/test').Page) => Promise<void>]
+  > = [
+    [
+      'a name',
+      (page) =>
+        page.locator('.cg-student').first().getByLabel('Name').fill('Ana'),
+    ],
+    [
+      'a number',
+      (page) =>
+        page
+          .locator('.cg-student')
+          .first()
+          .getByLabel('#', { exact: true })
+          .fill('9'),
+    ],
+    [
+      'a sex',
+      async (page) => {
+        await page
+          .locator('.cg-student')
+          .first()
+          .getByLabel('Sex')
+          .selectOption('F');
+      },
+    ],
+    [
+      'an absence',
+      (page) =>
+        page.locator('.cg-student').first().getByLabel('Absent').check(),
+    ],
+    [
+      'a together letter',
+      async (page) => {
+        await page
+          .locator('.cg-student')
+          .first()
+          .getByLabel('Together')
+          .selectOption('A');
+      },
+    ],
+    [
+      'an apart letter',
+      async (page) => {
+        await page
+          .locator('.cg-student')
+          .first()
+          .getByLabel('Apart')
+          .selectOption('A');
+      },
+    ],
+    [
+      'a student added',
+      (page) => page.getByRole('button', { name: 'Add student' }).click(),
+    ],
+    [
+      'a student removed',
+      (page) =>
+        page
+          .locator('.cg-student')
+          .first()
+          .getByRole('button', { name: 'Remove' })
+          .click(),
+    ],
+  ];
+  for (const [change, make] of ROSTER_CHANGES)
+    test(`${change} makes a saved roster unsaved`, async ({ page }) => {
+      await openRoster(page);
+      await addSeveral(page, 1);
+      await page.locator('#cg-io-toggle').click();
+      await downloadName(page, 'Export class list');
+      const state = page.locator('#cg-io .state');
+      await expect(state).toHaveText('nothing to save yet');
+      await make(page);
+      await expect(state).toHaveText('unsaved changes — export to keep them');
+    });
 
   // Task 1's own Step 3b test 3, carried forward rather than lost: it
   // appeared in NEITHER Task 1's nor Task 2's own test list (both read in
@@ -850,6 +943,11 @@ test.describe('adding, removing, and the two limits', () => {
     await addSeveral(page, 99);
     await expect(
       page.getByRole('button', { name: 'Add student' }),
+    ).toBeDisabled();
+    // Both (#426): this read Add student alone, and Add several could stay
+    // live at the limit.
+    await expect(
+      page.getByRole('button', { name: 'Add several' }),
     ).toBeDisabled();
     await expect(
       page.getByText('Student details holds up to 100 students.'),
@@ -1414,6 +1512,10 @@ test.describe('Indonesian', () => {
     await addSeveral(page, 99);
     await expect(
       page.getByRole('button', { name: 'Tambah siswa' }),
+    ).toBeDisabled();
+    // Both, as in English (#426).
+    await expect(
+      page.getByRole('button', { name: 'Tambah beberapa' }),
     ).toBeDisabled();
     await expect(
       page.getByText('Detail siswa menampung hingga 100 siswa.'),
