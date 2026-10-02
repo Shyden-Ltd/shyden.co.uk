@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseSource } from './ast';
-import { searched, specFilesUnder } from '../source-files';
-import { loopedCases, type LoopedCase } from '../one-test-per-case';
+import { filesUnder, searched, specFilesUnder } from '../source-files';
+import {
+  loopedCases,
+  statefulHelpers,
+  type LoopedCase,
+} from '../one-test-per-case';
 
 /**
  * One test per case (operator, 2026-10-02; #417).
@@ -67,6 +71,55 @@ describe('the detector', () => {
         for (let i = 0; i < 2; i += 1) await saveTheme(page, 'dark');
       });`).map((site) => site.test);
     expect(titles).toEqual(['widths', 'themes', 'media', 'saved']);
+  });
+
+  it('refuses a loop whose navigation sits in a helper this file declares (#390 F152)', () => {
+    expect(
+      found(`
+        const measure = async (page, path) => visit(page, path);
+        const visit = async (page, path) => {
+          await page.goto(path);
+        };
+        test('every page', async ({ page }) => {
+          for (const path of PATHS) await measure(page, path);
+        });`).map((site) => site.test),
+    ).toEqual(['every page']);
+  });
+
+  it('refuses a loop whose navigation sits in a shared helper (#390 F152)', () => {
+    const shared = statefulHelpers([
+      parseSource(
+        'export const openRoster = async (page, path) => { await page.goto(path); };',
+        'helpers.ts',
+      ),
+    ]);
+    const spec = parseSource(
+      `test('both', async ({ page }) => {
+        for (const path of PATHS) await openRoster(page, path);
+      });`,
+      'fixture.spec.ts',
+    );
+    expect(loopedCases(spec).map((site) => site.test)).toEqual([]);
+    expect(loopedCases(spec, shared).map((site) => site.test)).toEqual([
+      'both',
+    ]);
+  });
+
+  it('refuses a navigation by any of its names, not only goto (#390 F150)', () => {
+    const titles = found(`
+      test('reloaded', async ({ page }) => {
+        for (const stale of ['Dark', 'auto']) await page.reload();
+      });
+      test('back', async ({ page }) => {
+        for (const step of STEPS) await page.goBack();
+      });
+      test('forward', async ({ page }) => {
+        for (const step of STEPS) await page.goForward();
+      });
+      test('content', async ({ page }) => {
+        for (const html of PAGES) await page.setContent(html);
+      });`).map((site) => site.test);
+    expect(titles).toEqual(['reloaded', 'back', 'forward', 'content']);
   });
 
   it('passes a loop that changes no page state', () => {
@@ -136,10 +189,25 @@ describe('the detector', () => {
  * keep it empty. An empty allowance is somewhere to park the next site instead
  * of splitting it, and its own staleness check would assert over nothing.
  */
+const parsed = (file: string) => parseSource(readFileSync(file, 'utf8'), file);
+
+/** What the suite's shared modules make stateful: every non-spec file the specs import from. */
+const sharedStateful = () =>
+  statefulHelpers(
+    filesUnder(
+      'tests',
+      (path) =>
+        path.endsWith('.ts') &&
+        !path.endsWith('.spec.ts') &&
+        !path.startsWith('tests/unit/'),
+    ).map(parsed),
+  );
+
 const scan = (): { specs: string[]; sites: string[] } => {
   const specs = specFilesUnder('tests');
+  const shared = sharedStateful();
   const sites = specs.flatMap((file) =>
-    loopedCases(parseSource(readFileSync(file, 'utf8'), file)).map(
+    loopedCases(parsed(file), shared).map(
       (site) => `${file} :: ${site.test} :: ${site.loop}`,
     ),
   );
@@ -150,5 +218,12 @@ describe('the suite', () => {
   it('loops no known population inside a test', () => {
     const { specs, sites } = scan();
     expect(searched(sites, { of: specs, what: 'spec files' })).toEqual([]);
+  });
+
+  it('resolves the shared helpers that navigate', () => {
+    // Liveness for the scan above: openRoster's goto is one call away from
+    // every loop that uses it, so it must be among the names the scan treats
+    // as navigating, or the shared half of the detector is not running.
+    expect(sharedStateful().has('openRoster')).toBe(true);
   });
 });

@@ -1,5 +1,7 @@
 import { test, expect } from './fixtures';
 import { recorded } from './evidence';
+import { PUBLISHED_ROUTES } from './published-paths';
+import { getSiteStrings, localeFromPath } from '../../src/lib/i18n';
 
 test.use(recorded);
 
@@ -14,18 +16,16 @@ test.use(recorded);
  * that comment always said.
  */
 test.describe('skip link — WCAG 2.4.1', () => {
-  for (const [path, label] of [
-    ['/', 'Skip to content'],
-    ['/id/', 'Lewati ke konten'],
-    ['/classroom-groups', 'Skip to content'],
-    ['/id/classroom-groups', 'Lewati ke konten'],
-    ['/definitely-not-a-page', 'Skip to content'],
-  ] as const) {
+  // Every published page, its label from that page's own locale. Five
+  // hand-written pairs in English and Indonesian let a Thai page offer the
+  // English label (SL1).
+  for (const path of PUBLISHED_ROUTES)
     test(`${path} offers it, in the page's language`, async ({ page }) => {
       await page.goto(path);
-      await expect(page.locator('.skip-link')).toHaveText(label);
+      await expect(page.locator('.skip-link')).toHaveText(
+        getSiteStrings(localeFromPath(path)).skipToContent,
+      );
     });
-  }
 
   test('it is the FIRST thing a Tab reaches', async ({ page, browserName }) => {
     test.skip(

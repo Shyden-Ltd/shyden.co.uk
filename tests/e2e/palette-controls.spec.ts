@@ -4,6 +4,7 @@ import { searched } from '../source-files';
 import { THEMES } from '../palette';
 import { emulateTheme } from '../themes';
 import { resolvedColour } from './helpers';
+import { PUBLISHED_ROUTES } from './published-paths';
 
 /**
  * Every control's colour comes from the palette, not from the browser.
@@ -33,7 +34,10 @@ import { resolvedColour } from './helpers';
  * transparent. `accent-color` is what governs those, and it is asserted
  * separately below.
  */
-const PAGES = ['/', '/glory-points', '/classroom-groups', '/id/glory-points'];
+// Every published page in every locale, and the 404. A hand-written four
+// missed the 404's four report forms, /id/classroom-groups and every zh, vi
+// and th page, so a textarea painted off-palette on the 404 passed (PC1).
+const PAGES = PUBLISHED_ROUTES;
 
 /** Controls the page paints itself, as opposed to the ones the UA draws. */
 const PAINTED =
@@ -53,6 +57,13 @@ for (const path of PAGES) {
     }) => {
       await page.goto(path);
       await emulateTheme(page, theme);
+      // Every disclosure open, so the shot below finds a control to clip to:
+      // on most pages the only ones sit in a closed report form. A control's
+      // computed colours are the same open or closed.
+      await page.evaluate(() => {
+        for (const details of document.querySelectorAll('details'))
+          details.open = true;
+      });
 
       const { allowed, readings } = await page.evaluate((selector) => {
         // Resolve a declared value the way the renderer does, so the comparison
@@ -101,7 +112,8 @@ for (const path of PAGES) {
       }, PAINTED);
 
       // Liveness. A page with no controls would pass the loop below having
-      // measured nothing, and three of these four pages carry controls.
+      // measured nothing, and every page but the English homepage carries
+      // controls: the tools their own, the rest a beta report form.
       if (path === '/') {
         // #185 AC3, decided explicitly. The right answer here IS none, so
         // `searched` cannot wrap it: there is no population to count. What has
@@ -115,7 +127,7 @@ for (const path of PAGES) {
         // that the page loaded and the script ran to completion. The
         // SELECTOR's own liveness is carried by the sibling tests for the
         // other paths, which assert `readings.length > 0` against the same
-        // constant -- a typo there fails three of the four pages, not none.
+        // constant -- a typo there fails every other page, not none.
         expect(
           allowed.length,
           'the homepage served no palette, so nothing was measured at all',
@@ -154,7 +166,7 @@ for (const path of PAGES) {
       await shoot(
         page,
         `${path}, ${theme}: all ${readings.length} controls drawn from the palette's ${allowed.length} values`,
-        page.locator(PAINTED).first(),
+        page.locator(PAINTED).filter({ visible: true }).first(),
       );
     });
 }

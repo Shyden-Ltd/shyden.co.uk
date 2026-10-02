@@ -17,6 +17,12 @@ export interface LoopedCase {
  */
 const STATEFUL = new Set([
   'goto',
+  // A navigation by another name: theme.spec.ts reloaded six stale values in
+  // one test, unseen while only `goto` was listed (#390 F150).
+  'reload',
+  'goBack',
+  'goForward',
+  'setContent',
   'setViewportSize',
   'emulateTheme',
   'emulateMedia',
@@ -64,7 +70,10 @@ const titleOf = (sf: ts.SourceFile, call: ts.CallExpression): string => {
   return first.getText(sf).replace(/^`|`$/g, '');
 };
 
-const changesState = (node: ts.Node): boolean => {
+const changesState = (
+  node: ts.Node,
+  stateful: ReadonlySet<string> = STATEFUL,
+): boolean => {
   let found = false;
   const visit = (child: ts.Node): void => {
     if (found) return;
@@ -75,7 +84,7 @@ const changesState = (node: ts.Node): boolean => {
         : ts.isPropertyAccessExpression(callee)
           ? callee.name.text
           : '';
-      if (STATEFUL.has(name)) {
+      if (stateful.has(name)) {
         found = true;
         return;
       }
@@ -84,6 +93,47 @@ const changesState = (node: ts.Node): boolean => {
   };
   visit(node);
   return found;
+};
+
+/**
+ * `seed`, plus every function these files declare whose body changes page
+ * state, to a fixed point: a helper calling such a helper is one too.
+ * zoom-on-focus.spec.ts looped pages through its own `typedControls`, and
+ * classroom-groups-controls.spec.ts through the shared `openRoster`, each
+ * `goto` one call away from the loop and out of sight of a name match (#390
+ * F152). Keyed by name across files, every body kept: two helpers sharing a
+ * name make it stateful if either is, so a collision over-reports rather than
+ * hides a site.
+ */
+export const statefulHelpers = (
+  sources: readonly ts.SourceFile[],
+  seed: ReadonlySet<string> = STATEFUL,
+): ReadonlySet<string> => {
+  const bodies: [string, ts.Node][] = [];
+  const collect = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && node.name && node.body)
+      bodies.push([node.name.text, node.body]);
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      (ts.isArrowFunction(node.initializer) ||
+        ts.isFunctionExpression(node.initializer))
+    )
+      bodies.push([node.name.text, node.initializer.body]);
+    ts.forEachChild(node, collect);
+  };
+  for (const sf of sources) collect(sf);
+  const names = new Set(seed);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, body] of bodies)
+      if (!names.has(name) && changesState(body, names)) {
+        names.add(name);
+        grew = true;
+      }
+  }
+  return names;
 };
 
 /** Whether a `// runtime population:` comment sits directly above `node`. */
@@ -129,12 +179,18 @@ const loopParts = (
  * Every loop inside a test body that changes page state on each pass, unless
  * it declares a runtime population. A loop OUTSIDE a test that generates one
  * test per case is the shape this asks for, so it is never reported.
+ * `shared` is what the suite's shared modules make stateful
+ * (`statefulHelpers` over them), so an imported helper that navigates counts.
  */
-export function loopedCases(sf: ts.SourceFile): LoopedCase[] {
+export function loopedCases(
+  sf: ts.SourceFile,
+  shared: ReadonlySet<string> = STATEFUL,
+): LoopedCase[] {
   const cases: LoopedCase[] = [];
+  const stateful = statefulHelpers([sf], shared);
   const inTest = (title: string, node: ts.Node): void => {
     const loop = loopParts(sf, node);
-    if (loop && changesState(loop.body) && !declaresRuntime(sf, node))
+    if (loop && changesState(loop.body, stateful) && !declaresRuntime(sf, node))
       cases.push({
         test: title,
         loop: loop.header,

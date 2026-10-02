@@ -129,16 +129,17 @@ test.describe('every unverified language is marked BETA', () => {
   // One test per case from here (#420): per locale, and per theme.
   //
   // "BETA" alone tells a screen-reader user nothing about WHAT is in beta.
-  // Read as textContent, not as an accessible name: the badge is a plain
-  // `<span>` with no role, and the label is a visually-hidden child that a
-  // reader traverses but `innerText` omits.
+  // Read from the accessibility tree, not as an accessible name: the badge is
+  // a plain `<span>` with no role, and the label is a visually-hidden child
+  // that a reader traverses but `innerText` omits. Not as textContent either:
+  // that keeps a label set to `display: none`, which no reader hears (BB1).
   for (const locale of PREFIXED_LOCALES)
     test(`${locale}: the badge carries a translated name for screen readers`, async ({
       page,
     }) => {
       await page.goto(localisePath('/', locale));
       const badge = page.locator(`${SWITCHER} > summary ${BADGE}`);
-      const spoken = await badge.evaluate((el) => el.textContent ?? '');
+      const spoken = await badge.ariaSnapshot();
       expect(spoken, 'badge is a bare token').toContain(
         getSiteStrings(locale).language.betaLabel,
       );
