@@ -174,9 +174,13 @@ export const expectStudentsBoxReports = async (
  * consumer-to-be, not a hypothetical one, so the same rule that already
  * governs `openRoster`/`addSeveral` applies to this one too.
  */
-export const markAbsent = async (page: Page) => {
-  await openRoster(page);
-  await page.locator('.cg-student').first().getByLabel('Absent').check();
+export const markAbsent = async (page: Page, path = '/classroom-groups') => {
+  await openRoster(page, path);
+  await page
+    .locator('.cg-student')
+    .first()
+    .getByLabel(stringsOf(page).rosterColAbsent)
+    .check();
 };
 
 export const setSex = async (page: Page, row: number, sex: 'M' | 'F') =>

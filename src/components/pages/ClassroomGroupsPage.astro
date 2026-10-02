@@ -2343,6 +2343,10 @@ const sexWhyText = sexWhy(roster, t);
   .cg-io-buttons button,
   .cg-io-confirm-buttons button {
     min-height: 44px;
+    /* Width too: a label's length is the locale's. Thai's Remove is ลบ, and
+       it drew a 41px-wide button while English and Indonesian cleared 44px
+       on their longer words (#423). */
+    min-width: 44px;
     padding: 0.5rem 0.9rem;
     font: inherit;
     font-weight: 600;

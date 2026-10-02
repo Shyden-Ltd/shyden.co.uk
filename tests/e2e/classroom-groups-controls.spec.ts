@@ -437,84 +437,88 @@ test.describe('classroom groups — mobile-first layout', () => {
       );
   }
 
-  test(
-    'every control meets the 44px touch target',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 900 });
-      await page.goto('/classroom-groups');
+  // Every locale (#423): the buttons and labels measured here hold the
+  // page's own copy, and a two-character zh label can make a box narrower
+  // than an English one.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `every control meets the 44px touch target -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 375, height: 900 });
+        await page.goto(path);
 
-      // Measured in BOTH states of the mode field, because "students per
-      // group" and "how many groups" are never on screen at the same time —
-      // and a control that is not displayed measures 0, which is not the
-      // same thing as too small. Used to also toggle the naming radio's own
-      // conditional theme `<select>` the same way; Stage 3, Task 8 removed
-      // that field along with the radio that revealed it (design spec
-      // section 5), leaving one conditional field, not two.
-      //
-      // Stage 2, Task 5 added `#cg-form input[type="text"]` to this selector
-      // for the new #cg-class field. Honestly: this could not go red before
-      // that field existed, and does not prove much on its own even after --
-      // `small` starts and stays `[]` whether or not #cg-class is measured at
-      // all, which is exactly what happened when this line was added (a
-      // pre-implementation run stayed green, confirmed rather than assumed).
-      // What it DOES buy, from here on, is real: a #cg-class CSS rule that
-      // dropped below 44px would populate `small` and redden `expect(small).
-      // toEqual([])` below, the same as it would for any control this test
-      // already covered. `seen`'s own lower bound was left alone rather than
-      // bumped to "prove" #cg-class was counted -- the real baseline already
-      // includes the three section-toggle buttons inside #cg-form (missed on
-      // a first pass), so it sits comfortably above 5 with or without
-      // #cg-class, and tightening it to track an exact count would make this
-      // test brittle against unrelated future controls for no real gain.
-      //
-      // Noted on code review, not a hole: `#cg-speed` (and `#cg-sound-check`)
-      // moved into `#cg-sound-body` in Stage 2, Task 7, which starts
-      // `hidden`, and this test never opens it -- `offsetParent !== null`
-      // below correctly drops both from `small` and from `seen`'s count, the
-      // same as it would for any control inside a collapsed section. Neither
-      // control silently loses coverage overall: classroom-groups.spec.ts's
-      // own "every interactive target is at least 44px, collapsed and with
-      // every section open" test opens all four sections first and measures
-      // everything inside them, `#cg-speed` included. This test's own job is
-      // narrower -- the controls already on screen before a teacher opens
-      // anything -- and #cg-speed simply is not one of those any more.
-      // `[form="cg-form"]`: the form's controls that live outside it. #cg-go
-      // has since #384, and `#cg-form button` alone would stop measuring it.
-      const measureVisible = () =>
-        page
+        // Measured in BOTH states of the mode field, because "students per
+        // group" and "how many groups" are never on screen at the same time —
+        // and a control that is not displayed measures 0, which is not the
+        // same thing as too small. Used to also toggle the naming radio's own
+        // conditional theme `<select>` the same way; Stage 3, Task 8 removed
+        // that field along with the radio that revealed it (design spec
+        // section 5), leaving one conditional field, not two.
+        //
+        // Stage 2, Task 5 added `#cg-form input[type="text"]` to this selector
+        // for the new #cg-class field. Honestly: this could not go red before
+        // that field existed, and does not prove much on its own even after --
+        // `small` starts and stays `[]` whether or not #cg-class is measured at
+        // all, which is exactly what happened when this line was added (a
+        // pre-implementation run stayed green, confirmed rather than assumed).
+        // What it DOES buy, from here on, is real: a #cg-class CSS rule that
+        // dropped below 44px would populate `small` and redden `expect(small).
+        // toEqual([])` below, the same as it would for any control this test
+        // already covered. `seen`'s own lower bound was left alone rather than
+        // bumped to "prove" #cg-class was counted -- the real baseline already
+        // includes the three section-toggle buttons inside #cg-form (missed on
+        // a first pass), so it sits comfortably above 5 with or without
+        // #cg-class, and tightening it to track an exact count would make this
+        // test brittle against unrelated future controls for no real gain.
+        //
+        // Noted on code review, not a hole: `#cg-speed` (and `#cg-sound-check`)
+        // moved into `#cg-sound-body` in Stage 2, Task 7, which starts
+        // `hidden`, and this test never opens it -- `offsetParent !== null`
+        // below correctly drops both from `small` and from `seen`'s count, the
+        // same as it would for any control inside a collapsed section. Neither
+        // control silently loses coverage overall: classroom-groups.spec.ts's
+        // own "every interactive target is at least 44px, collapsed and with
+        // every section open" test opens all four sections first and measures
+        // everything inside them, `#cg-speed` included. This test's own job is
+        // narrower -- the controls already on screen before a teacher opens
+        // anything -- and #cg-speed simply is not one of those any more.
+        // `[form="cg-form"]`: the form's controls that live outside it. #cg-go
+        // has since #384, and `#cg-form button` alone would stop measuring it.
+        const measureVisible = () =>
+          page
+            .locator(
+              '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"], [form="cg-form"]',
+            )
+            .evaluateAll((els) =>
+              els
+                .filter((el) => (el as HTMLElement).offsetParent !== null)
+                .map((el) => ({
+                  id: el.id,
+                  height: el.getBoundingClientRect().height,
+                }))
+                .filter((c) => c.height < 44),
+            );
+
+        const small = [...(await measureVisible())];
+        await page.check('input[name="mode"][value="groupCount"]');
+        small.push(...(await measureVisible()));
+
+        // And prove the measurement actually saw the fields, rather than
+        // reporting nothing because it found nothing to look at.
+        const seen = await page
           .locator(
             '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"], [form="cg-form"]',
           )
-          .evaluateAll((els) =>
-            els
-              .filter((el) => (el as HTMLElement).offsetParent !== null)
-              .map((el) => ({
-                id: el.id,
-                height: el.getBoundingClientRect().height,
-              }))
-              .filter((c) => c.height < 44),
+          .evaluateAll(
+            (els) =>
+              els.filter((el) => (el as HTMLElement).offsetParent !== null)
+                .length,
           );
-
-      const small = [...(await measureVisible())];
-      await page.check('input[name="mode"][value="groupCount"]');
-      small.push(...(await measureVisible()));
-
-      // And prove the measurement actually saw the fields, rather than
-      // reporting nothing because it found nothing to look at.
-      const seen = await page
-        .locator(
-          '#cg-form select, #cg-form button, #cg-form input[type="number"], #cg-form input[type="text"], [form="cg-form"]',
-        )
-        .evaluateAll(
-          (els) =>
-            els.filter((el) => (el as HTMLElement).offsetParent !== null)
-              .length,
-        );
-      expect(seen).toBeGreaterThanOrEqual(5);
-      expect(small).toEqual([]);
-    },
-  );
+        expect(seen).toBeGreaterThanOrEqual(5);
+        expect(small).toEqual([]);
+      },
+    );
 
   // This is the page that ships a script, and it was the page without this
   // test. One test per language (#418): each has its own recorder and its own
@@ -1033,24 +1037,28 @@ test.describe("the tool's collapsible sections", () => {
   // 768px and the student's number could not be drawn at all, so the span is
   // load-bearing, not cosmetic. The two-by-two claim now rests on the three
   // sections that really do sit two-by-two.
-  test(
-    'the simple sections sit two-by-two on a laptop and stacked on a phone',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.goto('/classroom-groups');
-      await page.setViewportSize({ width: 1280, height: 900 });
-      const a = (await page.locator('#cg-grouping').boundingBox())!;
-      const b = (await page.locator('#cg-io').boundingBox())!;
-      expect(b.y).toBeCloseTo(a.y, 0); // same row
-      // …and the roster section takes the whole row above them.
-      const roster = (await page.locator('#cg-students').boundingBox())!;
-      expect(roster.width).toBeGreaterThan(a.width * 1.8);
-      await page.setViewportSize({ width: 320, height: 800 });
-      const c = (await page.locator('#cg-grouping').boundingBox())!;
-      const d = (await page.locator('#cg-io').boundingBox())!;
-      expect(d.y).toBeGreaterThan(c.y); // stacked
-    },
-  );
+  //
+  // Every locale (#423): a section's min-content is its copy, and one long
+  // label pins a grid track (the #cg-io file input did exactly that).
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `the simple sections sit two-by-two on a laptop and stacked on a phone -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.goto(path);
+        await page.setViewportSize({ width: 1280, height: 900 });
+        const a = (await page.locator('#cg-grouping').boundingBox())!;
+        const b = (await page.locator('#cg-io').boundingBox())!;
+        expect(b.y).toBeCloseTo(a.y, 0); // same row
+        // …and the roster section takes the whole row above them.
+        const roster = (await page.locator('#cg-students').boundingBox())!;
+        expect(roster.width).toBeGreaterThan(a.width * 1.8);
+        await page.setViewportSize({ width: 320, height: 800 });
+        const c = (await page.locator('#cg-grouping').boundingBox())!;
+        const d = (await page.locator('#cg-io').boundingBox())!;
+        expect(d.y).toBeGreaterThan(c.y); // stacked
+      },
+    );
 
   test('each section is reachable by heading, and starts collapsed', async ({
     page,
@@ -1296,31 +1304,34 @@ test.describe('Grouping options', () => {
   // moving the switches anywhere else on the page would still measure the
   // same two elements and this test would never notice they had left
   // Grouping options.
-  test(
-    'the two sex switches meet the 44px touch target once open',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 900 });
-      await page.goto('/classroom-groups');
-      await expect(page.locator('#cg-sex-mix')).toBeHidden();
+  //
+  // Every locale (#423): each switch's label is the page's own copy.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `the two sex switches meet the 44px touch target once open -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 375, height: 900 });
+        await page.goto(path);
+        await expect(page.locator('#cg-sex-mix')).toBeHidden();
 
-      const body = page.locator('#cg-grouping-body');
-      await page.locator('#cg-grouping-toggle').click();
-      const labels = await body
-        .locator('#cg-sex-mix, #cg-sex-separate')
-        .evaluateAll((els) =>
-          els.map((el) => {
-            const { width, height } = el
-              .closest('label')!
-              .getBoundingClientRect();
-            return { id: el.id, width, height };
-          }),
-        );
-      expect(labels).toHaveLength(2);
-      for (const { id, width, height } of labels)
-        rectAtLeast44({ width, height }, `${id} (label)`);
-    },
-  );
+        const body = page.locator('#cg-grouping-body');
+        await page.locator('#cg-grouping-toggle').click();
+        const labels = await body
+          .locator('#cg-sex-mix, #cg-sex-separate')
+          .evaluateAll((els) =>
+            els.map((el) => {
+              const { width, height } = el
+                .closest('label')!
+                .getBoundingClientRect();
+              return { id: el.id, width, height };
+            }),
+          );
+        expect(labels).toHaveLength(2);
+        for (const { id, width, height } of labels)
+          rectAtLeast44({ width, height }, `${id} (label)`);
+      },
+    );
 
   // Stage 2's `test.fixme('a separate-mode spillover warning renders,
   // naming who')` stood here. DELETED, whole, per this task's own plan step
