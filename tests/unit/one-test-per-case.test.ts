@@ -118,7 +118,7 @@ describe('the detector', () => {
     ).toEqual(['inner']);
   });
 
-  it('names a template title by its source, so a burn-down entry is stable', () => {
+  it('names a template title by its source, so a finding names its test', () => {
     expect(
       found(`
         test(\`\${path}: every control\`, async ({ page }) => {
@@ -129,14 +129,13 @@ describe('the detector', () => {
 });
 
 /**
- * Every looped site in the suite on the day #417 landed, to be split by
- * #418-#422. `file :: test :: loop`. The guard fails on a site missing from
- * this list AND on an entry that no longer matches a site, so the list can
- * only shrink: a conversion removes its entries in the same pull request.
+ * Every looped site in the suite, scanned inside each test, never at collection.
+ *
+ * #417 landed this guard with a burn-down list of the 46 sites that existed
+ * that day; #418-#422 split them all, and #422 retired the list rather than
+ * keep it empty. An empty allowance is somewhere to park the next site instead
+ * of splitting it, and its own staleness check would assert over nothing.
  */
-const BURN_DOWN: readonly string[] = [];
-
-/** Every looped site in the suite, scanned inside each test, never at collection. */
 const scan = (): { specs: string[]; sites: string[] } => {
   const specs = specFilesUnder('tests');
   const sites = specs.flatMap((file) =>
@@ -148,18 +147,8 @@ const scan = (): { specs: string[]; sites: string[] } => {
 };
 
 describe('the suite', () => {
-  it('loops no known population inside a test beyond the burn-down list', () => {
+  it('loops no known population inside a test', () => {
     const { specs, sites } = scan();
-    expect(
-      searched(
-        sites.filter((site) => !BURN_DOWN.includes(site)),
-        { of: specs, what: 'spec files' },
-      ),
-    ).toEqual([]);
-  });
-
-  it('keeps no burn-down entry that has already been split', () => {
-    const { sites } = scan();
-    expect(BURN_DOWN.filter((entry) => !sites.includes(entry))).toEqual([]);
+    expect(searched(sites, { of: specs, what: 'spec files' })).toEqual([]);
   });
 });
