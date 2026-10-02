@@ -1680,23 +1680,9 @@ test.describe('site-wide language switching', () => {
     ]);
   });
 
-  test('the Indonesian homepage links to the Indonesian tools', async ({
-    page,
-  }) => {
-    // localisePath's own doc comment calls this "the classic i18n bug", and
-    // nothing asserted it anywhere: an Indonesian visitor clicking a work
-    // card landed on the English page.
-    await page.goto('/id/');
-    await expect(
-      page.locator('#tools a[href="/id/classroom-groups"]'),
-    ).toHaveCount(1);
-    await expect(page.locator('#tools a[href="/id/glory-points"]')).toHaveCount(
-      1,
-    );
-    await expect(
-      page.locator('#tools a[href="/classroom-groups"]'),
-    ).toHaveCount(0);
-  });
+  // Where the homepage's tool cards link, in every locale, is held by
+  // 'exactly two tool cards, each badged and linked in-locale' in
+  // homepage.spec.ts (#390 F129).
 
   test.describe('what each page tells a search engine', () => {
     // Asserted by VALUE. Counting the tags cannot tell the difference between
