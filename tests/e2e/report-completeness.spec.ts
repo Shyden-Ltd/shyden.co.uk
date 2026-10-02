@@ -86,6 +86,13 @@ for (const locale of PREFIXED_LOCALES)
           if (parent && parent.checkVisibility() && node.textContent?.trim())
             texts.push(node.textContent);
         }
+        // An option has no box of its own, so it never passes
+        // checkVisibility, yet a visitor reads every one in the open list
+        // (RC3): each visible select's options are read too.
+        for (const select of document.querySelectorAll('select'))
+          if (select.checkVisibility())
+            for (const option of select.options)
+              if (option.text.trim()) texts.push(option.text);
         return texts;
       });
       const onPage = new Set(rendered.map((text) => normalise(text, locale)));
