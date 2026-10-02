@@ -570,6 +570,9 @@ test.describe('classroom groups — mobile-first layout', () => {
             ids.length,
             `${path}: no disclosure buttons found`,
           ).toBeGreaterThan(3);
+          // runtime population: the disclosure toggles this page rendered,
+          // read off the DOM above, so a section added later is covered the
+          // day it appears; collection time cannot know them (#417).
           for (const id of ids) {
             await page.goto(path);
             await page.locator(`#${id}`).click();
