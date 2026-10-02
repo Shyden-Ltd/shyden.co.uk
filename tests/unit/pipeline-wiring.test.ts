@@ -2439,6 +2439,27 @@ describe('wrangler comes from the lockfile (#97)', () => {
   });
 });
 
+// ---- the dev token proves its reach before every dev deploy (#415) -------
+//
+// Dev and production live in separate Cloudflare accounts, because a Pages
+// permission narrows to an account and never to a project. The dev token's
+// scope was proved once by hand; the job proves it again before each deploy,
+// so a token widened later never deploys. Read parsed, per step, in order.
+describe('the dev token proves its reach before every dev deploy (#415)', () => {
+  it('runs the reach probe in the deploy job, before the deploy', () => {
+    const runs = jobNamed('deploy-dev.yml', 'deploy-dev').runs.map((run) =>
+      withoutCommentLines(run).trim(),
+    );
+    const probe = runs.indexOf('node scripts/token-reach.mjs');
+    const deploy = runs.findIndex((run) =>
+      run.startsWith('npx wrangler pages deploy'),
+    );
+    expect(deploy, 'the deploy step').toBeGreaterThan(-1);
+    expect(probe, 'the reach probe').toBeGreaterThan(-1);
+    expect(probe, 'the probe runs before the deploy').toBeLessThan(deploy);
+  });
+});
+
 // ---- browsers come with the pinned image (#431) ---------------------------
 //
 // Run 36973026350's shard 2 spent its whole job in `npx playwright install
