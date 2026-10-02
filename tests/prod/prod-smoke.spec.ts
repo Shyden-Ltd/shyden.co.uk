@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { deployedRoutes } from '../site-pages';
+import { expectNotFoundServed } from '../not-found-served';
 import { withoutMarkupComments } from '../unit/source-text';
 
 /**
@@ -48,6 +49,12 @@ test.describe('the production smoke', () => {
       ).toBe(0);
     });
   }
+
+  test('an unknown path answers 404 with the not-found page', async ({
+    request,
+  }) => {
+    await expectNotFoundServed(request);
+  });
 
   test('the homepage is this site, linking to prod ShyTalk and fetching no script', async ({
     request,

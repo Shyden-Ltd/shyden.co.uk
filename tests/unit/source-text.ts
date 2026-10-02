@@ -384,6 +384,59 @@ function scanCss(source: string): { code: string; comments: string[] } {
 }
 
 /**
+ * SQL with its `--` and block comments removed, STRING LITERALS and quoted
+ * identifiers intact (#390 F160).
+ *
+ * An anchored match over raw SQL (`/^\s*quote\s+TEXT .../m`) was taken as
+ * proof a column is real, and a block comment holding the old line, below the
+ * table, satisfied it while the column itself had changed: an anchor pins a
+ * match to a line, and a block comment's inner lines are lines. A quote
+ * doubles to escape itself in SQL, so `'it''s'` is one literal: closing at
+ * the first `'` and reopening at the second reads it the same way.
+ */
+export function withoutSqlComments(source: string): string {
+  let code = '';
+  let i = 0;
+  let quote: string | null = null;
+
+  while (i < source.length) {
+    const ch = source[i];
+
+    if (quote !== null) {
+      code += ch;
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      code += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '-' && source[i + 1] === '-') {
+      const end = source.indexOf('\n', i);
+      i = end === -1 ? source.length : end;
+      continue;
+    }
+
+    if (ch === '/' && source[i + 1] === '*') {
+      // Unclosed runs to the end, as SQLite reads it.
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 2;
+      continue;
+    }
+
+    code += ch;
+    i += 1;
+  }
+
+  return code;
+}
+
+/**
  * `.astro` is three languages in one file — TypeScript frontmatter, markup,
  * and CSS — so no single scanner strips it. THREE PASSES, in this order:
  *

@@ -13,6 +13,7 @@ import { deployedRoutes } from '../site-pages';
 import { expectHomepageShyTalkLinksAt } from '../shytalk-links';
 import { expectTheSwitchPersists } from '../themes';
 import { robotsDirectives } from '../robots-directives';
+import { expectNotFoundServed } from '../not-found-served';
 
 // Runs against the REAL deployed dev site behind Basic auth. baseURL +
 // httpCredentials are supplied by playwright.dev.config.ts (env-driven).
@@ -25,6 +26,12 @@ test('dev homepage loads behind Basic auth', async ({ page }) => {
   const res = await page.goto('/');
   expect(res?.status()).toBe(200);
   await expect(page.locator('h1')).toBeVisible();
+});
+
+test('an unknown path answers 404 with the not-found page', async ({
+  request,
+}) => {
+  await expectNotFoundServed(request);
 });
 
 test('the Glory Points calculator loads on dev', async ({ page }) => {

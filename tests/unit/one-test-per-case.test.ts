@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseSource } from './ast';
-import { filesUnder, searched, specFilesUnder } from '../source-files';
+import { filesUnder, searched, tsFilesUnder } from '../source-files';
+import { specDirs } from '../spec-dirs';
 import {
   loopedCases,
   statefulHelpers,
+  testsRead,
   type LoopedCase,
 } from '../one-test-per-case';
+import { withoutTsComments } from './source-text';
 
 /**
  * One test per case (operator, 2026-10-02; #417).
@@ -54,6 +57,17 @@ describe('the detector', () => {
             await page.goto(localisePath('/', locale));
           });`),
     ).toEqual([]);
+  });
+
+  it('reads a test however Playwright declares it, focused and failing too', () => {
+    // This file kept its own list of test callees, which had no
+    // `test.fail.only`, so a looped body under one was never read (#390 F155).
+    expect(
+      found(`
+        test.fail.only('focused and failing', async ({ page }) => {
+          for (const path of ['/', '/id/']) await page.goto(path);
+        });`).map(({ test }) => test),
+    ).toEqual(['focused and failing']);
   });
 
   it('refuses each state change the budget pays for, not only goto', () => {
@@ -203,21 +217,65 @@ const sharedStateful = () =>
     ).map(parsed),
   );
 
-const scan = (): { specs: string[]; sites: string[] } => {
-  const specs = specFilesUnder('tests');
+/**
+ * A spec whose code, comments stripped, calls `test(` or a `test.<modifier>(`
+ * form: read independently of the parse tree, as text, so a reader that went
+ * blind to a form is caught by a file it found nothing in.
+ */
+const DECLARES_TESTS = /(?<![\w.])test(?:\.(?:only|skip|fixme|fail))*\s*\(/;
+
+const scan = (): {
+  specs: string[];
+  tests: string[];
+  sites: string[];
+  unread: string[];
+} => {
+  // Every TypeScript file in a directory that holds specs, not only the
+  // `*.spec.ts` ones: the Android preflight (`*.setup.ts`) and the iOS
+  // journeys (`*.journey.ts`) declare 21 tests between them, and a walk of
+  // `*.spec.ts` alone never read one (#390).
+  const specs = specDirs().flatMap(tsFilesUnder);
   const shared = sharedStateful();
+  const tests = specs.flatMap((file) =>
+    testsRead(parsed(file)).map((title) => `${file} :: ${title}`),
+  );
   const sites = specs.flatMap((file) =>
     loopedCases(parsed(file), shared).map(
       (site) => `${file} :: ${site.test} :: ${site.loop}`,
     ),
   );
-  return { specs, sites };
+  const unread = specs.filter(
+    (file) =>
+      DECLARES_TESTS.test(withoutTsComments(readFileSync(file, 'utf8'))) &&
+      testsRead(parsed(file)).length === 0,
+  );
+  return { specs, tests, sites, unread };
 };
 
 describe('the suite', () => {
   it('loops no known population inside a test', () => {
-    const { specs, sites } = scan();
-    expect(searched(sites, { of: specs, what: 'spec files' })).toEqual([]);
+    // The population is the TESTS read, not the files opened: a reader that
+    // went blind to every declaration would open every file, find no loop,
+    // and pass. `searched` refuses an empty population (#390).
+    const { tests, sites } = scan();
+    expect(searched(sites, { of: tests, what: 'tests read' })).toEqual([]);
+  });
+
+  it('reads the tests every spec declares, and as many as there are', () => {
+    // Liveness at the level the detector works at. 638 today, measured
+    // against the reader this replaced (both found the same 638 bodies,
+    // #390 F155); stated tight, because a floor with slack is how
+    // absence-liveness sat at 153 under a real 391 (#390 F161). And no spec
+    // whose text declares a test may read as none: a reader blind to one
+    // form (`test.fail.only` was) is caught by the file it missed.
+    const { tests, unread } = scan();
+    expect(tests.length).toBeGreaterThan(637);
+    expect(
+      searched(unread, {
+        of: specDirs().flatMap(tsFilesUnder),
+        what: 'files in spec directories',
+      }),
+    ).toEqual([]);
   });
 
   it('resolves the shared helpers that navigate', () => {

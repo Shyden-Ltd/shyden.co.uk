@@ -191,34 +191,34 @@ Columns: **Review** is `—` until the file is read in full; **Mutations** is `n
 | 182 | test | A | `tests/e2e/theme.spec.ts` | +573/-0 | read whole (tranche 13) | F150 six stale saved values were reloaded inside one test, unseen by the one-test-per-case guard because its state changes named goto and not reload; the guard now refuses reload, goBack, goForward and setContent too (a fixture each; its only new site was this one), and each value is its own test (slowest 439ms looped, 574ms split). F151 the #386 geometry test walked every site path in every locale, so the 404 and its own switch never changed theme: a light-only 17px on the 404's h2 passed (TG1b green); it walks PUBLISHED_ROUTES. (TG1 as a margin collapsed into the hr's 32px and moved nothing) | TG1b-before GREEN on develop (30 of 30); TG1b RED (2 of 32); ST1 RED (1 of 6, "auto" named); OT1 RED (the reload fixture) |
 | 183 | test | A | `tests/e2e/visual.spec.ts` | +222/-0 | read whole (tranche 13) | none: its five pages are a sample by decision (every one is a baseline per width and theme), each state proved before it can become a baseline; the docblock named 'the four' over a list of five and now says why there are five | n/a |
 | 184 | test | A | `tests/e2e/zoom-on-focus.spec.ts` | +109/-0 | read whole (tranche 13) | F152 each locale's pages were visited in one test through typedControls, whose goto the one-test-per-case guard could not see while it matched call names alone; the guard now resolves, to a fixed point, every function a spec or the suite's shared modules declare whose body changes state (fixtures for both, and a liveness check that openRoster resolves). Its only two new sites: this one, now a test per published page (the English homepage asserted rendered with no field), and the Absent test in classroom-groups-controls.spec.ts, which looped en and id through openRoster and took /Absent\|Tidak hadir/ on either page, now a test per sampled page holding the page's own word | OT2 OT3 RED (the shared and the caller-first fixtures); ZF1 RED (1 of 17, the 404 named); AB2-before GREEN on develop, AB2 RED (1 of 2, /id/). (AB1, a catalogue edit, moved both sides and proved nothing); LV1b RED (helpers.ts unread: the openRoster liveness check alone) |
-| 185 | test | A | `tests/engines.ts` | +11/-0 | — |  |  |
+| 185 | test | A | `tests/engines.ts` | +11/-0 | read whole (tranche 14) | F153 both configs map ENGINES, but only the e2e config's engines were pinned, so a functions config cut to Chromium alone kept every suite green (EN1 green); now browser-matrix holds the functions projects equal to the e2e engines, name and device | EN1-before GREEN; EN1 RED (1 of 3352) |
 | 186 | test | A | `tests/evidence-fixture.ts` | +82/-0 | read whole (tranche 10) | asPublished() added (F121): the page as a reader receives it, beside the fragment the unit suites read as text. | 3 run: 3 RED (PB1 doctype, PB2 charset on WebKit, PB3 viewport on a phone) |
-| 187 | test | A | `tests/fetch-trap.mjs` | +25/-0 | — |  |  |
-| 188 | test | A | `tests/functions/local.mjs` | +62/-0 | — |  |  |
-| 189 | test | A | `tests/functions/report.spec.ts` | +210/-0 | — |  |  |
-| 190 | test | A | `tests/functions/serve.mjs` | +59/-0 | — |  |  |
-| 191 | test | A | `tests/functions/wrangler.toml` | +10/-0 | — |  |  |
-| 192 | test | A | `tests/git-env-setup.ts` | +10/-0 | — |  |  |
-| 193 | test | A | `tests/git-env.ts` | +52/-0 | — |  |  |
-| 194 | test | A | `tests/layout-widths.ts` | +95/-0 | — |  |  |
-| 195 | test | A | `tests/make-groups.ts` | +45/-0 | — |  |  |
-| 196 | test | A | `tests/palette.ts` | +293/-0 | — |  |  |
-| 197 | test | A | `tests/playwright-declarations.ts` | +294/-0 | — |  |  |
-| 198 | test | A | `tests/prod/prod-sanity.spec.ts` | +183/-0 | — |  |  |
-| 199 | test | A | `tests/report-health.ts` | +14/-0 | — |  |  |
-| 200 | test | A | `tests/reporters/dashboard-jsonl.ts` | +136/-0 | — |  |  |
-| 201 | test | M | `tests/reporters/jsonl-reporter.ts` | +8/-79 | — |  |  |
-| 202 | test | M | `tests/reporters/jsonl-vitest.ts` | +17/-63 | — |  |  |
-| 203 | test | A | `tests/reporters/nav-timing-reporter.ts` | +161/-0 | — |  |  |
-| 204 | test | A | `tests/reporters/test-identity.ts` | +42/-0 | — |  |  |
-| 205 | test | A | `tests/sanity-on-build.ts` | +70/-0 | — |  |  |
-| 206 | test | A | `tests/shytalk-links.ts` | +60/-0 | — |  |  |
+| 187 | test | A | `tests/fetch-trap.mjs` | +25/-0 | read whole (tranche 14) | clean: the trap's log is the searched population, and translate.test.ts's key run proves it records (one request, to api-free.deepl.com) | — |
+| 188 | test | A | `tests/functions/local.mjs` | +62/-0 | read whole (tranche 14) | clean: DATABASE_ID is written again in wrangler.toml, and a mismatch fails closed at the health test (the server binds an unmigrated database) | — |
+| 189 | test | A | `tests/functions/report.spec.ts` | +210/-0 | read whole (tranche 14) | clean: the 404 blocks are generated per beta locale, the same condition ReportForm draws under; every absence of a stored row has a sibling test reading one through the same query | — |
+| 190 | test | A | `tests/functions/serve.mjs` | +59/-0 | read whole (tranche 14) | clean | — |
+| 191 | test | A | `tests/functions/wrangler.toml` | +10/-0 | read whole (tranche 14) | clean | — |
+| 192 | test | A | `tests/git-env-setup.ts` | +10/-0 | read whole (tranche 14) | clean: git-env.test.ts runs a child vitest handed a GIT_DIR and reads that the setup file cleared it | — |
+| 193 | test | A | `tests/git-env.ts` | +52/-0 | read whole (tranche 14) | clean | — |
+| 194 | test | A | `tests/layout-widths.ts` | +95/-0 | read whole (tranche 14) | F154 a width condition in a unit the reader does not parse (pt, ch, vw, ex) read as nothing, so header-room stopped measuring both sides of that breakpoint and stayed green (LW1: HomePage's 880px written as 660pt, the same width, green); now any width feature left unread is refused by name | LW1-before GREEN (dist served width>=660pt); LW1 RED (5 of 16, the five homepages) |
+| 195 | test | A | `tests/make-groups.ts` | +45/-0 | read whole (tranche 14) | clean | — |
+| 196 | test | A | `tests/palette.ts` | +293/-0 | read whole (tranche 14) | clean: darkBlocks matches `color-scheme: dark` exactly, and palette.test.ts pins the two blocks it must find by chain | — |
+| 197 | test | A | `tests/playwright-declarations.ts` | +294/-0 | read whole (tranche 14) | F155 DECLARING had no `fail.only` (Playwright 1.49+), and one-test-per-case.ts kept a second reader with the same gap, so a looped body under test.fail.only passed (FD1 green); now declared as a focused test, the one-test-per-case guard reads through declarationsIn (both find the same 638 bodies), and the forms test also exercises describe.serial.only and describe.parallel | FD1-before GREEN; FD1 RED (1 of 3358) |
+| 198 | test | A | `tests/prod/prod-sanity.spec.ts` | +183/-0 | read whole (tranche 14) | F157 neither gate requested a path the site does not have, and Pages answers every unknown path with the homepage at 200 once a build has no 404.html (N1: 404.astro removed, both sanity suites green); now prod-smoke and dev-sanity request one through tests/not-found-served.ts. F156 deploy-prod.yml named scripts/prod-smoke.sh, retired in #390 | N1-before GREEN (27 + 53, dist without 404.html); N1 RED (dev 1 of 28, prod 1 of 54) |
+| 199 | test | A | `tests/report-health.ts` | +14/-0 | read whole (tranche 14) | clean | — |
+| 200 | test | A | `tests/reporters/dashboard-jsonl.ts` | +136/-0 | read whole (tranche 14) | F158's doc half: the fold's comment named summarizePlaywrightGroup, which b43d7a3 removed; it now names playwrightVerdict, which counts expected and unexpected | — |
+| 201 | test | M | `tests/reporters/jsonl-reporter.ts` | +8/-79 | read whole (tranche 14) | F158 the live dashboard read result.status alone, so a test.fail() test failing as declared showed failed and one passing, which fails the run, showed passed (/classroom-groups carries five, #409); now Playwright's verdict, proven by a real Playwright run of four tests, one per outcome | jsonl-reporter.test.ts RED on develop's reporter (both directions); JR1 RED (1 of 11) |
+| 202 | test | M | `tests/reporters/jsonl-vitest.ts` | +17/-63 | read whole (tranche 15) | clean: measured with a real vitest run through this reporter, it.fails failing reports passed and it.fails passing reports failed, so F158's inversion does not reach the vitest half | — |
+| 203 | test | A | `tests/reporters/nav-timing-reporter.ts` | +161/-0 | read whole (tranche 15) | clean: counts Playwright's own 'Navigate' steps (page.goto), and navTimingVerdict turns a collector that matched nothing into a failure | — |
+| 204 | test | A | `tests/reporters/test-identity.ts` | +42/-0 | read whole (tranche 15) | clean | — |
+| 205 | test | A | `tests/sanity-on-build.ts` | +70/-0 | read whole (tranche 15) | clean | — |
+| 206 | test | A | `tests/shytalk-links.ts` | +60/-0 | read whole (tranche 15) | clean: links are selected by resolved host, and the absence goes through searched over the hosts found | — |
 | 207 | test | A | `tests/site-pages.ts` | +102/-0 | read whole (tranche 12) | F130 TITLE_FOR added beside HEADING_FOR, keyed by page for the same reason | LP1 RED |
-| 208 | test | A | `tests/source-files.ts` | +211/-0 | — |  |  |
+| 208 | test | A | `tests/source-files.ts` | +211/-0 | read whole (tranche 15) | clean: its git spawns throw on any status but 0 (and 1 for check-ignore), so a null status from a buffer overflow (#438's class) fails closed | — |
 | 209 | test | A | `tests/spec-dirs.ts` | +20/-0 | read whole (tranche 9) | F106 a docblock for a function taking dir was left behind when specFilesUnder moved to tests/source-files.ts (which carries its own), stacked above specDirs' real docblock: removed. | SD1: 1/1 RED |
-| 210 | test | A | `tests/themes.ts` | +62/-0 | — |  |  |
-| 211 | test | A | `tests/unit/absence-liveness.test.ts` | +186/-0 | — |  |  |
-| 212 | test | A | `tests/unit/anchored-presence.test.ts` | +303/-0 | — |  |  |
+| 210 | test | A | `tests/themes.ts` | +62/-0 | read whole (tranche 15) | clean: both saveTheme callers save the opposite of the device's theme, so neither assertion can pass on the device's own | — |
+| 211 | test | A | `tests/unit/absence-liveness.test.ts` | +186/-0 | read whole (tranche 15) | F159 only toEqual([]) and toHaveLength(0) were read, so an absence spelled expect(x.length).toBe(0), .size, or toStrictEqual([]) was never judged (AL1b green); now every spelling, with a fixture test. F161 its liveness floor sat at 153 under a real 391, so a dead toHaveLength(0) branch stayed green (AL2 green); now 394, floor 393. A subject bound by destructuring is still not traced (AL3 green), filed as #446 AC6 | AL1b-before GREEN; AL1b RED (1 of 3). AL2-before GREEN; AL2b RED (2 of 3) |
+| 212 | test | A | `tests/unit/anchored-presence.test.ts` | +303/-0 | read whole (tranche 15) | F160 an anchor is not a stripper: report-endpoint stripped only `--` with a private replace, and its anchored check passed a block comment below the table holding the old quote line while the column allowed 100000 characters (RE1 green); now withoutSqlComments in source-text.ts, quote-aware, and the doc no longer calls an anchor stronger than stripping. Its floor sat at 47 under a real 77, now 76 (AP2 red before: its fixtures cover toMatch, so the slack had no proven cost) | RE1-before GREEN; RE1 RED (1 of 3364) |
 | 213 | test | A | `tests/unit/ast.test.ts` | +452/-0 | — |  |  |
 | 214 | test | A | `tests/unit/ast.ts` | +592/-0 | — |  |  |
 | 215 | test | A | `tests/unit/astro-css-strip.test.ts` | +150/-0 | — |  |  |

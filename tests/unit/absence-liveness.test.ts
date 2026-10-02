@@ -65,21 +65,29 @@ const discoverers = callGraph(tsFiles).close(DISCOVERY);
 /** Bound once: each name resolves in its own scope, not by name (#184). */
 const bound = bindFiles(tsFiles);
 
-/** `.toEqual([])` or `.toHaveLength(0)` — and never their `.not` inverses. */
+const EQUALITY = new Set(['toEqual', 'toStrictEqual', 'toBe']);
+
+const isZero = (arg: ts.Expression | undefined): boolean =>
+  arg !== undefined && ts.isNumericLiteral(arg) && arg.text === '0';
+
+/**
+ * Every spelling of "this is empty" -- `.toEqual([])`, `.toStrictEqual([])`,
+ * `.toHaveLength(0)`, and a `.length` or `.size` held equal to 0 -- and never
+ * a `.not` inverse. For the last two the subject is what the count is OF:
+ * `expect(found.length).toBe(0)` asserts `found` empty (#390 F159).
+ */
 function absenceSubject(node: ts.CallExpression): ts.Expression | null {
   if (!ts.isPropertyAccessExpression(node.expression)) return null;
   const matcher = node.expression.name.text;
   const arg = node.arguments[0];
-  const isAbsence =
-    (matcher === 'toEqual' &&
-      arg !== undefined &&
-      ts.isArrayLiteralExpression(arg) &&
-      arg.elements.length === 0) ||
-    (matcher === 'toHaveLength' &&
-      arg !== undefined &&
-      ts.isNumericLiteral(arg) &&
-      arg.text === '0');
-  if (!isAbsence) return null;
+  const emptyList =
+    (matcher === 'toEqual' || matcher === 'toStrictEqual') &&
+    arg !== undefined &&
+    ts.isArrayLiteralExpression(arg) &&
+    arg.elements.length === 0;
+  const noLength = matcher === 'toHaveLength' && isZero(arg);
+  const zeroCount = EQUALITY.has(matcher) && isZero(arg);
+  if (!emptyList && !noLength && !zeroCount) return null;
 
   // Walk back through any modifier chain (`.not`, `.resolves`). A `.not`
   // anywhere in it inverts the claim, so the assertion is not an absence one.
@@ -91,7 +99,14 @@ function absenceSubject(node: ts.CallExpression): ts.Expression | null {
   if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression))
     return null;
   if (target.expression.text !== 'expect') return null;
-  return target.arguments[0] ?? null;
+  const subject = target.arguments[0];
+  if (subject === undefined) return null;
+  if (!zeroCount) return subject;
+  // A bare number held to 0 is a value, not a population.
+  return ts.isPropertyAccessExpression(subject) &&
+    (subject.name.text === 'length' || subject.name.text === 'size')
+    ? subject.expression
+    : null;
 }
 
 /** Why this subject needs a control, or null if it carries its own. */
@@ -165,14 +180,50 @@ describe('absence assertions prove the population they searched', () => {
   // those is good news. This is the shape `event-collectors.test.ts` settled.
   it('finds the absence assertions it is meant to be judging', () => {
     expect(tsFiles.length).toBeGreaterThan(30);
-    // 154 today. The floor is stated against a measured figure rather
+    // 394 today. The floor is stated against a measured figure rather
     // than left comfortably low, for the reason `anchored-presence`
     // records: a control with slack in it is most of the way back to
     // no control at all. #184 found it at 100 over a real 154, and showed
     // what that slack costs: with the `toHaveLength(0)` branch of
-    // `absenceSubject` dead, this test stayed green.
-    expect(result.absences).toBeGreaterThan(153);
+    // `absenceSubject` dead, this test stayed green. #390 F161 found it
+    // there again, at 153 over a real 391, with the same branch dead and
+    // the same test green; F159's spellings brought the figure to 394.
+    expect(result.absences).toBeGreaterThan(393);
     expect(result.proved).toBeGreaterThan(0);
+  });
+
+  it('reads an absence however it is spelled, and never its inverse', () => {
+    // Only `toEqual([])` and `toHaveLength(0)` were read, so an absence
+    // written `expect(found.length).toBe(0)` over a file walk was never
+    // judged (#390 F159).
+    const sf = ts.createSourceFile(
+      'fixture.test.ts',
+      [
+        'expect(a).toEqual([]);',
+        'expect(b).toStrictEqual([]);',
+        'expect(c).toHaveLength(0);',
+        'expect(d.length).toBe(0);',
+        'expect(e.size).toBe(0);',
+        'expect(f.length).toEqual(0);',
+        'expect(g.length).toStrictEqual(0);',
+        'expect(h).not.toEqual([]);',
+        'expect(i.length).not.toBe(0);',
+        'expect(j.length).toBe(1);',
+        'expect(k).toBe(0);',
+      ].join('\n'),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const subjects: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const subject = absenceSubject(node);
+        if (subject) subjects.push(subject.getText(sf));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    expect(subjects).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
   });
 
   it('finds none whose population could be empty without saying so', () => {
