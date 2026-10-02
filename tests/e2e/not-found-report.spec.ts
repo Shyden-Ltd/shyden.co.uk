@@ -4,6 +4,7 @@ import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
 import { contrastRatio } from './helpers';
 import { THEMES } from '../palette';
+import { searched } from '../source-files';
 import {
   DEFAULT_LOCALE,
   LOCALES,
@@ -64,10 +65,25 @@ test('each block offers what it shows: its heading, sentence and link match its 
     const heading = page.locator(`h2[lang="${locale}"]`);
     await expect(heading).toBeVisible();
     const link = page.locator(`p[lang="${locale}"] a[hreflang="${locale}"]`);
+    // The sentence as the page shows it: the paragraph's text up to its
+    // link. Taken from the catalogue instead, a block showing another
+    // language's sentence passed, since the catalogue always matches itself.
+    const body = await page
+      .locator(`p[lang="${locale}"]`)
+      .filter({ has: page.locator(`a[hreflang="${locale}"]`) })
+      .evaluate((paragraph) => {
+        const before: string[] = [];
+        for (const node of paragraph.childNodes) {
+          if (node.nodeName === 'A') break;
+          before.push(node.textContent ?? '');
+        }
+        return before.join('').trim();
+      });
+    expect(body, `${locale}: the sentence before the link`).not.toBe('');
     const shown = [
       [await heading.innerText(), 'site.notFound.heading'],
       [await link.innerText(), 'site.notFound.backHome'],
-      [getSiteStrings(locale).notFound.body, 'site.notFound.body'],
+      [body, 'site.notFound.body'],
     ] as const;
     for (const [text, key] of shown)
       expect(
@@ -131,14 +147,15 @@ for (const theme of THEMES)
   test.describe(`${theme} theme`, () => {
     test.use({ colorScheme: theme });
 
-    test('every control is at least 44px and every text meets AA', async ({
-      page,
-    }) => {
-      await page.goto(NOT_FOUND);
-      for (const locale of BETA) {
+    for (const locale of BETA)
+      test(`${locale}: every control is at least 44px and every text meets AA`, async ({
+        page,
+      }) => {
+        await page.goto(NOT_FOUND);
         const t = getSiteStrings(locale).report;
         const details = block(page, locale);
         await details.locator('summary').click();
+        await expect(details).toHaveAttribute('open', '');
         for (const target of [
           details.locator('summary'),
           details.getByLabel(t.quoteLabel, { exact: true }),
@@ -148,20 +165,30 @@ for (const theme of THEMES)
         ])
           await atLeast44(target);
         // On the 404 the form sits on the page's ground, not the footer's,
-        // so its label and hints are measured here too (#97 measured them in
-        // the footer).
-        const stem = reportIdStem('not-found', locale);
+        // so its words are measured here too (#97 measured them in the
+        // footer). Every label and paragraph the form renders, read from the
+        // DOM: a list naming the quote label and two hints passed a note
+        // label painted in --border. The honeypot's label sits in its own div,
+        // so `form > label` leaves it out.
+        const words = details.locator('form > label, form > p');
+        await expect(words.first()).toBeVisible();
+        const failing: string[] = [];
+        const read: string[] = [];
+        // runtime population: the labels and paragraphs this form rendered.
         for (const text of [
           details.locator('summary'),
-          details.locator('form > p').first(),
-          details.locator(`label[for="${stem}-quote"]`),
-          details.locator(`#${stem}-quote-hint`),
-          details.locator(`#${stem}-note-hint`),
+          ...(await words.all()),
           details.getByRole('button', { name: t.send }),
-        ])
-          expect(await contrastRatio(text), locale).toBeGreaterThanOrEqual(4.5);
-      }
-    });
+        ]) {
+          const said = await text.innerText();
+          read.push(said);
+          const ratio = await contrastRatio(text);
+          if (ratio < 4.5) failing.push(`'${said}' ${ratio.toFixed(2)}:1`);
+        }
+        expect(
+          searched(failing, { of: read, what: `${locale} form texts` }),
+        ).toEqual([]);
+      });
   });
 
 test(
