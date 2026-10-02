@@ -313,20 +313,19 @@ test.describe('privacy — when the script dies half-way', () => {
   test('a mid-module failure still cannot leak the class list', async ({
     page,
   }) => {
-    // Where each matchMedia failure was raised: the theme script in <head>
-    // calls it too, so the message alone cannot say the MODULE died.
-    const raisedIn: string[] = [];
+    // Every matchMedia failure the page raised. Counted, not located: the
+    // theme script in <head> calls it too, and WebKit reports the module's
+    // failure with no frame from the module in its stack.
+    let failures = 0;
     page.on('pageerror', (error) => {
-      if (error.message.includes('matchMedia unavailable'))
-        raisedIn.push(error.stack ?? '');
+      if (error.message.includes('matchMedia unavailable')) failures += 1;
     });
     await page.goto('/classroom-groups');
-    // The module really did die half-way (#424). Had it stopped calling
-    // matchMedia, the tool would work, its own handler would keep the URL
-    // clean, and this would pass without any failure having happened.
-    await expect
-      .poll(() => raisedIn.join('\n'))
-      .toContain('ClassroomGroupsPage');
+    // The module really did die half-way (#424): one failure from the theme
+    // script, one from the module. Had the module stopped calling matchMedia,
+    // the tool would work, its own handler would keep the URL clean, and this
+    // would pass without any failure having happened.
+    await expect.poll(() => failures).toBe(2);
     await page.fill('#cg-count', '8');
     await page.click('#cg-go');
 
