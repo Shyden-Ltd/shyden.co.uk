@@ -89,11 +89,15 @@ describe('the detector', () => {
     ).toEqual([]);
   });
 
+  // An ordinary comment sits above the loop on purpose. Without one, a
+  // detector that read the words from anywhere in the file still saw no
+  // comment to read them in, and this passed against it (DM5, #417).
   it('does not take the words from a string as the comment', () => {
     expect(
       found(`
         test('disclosures', async ({ page }) => {
           const note = '// runtime population: not a comment';
+          // every toggle, one at a time
           for (const id of ids) await page.goto(path);
         });`),
     ).toHaveLength(1);
