@@ -46,11 +46,13 @@ export default defineConfig({
   testDir: './tests/prod',
   // A stray `test.only` fails the run in CI rather than narrowing it (#390).
   forbidOnly: !!process.env.CI,
-  // One retry: a single network blip against the live site does not block a
-  // release, while a check that fails twice does, and the run reports a
-  // passed retry as flaky rather than hiding it. The timeout keeps a hung
-  // check from holding the release.
-  retries: 1,
+  // No retries (#445). This held one, so that "a single network blip"
+  // would not block a release, and a check that failed once and then passed
+  // posted `prod-verified`. The operator's rule, 2026-10-02: a retry is not
+  // a fix. A blip against the live site is a finding to read, and
+  // browser-matrix.test.ts refuses a retry in any config. The timeout keeps a
+  // hung check from holding the release.
+  retries: 0,
   timeout: 30_000,
   webServer: build?.webServer,
   grepInvert: build?.grepInvert,
