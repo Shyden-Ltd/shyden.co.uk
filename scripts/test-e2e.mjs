@@ -144,6 +144,37 @@ export function enumerationArgs(argv = []) {
 }
 
 /**
+ * `--list` prints a line per test, about 150 bytes each, so its output grows
+ * with the suite. At 7039 tests it passed spawnSync's 1 MiB default, and Node
+ * killed the child: no exit status, ENOBUFS, an empty stderr, and every shard
+ * of a green run failed (#438). The figure release-inventory.mjs and
+ * build-release-content.mjs read git with.
+ */
+export const LIST_MAX_BUFFER = 256 * 1024 * 1024;
+
+/**
+ * @typedef {(
+ *   command: string,
+ *   args: readonly string[],
+ *   options: import('node:child_process').SpawnSyncOptionsWithStringEncoding,
+ * ) => import('node:child_process').SpawnSyncReturns<string>} Spawn
+ */
+
+/**
+ * The unfiltered `playwright test --list` this run is reconciled against.
+ *
+ * @param {readonly string[]} argv
+ * @param {Spawn} spawn
+ */
+export function listSuite(argv = [], spawn = spawnSync) {
+  return spawn(
+    'npx',
+    ['playwright', 'test', '--list', ...enumerationArgs(argv)],
+    { encoding: 'utf8', maxBuffer: LIST_MAX_BUFFER },
+  );
+}
+
+/**
  *  Did the caller ask for a subset of the suite?
  *
  *  @param {readonly string[]} argv
@@ -274,7 +305,12 @@ const RULE = '='.repeat(72);
  *   executed: number | null,
  *   filtered: boolean,
  *   playwrightExitCode: number,
- *   listing?: { status: number | null, stderr?: string } | null,
+ *   listing?: {
+ *     status: number | null,
+ *     stderr?: string,
+ *     signal?: string | null,
+ *     error?: Error & { code?: string },
+ *   } | null,
  * }} verdict
  */
 export function reconcile({
@@ -294,12 +330,22 @@ export function reconcile({
   // genuinely had that many tests. Fatal even on a narrowed run: a number that
   // cannot be believed is worse than no number, because it prints like one.
   if (listing && listing.status !== 0) {
+    // No status means the child never exited on its own: Node killed it, and
+    // said why in `error` and `signal`, never in stderr (#438).
+    const ended =
+      listing.status === null
+        ? `was stopped before it exited (${
+            [listing.error?.code ?? listing.error?.message, listing.signal]
+              .filter(Boolean)
+              .join(', ') || 'no error or signal reported'
+          })`
+        : `exited ${listing.status}`;
     return {
       exitCode: 1,
       partial: false,
       message:
         `\n${RULE}\n  E2E RECONCILIATION FAILED — the suite could not be enumerated\n\n` +
-        `  \`playwright test --list\` exited ${listing.status}. Whatever it printed\n` +
+        `  \`playwright test --list\` ${ended}. Whatever it printed\n` +
         '  cannot be held against this run.\n\n' +
         `${(listing.stderr ?? '').trim() || '  (it printed nothing on stderr)'}\n${RULE}\n`,
     };
@@ -423,11 +469,7 @@ function main() {
   const { passthrough, reporter } = mergeReporters(argv);
 
   // Same suite, no filters: this is the number the run has to answer to.
-  const listing = spawnSync(
-    'npx',
-    ['playwright', 'test', '--list', ...enumerationArgs(argv)],
-    { encoding: 'utf8' },
-  );
+  const listing = listSuite(argv);
   const enumerated = parseListTotal(listing.stdout);
 
   const {
