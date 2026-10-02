@@ -588,3 +588,19 @@ describe('no CI run can be narrowed to the tests someone focused (#390)', () => 
     );
   });
 });
+
+describe('the functions suite renders on every engine (#350)', () => {
+  it('declares the same engines as the e2e suite, each the same device', async () => {
+    // A form posted by a real browser is the functions suite's claim, and each
+    // engine posts it its own way. Both configs map one list (tests/engines.ts),
+    // and only the e2e config's engines were pinned: a functions config cut
+    // to Chromium alone kept every suite green (#390 F153).
+    const devicesOf = (projects: PlaywrightTestConfig['projects']) =>
+      (projects ?? [])
+        .filter((p) => p.name !== 'content' && p.name !== 'visual')
+        .map(({ name, use }) => [name, use]);
+    const functions = await importConfig('playwright.functions.config.ts');
+
+    expect(devicesOf(functions.projects)).toEqual(devicesOf(config.projects));
+  });
+});
