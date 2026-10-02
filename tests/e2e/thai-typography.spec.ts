@@ -5,6 +5,7 @@ import { THEMES } from '../palette';
 import { emulateTheme } from '../themes';
 import { sitePaths } from '../site-pages';
 import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { NOT_FOUND_PATH } from './published-paths';
 
 /**
  * Thai marks must not run into the line above. #22.
@@ -30,7 +31,15 @@ import { LOCALES, localisePath } from '../../src/lib/i18n';
  * would have passed throughout.
  */
 
-const THAI_ROUTES = sitePaths().map((p) => localisePath(p, 'th'));
+/**
+ * Every Thai page, and the 404, whose Thai block (a heading, a sentence and a
+ * report form) went unmeasured while the routes came from `sitePaths` alone
+ * (TT1). The 404 is served as one, so its expected status travels with it.
+ */
+const THAI_ROUTES: readonly { route: string; status: number }[] = [
+  ...sitePaths().map((p) => ({ route: localisePath(p, 'th'), status: 200 })),
+  { route: NOT_FOUND_PATH, status: 404 },
+];
 
 /** Both phone sizes #32 fixed, plus a tablet and a laptop. A heading wraps to
  * more lines the narrower it gets, and collisions only happen between lines. */
@@ -45,7 +54,7 @@ test.describe('Thai typography', () => {
 
   // One test per width, route and theme (#421).
   for (const width of WIDTHS)
-    for (const route of THAI_ROUTES)
+    for (const { route, status } of THAI_ROUTES)
       for (const theme of THEMES)
         test(
           `no Thai glyph draws beyond its line box -- ${route} at ${width}px, ${theme}`,
@@ -61,7 +70,7 @@ test.describe('Thai typography', () => {
             expect(
               response?.status(),
               `${route} at ${width}px: route did not serve`,
-            ).toBe(200);
+            ).toBe(status);
             await emulateTheme(page, theme);
             const { offenders, examined } = await page.evaluate(() => {
               const THAI = /[฀-๿]/;
@@ -71,13 +80,23 @@ test.describe('Thai typography', () => {
               const found: string[] = [];
               let examined = 0;
 
-              for (const el of document.querySelectorAll(
-                'h1,h2,h3,p,li,label,button,a,span,td,th,summary',
-              )) {
-                const text = (el.textContent ?? '').trim();
-                // Leaf nodes only: a parent's textContent concatenates its
-                // children and would be measured in the parent's font.
-                if (!THAI.test(text) || el.children.length > 0) continue;
+              // Every text node, in its own parent's font against that
+              // parent's line box. A tag list read leaves only, so the Thai
+              // words of a paragraph that also held a link or an arrow were
+              // never measured (TT2), and no div or legend ever was.
+              const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+              );
+              for (
+                let node = walker.nextNode();
+                node;
+                node = walker.nextNode()
+              ) {
+                const el = node.parentElement;
+                const text = (node.textContent ?? '').trim();
+                if (!el || !THAI.test(text) || el.closest('script, style'))
+                  continue;
                 examined += 1;
 
                 const style = getComputedStyle(el);
