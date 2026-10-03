@@ -90,14 +90,25 @@ flag's drawing is non-empty, which is a presence check.
 ## Group 2: file-level populations (AC2), next
 
 39 `searched` calls hand their control a file-level population (`files`,
-`specs`, `modules`, `workflows`, `SCANNED` …). About half judge files and
-are sound: tracked paths, "reads every file under scripts/", the
-content-only spec list. The others hunt a construct inside the files
-(spellings, call sites, imports, date reads, directives) while proving only
-that files were opened. Each of those gets the judged unit inside its
-verdict, a tight floor, an independent cross-check and a planted
-construct in every form it takes. Listed in Appendix A with status
-"to read".
+`specs`, `modules`, `workflows`, `SCANNED` …). Read on 2026-10-03, each
+through to its verdict and not only up to the `searched(` call:
+
+- 18 are sound. They judge files or entries (tracked paths, "reads every
+  file under scripts/", the content-only spec list), or the verdict names
+  the home file (`toEqual(['tests/board-geometry.ts'])`), so a blind reader
+  returns `[]` and fails, or a sibling assertion runs the same reader on a
+  file that has the construct (`evidence-recording.test.ts:246`).
+- 12 judge each file with a pattern and assert an empty result, with no
+  cross-check found beside them yet.
+- 9 hunt a construct inside the files (rendered text, declarations,
+  imports, locator loops, workflow references, script statements, date
+  reads) while proving only that files were opened.
+
+Each of the 21 gets what the rule asks for: the judged unit inside its
+verdict where it is not files, a tight floor, an independent cross-check,
+fail-closed reading, and a planted construct in every form it takes.
+`pipeline-wiring.test.ts:1044` also skips a file that is not YAML with a
+silent `continue`. Appendix A gives each site's status.
 
 ## Group 3: plain counts, next
 
@@ -186,9 +197,9 @@ on macOS is not the one CI reads.
 | `unit/back-translate.test.ts:1076` | fails loudly without an engine, before writing or sending anything | `engine.log` | `translateRequests(engine)` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/back-translate.test.ts:1112` | refuses an engine that cannot read a locale, before sending anything | `engine.log` | `translateRequests(engine)` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/board-geometry.test.ts:44` | still names the things it measures once serialised | `needles` | `missing` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/board-geometry.test.ts:86` | is spelled in exactly one place under tests/ | `files` | `spelling` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/board-geometry.test.ts:86` | is spelled in exactly one place under tests/ | `files` | `spelling` | file-level | sound: judges the unit it counts |
 | `unit/browser-matrix.test.ts:101` | names specs that actually exist | `CONTENT_ONLY_SPECS` | `missing` | file-level | sound: judges the unit it counts |
-| `unit/browser-matrix.test.ts:131` | holds only specs whose verdict cannot depend on the engine or viewport | `CONTENT_ONLY_SPECS` | `engineDependent` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/browser-matrix.test.ts:131` | holds only specs whose verdict cannot depend on the engine or viewport | `CONTENT_ONLY_SPECS` | `engineDependent` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/browser-matrix.test.ts:248` | is excluded from every OTHER project | `others.map((p) => p.name)` | `claimants` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/browser-matrix.test.ts:380` | lets no device project claim the visual suite | `projects.map((p) => p.name)` | `claimants` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/browser-matrix.test.ts:396` | still runs every other e2e spec on the phone, content-only ones inclu… | `CONTENT_ONLY_SPECS` | `dropped` | file-level | sound: judges the unit it counts |
@@ -231,7 +242,7 @@ on macOS is not the one CI reads.
 | `unit/dependabot-labels.test.ts:58` | come from the parsed document, so a comment cannot add one | `declaredLabels(withComment)` | `declaredLabels(withComment).filter((nam…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/dependabot-labels.test.ts:143` | runs inside ${REQUIRED_JOB} or a job it stands for, the context branc… | `runs` | `runs.filter((run) => run.includes('scri…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/deprecated-css.test.ts:83` | finds none in any stylesheet under src/ | `sheets.map(({ css }) => css)` | `findings` | file-level | mismatch: judges a construct, counts files (Group 2) |
-| `unit/device-tool-homes.test.ts:38` | reads every call site through the one home | `files` | `spawning` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/device-tool-homes.test.ts:38` | reads every call site through the one home | `files` | `spawning` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/device-tool-homes.test.ts:68` | only scripts/adb.mjs decides which listed device is ready | `files` | `reading` | file-level | sound: judges the unit it counts |
 | `unit/duplicate-imports.test.ts:150` | src, scripts and tests each import a module once | `sources` | `repeated` | file-level | mismatch: judges a construct, counts files (Group 2) |
 | `unit/duplication.test.ts:126` | finds no cross-file duplicate that has not been given a verdict | `DECLARATIONS` | `findings` | loop-built | to read |
@@ -241,9 +252,9 @@ on macOS is not the one CI reads.
 | `unit/evidence-page.test.ts:1247` | has no consumer spelling an evidence filename for itself | `consumers` | `respellings` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/evidence-page.test.ts:1586` | emits only media references the artifact serves | `srcs` | `unservable` | file-level | sound: judges the unit it counts |
 | `unit/evidence-page.test.ts:1663` | references every recording it was given | `keys` | `unreferenced` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/evidence-recording.test.ts:261` | keeps video in one home: no spec spells it itself | `SPECS` | `spelled` | file-level | reader needs an independent cross-check (Group 2) |
-| `unit/evidence-recording.test.ts:275` | every spec that acts declares test.use(recorded) | `SPECS` | `missing` | file-level | reader needs an independent cross-check (Group 2) |
-| `unit/evidence-recording.test.ts:287` | no spec declares test.use(recorded) without acting | `SPECS` | `idle` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/evidence-recording.test.ts:261` | keeps video in one home: no spec spells it itself | `SPECS` | `spelled` | file-level | sound: judges the unit it counts |
+| `unit/evidence-recording.test.ts:275` | every spec that acts declares test.use(recorded) | `SPECS` | `missing` | file-level | no cross-check found beside it yet; read in Group 2 |
+| `unit/evidence-recording.test.ts:287` | no spec declares test.use(recorded) without acting | `SPECS` | `idle` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/evidence-recording.test.ts:305` | every construct in the vocabulary is detectable | `ACTIONS` | `undetected` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/evidence-recording.test.ts:309` | every construct in the vocabulary is detectable | `ACTIONS` | `actionsIn("await expect(page).toHaveTit…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/evidence-recording.test.ts:316` | every construct in the vocabulary is detectable | `ACTIONS` | `actionsIn("test('x', async () => { awai…` | findings drawn from it | sound at one hop: findings are built from the population |
@@ -290,14 +301,14 @@ on macOS is not the one CI reads.
 | `unit/pipeline-wiring.test.ts:967` | never calls a deploy a release | `deploys` | `findings` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:1044` | no workflow names a workflow file that does not exist | `workflows` | `dangling` | file-level | mismatch: judges a construct, counts files (Group 2) |
 | `unit/pipeline-wiring.test.ts:1171` | is not bypassed by any workflow calling Playwright directly | `workflowFileNames()` | `bypasses.map(({ file, line }) => `${fil…` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/pipeline-wiring.test.ts:1224` | takes the image the baselines are captured in from one selector | `workflows` | `named` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/pipeline-wiring.test.ts:1224` | takes the image the baselines are captured in from one selector | `workflows` | `named` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/pipeline-wiring.test.ts:1354` | no artifact capture in any workflow is set to ignore | `steps` | `silent` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:1365` | every artifact capture states what an empty capture means | `steps` | `undeclared` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:1408` | every astro server script opts out of the agent auto-background | `scripts.map(([, command]) => command)` | `unguarded` | file-level | sound: judges the unit it counts |
 | `unit/pipeline-wiring.test.ts:1506` | no checkout in any workflow leaves the job token in .git/config (#395) | `checkouts.map(({ where }) => where)` | `findings` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:1519` | no job in any workflow runs on the runner default budget | `graphs.flatMap(({ jobs }) => jobs)` | `findings` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/pipeline-wiring.test.ts:1539` | every job running the e2e suite carries exactly the shard budget | `suites` | `offBudget` | file-level | reader needs an independent cross-check (Group 2) |
-| `unit/pipeline-wiring.test.ts:1688` | no job running the e2e suite builds the site before it | `suites` | `prebuilt` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/pipeline-wiring.test.ts:1539` | every job running the e2e suite carries exactly the shard budget | `suites` | `offBudget` | file-level | no cross-check found beside it yet; read in Group 2 |
+| `unit/pipeline-wiring.test.ts:1688` | no job running the e2e suite builds the site before it | `suites` | `prebuilt` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/pipeline-wiring.test.ts:1746` | every upload in a matrix job names its leg | `uploads` | `shared` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:1783` | pins an image rather than a label that migrates under it | `all.map(({ label }) => label)` | `floating` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:1820` | prints the container architecture into the job summary | `visualRuns()` | `recording` | findings drawn from it | sound at one hop: findings are built from the population |
@@ -311,16 +322,16 @@ on macOS is not the one CI reads.
 | `unit/pipeline-wiring.test.ts:2319` | lets the script name the engine from its Dockerfile | `steps` | `typed` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:2332` | can go red: nothing in it continues on error | `steps` | `excused` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:2387` | starts for a pull request that changes anything it reads | `inputs` | `unwatched` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/pipeline-wiring.test.ts:2419` | no workflow installs it globally | `workflows.map(({ text }) => text)` | `globalInstalls` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/pipeline-wiring.test.ts:2419` | no workflow installs it globally | `workflows.map(({ text }) => text)` | `globalInstalls` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/pipeline-wiring.test.ts:2434` | every deploy runs the locked copy | `deploys` | `deploys.filter((line) => !line.includes…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:2553` | runs every other Playwright job in the image the `image` job picks | `jobs.map(({ where }) => where)` | `astray` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/playwright-declarations.test.ts:312` | no tag or use option is written in a form the guards would misread | `declarations.map(({ title }) => title)` | `unreadable` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/playwright-declarations.test.ts:350` | the only shared options object is the recording opt-in, from its home | `sharedUses` | `wrong` | loop-built | to read |
-| `unit/release-inventory.test.ts:385` | can see every capture: no module but a spec calls shoot | `modules` | `capturing` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/release-inventory.test.ts:385` | can see every capture: no module but a spec calls shoot | `modules` | `capturing` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/release-prose.test.ts:26` | finds none of any release file’s sentences in the scripts that render… | `phrases` | `phrases.filter((p) => code.includes(p))` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/report-review.test.ts:575` | makes none, and says so per report, without BACK_TRANSLATE_URL | `recorded.all` | `recorded.before` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/report-review.test.ts:607` | never calls the engine when no report needs it | `recorded.all` | `recorded.before` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/route-coverage.test.ts:143` | hardcodes no locale-prefixed route in any deploy gate | `specs` | `found` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/route-coverage.test.ts:143` | hardcodes no locale-prefixed route in any deploy gate | `specs` | `found` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/sanity-on-build.test.ts:174` | runs at least one test from every spec file in ${testDir} | `specFiles` | `silent` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/sanity-on-build.test.ts:195` | each says, where it is written, why only the deployed site can answer… | `tagged` | `unexplained` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/sanity-on-build.test.ts:208` | are left out of the on-build run, and nothing else is | `tagged` | `leaked` | findings drawn from it | sound at one hop: findings are built from the population |
@@ -332,7 +343,7 @@ on macOS is not the one CI reads.
 | `unit/script-entry.test.ts:663` | decides on import.meta.main alone | `decisions` | `wrong` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/script-entry.test.ts:784` | leaves every effect to an import.meta.main decision | `modules` | `work` | file-level | mismatch: judges a construct, counts files (Group 2) |
 | `unit/shipped-defaults.test.ts:496` | refuses an expectation a roster-building test could not have written | `all` | `all .filter((collision) => collision.af…` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/shytalk-brand.test.ts:137` | is spelled out nowhere else in the repo | `files` | `offenders` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/shytalk-brand.test.ts:137` | is spelled out nowhere else in the repo | `files` | `offenders` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/shytalk-showcase.test.ts:98` | has a capture for every locale the site serves | `LOCALES` | `missing` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/shytalk-showcase.test.ts:113` | gives every locale its OWN capture, not one file under five names | `captures` | `shared` | loop-built | to read |
 | `unit/shytalk-showcase.test.ts:127` | authors every capture at exactly the 2x frame size, and no larger | `captures` | `wrongSize` | findings drawn from it | sound at one hop: findings are built from the population |
@@ -376,9 +387,9 @@ on macOS is not the one CI reads.
 | `unit/translate.test.ts:676` | reports the stale drafts on a dry run and writes nothing | `run.log` | `run.requests` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/translate.test.ts:692` | drops the stale drafts with --prune, with no key and no request | `run.log` | `run.requests` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/translate.test.ts:708` | drops the stale drafts as --send writes, even with nothing to send | `run.log` | `run.requests` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/typecheck-scope.test.ts:85` | no script opts itself out with a ts-nocheck directive | `scripts` | `opted` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/typecheck-scope.test.ts:85` | no script opts itself out with a ts-nocheck directive | `scripts` | `opted` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/typed-fields.test.ts:69` | still names every kind of field once serialised | `needles` | `missing` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/typed-fields.test.ts:102` | is spelled in exactly one place under tests/ | `files` | `spelling` | file-level | reader needs an independent cross-check (Group 2) |
+| `unit/typed-fields.test.ts:102` | is spelled in exactly one place under tests/ | `files` | `spelling` | file-level | sound: judges the unit it counts |
 | `unit/verified-labels.test.ts:376` | the pin covers every locale and every roster column, with nothing bla… | `rosterColumnKeys` | `unpinned` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/verified-labels.test.ts:381` | the pin covers every locale and every roster column, with nothing bla… | `values` | `values.filter((value) => value.trim() =…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/verified-labels.test.ts:439` | every one is pinned or awaiting the operator's read | `witnessed` | `flagged` | loop-built | to read |
