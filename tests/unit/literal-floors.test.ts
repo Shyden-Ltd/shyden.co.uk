@@ -94,6 +94,31 @@ describe('floorSitesIn', () => {
     },
   );
 
+  // Written backwards, the literal is the subject and the count the bound.
+  // No file under tests/ writes one today (measured, review pass 1); read
+  // anyway, because a form the reader cannot see is one nothing refuses.
+  it.each([
+    ['less than', 'expect(5).toBeLessThan(files.length);', 'files.length', 6],
+    ['at most', 'expect(2).toBeLessThanOrEqual(n);', 'n', 2],
+  ])(
+    'reads a floor written backwards, %s, as counted',
+    (_, source, subject, demands) => {
+      expect(read(source)).toEqual({
+        sites: [
+          { line: 1, kind: 'counted', demands, subject, form: 'reversed' },
+        ],
+        refused: [],
+      });
+    },
+  );
+
+  it('reads a ceiling on a count as no floor', () => {
+    expect(read('expect(x.length).toBeLessThan(5);')).toEqual({
+      sites: [],
+      refused: [],
+    });
+  });
+
   it('reads a comparison bounding from above as a ceiling', () => {
     expect(read('expect(x.length < 3).toBe(true);').sites).toEqual([
       { line: 1, kind: 'ceiling', subject: 'x.length', form: 'comparison' },

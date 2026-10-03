@@ -37,7 +37,7 @@ export interface FloorSite {
    * Set when the floor is a comparison written inside the `expect(...)`
    * argument (`expect(n > 25).toBe(true)`) rather than a matcher.
    */
-  readonly form?: 'comparison';
+  readonly form?: 'comparison' | 'reversed';
 }
 
 export interface FloorReading {
@@ -47,6 +47,9 @@ export interface FloorReading {
 }
 
 const MATCHERS = new Set(['toBeGreaterThan', 'toBeGreaterThanOrEqual']);
+
+/** Read only with a literal SUBJECT: `expect(5).toBeLessThan(n)` is `n > 5`. */
+const REVERSED = new Set(['toBeLessThan', 'toBeLessThanOrEqual']);
 
 /** `expect`, `expect.soft` and `expect.poll`: the roots this repo asserts from. */
 const isExpectRoot = (callee: ts.Expression): boolean =>
@@ -258,6 +261,34 @@ export function floorSitesIn(sf: ts.SourceFile): FloorReading {
         } else if (root && isParameter(node, root.text))
           sites.push({ line, kind: 'forwarded', subject });
         else sites.push({ line, kind: 'compared', subject });
+      }
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      REVERSED.has(node.expression.name.text) &&
+      node.arguments.length === 1
+    ) {
+      const chain = chainOf(node.expression.expression);
+      const [first] = chain.expectCall?.arguments ?? [];
+      const value = first ? literalValue(first) : undefined;
+      if (chain.expectCall && !chain.negated && value !== undefined) {
+        const line =
+          sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+        const subject = collapse(node.arguments[0].getText(sf));
+        if (!Number.isInteger(value))
+          sites.push({ line, kind: 'threshold', subject, form: 'reversed' });
+        else {
+          const demands =
+            node.expression.name.text === 'toBeLessThan' ? value + 1 : value;
+          sites.push({
+            line,
+            kind: demands >= 2 ? 'counted' : 'presence',
+            demands,
+            subject,
+            form: 'reversed',
+          });
+        }
       }
     }
     ts.forEachChild(node, visit);
