@@ -3445,6 +3445,89 @@ index acd5ff5..34a5391 100644
  recorder that ran under the probe would run the suite and could rewrite the
 ~~~~
 
+## Task 13: From review pass 5: one test per case, and a claim made true
+
+Pass 5 findings 15-17. No floor moved; 3601 tests.
+
+~~~~diff
+diff --git a/tests/floors.ts b/tests/floors.ts
+index 0f35db7..69befae 100644
+--- a/tests/floors.ts
++++ b/tests/floors.ts
+@@ -15,8 +15,9 @@
+  * that grew, and `npm run floors:record` raises it. Neither direction moves
+  * on its own, so every floor is exact on every commit.
+  *
+- * Runner-neutral: vitest and Playwright both call it, so it imports neither
+- * and returns the breach as text for the caller's own `expect`:
++ * Runner-neutral: vitest calls it today and Playwright will (#446 Group 5),
++ * so it imports neither and returns the breach as text for the caller's own
++ * `expect`:
+  *
+  *     expect(floorBreach('absence-liveness/sites', sites.length)).toBeUndefined();
+  *
+diff --git a/tests/unit/floors.test.ts b/tests/unit/floors.test.ts
+index 83daa1c..2a9ae89 100644
+--- a/tests/unit/floors.test.ts
++++ b/tests/unit/floors.test.ts
+@@ -50,19 +50,27 @@ describe('floorBreach', () => {
+     expect(FLOORS_FILE).toBe('tests/floors.json');
+   });
+ 
+-  it.each([
+-    ['a fraction', 9.5],
+-    ['a negative', -1],
+-    ['NaN', Number.NaN],
+-    ['infinity', Number.POSITIVE_INFINITY],
+-  ])('refuses %s as a count, recording or not', (_, actual) => {
++  // One test per value and mode, never a loop inside one (one-test-per-case).
++  it.each(
++    (
++      [
++        ['a fraction', 9.5],
++        ['a negative', -1],
++        ['NaN', Number.NaN],
++        ['infinity', Number.POSITIVE_INFINITY],
++      ] as const
++    ).flatMap(([what, actual]) =>
++      (['judging', 'recording'] as const).map(
++        (mode) => [what, mode, actual] as const,
++      ),
++    ),
++  )('refuses %s as a count while %s', (_, mode, actual) => {
+     const dir = mkdtempSync(join(tmpdir(), 'floors-'));
+     try {
+-      const record = join(dir, 'seen.jsonl');
+-      for (const mode of [null, record])
+-        expect(
+-          floorBreach('guard/units', actual, { ...judging, record: mode }),
+-        ).toBe(`guard/units: ${actual} is not a count`);
++      const record = mode === 'recording' ? join(dir, 'seen.jsonl') : null;
++      expect(floorBreach('guard/units', actual, { ...judging, record })).toBe(
++        `guard/units: ${actual} is not a count`,
++      );
+     } finally {
+       rmSync(dir, { recursive: true, force: true });
+     }
+@@ -82,12 +90,11 @@ describe('floorBreach', () => {
+         .trimEnd()
+         .split('\n')
+         .map((line) => JSON.parse(line) as Record<string, unknown>);
+-      expect(lines.map(({ id, actual }) => [id, actual])).toEqual([
+-        ['guard/units', 12],
+-        ['guard/new', 3],
++      const here = expect.stringMatching(/^tests\/unit\/floors\.test\.ts:\d+$/);
++      expect(lines).toEqual([
++        { id: 'guard/units', actual: 12, site: here },
++        { id: 'guard/new', actual: 3, site: here },
+       ]);
+-      for (const { site } of lines)
+-        expect(site).toMatch(/^tests\/unit\/floors\.test\.ts:\d+$/);
+     } finally {
+       rmSync(dir, { recursive: true, force: true });
+     }
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/floors/m468.py`, copied from #446 Group 3's runner,
@@ -3607,5 +3690,28 @@ and the code; the matrix rows against `main()`'s branches.
     matrix rows R30 and R31 (Task 11). Recording that test first failed in
     record mode: `anchored-presence` refused `toContain` on a process's
     stderr, so each refusal is pinned whole.
+
+Three findings; the loop continues.
+
+### Pass 5 (2026-10-03, 21:20Z, tree `84b108b`)
+
+Mechanical, by `p468-pass.sh 5`: the twelve task diffs applied to
+`4d07565` equal the branch; `astro check` 0/0/0; prettier clean; unit
+3597/3597; `npm run floors:record` on the applied tree: every floor already
+matches, tree clean; matrix 6 + 31 as predicted (R30 and R31 RED), 0
+mismatches. CLEAN.
+
+Reading: `tests/floors.ts`' header and the CLAUDE.md bullet in full, and
+`tests/unit/floors.test.ts` in its final form, the last of the new code no
+earlier pass had read whole.
+
+15. `tests/floors.ts` said vitest and Playwright both call it; only vitest
+    does until #446 Group 5. Made true (Task 13).
+16. `floors.test.ts` looped the two modes, judging and recording, inside
+    each refused value: a population known before the run, inside one test,
+    which the global one-test-per-case rule forbids. Generated per value and
+    mode, eight tests (Task 13).
+17. Its record-mode test looped over the lines it wrote to check each site.
+    One assertion now holds both (Task 13).
 
 Three findings; the loop continues.
