@@ -210,12 +210,12 @@ exactly (a guard asserts the two agree).
   would leave the head with no checks, so it refuses by name and writes
   nothing. (Dependabot's next rebase brings the trigger in.)
 - **locked?** Also before writing anything, it reads `GET /branches/develop`
-  and refuses by name unless `protection.required_status_checks` names
-  `operator-review` (Unit 4), in `contexts` or in `checks`. A `contents: read`
-  token sees both (measured, run 37112752013: HTTP 200, `contexts`
-  `build-and-test`, `visual`, `closing-keywords`, and `checks` with each
-  `app_id`). So until the operator has required the lock, a rebaseline
-  captures and uploads but never commits.
+  and refuses by name unless the branch's protection lists `operator-review`
+  (Unit 4) among its required status checks, in `contexts` or in `checks`. A
+  `contents: read` token sees both (measured, run 37112752013: HTTP 200,
+  `contexts` `build-and-test`, `visual`, `closing-keywords`, and `checks`
+  with each `app_id`). So until the operator has required the lock, a
+  rebaseline captures and uploads but never commits.
 - **guard against staleness:** the PR's current head must equal the
   manifest's head SHA. If Dependabot has rebased in between, it refuses by
   name. The next capture run will handle the new head.
@@ -479,8 +479,9 @@ automatically.
 ## Review log
 
 Reviewed to zero on 2026-10-03, one pass at a time, each pass running the
-mechanical checks (prettier, line length, placeholders, cited issues exist)
-and reading the whole document.
+mechanical checks (prettier, line length, placeholders, cited issues exist,
+and from pass 22 the whole unit suite, whose guards read this file) and
+reading the whole document.
 
 | Pass | Findings |
 | --- | --- |
@@ -502,4 +503,7 @@ and reading the whole document.
 | 18 | none |
 | 19 | after decision 4 (Unit 4, measured by the #460 probe): constraints and diagram lacked the lock and Unit 2's **locked?**; threat model cited no enforcement; an unresolved author login would have failed open (now locks; logins on develop measured); Unit 2 claimed an author it does not set; `pending` was posted only after a read that could fail; the proof expected `CLEAN` where the lock makes it `BLOCKED`, and could not commit before the check is required; stale "first task measures 1.40 to 1.58"; a `null`-author test missing; three ragged lines |
 | 20 | update-branch after a rebaseline did not say the lock re-arms; the trusted half could have been gated on the relay's conclusion; no guard pinned the relay's `dismissed` trigger (dropping it would fail open); "author stays `dependabot[bot]`" read as the commit's author beside a lock keyed on it; two ragged lines |
-| 21 | none |
+| 21 | logged as none, but its checks never ran the unit suite, which reads this file: the pre-push hook's `documents only a context something in this repository can report` read the **locked?** sentence's API path as a context claimed as required, because it sat just before the protection field's name (reworded) |
+| 22 | this log's own row 21 quoted that same shape and tripped the same guard (reworded); checks now include the whole unit suite |
+| 23 | the log's own introduction still listed the checks without the unit suite |
+| 24 | none |
