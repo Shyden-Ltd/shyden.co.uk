@@ -2177,15 +2177,15 @@ describe('the drift measurement reports, and never gates (#224)', () => {
     expect(writes.length).toBeGreaterThan(1);
     // Independent of the YAML parse (#446, control c): the visual job's own
     // text, YAML comments aside, names the summary on exactly as many lines.
-    const ci = workflow('ci.yml');
-    const start = ci.search(/^ {2}visual:$/m);
+    // The job is every line after its key, up to the next line at a job's
+    // own two-space indent.
+    const lines = workflow('ci.yml').split('\n');
+    const start = lines.indexOf('  visual:');
     expect(start, 'ci.yml declares no visual job').toBeGreaterThan(-1);
-    const rest = ci.slice(start + 1);
-    const end = rest.search(/^ {2}\S/m);
-    const job = end === -1 ? rest : rest.slice(0, end);
-    expect(job.split('\n').filter(writesTheSummary)).toHaveLength(
-      writes.length,
-    );
+    const after = lines.slice(start + 1);
+    const end = after.findIndex((line) => /^ {2}\S/.test(line));
+    const job = end === -1 ? after : after.slice(0, end);
+    expect(job.filter(writesTheSummary)).toHaveLength(writes.length);
 
     const unreadable = writes.filter(
       (line) => !/tee\s+-a\s+"\$GITHUB_STEP_SUMMARY"/.test(line),

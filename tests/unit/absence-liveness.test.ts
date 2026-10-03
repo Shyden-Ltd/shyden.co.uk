@@ -340,7 +340,8 @@ describe('absence assertions prove the population they searched', () => {
         'expect.poll(t).toBe(0);',
         'expect.poll(async () => { return u.size; }).toBe(0);',
         'assertThat(v.length).toBe(0);',
-        // Not refused: a value held to 0, a polled value, and the read roots.
+        // Not refused: a value held to 0, a polled value, the two roots that
+        // are read, and an inverse.
         'assertThat(w).toBe(0);',
         'expect\n  .poll(async () => (await counters(x)).inflight)\n  .toBe(0);',
         'expect.soft(q).toEqual([]);',
