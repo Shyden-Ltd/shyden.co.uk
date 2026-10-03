@@ -21,18 +21,104 @@ import {
  */
 const CLOCK = /\bnew Date\(|\bDate\.now\(|\.getFullYear\(/;
 
+/** A view with its comments stripped, or nothing when it read nothing. */
+const readView = (view: string): string[] => {
+  const code = withoutTsComments(view);
+  return code.trim() === '' ? [] : [code];
+};
+
+/**
+ * What a date could be read in, in each `.astro` source: its code (the
+ * frontmatter, then each `<script>`) and its markup, comments stripped. A
+ * view is the whole file with the rest blanked, so one that is all blank
+ * read nothing. Kept apart so the cross-check below asks about the views the
+ * verdict judged, not about a second reading.
+ */
+const readSource = (text: string) => {
+  const code = astroCodeViews(text).flatMap(readView);
+  const markup = readView(astroTemplate(text));
+  return { code, markup, views: [...code, ...markup] };
+};
+
+/** Every view of `text` a date could be read in. */
+const viewsOf = (text: string): string[] => readSource(text).views;
+
+/**
+ * A file that plainly holds code, read as text: frontmatter opening the
+ * file, or a `<script` tag. Independent of `astroCodeViews`, so a reader
+ * gone blind to one region is caught by the file it read no code in (#446).
+ */
+const HOLDS_CODE = /^---|<script\b/;
+
+const read = () =>
+  filesUnder('src', (path) => path.endsWith('.astro')).map((path) => {
+    const text = readFileSync(path, 'utf8');
+    return { path, text, ...readSource(text) };
+  });
+
 describe('no page is rendered from the clock (#370)', () => {
   it('no .astro source reads the date, in its code or its markup', () => {
-    const sources = filesUnder('src', (path) => path.endsWith('.astro'));
-    const dated = sources.filter((path) => {
-      const text = readFileSync(path, 'utf8');
-      const code = astroCodeViews(text).map(withoutTsComments);
-      return [...code, withoutTsComments(astroTemplate(text))].some((view) =>
-        CLOCK.test(view),
-      );
-    });
-    expect(searched(dated, { of: sources, what: '.astro sources' })).toEqual(
-      [],
+    // The population is the views read, not the files opened: a reader blind
+    // to every region would open each file, find no date, and pass (#446).
+    const views = read().flatMap(({ path, views }) =>
+      views.map((view) => ({ path, view })),
     );
+    const dated = views
+      .filter(({ view }) => CLOCK.test(view))
+      .map(({ path }) => path);
+    expect(
+      searched(dated, {
+        of: views.map(({ view }) => view),
+        what: '.astro code and markup views',
+      }),
+    ).toEqual([]);
+  });
+
+  it('reads every view the sources hold, and as many as there are', () => {
+    // Measured 46 views on 2026-10-03 (#446). Stated tight, so a reader
+    // that comes back one short fails.
+    const sources = read();
+    expect(sources.flatMap(({ views }) => views).length).toBeGreaterThan(45);
+    const codeUnread = sources
+      .filter(({ text, code }) => HOLDS_CODE.test(text) && code.length === 0)
+      .map(({ path }) => path);
+    expect(
+      searched(codeUnread, { of: sources, what: '.astro sources' }),
+    ).toEqual([]);
+    const markupUnread = sources
+      .filter(({ markup }) => markup.length === 0)
+      .map(({ path }) => path);
+    expect(
+      searched(markupUnread, { of: sources, what: '.astro sources' }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    [
+      'its frontmatter',
+      '---\nconst year = new Date().getFullYear();\n---\n<p>x</p>',
+    ],
+    ['a script', '<p>x</p>\n<script>\n  const at = Date.now();\n</script>'],
+    ['its markup', '<footer>{new Date().getFullYear()}</footer>'],
+    [
+      'a year read off any date',
+      '---\nconst y = built.getFullYear();\n---\n<p>x</p>',
+    ],
+  ])('finds a date read in %s', (_where, source) => {
+    expect(viewsOf(source).filter((view) => CLOCK.test(view))).toHaveLength(1);
+  });
+
+  it('is not tripped by a date named in a comment', () => {
+    const source =
+      '---\n// was: new Date().getFullYear()\n---\n<p>{/* Date.now() */}x</p>';
+    // The markup is still read once the comment is gone, so the empty
+    // verdict is over a view, not over nothing.
+    const views = viewsOf(source);
+    expect(
+      searched(
+        views.filter((view) => CLOCK.test(view)),
+        { of: views, what: 'views of the fixture' },
+      ),
+    ).toEqual([]);
   });
 });

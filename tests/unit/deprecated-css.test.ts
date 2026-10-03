@@ -17,17 +17,26 @@ import { stylesheetCss } from './source-text';
  */
 
 /**
- * A `clip` declaration: the property where a declaration starts, in any case.
- * `clip-path`, a custom property such as `--clip`, and the `clip` keyword of
- * `overflow` are not one.
+ * A declaration: a property, a colon and a value, starting a block or
+ * following a `;`, and ended by a `;` or a `}`. A selector such as `a:hover`
+ * is ended by a `{`, so it is not one.
  */
-const CLIP_DECLARATION = /(?:^|[{;])\s*(clip\s*:[^;}]*)/gi;
+const DECLARATION = /(?:^|[{;])\s*(-{0,2}[a-z][\w-]*\s*:[^;{}]*)(?=[;}])/gi;
 
-/** Every `clip` declaration in `css`, which reaches here comment-free. */
+/** Every declaration in `css`, which reaches here comment-free. */
+const declarationsIn = (css: string): string[] =>
+  [...css.matchAll(DECLARATION)].map(([, declaration]) => declaration.trim());
+
+/**
+ * A `clip` declaration: the property itself, in any case. `clip-path`, a
+ * custom property such as `--clip`, and the `clip` keyword of `overflow` are
+ * not one.
+ */
+const CLIP = /^clip\s*:/i;
+
+/** Every `clip` declaration in `css`. */
 const clipDeclarations = (css: string): string[] =>
-  [...css.matchAll(CLIP_DECLARATION)].map(([, declaration]) =>
-    declaration.trim(),
-  );
+  declarationsIn(css).filter((declaration) => CLIP.test(declaration));
 
 /**
  * A name standing for the dialect a fixture is written in.
@@ -46,6 +55,15 @@ const stylesheetsUnder = (dir: string): Array<{ file: string; css: string }> =>
       css,
     })),
   );
+
+/**
+ * A file that plainly holds CSS, read as text: a stylesheet with a rule
+ * holding a colon, or a component with a `<style` tag. Independent of both
+ * readers, so one gone blind to a form is caught by the file it read no
+ * declaration in (#446).
+ */
+const HOLDS_CSS = (file: string): RegExp =>
+  file.endsWith('.css') ? /\{[^}]*:/ : /<style\b/;
 
 describe('no stylesheet declares the deprecated clip property (#200)', () => {
   it('reads a clip declaration however it is spelled', () => {
@@ -75,15 +93,74 @@ describe('no stylesheet declares the deprecated clip property (#200)', () => {
   });
 
   it('finds none in any stylesheet under src/', () => {
-    const sheets = stylesheetsUnder('src');
-    const findings = sheets.flatMap(({ file, css }) =>
-      clipDeclarations(css).map((declaration) => `${file}: ${declaration}`),
+    // The population is the declarations judged, not the sheets opened: a
+    // reader blind to every declaration would open each sheet and pass (#446).
+    const declarations = stylesheetsUnder('src').flatMap(({ file, css }) =>
+      declarationsIn(css).map((declaration) => ({ file, declaration })),
     );
+    const findings = declarations
+      .filter(({ declaration }) => CLIP.test(declaration))
+      .map(({ file, declaration }) => `${file}: ${declaration}`);
     expect(
       searched(findings, {
-        of: sheets.map(({ css }) => css),
-        what: 'stylesheets under src/',
+        of: declarations.map(({ declaration }) => declaration),
+        what: 'declarations under src/',
       }),
     ).toEqual([]);
+  });
+
+  it('reads every declaration the stylesheets hold, and as many as there are', () => {
+    // Measured 1170 declarations on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    const sheets = stylesheetsUnder('src');
+    expect(
+      sheets.flatMap(({ css }) => declarationsIn(css)).length,
+    ).toBeGreaterThan(1169);
+    // Read as text, independently of either reader: a file holding a
+    // `<style>` tag or a stylesheet's rule that yields no declaration is a
+    // form one of them has gone blind to.
+    const files = filesUnder('src', (path) => /\.(astro|css)$/.test(path));
+    const unread = files.filter(
+      (file) =>
+        HOLDS_CSS(file).test(readFileSync(file, 'utf8')) &&
+        !sheets.some(
+          (sheet) =>
+            sheet.file === file && declarationsIn(sheet.css).length > 0,
+        ),
+    );
+    expect(
+      searched(unread, {
+        of: files,
+        what: 'stylesheets and components under src/',
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['a stylesheet', 'case.css', '.a { clip: auto; }'],
+    [
+      'a component style',
+      'case.astro',
+      '<p>x</p>\n<style>\n  .a { clip: auto; }\n</style>',
+    ],
+    [
+      'a global style',
+      'case.astro',
+      '<p>x</p>\n<style is:global>\n  .a { clip: auto; }\n</style>',
+    ],
+    [
+      'an inline style',
+      'case.astro',
+      '<p>x</p>\n<style is:inline>\n  .a { clip: auto; }\n</style>',
+    ],
+    [
+      'the last declaration of a block',
+      'case.css',
+      '.a { color: red; clip: auto }',
+    ],
+  ])('finds one in %s', (_where, file, text) => {
+    expect(stylesheetCss(file, text).flatMap(clipDeclarations)).toEqual([
+      'clip: auto',
+    ]);
   });
 });

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { expectNothingFound } from './spec-scan';
+import {
+  declarationsRead,
+  expectNothingFound,
+  type Reading,
+} from './spec-scan';
 import ts from 'typescript';
 import { parseSource } from './ast';
 import {
@@ -177,8 +181,10 @@ function staleTagMessage(file: string, decl: Declaration): string {
  * describe block can prove every branch of it red and green on tiny synthetic
  * input, not just trust the real corpus to happen to exercise all of them. The
  * text is the file as it is on disk: the parser skips comments itself, and a
- * line counted in stripped text is not the line a reader opens. */
-function analyze(file: string, text: string): string[] {
+ * line counted in stripped text is not the line a reader opens. Every test
+ * and group it read is judged, for a tag it lacks or one gone stale, so each
+ * is named in `judged`. */
+function read(file: string, text: string): Reading {
   const sf = parseSource(text, file);
   const declarations = declarationsIn(sf);
 
@@ -221,12 +227,19 @@ function analyze(file: string, text: string): string[] {
       findings.push(staleTagMessage(file, decl));
   }
 
-  return findings;
+  const judged = declarations.map((decl) => `${file}:${decl.line}`);
+  return { judged, findings };
 }
+
+/** The findings alone, which is all the synthetic cases below ask about. */
+const analyze = (file: string, text: string): readonly string[] =>
+  read(file, text).findings;
 
 describe('a real phone cannot resize its own screen', () => {
   it('every test that resizes the viewport is tagged @emulated-viewport, none the phone runs reads it, and no tag is stale', () => {
-    expectNothingFound(analyze);
+    // Measured 771 tests and groups read on 2026-10-03 (#446). Stated tight,
+    // so a reader that comes back one short fails.
+    expectNothingFound(read, declarationsRead('tests and groups read', 770));
   });
 });
 

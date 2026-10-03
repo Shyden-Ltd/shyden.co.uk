@@ -133,23 +133,51 @@ const PROVES_NOT_EMPTY = new Set(['toHaveCount', 'toBeVisible']);
 /** Calls that pick one element, so a visible one proves the list has one. */
 const PICKS_ONE = new Set(['first', 'last', 'nth']);
 
-/** A `for (… of await <locator>.all())` loop, when `call` is its `.all()`. */
+/** An argument-free `<locator>.all()`: a locator's whole list. */
+const isAllCall = (
+  call: ts.CallExpression,
+): call is ts.CallExpression & { expression: ts.PropertyAccessExpression } =>
+  ts.isPropertyAccessExpression(call.expression) &&
+  call.expression.name.text === 'all' &&
+  call.arguments.length === 0;
+
+/**
+ * The `for (… of …)` loop over `call`'s list, when it is one: `of await
+ * x.all()`, or the list spread into an array the loop walks, `of [a,
+ * ...(await x.all()), b]` (#446: `formTextsUnderAA` loops that way, and a
+ * reader that knew only the first form counted it as no loop at all).
+ */
 function loopOver(
   call: ts.CallExpression,
 ): { loop: ts.ForOfStatement; locator: ts.Expression } | undefined {
-  const { expression: callee, parent: awaited } = call;
+  if (!isAllCall(call) || !ts.isAwaitExpression(call.parent)) return undefined;
+  let iterable: ts.Node = call.parent;
+  while (ts.isParenthesizedExpression(iterable.parent))
+    iterable = iterable.parent;
   if (
-    !ts.isPropertyAccessExpression(callee) ||
-    callee.name.text !== 'all' ||
-    call.arguments.length > 0 ||
-    !ts.isAwaitExpression(awaited)
+    ts.isSpreadElement(iterable.parent) &&
+    ts.isArrayLiteralExpression(iterable.parent.parent)
   )
-    return undefined;
-  const loop = awaited.parent;
-  return ts.isForOfStatement(loop)
-    ? { loop, locator: callee.expression }
+    iterable = iterable.parent.parent;
+  const loop = iterable.parent;
+  return ts.isForOfStatement(loop) && loop.expression === iterable
+    ? { loop, locator: call.expression.expression }
     : undefined;
 }
+
+/**
+ * Every `.all()` list `source` takes that is not walked by a loop
+ * `loopOver` reads, by its locator. Refused by name, never skipped: a list
+ * this reader cannot follow is a loop it cannot judge (#446).
+ */
+export const unfollowedLists = (source: string): string[] =>
+  callsIn(parseSource(source))
+    .filter(isAllCall)
+    .filter((call) => loopOver(call) === undefined)
+    .map((call) => subjectOf(call.expression.expression));
+
+/** `.all()`, as text: independent of the parse tree. */
+const ALL_CALL = /\.all\(\s*\)/g;
 
 /**
  * The locator `call` proves is not empty -- `expect(x).toHaveCount(n)`, or
@@ -268,13 +296,45 @@ const spec = (...lines: string[]): string => lines.join('\n');
 describe('a locator list cannot be looped unproved', () => {
   it('sees the loops it is scanning for', () => {
     // The detector's own liveness. Zero unproved loops means nothing if the
-    // regex found zero loops.
-    // Measured 7 locator loops found on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
+    // reader found zero loops.
+    // Measured 8 locator loops found on 2026-10-03 (#446), 7 before the
+    // spread form was read. Stated tight, so a reader that comes back one
+    // short fails.
     expect(
       SCANNED.flatMap((path) => locatorLoops(readFileSync(path, 'utf8')))
         .length,
-    ).toBeGreaterThanOrEqual(7);
+    ).toBeGreaterThan(7);
+  });
+
+  it('follows every .all() list it meets into a loop it can judge', () => {
+    // Fail-closed: a list taken any other way is named, never skipped.
+    const calls = SCANNED.flatMap((path) =>
+      (withoutTsComments(readFileSync(path, 'utf8')).match(ALL_CALL) ?? []).map(
+        (call) => `${path}: ${call}`,
+      ),
+    );
+    const unfollowed = SCANNED.flatMap((path) =>
+      unfollowedLists(readFileSync(path, 'utf8')).map(
+        (subject) => `${path}: ${subject}`,
+      ),
+    );
+    expect(searched(unfollowed, { of: calls, what: '.all() calls' })).toEqual(
+      [],
+    );
+  });
+
+  it('reads as many .all() calls as the text holds, file by file', () => {
+    // Two readers, one parse tree and one text scan: a file where they
+    // disagree holds a form the tree reader is blind to (#446).
+    const disagree = SCANNED.filter((path) => {
+      const source = readFileSync(path, 'utf8');
+      const text = withoutTsComments(source).match(ALL_CALL)?.length ?? 0;
+      const tree = callsIn(parseSource(source)).filter(isAllCall).length;
+      return text !== tree;
+    });
+    expect(
+      searched(disagree, { of: SCANNED, what: 'scanned e2e specs' }),
+    ).toEqual([]);
   });
 
   it('catches a loop with nothing proving the list is not empty', () => {
@@ -490,14 +550,36 @@ describe('a locator list cannot be looped unproved', () => {
   });
 
   it('every .all() loop proves its locator is not empty first', () => {
-    const unproved = SCANNED.flatMap((path) =>
-      locatorLoops(readFileSync(path, 'utf8'))
-        .filter((loop) => !loop.proved)
-        .map((loop) => `${path}: ${loop.subject}`),
+    // The population is the loops judged, not the files opened: a reader
+    // blind to every loop would open each file and pass (#446).
+    const loops = SCANNED.flatMap((path) =>
+      locatorLoops(readFileSync(path, 'utf8')).map((loop) => ({ path, loop })),
     );
+    const unproved = loops
+      .filter(({ loop }) => !loop.proved)
+      .map(({ path, loop }) => `${path}: ${loop.subject}`);
     expect(
-      searched(unproved, { of: SCANNED, what: 'scanned e2e specs' }),
+      searched(unproved, {
+        of: loops.map(({ path, loop }) => `${path}: ${loop.subject}`),
+        what: 'locator loops',
+      }),
       unproved.join('\n'),
     ).toEqual([]);
+  });
+
+  it('reads a list spread into the array a loop walks', () => {
+    expect(
+      locatorLoops(
+        "test('x', async () => {\n  for (const a of [first, ...(await links.all()), last]) f(a);\n});",
+      ),
+    ).toEqual([{ subject: 'links', proved: false }]);
+  });
+
+  it('names a list it cannot follow into a loop', () => {
+    expect(
+      unfollowedLists(
+        "test('x', async () => {\n  const items = await links.all();\n  for (const a of items) f(a);\n  (await btns.all()).forEach(f);\n});",
+      ),
+    ).toEqual(['links', 'btns']);
   });
 });

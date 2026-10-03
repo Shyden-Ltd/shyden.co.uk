@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { expectNothingFound } from './spec-scan';
-import { readFileSync } from 'node:fs';
+import { expectNothingFound, type Reading } from './spec-scan';
 import ts from 'typescript';
 import { parseSource } from './ast';
-import { specFilesUnder } from '../source-files';
 import { callsIn, lineOf } from '../playwright-declarations';
+import { withoutTsComments } from './source-text';
 
 /**
  * A download's bytes are read in ONE place: `downloadText` (tests/e2e/helpers.ts).
@@ -46,36 +45,51 @@ const insideHome = (node: ts.Node): boolean => {
   return false;
 };
 
-/** The whole guard as one pure function of (path, source text) -> finding messages. */
-function analyze(file: string, text: string): string[] {
+/** A read of a download's bytes: the home's own call, or a direct reader's. */
+const readsBytes = (call: ts.CallExpression): boolean =>
+  calleeName(call) === HOME ||
+  (DIRECT_READERS.includes(calleeName(call) ?? '') &&
+    ts.isPropertyAccessExpression(call.expression));
+
+/**
+ * The same reads, as text: a call to the home or to a direct reader, comments
+ * stripped. Independent of the parse tree, so a reader gone blind to a form
+ * is caught by the file it found nothing in (#446).
+ */
+const BYTE_READ = /\bdownloadText\s*\(|\.(?:createReadStream|saveAs)\s*\(/;
+
+/** The whole guard as one pure function of (path, source text): every byte read judged, and the ones outside the home. */
+function read(file: string, text: string): Reading {
   const sf = parseSource(text, file);
-  return callsIn(sf)
-    .filter((call) => DIRECT_READERS.includes(calleeName(call) ?? ''))
-    .filter((call) => ts.isPropertyAccessExpression(call.expression))
+  const reads = callsIn(sf).filter(readsBytes);
+  const findings = reads
+    .filter((call) => calleeName(call) !== HOME)
     .filter((call) => !insideHome(call))
     .map(
       (call) =>
         `${file}:${lineOf(sf, call)} reads a download's bytes with \`${calleeName(call)}\` ` +
         `instead of \`${HOME}\`, the only reader that works on the real phone (#308)`,
     );
+  const judged = reads.map((call) => `${file}:${lineOf(sf, call)}`);
+  return { judged, findings };
 }
+
+/** The findings alone, which is all the synthetic cases below ask about. */
+const analyze = (file: string, text: string): readonly string[] =>
+  read(file, text).findings;
 
 describe('a download’s bytes are read only through downloadText', () => {
   it('no spec reads them any other way', () => {
-    expectNothingFound(analyze);
-  });
-
-  // Guards the guard: a scan that found no reads at all -- because the helper was renamed, or
-  // `tests/e2e` moved -- would otherwise report a clean sweep it never performed.
-  it('is actually looking at specs that read bytes', () => {
-    const readers = specFilesUnder('tests/e2e').filter((file) =>
-      callsIn(parseSource(readFileSync(file, 'utf8'), file)).some(
-        (call) => calleeName(call) === HOME,
-      ),
-    );
-    // Measured 2 specs that read downloaded bytes on 2026-10-03 (#446). Stated
-    // tight, so a reader that comes back one short fails.
-    expect(readers.length).toBeGreaterThan(1);
+    // Guards the guard: a scan that found no reads at all -- because the
+    // helper was renamed, or `tests/e2e` moved -- would otherwise report a
+    // clean sweep it never performed. Counted in reads, not in the files that
+    // hold them: measured 8 on 2026-10-03 (#446), and stated tight, so a
+    // reader that comes back one short fails.
+    expectNothingFound(read, {
+      what: 'download byte reads',
+      moreThan: 7,
+      carries: (_file, source) => BYTE_READ.test(withoutTsComments(source)),
+    });
   });
 });
 

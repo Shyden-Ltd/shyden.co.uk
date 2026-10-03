@@ -319,14 +319,42 @@ test.describe('every site string reaches a built page', () => {
  * than listed, so a page added later is covered the day it is built.
  */
 test.describe('no built page names the dissolved company (#370)', () => {
+  // Decoded first: raw HTML serves the old registration line as
+  // `England &amp; Wales`, and the forms are written as a reader sees them.
+  const read = () =>
+    filesUnder('dist', (path) => /\.html$/.test(path)).map((path) => {
+      const html = readFileSync(path, 'utf8');
+      return { path, html, text: renderedText(html) };
+    });
+
   test('every page in every locale', () => {
-    const pages = filesUnder('dist', (path) => /\.html$/.test(path));
-    // Decoded first: raw HTML serves the old registration line as
-    // `England &amp; Wales`, and the forms are written as a reader sees them.
-    const naming = pages.flatMap((path) => {
-      const found = dissolvedIn(renderedText(readFileSync(path, 'utf8')));
+    // The population is the text each page was read as, not the paths
+    // opened: a reader that returned nothing would open every page and pass
+    // (#446).
+    const pages = read();
+    const naming = pages.flatMap(({ path, text }) => {
+      const found = dissolvedIn(text);
       return found.length > 0 ? [`${path}: ${found.join(', ')}`] : [];
     });
-    expect(searched(naming, { of: pages, what: 'built pages' })).toEqual([]);
+    expect(
+      searched(naming, {
+        of: pages.map(({ text }) => text),
+        what: 'built pages read',
+      }),
+    ).toEqual([]);
+  });
+
+  test('reads every built page, and as many as there are', () => {
+    // Measured 16 built pages on 2026-10-03 (#446): five locales of three
+    // pages, and the 404. Stated tight, so a build or a walk that comes back
+    // one short fails.
+    const pages = read();
+    expect(pages.length).toBeGreaterThan(15);
+    // A page whose HTML has a body and whose text read as nothing is a page
+    // the reader is blind to.
+    const blank = pages
+      .filter(({ html, text }) => /<body\b/i.test(html) && text.trim() === '')
+      .map(({ path }) => path);
+    expect(searched(blank, { of: pages, what: 'built pages' })).toEqual([]);
   });
 });

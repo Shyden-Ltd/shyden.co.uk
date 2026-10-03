@@ -66,6 +66,20 @@ describe('dissolvedIn: every form the dissolved company was printed in', () => {
     expect(dissolvedIn(renderedText(served))).not.toEqual([]);
   });
 
+  it.each([
+    ['a title', '<head><title>Shyden Ltd</title></head>'],
+    ['a meta tag', '<meta name="description" content="Company No. 17110487">'],
+    [
+      'visible text',
+      '<footer><p>Registered office: Shelton Street</p></footer>',
+    ],
+    ['text served escaped', '<p>England &amp; Wales</p>'],
+  ])('catches a form in %s of a built page', (_where, html) => {
+    // The all-pages scan reads the whole served HTML, so a name in the head is
+    // read like one in the body (#446).
+    expect(dissolvedIn(renderedText(html))).not.toEqual([]);
+  });
+
   it('reads Ltd as a word, not as letters inside one', () => {
     expect(dissolvedIn('Altdorf and Ltda.')).toEqual([]);
     expect(dissolvedIn('Shyden Ltd.')).toEqual(['Ltd']);

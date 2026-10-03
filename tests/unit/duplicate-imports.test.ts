@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { filesUnder, searched } from '../source-files';
 import { parseSource } from './ast';
-import { astroCodeViews } from './source-text';
+import { astroCodeViews, withoutTsComments } from './source-text';
 
 /**
  * No module imports the same specifier twice (#390 F59).
@@ -23,22 +23,31 @@ import { astroCodeViews } from './source-text';
  * Read from the AST, never the text: an import spelled inside a fixture string
  * is not an import, and a multi-line import is one declaration.
  */
-function repeatedImports(sf: ts.SourceFile): string[] {
+function readImports(sf: ts.SourceFile): {
+  read: string[];
+  repeated: string[];
+} {
+  const read: string[] = [];
   const seen = new Map<string, number>();
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     const clause = statement.importClause;
     if (clause === undefined) continue;
-    if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings))
-      continue;
     const specifier = moduleOf(
       (statement.moduleSpecifier as ts.StringLiteral).text,
     );
+    // Read, and judged allowed: see the namespace form above.
+    if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+      read.push(`* as ${specifier}`);
+      continue;
+    }
     const typeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
     const key = `${typeOnly ? 'type ' : ''}${specifier}`;
+    read.push(key);
     seen.set(key, (seen.get(key) ?? 0) + 1);
   }
-  return [...seen].filter(([, n]) => n > 1).map(([key]) => key);
+  const repeated = [...seen].filter(([, n]) => n > 1).map(([key]) => key);
+  return { read, repeated };
 }
 
 /**
@@ -50,19 +59,38 @@ function moduleOf(specifier: string): string {
 }
 
 const repeatsIn = (text: string, file = 'case.ts'): string[] =>
-  repeatedImports(parseSource(text, file));
+  readImports(parseSource(text, file)).repeated;
 
 /** Each module the file holds: an `.astro` file's frontmatter and scripts are separate programs. */
 function programsOf(path: string, text: string): string[] {
   return path.endsWith('.astro') ? astroCodeViews(text) : [text];
 }
 
-const fileRepeats = (path: string, text: string): string[] =>
-  programsOf(path, text).flatMap((program) =>
-    repeatedImports(parseSource(program, path)),
+/** Every import a file's programs declare with bindings, each judged, and the modules among them named twice. */
+const fileImports = (
+  path: string,
+  text: string,
+): { read: string[]; repeated: string[] } => {
+  const readings = programsOf(path, text).map((program) =>
+    readImports(parseSource(program, path)),
   );
+  return {
+    read: readings.flatMap(({ read }) => read),
+    repeated: readings.flatMap(({ repeated }) => repeated),
+  };
+};
 
-describe('repeatedImports reads declarations, not text', () => {
+const fileRepeats = (path: string, text: string): string[] =>
+  fileImports(path, text).repeated;
+
+/**
+ * An import with bindings, read as text with comments stripped: independent
+ * of the parse tree, so a reader gone blind to a form is caught by the file
+ * it read no import in (#446).
+ */
+const IMPORTS = /^\s*import\s+(?!['"])/m;
+
+describe('readImports reads declarations, not text', () => {
   it('names a module imported twice by name', () => {
     expect(
       repeatsIn("import { a } from './m';\nimport { b } from './m';\n"),
@@ -138,17 +166,45 @@ describe('repeatedImports reads declarations, not text', () => {
 });
 
 describe('no source imports one module twice (#390 F59)', () => {
+  const scan = () =>
+    ['src', 'scripts', 'tests']
+      .flatMap((dir) =>
+        filesUnder(dir, (path) => /\.(astro|ts|mjs|js)$/.test(path)),
+      )
+      .map((path) => {
+        const text = readFileSync(path, 'utf8');
+        return { path, text, ...fileImports(path, text) };
+      });
+
   it('src, scripts and tests each import a module once', () => {
-    const sources = ['src', 'scripts', 'tests'].flatMap((dir) =>
-      filesUnder(dir, (path) => /\.(astro|ts|mjs|js)$/.test(path)),
+    // The population is the imports judged, not the files opened: a reader
+    // blind to every declaration would open each file and pass (#446).
+    const sources = scan();
+    const repeated = sources.flatMap(({ path, repeated }) =>
+      repeated.map((specifier) => `${path}: ${specifier}`),
     );
-    const repeated = sources.flatMap((path) =>
-      fileRepeats(path, readFileSync(path, 'utf8')).map(
-        (specifier) => `${path}: ${specifier}`,
-      ),
-    );
-    expect(searched(repeated, { of: sources, what: 'source files' })).toEqual(
-      [],
-    );
+    expect(
+      searched(repeated, {
+        of: sources.flatMap(({ read }) => read),
+        what: 'imports read',
+      }),
+    ).toEqual([]);
+  });
+
+  it('reads every import the sources declare, and as many as there are', () => {
+    // Measured 1512 imports on 2026-10-03 (#446). Stated tight, so a reader
+    // that comes back one short fails.
+    const sources = scan();
+    expect(sources.flatMap(({ read }) => read).length).toBeGreaterThan(1511);
+    const unread = sources
+      .filter(
+        ({ path, text, read }) =>
+          read.length === 0 &&
+          programsOf(path, text).some((program) =>
+            IMPORTS.test(withoutTsComments(program)),
+          ),
+      )
+      .map(({ path }) => path);
+    expect(searched(unread, { of: sources, what: 'source files' })).toEqual([]);
   });
 });

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { expectNothingFound } from './spec-scan';
+import {
+  declarationsRead,
+  expectNothingFound,
+  type Reading,
+} from './spec-scan';
 import ts from 'typescript';
 import { parseSource } from './ast';
 import { declarationsIn, type Declaration } from '../playwright-declarations';
@@ -77,12 +81,11 @@ function commentBlockAbove(sf: ts.SourceFile, decl: Declaration): string[] {
 const headerOf = (sf: ts.SourceFile, decl: Declaration): string =>
   sf.text.slice(decl.call.getStart(sf), decl.body.getStart(sf));
 
-export function findUnreferencedParkedTests(
-  file: string,
-  source: string,
-): string[] {
+/** Every test and group read, each judged parked or not, and the parked ones naming no issue. */
+function readParkedTests(file: string, source: string): Reading {
   const sf = parseSource(source, file);
-  return declarationsIn(sf)
+  const declarations = declarationsIn(sf);
+  const findings = declarations
     .filter(({ modifier }) => modifier === 'fixme' || modifier === 'skip')
     .filter(
       (decl) =>
@@ -98,7 +101,14 @@ export function findUnreferencedParkedTests(
         'because a comment claimed "tracked, not hidden" and no such ticket ' +
         'existed, while the product really did overflow the fold.',
     );
+  const judged = declarations.map((decl) => `${file}:${decl.line}`);
+  return { judged, findings };
 }
+
+export const findUnreferencedParkedTests = (
+  file: string,
+  source: string,
+): readonly string[] => readParkedTests(file, source).findings;
 
 describe('parked tests must name an issue', () => {
   const scan = (source: string) =>
@@ -243,6 +253,11 @@ describe('parked tests must name an issue', () => {
   });
 
   it('the e2e corpus parks nothing without naming an issue', () => {
-    expectNothingFound(findUnreferencedParkedTests);
+    // Measured 771 tests and groups read on 2026-10-03 (#446). Stated tight,
+    // so a reader that comes back one short fails.
+    expectNothingFound(
+      readParkedTests,
+      declarationsRead('tests and groups read', 770),
+    );
   });
 });

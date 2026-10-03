@@ -38,6 +38,7 @@ import { parseFile } from './ast';
 import { declarationsIn } from '../playwright-declarations';
 import { REQUIRED_CHECKS } from '../../scripts/deploy-gate.mjs';
 import { localImage } from '../../scripts/playwright-image.mjs';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
 
 /**
  * The plain `test(...)` declarations `spec` makes, read by the parser. A test
@@ -107,8 +108,18 @@ const onBlock = (name: string) =>
 const workflowFileNames = (): string[] =>
   nonEmpty(readdirSync(WORKFLOWS), `workflow files in ${WORKFLOWS}`);
 
-const workflowYamlNames = (): string[] =>
-  workflowFileNames().filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
+const isYaml = (file: string): boolean =>
+  file.endsWith('.yml') || file.endsWith('.yaml');
+
+const workflowYamlNames = (): string[] => workflowFileNames().filter(isYaml);
+
+/**
+ * Every workflow file `raw` names, comments included: in a workflow a
+ * comment explaining the pipeline is part of what is checked (`ci.yml` once
+ * explained itself in terms of a deleted `deploy.yml`).
+ */
+const workflowRefs = (raw: string): string[] =>
+  [...raw.matchAll(/\b([\w.-]+\.ya?ml)\b/g)].map(([, ref]) => ref);
 
 /** What a workflow calls itself: the Actions UI, and `github.workflow`. */
 const workflowName = (file: string): string => {
@@ -1027,22 +1038,74 @@ describe('the deploy pipeline runs what it claims to', () => {
       join('.github', name),
       name,
     ];
-    const dangling: string[] = [];
-
-    const workflows = workflowFileNames();
-    for (const file of workflows) {
-      if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
-      const raw = readFileSync(join(WORKFLOWS, file), 'utf8');
-      for (const [, ref] of raw.matchAll(/\b([\w.-]+\.ya?ml)\b/g)) {
-        if (!candidates(ref).some((p) => existsSync(p))) {
-          dangling.push(`${file} → ${ref}`);
-        }
-      }
-    }
-
+    // The population is the references judged, not the files opened: a
+    // reader blind to every reference would open each workflow and pass
+    // (#446). And a file that is not YAML is refused by name, never skipped:
+    // its `ref` is undefined.
+    const refs = workflowFileNames().flatMap(
+      (file): Array<{ file: string; ref: string | undefined }> =>
+        isYaml(file)
+          ? workflowRefs(readFileSync(join(WORKFLOWS, file), 'utf8')).map(
+              (ref) => ({ file, ref }),
+            )
+          : [{ file, ref: undefined }],
+    );
+    const dangling = refs
+      .filter(
+        ({ ref }) =>
+          ref === undefined || !candidates(ref).some((p) => existsSync(p)),
+      )
+      .map(({ file, ref }) =>
+        ref === undefined ? `${file}: not a workflow` : `${file} → ${ref}`,
+      );
     expect(
-      searched(dangling, { of: workflows, what: 'workflow files' }),
+      searched(dangling, {
+        of: refs.map(({ file, ref }) =>
+          ref === undefined ? file : `${file} → ${ref}`,
+        ),
+        what: 'workflow file references',
+      }),
     ).toEqual([]);
+  });
+
+  it('reads every workflow file reference, and as many as there are', () => {
+    // Measured 19 references on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    const files = workflowYamlNames();
+    const read = files.map((file) => ({
+      file,
+      refs: workflowRefs(readFileSync(join(WORKFLOWS, file), 'utf8')),
+    }));
+    expect(read.flatMap(({ refs }) => refs).length).toBeGreaterThan(18);
+    // Cross-checked against the parsed document: every workflow file a
+    // value names once YAML has unquoted, unescaped and unfolded it must be
+    // among what the raw scan read, or the raw text spells it in a way the
+    // scan cannot see. The pattern's own forms are planted below.
+    const missed = read.flatMap(({ file, refs }) =>
+      stringLeaves(parseCleanYaml(workflow(file), file))
+        .flatMap(([, value]) => workflowRefs(value))
+        .filter((ref) => !refs.includes(ref))
+        .map((ref) => `${file} → ${ref}`),
+    );
+    expect(searched(missed, { of: files, what: 'workflow files' })).toEqual([]);
+  });
+
+  it.each([
+    ['a comment', '# was deploy.yml\non: push\n'],
+    [
+      'a reusable workflow',
+      'jobs:\n  a:\n    uses: ./.github/workflows/deploy.yml\n',
+    ],
+    [
+      'a quoted value',
+      "on:\n  workflow_run:\n    workflows: ['deploy.yaml']\n",
+    ],
+    [
+      'a script',
+      'jobs:\n  a:\n    steps:\n      - run: gh workflow run deploy.yml\n',
+    ],
+  ])('reads a workflow file named in %s', (_where, raw) => {
+    expect(workflowRefs(raw)).toHaveLength(1);
   });
 
   // Production was verified by `curl`: status codes and grepping fetched HTML.

@@ -110,6 +110,43 @@ fail-closed reading, and a planted construct in every form it takes.
 `pipeline-wiring.test.ts:1044` also skips a file that is not YAML with a
 silent `continue`. Appendix A gives each site's status.
 
+## Group 2a: construct guards, done
+
+The 9 sites above that judge a construct while counting files now count what
+they judge (#446 Group 2a, plan
+`docs/superpowers/plans/2026-10-03-guard-audit-group-2a.md`). Each verdict's
+population is the judged unit, the walk that made the verdict supplies it, and a
+floor at measured − 1, an independent cross-check and the construct's planted
+forms sit beside it:
+
+| Guard | Judged unit | Measured | Cross-check |
+| --- | --- | --- | --- |
+| `spec-scan.ts` (isolated-context, viewport, parked) | tests and groups read | 638, 771, 771 | `declaresTests`, text against the parse tree |
+| `spec-scan.ts` (`download-readers`) | download byte reads | 8 | a text scan for the three readers |
+| `spec-scan.ts` (`capture-after-assertion`) | evidence captures | 143 | `shoot` calls in the parse tree |
+| `no-dated-render` | code and markup views | 46 | `HOLDS_CODE`, frontmatter or a `<script` tag |
+| `deprecated-css` | declarations | 1170 | `HOLDS_CSS`, a rule or a `<style` tag |
+| `duplicate-imports` | imports read | 1512 | `IMPORTS`, a line opening an import |
+| `event-collectors` | locator loops | 8 | `.all()` in the text against the tree, per file |
+| `pipeline-wiring` dangling refs | workflow file references | 19 | the parsed document's string values |
+| `script-entry` argv / load-time | `process.argv` reads / statements | 10 / 313 | the text count / the statement filter |
+| `copy-reaches-a-page` dissolved | built pages read | 16 | a page with a body that read as blank |
+
+Two forms the code writes were invisible before: `formTextsUnderAA` loops a
+spread `.all()` list, which `event-collectors` counted as no loop (7 loops, really 8),
+and `script-entry` saw `process.argv[1]` only by index, never destructured,
+sliced from 1, read with `.at(1)` or passed on whole. Each reader now names
+what it cannot classify instead of skipping it, and `pipeline-wiring` names a
+file in the workflows directory that is not YAML instead of `continue`.
+
+The mutation matrix ran 52 rows, all as predicted: 16 on `develop`, where the
+blinded guard stayed GREEN (so the gap was real, except the viewport guard,
+whose orphan findings already caught a reader blind to every declaration), and
+36 on the new tree, where each one turned a guard RED. Twelve of those prove each
+cross-check alone, with its floor switched off. Appendices A and B below are the
+census at `6d07d37`, before Group 2a. `download-readers.test.ts:78`'s
+file-level floor in Appendix B is gone, replaced by the byte-read floor above.
+
 ## Group 3: plain counts, next
 
 9 `searched` calls pass a number (`text.length`, `result.scanned`,
@@ -159,7 +196,7 @@ on macOS is not the one CI reads.
 | `e2e/copy-reaches-a-page.spec.ts:291` | ${locale}: no defined copy renders nowhere | `defined` | `missing` | loop-built | to read |
 | `e2e/copy-reaches-a-page.spec.ts:295` | ${locale}: no defined copy renders nowhere | `defined` | `wronglyAllowed` | loop-built | to read |
 | `e2e/copy-reaches-a-page.spec.ts:305` | ${locale}: no defined copy renders nowhere | `[...seen]` | `phantom` | findings drawn from it | sound at one hop: findings are built from the population |
-| `e2e/copy-reaches-a-page.spec.ts:330` | every page in every locale | `pages` | `naming` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `e2e/copy-reaches-a-page.spec.ts:330` | every page in every locale | `pages` | `naming` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `e2e/disabled-controls.spec.ts:280` | (module level) | `reachable.map((a) => a.label)` | `reachable` | findings drawn from it | sound at one hop: findings are built from the population |
 | `e2e/disabled-controls.spec.ts:314` | (module level) | `painted.map((a) => a.label)` | `painted` | findings drawn from it | sound at one hop: findings are built from the population |
 | `e2e/disabled-controls.spec.ts:393` | (module level) | `seen.map((r) => r.label)` | `seen` | findings drawn from it | sound at one hop: findings are built from the population |
@@ -241,13 +278,13 @@ on macOS is not the one CI reads.
 | `unit/dead-copy.test.ts:121` | the site-wide copy defines nothing that no page renders | `groups` | `unused` | loop-built | to read |
 | `unit/dependabot-labels.test.ts:58` | come from the parsed document, so a comment cannot add one | `declaredLabels(withComment)` | `declaredLabels(withComment).filter((nam…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/dependabot-labels.test.ts:143` | runs inside ${REQUIRED_JOB} or a job it stands for, the context branc… | `runs` | `runs.filter((run) => run.includes('scri…` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/deprecated-css.test.ts:83` | finds none in any stylesheet under src/ | `sheets.map(({ css }) => css)` | `findings` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/deprecated-css.test.ts:83` | finds none in any stylesheet under src/ | `sheets.map(({ css }) => css)` | `findings` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/device-tool-homes.test.ts:38` | reads every call site through the one home | `files` | `spawning` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/device-tool-homes.test.ts:68` | only scripts/adb.mjs decides which listed device is ready | `files` | `reading` | file-level | sound: judges the unit it counts |
-| `unit/duplicate-imports.test.ts:150` | src, scripts and tests each import a module once | `sources` | `repeated` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/duplicate-imports.test.ts:150` | src, scripts and tests each import a module once | `sources` | `repeated` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/duplication.test.ts:126` | finds no cross-file duplicate that has not been given a verdict | `DECLARATIONS` | `findings` | loop-built | to read |
 | `unit/duplication.test.ts:139` | carries no verdict for a pair that no longer exists | `recorded` | `recorded.filter((key) => !live.has(key))` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/event-collectors.test.ts:499` | every .all() loop proves its locator is not empty first | `SCANNED` | `unproved` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/event-collectors.test.ts:499` | every .all() loop proves its locator is not empty first | `SCANNED` | `unproved` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/evidence-page.test.ts:1064` | never deletes a directory the operator was asked to keep | `deletions.length` | `deletions` | count | to read |
 | `unit/evidence-page.test.ts:1247` | has no consumer spelling an evidence filename for itself | `consumers` | `respellings` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/evidence-page.test.ts:1586` | emits only media references the artifact serves | `srcs` | `unservable` | file-level | sound: judges the unit it counts |
@@ -286,7 +323,7 @@ on macOS is not the one CI reads.
 | `unit/message-parity.test.ts:173` | %s fills the slots English fills, in every string | `ENGLISH.map(([path]) => path)` | `differing` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/message-parity.test.ts:196` | %s offers every choice of sentence English offers | `choosing.map(([path]) => path)` | `differing` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/message-parity.test.ts:237` | every plural offers exactly the forms its language has | `plurals.map(({ where }) => where)` | `wrong` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/no-dated-render.test.ts:34` | no .astro source reads the date, in its code or its markup | `sources` | `dated` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/no-dated-render.test.ts:34` | no .astro source reads the date, in its code or its markup | `sources` | `dated` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/one-test-per-case.test.ts:282` | loops no known population inside a test | `tests` | `sites` | loop-built | to read |
 | `unit/one-test-per-case.test.ts:295` | reads the tests every spec declares, and as many as there are | `specDirs().flatMap(tsFilesUnder)` | `unread` | loop-built | to read |
 | `unit/organisation-name.test.ts:61` | only the one historic fixture outside the dated docs | `files` | `hits.filter((hit) => !KEPT.includes(hit…` | file-level | sound: judges the unit it counts |
@@ -299,7 +336,7 @@ on macOS is not the one CI reads.
 | `unit/pipeline-wiring.test.ts:649` | no job that deploys or verifies prod reads a secret meant for dev (#2… | `prodJobs.map(({ where }) => where)` | `leaks` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:935` | documents only a context something in this repository can report | `claims.map(({ context }) => context)` | `findings` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:967` | never calls a deploy a release | `deploys` | `findings` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/pipeline-wiring.test.ts:1044` | no workflow names a workflow file that does not exist | `workflows` | `dangling` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/pipeline-wiring.test.ts:1044` | no workflow names a workflow file that does not exist | `workflows` | `dangling` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/pipeline-wiring.test.ts:1171` | is not bypassed by any workflow calling Playwright directly | `workflowFileNames()` | `bypasses.map(({ file, line }) => `${fil…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/pipeline-wiring.test.ts:1224` | takes the image the baselines are captured in from one selector | `workflows` | `named` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/pipeline-wiring.test.ts:1354` | no artifact capture in any workflow is set to ignore | `steps` | `silent` | findings drawn from it | sound at one hop: findings are built from the population |
@@ -339,9 +376,9 @@ on macOS is not the one CI reads.
 | `unit/scoped-classes.test.ts:266` | can read every class those files write | `all.flatMap(({ read }) => read)` | `unreadable` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/scratch-git-home.test.ts:79` | no call anywhere else hands git a cwd | `calls` | `calls .filter((call) => call.cwd && cal…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/script-entry.test.ts:649` | reads every file under scripts/ | `files` | `unread` | file-level | sound: judges the unit it counts |
-| `unit/script-entry.test.ts:656` | never reads process.argv[1] | `modules` | `reads` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/script-entry.test.ts:656` | never reads process.argv[1] | `modules` | `reads` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/script-entry.test.ts:663` | decides on import.meta.main alone | `decisions` | `wrong` | findings drawn from it | sound at one hop: findings are built from the population |
-| `unit/script-entry.test.ts:784` | leaves every effect to an import.meta.main decision | `modules` | `work` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/script-entry.test.ts:784` | leaves every effect to an import.meta.main decision | `modules` | `work` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/shipped-defaults.test.ts:496` | refuses an expectation a roster-building test could not have written | `all` | `all .filter((collision) => collision.af…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/shytalk-brand.test.ts:137` | is spelled out nowhere else in the repo | `files` | `offenders` | file-level | no cross-check found beside it yet; read in Group 2 |
 | `unit/shytalk-showcase.test.ts:98` | has a capture for every locale the site serves | `LOCALES` | `missing` | findings drawn from it | sound at one hop: findings are built from the population |
@@ -362,7 +399,7 @@ on macOS is not the one CI reads.
 | `unit/source-files.test.ts:151` | counts a zero and a false as content -- they are values, not blanks | `[0]` | `[]` | self-test of searched | sound: tests the control itself |
 | `unit/source-files.test.ts:152` | counts a zero and a false as content -- they are values, not blanks | `[false]` | `[]` | self-test of searched | sound: tests the control itself |
 | `unit/source-files.test.ts:156` | names the population in the message, so a failure says what died | `[]` | `[]` | self-test of searched | sound: tests the control itself |
-| `unit/spec-scan.ts:45` | (module level) | `files` | `findings` | file-level | mismatch: judges a construct, counts files (Group 2) |
+| `unit/spec-scan.ts:45` | (module level) | `files` | `findings` | file-level | done in Group 2a: judged unit, floor, cross-check |
 | `unit/stranded-docblocks.test.ts:126` | reads every source file git tracks | `tracked` | `tracked.filter((path) => !read.has(path…` | file-level | sound: judges the unit it counts |
 | `unit/stranded-docblocks.test.ts:167` | finds a docblock in every kind of source that holds one | `held` | `held.filter((kind) => !read.includes(ki…` | findings drawn from it | sound at one hop: findings are built from the population |
 | `unit/stranded-docblocks.test.ts:176` | finds none sitting directly on another | `SCANS.flatMap((scan) => scan.docblocks)` | `SCANS.flatMap((scan) => scan.stranded)` | findings drawn from it | sound at one hop: findings are built from the population |

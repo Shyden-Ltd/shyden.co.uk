@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { filesUnder, searched } from '../source-files';
 import { parseFile, parseSource, where } from './ast';
 import { scriptCheckout, type ScriptCheckout } from './script-checkout';
+import { withoutTsComments } from './source-text';
 
 /**
  * A script asks "was I run directly?" with `import.meta.main`, and with
@@ -31,26 +33,91 @@ import { scriptCheckout, type ScriptCheckout } from './script-checkout';
  * one.
  */
 
-/** `process.argv[1]`, with or without `?.`. */
-const isArgvEntry = (node: ts.Node): boolean =>
-  ts.isElementAccessExpression(node) &&
-  ts.isNumericLiteral(node.argumentExpression) &&
-  node.argumentExpression.text === '1' &&
-  ts.isPropertyAccessExpression(node.expression) &&
-  node.expression.name.text === 'argv' &&
-  ts.isIdentifier(node.expression.expression) &&
-  node.expression.expression.text === 'process';
+/** `process.argv` itself. */
+const isArgv = (node: ts.Node): node is ts.PropertyAccessExpression =>
+  ts.isPropertyAccessExpression(node) &&
+  node.name.text === 'argv' &&
+  ts.isIdentifier(node.expression) &&
+  node.expression.text === 'process';
 
-/** Where a file reads `process.argv[1]`. */
-const argvEntryReads = (sf: ts.SourceFile): string[] => {
-  const found: string[] = [];
+/** A numeric literal's value, or undefined for anything else. */
+const literalIndex = (node: ts.Node | undefined): number | undefined =>
+  node !== undefined && ts.isNumericLiteral(node)
+    ? Number(node.text)
+    : undefined;
+
+/**
+ * Whether a read of `argv` reaches the entry, `process.argv[1]`, and how:
+ * undefined when it does not, else what it reads. Every read is classified,
+ * and one this cannot classify is reported as unjudged, never passed: a
+ * guard that skips a form it cannot read is blind to it (#446).
+ */
+function entryRead(argv: ts.PropertyAccessExpression): string | undefined {
+  const { parent } = argv;
+  if (ts.isElementAccessExpression(parent) && parent.expression === argv) {
+    const index = literalIndex(parent.argumentExpression);
+    return index === undefined
+      ? 'process.argv[<not a literal>], unjudged'
+      : index === 1
+        ? 'process.argv[1]'
+        : undefined;
+  }
+  if (ts.isPropertyAccessExpression(parent) && parent.expression === argv) {
+    const method = parent.name.text;
+    if (method === 'length') return undefined;
+    const call = parent.parent;
+    if (ts.isCallExpression(call) && call.expression === parent) {
+      const from = literalIndex(call.arguments[0]);
+      if (method === 'slice' && from !== undefined)
+        return from <= 1 ? `process.argv.slice(${from})` : undefined;
+      if (method === 'at' && from !== undefined)
+        return from === 1 ? 'process.argv.at(1)' : undefined;
+    }
+    return `process.argv.${method}, unjudged`;
+  }
+  if (
+    ts.isVariableDeclaration(parent) &&
+    parent.initializer === argv &&
+    ts.isArrayBindingPattern(parent.name)
+  ) {
+    // The entry is reached by a binding at index 1, or by a rest element
+    // before it that gathers it.
+    const [first, second] = parent.name.elements;
+    const gathers =
+      first !== undefined &&
+      ts.isBindingElement(first) &&
+      first.dotDotDotToken !== undefined;
+    const binds = second !== undefined && !ts.isOmittedExpression(second);
+    return gathers || binds
+      ? 'process.argv destructured to its entry'
+      : undefined;
+  }
+  return 'process.argv passed on whole, unjudged';
+}
+
+/** Every read of `process.argv` a file makes, each judged, and where one reaches the entry. */
+const readArgv = (
+  sf: ts.SourceFile,
+): { judged: string[]; findings: string[] } => {
+  const judged: string[] = [];
+  const findings: string[] = [];
   const visit = (node: ts.Node): void => {
-    if (isArgvEntry(node)) found.push(where(sf, node));
+    if (isArgv(node)) {
+      judged.push(where(sf, node));
+      const read = entryRead(node);
+      if (read !== undefined) findings.push(`${where(sf, node)} ${read}`);
+    }
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  return found;
+  return { judged, findings };
 };
+
+/** Where a file reads `process.argv[1]`, in any form. */
+const argvEntryReads = (sf: ts.SourceFile): string[] => readArgv(sf).findings;
+
+/** `process.argv`, as text: independent of the parse tree. */
+const ARGV = /\bprocess\.argv\b/g;
 
 /** `import.meta.main`, spelled exactly. */
 const isImportMetaMain = (node: ts.Node): boolean =>
@@ -210,6 +277,17 @@ describe('the entry-check rules read the parse tree (#221)', () => {
     ['other.argv[1];', 0],
     ['process.env[1];', 0],
     ['// process.argv[1]', 0],
+    ['const [, entry] = process.argv;', 1],
+    ['const [node] = process.argv;', 0],
+    ['const [, , first] = process.argv;', 0],
+    ['const [...all] = process.argv;', 1],
+    ['process.argv.slice(1);', 1],
+    ['process.argv.at(1);', 1],
+    ['process.argv.at(2);', 0],
+    ['process.argv.length > 2;', 0],
+    ['run(process.argv);', 1],
+    ['process.argv.includes(flag);', 1],
+    ['process.argv[i];', 1],
   ])('counts the reads of process.argv[1] in: %s', (body, reads) => {
     expect(argvEntryReads(fixture(body))).toHaveLength(reads);
   });
@@ -338,13 +416,17 @@ const isDeclarationOnly = (st: ts.Statement): boolean =>
  * no decision and a script with no `main()` at all produces nothing to look
  * at: both were invisible to every rule meant to govern them (#276).
  */
-const loadTimeWork = (sf: ts.SourceFile): LoadTimeWork[] => {
+const loadTimeWork = (
+  sf: ts.SourceFile,
+): { judged: string[]; found: LoadTimeWork[] } => {
   const io = ioBindings(sf);
+  const judged: string[] = [];
   const found: LoadTimeWork[] = [];
 
   for (const st of sf.statements) {
     const declaresOnly = isDeclarationOnly(st);
     if (ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) continue;
+    judged.push(where(sf, st));
 
     let reported = false;
     const visit = (node: ts.Node): void => {
@@ -364,7 +446,7 @@ const loadTimeWork = (sf: ts.SourceFile): LoadTimeWork[] => {
     };
     visit(st);
   }
-  return found;
+  return { judged, found };
 };
 
 /**
@@ -374,12 +456,10 @@ const loadTimeWork = (sf: ts.SourceFile): LoadTimeWork[] => {
  * an assertion that cannot tell them apart is the vacuity #118 was filed
  * about.
  */
-const judgeSource = (sf: ts.SourceFile) => ({
-  examined: sf.statements.filter(
-    (st) => !ts.isImportDeclaration(st) && !ts.isExportDeclaration(st),
-  ).length,
-  work: loadTimeWork(sf).map(({ what }) => what),
-});
+const judgeSource = (sf: ts.SourceFile) => {
+  const { judged, found } = loadTimeWork(sf);
+  return { examined: judged.length, work: found.map(({ what }) => what) };
+};
 
 /** What the load-time rule makes of a fixture body. */
 const judgeWork = (body: string) => judgeSource(fixture(body));
@@ -652,8 +732,40 @@ describe('a script asks whether it was run directly with import.meta.main alone 
   });
 
   it('never reads process.argv[1]', () => {
-    const reads = modules.flatMap((file) => argvEntryReads(parseFile(file)));
-    expect(searched(reads, { of: modules, what: 'scripts' })).toEqual([]);
+    // The population is the reads of process.argv judged, not the scripts
+    // opened: a reader blind to every read would open each script and pass
+    // (#446).
+    const readings = modules.map((file) => readArgv(parseFile(file)));
+    const reads = readings.flatMap(({ findings }) => findings);
+    expect(
+      searched(reads, {
+        of: readings.flatMap(({ judged }) => judged),
+        what: 'reads of process.argv',
+      }),
+    ).toEqual([]);
+  });
+
+  it('judges every read of process.argv the scripts make, and as many as there are', () => {
+    // Measured 10 reads on 2026-10-03 (#446). Stated tight, so a reader that
+    // comes back one short fails.
+    const readings = modules.map((file) => ({
+      file,
+      judged: readArgv(parseFile(file)).judged.length,
+      written:
+        withoutTsComments(readFileSync(file, 'utf8')).match(ARGV)?.length ?? 0,
+    }));
+    expect(
+      readings.reduce((sum, { judged }) => sum + judged, 0),
+    ).toBeGreaterThan(9);
+    // Two readers, the parse tree and the text: a script where they disagree
+    // holds a form the tree reader is blind to.
+    const disagree = readings
+      .filter(({ judged, written }) => judged !== written)
+      .map(
+        ({ file, judged, written }) =>
+          `${file}: ${judged} judged, ${written} written`,
+      );
+    expect(searched(disagree, { of: modules, what: 'scripts' })).toEqual([]);
   });
 
   it('decides on import.meta.main alone', () => {
@@ -777,12 +889,43 @@ describe('a guarded script can be imported without running (#227)', () => {
  */
 describe('a script does no work while it loads (#276)', () => {
   it('leaves every effect to an import.meta.main decision', () => {
-    const work = modules.flatMap((file) =>
-      loadTimeWork(parseFile(file)).map(({ at, what }) => `${at} ${what}`),
+    // The population is the statements judged, not the scripts opened: a
+    // reader that skipped every statement would open each script and pass
+    // (#446).
+    const readings = modules.map((file) => loadTimeWork(parseFile(file)));
+    const work = readings.flatMap(({ found }) =>
+      found.map(({ at, what }) => `${at} ${what}`),
     );
     expect(
-      searched(work, { of: modules, what: 'scripts' }),
+      searched(work, {
+        of: readings.flatMap(({ judged }) => judged),
+        what: 'load-time statements',
+      }),
       'a module that works while it loads runs its program on import',
     ).toEqual([]);
+  });
+
+  it('judges every load-time statement the scripts hold, and as many as there are', () => {
+    // Measured 313 statements on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    const readings = modules.map((file) => {
+      const sf = parseFile(file);
+      return {
+        file,
+        judged: loadTimeWork(sf).judged.length,
+        // Counted apart from the rule's own loop: every top-level statement
+        // but an import or an export, which build the module's interface.
+        held: sf.statements.filter(
+          (st) => !ts.isImportDeclaration(st) && !ts.isExportDeclaration(st),
+        ).length,
+      };
+    });
+    expect(
+      readings.reduce((sum, { judged }) => sum + judged, 0),
+    ).toBeGreaterThan(312);
+    const skipped = readings
+      .filter(({ judged, held }) => judged !== held)
+      .map(({ file, judged, held }) => `${file}: ${judged} of ${held} judged`);
+    expect(searched(skipped, { of: modules, what: 'scripts' })).toEqual([]);
   });
 });

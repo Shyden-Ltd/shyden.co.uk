@@ -9,7 +9,7 @@ import {
   testsRead,
   type LoopedCase,
 } from '../one-test-per-case';
-import { withoutTsComments } from './source-text';
+import { declaresTests } from '../playwright-declarations';
 
 /**
  * One test per case (operator, 2026-10-02; #417).
@@ -238,13 +238,6 @@ const sharedStateful = () =>
     ).map(parsed),
   );
 
-/**
- * A spec whose code, comments stripped, calls `test(` or a `test.<modifier>(`
- * form: read independently of the parse tree, as text, so a reader that went
- * blind to a form is caught by a file it found nothing in.
- */
-const DECLARES_TESTS = /(?<![\w.])test(?:\.(?:only|skip|fixme|fail))*\s*\(/;
-
 const scan = (): {
   specs: string[];
   tests: string[];
@@ -267,7 +260,7 @@ const scan = (): {
   );
   const unread = specs.filter(
     (file) =>
-      DECLARES_TESTS.test(withoutTsComments(readFileSync(file, 'utf8'))) &&
+      declaresTests(readFileSync(file, 'utf8')) &&
       testsRead(parsed(file)).length === 0,
   );
   return { specs, tests, sites, unread };

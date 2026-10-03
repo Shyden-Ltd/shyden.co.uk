@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { expectNothingFound } from './spec-scan';
+import {
+  declarationsRead,
+  expectNothingFound,
+  type Reading,
+} from './spec-scan';
 import ts from 'typescript';
 import { parseSource } from './ast';
 import {
@@ -134,8 +138,8 @@ function groupsAround(
  * separate from the filesystem walk so the self-test block below can prove every branch red
  * and green on tiny synthetic input, not just trust the real corpus to exercise all of them.
  * The text is the file as it is on disk: a line counted in stripped text is not the line a
- * reader opens. */
-function analyze(file: string, text: string): string[] {
+ * reader opens. Every test it read is judged, so each is named in `judged`. */
+function read(file: string, text: string): Reading {
   const sf = parseSource(text, file);
   const declarations = declarationsIn(sf);
   const findings: string[] = [];
@@ -173,12 +177,21 @@ function analyze(file: string, text: string): string[] {
       findings.push(staleTagMessage(file, decl));
   }
 
-  return findings;
+  const judged = declarations
+    .filter((decl) => decl.kind === 'test')
+    .map((decl) => `${file}:${decl.line}`);
+  return { judged, findings };
 }
+
+/** The findings alone, which is all the synthetic cases below ask about. */
+const analyze = (file: string, text: string): readonly string[] =>
+  read(file, text).findings;
 
 describe('a real device has one browser context', () => {
   it('every test run without JavaScript, or calling newContext(), is tagged @requires-isolated-context, and no tag is stale', () => {
-    expectNothingFound(analyze);
+    // Measured 638 tests read on 2026-10-03, the same 638 one-test-per-case
+    // reads (#446). Stated tight, so a reader that comes back one short fails.
+    expectNothingFound(read, declarationsRead('tests read', 637));
   });
 });
 
