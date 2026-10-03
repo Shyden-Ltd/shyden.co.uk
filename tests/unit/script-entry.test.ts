@@ -563,7 +563,7 @@ const PROBES: Readonly<Record<string, Probe>> = {
   'visual-rebaseline.mjs': {
     args: [],
     status: 1,
-    says: 'unknown command (none); expected qualify, classify, stage, find or commit',
+    says: 'unknown command (none); expected qualify, classify, stage, find, locked or commit',
   },
   // With no command it can decide nothing, so it refuses by name before it
   // reads a variable or calls GitHub, and the status stays pending (#459).

@@ -143,7 +143,7 @@ describe('visual-rebaseline.mjs, run as the capture runs it (#459)', () => {
     const result = run(checkout(), ['bogus'], {});
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      '::error::unknown command bogus; expected qualify, classify, stage, find or commit',
+      '::error::unknown command bogus; expected qualify, classify, stage, find, locked or commit',
     );
   });
 

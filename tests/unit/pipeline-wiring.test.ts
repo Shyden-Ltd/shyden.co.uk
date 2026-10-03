@@ -2858,8 +2858,8 @@ describe('the rebaseline commit runs only the default branch code (#459)', () =>
     const nodes = runLinesOf(COMMIT).filter(({ line }) =>
       /\bnode\b/.test(line),
     );
-    // Measured: 2 (find, commit).
-    expect(nodes.length).toBeGreaterThanOrEqual(1);
+    // Measured: 3 (find, locked, commit).
+    expect(nodes.length).toBeGreaterThanOrEqual(2);
     const astray = nodes.filter(({ line }) => {
       const match = /^node (scripts\/[\w.-]+\.mjs)( [a-z]+)*$/.exec(line);
       return !match || !existsSync(match[1]);
@@ -2890,7 +2890,7 @@ describe('the rebaseline commit runs only the default branch code (#459)', () =>
 /** Run lines per rebaseline workflow, measured; each floor is that less one. */
 const RUN_LINES_MEASURED: Record<string, number> = {
   [CAPTURE]: 9,
-  [COMMIT]: 3,
+  [COMMIT]: 4,
 };
 
 describe('neither rebaseline workflow retries (operator rule, 2026-10-02)', () => {
@@ -3090,5 +3090,33 @@ describe('the review relay decides nothing and holds nothing (#459)', () => {
     expect(runLinesOf(RELAY).map(({ line }) => line)).toEqual([
       'echo "Review on pull request $PR_NUMBER; operator-review.yml decides."',
     ]);
+  });
+});
+
+describe('the rebaseline commit refuses until develop requires the lock (#459)', () => {
+  const steps = () => stepsOf(COMMIT) as JudgedStep[];
+  const running = (command: string) =>
+    steps().findIndex(
+      ({ run }) =>
+        withoutCommentLines(run ?? '', '#').trim() ===
+        `node scripts/visual-rebaseline.mjs ${command}`,
+    );
+
+  it('asks before the download and before the commit', () => {
+    const locked = running('locked');
+    expect(locked, 'no step runs the locked command alone').toBeGreaterThan(0);
+    const download = steps().findIndex(({ uses }) =>
+      uses?.startsWith('actions/download-artifact@'),
+    );
+    expect(download).toBeGreaterThan(locked);
+    expect(running('commit')).toBeGreaterThan(locked);
+  });
+
+  it('runs whenever the commit runs, and stops the job when it refuses', () => {
+    const locked = steps()[running('locked')];
+    const commit = steps()[running('commit')];
+    expect(locked?.if).toBe(commit?.if);
+    expect(String(locked?.if)).not.toMatch(/\b(?:always|failure|cancelled)\(/);
+    expect(locked?.['continue-on-error']).toBeUndefined();
   });
 });

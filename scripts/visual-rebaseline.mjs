@@ -624,6 +624,34 @@ export function commitMessage(manifest) {
   ].join('\n');
 }
 
+/** The required check that holds an automatic rebaseline's merge (Unit 4). */
+export const LOCK = 'operator-review';
+const BASE = 'develop';
+
+/**
+ * Whether a branch, as `GET /branches/{branch}` returns it, requires the
+ * lock among its required status checks, in `contexts` or in `checks`.
+ * Anything else, a branch with no protection included, reads as not
+ * required, which refuses.
+ * @param {unknown} branch
+ * @returns {boolean}
+ */
+export function lockRequired(branch) {
+  const required =
+    /** @type {{ protection?: { required_status_checks?: { contexts?: unknown, checks?: unknown } } } | null} */ (
+      branch
+    )?.protection?.required_status_checks;
+  const contexts = Array.isArray(required?.contexts) ? required.contexts : [];
+  const checks = Array.isArray(required?.checks) ? required.checks : [];
+  return (
+    contexts.includes(LOCK) ||
+    checks.some(
+      /** @param {{ context?: unknown } | null} check */
+      (check) => check?.context === LOCK,
+    )
+  );
+}
+
 // ---- I/O: everything below reads, writes or calls GitHub -------------------
 
 const LIMIT_MS = 30_000;
@@ -949,6 +977,16 @@ async function runCommit() {
   report(`Labelled #${number} ${LABEL} and commented.`);
 }
 
+async function runLocked() {
+  const branch = await getJson(`/branches/${BASE}`);
+  if (!lockRequired(branch))
+    throw new Error(
+      `${BASE} does not require ${LOCK} yet, so nothing commits a ` +
+        'rebaseline; the operator requires the check first (#459)',
+    );
+  report(`${BASE} requires ${LOCK}.`);
+}
+
 /**
  * @param {readonly string[]} [args]
  */
@@ -959,10 +997,11 @@ export async function main(args = argv.slice(2)) {
     else if (command === 'classify') runClassify(rest[0], rest[1]);
     else if (command === 'stage') runStage(rest[0]);
     else if (command === 'find') await runFind();
+    else if (command === 'locked') await runLocked();
     else if (command === 'commit') await runCommit();
     else
       throw new Error(
-        `unknown command ${command ?? '(none)'}; expected qualify, classify, stage, find or commit`,
+        `unknown command ${command ?? '(none)'}; expected qualify, classify, stage, find, locked or commit`,
       );
   } catch (error) {
     const reason = messageOf(error);

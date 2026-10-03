@@ -11,6 +11,7 @@ import {
   dispatchable,
   failedBaselines,
   gateAgrees,
+  lockRequired,
   qualify,
   testsIn,
   validateArtifact,
@@ -1080,5 +1081,64 @@ describe('what the commit writes (#459)', () => {
     expect(message).toContain(`- ${PATH_A} (1234 px)`);
     expect(message).toContain(`- ${PATH_B} (count not reported)`);
     expect(closingKeywordOffences(message)).toEqual([]);
+  });
+});
+
+/** `GET /branches/develop`, as a contents: read token read it (run 37112752013). */
+const branchRequiring = (contexts: string[], checks: string[] = contexts) => ({
+  name: 'develop',
+  protected: true,
+  protection: {
+    enabled: true,
+    required_status_checks: {
+      enforcement_level: 'everyone',
+      contexts,
+      checks: checks.map((context) => ({ context, app_id: null })),
+    },
+  },
+});
+
+const MEASURED = ['build-and-test', 'visual', 'closing-keywords'];
+
+describe('lockRequired: nothing commits until develop requires the lock (#459)', () => {
+  it('reads it from contexts', () => {
+    expect(
+      lockRequired(branchRequiring([...MEASURED, 'operator-review'], MEASURED)),
+    ).toBe(true);
+  });
+
+  it('reads it from checks alone', () => {
+    expect(
+      lockRequired(branchRequiring(MEASURED, [...MEASURED, 'operator-review'])),
+    ).toBe(true);
+  });
+
+  it('refuses the branch as measured, which names it nowhere', () => {
+    expect(lockRequired(branchRequiring(MEASURED))).toBe(false);
+  });
+
+  it('refuses a name that only begins like it', () => {
+    expect(lockRequired(branchRequiring(['operator-review-old']))).toBe(false);
+  });
+
+  it('refuses a branch with protection off', () => {
+    expect(
+      lockRequired({
+        name: 'develop',
+        protected: false,
+        protection: {
+          enabled: false,
+          required_status_checks: {
+            enforcement_level: 'off',
+            contexts: [],
+            checks: [],
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses a reply with no protection at all', () => {
+    expect(lockRequired({ name: 'develop', protected: false })).toBe(false);
   });
 });
