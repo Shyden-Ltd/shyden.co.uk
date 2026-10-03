@@ -594,6 +594,21 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'usage: node scripts/dependabot-labels.mjs',
   },
+  // Without a token and an account it has nothing to prove, so it refuses
+  // with the usage before any request reaches Cloudflare (#415).
+  'token-reach.mjs': {
+    args: [],
+    env: { CLOUDFLARE_API_TOKEN: undefined, CLOUDFLARE_ACCOUNT_ID: undefined },
+    status: 1,
+    says: 'usage: CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/token-reach.mjs',
+  },
+  // It takes no arguments, and refuses one before it reads the lockfile or
+  // asks mcr.microsoft.com anything (#454).
+  'playwright-image.mjs': {
+    args: ['--no-such-flag'],
+    status: 1,
+    says: 'usage: node scripts/playwright-image.mjs (takes no arguments)',
+  },
   // It had no refusal at all, being written never to fail an install, so #276
   // gave it the one the other argument-free scripts have. `prepare` passes
   // nothing, so nothing that is not already a mistake reaches it.

@@ -28,6 +28,10 @@ const STATEFUL = new Set([
   'emulateTheme',
   'emulateMedia',
   'saveTheme',
+  // WebDriver's own load, which the iOS journeys reach through the session's
+  // `navigateToPath` (tests/device/ios). Without it the 15 iOS journeys were
+  // counted and never checked (#446).
+  'navigate',
 ]);
 
 /** The one loop allowed inside a test: a population only the page knows. */
@@ -99,6 +103,18 @@ export const statefulHelpers = (
         ts.isFunctionExpression(node.initializer))
     )
       bodies.push([node.name.text, node.initializer.body]);
+    // A method, on an object or a class, and a property holding a function:
+    // the iOS session is an object whose `navigateToPath` method loads the
+    // page, and reading declarations alone never saw it (#446).
+    if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.body)
+      bodies.push([node.name.text, node.body]);
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      (ts.isArrowFunction(node.initializer) ||
+        ts.isFunctionExpression(node.initializer))
+    )
+      bodies.push([node.name.text, node.initializer.body]);
     ts.forEachChild(node, collect);
   };
   for (const sf of sources) collect(sf);
@@ -152,6 +168,17 @@ const loopParts = (
     };
   return null;
 };
+
+/**
+ * Every test this detector reads in `sf`, by title, from the one reader every
+ * guard shares. Exported as the population the suite counts: a detector that
+ * finds no loop has said nothing unless it also found the tests (#390).
+ */
+export function testsRead(sf: ts.SourceFile): string[] {
+  return declarationsIn(sf)
+    .filter(({ kind }) => kind === 'test')
+    .map(({ call }) => titleOf(sf, call));
+}
 
 /**
  * Every loop inside a test body that changes page state on each pass, unless

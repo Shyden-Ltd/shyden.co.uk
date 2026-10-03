@@ -37,6 +37,7 @@ import {
 import { parseFile } from './ast';
 import { declarationsIn } from '../playwright-declarations';
 import { REQUIRED_CHECKS } from '../../scripts/deploy-gate.mjs';
+import { localImage } from '../../scripts/playwright-image.mjs';
 
 /**
  * The plain `test(...)` declarations `spec` makes, read by the parser. A test
@@ -1200,32 +1201,35 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     }
   });
 
-  it('pins the same image the baselines are captured in', () => {
-    // Written down once. A browser bundle from a different release than the
-    // library driving it fails in ways neither one reports clearly, and the
-    // capture script derives the image from this same version rather than
-    // repeating it.
-    const { version } = JSON.parse(
-      readFileSync('node_modules/@playwright/test/package.json', 'utf8'),
-    ) as { version: string };
-    const pinned = `mcr.microsoft.com/playwright:v${version}-noble`;
-    expect(withoutCommentLines(workflow('ci.yml'), '#')).toContain(
-      `image: ${pinned}`,
+  it('takes the image the baselines are captured in from one selector', async () => {
+    // #454: no workflow names the image. The `image` job picks it with
+    // scripts/playwright-image.mjs, and the local runner takes the same
+    // pick (`localImage`), so a capture and its comparison share one image
+    // without either writing it down. A browser bundle from a different
+    // release than the library driving it fails in ways neither reports.
+    const workflows = workflowFileNames().filter(
+      (name) => name.endsWith('.yml') || name.endsWith('.yaml'),
     );
-    // And every other place a workflow names it says the same. The visual
-    // job's step summary types the image a second time, and a bump that
-    // reaches only the `container:` line leaves that summary recording an
-    // image the run never used (#390). The `image:` line above guarantees
-    // at least one name, so the set cannot be empty.
-    const named = workflowFileNames()
-      .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
-      .flatMap(
-        (name) =>
-          withoutCommentLines(workflow(name), '#').match(
-            /mcr\.microsoft\.com\/playwright:[\w.-]+/g,
-          ) ?? [],
-      );
-    expect(new Set(named)).toEqual(new Set([pinned]));
+    const named = workflows.flatMap((name) =>
+      (
+        withoutCommentLines(workflow(name), '#').match(
+          /mcr\.microsoft\.com\/playwright:[\w.@:-]+/g,
+        ) ?? []
+      ).map((image) => `${name}: ${image}`),
+    );
+    expect(searched(named, { of: workflows, what: 'workflow files' })).toEqual(
+      [],
+    );
+    expect(jobNamed('ci.yml', 'image').runs).toEqual([
+      'node scripts/playwright-image.mjs',
+    ]);
+    // The image the local runner USES, not whether it imports the selector:
+    // an import left beside an image derived another way passed a text
+    // check (mutation PI5).
+    const { image } = (await import('../../scripts/visual.mjs')) as {
+      image: string;
+    };
+    expect(image).toBe(localImage());
   });
 
   it('runs the visual project, with the switch that declares it', () => {
@@ -2433,9 +2437,116 @@ describe('wrangler comes from the lockfile (#97)', () => {
     expect(jobNamed('ci.yml', 'functions').runs).toEqual([
       'npm ci',
       // Every engine: the suite posts the 404's forms from all five (#350).
-      'npx playwright install --with-deps',
+      // No browser install: the job runs in the pinned image (#431).
       'npm run test:functions',
     ]);
+  });
+});
+
+// ---- the dev token proves its reach before every dev deploy (#415) -------
+//
+// Dev and production live in separate Cloudflare accounts, because a Pages
+// permission narrows to an account and never to a project. The dev token's
+// scope was proved once by hand; the job proves it again before each deploy,
+// so a token widened later never deploys. Read parsed, per step, in order.
+describe('the dev token proves its reach before every dev deploy (#415)', () => {
+  it('runs the reach probe in the deploy job, before the deploy', () => {
+    const runs = jobNamed('deploy-dev.yml', 'deploy-dev').runs.map((run) =>
+      withoutCommentLines(run).trim(),
+    );
+    const probe = runs.indexOf('node scripts/token-reach.mjs');
+    const deploy = runs.findIndex((run) =>
+      run.startsWith('npx wrangler pages deploy'),
+    );
+    expect(deploy, 'the deploy step').toBeGreaterThan(-1);
+    expect(probe, 'the reach probe').toBeGreaterThan(-1);
+    expect(probe, 'the probe runs before the deploy').toBeLessThan(deploy);
+  });
+});
+
+// ---- browsers come with the pinned image (#431) ---------------------------
+//
+// Run 36973026350's shard 2 spent its whole job in `npx playwright install
+// --with-deps` while an apt mirror stalled. A retry would only hide that, so
+// the download is gone instead: every job that runs Playwright runs inside the
+// Playwright image, which carries the browsers and their system packages. Read
+// from the parsed workflows, so a new browser job is judged the day it is
+// written and a comment naming the image cannot stand in for it.
+describe('browsers come with the pinned Playwright image, never a download (#431)', () => {
+  /**
+   * The two deploy verify jobs still install, until they can post their status
+   * without `gh`, which the image lacks (#444). Shrink-only: each entry must
+   * still be found, so a fixed job leaves the list instead of staying excused.
+   */
+  const STILL_INSTALLING = [
+    'deploy-dev.yml › verify-dev',
+    'deploy-prod.yml › smoke-and-verify',
+  ];
+  type Jobs = Record<string, { container?: unknown }>;
+  const imageOf = (file: string, id: string): string | undefined => {
+    const { jobs } = parseCleanYaml(workflow(file), file) as { jobs: Jobs };
+    const container = jobs[id]?.container;
+    if (typeof container === 'string') return container;
+    if (container && typeof container === 'object' && 'image' in container)
+      return String((container as { image: unknown }).image);
+    return undefined;
+  };
+  const runsPlaywright = (runs: readonly string[]) =>
+    runs
+      .map((run) => withoutCommentLines(run))
+      .some((run) =>
+        /playwright\s+test|npm run test:(e2e|functions|sanity|visual)\b/.test(
+          run,
+        ),
+      );
+  const browserJobs = () =>
+    workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter(({ runs }) => runsPlaywright(runs))
+        .map(({ id }) => ({ file: name, id, where: `${name} › ${id}` })),
+    );
+
+  it('downloads browsers in no step but the excused deploy verify jobs', () => {
+    const installing = workflowGraphs().flatMap(({ name, jobs }) =>
+      jobs
+        .filter(({ runs }) =>
+          runs.some((run) =>
+            /playwright\s+install/.test(withoutCommentLines(run)),
+          ),
+        )
+        .map(({ id }) => `${name} › ${id}`),
+    );
+    expect(installing).toEqual(STILL_INSTALLING);
+  });
+
+  it('runs every other Playwright job in the image the `image` job picks', () => {
+    // One expression, so every browser job in a run shares one digest, and
+    // the choice between the pinned and the resolved image lives in one
+    // script rather than in each job (#454).
+    const jobs = browserJobs();
+    const graphs = new Map(
+      workflowGraphs().map(({ name, jobs: all }) => [name, all]),
+    );
+    const astray = jobs
+      .filter(({ where }) => !STILL_INSTALLING.includes(where))
+      .filter(
+        ({ file, id }) =>
+          imageOf(file, id) !== '${{ needs.image.outputs.ref }}' ||
+          !graphs
+            .get(file)
+            ?.find((job) => job.id === id)
+            ?.needs.includes('image'),
+      )
+      .map(
+        ({ where, file, id }) =>
+          `${where}: ${imageOf(file, id) ?? 'no container'}`,
+      );
+    expect(
+      searched(astray, {
+        of: jobs.map(({ where }) => where),
+        what: 'jobs running Playwright',
+      }),
+    ).toEqual([]);
   });
 });
 
