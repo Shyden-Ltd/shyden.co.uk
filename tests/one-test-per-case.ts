@@ -28,6 +28,10 @@ const STATEFUL = new Set([
   'emulateTheme',
   'emulateMedia',
   'saveTheme',
+  // WebDriver's own load, which the iOS journeys reach through the session's
+  // `navigateToPath` (tests/device/ios). Without it the 15 iOS journeys were
+  // counted and never checked (#446).
+  'navigate',
 ]);
 
 /** The one loop allowed inside a test: a population only the page knows. */
@@ -95,6 +99,18 @@ export const statefulHelpers = (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.initializer &&
+      (ts.isArrowFunction(node.initializer) ||
+        ts.isFunctionExpression(node.initializer))
+    )
+      bodies.push([node.name.text, node.initializer.body]);
+    // A method, on an object or a class, and a property holding a function:
+    // the iOS session is an object whose `navigateToPath` method loads the
+    // page, and reading declarations alone never saw it (#446).
+    if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.body)
+      bodies.push([node.name.text, node.body]);
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
       (ts.isArrowFunction(node.initializer) ||
         ts.isFunctionExpression(node.initializer))
     )

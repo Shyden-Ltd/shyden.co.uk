@@ -59,6 +59,27 @@ describe('the detector', () => {
     ).toEqual([]);
   });
 
+  it('refuses a loop that navigates through a WebDriver session helper', () => {
+    // The iOS journeys load pages with `session.navigateToPath`, a method on
+    // the session object over WebDriver's `navigate`. Neither was a name the
+    // detector knew, and it read no method, so a looped journey passed while
+    // the test counter counted it (#446).
+    expect(
+      found(`
+        const session = {
+          driver,
+          async navigateToPath(path) { await driver.navigate(base + path); },
+          visit: async (path) => { await session.navigateToPath(path); },
+        };
+        test('every locale', async () => {
+          for (const locale of LOCALES) await session.navigateToPath(path(locale));
+        });
+        test('every page', async () => {
+          for (const page of PAGES) await session.visit(page);
+        });`).map(({ test }) => test),
+    ).toEqual(['every locale', 'every page']);
+  });
+
   it('reads a test however Playwright declares it, focused and failing too', () => {
     // This file kept its own list of test callees, which had no
     // `test.fail.only`, so a looped body under one was never read (#390 F155).
@@ -283,5 +304,8 @@ describe('the suite', () => {
     // every loop that uses it, so it must be among the names the scan treats
     // as navigating, or the shared half of the detector is not running.
     expect(sharedStateful().has('openRoster')).toBe(true);
+    // And the iOS session's, a method over WebDriver's `navigate` (#446):
+    // without it the 15 iOS journeys are counted and never checked.
+    expect(sharedStateful().has('navigateToPath')).toBe(true);
   });
 });
