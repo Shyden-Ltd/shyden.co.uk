@@ -6,7 +6,7 @@ name: Visual rebaseline capture
 # while the site is unchanged. For a pull request Dependabot opened that
 # updates Playwright and nothing else, this reruns the visual gate in the
 # gate's own image, recaptures exactly the screenshots it failed on pixels
-# alone, and uploads them. The commit workflow, which runs only the
+# alone, and uploads them. visual-rebaseline-commit.yml, which runs only the
 # default branch's code, decides whether they reach the branch.
 #
 # It runs pull-request code (a new Playwright is third-party code), so it

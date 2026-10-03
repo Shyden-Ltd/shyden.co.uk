@@ -2795,3 +2795,124 @@ describe('the rebaseline capture runs pull-request code with nothing to write wi
     ).toEqual([]);
   });
 });
+
+describe('the rebaseline commit runs only the default branch code (#459)', () => {
+  const root = () =>
+    parseCleanYaml(workflow(COMMIT), COMMIT) as {
+      on?: { workflow_run?: { workflows?: unknown; types?: unknown } };
+      permissions?: unknown;
+      jobs?: Record<string, { permissions?: unknown }>;
+    };
+
+  it('is started by the capture finishing, and by nothing else', () => {
+    expect(Object.keys(root().on ?? {})).toEqual(['workflow_run']);
+    expect(root().on?.workflow_run?.workflows).toEqual([workflowName(CAPTURE)]);
+    expect(root().on?.workflow_run?.types).toEqual(['completed']);
+  });
+
+  it('proceeds only after a successful capture of a pull request', () => {
+    expect(jobNamed(COMMIT, 'commit').condition).toBe(
+      "github.event.workflow_run.conclusion == 'success' && " +
+        "github.event.workflow_run.event == 'pull_request'",
+    );
+  });
+
+  it('writes in one job, with the three scopes it needs', () => {
+    expect(root().permissions).toEqual({ contents: 'read' });
+    expect(root().jobs?.commit?.permissions).toEqual({
+      contents: 'write',
+      actions: 'write',
+      'pull-requests': 'write',
+    });
+    expect(Object.keys(root().jobs ?? {})).toEqual(['commit']);
+  });
+
+  it('checks out the default branch and nothing else, keeping no token', () => {
+    const checkouts = stepsOf(COMMIT).filter(({ uses }) =>
+      uses?.startsWith('actions/checkout@'),
+    );
+    const astray = checkouts.filter(
+      (step) =>
+        step.with?.ref !== undefined ||
+        step.with?.repository !== undefined ||
+        step.with?.['persist-credentials'] !== false,
+    );
+    expect(
+      searched(
+        astray.map(({ job }) => job),
+        { of: checkouts.map(({ job }) => job), what: 'checkout steps' },
+      ),
+    ).toEqual([]);
+  });
+
+  it('installs only with npm ci --ignore-scripts', () => {
+    const installs = runLinesOf(COMMIT).filter(({ line }) =>
+      /\b(npm|npx|yarn|pnpm)\b/.test(line),
+    );
+    expect(installs.map(({ line }) => line)).toEqual([
+      'npm ci --ignore-scripts',
+    ]);
+  });
+
+  it("runs node only on its own checkout's scripts", () => {
+    const nodes = runLinesOf(COMMIT).filter(({ line }) =>
+      /\bnode\b/.test(line),
+    );
+    // Measured: 2 (find, commit).
+    expect(nodes.length).toBeGreaterThanOrEqual(1);
+    const astray = nodes.filter(({ line }) => {
+      const match = /^node (scripts\/[\w.-]+\.mjs)( [a-z]+)*$/.exec(line);
+      return !match || !existsSync(match[1]);
+    });
+    expect(
+      searched(
+        astray.map(({ line }) => line),
+        { of: nodes.map(({ line }) => line), what: 'node invocations' },
+      ),
+    ).toEqual([]);
+  });
+
+  it('downloads the triggering run’s artifact, into the runner’s own temp', () => {
+    const downloads = stepsOf(COMMIT).filter(({ uses }) =>
+      uses?.startsWith('actions/download-artifact@'),
+    );
+    expect(downloads.map((step) => step.with)).toEqual([
+      {
+        name: 'visual-rebaseline',
+        path: '${{ runner.temp }}/rebaseline',
+        'run-id': '${{ github.event.workflow_run.id }}',
+        'github-token': '${{ github.token }}',
+      },
+    ]);
+  });
+});
+
+/** Run lines per rebaseline workflow, measured; each floor is that less one. */
+const RUN_LINES_MEASURED: Record<string, number> = {
+  [CAPTURE]: 9,
+  [COMMIT]: 3,
+};
+
+describe('neither rebaseline workflow retries (operator rule, 2026-10-02)', () => {
+  for (const file of [CAPTURE, COMMIT])
+    it(`${file} retries nothing`, () => {
+      const lines = runLinesOf(file);
+      expect(lines.length).toBeGreaterThanOrEqual(RUN_LINES_MEASURED[file] - 1);
+      const retrying = lines.filter(({ line }) =>
+        /\bretr(?:y|ies)\b|--repeat-each|\buntil\b|\bwhile\b/i.test(line),
+      );
+      expect(
+        searched(
+          retrying.map(({ line }) => line),
+          { of: lines.map(({ line }) => line), what: `${file} run lines` },
+        ),
+      ).toEqual([]);
+      const actions = stepsOf(file).flatMap(({ uses }) => (uses ? [uses] : []));
+      expect(
+        searched(
+          actions.filter((uses) => /retry/i.test(uses)),
+          { of: actions, what: `${file} actions` },
+        ),
+      ).toEqual([]);
+    });
+});
