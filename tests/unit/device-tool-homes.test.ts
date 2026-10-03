@@ -22,13 +22,35 @@ const files = ['tests', 'scripts'].flatMap((dir) =>
   filesUnder(dir, (file) => /\.(ts|mjs)$/.test(file)),
 );
 
+/** A call that runs `tool`: any of the spawners, with the tool as a literal. */
+const spawnsTool = (tool: string): RegExp =>
+  new RegExp(
+    String.raw`\b(?:execFileSync|execFile|spawnSync|spawn|execSync|exec|runWithDeadline)\(\s*['"\`]` +
+      tool +
+      String.raw`\b`,
+  );
+
+/** Each way the code runs a tool, as a source line naming it. */
+const SPAWN_FORMS: ReadonlyArray<[string, (tool: string) => string]> = [
+  ['execFileSync', (tool) => `execFileSync('${tool}', ['devices']);`],
+  ['execFile', (tool) => `execFile('${tool}', ['devices'], done);`],
+  ['spawnSync', (tool) => `spawnSync("${tool}", ['devices']);`],
+  ['spawn', (tool) => `spawn(\`${tool}\`, ['devices']);`],
+  ['execSync', (tool) => `execSync('${tool} devices');`],
+  ['exec', (tool) => `exec('${tool} devices', done);`],
+  [
+    'runWithDeadline',
+    (tool) => `runWithDeadline('${tool}', ['devices'], 5000);`,
+  ],
+  [
+    'a call split over lines',
+    (tool) => `spawnSync(\n  '${tool}',\n  ['devices'],\n);`,
+  ],
+];
+
 describe.each(HOMES)('no file spawns $tool but $home', ({ tool, home }) => {
   it('reads every call site through the one home', () => {
-    const spawns = new RegExp(
-      String.raw`\b(?:execFileSync|execFile|spawnSync|spawn|execSync|exec|runWithDeadline)\(\s*['"\`]` +
-        tool +
-        String.raw`\b`,
-    );
+    const spawns = spawnsTool(tool);
     const spawning = files.filter(
       (file) =>
         file !== home &&
@@ -48,6 +70,22 @@ describe.each(HOMES)('no file spawns $tool but $home', ({ tool, home }) => {
       spawns.test(withoutTsComments(readFileSync(home, 'utf8'))),
       `${home} spawns ${tool}`,
     ).toBe(true);
+  });
+
+  it('reads every file under tests/ and scripts/, and as many as there are', () => {
+    // Measured 294 files on 2026-10-03 (#446). Stated tight, so a walk that
+    // comes back one short fails, and the home is among them, so a walk that
+    // loses scripts/ fails too.
+    expect(files.length).toBeGreaterThan(293);
+    expect(files).toContain(home);
+  });
+
+  it.each(SPAWN_FORMS)('reads a spawn written with %s', (_form, line) => {
+    expect(spawnsTool(tool).test(line(tool))).toBe(true);
+  });
+
+  it('does not read a longer tool name as this one', () => {
+    expect(spawnsTool(tool).test(`spawnSync('${tool}x', []);`)).toBe(false);
   });
 });
 

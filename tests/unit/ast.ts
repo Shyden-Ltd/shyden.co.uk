@@ -597,3 +597,27 @@ export function commentsIn(sf: ts.SourceFile): ts.CommentRange[] {
 export const where = (sf: ts.SourceFile, node: ts.Node): string =>
   `${relative(process.cwd(), sf.fileName)}:` +
   `${sf.getLineAndCharacterOfPosition(node.getStart()).line + 1}`;
+
+/**
+ * The text of every string `sf` spells: string literals, templates with no
+ * substitution, and the literal head, middles and tail of a template with
+ * them. A comment is not a node, so nothing a comment says is here. This is
+ * the parse tree's answer to "which strings does this file hold", independent
+ * of any regex that tracks quotes for itself (#446).
+ */
+export function stringTextsIn(sf: ts.SourceFile): string[] {
+  const texts: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    )
+      texts.push(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return texts;
+}

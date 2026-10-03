@@ -18,12 +18,44 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { withoutTsComments } from './source-text';
 import { filesUnder, searched, nonEmpty } from '../source-files';
 
 /** `tsconfig.json` is JSONC: it carries the reason for every option. */
 const tsconfig = (): Record<string, any> =>
   JSON.parse(withoutTsComments(readFileSync('tsconfig.json', 'utf8')));
+
+const scripts = (): string[] =>
+  nonEmpty(
+    filesUnder('scripts', (path) => path.endsWith('.mjs')),
+    'scripts',
+  );
+
+/**
+ * Whether `text` carries a ts-nocheck directive. Comment-stripped would HIDE
+ * it -- a directive IS a comment -- so this reads the raw text deliberately,
+ * and wider than the compiler does: a directive in a block comment, or below
+ * the first statement, is flagged although TypeScript ignores it.
+ *
+ * Matched WITHOUT comment syntax: spelling `//` here makes this file read as
+ * a comment stripper to `one-home.test.ts`, which is right to ask -- naming
+ * comment syntax is how a second stripper starts. The directive's own name is
+ * enough, and it appears nowhere else.
+ */
+const optsOut = (text: string): boolean => /@ts-nocheck/.test(text);
+
+/**
+ * Whether TypeScript itself reads `text` as switching checking off. The
+ * compiler records that on the parsed file as `checkJsDirective`, a field its
+ * public types leave out; the planted forms below fail if an upgrade moves it.
+ */
+const silencedByCompiler = (path: string, text: string): boolean =>
+  (
+    ts.createSourceFile(path, text, ts.ScriptTarget.Latest) as ts.SourceFile & {
+      checkJsDirective?: { enabled: boolean };
+    }
+  ).checkJsDirective?.enabled === false;
 
 describe('typecheck reads the scripts that deploy this site (#228)', () => {
   it('turns checkJs on, so a .js body is read and not merely admitted', () => {
@@ -68,20 +100,36 @@ describe('typecheck reads the scripts that deploy this site (#228)', () => {
   it('no script opts itself out with a ts-nocheck directive', () => {
     // A directive at the top of a file silences the whole file, which is the
     // one way to get back to where this ticket started without changing any
-    // config. Comment-stripped would HIDE it -- a directive IS a comment --
-    // so this reads the raw text deliberately, and that is why it matches
-    // the anchored form rather than the bare word.
-    const scripts = nonEmpty(
-      filesUnder('scripts', (path) => path.endsWith('.mjs')),
-      'scripts',
-    );
-    // Matched WITHOUT comment syntax: spelling `//` here makes this file
-    // read as a comment stripper to `one-home.test.ts`, which is right to
-    // ask -- naming comment syntax is how a second stripper starts. The
-    // directive's own name is enough, and it appears nowhere else.
-    const opted = scripts.filter((path) =>
-      /@ts-nocheck/.test(readFileSync(path, 'utf8')),
-    );
-    expect(searched(opted, { of: scripts, what: 'scripts read' })).toEqual([]);
+    // config.
+    const read = scripts();
+    const opted = read.filter((path) => optsOut(readFileSync(path, 'utf8')));
+    expect(searched(opted, { of: read, what: 'scripts read' })).toEqual([]);
+  });
+
+  it('reads every script, and as many as there are', () => {
+    // Measured 29 scripts on 2026-10-03 (#446). Stated tight, so a walk that
+    // comes back one short fails.
+    const read = scripts();
+    expect(read.length).toBeGreaterThan(28);
+    // Cross-checked against the compiler: every script TypeScript itself
+    // would stop checking must be one the raw scan flags. No script does
+    // today, so the planted forms below are what this check runs on.
+    const missed = read.filter((path) => {
+      const text = readFileSync(path, 'utf8');
+      return silencedByCompiler(path, text) && !optsOut(text);
+    });
+    expect(searched(missed, { of: read, what: 'scripts read' })).toEqual([]);
+  });
+
+  it.each([
+    ['a line comment', '// @ts-nocheck\nexport const a = 1;\n'],
+    ['a triple-slash comment', '/// @ts-nocheck\nexport const a = 1;\n'],
+    [
+      'a line comment under a shebang',
+      '#!/usr/bin/env node\n// @ts-nocheck\nexport const a = 1;\n',
+    ],
+  ])('flags a directive the compiler obeys, written as %s', (_form, text) => {
+    expect(silencedByCompiler('plant.mjs', text)).toBe(true);
+    expect(optsOut(text)).toBe(true);
   });
 });

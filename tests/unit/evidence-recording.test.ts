@@ -24,6 +24,7 @@ import {
   callsIn,
   declarationsIn,
   enclosingDeclaration,
+  useCallsIn,
 } from '../playwright-declarations';
 
 const E2E = 'tests/e2e';
@@ -92,7 +93,11 @@ const actionsIn = (text: string): string[] => {
 };
 
 const declaresRecorded = (text: string): boolean =>
-  text.includes('test.use(recorded)');
+  /\btest\.use\(\s*recorded\s*,?\s*\)/.test(text);
+
+/** Whether the parse tree of `text` passes `recorded` to `test.use`. */
+const parsedRecorded = (text: string): boolean =>
+  useCallsIn(parseSource(text)).some(({ shared }) => shared === 'recorded');
 
 /**
  * Whether a journey reaches the browser at all (#292) -- which is not the
@@ -288,6 +293,38 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
     ).toEqual([]);
   });
 
+  it('reads every spec, and as many declarations as there are', () => {
+    // Measured 43 e2e specs on 2026-10-03 (#446), 26 of them declaring
+    // recorded. Stated tight, so a walk or a reader that comes back one short
+    // fails.
+    expect(SPECS.length).toBeGreaterThan(42);
+    const declaring = SPECS.filter((path) => declaresRecorded(sourceOf(path)));
+    expect(declaring.length).toBeGreaterThan(25);
+    // Cross-checked against the parse tree: a spec the compiler reads as
+    // passing `recorded` to `test.use` is one the text scan reads as
+    // declaring it, and the other way round, so neither reading has a form
+    // the other cannot see.
+    const disagree = SPECS.filter(
+      (path) =>
+        parsedRecorded(sourceOf(path)) !== declaresRecorded(sourceOf(path)),
+    );
+    expect(
+      searched(disagree, {
+        of: SPECS,
+        what: 'specs checked for a declaration',
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['on one line', 'test.use(recorded);\n'],
+    ['with spaces inside the call', 'test.use( recorded );\n'],
+    ['split over lines', 'test.use(\n  recorded,\n);\n'],
+  ])('reads a declaration written %s', (_form, text) => {
+    expect(parsedRecorded(text)).toBe(true);
+    expect(declaresRecorded(text)).toBe(true);
+  });
+
   it('every construct in the vocabulary is detectable', () => {
     // Anti-vacuity, done with FIXTURES rather than by demanding a real spec
     // use each token. A token no spec uses yet still states the policy for the
@@ -323,9 +360,11 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
   it('some specs really do act, and some really do not', () => {
     // The population control for the two direction guards above: if every
     // spec landed on one side, both would pass while asserting nothing.
+    // Measured 26 acting and 17 still on 2026-10-03 (#446). Stated tight, so
+    // a reader that moves one spec across fails.
     const acting = SPECS.filter((p) => actionsIn(sourceOf(p)).length > 0);
     const still = SPECS.filter((p) => actionsIn(sourceOf(p)).length === 0);
-    expect({ acting: acting.length > 0, still: still.length > 0 }).toEqual({
+    expect({ acting: acting.length > 25, still: still.length > 16 }).toEqual({
       acting: true,
       still: true,
     });

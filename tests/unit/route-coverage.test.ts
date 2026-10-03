@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { LOCALES, PREFIXED_LOCALES } from '../../src/lib/i18n';
 import { withoutTsComments, withoutMarkupComments } from './source-text';
 import { nonEmpty, searched } from '../source-files';
+import { parseFile, parseSource, stringTextsIn } from './ast';
 
 /**
  * #21 Stage 4. Adding a locale must not mean writing routes by hand.
@@ -120,6 +121,21 @@ const gateSpecs = () =>
     ),
   );
 
+/**
+ * Every route in `code` under a locale prefix: a quote, a backtick or the end
+ * of a template substitution, then `/<locale>` ending the string or followed
+ * by a path, a query, a fragment or a substitution. `/id` alone is the
+ * Indonesian home, and the first version of this scan, which wanted a slash
+ * after the prefix, could not see it.
+ */
+const PREFIXED = `/(?:${PREFIXED_LOCALES.join('|')})(?=$|[/?#'"\`$])`;
+const localePrefixed = (code: string): string[] =>
+  [...code.matchAll(new RegExp(`['"\`}]${PREFIXED}`, 'g'))].map(([m]) => m);
+
+/** Whether a string, as the parse tree holds it, starts with a locale prefix. */
+const startsPrefixed = (text: string): boolean =>
+  new RegExp(`^${PREFIXED}`).test(text);
+
 describe('the post-deploy gates derive their routes', () => {
   it('has gate specs to check', () => {
     // Without this the loop below is vacuous if the directories are ever
@@ -130,23 +146,62 @@ describe('the post-deploy gates derive their routes', () => {
   });
 
   it('hardcodes no locale-prefixed route in any deploy gate', () => {
-    const pattern = new RegExp(
-      `['"\`]/(?:${PREFIXED_LOCALES.join('|')})/`,
-      'g',
-    );
     const specs = gateSpecs();
-    for (const file of specs) {
-      const found = [
-        ...withoutTsComments(readFileSync(file, 'utf8')).matchAll(pattern),
-      ].map((m) => m[0]);
-      expect(
-        searched(found, { of: specs, what: 'deploy-gate specs' }),
-        `${file} hardcodes a locale-prefixed path. Derive it from LOCALES ` +
-          `and localisePath instead — a hand-written list stops covering new ` +
-          `locales silently, and this gate is what stands between develop and ` +
-          `production`,
-      ).toEqual([]);
-    }
+    const found = specs.flatMap((file) =>
+      localePrefixed(withoutTsComments(readFileSync(file, 'utf8'))).map(
+        (route) => `${file}: ${route}`,
+      ),
+    );
+    expect(
+      searched(found, { of: specs, what: 'deploy-gate specs' }),
+      'a deploy gate hardcodes a locale-prefixed path. Derive it from LOCALES ' +
+        'and localisePath instead — a hand-written list stops covering new ' +
+        'locales silently, and this gate is what stands between develop and ' +
+        'production',
+    ).toEqual([]);
+  });
+
+  it('reads every locale-prefixed string the parse tree holds', () => {
+    // Cross-checked against the parse tree: a string the compiler reads as
+    // starting with a locale prefix must be one the text scan reports, or
+    // the scan's own quote handling has a blind spot. No gate spec holds one
+    // today, so the planted forms below are what this check runs on. Counts,
+    // not sets, because the verdict above holds the scan to none: any string
+    // the parse tree reads as prefixed is then one the scan missed.
+    const specs = gateSpecs();
+    const missed = specs.flatMap((file) => {
+      const scanned = localePrefixed(
+        withoutTsComments(readFileSync(file, 'utf8')),
+      ).length;
+      const parsed = stringTextsIn(parseFile(file)).filter(startsPrefixed);
+      return parsed.length > scanned ? [`${file}: ${parsed.join(', ')}`] : [];
+    });
+    expect(searched(missed, { of: specs, what: 'deploy-gate specs' })).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    ['a quoted path', "await page.goto('/id/glory-points');"],
+    ['a locale home', 'await page.goto("/zh");'],
+    ['a template with a substitution', 'await page.goto(`/th/${page}`);'],
+    ['a path after a base URL', 'await fetch(`${base}/vi/classroom-groups`);'],
+    ['a query on a locale home', "await page.goto('/id?ref=x');"],
+  ])('reads a locale-prefixed route written as %s', (_form, source) => {
+    expect(
+      stringTextsIn(parseSource(source)).filter(startsPrefixed),
+    ).toHaveLength(1);
+    expect(localePrefixed(source)).toHaveLength(1);
+  });
+
+  it.each(PREFIXED_LOCALES)('reads a route under /%s', (locale) => {
+    expect(localePrefixed(`await page.goto('/${locale}/x');`)).toHaveLength(1);
+  });
+
+  it('does not read a route that only starts with the same letters', () => {
+    expect(localePrefixed("await page.goto('/identity'); '/thanks';")).toEqual(
+      [],
+    );
   });
 });
 
