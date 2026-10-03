@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { floorBreach, readFloors, FLOORS_FILE } from '../floors';
@@ -208,5 +209,47 @@ describe('floorsText', () => {
     expect(floorsText({ 'z/a': 2, 'a/z': 1 })).toBe(
       '{\n  "a/z": 1,\n  "z/a": 2\n}\n',
     );
+  });
+});
+
+describe('record-floors.mjs refuses a run it cannot trust, and writes nothing', () => {
+  // Neither runs the suite: an empty PATH leaves no `npx` to start, and a
+  // stand-in `npx` that exits non-zero fails as a broken suite would. The
+  // stand-in is a stub at the process boundary, the one place a failing run
+  // can be had on demand. Both read the real record before and after.
+  const recordWith = (bin: (dir: string) => void) => {
+    const dir = mkdtempSync(join(tmpdir(), 'floors-path-'));
+    const before = readFileSync(FLOORS_FILE);
+    try {
+      bin(dir);
+      const run = spawnSync(process.execPath, ['scripts/record-floors.mjs'], {
+        encoding: 'utf8',
+        env: { ...process.env, CI: '', PATH: dir },
+      });
+      expect(readFileSync(FLOORS_FILE).equals(before), FLOORS_FILE).toBe(true);
+      return run;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('refuses a suite that did not start, naming why', () => {
+    const run = recordWith(() => {});
+    expect(run.status).toBe(1);
+    expect(run.stderr).toBe(
+      '✗ the unit suite did not start: spawnSync npx ENOENT\n',
+    );
+    expect(run.stdout).toBe('');
+  });
+
+  it('refuses a suite that failed, before judging a single figure', () => {
+    const run = recordWith((dir) => {
+      writeFileSync(join(dir, 'npx'), '#!/bin/sh\nexit 3\n', { mode: 0o755 });
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toBe(
+      '✗ the unit suite failed in record mode (exit 3): nothing recorded\n',
+    );
+    expect(run.stdout).toBe('');
   });
 });
