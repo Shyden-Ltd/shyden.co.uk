@@ -27,14 +27,11 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FLOORS_FILE, RECORD_ENV } from '../scripts/record-floors.mjs';
 
-export const FLOORS_FILE = 'tests/floors.json';
-
-/**
- * Set by `scripts/record-floors.mjs` to a file it reads back: while set,
- * every check appends what it saw instead of judging it.
- */
-export const RECORD_ENV = 'FLOORS_RECORD';
+// One home for both, in the recorder that writes the file and sets the
+// variable (review pass 2).
+export { FLOORS_FILE, RECORD_ENV };
 
 export type Floors = Readonly<Record<string, number>>;
 

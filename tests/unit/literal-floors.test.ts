@@ -319,8 +319,9 @@ describe('the floor reader proves what it read (#468)', () => {
   it('counts every floor matcher the code writes, file by file', () => {
     // Independent of the reader's walk (control c): the matcher counted in
     // each file's comment-stripped text, less the ones a string or a regex
-    // literal spells (this file's own MATCHER is one), against what the reader returned for that file, sites and
-    // refusals both. Per file, with no number to drift.
+    // literal spells (this file's own MATCHER is one), against what the
+    // reader returned for that file, sites and refusals both. Per file, with
+    // no number to drift.
     const MATCHER = /\.toBeGreaterThan(?:OrEqual)?\(/g;
     const count = (text: string) => text.match(MATCHER)?.length ?? 0;
     const misread = READINGS.filter(({ file, sites, refused }) => {

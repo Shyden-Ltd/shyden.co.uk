@@ -30,9 +30,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { env } from 'node:process';
 
-import { die } from './errors.mjs';
+import { die, messageOf } from './errors.mjs';
 
-const FLOORS_FILE = 'tests/floors.json';
+/** The recorded figures: one home, which `tests/floors.ts` imports. */
+export const FLOORS_FILE = 'tests/floors.json';
+
+/**
+ * Set to a file for the run's `floorBreach` calls to append what they saw
+ * to, instead of judging it (`tests/floors.ts`).
+ */
+export const RECORD_ENV = 'FLOORS_RECORD';
 
 /**
  * @typedef {{ id: string, actual: number, site: string }} Observation
@@ -149,14 +156,16 @@ const main = () => {
   const dir = mkdtempSync(join(tmpdir(), 'floors-record-'));
   /** @type {number | null} */
   let status;
+  /** @type {Error | undefined} */
+  let error;
   /** @type {Observation[]} */
   let seen = [];
   try {
     const record = join(dir, 'seen.jsonl');
-    status = spawnSync('npx', ['vitest', 'run'], {
+    ({ status, error } = spawnSync('npx', ['vitest', 'run'], {
       stdio: 'inherit',
-      env: { ...env, FLOORS_RECORD: record },
-    }).status;
+      env: { ...env, [RECORD_ENV]: record },
+    }));
     if (existsSync(record))
       seen = readFileSync(record, 'utf8')
         .split('\n')
@@ -166,6 +175,8 @@ const main = () => {
     rmSync(dir, { recursive: true, force: true });
   }
 
+  // A run that never started has no exit status; its error names why.
+  if (error) die(`the unit suite did not start: ${messageOf(error)}`);
   if (status !== 0)
     die(
       `the unit suite failed in record mode (exit ${status}): nothing recorded`,
