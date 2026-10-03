@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import ts from 'typescript';
 import {
   mkdirSync,
   mkdtempSync,
@@ -19,6 +20,8 @@ import {
 import { scratchGit, withoutLocalGit } from '../git-env';
 import { searched, trackedFiles } from '../source-files';
 import { withoutTsComments } from './source-text';
+import { parseSource } from './ast';
+import { callsIn } from '../playwright-declarations';
 
 /** A throwaway repository, driven by the real git. */
 const repository = () => {
@@ -364,27 +367,73 @@ describe('release-inventory.mjs as a command (#362)', () => {
     expect(run.status).toBe(2);
   });
 
-  it('can see every capture: no module but a spec calls shoot', () => {
-    // The selection reads specs alone, so a helper module that captured would
-    // put its tests' pictures on the release page without them ever running.
-    const calls = (source: string) =>
-      /(^|[^\w.$])shoot\(/m.test(withoutTsComments(source));
-    expect(calls("  await shoot(page, 'x');")).toBe(true);
-    expect(calls("  // await shoot(page, 'x');")).toBe(false);
-    const modules = trackedFiles(
+  /**
+   * Whether `source` calls `shoot`, bare or through a namespace import
+   * (`evidence.shoot(`), with or without space before the parenthesis, as
+   * `capture-after-assertion` reads a capture. The first version of this scan
+   * refused a dot before the name, so a helper capturing through a namespace
+   * passed it.
+   */
+  const callsShoot = (source: string) =>
+    /(^|[^\w$])shoot\s*\(/m.test(withoutTsComments(source));
+
+  /** Whether the parse tree of `source` holds a call to `shoot`, either way. */
+  const parsedShoot = (source: string, file = 'module.ts') =>
+    callsIn(parseSource(source, file)).some(
+      ({ expression: callee }) =>
+        (ts.isIdentifier(callee) && callee.text === 'shoot') ||
+        (ts.isPropertyAccessExpression(callee) && callee.name.text === 'shoot'),
+    );
+
+  const helperModules = () =>
+    trackedFiles(
       (path) =>
         path.startsWith('tests/') &&
         !path.startsWith('tests/unit/') &&
         /\.(ts|mjs|js)$/.test(path) &&
         !path.endsWith('.spec.ts'),
     );
+
+  it('can see every capture: no module but a spec calls shoot', () => {
+    // The selection reads specs alone, so a helper module that captured would
+    // put its tests' pictures on the release page without them ever running.
+    expect(callsShoot("  // await shoot(page, 'x');")).toBe(false);
+    const modules = helperModules();
     const capturing = modules.filter((path) =>
-      calls(readFileSync(path, 'utf8')),
+      callsShoot(readFileSync(path, 'utf8')),
     );
     expect(
       searched(capturing, { of: modules, what: 'test helper modules' }),
     ).toEqual([]);
+  });
+
+  it('reads every helper module, and as many as there are', () => {
+    // Measured 58 helper modules on 2026-10-03 (#446). Stated tight, so a
+    // walk that comes back one short fails.
+    const modules = helperModules();
+    expect(modules.length).toBeGreaterThan(57);
     expect(modules).toContain('tests/e2e/evidence.ts');
+    // Cross-checked against the parse tree: every module whose code calls
+    // `shoot` must be one the text scan flags. None does today, so the
+    // planted forms below are what this check runs on.
+    const missed = modules.filter((path) => {
+      const source = readFileSync(path, 'utf8');
+      return parsedShoot(source, path) && !callsShoot(source);
+    });
+    expect(
+      searched(missed, { of: modules, what: 'test helper modules' }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['a bare call', "  await shoot(page, 'x');"],
+    ['a call through a namespace import', "  await evidence.shoot(page, 'x');"],
+    ['a call at the start of a line', "shoot(page, 'x');"],
+    ['a returned call', "  return shoot(page, 'x');"],
+    ['a space before the parenthesis', "  await shoot (page, 'x');"],
+  ])('reads a capture written as %s', (_form, source) => {
+    expect(parsedShoot(source)).toBe(true);
+    expect(callsShoot(source)).toBe(true);
   });
 
   it('refuses a selection that is empty, rather than let a capture run everything', () => {
