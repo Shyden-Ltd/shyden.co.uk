@@ -1,5 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -10,7 +16,9 @@ import {
   readCommits,
   releaseTests,
 } from '../../scripts/release-inventory.mjs';
-import { scratchGit } from '../git-env';
+import { scratchGit, withoutLocalGit } from '../git-env';
+import { searched, trackedFiles } from '../source-files';
+import { withoutTsComments } from './source-text';
 
 /** A throwaway repository, driven by the real git. */
 const repository = () => {
@@ -64,6 +72,7 @@ describe('the release inventory (#362)', () => {
       '-q',
       '--no-ff',
       '-m',
+      // Merges before #413 name the org's old handle, and develop's history keeps them.
       'Merge pull request #347 from Shyden-Ltd/97-report',
       '97-report',
     ]);
@@ -79,7 +88,7 @@ describe('the release inventory (#362)', () => {
       '-q',
       '--no-ff',
       '-m',
-      'Merge pull request #298 from Shyden-Ltd/dependabot/npm/x',
+      'Merge pull request #298 from shyden-labs/dependabot/npm/x',
       'dependabot/npm/x',
     ]);
     sha.head = git(['rev-parse', 'HEAD']).trim();
@@ -144,7 +153,26 @@ describe('the release inventory (#362)', () => {
         { sha: 'x', parents: ['p'], subject: 's', files: [`${prefix}a`] },
       ]);
       expect(entry?.visitorFacing, prefix).toBe(true);
+      // The prefix opens the path: a directory of that name deeper down is
+      // another area's, and ships nothing.
+      const [deeper] = inventoryOf([
+        { sha: 'x', parents: ['p'], subject: 's', files: [`docs/${prefix}a`] },
+      ]);
+      expect(deeper?.visitorFacing, `docs/${prefix}a`).toBe(false);
     }
+  });
+
+  it('names each area once, sorted, whatever order its files arrive in', () => {
+    // git lists paths in byte order, so a root file can follow a directory.
+    const [entry] = inventoryOf([
+      {
+        sha: 'x',
+        parents: ['p'],
+        subject: 's',
+        files: ['docs/a.md', 'docs/b.md', 'public/x.png', 'z.md'],
+      },
+    ]);
+    expect(entry?.areas).toEqual(['(root)', 'docs', 'public']);
   });
 
   it('resolves the ends to full shas', () => {
@@ -162,6 +190,12 @@ describe('the release inventory (#362)', () => {
     expect(() =>
       readCommits({ base: sha.head, head: sha.squash, git: repo.git }),
     ).toThrow(/is not an ancestor of/);
+  });
+
+  it("names git's own refusal, rather than calling a missing commit no ancestor", () => {
+    expect(() =>
+      readCommits({ base: 'nosuch', head: sha.head, git: repo.git }),
+    ).toThrow(/Not a valid object name nosuch/);
   });
 });
 
@@ -181,6 +215,34 @@ describe('a commit the inventory has no rule for (#362)', () => {
       git(['merge', '-q', '--no-ff', '-m', 'octopus', 'one', 'two']);
       expect(() => readCommits({ base, head: 'HEAD', git })).toThrow(
         /has 3 parents/,
+      );
+    } finally {
+      repo.remove();
+    }
+  });
+
+  it('refuses a root commit on the line, which has no first parent to diff against', () => {
+    const repo = repository();
+    try {
+      const { git, write, commit } = repo;
+      write('a', 'a\n');
+      const base = commit('base');
+      // Another history's root, joined to this one: the first-parent walk
+      // from the join runs down to that root, never through the base.
+      git(['switch', '-q', '--orphan', 'other']);
+      write('src/b', 'b\n');
+      commit('another root');
+      git([
+        'merge',
+        '-q',
+        '--no-ff',
+        '--allow-unrelated-histories',
+        '-m',
+        'join',
+        'develop',
+      ]);
+      expect(() => readCommits({ base, head: 'HEAD', git })).toThrow(
+        /has 0 parents/,
       );
     } finally {
       repo.remove();
@@ -256,6 +318,71 @@ describe('release-inventory.mjs as a command (#362)', () => {
     expect(
       lines.some((l) => l.startsWith('tests/e2e/evidence-page.spec.ts:')),
     ).toBe(false);
+  });
+
+  it('prints the inventory of a range as JSON, from full shas', () => {
+    const repo = repository();
+    try {
+      repo.write('README.md', 'production\n');
+      const base = repo.commit('the production tree');
+      repo.write('src/pages/a.astro', 'a\n');
+      const head = repo.commit('feat: a page (#7) (#8)');
+      const run = spawnSync(
+        process.execPath,
+        [script, '--base', base.slice(0, 7), '--head', 'HEAD'],
+        { cwd: repo.dir, encoding: 'utf8', env: withoutLocalGit(process.env) },
+      );
+      expect(run.status, run.stderr).toBe(0);
+      expect(JSON.parse(run.stdout)).toEqual({
+        base,
+        head,
+        entries: [
+          {
+            sha: head,
+            subject: 'feat: a page (#7) (#8)',
+            pr: 8,
+            ticket: 7,
+            files: ['src/pages/a.astro'],
+            visitorFacing: true,
+            areas: ['src'],
+          },
+        ],
+      });
+    } finally {
+      repo.remove();
+    }
+  });
+
+  it('names an option it does not know, and refuses', () => {
+    const run = spawnSync(process.execPath, [script, '--tests', '--bogus'], {
+      encoding: 'utf8',
+    });
+    expect(run.stderr).toContain("release-inventory: Unknown option '--bogus'");
+    expect(run.stderr).toContain('usage: release-inventory.mjs');
+    expect(run.status).toBe(2);
+  });
+
+  it('can see every capture: no module but a spec calls shoot', () => {
+    // The selection reads specs alone, so a helper module that captured would
+    // put its tests' pictures on the release page without them ever running.
+    const calls = (source: string) =>
+      /(^|[^\w.$])shoot\(/m.test(withoutTsComments(source));
+    expect(calls("  await shoot(page, 'x');")).toBe(true);
+    expect(calls("  // await shoot(page, 'x');")).toBe(false);
+    const modules = trackedFiles(
+      (path) =>
+        path.startsWith('tests/') &&
+        !path.startsWith('tests/unit/') &&
+        /\.(ts|mjs|js)$/.test(path) &&
+        !path.endsWith('.spec.ts'),
+    );
+    const capturing = modules.filter((path) =>
+      calls(readFileSync(path, 'utf8')),
+    );
+    expect(
+      searched(capturing, { of: modules, what: 'test helper modules' }),
+    ).toEqual([]);
+    expect(modules).toContain('tests/e2e/evidence.ts');
   });
 
   it('refuses a selection that is empty, rather than let a capture run everything', () => {

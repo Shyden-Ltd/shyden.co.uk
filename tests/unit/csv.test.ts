@@ -110,8 +110,8 @@ describe('CSV_LOCALES', () => {
   // sorted-set comparison that version carried alongside it -- same array,
   // same order, therefore same keys -- so this is the whole contract rather
   // than half of it. A missing column in one language is a file the other
-  // pages cannot read, and nothing else in this repo would catch it: there
-  // is no type checker in CI.
+  // pages cannot read. `astro check` catches a missing key, since `columns`
+  // is a `Record<CsvColumn, string>`, but no type can see their order.
   it('lists the same column keys, in the same order, in every locale', () => {
     const expected = Object.keys(CSV_LOCALES.en.columns);
     expect(expected).toHaveLength(6);
@@ -880,6 +880,25 @@ describe('detectLocale', () => {
     expect(detectLocale(emptyTemplate('id'))).toBe('id');
   });
 
+  // Every locale, derived: the two-locale detector scored `en` and `id` by
+  // name, so a zh, vi or th file came back null and was parsed as the
+  // page's language -- while the no-shared-word guard above had already
+  // been widened to all ten pairs (#390, F9).
+  it.each(LOCALES)('recognises a %s file this codebase wrote', (locale) => {
+    const roster = [student({ number: 1, name: 'Ana', sex: 'F' })];
+    expect(detectLocale(serialiseRoster(roster, '7B', locale))).toBe(locale);
+    expect(detectLocale(emptyTemplate(locale))).toBe(locale);
+  });
+
+  it('recognises a file by a header its locale has since superseded', () => {
+    // The superseded word alone, beside a word no table uses: a current
+    // header in the same file would win the score on its own and hide
+    // whether the superseded word counted.
+    const [word] = CSV_LOCALES.vi.supersededColumns?.sex ?? [];
+    expect(word).toBe('tình dục');
+    expect(detectLocale(`${word},x\nF,1\n`)).toBe('vi');
+  });
+
   it('returns null for an empty file rather than guessing', () =>
     expect(detectLocale('')).toBe(null));
 
@@ -919,6 +938,15 @@ describe('importFile — the wrong language, refused with a way forward', () => 
     if (out.ok) return;
     expect(out.problems).toHaveLength(1);
     expect(out.problems[0].row).toBeNull();
+  });
+
+  it('refuses a Vietnamese file on the English page, naming Vietnamese', () => {
+    const roster = [student({ number: 1, name: 'Ana', sex: 'F' })];
+    const out = importFile(serialiseRoster(roster, '7B', 'vi'), 'en', en);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.problems).toHaveLength(1);
+    expect(out.problems[0].message).toContain(en.csvLanguageName.vi);
   });
 
   it('passes a right-language file straight through to parseRoster', () => {
@@ -1174,11 +1202,62 @@ describe('the sex column header, corrected without breaking old files', () => {
     ).toEqual([]);
   });
 
+  it('the sex tokens are the letters the roster offers the teacher', () => {
+    // #390, F10. The test above holds the sex column's HEADER to the page.
+    // The two tokens under it were held to nothing, although translate.ts
+    // and csv-locale.ts both say they must agree with the roster's own
+    // choices: a file of M/F rows beside a roster offering other letters is
+    // a file the teacher cannot check against the table it came from. Until
+    // this, changing one side reddened only literal pins, whose natural fix
+    // leaves the other side behind.
+    const drift: string[] = [];
+    for (const locale of LOCALES) {
+      const { M, F } = CSV_LOCALES[locale].sex;
+      const t = getStrings(locale);
+      if (M !== t.rosterSexMale)
+        drift.push(`${locale}: file M "${M}" vs page "${t.rosterSexMale}"`);
+      if (F !== t.rosterSexFemale)
+        drift.push(`${locale}: file F "${F}" vs page "${t.rosterSexFemale}"`);
+    }
+    expect(
+      searched(drift, { of: [...LOCALES], what: 'locales compared' }),
+    ).toEqual([]);
+  });
+
+  it("the class comment names the class the way the page's own field does", () => {
+    // #390, F12. zh wrote `# 类：` ("Category:") above a class list whose
+    // page labels the very same value 班级, as zh does 21 times elsewhere,
+    // and th wrote ชั้นเรียน where its field said คลาส. A teacher types the
+    // class name into that field and meets it again on this line, so both
+    // must use one word. The `(optional)` the field adds is not part of it.
+    const word = (text: string) => text.normalize('NFC').trim().toLowerCase();
+    const drift: string[] = [];
+    for (const locale of LOCALES) {
+      const inFile = CSV_LOCALES[locale].classComment
+        .replace(/^#\s*/, '')
+        .replace(/[:：]\s*$/, '');
+      const onPage = getStrings(locale).classLabel.replace(
+        /\s*[(（][^)）]*[)）]\s*$/,
+        '',
+      );
+      if (word(inFile) !== word(onPage))
+        drift.push(`${locale}: file "${inFile}" vs page "${onPage}"`);
+    }
+    expect(
+      searched(drift, { of: [...LOCALES], what: 'locales compared' }),
+    ).toEqual([]);
+  });
+
   it('correcting the sex header moved nothing else, in any locale', () => {
     // AC7 asks for the untouched tokens asserted rather than assumed. The
     // pins that existed covered `en` and `id` only -- the same two-locale
     // shape this file's own header comment records as having left nine of
     // the ten pairs unguarded once #22 shipped five languages.
+    //
+    // #390 moved three of them, by operator decision (2026-09-30, "Change
+    // all three"): zh `no` 不 → 否, vi `yes` đúng vậy ("that's right") →
+    // có, and th `no` ไม่ → ไม่ใช่, the yes/no pairs a form in each language
+    // uses. Free before the release, since production had no zh, vi or th.
     const UNTOUCHED = {
       en: {
         absentYes: 'yes',
@@ -1196,13 +1275,13 @@ describe('the sex column header, corrected without breaking old files', () => {
       },
       zh: {
         absentYes: '是',
-        absentNo: '不',
+        absentNo: '否',
         groupColumn: '组',
         M: 'M',
         F: 'F',
       },
       vi: {
-        absentYes: 'đúng vậy',
+        absentYes: 'có',
         absentNo: 'không',
         groupColumn: 'nhóm',
         M: 'M',
@@ -1210,7 +1289,7 @@ describe('the sex column header, corrected without breaking old files', () => {
       },
       th: {
         absentYes: 'ใช่',
-        absentNo: 'ไม่',
+        absentNo: 'ไม่ใช่',
         groupColumn: 'กลุ่ม',
         M: 'M',
         F: 'F',

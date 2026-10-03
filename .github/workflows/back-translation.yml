@@ -18,9 +18,11 @@ on:
     # script's own import closure, so a new input cannot go unwatched.
     paths:
       - 'src/lib/i18n/**'
+      - 'src/lib/catalogue-leaves.ts'
       - 'src/lib/csv-locale.ts'
       - 'scripts/i18n-back-translate.mjs'
       - 'scripts/back-translate-client.mjs'
+      - 'scripts/errors.mjs'
       - 'docker/libretranslate/**'
       - '.github/workflows/back-translation.yml'
   workflow_dispatch:
@@ -38,6 +40,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -64,7 +68,6 @@ jobs:
       - name: Read every locale back into English
         env:
           BACK_TRANSLATE_URL: http://localhost:5000
-          BACK_TRANSLATE_ENGINE: LibreTranslate v1.9.6
           BACK_TRANSLATE_REPORT: back-translation.json
         run: node scripts/i18n-back-translate.mjs
       - name: Keep every comparison

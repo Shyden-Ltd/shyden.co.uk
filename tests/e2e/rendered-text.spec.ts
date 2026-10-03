@@ -1,7 +1,11 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { searched } from '../source-files';
-import { publishedPaths } from './published-paths';
+import {
+  PUBLISHED_ROUTES,
+  publishedPaths,
+  withoutTrailingSlash,
+} from './published-paths';
 
 /**
  * The scan that found the shipped defects, encoded so it runs every time.
@@ -65,19 +69,26 @@ const scan = (text: string) =>
  * no separator at all, so every `</p><p>` would look like a defect. innerText
  * inserts the line breaks the layout implies, which is precisely the join
  * being tested. `hidden` is stripped first so the fields behind the radio
- * buttons are scanned too.
+ * buttons are scanned too, and every `<details>` is opened: innerText leaves
+ * a closed one's content out, so every report form's words passed both scans
+ * below on all thirteen beta pages (RT1, RT2).
  */
 const renderedText = (page: Page) =>
   page.evaluate(() => {
     document
       .querySelectorAll('[hidden]')
       .forEach((el) => el.removeAttribute('hidden'));
+    document
+      .querySelectorAll('details')
+      .forEach((details) => (details.open = true));
     return document.body.innerText;
   });
 
 /**
- * Joins that are meant to be there. Ten on the whole site, two shapes in five
- * languages, and both shapes are ordinary typography rather than accidents.
+ * Joins that are meant to be there: ordinary typography, never one sentence.
+ * The full-width shapes arrived with #390 F65, when the 404 stopped putting an
+ * English space into its Chinese line. A Chinese sentence glued to its link
+ * WITHOUT a full stop is still a finding.
  */
 const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
   {
@@ -87,8 +98,15 @@ const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
   },
   {
     left: /\S$/,
-    right: /^[.,]$/,
+    right: /^[.,。，]$/,
     why: 'punctuation closing a sentence that ended in a link',
+  },
+  {
+    left: /[。！？]$/,
+    right: /^\S/,
+    why:
+      'a full-width stop carries its own space: Chinese sets the next ' +
+      'sentence straight after it (#390 F65)',
   },
 ];
 
@@ -100,7 +118,9 @@ const INTENTIONAL_JOINS: Array<{ left: RegExp; right: RegExp; why: string }> = [
  * at from punctuation. The purely textual scan above only knows Latin
  * letters: delete the 404 page's `{' '}` and it finds the Indonesian and
  * Vietnamese sentences glued to their links, while this finds those two and
- * the Chinese and Thai ones as well (measured, #198).
+ * the Chinese and Thai ones as well (measured, #198). The Chinese one has had
+ * no space since #390 F65, by design: it ends in `。`, which the allow-list
+ * below accepts.
  *
  * Measured rather than reasoned about, because the obvious implementations
  * are both wrong. Comparing text alone reports 172 joins on this site, nearly
@@ -336,90 +356,92 @@ async function joinsReportedFor(
 }
 
 test.describe('rendered text — no sentence may lose a space to the formatter', () => {
-  test('every published page, in every language', async ({ page }) => {
-    const paths = await publishedPaths(page);
-    const findings: string[] = [];
-
-    for (const path of paths) {
-      await page.goto(path);
-      const text = await renderedText(page);
-
-      for (const { why, at } of scan(text)) {
-        const context = text.slice(Math.max(0, at - 45), at + 45).trim();
-        findings.push(`${path}: ${why} -> …${context}…`);
-      }
-    }
-
-    // Reported all at once: a scan that stops at the first hit turns one
-    // review pass into six.
-    expect(
-      searched(findings, { of: paths, what: 'built pages visited' }),
-      findings.join('\n'),
-    ).toEqual([]);
+  // The pages each test below generates come from the source; this holds
+  // them to what the build actually published, both ways (#422).
+  test("the published routes are the sitemap's", async ({ page }) => {
+    const built = (await publishedPaths(page)).map(withoutTrailingSlash).sort();
+    expect(PUBLISHED_ROUTES.map(withoutTrailingSlash).sort()).toEqual(built);
   });
 
-  test('no two words are rendered touching, on any page', async ({ page }) => {
-    // Where a box lands depends on the width it was laid out at, so the width
-    // is part of what was searched: at 1280px this test passed for weeks while
-    // every page failed it at phone width (#198). Each page reports its own
-    // width once it has loaded. `page.viewportSize()` is null on a real phone,
-    // which emulates nothing, and before `goto` the page is about:blank, which
-    // a phone lays out at 980px.
-    const paths = await publishedPaths(page);
-    const findings: string[] = [];
-    const widths = new Set<number>();
-    const measured: string[] = [];
-
-    for (const path of paths) {
+  // One test per published page (#422). Each reports every finding on its
+  // page at once: a scan that stops at the first hit turns one review pass
+  // into six.
+  for (const path of PUBLISHED_ROUTES)
+    test(`${path}: no sentence loses a space`, async ({ page }) => {
       await page.goto(path);
+      const text = await renderedText(page);
+      const findings = scan(text).map(({ why, at }) => {
+        const context = text.slice(Math.max(0, at - 45), at + 45).trim();
+        return `${why} -> …${context}…`;
+      });
+      expect(
+        searched(findings, { of: text.length, what: `characters of ${path}` }),
+        findings.join('\n'),
+      ).toEqual([]);
+    });
+
+  // Where a box lands depends on the width it was laid out at, so the width
+  // is part of what was searched: at 1280px this test passed for weeks while
+  // every page failed it at phone width (#198). Each page reports its own
+  // width once it has loaded. `page.viewportSize()` is null on a real phone,
+  // which emulates nothing, and before `goto` the page is about:blank, which
+  // a phone lays out at 980px.
+  for (const path of PUBLISHED_ROUTES)
+    test(`${path}: no two words are rendered touching`, async ({ page }) => {
+      await page.goto(path);
+      // Every disclosure in the page's flow open, as a visitor can: a closed
+      // one paints nothing, so a report form's words were never laid out to
+      // be measured (RT3). Not the header's two: they are menus that drop
+      // OVER the page, so their last item lies on top of the line beneath,
+      // and a line that is covered is not one anybody reads as touching.
+      await page.evaluate(() =>
+        document
+          .querySelectorAll<HTMLDetailsElement>('details:not(header details)')
+          .forEach((details) => (details.open = true)),
+      );
       const width = await page.evaluate(
         () => document.documentElement.clientWidth,
       );
-      if (width > 0) {
-        widths.add(width);
-        measured.push(path);
-      }
-      for (const join of await visualJoins(page)) {
-        const allowed = INTENTIONAL_JOINS.some(
-          ({ left, right }) => left.test(join.left) && right.test(join.right),
-        );
-        if (allowed) continue;
-        findings.push(
-          `${path} <${join.tag.toLowerCase()}>: ` +
+      const joins = await visualJoins(page);
+      const findings = joins
+        .filter(
+          (join) =>
+            !INTENTIONAL_JOINS.some(
+              ({ left, right }) =>
+                left.test(join.left) && right.test(join.right),
+            ),
+        )
+        .map(
+          (join) =>
+            `<${join.tag.toLowerCase()}>: ` +
             `…${join.left.slice(-40).trim()}⟨NO SPACE⟩${join.right.slice(0, 40).trim()}…`,
         );
-      }
-    }
+      expect(
+        searched(findings, {
+          of: width,
+          what: `px of ${path} laid out, a width read from the page`,
+        }),
+        `at ${width}px wide:\n${findings.join('\n')}`,
+      ).toEqual([]);
+    });
 
-    const at = [...widths].map((width) => `${width}px`).join(' and ');
-    expect(
-      searched(findings, {
-        of: measured,
-        what: `built pages visited at a width read from the page (${at})`,
-      }),
-      `at ${at} wide:\n${findings.join('\n')}`,
-    ).toEqual([]);
-  });
-
-  test('no unfilled [[placeholder]] reaches a page', async ({ page }) => {
-    // release.yml refuses to ship a `[[…]]` placeholder, but that guard only
-    // runs at release — by which point the fix costs a re-dispatch and an
-    // approval. The same check belongs here, where it runs on every PR.
-    const paths = await publishedPaths(page);
-    const findings: string[] = [];
-
-    for (const path of paths) {
+  // release.yml refuses to ship a `[[…]]` placeholder, but that guard only
+  // runs at release — by which point the fix costs a re-dispatch and an
+  // approval. The same check belongs here, where it runs on every PR.
+  for (const path of PUBLISHED_ROUTES)
+    test(`${path}: no unfilled [[placeholder]] reaches the page`, async ({
+      page,
+    }) => {
       await page.goto(path);
       const text = await renderedText(page);
-      for (const m of text.matchAll(/\[\[[^\]]{1,60}\]\]/g)) {
-        findings.push(`${path}: ${m[0]}`);
-      }
-    }
-    expect(
-      searched(findings, { of: paths, what: 'built pages visited' }),
-      findings.join('\n'),
-    ).toEqual([]);
-  });
+      const findings = [...text.matchAll(/\[\[[^\]]{1,60}\]\]/g)].map(
+        (m) => m[0],
+      );
+      expect(
+        searched(findings, { of: text.length, what: `characters of ${path}` }),
+        findings.join('\n'),
+      ).toEqual([]);
+    });
 
   test('the scan can actually see a broken seam', async ({ page }) => {
     // A detector nobody has watched fail is a detector nobody should trust.

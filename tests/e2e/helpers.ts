@@ -4,14 +4,32 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
-import { contrast, over, parseColour } from '../wcag';
+import { contrast, over, paintedGround, parseColour } from '../wcag';
 import {
   deviceDownloadText,
   emptyDeviceDownloads,
   onRealDevice,
 } from '../device/device-downloads';
-import type { Locale } from '../../src/lib/i18n/index';
+import {
+  getStrings,
+  localeFromPath,
+  type Locale,
+  type Strings,
+} from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
+
+/**
+ * The catalogue of the language the page is showing, read off its URL.
+ *
+ * The roster helpers named their controls by an English-or-Indonesian
+ * pattern (`/Sex|Jenis kelamin/`), written when those were the only two
+ * locales, so none of them could drive zh, vi or th, and a layout test on
+ * those pages could not even open the roster (#390 F113). Exact catalogue
+ * labels are stricter too: a substring pattern for "Add" also matches
+ * "+ Add student".
+ */
+const stringsOf = (page: Page): Strings =>
+  getStrings(localeFromPath(new URL(page.url()).pathname));
 
 /**
  * Fixtures for driving the roster into a starting state -- Stage 3, 4 and 5
@@ -36,7 +54,12 @@ import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 export const openRoster = async (page: Page, path = '/classroom-groups') => {
   await page.goto(path);
   await page.locator('#cg-students-toggle').click();
-  await page.getByRole('button', { name: /Add student|Tambah siswa/ }).click();
+  await page
+    .getByRole('button', {
+      name: stringsOf(page).rosterAddStudent,
+      exact: true,
+    })
+    .click();
 };
 
 /**
@@ -90,19 +113,22 @@ export const expectVisibleText = async (target: Locator, text: string) => {
 export const giveEveryoneASex = async (page: Page, sex: 'M' | 'F' = 'M') => {
   const rows = page.locator('#cg-roster tbody tr');
   for (let i = 0; i < (await rows.count()); i++) {
-    const select = rows.nth(i).getByLabel(/Sex|Jenis kelamin/);
+    const select = rows
+      .nth(i)
+      .getByLabel(stringsOf(page).rosterColSex, { exact: true });
     if ((await select.inputValue()) === '') await select.selectOption(sex);
   }
 };
 
 export const addSeveral = async (page: Page, howMany: number) => {
+  const t = stringsOf(page);
   await page
-    .getByRole('button', { name: /Add several|Tambah beberapa/ })
+    .getByRole('button', { name: t.rosterAddSeveral, exact: true })
     .click();
+  await page.getByLabel(t.rosterHowMany, { exact: true }).fill(String(howMany));
   await page
-    .getByLabel(/How many to add\?|Berapa yang ditambahkan\?/)
-    .fill(String(howMany));
-  await page.getByRole('button', { name: /^Add$|^Tambah$/ }).click();
+    .getByRole('button', { name: t.rosterAddConfirm, exact: true })
+    .click();
 };
 
 /**
@@ -148,16 +174,20 @@ export const expectStudentsBoxReports = async (
  * consumer-to-be, not a hypothetical one, so the same rule that already
  * governs `openRoster`/`addSeveral` applies to this one too.
  */
-export const markAbsent = async (page: Page) => {
-  await openRoster(page);
-  await page.locator('.cg-student').first().getByLabel('Absent').check();
+export const markAbsent = async (page: Page, path = '/classroom-groups') => {
+  await openRoster(page, path);
+  await page
+    .locator('.cg-student')
+    .first()
+    .getByLabel(stringsOf(page).rosterColAbsent)
+    .check();
 };
 
 export const setSex = async (page: Page, row: number, sex: 'M' | 'F') =>
   page
     .locator('.cg-student')
     .nth(row)
-    .getByLabel(/Sex|Jenis kelamin/)
+    .getByLabel(stringsOf(page).rosterColSex, { exact: true })
     .selectOption(sex);
 
 /** [sex, name] per student, in order. The one builder every later suite uses. */
@@ -170,8 +200,14 @@ export const buildRoster = async (
   if (students.length > 1) await addSeveral(page, students.length - 1);
   for (const [i, [sex, name]] of students.entries()) {
     const row = page.locator('.cg-student').nth(i);
-    if (name) await row.getByLabel(/Name|Nama/).fill(name);
-    if (sex) await row.getByLabel(/Sex|Jenis kelamin/).selectOption(sex);
+    if (name)
+      await row
+        .getByLabel(stringsOf(page).rosterColName, { exact: true })
+        .fill(name);
+    if (sex)
+      await row
+        .getByLabel(stringsOf(page).rosterColSex, { exact: true })
+        .selectOption(sex);
   }
   await expect(page.locator('.cg-student')).toHaveCount(students.length);
 };
@@ -203,19 +239,10 @@ export const withGroups = async (
   path = '/classroom-groups',
 ) => {
   await rosterOf(page, n, path);
-  // "Make Groups" / "Buat Kelompok" -- capital-for-capital (en.ts's own
-  // `makeGroups`/id.ts's own `makeGroups`). A case-SENSITIVE regex name
-  // (no `i` flag) is matched against the accessible name exactly as
-  // Playwright computes it -- `escapeRegexForSelector` in Playwright's own
-  // source passes a regex through unchanged, flags and all -- so the
-  // lowercase `groups`/`kelompok` this line used to carry could never match
-  // either button. Found by tracing that matching path, not assumed;
-  // confirmed directly against a real page before this fix. This helper had
-  // no call site anywhere in the suite yet (grep confirmed it: `withGroups(`
-  // -- zero hits outside its own definition), so the bug was latent, never
-  // exercised, and would have reddened the FIRST test to use it for a
-  // reason that had nothing to do with what that test was checking.
-  await page.getByRole('button', { name: /Make Groups|Buat Kelompok/ }).click();
+  // The page's own `makeGroups`, exactly, in whichever language it shows.
+  await page
+    .getByRole('button', { name: stringsOf(page).makeGroups, exact: true })
+    .click();
   await expect(page.locator('#cg-results .group').first()).toBeVisible();
 };
 
@@ -348,7 +375,7 @@ export const namesIn = (text: string): string[] =>
 /** Open the print panel from the results section. */
 export const openPrintPanel = async (page: Page) => {
   await page
-    .getByRole('button', { name: /^(Print|Cetak)$/ })
+    .getByRole('button', { name: stringsOf(page).printOpen, exact: true })
     .first()
     .click();
   await expect(page.locator('#cg-print-panel')).toBeVisible();
@@ -415,36 +442,35 @@ export const contrastRatio = async (target: Locator): Promise<number> => {
   // linearising at a different constant from the two node-side copies.
   const painted = await target.evaluate((el) => {
     const style = getComputedStyle(el);
-    // Start at the element itself -- it may paint its own background -- and
-    // walk up until something does, the same resolution the browser performs
-    // when compositing.
-    let bgEl: Element | null = el;
-    let background = 'rgb(255, 255, 255)';
-    while (bgEl) {
-      const c = getComputedStyle(bgEl).backgroundColor;
-      if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') {
-        background = c;
-        break;
-      }
-      bgEl = bgEl.parentElement;
+    // Every background from the element itself -- it may paint its own --
+    // outward, nearest first. Not just the first: a translucent layer is
+    // composited over what is behind it, which `paintedGround` does (#390
+    // F127).
+    const grounds: string[] = [];
+    for (let at: Element | null = el; at; at = at.parentElement) {
+      const c = getComputedStyle(at).backgroundColor;
+      if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') grounds.push(c);
     }
-    return { colour: style.color, background, opacity: Number(style.opacity) };
+    return { colour: style.color, grounds, opacity: Number(style.opacity) };
   });
 
   const ink = parseColour(painted.colour);
-  const ground = parseColour(painted.background);
-  if (ink === null || ground === null)
+  const layers = painted.grounds.map(parseColour);
+  if (ink === null || layers.some((layer) => layer === null))
     throw new Error(
-      `unreadable computed colour: ${painted.colour} on ${painted.background}`,
+      `unreadable computed colour: ${painted.colour} on ${painted.grounds.join(' over ')}`,
     );
+  const ground = paintedGround(
+    layers.filter((layer): layer is NonNullable<typeof layer> => !!layer),
+  );
   // The element's own opacity dims its text against what is behind it. A
   // colour token that passes AA on paper can still fail once the browser has
   // mixed it -- the bug this was first written for, in classroom-groups.
   const mixed = over(
     { rgb: ink.rgb, alpha: ink.alpha * painted.opacity },
-    over(ground, [255, 255, 255]),
+    ground,
   );
-  return contrast(mixed, over(ground, [255, 255, 255]));
+  return contrast(mixed, ground);
 };
 
 /**
@@ -516,4 +542,34 @@ export const expectNothingStored = async (
   for (const [where, value] of Object.entries(stored))
     for (const name of names)
       expect(value, `${where} — ${when}`).not.toContain(name);
+};
+
+/**
+ * Every text a report form shows that falls under AA: its summary, every
+ * label and paragraph it renders, and its send button, read from the DOM.
+ * Naming the quote label and two hints passed a note label painted in
+ * --border, on the 404 and in the footer alike (#390 F138, F146). The
+ * honeypot's label sits in its own div, so `form > label` leaves it out.
+ * Returns what was read too, so the caller's absence assertion can count it.
+ */
+export const formTextsUnderAA = async (
+  details: Locator,
+  send: Locator,
+): Promise<{ failing: string[]; read: string[] }> => {
+  const words = details.locator('form > label, form > p');
+  await expect(words.first()).toBeVisible();
+  const failing: string[] = [];
+  const read: string[] = [];
+  // runtime population: the labels and paragraphs this form rendered.
+  for (const text of [
+    details.locator('summary'),
+    ...(await words.all()),
+    send,
+  ]) {
+    const said = await text.innerText();
+    read.push(said);
+    const ratio = await contrastRatio(text);
+    if (ratio < 4.5) failing.push(`'${said}' ${ratio.toFixed(2)}:1`);
+  }
+  return { failing, read };
 };

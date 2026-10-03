@@ -157,9 +157,10 @@ describe('the post-deploy gates derive their routes', () => {
  * purpose was to make a hand-written list unable to go stale. It could catch a
  * sixth locale and was blind to a fourth page.
  *
- * `pipeline-wiring.test.ts`'s `the prod smoke covers every page in every
- * locale` asserts the same invariant and derives BOTH axes, so it is strictly
- * stronger and is now the one home for it (#89). Two guards on one invariant,
+ * The smoke now takes its routes from `deployedRoutes()` in
+ * tests/prod/prod-smoke.spec.ts, deriving BOTH axes, so it covers every page
+ * by construction (#390). Before that, a guard in `pipeline-wiring.test.ts`
+ * held its curl loop to the same derived set and was the one home (#89). Two guards on one invariant,
  * one of them weaker, is how the weaker one comes to be the only one anybody
  * edits.
  */

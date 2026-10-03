@@ -13,7 +13,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withoutMarkupComments, withoutTsComments } from './source-text';
 import { filesUnder, tsFilesUnder, searched } from '../source-files';
-import { reportLocation } from '../../scripts/test-e2e.mjs';
+import { oneAttemptEach, reportLocation } from '../../scripts/test-e2e.mjs';
 import {
   CONTRACT_MODULE,
   EVIDENCE_JPEG_QUALITY,
@@ -289,6 +289,7 @@ const runBuilder = (
   dir: string,
   page: string,
   script = 'scripts/build-evidence-page.mjs',
+  extra: string[] = [],
 ) => {
   const content = join(dir, 'content.json');
   writeFileSync(content, JSON.stringify(CONTENT));
@@ -325,6 +326,7 @@ const runBuilder = (
       page,
       '--assets',
       assets,
+      ...extra,
     ],
     { encoding: 'utf8' },
   );
@@ -1065,6 +1067,63 @@ describe('an evidence run leaves the builder exactly what it reads', () => {
     expect(runner, 'the report directory is deleted unconditionally').toMatch(
       /if \(ephemeral\)\s*rmSync\(reportDir/,
     );
+  });
+
+  it('refuses a second attempt of any test, which would overwrite the first one’s captures', () => {
+    // `shoot` numbers a test's captures per worker, and Playwright runs a retry
+    // in a fresh worker, so attempt 2 writes `01-…`, `02-…` over attempt 1's
+    // files while the manifest keeps both attempts' rows: the sign-off page
+    // shows one picture twice. A repeat collides the same way.
+    const evidence = { EVIDENCE_DIR: '/e' };
+    for (const argv of [
+      ['--retries=1'],
+      ['--retries', '2'],
+      ['tests/e2e/x.spec.ts', '--retries=1'],
+    ])
+      expect(() => oneAttemptEach(argv, evidence), argv.join(' ')).toThrow(
+        /an evidence run takes one attempt of each test: --retries=[12] /,
+      );
+    for (const argv of [['--repeat-each=2'], ['--repeat-each', '3']])
+      expect(() => oneAttemptEach(argv, evidence), argv.join(' ')).toThrow(
+        /an evidence run takes one attempt of each test: --repeat-each=[23] /,
+      );
+    for (const argv of [['--retries'], ['--repeat-each']])
+      expect(() => oneAttemptEach(argv, evidence), argv.join(' ')).toThrow(
+        /^--(retries|repeat-each) was given no value$/,
+      );
+  });
+
+  it('allows one attempt of each test, and leaves an ordinary run its retries', () => {
+    for (const argv of [
+      [],
+      ['--retries=0'],
+      ['--retries', '0'],
+      ['--repeat-each=1'],
+      ['--workers', '2', '--project=chromium'],
+    ])
+      expect(oneAttemptEach(argv, { EVIDENCE_DIR: '/e' }), argv.join(' ')).toBe(
+        'one attempt',
+      );
+    // Without EVIDENCE_DIR nothing is captured, so nothing can be overwritten.
+    for (const argv of [['--retries=2'], ['--repeat-each', '3']])
+      expect(oneAttemptEach(argv, {}), argv.join(' ')).toBe(
+        'not an evidence run',
+      );
+  });
+
+  it('is asked before the suite is listed or run', () => {
+    // A refusal that arrives after the run has spent its minutes is a refusal
+    // nobody needed. Read from the stripped source: the docblock names it too.
+    const runner = withoutTsComments(
+      readFileSync('scripts/test-e2e.mjs', 'utf8'),
+    );
+    const main = runner.slice(runner.indexOf('function main()'));
+    const asked = main.indexOf('oneAttemptEach(argv, process.env)');
+    // `listSuite` holds the `--list` itself (#438); main() calls it.
+    const listed = main.indexOf('listSuite(argv)');
+    expect(listed, 'main() no longer lists the suite').toBeGreaterThan(0);
+    expect(asked, 'main() never asks oneAttemptEach').toBeGreaterThan(0);
+    expect(asked, 'main() lists the suite before it asks').toBeLessThan(listed);
   });
 
   it('keeps the recordings in a directory of their own inside the evidence directory', async () => {
@@ -2089,6 +2148,189 @@ describe('recordings travel in the asset store (#268)', () => {
         sizeOf: () => 1024,
       }),
     ).toBeUndefined();
+  });
+
+  /**
+   * The command line, parsed strictly (#390). The hand-rolled reader ignored
+   * an option it did not know, so `--publishd` cost the publish every removal
+   * without a word, and took the next word whatever it was, so
+   * `--evidence --out page` read a directory called `--out`.
+   *
+   * Run from the scratch directory: a builder that misreads its command
+   * writes wherever it was started, and a mutation that brought the loose
+   * parser back left a plan called `true.uploads.json` in the checkout.
+   */
+  const builder = (...args: string[]) =>
+    spawnSync(
+      process.execPath,
+      [resolve('scripts/build-evidence-page.mjs'), ...args],
+      { encoding: 'utf8', cwd: scratch },
+    );
+
+  it('refuses an option it does not know, by name, before reading anything', () => {
+    const dir = runDirectory('unknown-option-');
+    const page = join(dir, 'page.html');
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      page,
+      '--publishd',
+      join(dir, 'listing.json'),
+    );
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      "build-evidence-page: Unknown option '--publishd'",
+    );
+    expect(refused.stderr).toContain('usage: build-evidence-page.mjs');
+    expect(existsSync(`${page}.uploads.json`), 'the plan was written').toBe(
+      false,
+    );
+  });
+
+  it('refuses an option whose value is another option', () => {
+    const dir = runDirectory('ambiguous-');
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      '--out',
+      join(dir, 'page.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      "build-evidence-page: Option '--evidence' argument is ambiguous.",
+    );
+  });
+
+  it('refuses an option given no value, naming it', () => {
+    const dir = runDirectory('no-value-');
+    const refused = builder('--plan', '--evidence', dir, '--out');
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      "build-evidence-page: Option '--out <value>' argument missing",
+    );
+  });
+
+  it('refuses a plan pass that is also handed the answer to it', () => {
+    const dir = runDirectory('both-passes-');
+    const refused = builder(
+      '--plan',
+      '--assets',
+      join(dir, 'assets.json'),
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'page.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(
+      'build-evidence-page: --plan writes the upload list; --assets reads the ' +
+        'answer to it. Passing both asks for one pass to be two.',
+    );
+  });
+
+  it('says a refusal in one line, with no stack under it', () => {
+    // A decision is not a crash: `at main (...)` under it shows the reader an
+    // internal error where the answer belongs (#227).
+    const dir = runDirectory('one-line-');
+    const content = join(dir, 'content.json');
+    writeFileSync(content, JSON.stringify(CONTENT));
+    const refused = builder(
+      '--evidence',
+      dir,
+      '--content',
+      content,
+      '--out',
+      join(dir, 'page.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toMatch(
+      /^✗ build-evidence-page: .*no --assets map was given/,
+    );
+    expect(refused.stderr).not.toMatch(/^\s+at /m);
+  });
+
+  it('names a report that is not JSON', () => {
+    const dir = runDirectory('bad-report-');
+    writeFileSync(join(dir, EVIDENCE_REPORT), '{"stats":');
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'p.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: the evidence report at ${join(dir, EVIDENCE_REPORT)} is not JSON:`,
+    );
+  });
+
+  it('names the manifest line that is not JSON, counting blank lines', () => {
+    const dir = runDirectory('bad-manifest-');
+    const manifest = join(dir, EVIDENCE_MANIFEST);
+    writeFileSync(
+      manifest,
+      `\n${readFileSync(manifest, 'utf8').trim()}\n{"project":\n`,
+    );
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'p.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: the evidence manifest at ${manifest} line 3 is not JSON:`,
+    );
+  });
+
+  it('names an evidence directory with no report in it', () => {
+    const dir = mkdtempSync(join(scratch, 'empty-'));
+    const refused = builder(
+      '--plan',
+      '--evidence',
+      dir,
+      '--out',
+      join(dir, 'p.html'),
+    );
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: could not read the evidence report at ${join(dir, EVIDENCE_REPORT)}: ENOENT`,
+    );
+  });
+
+  it('removes what an earlier publish served, from the --published listing', () => {
+    // Driven through the command: only reconcileFiles itself was tested, so
+    // the option that hands it the listing could be dropped with every test
+    // green.
+    const dir = runDirectory('published-');
+    const listing = join(dir, 'listing.json');
+    writeFileSync(listing, JSON.stringify(['index.html', 'evidence/old.webm']));
+    const page = join(dir, 'page.html');
+    const built = runBuilder(dir, page, undefined, ['--published', listing]);
+    expect(built.status, built.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(`${page}.files.json`, 'utf8'))).toEqual({
+      'evidence/old.webm': null,
+    });
+  });
+
+  it.each([
+    ['a list holding an object', [{ path: 'evidence/old.webm' }]],
+    ['an object, not a list', { files: ['evidence/old.webm'] }],
+  ])('refuses a published listing that is %s, naming it', (_, shape) => {
+    const dir = runDirectory('listing-shape-');
+    const listing = join(dir, 'listing.json');
+    writeFileSync(listing, JSON.stringify(shape));
+    const page = join(dir, 'page.html');
+    const refused = runBuilder(dir, page, undefined, ['--published', listing]);
+    expect(refused.status, refused.stderr).toBe(1);
+    expect(refused.stderr).toContain(
+      `✗ build-evidence-page: the published file listing at ${listing} is not a list of paths -- got ${JSON.stringify(shape)}`,
+    );
+    expect(existsSync(page), 'a page was written').toBe(false);
   });
 });
 

@@ -24,9 +24,14 @@ import { scanPresence, type PresenceClosures } from './presence-detector';
  *  - **Anchored** — the matcher is a regex whose every top-level alternative
  *    starts with `^`, pinning the real syntax to a line. Any regex used to
  *    count, and `toMatch(/foo/)` matches exactly the text `toContain('foo')`
- *    does (#183). Stronger than stripping, and preferred by #98's own AC:
- *    stripping removes ONE way of faking the claim, while an import left
- *    behind after the code was deleted is another. Only an anchor caught it.
+ *    does (#183). Preferred by #98's own AC, because stripping removes ONE
+ *    way of faking the claim while an import left behind after the code was
+ *    deleted is another, and only an anchor caught it. But an anchor is not
+ *    a stripper: a BLOCK comment's inner lines are lines, and `^` matches
+ *    them. A block comment below the migration's table, holding the old
+ *    `quote` line, satisfied `report-endpoint`'s anchored check while the
+ *    column itself had changed (#390 F160). Over a language with block
+ *    comments, strip AND anchor.
  *  - **Comment-derived** — the text is BUILT from comments
  *    (`isMarkerCommentLine`, `commentsIn`), so the assertion is about the
  *    documentation by design, and a comment satisfying it is the point:
@@ -54,6 +59,7 @@ const STRIPPERS = new Set([
   'withoutIniComments',
   'blankCommentLines',
   'withoutAstroComments',
+  'withoutSqlComments',
   'withoutYamlQuotes',
 ]);
 const COMMENT_READERS = new Set(['isMarkerCommentLine', 'commentsIn']);
@@ -275,7 +281,7 @@ describe('presence assertions over source text are stripped or anchored', () => 
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    // 48 today, and the figure is worth stating: the floor sat at 20 while
+    // 76 today, and the figure is worth stating: the floor sat at 20 while
     // the truth was 27, so a control with that much slack in it is most of
     // the way back to no control at all. #118 moved the number twice --
     // UP as the derivation learned to follow local bindings to a fixed
@@ -286,8 +292,11 @@ describe('presence assertions over source text are stripped or anchored', () => 
     // file-wide map had been sending to another test's declaration. #225
     // measured 46 (the suite had grown by one under a floor of 44) and moved
     // it to 48: two `evidence-page` assertions a helper's `JSON.stringify`
-    // had been exempting as parsed.
-    expect(result.scanned).toBeGreaterThan(47);
+    // had been exempting as parsed. #390 found 77 under that floor of 47,
+    // the suite having grown with nobody moving it, and set it to the 77.
+    // #454 took one away on purpose: a text check on visual.mjs's import
+    // became a check of the image it uses, so 76.
+    expect(result.scanned).toBeGreaterThan(75);
     expect(tsFiles.length).toBeGreaterThan(30);
   });
 

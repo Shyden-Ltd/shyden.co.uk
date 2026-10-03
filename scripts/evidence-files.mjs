@@ -19,6 +19,8 @@
  * `.ts` home could not be the one home.
  */
 
+import { createHash } from 'node:crypto';
+
 /** Playwright's json report, as the page builder expects to find it. */
 export const EVIDENCE_REPORT = 'report.json';
 
@@ -52,11 +54,28 @@ export const EVIDENCE_MANIFEST = 'manifest.jsonl';
  * Twice now the shots have spent a budget the videos needed, so the real fix is
  * #158: publish captures as supporting files, and stop making scope and video
  * compete for one page.
+ *
+ * An override outside 1 to 100, or not a whole number, is refused rather than
+ * replaced with 90: a capture at a quality nobody asked for is a run nobody
+ * asked for, and nothing would say so.
+ *
+ * @returns {number}
  */
-export const EVIDENCE_JPEG_QUALITY = (() => {
-  const asked = Number(process.env.EVIDENCE_JPEG_QUALITY);
-  return Number.isFinite(asked) && asked >= 1 && asked <= 100 ? asked : 90;
-})();
+export const jpegQuality = (/** @type {string | undefined} */ asked) => {
+  if (asked === undefined || asked === '') return 90;
+  const quality = Number(asked);
+  if (!Number.isInteger(quality) || quality < 1 || quality > 100)
+    throw new Error(
+      `EVIDENCE_JPEG_QUALITY=${asked} is not a JPEG quality: ` +
+        'expected a whole number from 1 to 100',
+    );
+  return quality;
+};
+
+/** The quality this run captures at: `jpegQuality` of the environment. */
+export const EVIDENCE_JPEG_QUALITY = jpegQuality(
+  process.env.EVIDENCE_JPEG_QUALITY,
+);
 
 /**
  * Filesystem-safe, still readable in a directory listing.
@@ -77,6 +96,36 @@ export const slug = (s) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 80)
     .toLowerCase();
+
+/**
+ * Where one capture is written, relative to the evidence directory. Both
+ * capture legs name their files here, so there is one scheme to change.
+ *
+ * `slug` alone is not a name: it keeps 80 characters of a title path and
+ * drops case and punctuation, and on the #390 listing 650 of 4,109 tests
+ * shared a slug with another test in the same project. Two such tests
+ * shooting the same order and label wrote one file, and the evidence page
+ * showed one test's picture under the other's name. Eight characters of a
+ * hash over the project and the full title keep each test's own file; the
+ * slugs keep the name readable in a listing.
+ *
+ * @param {{
+ *   project: string,
+ *   title: string,
+ *   order: number,
+ *   label: string,
+ *   ext: 'jpg' | 'png',
+ * }} capture
+ * @returns {string}
+ */
+export const captureFile = ({ project, title, order, label, ext }) => {
+  const test = createHash('sha256')
+    .update(`${project}\n${title}`)
+    .digest('hex')
+    .slice(0, 8);
+  const shot = `${String(order).padStart(2, '0')}-${slug(label)}`;
+  return `${slug(project)}/${slug(title)}-${test}__${shot}.${ext}`;
+};
 
 /**
  * What one assertion shot records about itself.

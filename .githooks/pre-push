@@ -1,10 +1,14 @@
 #!/bin/sh
 #
-# Runs the two checks that gate the FIRST step of `build-and-test`, so a
-# two-second problem cannot cost a sixteen-minute CI run. PR #34 failed on a
-# single over-long line in a test file; because `npm run format` runs first in
-# CI, the build, the unit suite and the entire e2e corpus were skipped, and the
-# run verified nothing. See #35.
+# Runs the three fastest checks of ci.yml's `checks` job, so a two-second
+# problem cannot cost a CI round trip. Typecheck joined in #390 (about ten
+# seconds): vitest strips types without checking them, so a type error passed
+# this hook and reached a pushed commit. PR #34 failed on a single over-long line in a
+# test file; `npm run format` ran first, so the build, the unit suite and the
+# entire e2e corpus were skipped and the run verified nothing. See #35. Since
+# #163 the e2e shards run beside `checks` rather than after it, so a format
+# slip no longer skips them -- it still turns `build-and-test` red, and the
+# push still costs a whole run to find out.
 #
 # e2e is deliberately NOT here — ~7.3 minutes would make pushing unusable, and
 # a hook people bypass every time is worse than no hook. CI remains its gate.
@@ -27,4 +31,5 @@ fail() {
 }
 
 npm run format || fail 'Prettier found files that are not formatted' 'npx prettier --write .'
+npm run typecheck || fail 'astro check found a type error' 'npm run typecheck'
 npm run test:unit || fail 'a unit test failed' 'npm run test:unit'

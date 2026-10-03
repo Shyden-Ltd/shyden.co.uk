@@ -12,7 +12,7 @@
  * ONE HOME, and that is why this is a module rather than a `grep` inside the
  * hook: the rule has two media to cover. A commit message reaches it through
  * `.githooks/commit-msg`; a pull request body never meets a git hook at all,
- * so `build-and-test` feeds it the same function. Two copies of a pattern
+ * so `pr-body.yml`'s `closing-keywords` job feeds it the same function. Two copies of a pattern
  * drift, and the copy that drifts is the one nobody watched fail (#227).
  *
  * NO EXCEPTION FOR A DELIBERATE CLOSE (operator decision, 2026-09-21). No
@@ -44,9 +44,14 @@ import { die, messageOf } from './errors.mjs';
  * The leading `\b` is what keeps `prefix#5` and `affixes #9` safe -- there is
  * no word boundary before `fix` inside either -- and the trailing `\d+` is
  * what keeps this file's own `#<n>` placeholders from matching.
+ *
+ * A full issue or pull request URL counts as a reference too. GitHub does not
+ * document that form, so the rule does not rely on GitHub ignoring it.
+ * The scheme's slashes are `\/{2}` because `tests/unit/one-home.test.ts`
+ * reads an escaped `//` as comment syntax.
  */
 const CLOSING_KEYWORD =
-  /\b(?:clos|fix|resolv)[a-z]*[ \t]*:?[ \t]*(?:[\w.-]+\/[\w.-]+)?(?:#|GH-)\d+/i;
+  /\b(?:clos|fix|resolv)[a-z]*[ \t]*:?[ \t]*(?:https?:\/{2}github\.com\/[\w.-]+\/[\w.-]+\/(?:issues|pull)\/|(?:[\w.-]+\/[\w.-]+)?(?:#|GH-))\d+/i;
 
 /** @typedef {{ line: number, text: string }} Offence */
 
@@ -92,7 +97,8 @@ export const closingKeywordRefusal = (what, offences) =>
 
 /**
  * Refuse a file whose text breaks the rule. Used by `.githooks/commit-msg`
- * for a commit message and by `build-and-test` for a pull request body.
+ * for a commit message and by `pr-body.yml` for a pull request body and the
+ * pull request's commit messages.
  *
  * @returns {Promise<void>}
  */

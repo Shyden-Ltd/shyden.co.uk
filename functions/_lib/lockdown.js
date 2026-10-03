@@ -14,8 +14,9 @@
  * ignored. See https://developers.cloudflare.com/pages/functions/get-started/
  *
  * Adapted from ShyTalk's `functions/_lib/lockdown.js` — same behaviour,
- * only the hostname/strings differ, and the API-surface helpers are
- * dropped (this is a static site with no API).
+ * only the hostname/strings differ, and ShyTalk's API-surface helpers are
+ * dropped. The site's one API, `/api/report` (#97), sits behind the same
+ * gate as every other path on a non-prod host.
  */
 
 // Single canonical production hostname. One Functions codebase serves

@@ -22,6 +22,20 @@ import type { Locale } from './locales.ts';
  * control. A pin has no control yet, so its one word per locale was approved
  * on its own, and a future pin control is held to it.
  *
+ * `mix` and `leftovers` joined in #390. Their state labels had been machine
+ * translated as bare phrases. zh, vi and th rendered "mixed by sex" as "sorted
+ * by sex", the opposite of the setting; in th it was the same text as
+ * "separated by sex". "leftovers in one group" became leftover FOOD. The
+ * controls' own labels were correct in every locale, so holding the rest of
+ * the copy to those labels' words catches both. `sound` and `classList`
+ * joined with them: "Sound off" had become the idiom for speaking up (zh
+ * 畅所欲言, vi "Hãy lên tiếng", th แสดงความคิดเห็น), and zh called the class
+ * list a course list (课程列表) in three sentences. The Glory Points page's
+ * three currencies joined too, by operator decision (2026-09-30, "Keep app
+ * names in English"): YeeTalk's own names, glory points and bean, stay in
+ * English in every language, and the coin is one word per language. Each
+ * page had named them two or three ways, beans as bean seeds among them.
+ *
  * What it cannot see: copy that carries an approved word once and a wrong
  * word elsewhere. A count was tried and rejected, because a prefix changes an
  * Indonesian root (`pisah` becomes `memisahkan`) and the count then flags
@@ -31,8 +45,23 @@ import type { Locale } from './locales.ts';
  * CLI-only, like the `back-translate.ts` it reads its units from.
  */
 
-/** A feature of the classroom-groups tool that its copy names. */
-export type FeatureTerm = 'pin' | 'together' | 'apart' | 'absent' | 'group';
+/**
+ * A feature a tool page's copy names: the classroom-groups controls, and the
+ * Glory Points page's three currencies (#390).
+ */
+export type FeatureTerm =
+  | 'pin'
+  | 'together'
+  | 'apart'
+  | 'absent'
+  | 'group'
+  | 'mix'
+  | 'leftovers'
+  | 'sound'
+  | 'classList'
+  | 'gloryPoints'
+  | 'bean'
+  | 'coin';
 
 /**
  * How English copy names each feature: as a whole word, in every form the
@@ -46,6 +75,13 @@ export const FEATURE_TERMS: Readonly<Record<FeatureTerm, RegExp>> = {
   apart: /\bapart\b/,
   absent: /\babsen(?:t|ces?)\b/,
   group: /\bgroup(?:s|ed|ings?)?\b/,
+  mix: /\bmix(?:es|ed|ing)?\b/,
+  leftovers: /\bleft ?overs?\b/,
+  sound: /\bsounds?\b/,
+  classList: /\bclass lists?\b/,
+  gloryPoints: /\bglory points?\b/,
+  bean: /\bbeans?\b/,
+  coin: /\bcoins?\b/,
 };
 
 /** The words a locale may use for each feature, as the operator approved them. */

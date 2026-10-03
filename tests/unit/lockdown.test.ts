@@ -8,6 +8,7 @@ import {
   basicAuthOk,
   basicAuthChallenge,
 } from '../../functions/_lib/lockdown.js';
+import { robotsDirectives } from '../robots-directives';
 
 // Base64 a "user:password" credential the way a browser's Basic-auth
 // header does — Node's Buffer here, atob/btoa at the Cloudflare edge.
@@ -72,9 +73,11 @@ describe('shouldServeBlockingRobots', () => {
 
 describe('blockingRobotsBody', () => {
   it('disallows all crawling', () => {
-    const body = blockingRobotsBody();
-    expect(body).toContain('User-agent: *');
-    expect(body).toContain('Disallow: /');
+    // Every directive, whole: `Disallow: /private` contains `Disallow: /`.
+    expect(robotsDirectives(blockingRobotsBody())).toEqual([
+      'User-agent: *',
+      'Disallow: /',
+    ]);
   });
 });
 

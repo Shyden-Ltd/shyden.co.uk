@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { chooseSpeed } from '../make-groups';
 import { recordErrors, recordRequests, urlMatching } from './recorders';
 import type { Page } from '@playwright/test';
 
@@ -15,6 +16,7 @@ import { recorded, shoot } from './evidence';
 import { THEMES } from '../palette';
 import { THEME_SCRIPT_SOURCE, emulateTheme } from '../themes';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+import { localePaths } from './locale-sampling';
 import {
   openRoster,
   addSeveral,
@@ -48,20 +50,10 @@ const fill = async (
     await page.check('input[name="mode"][value="groupCount"]');
     await page.fill('#cg-groups', opts.groups);
   }
-  // Stage 2, Task 7 folded Sound & animation into the tool's fourth
-  // collapsible section, the same treatment Task 4 already gave the
-  // leftovers radios -- #cg-speed now lives in #cg-sound-body, which starts
-  // collapsed, and Playwright's `selectOption` waits for a visible target
-  // rather than acting on a hidden one. Idempotent (checked, not clicked
-  // unconditionally): `fill()` runs more than once inside some tests, and a
-  // second click would close what the first one just opened.
-  const soundBody = page.locator('#cg-sound-body');
-  if (await soundBody.isHidden()) {
-    await page.locator('#cg-sound-toggle').click();
-  }
   // Default to skip so the tests assert the RESULT, not the show. The
-  // animation gets its own test below.
-  await page.selectOption('#cg-speed', opts.speed ?? 'skip');
+  // animation gets its own test below. Idempotent, so `fill()` may run
+  // more than once in a test (see chooseSpeed).
+  await chooseSpeed(page, opts.speed ?? 'skip');
 };
 
 /**
@@ -784,7 +776,7 @@ test.describe('classroom group creator', () => {
 // nothing is blocked... It heads the results: `7B — your groups`... It is
 // not repeated on every group card."
 test.describe('class name and results heading', () => {
-  // Corrected from task-5-brief.md's own snippet, which located the
+  // Corrected from the uncommitted #9 task brief's own snippet, which located the
   // "not repeated on cards" check at `#cg-groups` -- that id belongs to the
   // "how many groups" NUMBER INPUT on this page, not the results container
   // (`#cg-tables`, where the script actually appends group cards) -- the
@@ -799,7 +791,7 @@ test.describe('class name and results heading', () => {
     await expect(page.locator('#cg-tables').getByText('7B')).toHaveCount(0);
   });
 
-  // task-5-brief.md's own count (9 students at the page's default group
+  // the uncommitted #9 task brief's own count (9 students at the page's default group
   // size, 4) predicted `#cg-groups .group` would have count 3. The engine's
   // own targetSizes (src/lib/grouping.ts) says otherwise: groupCount =
   // floor(9/4) = 2, not ceil -- the same "never smaller than the size you
@@ -842,7 +834,7 @@ test.describe('class name and results heading', () => {
     await expect(page.locator('#cg-results-h')).toHaveText('Your groups');
   });
 
-  // Corrected from task-5-brief.md's own `#cg-groups .group h3` locator --
+  // Corrected from the uncommitted #9 task brief's own `#cg-groups .group h3` locator --
   // same mistake as above. Filling the class field first is what makes this
   // a real test of THIS task's own wiring rather than a pin of
   // stage-3-owned behaviour: a naive implementation that broke
@@ -884,10 +876,9 @@ test.describe('class name and results heading', () => {
     });
     const raw = '<img src=x onerror=alert(1)>7B & "Sons"';
     await page.getByLabel('Class (optional)').fill(raw);
-    // #cg-speed sits inside #cg-sound-body since Stage 2, Task 7 (see
-    // the fill() helper's own comment above -- this test does not use it).
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
+    // This test keeps the default class size, so it chooses the speed
+    // alone rather than going through fill().
+    await chooseSpeed(page, 'skip');
     await page.click('#cg-go');
     await expect(page.locator('#cg-results-h')).toHaveText(
       `${raw} — your groups`,
@@ -908,8 +899,7 @@ test.describe('class name and results heading', () => {
   }) => {
     await page.goto('/classroom-groups');
     await page.getByLabel('Class (optional)').fill('Year 7 / Set B');
-    await page.locator('#cg-sound-toggle').click();
-    await page.selectOption('#cg-speed', 'skip');
+    await chooseSpeed(page, 'skip');
     await page.click('#cg-go');
     await expect(page.locator('#cg-results-h')).toHaveText(
       'Year 7 / Set B — your groups',
@@ -930,8 +920,7 @@ test.describe('class name and results heading', () => {
       await page.setViewportSize({ width: 320, height: 900 });
       await page.goto('/classroom-groups');
       await page.getByLabel('Class (optional)').fill('x'.repeat(300));
-      await page.locator('#cg-sound-toggle').click();
-      await page.selectOption('#cg-speed', 'skip');
+      await chooseSpeed(page, 'skip');
       await page.click('#cg-go');
       await expect(page.locator('#cg-results-h')).toBeVisible();
       await expectNoHorizontalScroll(page);
@@ -1088,7 +1077,7 @@ test.describe('classroom group creator — Bahasa Indonesia', () => {
 
   // Mirrors the English 'class name and results heading' describe block
   // above -- "assert whole rendered sentences, in both locales" applies
-  // regardless of what task-5-brief.md's own snippet happened to show (it
+  // regardless of what the uncommitted #9 task brief's own snippet happened to show (it
   // was English-only).
   test('the class name heads the results, once', async ({ page }) => {
     await page.goto('/id/classroom-groups');
@@ -1509,47 +1498,46 @@ test.describe('out-of-date groups', () => {
   // without anyone re-running a contrast checker by hand (tokens.css's own
   // "do NOT lighten past AA" on --accent is why that retuning is a real
   // risk on this page, not a hypothetical one).
-  test('the dim stays above the WCAG AA contrast floor for normal text', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await shuffle(page);
-    await page.getByLabel('Students in each group').fill('3');
-    await expect(page.locator('#cg-results')).toHaveClass(/stale/);
-    for (const theme of THEMES) {
+  // One test per theme (#419).
+  for (const theme of THEMES)
+    test(`${theme}: the dim stays above the WCAG AA contrast floor for normal text`, async ({
+      page,
+    }) => {
+      await page.goto('/classroom-groups');
+      await shuffle(page);
+      await page.getByLabel('Students in each group').fill('3');
+      await expect(page.locator('#cg-results')).toHaveClass(/stale/);
       await emulateTheme(page, theme);
       const contrast = await contrastRatio(
         page.locator('#cg-results .group').first(),
       );
-      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
-    }
-  });
+      expect(contrast).toBeGreaterThanOrEqual(4.5);
+    });
 
   // #332. The notice paints its own cream ground (#fff6e3) but took its ink
   // from --ink, which Aurora made near-white: 1.05:1, a sentence nobody could
   // read. Scored the way the browser paints it, in the real state, so the
   // ground is the one the sentence actually sits on rather than a token pair.
-  test('the out-of-date sentence meets the WCAG AA contrast floor', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    await shuffle(page);
-    await page.getByLabel('Students in each group').fill('3');
-    const sentence = page.locator('#cg-stale-text');
-    await expect(sentence).toBeVisible();
-    await expect(sentence).toHaveText(
-      'These groups are out of date — the group size changed.',
-    );
-    for (const theme of THEMES) {
+  for (const theme of THEMES)
+    test(`${theme}: the out-of-date sentence meets the WCAG AA contrast floor`, async ({
+      page,
+    }) => {
+      await page.goto('/classroom-groups');
+      await shuffle(page);
+      await page.getByLabel('Students in each group').fill('3');
+      const sentence = page.locator('#cg-stale-text');
+      await expect(sentence).toBeVisible();
+      await expect(sentence).toHaveText(
+        'These groups are out of date — the group size changed.',
+      );
       await emulateTheme(page, theme);
-      expect(await contrastRatio(sentence), theme).toBeGreaterThanOrEqual(4.5);
+      expect(await contrastRatio(sentence)).toBeGreaterThanOrEqual(4.5);
       await shoot(
         page,
         `${theme}: the out-of-date sentence on its cream notice`,
         page.locator('#cg-stale'),
       );
-    }
-  });
+    });
 
   // CLAUDE.md's binding rules apply to anything this task adds: no
   // horizontal scroll at 320px in any state, and every interactive target
@@ -1557,22 +1545,29 @@ test.describe('out-of-date groups', () => {
   // the page is a later task's own (this task owns staleness, not the
   // no-scroll rule as a whole) -- this defends the one new element this
   // task is actually adding.
-  test(
-    'the notice fits at 320px with no horizontal scroll, and its button meets the touch-target minimum',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 320, height: 900 });
-      await page.goto('/classroom-groups');
-      await shuffle(page);
-      await page.getByLabel('Students in each group').fill('3');
-      await expect(page.locator('#cg-stale')).toBeVisible();
-      await expectNoHorizontalScroll(page);
-      await atLeast44(
-        page.locator('#cg-stale button'),
-        'the stale notice button',
-      );
-    },
-  );
+  //
+  // Every locale (#390 F135): the notice is a sentence naming the change, in
+  // each language's own words and widths, and this read English only. The
+  // fields go by id, since their labels are each language's own.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `the notice fits at 320px with no horizontal scroll, and its button meets the touch-target minimum -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await page.goto(path);
+        await page.locator('#cg-count').fill('12');
+        await page.click('#cg-go');
+        await expect(page.locator('#cg-results .group')).toHaveCount(3);
+        await page.locator('#cg-size').fill('3');
+        await expect(page.locator('#cg-stale')).toBeVisible();
+        await expectNoHorizontalScroll(page, `${path}: the stale notice`);
+        await atLeast44(
+          page.locator('#cg-stale button'),
+          `${path}: the stale notice button`,
+        );
+      },
+    );
 
   // "Assert whole rendered sentences, in both locales" (CLAUDE.md) -- every
   // test above is English-only, and the reason TEXT itself is
@@ -1692,23 +1687,9 @@ test.describe('site-wide language switching', () => {
     ]);
   });
 
-  test('the Indonesian homepage links to the Indonesian tools', async ({
-    page,
-  }) => {
-    // localisePath's own doc comment calls this "the classic i18n bug", and
-    // nothing asserted it anywhere: an Indonesian visitor clicking a work
-    // card landed on the English page.
-    await page.goto('/id/');
-    await expect(
-      page.locator('#tools a[href="/id/classroom-groups"]'),
-    ).toHaveCount(1);
-    await expect(page.locator('#tools a[href="/id/glory-points"]')).toHaveCount(
-      1,
-    );
-    await expect(
-      page.locator('#tools a[href="/classroom-groups"]'),
-    ).toHaveCount(0);
-  });
+  // Where the homepage's tool cards link, in every locale, is held by
+  // 'exactly two tool cards, each badged and linked in-locale' in
+  // homepage.spec.ts (#390 F129).
 
   test.describe('what each page tells a search engine', () => {
     // Asserted by VALUE. Counting the tags cannot tell the difference between
@@ -1762,14 +1743,9 @@ test.describe('site-wide language switching', () => {
     }
   });
 
-  test('the 404 answers in both languages', async ({ page }) => {
-    // Cloudflare Pages serves this one file for any unknown path, including
-    // /id/*, so an Indonesian visitor must not be stranded in English.
-    const response = await page.goto('/definitely-not-a-page');
-    expect(response?.status()).toBe(404);
-    await expect(page.locator('body')).toContainText('Page not found');
-    await expect(page.locator('body')).toContainText('Halaman tidak ditemukan');
-  });
+  // The 404 answering in every language is held by not-found.spec.ts, and its
+  // status code by site-meta.spec.ts. An English-and-Indonesian copy titled
+  // "in both languages" stood here from before the page served five (#390 F132).
 });
 
 // Stage 2, Task 7. Design spec section 2: "The default, collapsed state must
@@ -1930,12 +1906,15 @@ test.describe('the no-scroll rule, measured', () => {
     await page.goto(path);
     await page.evaluate(() => document.fonts.ready);
     const { bottom, budget } = await page.evaluate(() => ({
-      bottom: Math.round(
-        document.getElementById('cg-go')!.getBoundingClientRect().bottom,
-      ),
+      bottom: document.getElementById('cg-go')!.getBoundingClientRect().bottom,
       budget: window.innerHeight,
     }));
-    expect(bottom).toBeLessThanOrEqual(budget);
+    // Compared RAW and rounded only for the reader: rounding first let a
+    // button 0.4px under the fold read as above it (#371, #390 F114).
+    expect(
+      bottom,
+      `#cg-go's bottom at ${bottom.toFixed(1)}px against a ${budget}px fold`,
+    ).toBeLessThanOrEqual(budget);
   };
 
   // No `fits` flag and no if/else any more -- every viewport runs as `test`.
@@ -1994,30 +1973,25 @@ test.describe('the no-scroll rule, measured', () => {
   // stopped applying somewhere in the middle -- a stray `min-width`, a
   // specificity fight with a later block -- would leave the pixel tests
   // passing wherever the page happened to fit anyway.
-  test(
-    'the action row is sticky at every width, so the primary action is never below the fold',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      const positionAt = async (width: number, height: number) => {
+  // One test per viewport (#419): this spelled the four sizes out by hand,
+  // and the two below looped them, under one budget.
+  for (const { width, height } of VIEWPORTS)
+    test(
+      `the action row is sticky at ${width}x${height}, so the primary action is never below the fold`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
-        return page.evaluate(
+        const position = await page.evaluate(
           () =>
             getComputedStyle(
               document.getElementById('cg-go')!.closest('.actions')!,
             ).position,
         );
-      };
-      expect(await positionAt(320, 568)).toBe('sticky');
-      await shoot(page, '320x568, the action row is sticky');
-      expect(await positionAt(375, 667)).toBe('sticky');
-      await shoot(page, '375x667, the action row is sticky');
-      expect(await positionAt(768, 1024)).toBe('sticky');
-      await shoot(page, '768x1024, the action row is sticky');
-      expect(await positionAt(1280, 800)).toBe('sticky');
-      await shoot(page, '1280x800, the action row is sticky');
-    },
-  );
+        expect(position).toBe('sticky');
+        await shoot(page, `${width}x${height}, the action row is sticky`);
+      },
+    );
 
   // The bar's COMPANION rule, which had no test at all until #188.
   // `scroll-padding-bottom` on `html` exists for one reason: to stop the
@@ -2032,11 +2006,11 @@ test.describe('the no-scroll rule, measured', () => {
   // pinning the literal would go on passing if the bar grew and the padding
   // did not, which is the one failure this rule exists to prevent, and it
   // would restate a value that already has a home in the stylesheet.
-  test(
-    'the scroll padding clears the pinned action row at every width',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      for (const { width, height } of VIEWPORTS) {
+  for (const { width, height } of VIEWPORTS)
+    test(
+      `the scroll padding clears the pinned action row at ${width}x${height}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
         const { padding, bar } = await page.evaluate(() => ({
@@ -2052,15 +2026,14 @@ test.describe('the no-scroll rule, measured', () => {
         // every padding value would then clear it.
         expect(
           bar,
-          `${width}x${height}: the action row must have a height to clear`,
+          'the action row must have a height to clear',
         ).toBeGreaterThan(0);
         expect(
           padding,
-          `${width}x${height}: scroll padding must clear the pinned bar`,
+          'scroll padding must clear the pinned bar',
         ).toBeGreaterThanOrEqual(bar);
-      }
-    },
-  );
+      },
+    );
 
   // #188, operator decision 2026-09-17. Pinned at every width, the row
   // covers the edge of whatever sits above it before any scrolling -- at
@@ -2069,11 +2042,11 @@ test.describe('the no-scroll rule, measured', () => {
   // clipped. Asserted as the property that does that work -- visible, soft,
   // offset upward -- because a pinned literal would go on passing with the
   // offset flipped below the row, off the fold where nobody sees it.
-  test(
-    'the pinned action row casts a soft shadow upward at every width',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      for (const { width, height } of VIEWPORTS) {
+  for (const { width, height } of VIEWPORTS)
+    test(
+      `the pinned action row casts a soft shadow upward at ${width}x${height}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         await page.setViewportSize({ width, height });
         await page.goto('/classroom-groups');
         const shadow = await page.evaluate(
@@ -2105,9 +2078,8 @@ test.describe('the no-scroll rule, measured', () => {
           page,
           `${width}x${height}, the row casts its shadow upward`,
         );
-      }
-    },
-  );
+      },
+    );
 
   // L-08. The brief's own literal query measured only what page LOAD
   // already shows -- nothing inside any of the four sections is on screen
@@ -2152,38 +2124,46 @@ test.describe('the no-scroll rule, measured', () => {
   // on: the label for a radio/checkbox, the element itself for everything
   // else. It can still fail for real: any control whose min-height/padding
   // regresses below 44px, radio/checkbox label included, still shows up.
-  test(
-    'every interactive target is at least 44px, collapsed and with every section open',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 320, height: 900 });
-      await page.goto('/classroom-groups');
-      for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
-        await page.locator(`#${id}-toggle`).click();
-      }
-      const small = await page.evaluate(() =>
-        [
-          ...document.querySelectorAll(
-            'button, input, select, textarea, summary, a',
-          ),
-        ]
-          .map((el) => {
-            const isBoxControl =
-              el instanceof HTMLInputElement &&
-              (el.type === 'radio' || el.type === 'checkbox');
-            const target = isBoxControl ? (el.closest('label') ?? el) : el;
-            return {
-              tag: el.tagName,
-              id: el.id,
-              r: target.getBoundingClientRect(),
-            };
-          })
-          .filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
-          .map(({ tag, id }) => `${tag}#${id}`),
-      );
-      expect(small).toEqual([]);
-    },
-  );
+  //
+  // Every locale (#423): every control on the page holds the page's own copy.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `every interactive target is at least 44px, collapsed and with every section open -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await page.goto(path);
+        for (const id of ['cg-students', 'cg-grouping', 'cg-io', 'cg-sound']) {
+          await page.locator(`#${id}-toggle`).click();
+        }
+        const small = await page.evaluate(() =>
+          [
+            ...document.querySelectorAll(
+              'button, input, select, textarea, summary, a',
+            ),
+          ]
+            // Not the report form's honeypot, which no person is meant to
+            // reach: it sits under `aria-hidden` with `tabindex="-1"`, the
+            // same exclusion tests/typed-fields.ts makes. It is in every
+            // locale but English, so only the per-locale cases met it (#423).
+            .filter((el) => !el.closest('[aria-hidden="true"]'))
+            .map((el) => {
+              const isBoxControl =
+                el instanceof HTMLInputElement &&
+                (el.type === 'radio' || el.type === 'checkbox');
+              const target = isBoxControl ? (el.closest('label') ?? el) : el;
+              return {
+                tag: el.tagName,
+                id: el.id,
+                r: target.getBoundingClientRect(),
+              };
+            })
+            .filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
+            .map(({ tag, id }) => `${tag}#${id}`),
+        );
+        expect(small).toEqual([]);
+      },
+    );
 
   // L-09. The accent colour is the AA floor by design ("never lighten
   // without re-checking contrast", CLAUDE.md) -- this computes the REAL
@@ -2196,16 +2176,15 @@ test.describe('the no-scroll rule, measured', () => {
   // AA. What would redden this: those custom properties moving closer
   // together, or `.actions button`'s own background/color rules drifting
   // from the variables entirely.
-  test('the accent colour still meets the WCAG AA contrast floor', async ({
-    page,
-  }) => {
-    await page.goto('/classroom-groups');
-    for (const theme of THEMES) {
+  for (const theme of THEMES)
+    test(`${theme}: the accent colour still meets the WCAG AA contrast floor`, async ({
+      page,
+    }) => {
+      await page.goto('/classroom-groups');
       await emulateTheme(page, theme);
       const contrast = await contrastRatio(page.locator('#cg-go'));
-      expect(contrast, theme).toBeGreaterThanOrEqual(4.5);
-    }
-  });
+      expect(contrast).toBeGreaterThanOrEqual(4.5);
+    });
 
   // M-11. The one test in this file that never touches /classroom-groups --
   // CLAUDE.md's promise about what the homepage ships (one script, the theme

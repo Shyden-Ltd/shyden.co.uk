@@ -30,16 +30,29 @@ export const makeGroups = async (
 ): Promise<void> => {
   await page.fill('#cg-count', count);
   await page.fill('#cg-size', size);
-  // Stage 2, Task 7 folded Sound & animation into the tool's fourth
-  // collapsible section -- #cg-speed now lives in #cg-sound-body, which
-  // starts collapsed, so it has to be open before `selectOption` can act on
-  // it (same reasoning as the leftovers radios inside #cg-grouping-body,
-  // Stage 2 Task 4). Idempotent: this helper can run more than once per
-  // test, and a second click would close what the first one opened.
+  await chooseSpeed(page, 'skip');
+  await page.click('#cg-go');
+};
+
+/**
+ * Choose how the groups are dealt. `skip`, the default, lands them at once,
+ * so a test asserts the result rather than the show.
+ *
+ * Stage 2, Task 7 folded Sound & animation into the tool's fourth
+ * collapsible section -- #cg-speed lives in #cg-sound-body, which starts
+ * collapsed, and `selectOption` waits for a visible target. Idempotent: the
+ * section is opened only when it is shut, because a second click would close
+ * what the first one opened. Seven inline copies clicked the toggle
+ * unconditionally after #277 gave `makeGroups` one home, one of them in the
+ * dev gate, and the spec-local `fill` carried an eighth (#390 F112).
+ */
+export const chooseSpeed = async (
+  page: Page,
+  speed: 'normal' | 'fast' | 'skip' = 'skip',
+): Promise<void> => {
   const soundBody = page.locator('#cg-sound-body');
   if (await soundBody.isHidden()) {
     await page.locator('#cg-sound-toggle').click();
   }
-  await page.selectOption('#cg-speed', 'skip');
-  await page.click('#cg-go');
+  await page.selectOption('#cg-speed', speed);
 };

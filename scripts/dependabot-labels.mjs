@@ -16,9 +16,10 @@
  * the one entry whose truth lives OUTSIDE the file, in repository state, so
  * no amount of reading the config can judge it. This runs where a token is.
  *
- * It runs inside `build-and-test`, which is in
- * `required_status_checks.contexts`. A new job would not be a gate until that
- * list named it, and that list is repository administration (#33).
+ * It runs in `ci.yml`'s `checks` job, which `build-and-test` needs, and
+ * `build-and-test` is in `required_status_checks.contexts`. A new job would
+ * not be a gate until that list named it or `build-and-test` needed it, and
+ * that list is repository administration (#33, #163).
  *
  * The API call goes through `gh`, never a token this process handles: on a
  * developer's machine `gh` is routed to the `shyden-agent` App, and on a
@@ -58,8 +59,13 @@ export const DEPENDABOT = '.github/dependabot.yml';
  * follow. Derived across EVERY ecosystem too: a hand-written list would cover
  * the ecosystems that existed the day it was written (#24, #49, #80).
  *
+ * A label YAML reads as something other than text (`7`, `1.0`, `~`, `true`)
+ * is refused rather than dropped: dropping it left a label nobody checked,
+ * and `1.0` is no longer the text its author wrote once it has been parsed.
+ *
  * @param {string} text The contents of `.github/dependabot.yml`.
  * @returns {string[]} The label names, sorted, without duplicates.
+ * @throws {Error} When the config does not parse, or names such a label.
  */
 export const declaredLabels = (text) => {
   /** @type {unknown} */
@@ -67,18 +73,26 @@ export const declaredLabels = (text) => {
   try {
     doc = parse(text);
   } catch (error) {
-    die(`cannot parse ${DEPENDABOT}: ${messageOf(error)}`);
+    throw new Error(`cannot parse ${DEPENDABOT}: ${messageOf(error)}`);
   }
 
   const updates =
     isRecord(doc) && Array.isArray(doc.updates) ? doc.updates : [];
 
-  const names = updates.flatMap((entry) =>
-    isRecord(entry) && Array.isArray(entry.labels)
-      ? entry.labels.filter((label) => typeof label === 'string')
-      : [],
+  /** @type {unknown[]} */
+  const labels = updates.flatMap((entry) =>
+    isRecord(entry) && Array.isArray(entry.labels) ? entry.labels : [],
   );
 
+  const unreadable = labels.filter((label) => typeof label !== 'string');
+  if (unreadable.length > 0)
+    throw new Error(
+      `${DEPENDABOT} names labels YAML does not read as text: ` +
+        `${unreadable.map((label) => JSON.stringify(label)).join(', ')}.\n` +
+        "Quote each one, e.g. labels: ['7'].",
+    );
+
+  const names = labels.filter((label) => typeof label === 'string');
   return [...new Set(names)].sort();
 };
 
@@ -167,7 +181,13 @@ const main = () => {
     die(`cannot read ${DEPENDABOT}: ${messageOf(error)}`);
   }
 
-  const declared = declaredLabels(text);
+  /** @type {string[]} */
+  let declared;
+  try {
+    declared = declaredLabels(text);
+  } catch (error) {
+    die(messageOf(error));
+  }
   // The liveness control. Every assertion below is satisfied for free by an
   // empty set, so a config that stopped naming labels at all -- or a parse
   // that quietly returned nothing -- would read exactly like a clean pass

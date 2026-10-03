@@ -8,7 +8,7 @@ import { emulateTheme, expectTheme } from '../themes';
 import { atLeast44 } from '../viewport';
 import { LOCALES, getSiteStrings, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
-import { sitePaths } from '../site-pages';
+import { PUBLISHED_ROUTES } from './published-paths';
 
 test.use(recorded);
 
@@ -73,9 +73,13 @@ test.describe('no flash of the other theme (#142 §6.3, AC5)', () => {
 test.describe('a saved value that is not exactly light or dark (Review Focus 1)', () => {
   test.use({ colorScheme: 'light' });
 
-  test('is ignored, and the device setting applies', async ({ page }) => {
-    await page.goto('/');
-    for (const stale of ['Dark', ' dark', 'dark\n', '"dark"', 'auto', '']) {
+  // One test per value (#390 F150): six reloads in one test shared one budget,
+  // and the first value to fail hid the rest.
+  for (const stale of ['Dark', ' dark', 'dark\n', '"dark"', 'auto', ''])
+    test(`${JSON.stringify(stale)} is ignored, and the device setting applies`, async ({
+      page,
+    }) => {
+      await page.goto('/');
       await page.evaluate(
         (value) => localStorage.setItem('theme', value),
         stale,
@@ -86,8 +90,7 @@ test.describe('a saved value that is not exactly light or dark (Review Focus 1)'
         page.locator('html'),
         `${JSON.stringify(stale)} stamped nothing`,
       ).not.toHaveAttribute('data-theme', /./);
-    }
-  });
+    });
 });
 
 test.describe('the switch (#142 §5, AC3)', () => {
@@ -515,59 +518,58 @@ test.describe('nothing moves when the theme changes (#386)', () => {
       });
     }, SWITCH);
 
-  for (const route of sitePaths()) {
-    for (const locale of LOCALES) {
-      for (const width of [390, 1280]) {
-        const path = localisePath(route, locale);
-        test(
-          `${path} at ${width}px: no element moves between dark and light`,
-          { tag: '@emulated-viewport' },
-          async ({ page }) => {
-            await page.setViewportSize({ width, height: 900 });
-            await page.goto(path);
-            await page.addStyleTag({
-              content:
-                '*, *::before, *::after { animation: none !important; transition: none !important; }',
-            });
-            await page.evaluate(() => document.fonts.ready);
-            await emulateTheme(page, 'dark');
-            const dark = await boxes(page);
-            await toggle(page).click();
-            await expectTheme(page, 'light');
-            const light = await boxes(page);
-            await toggle(page).click();
-            await expectTheme(page, 'dark');
-            const darkAgain = await boxes(page);
+  // Every published page, the 404 included: walked as every site path in
+  // every locale, the 404 and its own switch never changed theme (TG1).
+  for (const path of PUBLISHED_ROUTES) {
+    for (const width of [390, 1280]) {
+      test(
+        `${path} at ${width}px: no element moves between dark and light`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(path);
+          await page.addStyleTag({
+            content:
+              '*, *::before, *::after { animation: none !important; transition: none !important; }',
+          });
+          await page.evaluate(() => document.fonts.ready);
+          await emulateTheme(page, 'dark');
+          const dark = await boxes(page);
+          await toggle(page).click();
+          await expectTheme(page, 'light');
+          const light = await boxes(page);
+          await toggle(page).click();
+          await expectTheme(page, 'dark');
+          const darkAgain = await boxes(page);
 
-            const compared = dark.filter((d) => d.rendered && !d.inSwitch);
-            for (const [label, other] of [
-              ['light', light],
-              ['saved dark', darkAgain],
-            ] as const) {
-              expect(other, 'the document changed between passes').toHaveLength(
-                dark.length,
+          const compared = dark.filter((d) => d.rendered && !d.inSwitch);
+          for (const [label, other] of [
+            ['light', light],
+            ['saved dark', darkAgain],
+          ] as const) {
+            expect(other, 'the document changed between passes').toHaveLength(
+              dark.length,
+            );
+            const moved = dark
+              .map((d, i) => ({ d, o: other[i] }))
+              .filter(
+                ({ d, o }) =>
+                  !d.inSwitch &&
+                  (d.rendered !== o.rendered ||
+                    d.box.some((v, k) => Math.abs(v - o.box[k]) > 0.5)),
+              )
+              .map(
+                ({ d, o }) => `${d.what} dark ${d.box} -> ${label} ${o.box}`,
               );
-              const moved = dark
-                .map((d, i) => ({ d, o: other[i] }))
-                .filter(
-                  ({ d, o }) =>
-                    !d.inSwitch &&
-                    (d.rendered !== o.rendered ||
-                      d.box.some((v, k) => Math.abs(v - o.box[k]) > 0.5)),
-                )
-                .map(
-                  ({ d, o }) => `${d.what} dark ${d.box} -> ${label} ${o.box}`,
-                );
-              expect(
-                searched(moved, {
-                  of: compared.length,
-                  what: 'rendered elements',
-                }),
-              ).toEqual([]);
-            }
-          },
-        );
-      }
+            expect(
+              searched(moved, {
+                of: compared.length,
+                what: 'rendered elements',
+              }),
+            ).toEqual([]);
+          }
+        },
+      );
     }
   }
 });

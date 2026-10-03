@@ -435,6 +435,10 @@ describe('matching a quote (spec 5)', () => {
     expect(matchesForm('anything at all', oneLetter, 'vi')).toBe(false);
     expect(matchesForm('ab and more', worded, 'vi')).toBe(true);
     expect(matchesForm('ab', worded, 'vi')).toBe(true);
+    // A form with no slot has no whole message to scan for: its wording
+    // twice, with anything between, is not a quote of it.
+    const slotless = { display: 'ab', runs: ['ab'] };
+    expect(matchesForm('ab then ab', slotless, 'vi')).toBe(false);
   });
 
   it('rule 3 wants every slot non-empty and every run in order', () => {

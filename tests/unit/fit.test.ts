@@ -154,6 +154,16 @@ describe('fontThatFits', () => {
     ).toBeCloseTo(37.7405, 3);
   });
 
+  // Room that was not measured -- NaN, Infinity, none, or less than none --
+  // is not room: the floor, never the applied font an unbounded answer
+  // would clamp to (#390, FT2).
+  it.each([NaN, Infinity, 0, -100])(
+    'answers the floor for %s px of room',
+    (available) => {
+      expect(fontThatFits(available, atBase, atApplied, 24)).toBe(24);
+    },
+  );
+
   it('never returns a font of zero or NaN, whatever it is given', () => {
     for (const answer of [
       fontThatFits(NaN, atBase, atApplied, 24),

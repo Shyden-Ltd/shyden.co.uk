@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE } from './locales';
+import { DEFAULT_LOCALE, LOCALES } from './locales';
 
 /**
  * Everything that differs per language, in one table.
@@ -16,9 +16,9 @@ import { DEFAULT_LOCALE } from './locales';
 /**
  * The five MVP languages, deliberately WIDER than `LOCALES`.
  *
- * Metadata for all five ships now while only `en` and `id` are routed. That is
- * what makes #22 a data change: adding `zh` to LOCALES must mean flipping which
- * locales are served, never writing new metadata code.
+ * Metadata for a language ships before the language is served, so serving it
+ * is a data change -- adding it to `LOCALES` -- never new metadata code. That
+ * is how #22 served zh, vi and th. Today every MVP language is served.
  */
 export const MVP_LOCALES = ['en', 'id', 'zh', 'vi', 'th'] as const;
 export type MvpLocale = (typeof MVP_LOCALES)[number];
@@ -47,6 +47,15 @@ export interface LocaleMetadata {
   readonly ogLocale: string;
   /** BCP-47 tag for `Intl` / `toLocaleString`. */
   readonly numberLocale: string;
+  /**
+   * What joins two sentences, and what ends one, where a page assembles a
+   * sentence around markup instead of taking it whole from a catalogue (the
+   * 404's back-home link, #390 F65). Chinese ends with a full-width 。 that
+   * carries its own space, so it takes no gap; Thai separates phrases with a
+   * space and ends none with a full stop.
+   */
+  readonly sentenceGap: string;
+  readonly fullStop: string;
 }
 
 export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
@@ -58,6 +67,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'gb',
     ogLocale: 'en_GB',
     numberLocale: 'en-GB',
+    sentenceGap: ' ',
+    fullStop: '.',
   },
   id: {
     nativeName: 'Bahasa Indonesia',
@@ -65,6 +76,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'id',
     ogLocale: 'id_ID',
     numberLocale: 'id-ID',
+    sentenceGap: ' ',
+    fullStop: '.',
   },
   zh: {
     nativeName: '中文',
@@ -73,6 +86,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'cn',
     ogLocale: 'zh_CN',
     numberLocale: 'zh-CN',
+    sentenceGap: '',
+    fullStop: '。',
   },
   vi: {
     nativeName: 'Tiếng Việt',
@@ -80,6 +95,8 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'vn',
     ogLocale: 'vi_VN',
     numberLocale: 'vi-VN',
+    sentenceGap: ' ',
+    fullStop: '.',
   },
   th: {
     nativeName: 'ไทย',
@@ -87,18 +104,20 @@ export const LOCALE_METADATA: Record<MvpLocale, LocaleMetadata> = {
     flag: 'th',
     ogLocale: 'th_TH',
     numberLocale: 'th-TH',
+    sentenceGap: ' ',
+    fullStop: '',
   },
 };
 
 /**
- * Every served locale's own name for itself, in `MVP_LOCALES` order.
+ * Every served locale's own name for itself, in `LOCALES` order.
  *
  * Derived rather than listed so the homepage marquee cannot name a language
  * the site does not serve, and cannot fall behind one that is added. The
  * approved Aurora artifact writes the list by hand (#17).
  */
 export const localeNativeNames = (): string[] =>
-  MVP_LOCALES.map((locale) => LOCALE_METADATA[locale].nativeName);
+  LOCALES.map((locale) => LOCALE_METADATA[locale].nativeName);
 
 export const isMvpLocale = (value: unknown): value is MvpLocale =>
   typeof value === 'string' &&

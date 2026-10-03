@@ -34,7 +34,7 @@ export const vi: Catalogue = {
   studentsHelp:
     'Các học sinh được giấu tên và đánh số — Học sinh 1, Học sinh 2, v.v.',
   studentsLockedReason:
-    'Được thiết lập theo danh sách của bạn. Để thay đổi danh sách này, hãy thêm hoặc xóa học sinh trong phần “Chi tiết học sinh”.',
+    'Được thiết lập theo danh sách của bạn. Để thay đổi danh sách này, hãy thêm hoặc xóa học sinh trong phần “Thông tin học sinh”.',
   // #188. DeepL draft, awaiting a speaker (#53, #161). The three labels are
   // three words or fewer -- the exact class that produced `Tình dục` as a
   // column header on a pupil roster -- so a speaker must read them apart
@@ -47,7 +47,7 @@ export const vi: Catalogue = {
   pairNumbersHelp:
     'Dấu phẩy nối một cặp; dấu chấm phẩy bắt đầu cặp mới — 3,9; 14,15.',
   numbersLockedReason:
-    'Được thiết lập theo danh sách của bạn. Hãy đánh dấu vắng mặt và ghép cặp trong phần “Chi tiết học sinh” để thay đổi.',
+    'Được thiết lập theo danh sách của bạn. Hãy đánh dấu vắng mặt và ghép cặp trong phần “Thông tin học sinh” để thay đổi.',
   numbersNotWholeMessage:
     '“{text}” không phải là số nguyên. Hãy nhập số thứ tự từ 1 đến {count}.',
   numbersAboveCountMessage: 'Không có số {text}. Bạn có {count} học sinh.',
@@ -74,7 +74,7 @@ export const vi: Catalogue = {
   sexWhyNoList:
     'Hãy thêm học sinh của bạn vào phần “Thông tin học sinh” và chọn M hoặc F cho từng em để sử dụng các tính năng này.',
   sexWhyUnset:
-    '{unset} trong số các học sinh {grouped} đang được phân nhóm chưa được chỉ định giới tính. Hãy mở Chi tiết học sinh và chọn M hoặc F cho các em để có thể sử dụng các tùy chọn này.',
+    '{unset} trong số {grouped} học sinh đang được phân nhóm chưa được chỉ định giới tính. Hãy mở “Thông tin học sinh” và chọn M hoặc F cho các em để có thể sử dụng các tùy chọn này.',
   sexWhyReturning:
     '{who} đã quay lại nhưng chưa được gán giới tính. Các tùy chọn này yêu cầu phải có thông tin về giới tính cho từng học sinh trong nhóm.',
   leftoversLabel: 'Nếu vẫn còn học sinh',
@@ -83,15 +83,15 @@ export const vi: Catalogue = {
   leftoversHelp:
     'Dù thế nào đi nữa, không có nhóm nào có quy mô nhỏ hơn quy mô mà bạn đã chọn.',
   soundOn: 'Bật âm thanh',
-  soundOff: 'Hãy lên tiếng',
+  soundOff: 'Tắt âm thanh',
   speedLabel: 'Tốc độ',
   speedNormal: 'Bình thường',
   speedFast: 'Nhanh',
-  speedSkip: 'Bỏ qua phần hoạt hình',
+  speedSkip: 'Bỏ qua hoạt ảnh',
   sectionStudentsHeading: 'Thông tin học sinh',
   sectionGroupingHeading: 'Các tùy chọn phân nhóm',
-  sectionImportExportHeading: 'Nhập khẩu / xuất khẩu',
-  sectionSoundHeading: 'Âm thanh và hoạt hình',
+  sectionImportExportHeading: 'Nhập / xuất',
+  sectionSoundHeading: 'Âm thanh và hoạt ảnh',
   rosterColNumber: '#',
   rosterColName: 'Tên',
   rosterColSex: 'Giới tính',
@@ -131,10 +131,10 @@ export const vi: Catalogue = {
   stateApart: '{n} tách biệt',
   stateAdded: '{n} đã được thêm vào',
   stateNone: 'không có',
-  stateMixed: 'phân loại theo giới tính',
+  stateMixed: 'nam và nữ cân bằng',
   stateSeparated: 'phân chia theo giới tính',
-  stateBunched: 'thức ăn thừa trong một nhóm',
-  stateNothingToSave: 'Chưa có gì để lưu cả',
+  stateBunched: 'học sinh còn lại gộp vào một nhóm',
+  stateNothingToSave: 'chưa có gì để lưu cả',
   stateUnsaved: 'các thay đổi chưa được lưu — hãy xuất để giữ lại chúng',
   makeGroups: 'Tạo nhóm',
   again: 'Trộn lại',
@@ -146,7 +146,7 @@ export const vi: Catalogue = {
   studentNumber: 'Học sinh {n}',
   staleMode: 'Các nhóm này đã lỗi thời — quy mô nhóm đã thay đổi.',
   staleLeftovers:
-    'Các nhóm này đã lỗi thời — lựa chọn “thức ăn thừa” đã thay đổi.',
+    'Các nhóm này đã lỗi thời — lựa chọn “học sinh còn lại” đã thay đổi.',
   staleSexMode:
     'Các nhóm này đã lỗi thời — cách phân nhóm các em trai và em gái đã thay đổi.',
   staleRoster: 'Các nhóm này đã lỗi thời — danh sách lớp đã thay đổi.',
@@ -155,7 +155,7 @@ export const vi: Catalogue = {
   csvProblemNoNumberColumn:
     'Tệp này không có cột số. Mỗi học sinh cần có số thứ tự.',
   csvProblemNumberBlank:
-    'Dòng {row} — ô này để trống. Mỗi học sinh cần có một ô.',
+    'Dòng {row} — chưa có số thứ tự. Mỗi học sinh cần có một số.',
   csvProblemNumberNotWhole:
     "Dòng {row} — số '{value}' không phải là số nguyên.",
   csvProblemDuplicateNumber:
@@ -165,11 +165,11 @@ export const vi: Catalogue = {
   csvProblemAbsent:
     "Dòng {row} — vắng mặt '{value}' không được nhận diện. Hãy sử dụng {accepted} hoặc để trống.",
   csvProblemLetter:
-    "Hàng {row} — {column} '{value}' không phải là một ký tự duy nhất.",
+    "Dòng {row} — {column} '{value}' không phải là một ký tự duy nhất.",
   csvProblemTooMany:
-    'Tệp này có {found} học sinh. Thông tin chi tiết về học sinh chứa tối đa {max} mục.',
+    'Tệp này có {found} học sinh. “Thông tin học sinh” chứa được tối đa {max} học sinh.',
   csvWrongLanguage:
-    'Đây có vẻ là danh sách các lớp {language}. Hãy mở phiên bản {version} của trang này để nhập nó.',
+    'Đây có vẻ là một danh sách lớp bằng {language}. Hãy mở phiên bản {version} của trang này để nhập nó.',
   csvLanguageName: {
     en: 'Tiếng Anh',
     id: 'Tiếng Indonesia',
@@ -184,8 +184,8 @@ export const vi: Catalogue = {
     vi: 'Tiếng Việt',
     th: 'Tiếng Thái',
   },
-  ioExportClassList: 'Xuất danh sách các lớp học',
-  ioExportGroups: 'Nhóm xuất khẩu',
+  ioExportClassList: 'Xuất danh sách lớp',
+  ioExportGroups: 'Xuất nhóm',
   ioDownloadTemplate: 'Tải xuống mẫu',
   ioImportLabel: 'Nhập danh sách lớp học',
   ioProblemsHeading: 'Tệp này chưa được nhập:',
@@ -218,7 +218,7 @@ export const vi: Catalogue = {
   printConfirm: 'In',
   printClassListHeading: 'Danh sách lớp',
   printGroupsHeading: 'Các nhóm',
-  printedOn: 'Được in tại {on}',
+  printedOn: 'In ngày {on}',
   printHereToday: '{here} học sinh có mặt hôm nay · {absent} vắng mặt',
   boardOpen: 'Toàn màn hình',
   boardExit: 'Thoát chế độ toàn màn hình',
@@ -226,7 +226,7 @@ export const vi: Catalogue = {
   staleRefuseExport:
     'Các nhóm này đã lỗi thời. Hãy trộn lại trước khi lưu chúng.',
   staleRefusePrint:
-    'Các nhóm này đã lỗi thời. Hãy xáo trộn lại trước khi in chúng.',
+    'Các nhóm này đã lỗi thời. Hãy trộn lại trước khi in chúng.',
   staleRefuseBoard:
     'Các nhóm này đã lỗi thời. Hãy trộn lại trước khi hiển thị chúng.',
   errors: {

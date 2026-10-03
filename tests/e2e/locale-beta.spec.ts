@@ -126,18 +126,21 @@ test.describe('every unverified language is marked BETA', () => {
     });
   }
 
-  test('the badge carries a translated name for screen readers', async ({
-    page,
-  }) => {
-    // "BETA" alone tells a screen-reader user nothing about WHAT is in beta.
-    // Read as textContent, not as an accessible name: the badge is a plain
-    // `<span>` with no role, and the label is a visually-hidden child that a
-    // reader traverses but `innerText` omits.
-    for (const locale of PREFIXED_LOCALES) {
+  // One test per case from here (#420): per locale, and per theme.
+  //
+  // "BETA" alone tells a screen-reader user nothing about WHAT is in beta.
+  // Read from the accessibility tree, not as an accessible name: the badge is
+  // a plain `<span>` with no role, and the label is a visually-hidden child
+  // that a reader traverses but `innerText` omits. Not as textContent either:
+  // that keeps a label set to `display: none`, which no reader hears (BB1).
+  for (const locale of PREFIXED_LOCALES)
+    test(`${locale}: the badge carries a translated name for screen readers`, async ({
+      page,
+    }) => {
       await page.goto(localisePath('/', locale));
       const badge = page.locator(`${SWITCHER} > summary ${BADGE}`);
-      const spoken = await badge.evaluate((el) => el.textContent ?? '');
-      expect(spoken, `${locale}: badge is a bare token`).toContain(
+      const spoken = await badge.ariaSnapshot();
+      expect(spoken, 'badge is a bare token').toContain(
         getSiteStrings(locale).language.betaLabel,
       );
       expect(spoken).toContain(BETA_BADGE);
@@ -146,17 +149,16 @@ test.describe('every unverified language is marked BETA', () => {
         `${locale} badge is announced as "${spoken.trim()}"`,
         page.locator(`${SWITCHER} > summary`),
       );
-    }
-  });
+    });
 
-  test("the badge's spoken label keeps the page's language, even inside another language's entry", async ({
-    page,
-  }) => {
-    // Each entry carries its own `lang`, so a screen reader voices 中文 in
-    // Chinese. The badge's hidden label is written in the PAGE's language --
-    // "beta translation" on an English page -- and with no `lang` of its own
-    // it inherited the entry's, handing English words to a Chinese voice.
-    for (const locale of LOCALES) {
+  // Each entry carries its own `lang`, so a screen reader voices 中文 in
+  // Chinese. The badge's hidden label is written in the PAGE's language --
+  // "beta translation" on an English page -- and with no `lang` of its own
+  // it inherited the entry's, handing English words to a Chinese voice.
+  for (const locale of LOCALES)
+    test(`${locale}: the badge's spoken label keeps the page's language, even inside another language's entry`, async ({
+      page,
+    }) => {
       await page.goto(localisePath('/', locale));
       await page.locator(`${SWITCHER} > summary`).click();
       const voices = await page
@@ -164,52 +166,48 @@ test.describe('every unverified language is marked BETA', () => {
         .evaluateAll((labels) =>
           labels.map((label) => label.closest('[lang]')?.getAttribute('lang')),
         );
-      expect(voices, `${locale}: one label per badge`).toHaveLength(
+      expect(voices, 'one label per badge').toHaveLength(
         expectedBadges(locale),
       );
       const misvoiced = voices.filter((voice) => voice !== locale);
       expect(
         searched(misvoiced, { of: voices, what: 'badge labels' }),
-        `${locale}: badge labels voiced in another language`,
+        'badge labels voiced in another language',
       ).toEqual([]);
-    }
-  });
+    });
 
-  test('the badge clears the WCAG AA floor for normal text, in both themes', async ({
-    page,
-  }) => {
-    // Both placements: the dropdown paints its own background, so the entry
-    // badge is a different composite from the one in the summary. The list
-    // is opened first, so both badges are measured in each theme.
-    await page.goto(localisePath('/', PREFIXED_LOCALES[0]));
-    await page.locator(`${SWITCHER} > summary`).click();
-    const summaryBadge = page.locator(`${SWITCHER} > summary ${BADGE}`).first();
-    const entryBadge = page.locator(`${SWITCHER} li ${BADGE}`).first();
-    await expect(entryBadge).toBeVisible();
-    for (const theme of THEMES) {
+  // Both placements: the dropdown paints its own background, so the entry
+  // badge is a different composite from the one in the summary. The list is
+  // opened first, so both badges are measured. One prefixed locale stands
+  // for all: a badge's contrast does not depend on its language.
+  for (const theme of THEMES)
+    test(`${theme}: the badge clears the WCAG AA floor for normal text`, async ({
+      page,
+    }) => {
+      await page.goto(localisePath('/', PREFIXED_LOCALES[0]));
+      await page.locator(`${SWITCHER} > summary`).click();
+      const summaryBadge = page
+        .locator(`${SWITCHER} > summary ${BADGE}`)
+        .first();
+      const entryBadge = page.locator(`${SWITCHER} li ${BADGE}`).first();
+      await expect(entryBadge).toBeVisible();
       await emulateTheme(page, theme);
       const summaryRatio = await contrastRatio(summaryBadge);
-      expect(
-        summaryRatio,
-        `${theme}: the summary badge`,
-      ).toBeGreaterThanOrEqual(4.5);
+      expect(summaryRatio, 'the summary badge').toBeGreaterThanOrEqual(4.5);
       const entryRatio = await contrastRatio(entryBadge);
-      expect(entryRatio, `${theme}: the entry badge`).toBeGreaterThanOrEqual(
-        4.5,
-      );
+      expect(entryRatio, 'the entry badge').toBeGreaterThanOrEqual(4.5);
       await shoot(
         page,
         `${theme}: the badge paints ${summaryRatio.toFixed(2)}:1 in the summary and ${entryRatio.toFixed(2)}:1 in the list, floor 4.5:1`,
         page.locator(SWITCHER),
       );
-    }
-  });
+    });
 
-  test(
-    'adds no horizontal scroll at 320px, in every language',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      for (const locale of LOCALES) {
+  for (const locale of LOCALES)
+    test(
+      `${locale}: adds no horizontal scroll at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
         const path = localisePath('/', locale);
         await page.setViewportSize({ width: 320, height: 720 });
         await page.goto(path);
@@ -230,7 +228,6 @@ test.describe('every unverified language is marked BETA', () => {
           page,
           `${locale} at 320px: badge visible, overflow ${overflow}px`,
         );
-      }
-    },
-  );
+      },
+    );
 });

@@ -99,10 +99,11 @@ for (const locale of PREFIXED_LOCALES)
       }
     });
 
-test('the disclosure sits right after the BETA notice, and asks for nothing personal', async ({
-  page,
-}) => {
-  for (const locale of PREFIXED_LOCALES) {
+// One test per locale (#420).
+for (const locale of PREFIXED_LOCALES)
+  test(`${locale}: the disclosure sits right after the BETA notice, and asks for nothing personal`, async ({
+    page,
+  }) => {
     await page.goto(pagePath('home', locale));
     // AC2: beside the BETA notice, not merely somewhere in the footer.
     await expect(
@@ -121,5 +122,4 @@ test('the disclosure sits right after the BETA notice, and asks for nothing pers
       'note',
       'website',
     ]);
-  }
-});
+  });

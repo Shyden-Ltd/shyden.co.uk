@@ -18,6 +18,7 @@
 import { readFileSync } from 'node:fs';
 import { journeysOfPage } from './build-evidence-page.mjs';
 import { signOffOf, standingOf } from './evidence-signoff.mjs';
+import { messageOf } from './errors.mjs';
 
 /**
  * @typedef {object} Status
@@ -89,11 +90,11 @@ const USAGE =
   'usage: signoff-status.mjs <published page.html> <sign-off document.json>';
 
 const main = () => {
-  const [pagePath, docPath] = process.argv.slice(2);
+  const [pagePath, docPath, ...extra] = process.argv.slice(2);
   /** @type {Status} */
   let status;
   try {
-    if (!pagePath || !docPath) throw new Error(USAGE);
+    if (!pagePath || !docPath || extra.length > 0) throw new Error(USAGE);
     status = signOffStatus(
       readFileSync(pagePath, 'utf8'),
       JSON.parse(readFileSync(docPath, 'utf8')),
@@ -101,9 +102,7 @@ const main = () => {
   } catch (error) {
     // No verdict from a check that could not read its inputs: 2 is neither
     // a sign-off nor an out-of-date one.
-    console.error(
-      `signoff-status: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`signoff-status: ${messageOf(error)}`);
     process.exit(2);
   }
   console.log(status.says);

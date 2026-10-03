@@ -7,9 +7,10 @@ import {
   handleReport,
   reportHealth,
   schemaMatches,
+  type ReportsDatabase,
 } from '../../src/lib/report';
 import { getSiteStrings } from '../../src/lib/i18n';
-import { codeWithoutComments } from './source-text';
+import { codeWithoutComments, withoutSqlComments } from './source-text';
 
 /**
  * Real `Request` objects, no stand-in database (spec 10). Checks 1–8 return
@@ -65,13 +66,16 @@ const outcomeOf = async (response: Response) =>
   ((await response.json()) as { outcome: string }).outcome;
 
 describe('checks 1-4: the request itself', () => {
-  it('1: refuses any method but POST with 405 and Allow', async () => {
-    const response = await answer(
-      new Request(ENDPOINT, { method: 'GET', headers: { Origin: ORIGIN } }),
-    );
-    expect(response.status).toBe(405);
-    expect(response.headers.get('Allow')).toBe('POST');
-  });
+  // Every method a form or a script can send, not only GET: a guard written
+  // as "refuse GET" passed the GET-only version of this test (#390).
+  it.each(['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])(
+    '1: refuses %s with 405 and Allow',
+    async (method) => {
+      const response = await answer(post(valid(), { method }));
+      expect(response.status).toBe(405);
+      expect(response.headers.get('Allow')).toBe('POST');
+    },
+  );
 
   it('2: refuses a missing Origin, a foreign one, and "null"', async () => {
     for (const origin of [undefined, 'https://evil.example', 'null']) {
@@ -114,6 +118,16 @@ describe('checks 1-4: the request itself', () => {
         )
       ).status,
     ).not.toBe(415);
+    // A media type is case-insensitive (RFC 9110 8.3.1).
+    expect(
+      (
+        await answer(
+          post(valid(), {
+            headers: { 'Content-Type': 'Application/X-WWW-Form-URLEncoded' },
+          }),
+        )
+      ).status,
+    ).not.toBe(415);
   });
 
   it('4: accepts a body of exactly 64 KiB and refuses one byte more', async () => {
@@ -130,11 +144,15 @@ describe('checks 1-4: the request itself', () => {
     // chunks, and stopping at the cap pulls about five.
     const chunk = new TextEncoder().encode('a'.repeat(16 * 1024));
     let pulled = 0;
+    let cancelled = false;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
         pulled += 1;
         if (pulled > 64) controller.close();
         else controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
       },
     });
     const request = new Request(ENDPOINT, {
@@ -146,6 +164,42 @@ describe('checks 1-4: the request itself', () => {
     expect(request.headers.get('Content-Length')).toBeNull();
     expect((await answer(request)).status).toBe(413);
     expect(pulled).toBeLessThan(10);
+    // Stopping is not enough: the rest of the body is released, not left open.
+    expect(cancelled).toBe(true);
+  });
+
+  it('4: refuses a body that declares more than 64 KiB without reading it', async () => {
+    // A string body carries no Content-Length on a Request, so the test above
+    // and the exact-size test both reach the read. Only a declared length
+    // shows the check that refuses before any byte is pulled.
+    let pulled = 0;
+    // highWaterMark 0: a stream pulls once on construction to fill its queue
+    // otherwise, and that pull would read as the handler reading the body.
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new TextEncoder().encode('locale=vi'));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const request = new Request(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Origin: ORIGIN,
+        'Content-Type': FORM,
+        'Content-Length': String(MAX_BODY_BYTES + 1),
+      },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(request.headers.get('Content-Length')).toBe(
+      String(MAX_BODY_BYTES + 1),
+    );
+    expect((await answer(request)).status).toBe(413);
+    expect(pulled).toBe(0);
   });
 });
 
@@ -312,8 +366,9 @@ describe('check 9 with no database: failed, and a clean log line', () => {
       }),
       lines,
     );
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^report failed: \w+: /);
+    expect(lines).toEqual([
+      'report failed: Error: the REPORTS binding is missing',
+    ]);
     for (const leak of [secret, 'note-9c1d', 'agent-2b8e', quote, ORIGIN])
       expect(lines[0]).not.toContain(leak);
   });
@@ -414,16 +469,66 @@ describe('the health check', () => {
     expect(schemaMatches(REPORT_COLUMNS.slice(1))).toBe(false);
     expect(schemaMatches([...REPORT_COLUMNS, 'status'])).toBe(false);
     expect(schemaMatches([])).toBe(false);
+    // Same count, one name changed: a length check alone would pass it.
+    expect(schemaMatches([...REPORT_COLUMNS.slice(1), 'status'])).toBe(false);
+  });
+
+  // The real D1 in tests/functions always holds the migrated table, so only
+  // a table answering other columns can show what health says about drift.
+  const tableWith = (columns: readonly string[]): ReportsDatabase => ({
+    prepare: () => ({
+      bind() {
+        throw new Error('health binds nothing');
+      },
+      run() {
+        throw new Error('health writes nothing');
+      },
+      all: async <T>() => ({
+        results: columns.map((name) => ({ name })) as T[],
+      }),
+    }),
+  });
+
+  it('answers 200 ok:true for the migrated table, and logs nothing', async () => {
+    const lines: string[] = [];
+    const log = (line: string) => lines.push(line);
+    const response = await reportHealth(
+      new Request(HEALTH),
+      { REPORTS: tableWith(REPORT_COLUMNS) },
+      log,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    // A call with no binding through the same log proves it live, so one
+    // line in all is the healthy call's silence, not a dead listener.
+    await reportHealth(new Request(HEALTH), NO_DB, log);
+    expect(lines).toEqual([
+      'report health: Error: the REPORTS binding is missing',
+    ]);
+  });
+
+  it('answers 503 ok:false for a drifted table, and logs the drift', async () => {
+    const lines: string[] = [];
+    const response = await reportHealth(
+      new Request(HEALTH),
+      { REPORTS: tableWith([...REPORT_COLUMNS.slice(1), 'status']) },
+      (line) => lines.push(line),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ ok: false });
+    expect(lines).toEqual([
+      'report health: the reports table does not match the migration',
+    ]);
   });
 });
 
 describe('the migration', () => {
-  // SQL line comments stripped: the migration's own column notes must not satisfy this.
+  // Comments stripped, both forms: the migration's own column notes must not
+  // satisfy this. A private `--` replace stood here, and a block comment below
+  // the table holding the old `quote` line passed the anchored check while the
+  // column itself allowed 100000 characters (#390 F160).
   const sql = () =>
-    readFileSync('migrations/0001_reports.sql', 'utf8')
-      .split('\n')
-      .map((line) => line.replace(/--.*$/, ''))
-      .join('\n');
+    withoutSqlComments(readFileSync('migrations/0001_reports.sql', 'utf8'));
 
   it('creates exactly the columns the endpoint writes and the health check expects', () => {
     const body = /CREATE TABLE reports \(([\s\S]*)\);/.exec(sql())?.[1];
@@ -465,7 +570,15 @@ describe('the Pages Functions are plumbing only', () => {
         `import \\{ ${handler} \\} from '\\.\\./\\.\\./\\.\\./src/lib/report'`,
       ),
     );
-    expect(code).toMatch(/^export const onRequest/m);
+    // The title promises the hand-off, so the export's whole body is
+    // pinned: an `onRequest` that imported the handler and answered
+    // anything else passed the bare `export const onRequest` match (#390).
+    expect(code).toMatch(
+      new RegExp(
+        `^export const onRequest = \\(\\{ request, env \\}\\) =>\\s+${handler}\\(request, env\\);$`,
+        'm',
+      ),
+    );
   });
 });
 

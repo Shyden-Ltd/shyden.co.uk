@@ -1,5 +1,5 @@
 import { parseDocument } from 'yaml';
-import { stringLeaves } from './catalogue-leaves';
+import { stringLeaves } from '../src/lib/catalogue-leaves';
 import { withoutCommentLines } from './unit/source-text';
 import { isRecord } from '../src/lib/is-record';
 
@@ -232,6 +232,44 @@ export function workflowJobs(text: string, file: string): WorkflowJob[] {
       secrets: secretsOf(body, shared, where),
       uses: usesOf(body, where),
     };
+  });
+}
+
+/** One `actions/checkout` step, and whether it leaves the job token behind. */
+export interface CheckoutStep {
+  /** `<file> job '<id>': step <n>`, for a finding's text. */
+  readonly where: string;
+  /**
+   * True unless the step says `persist-credentials: false` as a YAML
+   * boolean. Checkout writes the job's token into `.git/config` by default,
+   * where every later step can read it, third-party code included (#395).
+   */
+  readonly persistsCredentials: boolean;
+}
+
+/** Every `actions/checkout` step in a workflow, in file order. */
+export function checkoutSteps(text: string, file: string): CheckoutStep[] {
+  const root = parseCleanYaml(text, file);
+  const jobs = isRecord(root) ? root.jobs : undefined;
+  if (!isRecord(jobs)) throw new Error(`${file} has no jobs mapping`);
+  return Object.entries(jobs).flatMap(([id, job]) => {
+    const steps = isRecord(job) ? job.steps : undefined;
+    if (!Array.isArray(steps)) return [];
+    return steps.flatMap((step: unknown, index) => {
+      if (
+        !isRecord(step) ||
+        typeof step.uses !== 'string' ||
+        !step.uses.startsWith('actions/checkout@')
+      )
+        return [];
+      const inputs = isRecord(step.with) ? step.with : {};
+      return [
+        {
+          where: `${file} job '${id}': step ${index + 1}`,
+          persistsCredentials: inputs['persist-credentials'] !== false,
+        },
+      ];
+    });
   });
 }
 

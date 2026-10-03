@@ -14,14 +14,16 @@ import { zh } from '../../src/lib/i18n/zh';
 import { getSiteStrings, type Locale } from '../../src/lib/i18n';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
-import { stringLeaves } from '../catalogue-leaves';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
 import { searched } from '../source-files';
 import {
   backTranslationUnits,
   chrF,
   engineConfig,
   engineLanguages,
+  engineName,
   engineSource,
+  isLabel,
   libreTranslateBody,
   livenessProblems,
   reviewMarkdown,
@@ -62,6 +64,17 @@ describe('chrF: how far a back-translation drifted from its English', () => {
     ['full-width letters', 'AB', 'ＡＢ', 100],
     ['a message slot', '{names} have joined', 'have joined', 100],
     ['an empty back-translation', 'Add a student', '', 0],
+    ['symbols, which carry no language', 'A + B', 'AB', 100],
+    // Orders one to six: 7/8, 6/7, 5/6, 4/5, 3/4 and 2/3 on both sides, whose
+    // mean is 4017/5040. Five orders would give 3457/4200 instead.
+    [
+      'a text long enough for all six orders',
+      'abcdefgh',
+      'abcdefgx',
+      133900 / 1680,
+    ],
+    ['two texts with nothing to compare', '', '', 100],
+    ['two texts of punctuation alone', '.', '!', 100],
     // U+20000 and U+20001 share their high surrogate, so a count over UTF-16
     // code units would find half of each in common and score 25.
     ['astral letters that share a surrogate', '𠀀', '𠀁', 0],
@@ -124,6 +137,23 @@ describe('unitsBetween: what the reader is asked to read', () => {
     ).toEqual([{ key: 'add', english: 'Add', translation: 'Tambah' }]);
   });
 
+  it('sends no symbol even when its translation differs', () => {
+    expect(unitsBetween({ n: '#', dash: '—' }, { n: '＃', dash: '–' })).toEqual(
+      [],
+    );
+  });
+
+  it('sends nothing for copy the locale has no string for', () => {
+    expect(
+      unitsBetween(
+        { a: 'Add a student', b: 'Type a name', c: 'Close' },
+        { b: 'Ketik nama', c: 7 },
+      ),
+    ).toEqual([
+      { key: 'b', english: 'Type a name', translation: 'Ketik nama' },
+    ]);
+  });
+
   it('sends a plural as its "other" sentence', () => {
     expect(
       unitsBetween(
@@ -161,13 +191,44 @@ describe('unitsBetween: what the reader is asked to read', () => {
         { pick: '{sex, select, M {boy} other {girl}}' },
         { pick: 'anak' },
       ),
-    ).toThrow(/pick/);
+    ).toThrow(
+      'pick: the English chooses by {sex} from M, other; the translation makes no choice',
+    );
     expect(() =>
       unitsBetween(
         { pick: '{sex, select, M {boy} other {girl}}' },
         { pick: '{sex, select, other {anak}}' },
       ),
-    ).toThrow(/pick.*M/);
+    ).toThrow(
+      'pick: the English chooses by {sex} from M, other; the translation chooses by {sex} from other',
+    );
+  });
+
+  it.each([
+    [
+      'chooses by another value',
+      '{kind, select, M {anak laki} other {anak}}',
+      'chooses by {kind} from M, other',
+    ],
+    [
+      'adds a branch',
+      '{sex, select, M {laki} F {perempuan} other {anak}}',
+      'chooses by {sex} from M, F, other',
+    ],
+    [
+      'has as many branches under other names',
+      '{sex, select, F {perempuan} other {anak}}',
+      'chooses by {sex} from F, other',
+    ],
+  ])('refuses a translation that %s', (_, translation, theirs) => {
+    expect(() =>
+      unitsBetween(
+        { pick: '{sex, select, M {boy} other {girl}}' },
+        { pick: translation },
+      ),
+    ).toThrow(
+      `pick: the English chooses by {sex} from M, other; the translation ${theirs}`,
+    );
   });
 });
 
@@ -178,7 +239,7 @@ const CATALOGUES = { id, zh, vi, th } satisfies Record<
 >;
 const TRANSLATED = Object.keys(CATALOGUES) as Array<keyof typeof CATALOGUES>;
 
-/** The CSV vocabulary without its `sex` tokens, which are never translated. */
+/** The CSV vocabulary without its `sex` letters, which the roster rows read back. */
 const csvCopy = (locale: Locale) =>
   Object.fromEntries(
     Object.entries(CSV_LOCALES[locale]).filter(([key]) => key !== 'sex'),
@@ -291,6 +352,12 @@ describe('worstFirst', () => {
     ]);
     expect(rows[0].key, 'worstFirst sorted its input in place').toBe('b');
   });
+
+  it('breaks a tie on score and locale by key', () => {
+    // Given b before a, so a stable sort that ignored the key keeps them wrong.
+    const rows = [compared('id', 'b', 70), compared('id', 'a', 70)];
+    expect(worstFirst(rows).map((row) => row.key)).toEqual(['a', 'b']);
+  });
 });
 
 describe('livenessProblems: a run that read nothing is a failure', () => {
@@ -305,7 +372,7 @@ describe('livenessProblems: a run that read nothing is a failure', () => {
 
   it('names a locale that compared nothing', () => {
     expect(livenessProblems(['id', 'zh'], [compared('id', 'a', 90)])).toEqual([
-      expect.stringMatching(/^zh: /),
+      'zh: nothing was compared -- no translated copy was read back',
     ]);
   });
 
@@ -315,7 +382,7 @@ describe('livenessProblems: a run that read nothing is a failure', () => {
         ['th'],
         [compared('th', 'a', 0, ''), compared('th', 'b', 0, '  ')],
       ),
-    ).toEqual([expect.stringMatching(/^th: /)]);
+    ).toEqual(['th: none of 2 back-translations came back with any text']);
   });
 
   it('leaves one empty back-translation to the review, as its worst row', () => {
@@ -348,9 +415,29 @@ describe('engineSource: which of the engine’s languages a locale is', () => {
 
   it('refuses a locale the engine cannot read into English', () => {
     expect(() => engineSource('th', [{ code: 'th', targets: ['fr'] }])).toThrow(
-      /th/,
+      'th: the engine cannot read th into English; it reads nothing',
     );
-    expect(() => engineSource('th', offered('en', 'vi'))).toThrow(/th/);
+    expect(() => engineSource('th', offered('en', 'vi'))).toThrow(
+      'th: the engine cannot read th into English; it reads en, vi',
+    );
+  });
+
+  it('prefers the locale’s own code to a scripted one', () => {
+    expect(engineSource('zh', offered('en', 'zh', 'zh-Hans'))).toBe('zh');
+  });
+
+  it('refuses to guess between two codes in the locale’s script', () => {
+    expect(() =>
+      engineSource('zh', offered('en', 'zh-Hans', 'zh-Hans-CN')),
+    ).toThrow(
+      'zh: the engine offers zh-Hans, zh-Hans-CN for zh in the Hans script, and the gate will not guess which',
+    );
+  });
+
+  it('never takes a code Intl cannot read as the locale’s script', () => {
+    expect(() => engineSource('vi', offered('en', 'vi-!!'))).toThrow(
+      'vi: the engine cannot read vi into English; it reads en, vi-!!',
+    );
   });
 });
 
@@ -366,6 +453,15 @@ describe('engineLanguages: what the engine says it can read', () => {
     expect(() => engineLanguages([{ code: 'th' }])).toThrow(/languages/);
     expect(() => engineLanguages([{ code: 'th', targets: 'en' }])).toThrow(
       /languages/,
+    );
+  });
+
+  it.each([
+    ['an entry with no code', [{ targets: ['en'] }]],
+    ['a target that is not a string', [{ code: 'th', targets: ['en', 3] }]],
+  ])('refuses %s', (_, answer) => {
+    expect(() => engineLanguages(answer)).toThrow(
+      'expected GET /languages to answer a list of { code, targets }',
     );
   });
 });
@@ -398,7 +494,7 @@ describe('the LibreTranslate request and its answer', () => {
 
   it('refuses an answer with a different count', () => {
     expect(() => translatedTexts({ translatedText: ['only one'] }, 2)).toThrow(
-      /2/,
+      'expected 2 translatedText entries, got 1',
     );
   });
 
@@ -433,6 +529,60 @@ describe('sendable: what the engine is sent', () => {
     ['nothing but a slot', '{n}', ''],
   ])('%s', (_, text, want) => {
     expect(sendable(text)).toBe(want);
+  });
+});
+
+describe('engineName: the engine the Dockerfile builds, unless a run names one', () => {
+  const pinned =
+    'FROM libretranslate/libretranslate:v1.9.6@sha256:' + 'a'.repeat(64);
+
+  it('names the tag the Dockerfile builds, without its digest', () => {
+    expect(engineName({}, `${pinned}\nENV LT_LOAD_ONLY=en\n`)).toBe(
+      'LibreTranslate v1.9.6',
+    );
+  });
+
+  it('reads a tag that carries no digest', () => {
+    expect(
+      engineName({}, 'FROM libretranslate/libretranslate:v2.0.0 AS engine\n'),
+    ).toBe('LibreTranslate v2.0.0');
+  });
+
+  it('never reads a FROM line that is commented out', () => {
+    expect(
+      engineName(
+        {},
+        `# FROM libretranslate/libretranslate:v0.0.1\n  ${pinned}\n`,
+      ),
+    ).toBe('LibreTranslate v1.9.6');
+  });
+
+  it('lets a run name its own engine, and treats an empty name as none', () => {
+    expect(engineName({ BACK_TRANSLATE_ENGINE: 'my-engine' }, pinned)).toBe(
+      'my-engine',
+    );
+    expect(engineName({ BACK_TRANSLATE_ENGINE: '' }, pinned)).toBe(
+      'LibreTranslate v1.9.6',
+    );
+  });
+
+  it('refuses a Dockerfile that names no libretranslate image', () => {
+    expect(() => engineName({}, 'FROM node:24\n')).toThrow(
+      /names no libretranslate\/libretranslate image/,
+    );
+  });
+
+  it("names the repository's own Dockerfile's tag", () => {
+    // Read here by a different route from the one under test: the tag is
+    // what sits between the image's ':' and its '@' on the FROM line.
+    const dockerfile = readFileSync('docker/libretranslate/Dockerfile', 'utf8');
+    const from = dockerfile
+      .split('\n')
+      .find((line) => line.startsWith('FROM libretranslate/libretranslate:'));
+    expect(from, 'the Dockerfile has a FROM line').toBeDefined();
+    const tag = from!.split(':')[1]!.split('@')[0]!;
+    expect(tag).toMatch(/^v\d+\.\d+\.\d+$/);
+    expect(engineName({}, dockerfile)).toBe(`LibreTranslate ${tag}`);
   });
 });
 
@@ -555,6 +705,62 @@ describe('reviewMarkdown: the page a reviewer reads', () => {
     expect(slotted).not.toContain('#### Sentences');
   });
 
+  it('counts a label by its words, never its symbols', () => {
+    expect(isLabel('Boys & girls only')).toBe(true);
+    expect(isLabel('Keep these four together')).toBe(false);
+  });
+
+  it('opens the labels section with the caveat the score needs', () => {
+    const labelled = reviewMarkdown(
+      [
+        {
+          ...compared('vi', 'label', 9, 'Gender', 'Giới tính'),
+          english: 'Sex',
+        },
+      ],
+      ['vi'],
+      'engine',
+    );
+    const heading = labelled.indexOf('#### Labels of three words or fewer');
+    const caveat = labelled.indexOf(
+      'Judge these by eye; the order is only a place to start (#95, #161).',
+    );
+    expect(heading, 'no labels section').toBeGreaterThan(-1);
+    expect(caveat, 'no caveat after the heading').toBeGreaterThan(heading);
+    expect(labelled.indexOf('| `label` |')).toBeGreaterThan(caveat);
+  });
+
+  it('has no labels section when every row is a sentence', () => {
+    const sentences = reviewMarkdown(
+      [
+        {
+          ...compared('vi', 'sentence', 40),
+          english: 'Keep these students together in one group',
+        },
+      ],
+      ['vi'],
+      'engine',
+    );
+    expect(sentences, 'no sentences section').toContain('#### Sentences');
+    expect(sentences).not.toContain('#### Labels');
+  });
+
+  it('says a locale read nothing back, rather than scoring an empty list', () => {
+    expect(reviewMarkdown([], ['zh'], 'engine')).toContain(
+      '<details><summary>zh — 0 compared</summary>\n\nNothing was read back.\n\n</details>',
+    );
+  });
+
+  it('keeps an entity-like text literal, escaping its ampersand', () => {
+    expect(
+      reviewMarkdown(
+        [compared('vi', 'k', 10, 'Use &lt; for <')],
+        ['vi'],
+        'engine',
+      ),
+    ).toContain('| Use &amp;lt; for &lt; |');
+  });
+
   it('keeps every value inside its own table cell', () => {
     const awkward = reviewMarkdown(
       [compared('vi', 'k', 10, 'a | b\nc <b>d</b>', 'x|y')],
@@ -606,6 +812,8 @@ describe('scripts/i18n-back-translate.mjs', () => {
     log: string[];
     /** Every text the engine was asked to read, in order. */
     sent: string[];
+    /** The same, each as `<source> <text>`: which language it was sent as. */
+    sentFrom: string[];
   }
 
   async function standIn(options: {
@@ -615,6 +823,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
   }): Promise<StandIn> {
     const log: string[] = [];
     const sent: string[] = [];
+    const sentFrom: string[] = [];
     server = createServer((request, response) => {
       // Decoded as a stream, so a Thai character split across two chunks
       // arrives whole rather than as two replacement characters.
@@ -638,6 +847,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
           };
           log.push(`POST /translate ${source} ${q.length}`);
           sent.push(...q);
+          sentFrom.push(...q.map((text) => `${source} ${text}`));
           if (options.refuse) {
             reply(options.refuse.status, { error: options.refuse.error });
             return;
@@ -654,7 +864,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     await new Promise<void>((done) => listening.listen(0, '127.0.0.1', done));
     log.push('listening');
     const { port } = listening.address() as AddressInfo;
-    return { url: `http://127.0.0.1:${port}`, log, sent };
+    return { url: `http://127.0.0.1:${port}`, log, sent, sentFrom };
   }
 
   /** One run of the real script, with only the environment a test gives it. */
@@ -743,6 +953,106 @@ describe('scripts/i18n-back-translate.mjs', () => {
     ).toBe(true);
   });
 
+  it('says how many it compared per locale, and as what', async () => {
+    const engine = await standIn({});
+    const result = await run({ BACK_TRANSLATE_URL: engine.url });
+    expect(result.status, result.output).toBe(0);
+    for (const locale of TRANSLATED)
+      expect(result.output, locale).toMatch(
+        new RegExp(
+          `^${locale}: ${backTranslationUnits(locale).length} compared, \\d+ distinct, read as ${locale === 'zh' ? 'zh-Hans' : locale}$`,
+          'm',
+        ),
+      );
+  });
+
+  it('scores each back-translation against its English', async () => {
+    const engine = await standIn({});
+    const result = await run({
+      BACK_TRANSLATE_URL: engine.url,
+      BACK_TRANSLATE_REPORT: join(dir, 'back-translation.json'),
+    });
+    expect(result.status, result.output).toBe(0);
+    const rows = report().comparisons;
+    expect(rows.filter(({ score }) => score > 0).length).toBeGreaterThan(0);
+    for (const row of rows)
+      expect(row.score, `${row.locale} ${row.key}`).toBe(
+        chrF(row.english, row.backTranslation),
+      );
+  });
+
+  it('sends a text once per locale, however many keys share it', async () => {
+    // Liveness: the catalogues do repeat a translation under several keys,
+    // so sending one per key would show here.
+    expect(
+      TRANSLATED.some((locale) => {
+        const units = backTranslationUnits(locale);
+        return (
+          new Set(units.map(({ translation }) => sendable(translation))).size <
+          units.length
+        );
+      }),
+    ).toBe(true);
+    const engine = await standIn({});
+    await run({ BACK_TRANSLATE_URL: engine.url });
+    expect(engine.sentFrom.length).toBeGreaterThan(0);
+    expect(new Set(engine.sentFrom).size).toBe(engine.sentFrom.length);
+  });
+
+  it('names the engine it was given, in the review and the report', async () => {
+    const engine = await standIn({});
+    const result = await run({
+      BACK_TRANSLATE_URL: engine.url,
+      BACK_TRANSLATE_ENGINE: 'libretranslate/libretranslate:v1.6.2',
+      BACK_TRANSLATE_REPORT: join(dir, 'back-translation.json'),
+    });
+    expect(result.status, result.output).toBe(0);
+    expect(summary()).toMatch(
+      /^Every translated locale, read back into English by \*\*libretranslate\/libretranslate:v1\.6\.2\*\*, /m,
+    );
+    expect(
+      (
+        JSON.parse(
+          readFileSync(join(dir, 'back-translation.json'), 'utf8'),
+        ) as {
+          engine: string;
+        }
+      ).engine,
+    ).toBe('libretranslate/libretranslate:v1.6.2');
+  });
+
+  // #390 F75. The workflow no longer types the version, so a run that names
+  // no engine must take it from the Dockerfile Dependabot bumps.
+  it('names the engine the Dockerfile builds when a run names none', async () => {
+    const engine = await standIn({});
+    const result = await run({ BACK_TRANSLATE_URL: engine.url });
+    expect(result.status, result.output).toBe(0);
+    const built = engineName(
+      {},
+      readFileSync('docker/libretranslate/Dockerfile', 'utf8'),
+    );
+    expect(built).toMatch(/^LibreTranslate v\d/);
+    // The name the review's anchored opening line carries, compared EXACTLY
+    // with the Dockerfile's: a missing line reads as undefined and fails.
+    const opening =
+      /^Every translated locale, read back into English by \*\*(LibreTranslate v[^*]+)\*\*, /m;
+    expect(opening.exec(summary())?.[1]).toBe(built);
+  });
+
+  it('prints the review when there is no job summary to write it to', async () => {
+    const engine = await standIn({});
+    const result = await run({
+      BACK_TRANSLATE_URL: engine.url,
+      GITHUB_STEP_SUMMARY: '',
+    });
+    expect(result.status, result.output).toBe(0);
+    expect(result.output).toMatch(
+      /^Every translated locale, read back into English by \*\*LibreTranslate v\d+\.\d+\.\d+\*\*, /m,
+    );
+    expect(existsSync(dir)).toBe(true);
+    expect(existsSync(join(dir, 'summary.md'))).toBe(false);
+  });
+
   it('never fails on a score, however bad', async () => {
     const engine = await standIn({ answer: () => 'zzz' });
     const result = await run({ BACK_TRANSLATE_URL: engine.url });
@@ -775,6 +1085,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     const result = await run({ BACK_TRANSLATE_URL: engine.url });
     expect(result.status, result.output).toBe(1);
     expect(result.output).toMatch(/^th: /m);
+    expect(summary()).toMatch(/^\*\*This run cannot be believed:\*\*$/m);
     expect(summary()).toMatch(/^th: /m);
   });
 
@@ -784,7 +1095,7 @@ describe('scripts/i18n-back-translate.mjs', () => {
     });
     const result = await run({ BACK_TRANSLATE_URL: engine.url });
     expect(result.status).toBe(1);
-    expect(result.output).toMatch(/Invalid API key/);
+    expect(result.output).toMatch(/^✗ .*Invalid API key/m);
   });
 
   it('refuses an engine that cannot read a locale, before sending anything', async () => {

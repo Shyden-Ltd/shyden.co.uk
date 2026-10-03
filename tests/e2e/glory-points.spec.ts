@@ -1,6 +1,12 @@
 import { test, expect } from './fixtures';
 import { recorded } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+import { getSiteStrings } from '../../src/lib/i18n/index';
+import { expectVisibleText } from './helpers';
+import { localePaths } from './locale-sampling';
+
+const en = getSiteStrings('en').glory;
+const id = getSiteStrings('id').glory;
 
 test.use(recorded);
 test.describe('glory points calculator', () => {
@@ -8,10 +14,13 @@ test.describe('glory points calculator', () => {
     await page.goto('/glory-points');
     await page.fill('#glory-input', '1000');
     await page.click('#glory-submit');
-    const result = page.locator('#glory-result');
-    await expect(result).toContainText('1,000'); // coins
-    await expect(result).toContainText('1,112'); // beans
-    await expect(result).toContainText('2,780'); // gift
+    // The whole line, so each amount sits in its own place: three
+    // order-free substring checks passed with coins and beans swapped (#390
+    // F124). The amounts are literals, the sentence is the catalogue's.
+    await expectVisibleText(
+      page.locator('#glory-result'),
+      en.resultLine('1,000', '1,112', '2,780'),
+    );
     await expect(page.locator('#glory-error')).toBeEmpty(); // result & error are mutually exclusive
   });
   test('the Indonesian calculator prints Indonesian numbers', async ({
@@ -27,22 +36,20 @@ test.describe('glory points calculator', () => {
     await page.goto('/id/glory-points');
     await page.fill('#glory-input', '1000');
     await page.click('#glory-submit');
-    const result = page.locator('#glory-result');
-    await expect(result).toContainText('1.000'); // koin
-    await expect(result).toContainText('1.112'); // bean
-    await expect(result).toContainText('2.780'); // nilai hadiah
-    await expect(result).not.toContainText('1,112');
+    await expectVisibleText(
+      page.locator('#glory-result'),
+      id.resultLine('1.000', '1.112', '2.780'),
+    );
   });
 
   test('the Indonesian calculator refuses in Indonesian', async ({ page }) => {
     await page.goto('/id/glory-points');
     await page.fill('#glory-input', 'abc');
     await page.click('#glory-submit');
-    const error = page.locator('#glory-error');
-    await expect(error).not.toBeEmpty();
     // The English fallback at glory-points.ts would render the raw English
-    // message here; the map must actually cover this code.
-    await expect(error).not.toContainText('whole number');
+    // message here; the map must actually cover this code. Named, not merely
+    // "not English": any other Indonesian sentence passed that (#390 F124).
+    await expectVisibleText(page.locator('#glory-error'), id.errors.notWhole);
     await expect(page.locator('#glory-result')).toBeEmpty();
   });
 
@@ -50,7 +57,10 @@ test.describe('glory points calculator', () => {
     await page.goto('/glory-points');
     await page.fill('#glory-input', '9');
     await page.press('#glory-input', 'Enter');
-    await expect(page.locator('#glory-result')).toContainText('25');
+    await expectVisibleText(
+      page.locator('#glory-result'),
+      en.resultLine('9', '10', '25'),
+    );
     await expect(page.locator('#glory-error')).toBeEmpty();
   });
   test('shows YeeTalk attribution linking to the official site', async ({
@@ -79,7 +89,7 @@ test.describe('glory points calculator', () => {
       await page.goto('/glory-points');
       if (input) await page.fill('#glory-input', input);
       await page.click('#glory-submit');
-      await expect(page.locator('#glory-error')).toHaveText(message);
+      await expectVisibleText(page.locator('#glory-error'), message);
       await expect(page.locator('#glory-result')).toBeEmpty();
     });
   }
@@ -129,29 +139,34 @@ test.describe('glory points — explains what it does and how to use it', () => 
 });
 
 test.describe('glory points — touch targets ≥ 44×44px (WCAG / mobile-first)', () => {
-  test(
-    'mobile: attribution link, input and submit button are ≥44px',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 800 });
-      await page.goto('/glory-points');
-      await atLeast44(page.locator('a[href="https://yeetalkapp.com/"]'));
-      await atLeast44(page.locator('#glory-input'));
-      await atLeast44(page.locator('#glory-submit'));
-    },
-  );
-});
-
-test.describe('glory points — mobile-first layout', () => {
-  for (const width of [320, 375, 768, 1280]) {
+  // Every locale (#423): the submit button's label is the page's own copy.
+  for (const path of localePaths('/glory-points'))
     test(
-      `no horizontal scroll at ${width}px`,
+      `mobile: attribution link, input and submit button are ≥44px -- ${path}`,
       { tag: '@emulated-viewport' },
       async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
-        await page.goto('/glory-points');
-        await expectNoHorizontalScroll(page);
+        await page.setViewportSize({ width: 375, height: 800 });
+        await page.goto(path);
+        await atLeast44(page.locator('a[href="https://yeetalkapp.com/"]'));
+        await atLeast44(page.locator('#glory-input'));
+        await atLeast44(page.locator('#glory-submit'));
       },
     );
+});
+
+// Every locale at every width (#423): theme-gallery reads every locale at 320
+// and 1280px only, so 375 and 768px were read in English alone.
+test.describe('glory points — mobile-first layout', () => {
+  for (const width of [320, 375, 768, 1280]) {
+    for (const path of localePaths('/glory-points'))
+      test(
+        `no horizontal scroll at ${width}px -- ${path}`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(path);
+          await expectNoHorizontalScroll(page);
+        },
+      );
   }
 });

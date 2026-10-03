@@ -5,11 +5,12 @@ import {
   getSiteStrings,
   localisePath,
   type Locale,
+  otherLocales,
 } from '../../src/lib/i18n';
-import { otherLocales } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import { recorded, shoot } from './evidence';
 import { atLeast44, expectNoHorizontalScroll } from '../viewport';
+import { sitePaths } from '../site-pages';
 
 test.use(recorded);
 
@@ -70,39 +71,54 @@ const expectLabel = async (
   );
 };
 
+/** Each switcher entry's href, keyed by the language it offers. */
+const switcherTargets = (page: Page): Promise<Record<string, string>> =>
+  page
+    .locator(`${SWITCHER} li a`)
+    .evaluateAll((links) =>
+      Object.fromEntries(
+        links.map((l) => [
+          l.getAttribute('hreflang') ?? '',
+          l.getAttribute('href') ?? '',
+        ]),
+      ),
+    );
+
+/** A path as Astro serves it, with its trailing slash. */
+const withSlash = (path: string): string =>
+  path.endsWith('/') ? path : `${path}/`;
+
 test.describe('language switcher', () => {
-  test('names the current language in its own language, as its width calls for', async ({
-    page,
-  }) => {
-    // No viewport is set, so this runs at each project's own width -- and on a
-    // real phone, which emulates nothing: the desktop projects see the full
-    // name and the phone projects the short code, so both branches run.
-    for (const locale of LOCALES) {
+  // One test per case below (#420): per locale, and per locale and width.
+  for (const locale of LOCALES)
+    test(`${locale}: names the current language in its own language, as its width calls for`, async ({
+      page,
+    }) => {
+      // No viewport is set, so this runs at each project's own width -- and on
+      // a real phone, which emulates nothing: the desktop projects see the full
+      // name and the phone projects the short code, so both branches run.
       await page.goto(localisePath('/', locale));
       const width = await page.evaluate(() => window.innerWidth);
       await expectLabel(page, locale, width);
-    }
-  });
+    });
 
-  test(
-    'shows the short code below 720px and the full name from 720px, in every language',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // Both sides of the edge, and both ends of the range (#329).
-      for (const locale of LOCALES) {
-        await page.goto(localisePath('/', locale));
-        for (const width of [320, COMPACT_BELOW - 1, COMPACT_BELOW, 1280]) {
+  // Both sides of the edge, and both ends of the range (#329).
+  for (const locale of LOCALES)
+    for (const width of [320, COMPACT_BELOW - 1, COMPACT_BELOW, 1280])
+      test(
+        `${locale} at ${width}px: shows the short code below 720px and the full name from 720px`,
+        { tag: '@emulated-viewport' },
+        async ({ page }) => {
           await page.setViewportSize({ width, height: 720 });
+          await page.goto(localisePath('/', locale));
           await expectLabel(page, locale, width);
-        }
-      }
-    },
-  );
+        },
+      );
 
-  test('lists every language in one fixed order, the current one ticked in place, every other a link', async ({
-    page,
-  }) => {
-    for (const locale of LOCALES) {
+  for (const locale of LOCALES)
+    test(`${locale}: lists every language in one fixed order, the current one ticked in place, every other a link`, async ({
+      page,
+    }) => {
       await page.goto(localisePath('/', locale));
       await page.locator(`${SWITCHER} > summary`).click();
       // Every language, derived. A count of 1 and a single hard-coded name
@@ -152,8 +168,7 @@ test.describe('language switcher', () => {
         `${locale}: every language listed in one order, ${LOCALE_METADATA[locale].nativeName} ticked in place`,
         page.locator(`${SWITCHER} ul`),
       );
-    }
-  });
+    });
 
   test('opens and closes without JavaScript', async ({ page }) => {
     // A native <details>, with no script of its own: a language switcher is
@@ -168,34 +183,46 @@ test.describe('language switcher', () => {
     await expect(entry).toBeVisible();
   });
 
-  test('keeps you on the page you were reading', async ({ page }) => {
-    // The classic i18n bug is a switcher that dumps the visitor on the
-    // homepage instead of translating the page in front of them.
-    // Trailing slash included deliberately: Astro serves these paths with one,
-    // so this asserts the href a visitor actually gets rather than a tidied
-    // version of it. `every target is a real page` proves it resolves.
-    await page.goto('/glory-points');
-    await expect(page.locator(`${SWITCHER} li a`).first()).toHaveAttribute(
-      'href',
-      '/id/glory-points/',
-    );
+  // Every page, every language, every entry (#390 F131). Both tests read the
+  // first entry on /glory-points and nothing else, so a Thai entry that sent
+  // the visitor to the homepage, or a /classroom-groups switcher pointing at
+  // the wrong page, passed. One test per page per language, so each has its
+  // own budget and a failure names the page in its title.
+  for (const path of sitePaths())
+    for (const locale of LOCALES) {
+      const here = localisePath(path, locale);
 
-    await page.goto('/id/glory-points');
-    await expect(page.locator(`${SWITCHER} li a`).first()).toHaveAttribute(
-      'href',
-      '/glory-points/',
-    );
-  });
+      test(`${here}: keeps you on the page you were reading`, async ({
+        page,
+      }) => {
+        // The classic i18n bug is a switcher that dumps the visitor on the
+        // homepage instead of translating the page in front of them.
+        // Trailing slash included deliberately: Astro serves these paths with
+        // one, so this asserts the href a visitor actually gets rather than a
+        // tidied version of it. `every target is a real page` proves it
+        // resolves.
+        await page.goto(here);
+        expect(await switcherTargets(page)).toEqual(
+          Object.fromEntries(
+            otherLocales(locale).map((other) => [
+              other,
+              withSlash(localisePath(path, other)),
+            ]),
+          ),
+        );
+      });
 
-  test('every target is a real page, not a 404', async ({ page }) => {
-    await page.goto('/glory-points');
-    const href = await page
-      .locator(`${SWITCHER} li a`)
-      .first()
-      .getAttribute('href');
-    const response = await page.request.get(href!);
-    expect(response.status()).toBe(200);
-  });
+      test(`${here}: every target is a real page, not a 404`, async ({
+        page,
+      }) => {
+        await page.goto(here);
+        const targets = Object.values(await switcherTargets(page));
+        // The population: one entry for every other language.
+        expect(targets).toHaveLength(otherLocales(locale).length);
+        for (const href of targets)
+          expect((await page.request.get(href)).status(), href).toBe(200);
+      });
+    }
 
   test('the control and its entries are touchable', async ({ page }) => {
     await page.goto('/');
@@ -211,17 +238,18 @@ test.describe('language switcher', () => {
     );
   });
 
-  test(
-    'adds no horizontal scroll at 320px, in every language',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // Derived from LOCALES (#75). This read `['/', '/id/']`, written when
-      // those were the only two. Width at 320px is one of the few genuinely
-      // locale-sensitive things here — Thai and Chinese set to different
-      // widths than English — so the three locales #22 added are exactly the
-      // ones this test most needed to see. The loop is inside the test, so
-      // covering them costs iterations, not tests.
-      for (const path of LOCALES.map((locale) => localisePath('/', locale))) {
+  // Derived from LOCALES (#75). This read `['/', '/id/']`, written when those
+  // were the only two. Width at 320px is one of the few genuinely
+  // locale-sensitive things here — Thai and Chinese set to different widths
+  // than English — so the three locales #22 added are exactly the ones this
+  // test most needed to see. One test per locale (#420): the loop that once
+  // lived inside this test shared one budget across all five.
+  for (const locale of LOCALES)
+    test(
+      `${locale}: adds no horizontal scroll at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        const path = localisePath('/', locale);
         await page.setViewportSize({ width: 320, height: 720 });
         await page.goto(path);
         // Not vacuous: a switcher hidden at 320px would satisfy "no overflow"
@@ -231,26 +259,30 @@ test.describe('language switcher', () => {
           page,
           `${path} scrolls sideways at 320px`,
         );
-      }
-    },
-  );
+      },
+    );
 
-  test(
-    'the open dropdown stays inside the viewport at 320px',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      // Page-level scrollWidth is not containment: a panel can escape its own
-      // container and still produce zero document scroll.
-      await page.setViewportSize({ width: 320, height: 720 });
-      await page.goto('/');
-      await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
-      await page.locator(`${SWITCHER} > summary`).click();
-      const box = (await page.locator(`${SWITCHER} ul`).boundingBox())!;
-      expect(box.x, 'dropdown escapes the left edge').toBeGreaterThanOrEqual(0);
-      expect(
-        box.x + box.width,
-        'dropdown escapes the right edge',
-      ).toBeLessThanOrEqual(320);
-    },
-  );
+  // Every language (#390 F131): the panel hangs off a summary whose width is
+  // each language's own, so this is a fit test, and it read English only.
+  for (const locale of LOCALES)
+    test(
+      `${locale}: the open dropdown stays inside the viewport at 320px`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        // Page-level scrollWidth is not containment: a panel can escape its
+        // own container and still produce zero document scroll.
+        await page.setViewportSize({ width: 320, height: 720 });
+        await page.goto(localisePath('/', locale));
+        await expect(page.locator(`${SWITCHER} > summary`)).toBeVisible();
+        await page.locator(`${SWITCHER} > summary`).click();
+        const box = (await page.locator(`${SWITCHER} ul`).boundingBox())!;
+        expect(box.x, 'dropdown escapes the left edge').toBeGreaterThanOrEqual(
+          0,
+        );
+        expect(
+          box.x + box.width,
+          'dropdown escapes the right edge',
+        ).toBeLessThanOrEqual(320);
+      },
+    );
 });

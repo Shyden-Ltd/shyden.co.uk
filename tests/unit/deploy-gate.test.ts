@@ -12,9 +12,10 @@ import { REQUIRED_CHECKS, decideDeploy } from '../../scripts/deploy-gate.mjs';
  * 24m02s and the deploy was silently skipped (#155, #157).
  *
  * The obvious fix — "read the build-and-test status off the commit" — does not
- * work, and measuring that first is what produced this design. `ci.yml` triggers
- * on `pull_request` ONLY, so it has never run against a merge commit: there is
- * no status there to read. What IS true is that `develop` sets `strict: true`,
+ * work, and measuring that first is what produced this design. `ci.yml` never
+ * runs on a push (its triggers are `pull_request` and the dispatch path's
+ * `workflow_call`), so a pushed merge commit carries no status to read. What
+ * IS true is that `develop` sets `strict: true`,
  * so a PR cannot merge unless it is up to date with its base, which makes the
  * merge commit's TREE identical to the tested head's tree. Measured on 6695877:
  * both are eb26eb490c6c84e670315b1103199d4006fa5998.

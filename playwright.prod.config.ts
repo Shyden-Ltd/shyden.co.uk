@@ -13,6 +13,10 @@ import { onBuild } from './tests/sanity-on-build';
 // whether the calculators' JS ran, or whether the page scrolls sideways at
 // 320px. `prod-verified` should mean a browser rendered production.
 //
+// The curl smoke itself lives here too since #390 (tests/prod/prod-smoke.spec.ts,
+// requests and no browser), so a pull request's `sanity-on-build` runs it
+// against that PR's own prod build before any deploy can meet it.
+//
 // baseURL is env-driven so the target can move without editing this file. It
 // defaults to the PUBLIC production domain — the host real visitors get.
 //
@@ -40,9 +44,15 @@ if (build && process.env.PUBLIC_SHYTALK_URL !== undefined)
 
 export default defineConfig({
   testDir: './tests/prod',
-  // A failed prod check must not be a flake that gets waved through, and must
-  // not hang the release either.
-  retries: 1,
+  // A stray `test.only` fails the run in CI rather than narrowing it (#390).
+  forbidOnly: !!process.env.CI,
+  // No retries (#445). This held one, so that "a single network blip"
+  // would not block a release, and a check that failed once and then passed
+  // posted `prod-verified`. The operator's rule, 2026-10-02: a retry is not
+  // a fix. A blip against the live site is a finding to read, and
+  // browser-matrix.test.ts refuses a retry in any config. The timeout keeps a
+  // hung check from holding the release.
+  retries: 0,
   timeout: 30_000,
   webServer: build?.webServer,
   grepInvert: build?.grepInvert,

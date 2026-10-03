@@ -39,6 +39,18 @@ import type { Locale } from '../../src/lib/i18n/locales';
  * its one word per locale was approved on #319 itself, and any future pin
  * control is held to it. Changing an entry needs a fresh operator read, like
  * every pinned value.
+ *
+ * `mix` and `leftovers` (#390) take their words from those features' own
+ * controls, `sexMixLabel` and `leftoversLabel`. Each control was correct in
+ * every locale while the copy describing it was not. zh 平均 and th เท่ากัน
+ * ("evenly") and vi cân bằng ("balanced") are how each locale's
+ * "Mix boys and girls evenly" control says it. Leftovers are the students
+ * left over, never the bare word for "left", which also names leftover food:
+ * zh 剩余, vi còn lại and th นักเรียน…เหลือ, where the student is in the word.
+ * `sound` takes the Sound on control's word, and `classList` the words of
+ * the Class list print option, pinned on #161 in th. `gloryPoints`, `bean`
+ * and `coin` are the operator's 2026-09-30 decision, which id already kept:
+ * YeeTalk's names in English, the coin in the page's language.
  */
 const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
   id: {
@@ -53,6 +65,13 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     ],
     absent: ['tidak hadir', 'ketidakhadiran'],
     group: ['kelompok', 'pengelompokan'],
+    mix: ['campur'],
+    leftovers: ['tersisa', 'sisa dalam'],
+    sound: ['suara'],
+    classList: ['daftar kelas'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['koin'],
   },
   zh: {
     pin: ['固定'],
@@ -60,6 +79,13 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     apart: ['分开'],
     absent: ['缺席'],
     group: ['组'],
+    mix: ['平均'],
+    leftovers: ['剩余'],
+    sound: ['声音'],
+    classList: ['班级名单'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['金币'],
   },
   vi: {
     pin: ['ghim'],
@@ -67,6 +93,13 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     apart: ['tách biệt', 'khác nhóm'],
     absent: ['vắng mặt'],
     group: ['nhóm'],
+    mix: ['cân bằng'],
+    leftovers: ['còn học sinh', 'học sinh còn lại'],
+    sound: ['âm thanh'],
+    classList: ['danh sách lớp'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['xu'],
   },
   th: {
     pin: ['ปักหมุด'],
@@ -74,6 +107,13 @@ const GLOSSARY: Record<Exclude<Locale, 'en'>, Glossary> = {
     apart: ['แยก', 'คนละกลุ่ม'],
     absent: ['ไม่มา', 'ขาด'],
     group: ['กลุ่ม'],
+    mix: ['เท่ากัน'],
+    leftovers: ['นักเรียนเหลือ', 'นักเรียนที่เหลือ'],
+    sound: ['เสียง'],
+    classList: ['รายชื่อชั้น', 'รายชื่อนักเรียน'],
+    gloryPoints: ['glory point'],
+    bean: ['bean'],
+    coin: ['เหรียญ'],
   },
 };
 
@@ -98,6 +138,13 @@ const ONE_WORD: Glossary = {
   apart: ['tách biệt'],
   absent: ['vắng mặt'],
   group: ['nhóm'],
+  mix: ['cân bằng'],
+  leftovers: ['học sinh còn lại'],
+  sound: ['âm thanh'],
+  classList: ['danh sách lớp'],
+  gloryPoints: ['glory point'],
+  bean: ['bean'],
+  coin: ['xu'],
 };
 
 /** What zh `warnings.PINNED_MIXED_SEX` said until #319. */
@@ -119,6 +166,12 @@ describe('featuresNamed: the features a piece of English copy names', () => {
       '{grouped} of {typed} grouped — numbers {absent} are absent.',
       ['absent', 'group'],
     ],
+    ['Mix boys and girls evenly', ['mix']],
+    ['mixed by sex', ['mix']],
+    ['If students are left over', ['leftovers']],
+    ['leftovers in one group', ['group', 'leftovers']],
+    ['Sound off', ['sound']],
+    ['Your class list is still here.', ['classList']],
   ])('%j names %j', (english, named) => {
     expect(featuresNamed(english)).toEqual(named);
   });
@@ -130,6 +183,8 @@ describe('featuresNamed: the features a piece of English copy names', () => {
     'Keep everyone apartment-free while keeping score.',
     'Spin the wheel at the pinnacle.',
     'He left absently.',
+    // "mixture" holds m-i-x, and a dough left overnight is not a leftover.
+    'A mixture of flour and water, left overnight.',
   ])('%j names no feature', (english) => {
     expect(featuresNamed(english)).toEqual([]);
   });
@@ -360,6 +415,58 @@ describe('on the live catalogues', () => {
     );
     expect(verdict?.missing).toContain('pin');
   });
+
+  it.each<[string, string, string, FeatureTerm]>([
+    ['zh', 'soundOff', '畅所欲言', 'sound'],
+    ['vi', 'soundOff', 'Hãy lên tiếng', 'sound'],
+    ['th', 'soundOff', 'แสดงความคิดเห็น', 'sound'],
+    [
+      'zh',
+      'privacy',
+      '所有操作都在您的浏览器中完成。课程列表绝不会离开此页面。',
+      'classList',
+    ],
+    ['zh', 'stateBunched', '一组剩菜', 'leftovers'],
+    ['th', 'stateMixed', 'แบ่งตามเพศ', 'mix'],
+    [
+      'vi',
+      'site.glory.howToSteps[0]',
+      'Hãy nhập số điểm vinh quang mà bạn muốn đạt được vào ô bên dưới.',
+      'gloryPoints',
+    ],
+    [
+      'th',
+      'site.glory.assumptions',
+      'สมมติว่า 1 คะแนนเท่ากับ 1 เหรียญ, 0.9 เหรียญต่อถั่ว และของขวัญจะถูกแปลงเป็นถั่วในอัตรา 40%',
+      'bean',
+    ],
+    [
+      'zh',
+      'site.glory.howToSteps[2]',
+      '请准确读出达到该目标所需的硬币、豆子以及礼物总价值。',
+      'coin',
+    ],
+  ])(
+    '%s %s seeded back to what #390 corrected is flagged for %s',
+    (locale, key, before, feature) => {
+      const units = backTranslationUnits(locale as Locale);
+      const seeded = units.map((one) =>
+        one.key === key ? { ...one, translation: before } : one,
+      );
+      // Watch the seed apply: exactly one unit differs, and it is this one.
+      expect(
+        seeded
+          .filter((one, index) => one !== units[index])
+          .map((one) => one.key),
+      ).toEqual([key]);
+      const verdict = checkFeatureTerms(
+        seeded,
+        locale as Locale,
+        glossaryOf(locale as Locale),
+      ).find((one) => one.key === key);
+      expect(verdict?.missing).toContain(feature);
+    },
+  );
 
   it('the corrected zh PINNED_MIXED_SEX is not flagged, and says 固定', () => {
     const units = backTranslationUnits('zh');

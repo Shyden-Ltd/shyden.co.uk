@@ -1,13 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { nonEmpty, searched } from '../source-files';
 import { parseCleanYaml, workflowJobs } from '../workflow-jobs';
 import { withoutCommentLines } from './source-text';
 import { closingKeywordOffences } from '../../scripts/closing-keywords.mjs';
+import { scratchDir } from '../scratch-dir';
+import { scratchGit, withoutLocalGit } from '../git-env';
 
 /**
  * The rule: no message may put a closing keyword next to an issue number, for
@@ -67,10 +67,18 @@ const REFUSED: readonly Fixture[] = [
   { text: 'never closes #3', why: 'the never form' },
   { text: 'Closes: #65', why: 'the colon form GitHub also reads' },
   {
-    text: 'fixes Shyden-Ltd/shyden.co.uk#12',
+    text: 'fixes shyden-labs/shyden.co.uk#12',
     why: 'the cross-repository form',
   },
   { text: 'closes GH-12', why: 'the GH- reference form' },
+  {
+    text: 'fixes https://github.com/shyden-labs/shyden.co.uk/issues/12',
+    why: 'the full issue URL — undocumented by GitHub, so refused rather than trusted',
+  },
+  {
+    text: 'Closes: http://github.com/shyden-labs/shyden.co.uk/pull/12',
+    why: 'the URL form with a colon, over http, naming a pull request',
+  },
   {
     text: 'and never write close #7 while explaining this very rule',
     why: 'explaining the rule is how the standing note says it happens',
@@ -96,6 +104,18 @@ const ACCEPTED: readonly Fixture[] = [
   {
     text: 'renamed the prefix#5 identifier',
     why: 'fix inside a longer word: there is no word boundary before it',
+  },
+  {
+    text: 'never write `close #<n>` in a message',
+    why: 'a placeholder, not a number — how the rule itself is documented',
+  },
+  {
+    text: 'see https://github.com/shyden-labs/shyden.co.uk/issues/12',
+    why: 'an issue URL with no keyword before it',
+  },
+  {
+    text: 'the fix is in https://github.com/shyden-labs/shyden.co.uk/pull/5',
+    why: 'a keyword and a URL in one sentence, but NOT adjacent',
   },
   {
     text: 'affixes #9 to the header',
@@ -156,7 +176,7 @@ describe('the closing-keyword rule, in its one home', () => {
 
 /**
  * The command line, which is how BOTH media reach the rule: `.githooks/
- * commit-msg` hands it a message file, and `build-and-test` hands it the pull
+ * commit-msg` hands it a message file, and `pr-body.yml` hands it the pull
  * request body. A script that exits 0 in silence is indistinguishable from
  * one whose entry point never ran, so its refusals are asserted too (#221,
  * #276).
@@ -175,7 +195,7 @@ describe('the closing-keyword command line', () => {
   }
 
   function fileHolding(text: string): string {
-    const file = join(mkdtempSync(join(tmpdir(), 'closing-keywords-')), 'MSG');
+    const file = join(scratchDir('closing-keywords-'), 'MSG');
     writeFileSync(file, text);
     return file;
   }
@@ -324,6 +344,62 @@ describe('the rule covers a pull request body, not only a commit message', () =>
     expect(
       commands.filter((command) => /^test -s .*commits\.txt/.test(command)),
     ).toHaveLength(1);
+  });
+
+  it("reads every commit the pull request adds, its merges too, and not the checkout's own", () => {
+    // A pull_request checkout is a synthetic merge of the head into the base,
+    // at HEAD. `--no-merges` left that one out, and with it every merge commit
+    // the branch carries, which lands on develop, the default branch, with
+    // its message intact (#390). The workflow's own command runs here,
+    // against a branch shaped like that.
+    const [only] = workflowsRunningTheRule();
+    const [range] = (only?.commands ?? []).filter((command) =>
+      command.startsWith('git log'),
+    );
+    expect(range, 'the step reads no commit range').toBeDefined();
+
+    const dir = scratchDir('pr-range-');
+    const git = scratchGit(dir);
+    const commit = (message: string) =>
+      git(['commit', '-q', '--allow-empty', '-m', message]);
+    git(['init', '-q', '-b', 'develop']);
+    git(['config', 'user.email', 'fixture@example.test']);
+    git(['config', 'user.name', 'Fixture']);
+    git(['config', 'commit.gpgsign', 'false']);
+    commit('already on the base');
+    git(['checkout', '-q', '-b', 'feature']);
+    commit('the branch work');
+    git(['checkout', '-q', 'develop']);
+    commit('the base moves on');
+    git(['update-ref', 'refs/remotes/origin/develop', 'develop']);
+    git(['checkout', '-q', 'feature']);
+    git([
+      'merge',
+      '-q',
+      '--no-ff',
+      'develop',
+      '-m',
+      'Merge develop, closes #5',
+    ]);
+    git(['checkout', '-q', '--detach', 'develop']);
+    git(['merge', '-q', '--no-ff', 'feature', '-m', 'the checkout merge']);
+
+    const out = scratchDir('pr-range-out-');
+    execFileSync('bash', ['-c', range!], {
+      cwd: dir,
+      env: {
+        ...withoutLocalGit(process.env),
+        BASE_REF: 'develop',
+        RUNNER_TEMP: out,
+      },
+    });
+    // Every message, whole: the base's commit and the checkout's merge are
+    // absent, and the branch's merge is present.
+    const messages = readFileSync(join(out, 'commits.txt'), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .sort();
+    expect(messages).toEqual(['Merge develop, closes #5', 'the branch work']);
   });
 
   it('never expands the body into a shell command', () => {

@@ -62,6 +62,32 @@ test.describe('the 404 answers everyone', () => {
     }
   });
 
+  // #390 F65. Each block was assembled as body, a space, the link and an
+  // ASCII full stop, whatever the language: Chinese read 该页面不存在。 返回首页.
+  // (a space after the full-width stop and a Latin one at the end), and Thai,
+  // which ends no sentence with a full stop, carried one. Literal sentences,
+  // so the expectation cannot share the page's mistake.
+  test('ends each back-home sentence in its own language', async ({ page }) => {
+    const sentences: Record<string, string> = {
+      en: "That page doesn't exist. Back to the homepage.",
+      id: 'Halaman itu tidak ada. Kembali ke beranda.',
+      zh: '该页面不存在。返回首页。',
+      vi: 'Trang đó không tồn tại. Quay lại trang chủ.',
+      th: 'หน้านั้นไม่มีอยู่ กลับสู่หน้าหลัก',
+    };
+    expect(Object.keys(sentences).sort()).toEqual([...LOCALES].sort());
+    await page.goto(NOT_FOUND);
+    for (const locale of LOCALES) {
+      const t = getSiteStrings(locale).notFound;
+      const link = page.getByRole('link', { name: t.backHome, exact: true });
+      const sentence = link.locator('xpath=ancestor::p[1]');
+      await expect(sentence, locale).toHaveCount(1);
+      await expect(sentence, locale).toBeVisible();
+      expect(await sentence.innerText(), locale).toBe(sentences[locale]);
+      await shoot(page, `${locale} back-home sentence`, sentence);
+    }
+  });
+
   test(
     'five stacked languages add no horizontal scroll at 320px',
     { tag: '@emulated-viewport' },

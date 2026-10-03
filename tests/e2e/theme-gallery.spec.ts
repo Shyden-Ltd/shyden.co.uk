@@ -1,11 +1,10 @@
 import { test, expect } from './fixtures';
 import { recorded, shoot } from './evidence';
+import { PUBLISHED_ROUTES } from './published-paths';
 import { refuseFullscreen, withGroups } from './helpers';
 import { THEMES } from '../palette';
-import { sitePaths } from '../site-pages';
 import { expectTheme } from '../themes';
 import { expectNoHorizontalScroll } from '../viewport';
-import { DEFAULT_LOCALE, LOCALES, localisePath } from '../../src/lib/i18n';
 
 /**
  * Every built page in both themes (#142 §6.7), in every locale, at the
@@ -24,25 +23,21 @@ for (const theme of THEMES) {
   test.describe(`${theme} theme`, () => {
     test.use({ colorScheme: theme });
 
-    for (const width of WIDTHS) {
-      for (const locale of LOCALES) {
+    // One test per page, width and theme (#421): every page in a locale was
+    // one test, so the 404 rode along with the English pages' budget.
+    for (const width of WIDTHS)
+      for (const path of PUBLISHED_ROUTES)
         test(
-          `${locale} at ${width}px: every page renders the theme, with no sideways scroll`,
+          `${path} at ${width}px: renders the theme, with no sideways scroll`,
           { tag: '@emulated-viewport' },
           async ({ page }) => {
             await page.setViewportSize({ width, height: 900 });
-            const paths = sitePaths().map((path) => localisePath(path, locale));
-            if (locale === DEFAULT_LOCALE) paths.push('/definitely-not-a-page');
-            for (const path of paths) {
-              await page.goto(path);
-              await expectTheme(page, theme);
-              await expectNoHorizontalScroll(page);
-              await shoot(page, `${path}, ${theme}, ${width}px`);
-            }
+            await page.goto(path);
+            await expectTheme(page, theme);
+            await expectNoHorizontalScroll(page);
+            await shoot(page, `${path}, ${theme}, ${width}px`);
           },
         );
-      }
-    }
 
     test.describe('interactive states', () => {
       test(

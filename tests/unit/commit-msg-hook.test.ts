@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { scratchDir } from '../scratch-dir';
 
 /**
  * The commit-msg hook, end to end, as git invokes it.
@@ -24,10 +24,7 @@ const HOOK = '.githooks/commit-msg';
 
 /** Runs the real hook against a real message file, as git would. */
 function runHook(message: string): { ok: boolean; output: string } {
-  const file = join(
-    mkdtempSync(join(tmpdir(), 'commit-msg-')),
-    'COMMIT_EDITMSG',
-  );
+  const file = join(scratchDir('commit-msg-'), 'COMMIT_EDITMSG');
   writeFileSync(file, message);
   try {
     execFileSync(HOOK, [file], { encoding: 'utf8', stdio: 'pipe' });

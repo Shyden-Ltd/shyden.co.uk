@@ -6,6 +6,7 @@ import {
   getSiteStrings,
   localisePath,
 } from '../lib/i18n';
+import { metadataFor } from '../lib/i18n/metadata';
 import ReportForm from '../components/ReportForm.astro';
 
 /**
@@ -35,11 +36,17 @@ import ReportForm from '../components/ReportForm.astro';
  * nothing in English, so the default block has none, as on every English page.
  */
 const primary = getSiteStrings(DEFAULT_LOCALE).notFound;
+// Each language's own gap and full stop (#390 F65): the sentence is assembled
+// around the link, so its punctuation cannot come whole from the catalogue.
+const { sentenceGap: primaryGap, fullStop: primaryStop } =
+  metadataFor(DEFAULT_LOCALE);
 const others = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).map(
   (locale) => ({
     locale,
     copy: getSiteStrings(locale).notFound,
     home: localisePath('/', locale),
+    gap: metadataFor(locale).sentenceGap,
+    stop: metadataFor(locale).fullStop,
   }),
 );
 ---
@@ -52,22 +59,28 @@ const others = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).map(
 >
   <section class="wrap">
     <h1>{primary.heading}</h1>
-    {/* {' '} is load-bearing: a newline glues sentence to link. */}
+    {/* The gap and the stop are expressions, never literal text: a newline
+        between JSX nodes is dropped, so the sentence would glue to its link,
+        and each language punctuates its own way (#390 F65). */}
     <p>
-      {primary.body} <a href="/">{primary.backHome}</a>.
+      {primary.body}
+      {primaryGap}
+      <a href="/">{primary.backHome}</a>
+      {primaryStop}
     </p>
     <ReportForm lang={DEFAULT_LOCALE} page="not-found" />
 
-    {others.map(({ locale, copy, home }) => (
+    {others.map(({ locale, copy, home, gap, stop }) => (
       <Fragment>
         <hr />
         <h2 lang={locale}>{copy.heading}</h2>
         <p lang={locale}>
-          {copy.body}{' '}
+          {copy.body}
+          {gap}
           <a href={home} hreflang={locale} lang={locale}>
             {copy.backHome}
           </a>
-          .
+          {stop}
         </p>
         <ReportForm lang={locale} page="not-found" />
       </Fragment>

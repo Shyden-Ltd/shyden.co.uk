@@ -6,6 +6,7 @@ import { emulateTheme } from '../themes';
 import { MAX_ROSTER } from '../../src/lib/roster';
 import { addSeveral, openRoster, setSex } from './helpers';
 import { recorded } from './evidence';
+import { localePaths } from './locale-sampling';
 import { expectNoHorizontalScroll } from '../viewport';
 
 test.use(recorded);
@@ -423,43 +424,49 @@ test.describe('a disabled control affords that it is disabled', () => {
     // liveness control doing exactly its job. Stated positively instead, so
     // a control that STOPS being UA-painted turns this red rather than
     // slipping past an assertion that was never reached.
-    expect(reachable.filter((a) => !a.uaPainted).map((a) => a.label)).toEqual(
-      [],
-    );
+    // The population inside the verdict (#446): absence-liveness could not
+    // see through `const { reachable } = await affordances(page)` until AC6,
+    // so this absence went unjudged, held up only by the call above.
+    expect(
+      searched(
+        reachable.filter((a) => !a.uaPainted).map((a) => a.label),
+        { of: reachable, what: 'disabled controls in the default state' },
+      ),
+    ).toEqual([]);
 
     // `reasons` reads the tags `affordances` just wrote, so it always runs
     // after it — the two share one derivation of the population.
     expectAReasonWithoutHover(await reasons(page), 'default');
   });
 
-  test('roster at the limit — the add buttons and Make groups too', async ({
-    page,
-  }) => {
-    await openRoster(page);
-    // `openRoster` already added one, so this lands exactly ON the limit
-    // rather than asking the page to clamp an overshoot.
-    await addSeveral(page, MAX_ROSTER - 1);
-    await openEveryDisclosure(page);
-
-    for (const theme of THEMES) {
+  // One test per theme (#419): a hundred-row roster under two themes was one
+  // budget.
+  for (const theme of THEMES)
+    test(`${theme}: roster at the limit — the add buttons and Make groups too`, async ({
+      page,
+    }) => {
+      await openRoster(page);
+      // `openRoster` already added one, so this lands exactly ON the limit
+      // rather than asking the page to clamp an overshoot.
+      await addSeveral(page, MAX_ROSTER - 1);
+      await openEveryDisclosure(page);
       await emulateTheme(page, theme);
       const { reachable, fill, ink } = await affordances(page);
       expectNoEntryCursor(reachable, `at-limit, ${theme}`);
       expectDisabledPaint(reachable, fill, ink, `at-limit, ${theme}`);
-    }
-    expectAReasonWithoutHover(await reasons(page), 'at-limit');
-  });
+      // `reasons` reads the tags `affordances` just wrote, so it runs after.
+      expectAReasonWithoutHover(await reasons(page), 'at-limit');
+    });
 
-  test('the disabled placeholder option is excluded deliberately, and it exists', async ({
-    page,
-  }) => {
-    await openRoster(page);
-    // Choosing a sex is what disables that row's "—" option (roster-ui.ts).
-    // Without this the exclusion branch never fires, and a detector branch
-    // that has never matched anything is itself vacuous (#118).
-    await setSex(page, 0, 'M');
-
-    for (const theme of THEMES) {
+  for (const theme of THEMES)
+    test(`${theme}: the disabled placeholder option is excluded deliberately, and it exists`, async ({
+      page,
+    }) => {
+      await openRoster(page);
+      // Choosing a sex is what disables that row's "—" option (roster-ui.ts).
+      // Without this the exclusion branch never fires, and a detector branch
+      // that has never matched anything is itself vacuous (#118).
+      await setSex(page, 0, 'M');
       await emulateTheme(page, theme);
       const { reachable, excluded, fill, ink } = await affordances(page);
       searched(excluded, {
@@ -471,8 +478,7 @@ test.describe('a disabled control affords that it is disabled', () => {
       expect(excluded).toEqual(['option']);
       expectNoEntryCursor(reachable, `a sex chosen, ${theme}`);
       expectDisabledPaint(reachable, fill, ink, `a sex chosen, ${theme}`);
-    }
-  });
+    });
 
   test('only checkbox, radio and file inputs are left to the UA to paint', async ({
     page,
@@ -520,36 +526,45 @@ test.describe('a disabled control affords that it is disabled', () => {
     expectNoEntryCursor(reachable, 'at-limit, against the enabled controls');
   });
 
-  test(
-    'at 320px every disabled control keeps a 44px target, and the page does not scroll sideways',
-    { tag: '@emulated-viewport' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: 320, height: 900 });
-      await openRoster(page);
-      await addSeveral(page, MAX_ROSTER - 1);
-      await openEveryDisclosure(page);
+  // Every locale (#390 F135): a fit test, and each language's disabled
+  // reasons and labels are its own widths. One test per page, because a
+  // hundred-row roster five times over would share one budget.
+  for (const path of localePaths('/classroom-groups'))
+    test(
+      `at 320px every disabled control keeps a 44px target, and the page does not scroll sideways -- ${path}`,
+      { tag: '@emulated-viewport' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 900 });
+        await openRoster(page, path);
+        await addSeveral(page, MAX_ROSTER - 1);
+        await openEveryDisclosure(page);
 
-      const { reachable } = await affordances(page);
+        const { reachable } = await affordances(page);
 
-      // UA-painted inputs are carved out for the reason the fill carve-out
-      // exists: the raw checkbox is not what a finger lands on. `.switch`'s
-      // 44px min-height sits on the LABEL, measured by
-      // classroom-groups-controls.spec.ts, and a second opinion here would
-      // only split the truth in two.
-      const measured = reachable.filter((a) => !a.uaPainted);
-      const small = measured
-        .filter((a) => a.height < 44)
-        .map((a) => `${a.label} — ${a.height.toFixed(1)}px tall`);
-      expect(
-        searched(small, {
-          of: measured.map((a) => a.label),
-          what: 'disabled controls at 320px',
-        }),
-      ).toEqual([]);
+        // UA-painted inputs are carved out for the reason the fill carve-out
+        // exists: the raw checkbox is not what a finger lands on. `.switch`'s
+        // 44px min-height sits on the LABEL, measured by
+        // classroom-groups-controls.spec.ts, and a second opinion here would
+        // only split the truth in two.
+        const measured = reachable.filter((a) => !a.uaPainted);
+        // A target is 44px each way: a control 44px tall and 30px wide is still
+        // a 30px target for a finger.
+        const small = measured
+          .filter((a) => a.width < 44 || a.height < 44)
+          .map(
+            (a) =>
+              `${a.label} — ${a.width.toFixed(1)} × ${a.height.toFixed(1)}px`,
+          );
+        expect(
+          searched(small, {
+            of: measured.map((a) => a.label),
+            what: 'disabled controls at 320px',
+          }),
+        ).toEqual([]);
 
-      // The instrument classroom-groups-controls.spec.ts already uses, so
-      // the second home cannot disagree with the first about what counts.
-      await expectNoHorizontalScroll(page);
-    },
-  );
+        // The instrument classroom-groups-controls.spec.ts already uses, so
+        // the second home cannot disagree with the first about what counts.
+        await expectNoHorizontalScroll(page);
+      },
+    );
 });

@@ -1,10 +1,31 @@
 import { expect, type Page } from '@playwright/test';
+import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { sitePaths } from '../site-pages';
+
+/** The not-found path every published-page sweep visits. */
+export const NOT_FOUND_PATH = '/definitely-not-a-page';
+
+/**
+ * Every page the site publishes, in every locale, and the 404: derived from
+ * the source, so a spec can generate one test per page (#422). A test is
+ * created when its file is COLLECTED, before the web server has built
+ * `dist/`, so a list read from the built sitemap would be empty there on a
+ * cold tree and generate nothing. `the published routes are the sitemap's`
+ * (rendered-text.spec.ts) holds this list to the built sitemap, so a page
+ * the sitemap publishes and nothing here visits still goes red.
+ */
+export const PUBLISHED_ROUTES: readonly string[] = [
+  ...LOCALES.flatMap((locale) =>
+    sitePaths().map((path) => localisePath(path, locale)),
+  ),
+  NOT_FOUND_PATH,
+];
 
 /**
  * Every page the site publishes, read from the built sitemap rather than
- * listed here — a new page is covered the day it is added, without anyone
- * remembering to come back and add it. The 404 is appended because it is
- * deliberately absent from the sitemap.
+ * listed here. The 404 is appended because it is deliberately absent from
+ * the sitemap. Read at run time, so it is the check on `PUBLISHED_ROUTES`,
+ * never a population to generate tests from.
  *
  * One home for the list: `rendered-text.spec.ts` kept it privately until
  * `head-and-sitemap.spec.ts` needed the same pages (#233).
@@ -15,5 +36,9 @@ export async function publishedPaths(page: Page): Promise<string[]> {
     (m) => new URL(m[1]).pathname,
   );
   expect(paths.length).toBeGreaterThan(0); // an empty sitemap must not pass
-  return [...paths, '/definitely-not-a-page'];
+  return [...paths, NOT_FOUND_PATH];
 }
+
+/** A path without its trailing slash, so `/id/` and `/id` compare equal. */
+export const withoutTrailingSlash = (path: string): string =>
+  path.length > 1 ? path.replace(/\/$/, '') : path;

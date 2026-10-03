@@ -1,8 +1,9 @@
 import { test, expect } from './fixtures';
 import { makeGroups } from '../make-groups';
-import { LOCALES, localisePath } from '../../src/lib/i18n';
+import { LOCALES, getStrings, localisePath } from '../../src/lib/i18n';
 import { searched } from '../source-files';
 import { recorded, shoot } from './evidence';
+import { recordErrors } from './recorders';
 import {
   buildRoster,
   buildRosterAtPath,
@@ -200,18 +201,15 @@ test.describe('privacy — with JavaScript blocked', () => {
   // has the full reasoning). `javaScriptEnabled: false` on this describe
   // block means that script never runs, so the raw markup below is exactly
   // what a real script-disabled visitor gets — not a proxy for it.
-  for (const [path, whoAndWhy, whatItDoes] of [
-    [
-      '/classroom-groups',
-      'Built for teachers, by Shyden. Splitting a class fairly takes time you do not have, and doing it by hand invites an argument about favourites. This does it in one press — free, with no sign-up, and with nothing about your class ever leaving your browser.',
-      'Tell it how big your class is and how many students you want per group. It shuffles and deals everyone out, and no group ever ends up smaller than you asked for.',
-    ],
-    [
-      '/id/classroom-groups',
-      'Dibuat untuk para guru, oleh Shyden. Membagi kelas dengan adil memakan waktu yang tidak Anda miliki, dan melakukannya secara manual mengundang perdebatan soal pilih kasih. Ini melakukannya dalam satu tekan — gratis, tanpa perlu mendaftar, dan tidak ada data kelas Anda yang pernah meninggalkan peramban Anda.',
-      'Masukkan jumlah siswa di kelas Anda dan berapa siswa yang Anda inginkan per kelompok. Alat ini akan mengacak dan membagikan semuanya, dan tidak ada kelompok yang jumlahnya kurang dari yang Anda tentukan.',
-    ],
-  ] as const) {
+  //
+  // Every locale, derived (#73): each is a separately generated page, and the
+  // en/id pair this once listed left zh, vi and th unread from #22 (#390
+  // F111). The words come from the catalogue the page renders; the approved
+  // wording is pinned where copy is pinned (classroom-groups-controls.spec.ts
+  // and classroom-groups-placement.test.ts).
+  for (const locale of LOCALES) {
+    const path = localisePath('/classroom-groups', locale);
+    const t = getStrings(locale);
     test(
       `${path}: the lead and How to use part 1 are reachable without JavaScript`,
       { tag: '@requires-isolated-context' },
@@ -219,9 +217,14 @@ test.describe('privacy — with JavaScript blocked', () => {
         await page.goto(path);
         await expect(page.locator('#cg-howto-body')).toBeVisible();
         // Since #384 the who-and-why paragraph is the lead, and part 1 of
-        // How to use says what the tool does. Both must survive no script.
-        await expect(page.locator('.lead')).toHaveText(whoAndWhy);
-        await expect(page.locator('#cg-howto-body > p')).toHaveText(whatItDoes);
+        // How to use says what the tool does. Both must survive no script,
+        // and be SEEN: `toHaveText` reads a hidden element's text too (#188).
+        const lead = page.locator('.lead');
+        await expect(lead).toBeVisible();
+        await expect(lead).toHaveText(t.lead);
+        const whatItDoes = page.locator('#cg-howto-body > p');
+        await expect(whatItDoes).toBeVisible();
+        await expect(whatItDoes).toHaveText(t.howToWhat);
       },
     );
   }
@@ -271,11 +274,22 @@ test.describe('privacy — with JavaScript blocked', () => {
       await page.fill('#cg-count', '24');
       await page.fill('#cg-class', 'PrivacyProbeClassName7B');
       await page.click('#cg-go');
+      // WebKit schedules the form's GET after the click has returned, so the
+      // click's own wait for navigations can end before it starts, and the URL
+      // read next was the old one (#449, run 37026039545). Wait for the
+      // submission's URL itself: no submit at all fails here, by timing out.
+      await page.waitForURL((submitted) => submitted.search !== '');
 
+      // Over the keys the submit actually wrote (#424): with no submit at all
+      // the URL is empty, and an empty URL passed this as a clean one.
       const url = new URL(page.url());
-      for (const key of url.searchParams.keys()) {
-        expect(NON_PERSONAL_NAMES).toContain(key);
-      }
+      const keys = [...url.searchParams.keys()];
+      expect(
+        searched(
+          keys.filter((key) => !NON_PERSONAL_NAMES.includes(key)),
+          { of: keys, what: 'query keys a native submit wrote' },
+        ),
+      ).toEqual([]);
       expect(url.search).not.toContain('PrivacyProbeClassName7B');
     },
   );
@@ -305,9 +319,38 @@ test.describe('privacy — when the script dies half-way', () => {
   test('a mid-module failure still cannot leak the class list', async ({
     page,
   }) => {
+    // Every matchMedia failure the page raised. Counted, not located: the
+    // theme script in <head> calls it too, and WebKit reports the module's
+    // failure with no frame from the module in its stack.
+    const reported = recordErrors(page);
+    const failures = () =>
+      reported.uncaught.filter((error) =>
+        error.includes('matchMedia unavailable'),
+      ).length;
     await page.goto('/classroom-groups');
+    // The module really did die half-way (#424): one failure from the theme
+    // script, one from the module. Had the module stopped calling matchMedia,
+    // the tool would work, its own handler would keep the URL clean, and this
+    // would pass without any failure having happened.
+    await expect.poll(failures).toBe(2);
     await page.fill('#cg-count', '8');
+    // Whether the submit was CANCELLED, read from the event itself (#449). The
+    // URL alone cannot say: WebKit starts a native submit's navigation after
+    // the click returns, so an unchanged URL read straight away passed even
+    // when nothing stopped the submit. A listener on window runs after the
+    // form's own, so it sees the guard's preventDefault.
+    await page.evaluate(() => {
+      window.addEventListener('submit', (event) => {
+        document.documentElement.dataset.submitPrevented = String(
+          event.defaultPrevented,
+        );
+      });
+    });
     await page.click('#cg-go');
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-submit-prevented',
+      'true',
+    );
 
     // No native submit happened, so no query string exists at all — not even
     // the harmless radio values. That is the unconditional guard registered

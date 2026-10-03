@@ -3,8 +3,6 @@ import { specFilesUnder } from './source-files';
 
 const TESTS_DIR = 'tests';
 
-/** Every directory at or below `dir` that directly holds a Playwright spec. */
-
 /**
  * The directories a source-scanning guard should read, derived from disk.
  *

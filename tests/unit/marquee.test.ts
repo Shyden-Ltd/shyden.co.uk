@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { LOCALES } from '../../src/lib/i18n';
 import { localeNativeNames } from '../../src/lib/i18n/metadata';
 
@@ -29,6 +29,31 @@ describe('the homepage marquee', () => {
       'Tiếng Việt',
       'ไทย',
     ]);
+  });
+
+  describe('when the site serves fewer languages than it has metadata for', () => {
+    // `MVP_LOCALES` is deliberately wider than `LOCALES`: metadata for a
+    // language ships before the language is served. Today the two lists are
+    // equal, so only a narrower `LOCALES` can show which one the marquee
+    // reads. The mock is the smallest way to stage that without editing the
+    // shipped list.
+    afterEach(() => {
+      vi.doUnmock('../../src/lib/i18n/locales');
+      vi.resetModules();
+    });
+
+    it('names only the languages served, never one merely staged', async () => {
+      vi.resetModules();
+      vi.doMock('../../src/lib/i18n/locales', () => ({
+        LOCALES: ['en', 'id'],
+        DEFAULT_LOCALE: 'en',
+      }));
+      const metadata = await import('../../src/lib/i18n/metadata');
+      expect(metadata.localeNativeNames()).toEqual([
+        'English',
+        'Bahasa Indonesia',
+      ]);
+    });
   });
 
   it('covers every locale the site serves, and no others', () => {

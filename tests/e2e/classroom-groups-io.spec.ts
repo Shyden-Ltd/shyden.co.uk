@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { recordErrors } from './recorders';
 import { atLeast44 } from '../viewport';
-import { otherLocales } from '../../src/lib/i18n/index';
+import { otherLocales, toolPath } from '../../src/lib/i18n/index';
 import { LOCALE_METADATA } from '../../src/lib/i18n/metadata';
 import {
   buildRoster,
@@ -604,6 +604,11 @@ test.describe('exporting in both languages', () => {
       ),
     ).toBeVisible();
     await expect(page.locator('.cg-student')).toHaveCount(1);
+    // "Try again" is a second press, so the list stays open with the button
+    // that sentence is about. Closing it here passed until #390 IO5.
+    await expect(
+      page.getByRole('button', { name: 'Bahasa Indonesia' }),
+    ).toBeVisible();
   });
 
   // A tab that opens but never asks -- the other half of "the handover must
@@ -632,6 +637,40 @@ test.describe('exporting in both languages', () => {
       ),
     ).toBeVisible({ timeout: 15000 });
     await expect(page.locator('.cg-student')).toHaveCount(1);
+  });
+
+  // The sender answers ONE window, the tab it opened. Any other document on
+  // this origin can post a `cg-ack` -- here the page itself does -- and
+  // believing it would report a handover as done while the tab that was
+  // opened never even asked. Nothing staged a stranger until #390 IO1, so
+  // the `event.source` check could be deleted with the whole spec green.
+  // The timeout sentence arriving is what proves the forged ack was refused:
+  // a believed ack settles the handover and the timeout never speaks.
+  test('an acknowledgement from any window but the opened tab is ignored', async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      window.open = () => ({ closed: false }) as unknown as Window;
+    });
+    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+    await page.locator('#cg-io-toggle').click();
+    await Promise.all([
+      page.waitForEvent('download'),
+      handoverTo(page, 'Bahasa Indonesia'),
+    ]);
+    await page.evaluate(() =>
+      window.postMessage({ kind: 'cg-ack' }, window.location.origin),
+    );
+    await expect(
+      page.getByText(
+        'The second tab never asked for the class list. Your class list is ' +
+          'still here — close that tab and try again.',
+      ),
+    ).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByText('Your class list is now open in Bahasa Indonesia.'),
+    ).toHaveCount(0);
   });
 
   // A page opened NORMALLY must not shout into the channel -- otherwise a
@@ -809,23 +848,30 @@ test.describe('the handover destination is chosen, not assumed', () => {
     );
   });
 
-  test('names the language it opened, not "the other one"', async ({
-    page,
-    context,
-  }) => {
-    await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
-    await openIo(page);
-    const [, newPage] = await Promise.all([
-      page.waitForEvent('download'),
-      context.waitForEvent('page'),
-      handoverTo(page, 'Bahasa Indonesia'),
-    ]);
-    await newPage.waitForLoadState();
-    expect(new URL(newPage.url()).pathname).toBe('/id/classroom-groups');
-    await expect(
-      page.getByText('Your class list is now open in Bahasa Indonesia.'),
-    ).toBeVisible();
-  });
+  // Every other language, derived. Pressing only Bahasa Indonesia, the FIRST
+  // alternative, could not tell the pressed language from "the first one":
+  // routing every handover to `otherLocales(locale)[0]` passed the whole spec
+  // (#390 IO2). The last alternative is where that difference shows.
+  for (const locale of otherLocales('en')) {
+    const { nativeName } = LOCALE_METADATA[locale];
+    test(`names the language it opened, not "the other one": ${locale}`, async ({
+      page,
+      context,
+    }) => {
+      await buildRosterAtPath(page, '/classroom-groups', [['F', 'Ana']]);
+      await openIo(page);
+      const [, newPage] = await Promise.all([
+        page.waitForEvent('download'),
+        context.waitForEvent('page'),
+        handoverTo(page, nativeName),
+      ]);
+      await newPage.waitForLoadState();
+      expect(new URL(newPage.url()).pathname).toBe(toolPath(locale));
+      await expect(
+        page.getByText(`Your class list is now open in ${nativeName}.`),
+      ).toBeVisible();
+    });
+  }
 });
 
 /**

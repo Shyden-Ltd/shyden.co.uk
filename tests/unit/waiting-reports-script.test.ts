@@ -161,7 +161,7 @@ beforeEach(() => {
     return { status: 404, body: { success: false, errors: [] } };
   });
   github.answer(({ method, url }) => {
-    const path = `/repos/Shyden-Ltd/shyden.co.uk/issues/${ISSUE}/comments`;
+    const path = `/repos/shyden-labs/shyden.co.uk/issues/${ISSUE}/comments`;
     if (method === 'GET' && url.startsWith(`${path}?`))
       return { status: 200, body: comments };
     if (method === 'POST' && url === path) return { status: 201, body: {} };
@@ -183,7 +183,7 @@ const run = (
         CLOUDFLARE_D1_READ_TOKEN: 'cf-read-token',
         GITHUB_API_URL: github.url,
         GITHUB_SERVER_URL: 'https://github.com',
-        GITHUB_REPOSITORY: 'Shyden-Ltd/shyden.co.uk',
+        GITHUB_REPOSITORY: 'shyden-labs/shyden.co.uk',
         GITHUB_RUN_ID: '36000000001',
         GITHUB_TOKEN: 'gh-token',
         NOTICE_ISSUE: ISSUE,
@@ -334,6 +334,53 @@ describe('a count that cannot be read is a failure, never a zero', () => {
     await expectFailedQuietly(await run([], { CLOUDFLARE_D1_READ_TOKEN: '' }));
     await cloudflare.expectNothingReceived();
   });
+
+  it('an account id one digit short stops before any request', async () => {
+    // It goes into a URL path, so its shape is exact: 32 hex digits.
+    const result = await run([], { CLOUDFLARE_ACCOUNT_ID: ACCOUNT.slice(1) });
+    await expectFailedQuietly(result);
+    expect(result.out).toContain('CLOUDFLARE_ACCOUNT_ID is not set');
+    await cloudflare.expectNothingReceived();
+  });
+
+  it('an API base that is not http(s) stops before any request', async () => {
+    const result = await run([], { CLOUDFLARE_API_BASE: 'file:///etc' });
+    await expectFailedQuietly(result);
+    expect(result.out).toContain(
+      'CLOUDFLARE_API_BASE is not set, or not an http(s) URL',
+    );
+  });
+});
+
+describe('what the script is given', () => {
+  it('an API base with a trailing slash asks the same paths', async () => {
+    const { code, out } = await run([], {
+      CLOUDFLARE_API_BASE: `${cloudflare.url}/`,
+    });
+    expect(code, out).toBe(0);
+    const asked = await cloudflare.record();
+    expect(asked.map(({ url }) => url)).toEqual([
+      `/accounts/${ACCOUNT}/d1/database?name=shyden-reports`,
+      `/accounts/${ACCOUNT}/d1/database/${PROD_ID}/query`,
+    ]);
+  });
+
+  it('a comment GitHub refuses is a failure, never "Posted."', async () => {
+    // GitHub refuses in JSON, so only the status says the comment was not
+    // made: a refusal read as an answer would report a notice no one sees.
+    github.answer(({ method }) =>
+      method === 'POST'
+        ? {
+            status: 403,
+            body: { message: 'Resource not accessible by integration' },
+          }
+        : { status: 200, body: [] },
+    );
+    const { code, out } = await run();
+    expect(code, out).toBe(1);
+    expect(out).toContain('GitHub answered HTTP 403');
+    expect(out).not.toContain('Posted.');
+  });
 });
 
 describe('the report-failure mode', () => {
@@ -349,16 +396,19 @@ describe('the report-failure mode', () => {
       {
         body:
           'The waiting-reports count could not be read.\n\n' +
-          'https://github.com/Shyden-Ltd/shyden.co.uk/actions/runs/36000000001',
+          'https://github.com/shyden-labs/shyden.co.uk/actions/runs/36000000001',
       },
     ]);
     await cloudflare.expectNothingReceived();
   });
 
-  it('refuses an unknown mode with exit 2, sending nothing', async () => {
-    const { code } = await run(['report-failures']);
-    expect(code).toBe(2);
-    await github.expectNothingReceived();
-    await cloudflare.expectNothingReceived();
-  });
+  it.each([[['report-failures']], [['report-failure', 'extra']]])(
+    'refuses %j with exit 2, sending nothing',
+    async (args) => {
+      const { code } = await run(args);
+      expect(code).toBe(2);
+      await github.expectNothingReceived();
+      await cloudflare.expectNothingReceived();
+    },
+  );
 });

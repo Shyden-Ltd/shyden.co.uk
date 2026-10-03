@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { adb, androidAbsence } from '../../scripts/adb.mjs';
 import { test, expect } from '@playwright/test';
 import {
   CHROME_PACKAGE,
@@ -27,27 +27,18 @@ import {
 test.describe.configure({ mode: 'serial' });
 
 test.describe('android device preflight', () => {
-  test('1. adb sees exactly one device, ready', () => {
-    const raw = execFileSync('adb', ['devices']).toString();
-    const devices = raw
-      .split('\n')
-      .slice(1) // drop the "List of devices attached" header line
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [serial, state] = line.split(/\s+/);
-        return { serial, state };
-      });
-
+  // The same decision the runner made before starting this project, from the
+  // same function: one ready phone, or the one ANDROID_SERIAL names among
+  // several. adb itself targets ANDROID_SERIAL for every later call here.
+  test('1. adb sees exactly one device to drive, ready', () => {
     expect(
-      devices,
-      `expected \`adb devices\` to list exactly one device in state 'device' (unplugged, ` +
-        `offline, or unauthorized otherwise); got: ${JSON.stringify(devices)}`,
-    ).toEqual([expect.objectContaining({ state: 'device' })]);
+      androidAbsence(adb(['devices']), process.env.ANDROID_SERIAL),
+      'why no Android phone can be driven',
+    ).toBeNull();
   });
 
   test('2. the screen is awake and unlocked', () => {
-    const power = execFileSync('adb', ['shell', 'dumpsys', 'power']).toString();
+    const power = adb(['shell', 'dumpsys', 'power']);
     expect(
       power,
       "expected `dumpsys power` to report mWakefulness=Awake -- the phone's screen is " +
@@ -57,12 +48,7 @@ test.describe('android device preflight', () => {
     // KeyguardStateMonitor.mIsShowing is Android's own signal for "the lock screen is
     // currently showing". Confirmed present exactly once in `dumpsys window policy` on this
     // device, so a plain substring match is unambiguous.
-    const policy = execFileSync('adb', [
-      'shell',
-      'dumpsys',
-      'window',
-      'policy',
-    ]).toString();
+    const policy = adb(['shell', 'dumpsys', 'window', 'policy']);
     expect(
       policy,
       'expected KeyguardStateMonitor.mIsShowing=false in `dumpsys window policy` -- the ' +
@@ -75,7 +61,7 @@ test.describe('android device preflight', () => {
     // measurement (rendering freezes in a backgrounded app; Playwright's actionability check
     // waits for a stable bounding box and never gets one). Force-stop it before launching
     // Chrome so this precondition cannot pass by accident.
-    execFileSync('adb', ['shell', 'am', 'force-stop', 'com.brave.browser']);
+    adb(['shell', 'am', 'force-stop', 'com.brave.browser']);
 
     // Chrome is force-stopped too, so every run launches it COLD (#307). Whether Chrome
     // happened to be running used to decide precondition 4: a warm Chrome already had its
@@ -83,7 +69,7 @@ test.describe('android device preflight', () => {
     // single read missed it 3 times in 3. With the cold path the only path, precondition 4's
     // wait is exercised on every run, and a regression to a single read fails every run
     // rather than only on the days the phone had reclaimed Chrome.
-    execFileSync('adb', ['shell', 'am', 'force-stop', CHROME_PACKAGE]);
+    adb(['shell', 'am', 'force-stop', CHROME_PACKAGE]);
 
     // Proven, not assumed: the stopped Chrome's socket must be gone before the launch, or
     // precondition 4 could be satisfied by it. This absence check cannot pass on a reader
@@ -98,7 +84,7 @@ test.describe('android device preflight', () => {
       })
       .not.toContain(DEVTOOLS_SOCKET);
 
-    execFileSync('adb', [
+    adb([
       'shell',
       'am',
       'start',
@@ -141,15 +127,11 @@ test.describe('android device preflight', () => {
   });
 
   test('5. adb forward and reverse tunnels are mapped', () => {
-    execFileSync('adb', [
-      'forward',
-      'tcp:9222',
-      'localabstract:chrome_devtools_remote',
-    ]);
-    execFileSync('adb', ['reverse', 'tcp:4321', 'tcp:4321']);
+    adb(['forward', 'tcp:9222', 'localabstract:chrome_devtools_remote']);
+    adb(['reverse', 'tcp:4321', 'tcp:4321']);
 
-    const forwardList = execFileSync('adb', ['forward', '--list']).toString();
-    const reverseList = execFileSync('adb', ['reverse', '--list']).toString();
+    const forwardList = adb(['forward', '--list']);
+    const reverseList = adb(['reverse', '--list']);
 
     expect(
       forwardList,

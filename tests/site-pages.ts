@@ -75,6 +75,19 @@ export function headingFor(path: string): (locale: Locale) => string {
   return heading;
 }
 
+/**
+ * The `<title>` a page renders, per locale, keyed like `HEADING_FOR` and for
+ * the same reason. `locale-parity.spec.ts` walked a hand-written list of two
+ * pages, so `/classroom-groups` could ship an English title in zh, vi and th
+ * with every suite green (#390 F130). `site-pages.test.ts` asserts this map
+ * covers `sitePaths()`.
+ */
+export const TITLE_FOR: Record<string, (locale: Locale) => string> = {
+  '/': (locale) => getSiteStrings(locale).home.title,
+  '/glory-points': (locale) => getSiteStrings(locale).glory.title,
+  '/classroom-groups': (locale) => `${getStrings(locale).title} — Shyden`,
+};
+
 /** One route per page per locale, with the heading each should render. */
 export interface DeployedRoute {
   readonly locale: Locale;

@@ -1,7 +1,6 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { type Locale } from '../../lib/i18n';
-import { getSiteStrings } from '../../lib/i18n';
+import { type Locale, getSiteStrings } from '../../lib/i18n';
 
 interface Props {
   lang: Locale;
@@ -13,8 +12,8 @@ const t = getSiteStrings(lang).glory;
 <BaseLayout title={t.title} description={t.description} lang={lang}>
   <section class="wrap">
     <p class="for-yeetalk">
-      <!-- Nominative attribution: text wordmark now; swap in YeeTalk's official
-           logo asset when sourced (spec §6/§11). Do not fabricate their mark. -->
+      {/* Nominative attribution: text wordmark now; swap in YeeTalk's official
+           logo asset when sourced (spec §6/§11). Do not fabricate their mark. */}
       <a
         href="https://yeetalkapp.com/"
         target="_blank"

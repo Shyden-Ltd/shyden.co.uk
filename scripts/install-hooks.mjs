@@ -46,7 +46,7 @@ export function main() {
   if (!existsSync('.git')) {
     console.log(
       `install-hooks: no .git here, so no git hooks were installed. ` +
-        `Run this again from a clone if you want the pre-push checks.`,
+        `Run this again from a clone to install its hooks.`,
     );
     exit(0);
   }
@@ -77,9 +77,11 @@ export function main() {
     );
     exit(0);
   }
+  // No list of hook names: one named only the pre-push hook for as long as
+  // commit-msg (the closing-keyword refusal) was installed beside it.
   console.log(
-    `install-hooks: git will run hooks from ${HOOKS}/ — ` +
-      `pre-push checks formatting and unit tests. Bypass one push with --no-verify.`,
+    `install-hooks: git will run the hooks in ${HOOKS}/. ` +
+      'Bypass one with --no-verify.',
   );
 }
 

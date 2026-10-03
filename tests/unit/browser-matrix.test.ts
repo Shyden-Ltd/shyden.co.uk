@@ -1,4 +1,4 @@
-import { beforeAll, describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -13,8 +13,10 @@ import {
   nonEmpty,
   searched,
   specFilesUnder,
+  trackedFiles,
 } from '../source-files';
-import { withoutTsComments } from './source-text';
+import { withoutCommentLines, withoutTsComments } from './source-text';
+import { workflowJobs } from '../workflow-jobs';
 import { engineDependence } from './engine-dependence';
 
 /**
@@ -494,21 +496,37 @@ describe('the measuring twin cannot become a gate (#224)', () => {
  * only under an environment flag, so they are appended here, where no flag can
  * hide one.
  */
+const CONFIG = /^playwright.*\.config\.[cm]?[jt]s$/;
+
+/**
+ * A config's module, freshly evaluated under `env` added to the environment,
+ * with every variable put back afterwards, including any its import sets. The
+ * module cache is reset first, because a config reads the environment once,
+ * as it loads.
+ */
+const importConfig = async (
+  file: string,
+  env: Record<string, string> = {},
+): Promise<PlaywrightTestConfig> => {
+  const before = { ...process.env };
+  try {
+    Object.assign(process.env, env);
+    vi.resetModules();
+    return (await import(resolve(file))).default as PlaywrightTestConfig;
+  } finally {
+    for (const key of Object.keys(process.env))
+      if (!(key in before)) delete process.env[key];
+    Object.assign(process.env, before);
+  }
+};
+
+/** Every Playwright config at the repository root, by the name Playwright gives one. */
+const rootConfigs = (): string[] =>
+  nonEmpty(readdirSync('.'), 'entries at the repository root')
+    .filter((name) => CONFIG.test(name))
+    .sort();
+
 describe('every project declares its colour scheme (#142)', () => {
-  const CONFIG = /^playwright.*\.config\.[cm]?[jt]s$/;
-
-  /** A config's module, with any variable its import sets put back. */
-  const importConfig = async (file: string): Promise<PlaywrightTestConfig> => {
-    const before = { ...process.env };
-    try {
-      return (await import(resolve(file))).default as PlaywrightTestConfig;
-    } finally {
-      for (const key of Object.keys(process.env))
-        if (!(key in before)) delete process.env[key];
-      Object.assign(process.env, before);
-    }
-  };
-
   it('finds a config by the name Playwright gives one', () => {
     const names = [
       'playwright.config.ts',
@@ -528,9 +546,7 @@ describe('every project declares its colour scheme (#142)', () => {
   });
 
   it('runs every resolved project light or dark, never the default', async () => {
-    const configs = nonEmpty(readdirSync('.'), 'entries at the repository root')
-      .filter((name) => CONFIG.test(name))
-      .sort();
+    const configs = rootConfigs();
     const projects: string[] = [];
     const undeclared: string[] = [];
     for (const file of configs) {
@@ -551,6 +567,96 @@ describe('every project declares its colour scheme (#142)', () => {
     }
     expect(
       searched(undeclared, { of: projects, what: 'Playwright projects' }),
+    ).toEqual([]);
+  });
+});
+
+describe('no CI run can be narrowed to the tests someone focused (#390)', () => {
+  it('refuses test.only under CI, in every Playwright config', async () => {
+    // `--list` ignores `.only` (measured 2026-10-01: 4,159 listed with one
+    // test focused), so in the e2e suite a focused run no longer adds up to
+    // the shards' accounting and fails. tests/dev and tests/prod keep no such
+    // account: a stray `.only` let `sanity-on-build`, and the run that posts
+    // `prod-verified`, run one test and pass. Only the functions config set
+    // `forbidOnly`.
+    const configs = rootConfigs();
+    const lax: string[] = [];
+    for (const file of configs) {
+      const loaded = await importConfig(file, { CI: 'true' });
+      if (loaded.forbidOnly !== true) lax.push(file);
+    }
+    expect(searched(lax, { of: configs, what: 'Playwright configs' })).toEqual(
+      [],
+    );
+  });
+});
+
+describe('the functions suite renders on every engine (#350)', () => {
+  it('declares the same engines as the e2e suite, each the same device', async () => {
+    // A form posted by a real browser is the functions suite's claim, and each
+    // engine posts it its own way. Both configs map one list (tests/engines.ts),
+    // and only the e2e config's engines were pinned: a functions config cut
+    // to Chromium alone kept every suite green (#390 F153).
+    const devicesOf = (projects: PlaywrightTestConfig['projects']) =>
+      (projects ?? [])
+        .filter((p) => p.name !== 'content' && p.name !== 'visual')
+        .map(({ name, use }) => [name, use]);
+    const functions = await importConfig('playwright.functions.config.ts');
+
+    expect(devicesOf(functions.projects)).toEqual(devicesOf(config.projects));
+  });
+});
+
+describe('no test run retries (#445)', () => {
+  // The operator's rule, 2026-10-02: "retries are not acceptable. if retries
+  // are required that means it's flaky, adding a retry is NOT a fix". A retry
+  // turns a failure into a pass: playwright.prod.config.ts's one let a check
+  // that failed once verify a release.
+  it('resolves retries to 0 in every Playwright config and project, under CI', async () => {
+    const configs = rootConfigs();
+    const retrying: string[] = [];
+    for (const file of configs) {
+      const loaded = await importConfig(file, { CI: 'true' });
+      if ((loaded.retries ?? 0) !== 0)
+        retrying.push(`${file}: retries ${String(loaded.retries)}`);
+      for (const project of loaded.projects ?? [])
+        if ((project.retries ?? 0) !== 0)
+          retrying.push(
+            `${file} › ${project.name}: retries ${String(project.retries)}`,
+          );
+    }
+    expect(
+      searched(retrying, { of: configs, what: 'Playwright configs' }),
+    ).toEqual([]);
+  });
+
+  it('passes no --retries but 0 in any workflow step or package script', () => {
+    // `trackedFiles`, the walk's home for dot-directories, which proves its
+    // list non-empty before anything is judged over it.
+    const workflows = trackedFiles(
+      (path) => path.startsWith('.github/workflows/') && path.endsWith('.yml'),
+    );
+    const steps = workflows.flatMap((path) =>
+      workflowJobs(readFileSync(path, 'utf8'), path).flatMap(({ id, runs }) =>
+        runs.map((run) => `${path} › ${id}: ${withoutCommentLines(run)}`),
+      ),
+    );
+    const scripts = Object.entries(
+      (
+        JSON.parse(readFileSync('package.json', 'utf8')) as {
+          scripts: Record<string, string>;
+        }
+      ).scripts,
+    ).map(([name, script]) => `package.json › ${name}: ${script}`);
+    const commands = [...steps, ...scripts];
+    const retrying = commands.filter((command) =>
+      /--retries(?:=|\s+)(?!0(?![\w.]))\S/.test(command),
+    );
+    expect(
+      searched(retrying, {
+        of: commands,
+        what: 'workflow steps and package scripts',
+      }),
     ).toEqual([]);
   });
 });

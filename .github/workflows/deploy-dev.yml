@@ -44,8 +44,9 @@ permissions:
 jobs:
   # ---- Gate 1a (push): the tree being deployed already passed -------------
   # A merge into `develop` arrives with its suite already run — on the PR, not
-  # on this commit. `ci.yml` triggers on `pull_request` ONLY, so there is no
-  # status here to read; what there IS, because `develop` sets `strict: true`,
+  # on this commit. `ci.yml` never runs on a push (pull_request and this
+  # file's own workflow_call are its only triggers), so there is no status
+  # here to read; what there IS, because `develop` sets `strict: true`,
   # is a second parent whose TREE is identical to this one. `deploy-gate.mjs`
   # proves that equality and reads the check-runs from that parent, refusing on
   # anything ambiguous. See scripts/deploy-gate.mjs for why every doubtful case
@@ -61,6 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The gate reads parents and trees, so a shallow clone would make it
           # refuse for want of objects rather than for want of evidence.
           fetch-depth: 0
@@ -118,6 +120,8 @@ jobs:
       url: https://dev.shyden.co.uk
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -127,6 +131,15 @@ jobs:
         env:
           PUBLIC_SHYTALK_URL: https://dev.shytalk.shyden.co.uk
         run: npm run build
+      # Before anything is deployed, the dev token proves it reaches the dev
+      # account and nothing else (#415): a token that could reach production
+      # never deploys. One request, no retry; any answer but exactly the dev
+      # account stops the job here.
+      - name: The dev token reaches the dev account alone
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/token-reach.mjs
       - name: Deploy dist/ to Cloudflare Pages (dev project)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -154,9 +167,10 @@ jobs:
       !cancelled() && needs.deploy-dev.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
-    # It reads DEV_BASIC_AUTH_PASSWORD, so it names the environment holding it.
-    # A job naming none reads repository secrets, and those reach a workflow on
-    # any branch (#241). The url repeats deploy-dev's, because the environment
+    # It reads DEV_BASIC_AUTH_PASSWORD, so it names the environment meant to
+    # hold it. A job naming none reads repository secrets, and those reach a
+    # workflow on any branch (#241). Read 2026-10-01: `dev` holds no secret
+    # yet, so the repository copy is what this reads until #241 lands. The url repeats deploy-dev's, because the environment
     # links to its latest deployment, and that is this job's.
     environment:
       name: dev
@@ -166,6 +180,8 @@ jobs:
       statuses: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc

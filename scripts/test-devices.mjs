@@ -51,7 +51,10 @@
  *    always runs, via `finally` and a signal handler -- see `cleanup()`.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import { constants } from 'node:os';
 import { die, messageOf } from './errors.mjs';
+import { adb, androidAbsence } from './adb.mjs';
+import { listDevices, pickIphone } from './devicectl.mjs';
 import {
   closeSync,
   existsSync,
@@ -67,7 +70,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PORT = 4321;
 const TEST_RESULTS_DIR = path.join(ROOT, 'test-results');
-const IOS_MODE_FILE = path.join(TEST_RESULTS_DIR, 'ios-mode.json');
+export const IOS_MODE_FILE = path.join(TEST_RESULTS_DIR, 'ios-mode.json');
 const IOS_SESSION_MARKER_FILE = path.join(
   TEST_RESULTS_DIR,
   'ios-session-marker.json',
@@ -151,11 +154,17 @@ const DASHBOARD_JSONL_FILE = {
   android: path.join(DASHBOARD_STATE_DIR, 'android.jsonl'),
   ios: path.join(DASHBOARD_STATE_DIR, 'ios.jsonl'),
 };
-// Kept in sync with scripts/dashboard.mjs's own REPORT_INDEX -- that file
-// checks for `<dir>/index.html` under these exact two directories to show
-// a report link. Only desktop/android are Playwright; iOS is a Vitest
+
+/** The live files scripts/dashboard.mjs reads, named once for both processes. */
+export const DASHBOARD_FILES = {
+  groups: DASHBOARD_GROUPS_FILE,
+  final: DASHBOARD_FINAL_FILE,
+  jsonl: DASHBOARD_JSONL_FILE,
+};
+// Imported by scripts/dashboard.mjs, which checks for `<dir>/index.html`
+// under these two directories to show a report link. Only desktop/android are Playwright; iOS is a Vitest
 // run and has no HTML report to link to.
-const REPORT_DIR = {
+export const REPORT_DIR = {
   desktop: path.join(ROOT, 'playwright-report', 'desktop'),
   android: path.join(ROOT, 'playwright-report', 'android'),
 };
@@ -174,14 +183,26 @@ export async function waitUntil(
   { timeoutMs, describe, intervalMs = 250 },
 ) {
   const deadline = Date.now() + timeoutMs;
+  const timedOut = () =>
+    new Error(`Timed out after ${timeoutMs}ms waiting for: ${describe}`);
   for (;;) {
-    const result = await predicate();
+    // Raced against the time left, not only checked once an answer arrives: a
+    // request a half-open server accepts and never answers would otherwise
+    // hold this loop past any timeout (measured: still waiting at 2s on a
+    // 100ms timeout, #390).
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    const result = await Promise.race([
+      predicate(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(timedOut()),
+          Math.max(0, deadline - Date.now()),
+        );
+      }),
+    ]).finally(() => clearTimeout(timer));
     if (result) return result;
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `Timed out after ${timeoutMs}ms waiting for: ${describe}`,
-      );
-    }
+    if (Date.now() >= deadline) throw timedOut();
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
@@ -516,20 +537,43 @@ async function startDashboard() {
   );
 }
 
+/**
+ * Refuses unless `url` answers with exactly the bytes of `builtFile`. This
+ * checked for a `/_astro/` reference once, which every build carries, so an
+ * older build left serving on the port passed as this run's (#390). `astro
+ * preview` serves `dist/` verbatim (measured: 58,854 characters, equal).
+ *
+ * @param {string} url
+ * @param {string} builtFile
+ * @returns {Promise<void>}
+ */
+export async function confirmServesBuild(url, builtFile) {
+  const built = readFileSync(builtFile, 'utf8');
+  const response = await fetch(url);
+  const served = await response.text();
+  if (!response.ok || served !== built) {
+    throw new Error(
+      `expected ${url} to serve the page this run just built -- it answered ${response.status} with ` +
+        `${served.length} characters that differ from the ${built.length} built ` +
+        `(${path.relative(ROOT, builtFile)}). Something other than this run's preview is being served; ` +
+        'aborting the whole run rather than testing the wrong bytes.',
+    );
+  }
+}
+
 // ── device presence: real checks, not a config flag ────────────────────
 
 /**
- * `adb devices`, parsed the same way `tests/device/android-preflight.setup.ts`
- * asserts it (state must be exactly `device`, not merely present-but-locked
- * or unauthorized). Not imported from that file -- it is a Playwright test,
- * not an exported function, and plain Node cannot load this project's other
- * device-facing TypeScript either way (see `findIosDeviceOrThrow`'s comment
- * for the measured reason). A self-contained, cross-referenced duplicate of
- * this same `adb devices` parsing, kept deliberately small.
+ * `adb devices`, read through `androidAbsence` in `scripts/adb.mjs`, which
+ * `tests/device/android-preflight.setup.ts` asks too (state must be exactly
+ * `device`, not merely present-but-locked or unauthorized). The two used to
+ * parse it separately and disagreed: the preflight refused any listing that
+ * was not exactly one ready device, so a second phone failed it even with
+ * `ANDROID_SERIAL` choosing between them (#390).
  *
  * `ANDROID_SERIAL` (a real, standard adb environment variable) disambiguates
  * when more than one device is attached, the same role `IOS_UDID` plays for
- * `findIosDeviceOrThrow` below -- set it to a serial that is not attached
+ * `isIosPresent` below -- set it to a serial that is not attached
  * and this function honestly reports absence. That is also how this run's
  * "device absent" proof was produced for a phone this agent has no hands to
  * physically unplug: point this env var at a serial that is not attached
@@ -539,134 +583,36 @@ async function startDashboard() {
 function isAndroidPresent() {
   let raw;
   try {
-    raw = execFileSync('adb', ['devices'], { encoding: 'utf8' });
+    raw = adb(['devices']);
   } catch (error) {
-    return {
-      present: false,
-      reason: `\`adb devices\` failed to run: ${messageOf(error)}`,
-    };
+    return `\`adb devices\` failed to run: ${messageOf(error)}`;
   }
-  const devices = raw
-    .split('\n')
-    .slice(1) // drop the "List of devices attached" header line
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [serial, state] = line.split(/\s+/);
-      return { serial, state };
-    });
-
-  const ready = devices.filter((d) => d.state === 'device');
-  const override = process.env.ANDROID_SERIAL;
-  const matching = override
-    ? ready.filter((d) => d.serial === override)
-    : ready;
-
-  if (matching.length === 0) {
-    return {
-      present: false,
-      reason: override
-        ? `\`adb devices\` did not list serial ${override} (from ANDROID_SERIAL) in state 'device' -- ` +
-          `seen: ${JSON.stringify(devices)}`
-        : `\`adb devices\` listed no device in state 'device' (unplugged, asleep, offline, or ` +
-          `unauthorized otherwise) -- seen: ${JSON.stringify(devices)}`,
-    };
-  }
-  if (matching.length > 1) {
-    return {
-      present: false,
-      reason:
-        `expected exactly one ready Android device -- found ${matching.length}: ` +
-        `${JSON.stringify(matching)}. Set ANDROID_SERIAL to disambiguate.`,
-    };
-  }
-  return { present: true, serial: matching[0].serial };
+  return androidAbsence(raw, process.env.ANDROID_SERIAL);
 }
 
 /**
- * A deliberate, cross-referenced DUPLICATE of `findIosDevice` in
- * tests/device/ios/session.ts -- not imported from there. Measured, not a
- * style choice: this script tried importing that file directly (this
- * repo's pinned Node, .nvmrc: 24, does strip TypeScript *types* natively)
- * and it failed with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` -- `session.ts`
- * transitively pulls in `webdriver.ts` and `interaction.ts`, both of which
- * use constructor PARAMETER PROPERTIES (e.g. `constructor(private readonly
- * driver: WebDriver)`), a real syntax transform, not mere type erasure,
- * which Node's strip-only mode explicitly does not support. Rewriting
- * those already-shipped, already-reviewed files to dodge that -- purely so
- * this script could import them -- was judged a worse trade than one
- * small, clearly-labelled duplication. If `xcrun devicectl`'s JSON shape
- * ever changes, both this function and session.ts's `findIosDevice` need
- * updating together.
+ * Why no iPhone can be driven, or `null` when exactly one physical iPhone is
+ * there, read through `scripts/devicectl.mjs`, the one home the iOS session
+ * reads it through too (#390).
+ *
+ * This script cannot import the session's own TypeScript. Measured, not a
+ * style choice: importing `tests/device/ios/session.ts` failed with
+ * `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` under this repo's pinned Node (.nvmrc:
+ * 24, which strips TypeScript *types* natively), because the session pulls in
+ * `webdriver.ts` and `interaction.ts`, both of which use constructor PARAMETER
+ * PROPERTIES (`constructor(private readonly driver: WebDriver)`), a real
+ * syntax transform that Node's strip-only mode does not support. The session
+ * can import a plain module, so the listing and its parsing live in one.
  */
-function findIosDeviceOrThrow() {
-  const raw = execFileSync(
-    'xcrun',
-    ['devicectl', 'list', 'devices', '--json-output', '-'],
-    { encoding: 'utf8' },
-  );
-
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(
-      `expected \`xcrun devicectl list devices --json-output -\` to print JSON on stdout -- got: ` +
-        `${raw.slice(0, 300)}`,
-      { cause },
-    );
-  }
-
-  const physicalIphones = parsed.result.devices.filter(
-    (
-      /** @type {{ hardwareProperties: { udid: string, reality: string, deviceType: string } }} */ d,
-    ) =>
-      d.hardwareProperties.reality === 'physical' &&
-      d.hardwareProperties.deviceType === 'iPhone',
-  );
-
-  const override = process.env.IOS_UDID;
-  const candidates = override
-    ? physicalIphones.filter(
-        (/** @type {{ hardwareProperties: { udid: string } }} */ d) =>
-          d.hardwareProperties.udid === override,
-      )
-    : physicalIphones;
-
-  if (candidates.length === 0) {
-    const seen = physicalIphones.map(
-      (/** @type {{ hardwareProperties: { udid: string } }} */ d) =>
-        d.hardwareProperties.udid,
-    );
-    throw new Error(
-      override
-        ? `expected \`xcrun devicectl list devices\` to include a physical iPhone with udid ${override} ` +
-            `(from IOS_UDID) -- none found; physical iPhones seen: ${JSON.stringify(seen)}`
-        : 'expected `xcrun devicectl list devices` to list at least one physical iPhone -- none found. ' +
-            'Is it connected, paired and trusted? (Set IOS_UDID to target one by UDID.)',
-    );
-  }
-  if (candidates.length > 1) {
-    throw new Error(
-      `expected exactly one physical iPhone to target -- found ${candidates.length}: ` +
-        `${JSON.stringify(candidates.map((/** @type {{ hardwareProperties: { udid: string } }} */ d) => d.hardwareProperties.udid))}. Set IOS_UDID to disambiguate.`,
-    );
-  }
-
-  return candidates[0];
-}
-
 function isIosPresent() {
+  let raw;
   try {
-    const device = findIosDeviceOrThrow();
-    return {
-      present: true,
-      udid: device.hardwareProperties.udid,
-      name: device.deviceProperties.name,
-    };
+    raw = listDevices();
   } catch (error) {
-    return { present: false, reason: messageOf(error) };
+    return messageOf(error);
   }
+  const picked = pickIphone(raw, process.env.IOS_UDID);
+  return 'absence' in picked ? picked.absence : null;
 }
 
 // ── one-off discovery: how many tests does grepInvert exclude by design? ──
@@ -696,7 +642,7 @@ const EXCLUDED_BY_DESIGN_GREP = '@emulated-viewport|@requires-isolated-context';
  * a resizable screen, or a fresh per-test browser context) and both are excluded from
  * the SAME `grepInvert`, so the Android group's own "skipped by design" number must be
  * their sum to stay honestly self-consistent with what actually ran (see
- * printSummaryTable / summarizePlaywrightGroup, which add this to Playwright's own
+ * printSummaryTable / playwrightVerdict, which add this to Playwright's own
  * `stats.skipped` for the real run). Splitting them into two separately-reported
  * numbers was considered and rejected: nothing downstream (the dashboard, this
  * script's own exit-code logic) currently needs to tell them apart, and a single
@@ -731,54 +677,200 @@ async function countExcludedByDesign() {
         'skipped-by-design count.',
     );
   }
-  const report = readJson(outFile, 'the excluded-by-design discovery listing');
-  return report.stats.skipped;
+  return countAt(
+    readJson(outFile, 'the excluded-by-design discovery listing'),
+    ['stats', 'skipped'],
+    'the excluded-by-design discovery listing',
+  );
 }
 
 // ── the three groups ────────────────────────────────────────────────────
 
 /**
+ * A group's report, or `null` when the group never wrote one.
+ *
+ * @param {string} file
+ * @param {string} description
+ * @returns {unknown}
+ */
+function reportAt(file, description) {
+  return existsSync(file) ? readJson(file, description) : null;
+}
+
+/**
+ * One count off a report, refused unless it is a whole number. Read blind, a
+ * missing count became `NaN` in the summary and `undefined !== 0` a failure
+ * nobody could explain (#390).
+ *
+ * @param {unknown} report
+ * @param {string[]} at
+ * @param {string} description
+ * @returns {number}
+ */
+function countAt(report, at, description) {
+  /** @type {unknown} */
+  let value = report;
+  for (const key of at)
+    value =
+      typeof value === 'object' && value !== null
+        ? /** @type {Record<string, unknown>} */ (value)[key]
+        : undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(
+      `expected ${description} to carry a count at ${at.join('.')} -- got ${JSON.stringify(value)}`,
+    );
+  }
+  return value;
+}
+
+/**
+ * The one rule both kinds of group are judged by: the process and the report
+ * must both say it passed, and something must have passed. A group in which
+ * nothing passed measured nothing, whatever its exit code says (#390).
+ *
+ * @param {{ name: string, code: number | null, passed: number, failed: number,
+ *   skippedByDesign: number, reportSaysOk: boolean, reportSays: string,
+ *   failures: string }} counts
+ */
+function judged({
+  name,
+  code,
+  passed,
+  failed,
+  skippedByDesign,
+  reportSaysOk,
+  reportSays,
+  failures,
+}) {
+  const processSaysOk = code === 0;
+  const reason =
+    reportSaysOk !== processSaysOk
+      ? `disagreement: process exit code ${code} but the report says ${reportSays} -- treated ` +
+        'as failed either way, since these should never disagree'
+      : !processSaysOk
+        ? `${failures} (process exit code ${code})`
+        : passed === 0
+          ? 'no test passed, so this group proved nothing -- a run that measured nothing is not a pass'
+          : undefined;
+  return {
+    name,
+    status: reason === undefined ? 'passed' : 'failed',
+    passed,
+    failed,
+    skippedByDesign,
+    reason,
+  };
+}
+
+/**
  * @param {string} name
  * @param {number | null} code
  * @param {string} reportFile
- * @param {number} durationMs
  */
-function summarizePlaywrightGroup(
+function neverWritten(name, code, reportFile) {
+  return {
+    name,
+    status: 'failed',
+    passed: null,
+    failed: null,
+    skippedByDesign: null,
+    reason:
+      `the process exited with code ${code} but its report (${reportFile}) was never written -- ` +
+      'cannot verify real counts, so this cannot be reported as anything other than failed.',
+  };
+}
+
+/**
+ * What a Playwright group proved, from its exit code and its JSON report
+ * (`null` when none was written). `reportFile` only names the report.
+ *
+ * @param {{ name: string, code: number | null, report: unknown,
+ *   reportFile: string, extraSkipped?: number }} group
+ */
+export function playwrightVerdict({
   name,
   code,
+  report,
   reportFile,
-  durationMs,
-  { extraSkipped = 0 } = {},
-) {
-  if (!existsSync(reportFile)) {
+  extraSkipped = 0,
+}) {
+  if (report === null) return neverWritten(name, code, reportFile);
+  const description = `${name}'s Playwright report`;
+  /** @param {string} key */
+  const count = (key) => countAt(report, ['stats', key], description);
+  const passed = count('expected') + count('flaky');
+  const failed = count('unexpected');
+  return judged({
+    name,
+    code,
+    passed,
+    failed,
+    skippedByDesign: count('skipped') + extraSkipped,
+    reportSaysOk: failed === 0,
+    reportSays: `${failed} failed`,
+    failures: `${failed} test(s) failed`,
+  });
+}
+
+/**
+ * What the iOS group proved, from vitest's JSON report. A file that fails to
+ * load fails no test (measured: `numFailedTests` 0, `numFailedTestSuites` 1,
+ * `success` false), so the failed files are named beside the failed tests.
+ *
+ * @param {{ name: string, code: number | null, report: unknown,
+ *   reportFile: string }} group
+ */
+export function vitestVerdict({ name, code, report, reportFile }) {
+  if (report === null) return neverWritten(name, code, reportFile);
+  const description = `${name}'s vitest report`;
+  /** @param {string} key */
+  const count = (key) => countAt(report, [key], description);
+  const passed = count('numPassedTests');
+  const failed = count('numFailedTests');
+  const failedFiles = count('numFailedTestSuites');
+  const skippedByDesign = count('numPendingTests') + count('numTodoTests');
+  const success = /** @type {Record<string, unknown>} */ (report).success;
+  if (typeof success !== 'boolean') {
+    throw new Error(
+      `expected ${description} to say true or false at success -- got ${JSON.stringify(success)}`,
+    );
+  }
+  return judged({
+    name,
+    code,
+    passed,
+    failed,
+    skippedByDesign,
+    reportSaysOk: failed === 0 && success,
+    reportSays: `${failed} failed and success ${success}`,
+    failures: `${failed} test(s) and ${failedFiles} file(s) failed`,
+  });
+}
+
+/**
+ * Runs one group, and turns a group that throws into its own failed row. The
+ * three ran under one `Promise.all`, so one unreadable report rejected the lot:
+ * the other two groups' verdicts were never read, the run said ABORTED, and
+ * cleanup stopped the shared server under groups still running (#390).
+ *
+ * @param {string} name
+ * @param {() => Promise<Record<string, unknown>>} run
+ */
+export async function contained(name, run) {
+  const startedAt = Date.now();
+  try {
+    return await run();
+  } catch (error) {
     return {
       name,
       status: 'failed',
       passed: null,
       failed: null,
       skippedByDesign: null,
-      durationMs,
-      reason:
-        `the process exited with code ${code} but its JSON report ` +
-        `(${path.relative(ROOT, reportFile)}) was never written -- cannot verify real counts, so this ` +
-        'cannot be reported as anything other than failed.',
+      durationMs: Date.now() - startedAt,
+      reason: `the group stopped before it could report: ${messageOf(error)}`,
     };
   }
-  const report = readJson(reportFile, `${name}'s Playwright JSON report`);
-  const passed = report.stats.expected + report.stats.flaky;
-  const failed = report.stats.unexpected;
-  const skippedByDesign = report.stats.skipped + extraSkipped;
-  const jsonSaysOk = failed === 0;
-  const processSaysOk = code === 0;
-  const status = jsonSaysOk && processSaysOk ? 'passed' : 'failed';
-  const reason =
-    status === 'passed'
-      ? undefined
-      : jsonSaysOk !== processSaysOk
-        ? `disagreement: process exit code ${code} but the JSON report says ${failed} failed -- treated ` +
-          'as failed either way, since these should never disagree'
-        : `${failed} test(s) failed (process exit code ${code})`;
-  return { name, status, passed, failed, skippedByDesign, durationMs, reason };
 }
 
 async function runDesktopGroup() {
@@ -825,12 +917,15 @@ async function runDesktopGroup() {
       },
     },
   );
-  return summarizePlaywrightGroup(
-    name,
-    code,
-    reportFile,
-    Date.now() - startedAt,
-  );
+  return {
+    ...playwrightVerdict({
+      name,
+      code,
+      report: reportAt(reportFile, `${name}'s Playwright JSON report`),
+      reportFile: path.relative(ROOT, reportFile),
+    }),
+    durationMs: Date.now() - startedAt,
+  };
 }
 
 /**
@@ -841,12 +936,12 @@ async function runDesktopGroup() {
 async function runAndroidGroup(excludedByDesign) {
   const name = 'android';
   const startedAt = Date.now();
-  const presence = isAndroidPresent();
-  if (!presence.present) {
+  const absence = isAndroidPresent();
+  if (absence !== null) {
     process.stdout.write(
-      `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
+      `[${name}] device absent -- not attempting this group: ${absence}\n`,
     );
-    writeDashboardNotRun(name, presence.reason ?? 'no reason given');
+    writeDashboardNotRun(name, absence);
     return {
       name,
       status: 'not-run',
@@ -854,7 +949,7 @@ async function runAndroidGroup(excludedByDesign) {
       failed: null,
       skippedByDesign: null,
       durationMs: Date.now() - startedAt,
-      reason: presence.reason,
+      reason: absence,
     };
   }
 
@@ -882,26 +977,27 @@ async function runAndroidGroup(excludedByDesign) {
       },
     },
   );
-  return summarizePlaywrightGroup(
-    name,
-    code,
-    reportFile,
-    Date.now() - startedAt,
-    {
+  return {
+    ...playwrightVerdict({
+      name,
+      code,
+      report: reportAt(reportFile, `${name}'s Playwright JSON report`),
+      reportFile: path.relative(ROOT, reportFile),
       extraSkipped: excludedByDesign,
-    },
-  );
+    }),
+    durationMs: Date.now() - startedAt,
+  };
 }
 
 async function runIosGroup() {
   const name = 'ios';
   const startedAt = Date.now();
-  const presence = isIosPresent();
-  if (!presence.present) {
+  const absence = isIosPresent();
+  if (absence !== null) {
     process.stdout.write(
-      `[${name}] device absent -- not attempting this group: ${presence.reason}\n`,
+      `[${name}] device absent -- not attempting this group: ${absence}\n`,
     );
-    writeDashboardNotRun(name, presence.reason ?? 'no reason given');
+    writeDashboardNotRun(name, absence);
     return {
       name,
       status: 'not-run',
@@ -909,7 +1005,7 @@ async function runIosGroup() {
       failed: null,
       skippedByDesign: null,
       durationMs: Date.now() - startedAt,
-      reason: presence.reason,
+      reason: absence,
     };
   }
 
@@ -961,7 +1057,7 @@ async function runIosGroup() {
   // `modeInfo.description` is the FULL sentence session.ts already rendered
   // via its own `describeInteractionMode` call -- read verbatim, not
   // recomputed here, because this script cannot import that function
-  // directly (see `findIosDeviceOrThrow`'s own comment for the measured
+  // directly (see `isIosPresent`'s own comment for the measured
   // reason) and a hand-copied paraphrase could drift from the source of
   // truth the moment either file is edited.
   const modeNote = modeInfo
@@ -970,41 +1066,14 @@ async function runIosGroup() {
       'session never reached the design doc s5a canary. Treat any iOS result this run as unverified ' +
       'for touch-input claims.';
 
-  if (!existsSync(reportFile)) {
-    return {
-      name,
-      status: 'failed',
-      passed: null,
-      failed: null,
-      skippedByDesign: null,
-      durationMs,
-      reason: `the process exited with code ${code} but its JSON report was never written`,
-      modeNote,
-    };
-  }
-  const report = readJson(reportFile, "iOS's vitest JSON report");
-  const passed = report.numPassedTests;
-  const failed = report.numFailedTests;
-  const skippedByDesign = report.numPendingTests + (report.numTodoTests ?? 0);
-  const jsonSaysOk = failed === 0 && report.success === true;
-  const processSaysOk = code === 0;
-  const status = jsonSaysOk && processSaysOk ? 'passed' : 'failed';
-  const reason =
-    status === 'passed'
-      ? undefined
-      : jsonSaysOk !== processSaysOk
-        ? `disagreement: process exit code ${code} but the JSON report says ${failed} failed -- treated ` +
-          'as failed either way'
-        : `${failed} test(s) failed (process exit code ${code})`;
-
   return {
-    name,
-    status,
-    passed,
-    failed,
-    skippedByDesign,
+    ...vitestVerdict({
+      name,
+      code,
+      report: reportAt(reportFile, "iOS's vitest JSON report"),
+      reportFile: path.relative(ROOT, reportFile),
+    }),
     durationMs,
-    reason,
     modeNote,
   };
 }
@@ -1021,7 +1090,7 @@ async function cleanupAdbTunnels() {
     ['reverse', '--remove-all'],
   ]) {
     try {
-      execFileSync('adb', args, { stdio: 'ignore' });
+      adb(args);
     } catch (error) {
       // No device attached at all makes plain `adb` fail outright -- fine,
       // there is nothing to remove. Anything else is logged, not thrown:
@@ -1030,6 +1099,53 @@ async function cleanupAdbTunnels() {
         `cleanup: \`adb ${args.join(' ')}\` failed (continuing): ${messageOf(error)}\n`,
       );
     }
+  }
+}
+
+/**
+ * The port and session a leaked-session marker names, refused unless both are
+ * there: read blind, a marker without a port sent `DELETE` to `:undefined` and
+ * asked `lsof` about port `undefined` (#390).
+ *
+ * @param {unknown} marker
+ * @returns {{ port: number, sessionId: string }}
+ */
+export function leakedSessionOf(marker) {
+  const { port, sessionId } = /** @type {Record<string, unknown>} */ (
+    marker ?? {}
+  );
+  if (
+    typeof port !== 'number' ||
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65_535 ||
+    typeof sessionId !== 'string' ||
+    sessionId === ''
+  ) {
+    throw new Error(
+      `expected the iOS session marker to name a port and a session id -- got ${JSON.stringify(marker)}`,
+    );
+  }
+  return { port, sessionId };
+}
+
+/**
+ * Ends a WebDriver session, refused unless safaridriver says it did. The
+ * answer went unread once, so a 404 printed "Deleted leaked WebDriver session"
+ * (#390).
+ *
+ * @param {{ port: number, sessionId: string }} session
+ * @returns {Promise<void>}
+ */
+export async function deleteSession({ port, sessionId }) {
+  const response = await fetch(
+    `http://127.0.0.1:${port}/session/${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `safaridriver answered ${response.status} to DELETE /session/${sessionId}`,
+    );
   }
 }
 
@@ -1049,7 +1165,9 @@ async function cleanupLeakedIosSession() {
   );
   let marker;
   try {
-    marker = readJson(IOS_SESSION_MARKER_FILE, 'the leaked iOS session marker');
+    marker = leakedSessionOf(
+      readJson(IOS_SESSION_MARKER_FILE, 'the leaked iOS session marker'),
+    );
   } catch (error) {
     process.stderr.write(
       `cleanup: could not read the iOS session marker: ${messageOf(error)}\n`,
@@ -1058,9 +1176,7 @@ async function cleanupLeakedIosSession() {
   }
   const { port, sessionId } = marker;
   try {
-    await fetch(`http://127.0.0.1:${port}/session/${sessionId}`, {
-      method: 'DELETE',
-    });
+    await deleteSession(marker);
     process.stdout.write(
       `==> Deleted leaked WebDriver session ${sessionId}.\n`,
     );
@@ -1142,11 +1258,36 @@ function printSummaryTable(groups, totalDurationMs) {
 
 /** @type {import('node:child_process').ChildProcess | null} */
 let previewChild = null;
-let cleanedUp = false;
 
-async function cleanup() {
-  if (cleanedUp) return;
-  cleanedUp = true;
+/**
+ * Runs `task` on the first call only, and answers every call with that run's
+ * promise. Cleanup was guarded by a flag set as it began, so Ctrl+C during the
+ * end-of-run cleanup found it "done", skipped it, and exited under the half
+ * finished one (#390).
+ *
+ * @template T
+ * @param {() => T} task
+ * @returns {() => T}
+ */
+export function once(task) {
+  /** @type {{ value: T } | undefined} */
+  let ran;
+  return () => (ran ??= { value: task() }).value;
+}
+
+/**
+ * The exit status a shell reports for a process a signal ended: 128 plus the
+ * signal's number. Every signal exited 130 before, SIGINT's, so a SIGTERM
+ * read as a Ctrl+C (#390).
+ *
+ * @param {NodeJS.Signals} signal
+ * @returns {number}
+ */
+export function exitCodeFor(signal) {
+  return 128 + constants.signals[signal];
+}
+
+const cleanup = once(async () => {
   if (previewChild) {
     process.stdout.write('==> Stopping the shared preview server...\n');
     await killByPort(PORT).catch((error) =>
@@ -1157,7 +1298,7 @@ async function cleanup() {
   }
   await cleanupAdbTunnels();
   await cleanupLeakedIosSession();
-}
+});
 
 /**
  * Ctrl+C (or a CI-style SIGTERM) must not skip cleanup -- a leaked iOS
@@ -1178,13 +1319,13 @@ async function cleanup() {
  * @returns {void}
  */
 function cleanUpOnSignal() {
-  for (const signal of ['SIGINT', 'SIGTERM']) {
+  for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
     process.once(signal, async () => {
       process.stdout.write(
         `\n==> Received ${signal}, cleaning up before exit...\n`,
       );
       await cleanup();
-      process.exit(130);
+      process.exit(exitCodeFor(signal));
     });
   }
 }
@@ -1294,23 +1435,14 @@ async function main() {
       describe: `the shared preview server to answer on :${PORT}`,
     });
 
-    // Brief step 2(d): a built page references a hashed asset under
-    // /_astro/. If that marker is absent, the server on 4321 is not
-    // previewing a fresh build -- abort the WHOLE run rather than warn and
-    // let three groups measure the wrong bytes.
-    const freshnessCheck = await fetch(
+    // Brief step 2(d): abort the WHOLE run rather than let three groups
+    // measure the wrong bytes.
+    await confirmServesBuild(
       `http://localhost:${PORT}/classroom-groups`,
+      path.join(ROOT, 'dist', 'classroom-groups', 'index.html'),
     );
-    const body = await freshnessCheck.text();
-    if (!body.includes('/_astro/')) {
-      throw new Error(
-        'expected the response from /classroom-groups to reference a hashed /_astro/ asset (proof of ' +
-          'a fresh `astro build`) -- it does not. The server on port 4321 is not serving a fresh build; ' +
-          'aborting the whole run rather than testing the wrong bytes.',
-      );
-    }
     process.stdout.write(
-      '==> Confirmed: the shared server is previewing a fresh build (/_astro/ marker found).\n',
+      '==> Confirmed: the shared server serves the page this run just built, byte for byte.\n',
     );
 
     process.stdout.write(
@@ -1326,9 +1458,9 @@ async function main() {
       '==> Launching desktop, android and ios concurrently...\n\n',
     );
     const groups = await Promise.all([
-      runDesktopGroup(),
-      runAndroidGroup(excludedByDesign),
-      runIosGroup(),
+      contained('desktop', runDesktopGroup),
+      contained('android', () => runAndroidGroup(excludedByDesign)),
+      contained('ios', runIosGroup),
     ]);
 
     await cleanup();

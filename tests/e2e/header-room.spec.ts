@@ -1,7 +1,6 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import {
-  LOCALES,
   getSiteStrings,
   localeFromPath,
   localisePath,
@@ -9,7 +8,7 @@ import {
 } from '../../src/lib/i18n';
 import { layoutWidthsFrom } from '../layout-widths';
 import { searched } from '../source-files';
-import { publishedPaths } from './published-paths';
+import { PUBLISHED_ROUTES } from './published-paths';
 import { recorded, shoot } from './evidence';
 
 test.use(recorded);
@@ -230,40 +229,35 @@ const survey = (locale: Locale) => {
   };
 };
 
-/** This locale's published pages, read from the sitemap (the 404 is English). */
-const pagesOf = async (page: Page, locale: Locale) => {
-  const home = localisePath('/', locale);
-  const paths = (await publishedPaths(page)).filter(
-    (path) => localeFromPath(path) === locale,
-  );
-  // The locale's homepage first, so the evidence shot is of the page a
-  // visitor lands on.
-  return [home, ...paths.filter((path) => path !== home)];
-};
-
 test.describe('the header row has room for everything in it (#329)', () => {
-  for (const locale of LOCALES) {
+  // One test per published page (#422). The 404 is English, so it is
+  // measured as an English page.
+  for (const path of PUBLISHED_ROUTES) {
+    const locale = localeFromPath(path);
     test(
-      `${locale}: no header item overlaps another, at any width`,
+      `${path}: no header item overlaps another, at any width`,
       { tag: '@emulated-viewport' },
       async ({ page }) => {
-        const paths = await pagesOf(page, locale);
         const header = survey(locale);
-        for (const path of paths) {
-          for (const width of await header.open(page, path)) {
-            await page.setViewportSize({ width, height: 800 });
-            await header.measure(page, `${path} at ${width}px`);
-          }
+        // runtime population: the widths this page's own CSS can lay out,
+        // read from the media queries it serves, so only the loaded page
+        // knows them (#422).
+        for (const width of await header.open(page, path)) {
+          await page.setViewportSize({ width, height: 800 });
+          await header.measure(page, `${path} at ${width}px`);
         }
         header.expectRoom();
-        // The picture comes after the verdict, so it shows a row that passed.
-        await header.open(page, paths[0]);
-        await page.setViewportSize({ width: 320, height: 800 });
-        await shoot(
-          page,
-          `${paths[0]} at 320px: the header row`,
-          page.locator('header'),
-        );
+        // The picture comes after the verdict, so it shows a row that passed,
+        // and of the page a visitor lands on: each locale's homepage.
+        if (path === localisePath('/', locale)) {
+          await header.open(page, path);
+          await page.setViewportSize({ width: 320, height: 800 });
+          await shoot(
+            page,
+            `${path} at 320px: the header row`,
+            page.locator('header'),
+          );
+        }
       },
     );
   }

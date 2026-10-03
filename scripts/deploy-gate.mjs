@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
+import { die, messageOf } from './errors.mjs';
+
 /**
  * May this commit be deployed to dev without re-running the whole suite?
  *
@@ -11,9 +13,10 @@ import { execFileSync } from 'node:child_process';
  * a failure that posts no red gate and reads as "nothing happened" (#155).
  *
  * The obvious fix does not work, and finding that out first is what produced
- * this design. `ci.yml` triggers on `pull_request` ONLY, so it has never run
- * against a merge commit: there is no `build-and-test` status sitting there to
- * read, and a gate querying `/statuses` would find nothing at all.
+ * this design. `ci.yml` never runs on a push (its triggers are `pull_request`
+ * and the dispatch path's `workflow_call`), so a merge commit that a push
+ * delivers carries no `build-and-test` status to read, and a gate querying
+ * `/statuses` would find nothing at all.
  *
  * What is true is that `develop` sets `strict: true`, so a PR cannot merge
  * unless it is up to date with its base — which makes the merge commit's TREE
@@ -155,21 +158,34 @@ export const decideDeploy = ({
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 
 /**
+ * The check-runs on `sha`, from the API the runner names in GITHUB_API_URL
+ * (Actions sets it on every runner, and `tests/unit/deploy-gate-script.test.ts`
+ * points it at a stand-in).
+ *
+ * Node's `fetch` rejects an unreachable host with only "fetch failed" and
+ * keeps the reason on `cause`, so the refusal names the request and the cause.
+ *
  * @param {string} repo
  * @param {string} sha
  * @param {string} token
  */
 const checkRunsFor = async (repo, sha, token) => {
-  const res = await fetch(
-    `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100`,
-    {
+  const api = process.env.GITHUB_API_URL ?? 'https://api.github.com';
+  const url = `${api}/repos/${repo}/commits/${sha}/check-runs?per_page=100`;
+  /** @type {Response} */
+  let res;
+  try {
+    res = await fetch(url, {
       headers: {
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${token}`,
         'x-github-api-version': '2022-11-28',
       },
-    },
-  );
+    });
+  } catch (error) {
+    const cause = error instanceof Error ? (error.cause ?? error) : error;
+    throw new Error(`GET ${url} could not be reached: ${messageOf(cause)}`);
+  }
   if (!res.ok)
     throw new Error(`check-runs for ${short(sha)}: HTTP ${res.status}`);
   const body =
@@ -187,13 +203,9 @@ const main = async () => {
   const sha = process.env.GITHUB_SHA ?? git('rev-parse', 'HEAD');
   const repo = process.env.GITHUB_REPOSITORY;
   const token = process.env.GITHUB_TOKEN;
-  if (!repo || !token) {
-    // Refusing is the safe direction: without the API this cannot prove anything.
-    console.error(
-      'deploy-gate: GITHUB_REPOSITORY and GITHUB_TOKEN are required',
-    );
-    process.exit(1);
-  }
+  // Refusing is the safe direction: without the API this cannot prove anything.
+  if (!repo || !token)
+    die('deploy-gate: GITHUB_REPOSITORY and GITHUB_TOKEN are required');
 
   const parents = git('rev-list', '--parents', '-n', '1', sha)
     .split(/\s+/)
@@ -207,8 +219,14 @@ const main = async () => {
       }
     }),
   );
-  const checks =
-    parents.length > 1 ? await checkRunsFor(repo, parents[1], token) : [];
+  /** @type {CheckRun[]} */
+  let checks = [];
+  try {
+    if (parents.length > 1)
+      checks = await checkRunsFor(repo, parents[1], token);
+  } catch (error) {
+    die(`deploy-gate: REFUSE — ${messageOf(error)}`);
+  }
 
   const { deploy, reason } = decideDeploy({ sha, parents, treeOf, checks });
   console.log(`deploy-gate: ${deploy ? 'PROCEED' : 'REFUSE'} — ${reason}`);

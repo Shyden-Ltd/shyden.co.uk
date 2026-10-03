@@ -14,7 +14,9 @@
  *   BACK_TRANSLATE_URL      the engine's address. Required: without it the
  *                           run fails, rather than comparing nothing.
  *   BACK_TRANSLATE_API_KEY  only for an engine that asks for one.
- *   BACK_TRANSLATE_ENGINE   the engine's name for the review, e.g. its image.
+ *   BACK_TRANSLATE_ENGINE   the engine's name for the review. Unset, it is the
+ *                           LibreTranslate tag docker/libretranslate/Dockerfile
+ *                           builds, the image CI runs (#390 F75).
  *   BACK_TRANSLATE_REPORT   a path to write every comparison to, as JSON.
  *   GITHUB_STEP_SUMMARY     where the review goes in CI; printed otherwise.
  *
@@ -28,19 +30,21 @@
  * an engine. This file is wiring: read, fetch, write. Node 24 strips
  * TypeScript natively, so the catalogues import directly with no build step.
  */
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import {
   TRANSLATED_LOCALES,
   backTranslationUnits,
   chrF,
   engineConfig,
   engineLanguages,
+  engineName,
   engineSource,
   livenessProblems,
   reviewMarkdown,
   sendable,
 } from '../src/lib/i18n/back-translate.ts';
 import { call, readBack } from './back-translate-client.mjs';
+import { messageOf } from './errors.mjs';
 
 async function main() {
   // Everything it reads is an environment variable, so an argument is a
@@ -50,7 +54,13 @@ async function main() {
       `i18n-back-translate.mjs takes no arguments; set BACK_TRANSLATE_* instead (got ${process.argv.slice(2).join(' ')})`,
     );
   const { url, apiKey } = engineConfig(process.env);
-  const engine = process.env.BACK_TRANSLATE_ENGINE || 'LibreTranslate';
+  const engine = engineName(
+    process.env,
+    readFileSync(
+      new URL('../docker/libretranslate/Dockerfile', import.meta.url),
+      'utf8',
+    ),
+  );
 
   // Every locale is resolved before any copy is sent, so an engine that
   // cannot read one of them costs a single request, not a partial run.
@@ -115,8 +125,6 @@ async function main() {
 
 if (import.meta.main)
   await main().catch((error) => {
-    console.error(
-      `✗ ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`✗ ${messageOf(error)}`);
     process.exitCode = 1;
   });

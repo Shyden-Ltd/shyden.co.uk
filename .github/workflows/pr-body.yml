@@ -15,9 +15,10 @@ name: PR body
 # them, so all four are named: dropping `synchronize` would silently stop
 # checking a body on every later push.
 #
-# SEPARATE FROM ci.yml, deliberately. Adding `edited` there would re-run a
-# ~36-minute suite for a typo in a description, and with `strict: true` making
-# merges serial that cost lands on every other open PR. This runs in seconds.
+# SEPARATE FROM ci.yml, deliberately. Adding `edited` there would repeat a
+# whole CI run (about nine minutes since #163, 36 before it) for a typo in a
+# description, and with `strict: true` making merges serial that cost lands on
+# every other open PR. This runs in seconds.
 #
 # NOT A GATE UNTIL IT IS REQUIRED. A job that can go red while the merge
 # proceeds is decoration (#33). This becomes blocking when `closing-keywords`
@@ -57,6 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The pull request's own commits, not just its tip: the messages are
           # read below, and a shallow clone has none of them.
           fetch-depth: 0
@@ -83,14 +85,17 @@ jobs:
         # failure message. This is the layer nobody can bypass, so it reads
         # both media through the same rule.
         #
-        # `origin/<base>..HEAD` is exactly the set a merge would add, so a
-        # commit already on the base cannot redden an innocent pull request.
-        # `--no-merges` drops the synthetic merge commit a pull_request
-        # checkout puts at HEAD.
+        # A pull_request checkout puts a synthetic merge of the head into the
+        # base at HEAD, so `HEAD^2` is the pull request's own head, and
+        # `origin/<base>..HEAD^2` is exactly the set a merge would add: a
+        # commit already on the base cannot redden an innocent pull request,
+        # and the synthetic merge is left out. Merge commits the branch
+        # carries are read like any other, since they land on the base with
+        # their messages; `--no-merges` skipped them (#390).
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          git log --no-merges --format=%B "origin/${BASE_REF}..HEAD" > "${RUNNER_TEMP}/commits.txt"
+          git log --format=%B "origin/${BASE_REF}..HEAD^2" > "${RUNNER_TEMP}/commits.txt"
           # An empty range would pass this check for free, and would look
           # exactly like a clean pull request. An open one always adds at
           # least one commit, so nothing here is the range being wrong.

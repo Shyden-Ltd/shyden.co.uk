@@ -103,8 +103,8 @@ export const getStrings = (locale: unknown): Strings => {
 /**
  * A locale's tool catalogue as written, every message still a template.
  * `getStrings` compiles each message into a function (#136), so a walk over
- * its result never sees one: 139 keys against 197. The translation-report
- * table (#97) walks this instead.
+ * its result never sees one and finds fewer entries than the catalogue
+ * holds. The translation-report table (#97) walks this instead.
  */
 export const rawCatalogue = (locale: Locale): Catalogue => CATALOGUES[locale];
 
@@ -152,12 +152,12 @@ export const otherLocales = (locale: Locale): Locale[] =>
  * Every page needs this for its hreflang links and its language switcher, and
  * getting it wrong is the classic i18n bug: a switcher that always dumps the
  * visitor on the homepage instead of the page they were reading. English is
- * unprefixed, so switching is purely adding or removing the `/id` segment.
+ * unprefixed, so switching is purely adding or removing a locale segment
+ * such as `/id`.
  */
 export function localisePath(pathname: string, target: Locale): string {
   const stripped = pathname.replace(PREFIX_PATTERN, '') || '/';
-  if (target === DEFAULT_LOCALE) return stripped;
-  return stripped === '/' ? `/${target}/` : `/${target}${stripped}`;
+  return target === DEFAULT_LOCALE ? stripped : `/${target}${stripped}`;
 }
 
 /** The locale a path belongs to, inferred from its prefix. */
@@ -323,7 +323,7 @@ export function renderError(
  * defaulting the same way -- a caller that forgets a resolver still gets
  * "Student 7, Student 8 …", never bare digits.
  *
- * Task 8a. `sexSpillover` is the only code WARNING_CODES defines. Task 8a
+ * Task 8a. `sexSpillover` was the first code WARNING_CODES defined. Task 8a
  * built this renderer ahead of a real caller -- see the doc comment on
  * WARNING_CODES.sexSpillover there -- so Task 8b's separate-mode placement
  * work landed against a channel that was already tested and translated
@@ -394,9 +394,8 @@ export function groupName(index: number, strings: Strings): string {
  * section's own filename-safety substitution is deliberately scoped to the
  * exported filename and nowhere else, so a name a teacher actually typed
  * (leading/trailing whitespace included) reaches this heading exactly as
- * typed. This deliberately corrects task-5-brief.md's own snippet, which
- * threaded `className.trim()` through to the named branch as well as the
- * blank check.
+ * typed. So `className.trim()` decides the blank check and never reaches
+ * the named branch.
  */
 export function resultsHeadingText(
   className: string,
@@ -411,7 +410,7 @@ export function resultsHeadingText(
  * A refused number field (#188), as a sentence in the page's language.
  *
  * The ONE place a `NumberSetsProblem` kind becomes copy, for the reason
- * `renderError` above and `resultsHeadingText` below both give: two call
+ * `renderError` and `resultsHeadingText` above both give: two call
  * sites deciding "which sentence do I show" is how two sentences for one
  * fact drift apart.
  *

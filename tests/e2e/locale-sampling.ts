@@ -37,3 +37,13 @@ export const sampledPaths = (path: string): string[] => {
     );
   return SAMPLED_LOCALES.map((locale) => localisePath(path, locale));
 };
+
+/**
+ * `path` in EVERY locale: what a layout- or text-sensitive test runs against,
+ * because character widths differ. Beside `sampledPaths` so that each call
+ * site says which it chose. Five fit tests on `/classroom-groups` and the
+ * roster's truncation test measured English, or English and Indonesian,
+ * while this file's own header said they must not (#390 F113).
+ */
+export const localePaths = (path: string): string[] =>
+  LOCALES.map((locale) => localisePath(path, locale));

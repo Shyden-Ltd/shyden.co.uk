@@ -17,12 +17,13 @@ import { en } from '../../src/lib/i18n/en';
 import { siteEn } from '../../src/lib/i18n/site';
 import { CSV_LOCALES } from '../../src/lib/csv-locale';
 import { searched } from '../source-files';
-import { stringLeaves } from '../catalogue-leaves';
+import { stringLeaves } from '../../src/lib/catalogue-leaves';
+import { messageOf } from '../../scripts/errors.mjs';
 import {
-  CSV_KEYS_NOT_TRANSLATED,
   DO_NOT_TRANSLATE,
   buildRequestBody,
   escapeXml,
+  deeplDrafts,
   deeplEndpoint,
   deeplLanguage,
   needsTranslation,
@@ -30,7 +31,6 @@ import {
   pruneDrafts,
   unescapeXml,
   unprotectTerms,
-  untranslatedKeys,
   translatableSentences,
   translationUnits,
   TRANSLATABLE_LOCALES,
@@ -39,9 +39,8 @@ import {
 /**
  * #21 Stage 5. The DeepL harness, minus the network.
  *
- * Built and NOT run — operator instruction, 2026-09-09. `LOCALES` stays
- * `['en','id']` and no translation is committed by this stage. What ships is
- * the logic, unit-tested, so that when #22 does run it the decisions have
+ * Built before it was run (operator instruction, 2026-09-09): the logic,
+ * unit-tested, so that when #22 ran it for zh, vi and th the decisions had
  * already been reviewed: which host the key routes to, what DeepL calls each
  * language, and which strings must never be sent at all.
  *
@@ -63,12 +62,7 @@ import {
  * and the second time this repo has paid for it.
  */
 function collectCatalogue(): string[] {
-  const csv = Object.fromEntries(
-    Object.entries(CSV_LOCALES.en).filter(
-      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
-    ),
-  );
-  const units = [en, siteEn, csv].flatMap((table) =>
+  const units = [en, siteEn, CSV_LOCALES.en].flatMap((table) =>
     stringLeaves(table).flatMap(([, value]) => translationUnits(value)),
   );
   return [...new Set(units)];
@@ -78,19 +72,22 @@ describe('the DeepL key decides the host', () => {
   it('routes a free key to the free host', () => {
     // The whole reason this function exists. A Free-plan key ends `:fx` and
     // is REJECTED by api.deepl.com — the request does not fail over, it 403s.
-    expect(deeplEndpoint('abc123:fx')).toContain('api-free.deepl.com');
+    expect(deeplEndpoint('abc123:fx')).toBe(
+      'https://api-free.deepl.com/v2/translate',
+    );
   });
 
   it('routes a pro key to the paid host', () => {
-    expect(deeplEndpoint('abc123')).toContain('api.deepl.com');
-    expect(deeplEndpoint('abc123')).not.toContain('api-free');
+    expect(deeplEndpoint('abc123')).toBe('https://api.deepl.com/v2/translate');
   });
 
   it('survives the whitespace a real .env file carries', () => {
     // `DEEPL_API_KEY=abc:fx\n` read naively keeps the newline, and
     // `endsWith(':fx')` is then false — a Free key silently sent to the paid
     // host, which is a 403 at the end of a long run.
-    expect(deeplEndpoint(' abc123:fx\n')).toContain('api-free.deepl.com');
+    expect(deeplEndpoint(' abc123:fx\n')).toBe(
+      'https://api-free.deepl.com/v2/translate',
+    );
   });
 
   it('never puts the key in the URL it returns', () => {
@@ -101,8 +98,8 @@ describe('the DeepL key decides the host', () => {
   });
 
   it('refuses an empty key rather than guessing a host', () => {
-    expect(() => deeplEndpoint('')).toThrow();
-    expect(() => deeplEndpoint('   ')).toThrow();
+    expect(() => deeplEndpoint('')).toThrow('DEEPL_API_KEY is empty');
+    expect(() => deeplEndpoint('   ')).toThrow('DEEPL_API_KEY is empty');
   });
 });
 
@@ -116,6 +113,16 @@ describe('every MVP language has a DeepL code', () => {
     // could change under us.
     expect(deeplLanguage('zh')).toBe('ZH-HANS');
     expect(deeplLanguage('en')).toBe('EN-GB');
+  });
+
+  it('names each language by the code DeepL documents for it', () => {
+    // Literals, all five: `IN`, `VN` or `THA` read as plausible codes and are
+    // refused by the API, and only zh and en were pinned before #390.
+    expect(
+      Object.fromEntries(
+        MVP_LOCALES.map((locale) => [locale, deeplLanguage(locale)]),
+      ),
+    ).toEqual({ en: 'EN-GB', id: 'ID', zh: 'ZH-HANS', vi: 'VI', th: 'TH' });
   });
 
   it('offers exactly the MVP locales as targets, derived not copied', () => {
@@ -183,7 +190,7 @@ describe('what must never be sent to a translator', () => {
  * Presence is not the assertion, exactly as the supply-chain guard (#23) and
  * the prod-smoke path list (#21 Stage 4) both learned.
  *
- * Only one of the six terms occurs in today's catalogue, which is why nothing
+ * Only one protected term occurred in the catalogue then, which is why nothing
  * looked wrong. The tests below assert the EFFECT: that the text handed to
  * DeepL carries the tags, and that what comes back is unwrapped again.
  */
@@ -204,6 +211,36 @@ describe('protected terms are wrapped before they are sent', () => {
         'Shyden Studio',
       ]),
     ).toBe('<x>Shyden Studio</x> is by <x>Shyden</x>.');
+  });
+
+  it('never wraps a term that sits at the END of a longer one', () => {
+    expect(
+      protectTerms('Shyden Studio and Studio', ['Studio', 'Shyden Studio']),
+    ).toBe('<x>Shyden Studio</x> and <x>Studio</x>');
+  });
+
+  it('never wraps a term that sits in the MIDDLE of a longer one', () => {
+    // A per-term loop wrapped `Glory Points` again inside the span the longer
+    // term had already wrapped: `<x>The <x>Glory Points</x> Cup</x>`.
+    expect(
+      protectTerms('The Glory Points Cup, and Glory Points', [
+        'Glory Points',
+        'The Glory Points Cup',
+      ]),
+    ).toBe('<x>The Glory Points Cup</x>, and <x>Glory Points</x>');
+  });
+
+  it('protects nothing, and changes nothing, given no terms or an empty one', () => {
+    const text = 'Built for teachers, by Shyden.';
+    expect(protectTerms(text, [])).toBe(text);
+    expect(protectTerms(text, [''])).toBe(text);
+  });
+
+  it('matches a term literally, never as a pattern', () => {
+    // `A.B.` as a pattern would match `AxB.` too.
+    expect(protectTerms('AxB. is not A.B.', ['A.B.'])).toBe(
+      'AxB. is not <x>A.B.</x>',
+    );
   });
 
   it('leaves a string with no protected term untouched', () => {
@@ -249,9 +286,71 @@ describe('protected terms are wrapped before they are sent', () => {
     expect(script, 'the request body must come from buildRequestBody').toMatch(
       /buildRequestBody\(/,
     );
-    expect(script, 'the response must be unwrapped again').toMatch(
-      /unprotectTerms\(/,
+    expect(script, 'the response must be checked and unwrapped').toMatch(
+      /deeplDrafts\(/,
     );
+  });
+
+  it('reads the drafts out of an answer, unwrapped and unescaped', () => {
+    expect(
+      deeplDrafts(
+        {
+          translations: [
+            { text: '由 <x>Shyden</x> 打造 &amp; 分享。' },
+            { text: '添加学生' },
+          ],
+        },
+        2,
+      ),
+    ).toEqual(['由 Shyden 打造 & 分享。', '添加学生']);
+  });
+
+  it.each([
+    [1, 2],
+    [3, 2],
+    [0, 1],
+  ])(
+    'refuses %i drafts for %i sentences, which would pair each draft with the wrong English',
+    (returned, sent) => {
+      const response = {
+        translations: Array.from({ length: returned }, () => ({ text: 'x' })),
+      };
+      expect(() => deeplDrafts(response, sent)).toThrow(
+        `DeepL returned ${returned} translations for ${sent} texts`,
+      );
+    },
+  );
+
+  it.each([
+    ['that is not an object', null],
+    ['with no translations', {}],
+    ['whose translations are not a list', { translations: 'x' }],
+  ])('refuses an answer %s', (_, response) => {
+    expect(() => deeplDrafts(response, 1)).toThrow(
+      'DeepL answered without a list of translations',
+    );
+  });
+
+  it.each([
+    ['a number', { text: 3 }],
+    ['nothing', {}],
+    ['a null entry', null],
+  ])('refuses a translation whose text is %s', (_, entry) => {
+    expect(() =>
+      deeplDrafts({ translations: [{ text: 'fine' }, entry] }, 2),
+    ).toThrow('translation 1 has no text');
+  });
+
+  it('never quotes what came back in its error, as the script never prints a body', () => {
+    // The script reports a failed request by its status alone, because a
+    // DeepL error can echo the request.
+    let message = '';
+    try {
+      deeplDrafts({ translations: [{ text: 'Pupil copy, echoed' }] }, 2);
+    } catch (error) {
+      message = messageOf(error);
+    }
+    expect(message).toBe('DeepL returned 1 translations for 2 texts');
   });
 
   it('escapes the ampersand that made DeepL answer 400', () => {
@@ -294,9 +393,9 @@ describe('protected terms are wrapped before they are sent', () => {
     // Until #164 this scanned the script for `collect(en)` by name. The
     // collection now has one home, `translatableSentences`, which the harness
     // sends from and the stale-draft guard reads, so it is pinned here to this
-    // file's independent walk: a missing catalogue, or the CSV `sex` tokens
-    // sent after all, changes the set. That the script really uses it is
-    // proved by running the script -- see `--prune` below.
+    // file's independent walk: a missing catalogue changes the set. That the
+    // script really uses it is proved by running the script -- see `--prune`
+    // below.
     expect([...translatableSentences()].sort()).toEqual(
       collectCatalogue().sort(),
     );
@@ -318,19 +417,6 @@ describe('protected terms are wrapped before they are sent', () => {
       }),
       'these strings do not survive the request pipeline unchanged',
     ).toEqual([]);
-  });
-});
-
-describe('the harness reports what a human still has to write', () => {
-  it('lists every key it could not translate', () => {
-    const report = untranslatedKeys({
-      greeting: 'Hello',
-      count: (n: number) => `${n}`,
-      symbol: '#',
-      message: '{n, plural, one {# left} other {# left}}',
-      nested: { deep: 'Yes', fn: () => 'x' },
-    });
-    expect(report.sort()).toEqual(['count', 'nested.fn', 'symbol']);
   });
 });
 
@@ -639,6 +725,16 @@ describe('the harness prunes the cache it writes', () => {
     expect(run.status, run.output).toBe(1);
     expect(readFileSync(cachePath, 'utf8'), 'a refused run wrote').toBe(before);
     expect(run.output).toMatch(/^✗ --send and --prune cannot be combined: /m);
+  });
+
+  it('refuses a second locale, rather than drafting only the first', () => {
+    const before = writeFixture();
+    const run = harness(['zh', 'th', '--send'], 'test-key:fx');
+    expect(run.status, run.output).toBe(1);
+    expect(readFileSync(cachePath, 'utf8'), 'a refused run wrote').toBe(before);
+    expect(run.output).toMatch(
+      /^✗ name one locale, not 2 \(zh, th\) — usage: npm run i18n:translate -- /m,
+    );
   });
 
   it('refuses an option it does not know, rather than dry-running past a typo', () => {

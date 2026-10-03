@@ -23,7 +23,8 @@ import { parseArgs } from 'node:util';
 import { capturesOfThisRun, flattenReport } from './build-evidence-page.mjs';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 import { inventoryFor } from './release-inventory.mjs';
-import { changeMapOf, renderChangeMap } from './release-map.mjs';
+import { changeMapOf, releaseOf, renderChangeMap } from './release-map.mjs';
+import { messageOf } from './errors.mjs';
 
 /**
  * Every test title a listing holds, as the builder writes a journey's title
@@ -143,7 +144,7 @@ const devVerifiedOf = (sha) => {
 
 const main = () => {
   /** @type {{ release?: string, head?: string, evidence?: string, out?: string, check?: boolean, listing?: string }} */
-  let values = {};
+  let values;
   try {
     ({ values } = parseArgs({
       options: {
@@ -155,8 +156,10 @@ const main = () => {
         listing: { type: 'string' },
       },
     }));
-  } catch {
-    values = {};
+  } catch (error) {
+    console.error(`build-release-content: ${messageOf(error)}`);
+    console.error(USAGE);
+    process.exit(2);
   }
   const checking = values.check === true;
   if (
@@ -168,7 +171,7 @@ const main = () => {
     process.exit(2);
   }
   try {
-    const release = JSON.parse(readFileSync(values.release, 'utf8'));
+    const release = releaseOf(JSON.parse(readFileSync(values.release, 'utf8')));
     const inventory = inventoryFor({
       base: release.base,
       head: values.head,
@@ -206,7 +209,7 @@ const main = () => {
     writeFileSync(values.out ?? '', `${JSON.stringify(content, null, 2)}\n`);
     console.log(`build-release-content: wrote ${values.out}`);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(messageOf(error));
     process.exit(1);
   }
 };

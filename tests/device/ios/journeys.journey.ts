@@ -63,6 +63,11 @@ import { MAX_STUDENTS } from '../../../src/lib/grouping';
 import { FLOOR_PX } from '../../../src/scripts/projector';
 import { measureBoardScript, type BoardGeometry } from '../../board-geometry';
 import { searched } from '../../source-files';
+import {
+  IOS_ZOOM_FLOOR_PX,
+  measureTypedFields,
+  measureTypedFieldsScript,
+} from '../../typed-fields';
 import { shootDevice } from './evidence';
 import { startIosSession, type DeviceSession } from './session';
 import { waitFor } from './webdriver';
@@ -627,6 +632,16 @@ describe.each(LOCALES)(
       // classroom-groups-controls.spec.ts's own "only the preference is
       // stored, never class data" test, which checks the student count but
       // not the class name field.
+      //
+      // The key goes first, or the "a real write happened" control below is
+      // satisfied by a key Journey 3 wrote earlier in this session, or by any
+      // past run: this is the phone's real localStorage, and nothing clears it.
+      const keyBefore = await session.driver.executeScript<string | null>(
+        `localStorage.removeItem('cg-howto-collapsed'); return localStorage.getItem('cg-howto-collapsed');`,
+      );
+      expect(keyBefore, `the key is gone before the click (${locale})`).toBe(
+        null,
+      );
       const howToToggle = await session.driver.findElement('#cg-howto-toggle');
       await session.interaction.click(howToToggle);
 
@@ -658,28 +673,30 @@ describe.each(LOCALES)(
     // iOS-only proofs (11-13): the reason this whole runner exists. Bounded
     // by the SAME dual-mode limitation as the rest of this file -- see this
     // file's own module doc, and design doc s5a.
-    test('Journey 11 -- iOS-only, no zoom on focus: every text/number input has a real computed font-size >= 16px (tap-triggered focus and scale change are NOT verified in dom-dispatch mode)', async () => {
+    // The fields are the ones `zoom-on-focus.spec.ts` checks in CI, from the
+    // one definition in tests/typed-fields.ts. This journey used to check only
+    // `input[type=text|number]`, so the one leg on real WebKit skipped every
+    // select, textarea and email field (#390).
+    test('Journey 11 -- iOS-only, no zoom on focus: every typed field has a real computed font-size >= 16px (tap-triggered focus and scale change are NOT verified in dom-dispatch mode)', async () => {
       logMode(`Journey 11 (${locale})`);
       await session.navigateToPath(path);
 
-      const inputs = await session.driver.executeScript<
-        { id: string; fontSize: number }[]
-      >(
-        `return Array.from(document.querySelectorAll('input[type="text"], input[type="number"]')).map((el) => ({ id: el.id, fontSize: parseFloat(getComputedStyle(el).fontSize) }));`,
-      );
+      const fields = await session.driver.executeScript<
+        ReturnType<typeof measureTypedFields>
+      >(measureTypedFieldsScript());
       // Guards against a silently-empty match set making the loop below
       // vacuously true -- a selector typo would otherwise pass having
       // checked nothing at all.
       expect(
-        inputs.length,
-        `at least one text/number input was found to check (${locale})`,
+        fields.length,
+        `at least one typed field was found to check (${locale})`,
       ).toBeGreaterThan(0);
 
-      for (const input of inputs) {
+      for (const { field, fontSize } of fields) {
         expect(
-          input.fontSize,
-          `#${input.id} computed font-size (${locale})`,
-        ).toBeGreaterThanOrEqual(16);
+          fontSize,
+          `${field} computed font-size (${locale})`,
+        ).toBeGreaterThanOrEqual(IOS_ZOOM_FLOOR_PX);
       }
     });
 

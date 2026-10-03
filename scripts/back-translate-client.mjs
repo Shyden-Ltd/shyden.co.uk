@@ -8,6 +8,7 @@ import {
   libreTranslateBody,
   translatedTexts,
 } from '../src/lib/i18n/back-translate.ts';
+import { messageOf } from './errors.mjs';
 
 /** Texts per request: small enough that one slow batch is not the whole run. */
 const BATCH = 25;
@@ -15,12 +16,25 @@ const BATCH = 25;
 /**
  * One request, its JSON answer, and the engine's own words when it refuses.
  *
+ * An engine that cannot be reached is named with the reason: `fetch` rejects
+ * with "fetch failed" and keeps `ECONNREFUSED` on `cause`, so a run whose
+ * container was not started printed `✗ fetch failed` and nothing else (#390).
+ *
  * @param {string} url
  * @param {RequestInit} [init]
  * @returns {Promise<unknown>}
  */
 export async function call(url, init = {}) {
-  const response = await fetch(url, init);
+  /** @type {Response} */
+  let response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    const cause = error instanceof Error ? (error.cause ?? error) : error;
+    throw new Error(
+      `${init.method ?? 'GET'} ${url} could not be reached: ${messageOf(cause)}`,
+    );
+  }
   const text = await response.text();
   let body;
   try {

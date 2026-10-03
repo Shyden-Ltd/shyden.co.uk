@@ -144,6 +144,37 @@ export function enumerationArgs(argv = []) {
 }
 
 /**
+ * `--list` prints a line per test, about 150 bytes each, so its output grows
+ * with the suite. At 7039 tests it passed spawnSync's 1 MiB default, and Node
+ * killed the child: no exit status, ENOBUFS, an empty stderr, and every shard
+ * of a green run failed (#438). The figure release-inventory.mjs and
+ * build-release-content.mjs read git with.
+ */
+export const LIST_MAX_BUFFER = 256 * 1024 * 1024;
+
+/**
+ * @typedef {(
+ *   command: string,
+ *   args: readonly string[],
+ *   options: import('node:child_process').SpawnSyncOptionsWithStringEncoding,
+ * ) => import('node:child_process').SpawnSyncReturns<string>} Spawn
+ */
+
+/**
+ * The unfiltered `playwright test --list` this run is reconciled against.
+ *
+ * @param {readonly string[]} argv
+ * @param {Spawn} spawn
+ */
+export function listSuite(argv = [], spawn = spawnSync) {
+  return spawn(
+    'npx',
+    ['playwright', 'test', '--list', ...enumerationArgs(argv)],
+    { encoding: 'utf8', maxBuffer: LIST_MAX_BUFFER },
+  );
+}
+
+/**
  *  Did the caller ask for a subset of the suite?
  *
  *  @param {readonly string[]} argv
@@ -157,6 +188,45 @@ export function isFilteredRun(argv = []) {
     if (!arg.includes('=') && VALUE_FLAGS.has(name)) i += 1; // skip its value
   }
   return false;
+}
+
+/**
+ * The value each attempt flag must keep in an evidence run.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+const ONE_ATTEMPT = { '--retries': '0', '--repeat-each': '1' };
+
+/**
+ * An evidence run captures exactly one attempt of each test, so it refuses a
+ * flag that would make a second.
+ *
+ * `shoot` (tests/e2e/evidence.ts) numbers a test's captures per worker, and
+ * Playwright runs a retry in a fresh worker, so a second attempt writes its
+ * `01-…`, `02-…` over the first's files while the manifest keeps both
+ * attempts' rows: the sign-off page shows one picture twice, under a test it
+ * may not describe. A repeat collides the same way. An ordinary run captures
+ * nothing, so it keeps every flag.
+ *
+ * @param {readonly string[]} argv
+ * @param {Record<string, string | undefined>} env
+ * @returns {'one attempt' | 'not an evidence run'}
+ */
+export function oneAttemptEach(argv, env) {
+  if (!env.EVIDENCE_DIR) return 'not an evidence run';
+  for (let i = 0; i < argv.length; i += 1) {
+    const [name, inline] = argv[i].split('=');
+    if (!Object.hasOwn(ONE_ATTEMPT, name)) continue;
+    const value = inline ?? argv[i + 1];
+    if (value === undefined) throw new Error(`${name} was given no value`);
+    if (value !== ONE_ATTEMPT[name])
+      throw new Error(
+        `an evidence run takes one attempt of each test: ${name}=${value} ` +
+          'would write a second attempt’s captures over the first’s, and keep ' +
+          'both in the manifest',
+      );
+  }
+  return 'one attempt';
 }
 
 /**
@@ -235,7 +305,12 @@ const RULE = '='.repeat(72);
  *   executed: number | null,
  *   filtered: boolean,
  *   playwrightExitCode: number,
- *   listing?: { status: number | null, stderr?: string } | null,
+ *   listing?: {
+ *     status: number | null,
+ *     stderr?: string,
+ *     signal?: string | null,
+ *     error?: Error & { code?: string },
+ *   } | null,
  * }} verdict
  */
 export function reconcile({
@@ -255,12 +330,22 @@ export function reconcile({
   // genuinely had that many tests. Fatal even on a narrowed run: a number that
   // cannot be believed is worse than no number, because it prints like one.
   if (listing && listing.status !== 0) {
+    // No status means the child never exited on its own: Node killed it, and
+    // said why in `error` and `signal`, never in stderr (#438).
+    const ended =
+      listing.status === null
+        ? `was stopped before it exited (${
+            [listing.error?.code ?? listing.error?.message, listing.signal]
+              .filter(Boolean)
+              .join(', ') || 'no error or signal reported'
+          })`
+        : `exited ${listing.status}`;
     return {
       exitCode: 1,
       partial: false,
       message:
         `\n${RULE}\n  E2E RECONCILIATION FAILED — the suite could not be enumerated\n\n` +
-        `  \`playwright test --list\` exited ${listing.status}. Whatever it printed\n` +
+        `  \`playwright test --list\` ${ended}. Whatever it printed\n` +
         '  cannot be held against this run.\n\n' +
         `${(listing.stderr ?? '').trim() || '  (it printed nothing on stderr)'}\n${RULE}\n`,
     };
@@ -379,15 +464,12 @@ function main() {
   // Refuses a shard it could not account for BEFORE spending a run on it:
   // the account written below needs to say which shard this was (#163).
   shardOf(argv);
+  oneAttemptEach(argv, process.env);
   const filtered = isFilteredRun(argv);
   const { passthrough, reporter } = mergeReporters(argv);
 
   // Same suite, no filters: this is the number the run has to answer to.
-  const listing = spawnSync(
-    'npx',
-    ['playwright', 'test', '--list', ...enumerationArgs(argv)],
-    { encoding: 'utf8' },
-  );
+  const listing = listSuite(argv);
   const enumerated = parseListTotal(listing.stdout);
 
   const {
@@ -455,7 +537,8 @@ function main() {
           '  Without it there is no count to check, so this cannot be treated as\n' +
           `  a pass.\n${RULE}\n`,
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // #44 wants the distribution before anyone changes a timeout. Emitted
@@ -523,8 +606,11 @@ function main() {
       );
     // Neither verdict masks the other: reconcile keeps its exit code, and a
     // dead collector turns an otherwise-clean run red on its own.
-    process.exit(verdict.exitCode || (liveness.ok ? 0 : 1));
+    process.exitCode = verdict.exitCode || (liveness.ok ? 0 : 1);
   } finally {
+    // Reached because the verdicts above set `process.exitCode` and return:
+    // `process.exit()` ends the process without running any `finally`, and
+    // every run left this directory behind while this said otherwise (#390).
     // An evidence directory is the operator's, not ours: it holds the captures
     // and the video the sign-off page is built from.
     if (ephemeral) rmSync(reportDir, { recursive: true, force: true });

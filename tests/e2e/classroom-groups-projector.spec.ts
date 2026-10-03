@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { chooseSpeed, makeGroups } from '../make-groups';
 import {
   withGroups,
   rosterForSpillover,
@@ -365,10 +366,9 @@ test.describe('the reveal', () => {
     // is thrown away by that navigation. The plan's own snippet set it
     // first and would have passed only if suppression never worked.
     await withGroups(page);
-    await page.locator('#cg-sound-toggle').click();
     // A <select>, not a checkbox — the plan's snippet used `.check()` on a
     // label that is an <option>. The real control is `#cg-speed`.
-    await page.selectOption('#cg-speed', 'skip');
+    await chooseSpeed(page, 'skip');
     await page.getByRole('button', { name: 'Full screen' }).click();
     await expect(page.locator('#cg-board .group').first()).not.toHaveClass(
       /revealing/,
@@ -664,13 +664,7 @@ const boardOf = async (
   size: string,
 ) => {
   await page.goto('/classroom-groups');
-  await page.fill('#cg-count', count);
-  await page.fill('#cg-size', size);
-  const soundBody = page.locator('#cg-sound-body');
-  if (await soundBody.isHidden())
-    await page.locator('#cg-sound-toggle').click();
-  await page.selectOption('#cg-speed', 'skip');
-  await page.click('#cg-go');
+  await makeGroups(page, count, size);
   await expect(page.locator('#cg-results .group').first()).toBeVisible();
   await page
     .getByRole('button', { name: /Full screen|Layar penuh/ })

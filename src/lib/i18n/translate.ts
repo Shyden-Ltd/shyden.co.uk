@@ -1,6 +1,7 @@
 import type { MvpLocale } from './metadata';
 // With their extensions: the DeepL scripts load this module under plain Node,
 // which resolves nothing without one.
+import { catalogueLeaves } from '../catalogue-leaves.ts';
 import { CSV_LOCALES } from '../csv-locale.ts';
 import { en } from './en.ts';
 import {
@@ -21,8 +22,7 @@ import { siteEn } from './site.ts';
  * free-tier quota. Same split CLAUDE.md already requires of `gloryPoints.ts`
  * and `grouping.ts` against the page scripts.
  *
- * Built and NOT run — #21 Stage 5, operator instruction 2026-09-09. No
- * translation is committed by this stage; #22 is what runs it.
+ * Built for #21 Stage 5 and run first by #22, which drafted zh, vi and th.
  *
  * This module is CLI-only and must stay out of the browser bundle, which
  * `tests/unit/translate.test.ts` asserts by scanning `src/` for importers.
@@ -131,19 +131,8 @@ export const DO_NOT_TRANSLATE: readonly string[] = [
  */
 const PROTECT_TAG = 'x';
 
-/**
- * Protected terms, longest first.
- *
- * When one term is a prefix of another (`Shyden` of `Shyden Studio`),
- * wrapping the short one first yields `<x>Shyden</x> Studio` and hands
- * "Studio" to the translator on its own, which is how a name comes back
- * half-translated. `protectTerms` sorts any list it is given the same way.
- */
-const PROTECTED_LONGEST_FIRST: readonly string[] = [...DO_NOT_TRANSLATE].sort(
-  (a, b) => b.length - a.length,
-);
-
-const escapeForRegExp = (text: string): string =>
+/** `text` as a regular expression that matches it literally. */
+export const escapeForRegExp = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -174,34 +163,36 @@ export const unescapeXml = (text: string): string =>
  * emitted, so the list protected nothing. The zh/vi/th run returned "Shyden"
  * intact in all three languages by DeepL's own proper-noun handling -- luck,
  * not a control, and luck that runs out the first time someone writes "Glory
- * Points" into the catalogue. Only one of the six terms occurs in today's
- * copy, which is why nothing looked wrong.
+ * Points" into the catalogue. Only one protected term occurred in the copy of
+ * the day, which is why nothing looked wrong.
  *
- * The lookbehind stops a shorter term matching inside a span a longer one
- * already wrapped: in `<x>Shyden Studio</x>`, `Shyden` sits immediately after
- * `<x>` and is skipped.
+ * One pass over the text with every term in one alternation, longest first.
+ * A regular expression tries its alternatives in order at each position, so
+ * where one term starts another (`Shyden` of `Shyden Studio`) the longer
+ * wins, and a matched span is consumed whole, so no term is ever wrapped
+ * inside another. A loop over the terms, one replacement each, wrapped a
+ * shorter term again wherever it sat in the middle of a longer one (#390).
  *
  * `terms` defaults to the shipped list. It is a parameter so longest-first
- * stays provable when the shipped list holds no prefix pair, as it has not
- * since #370.
+ * stays provable when the shipped list holds no pair that overlaps, as it has
+ * not since #370. An empty term matches everywhere and protects nothing, so it
+ * is dropped.
  */
 export function protectTerms(
   text: string,
-  terms: readonly string[] = PROTECTED_LONGEST_FIRST,
+  terms: readonly string[] = DO_NOT_TRANSLATE,
 ): string {
-  let out = text;
-  for (const term of [...terms].sort((a, b) => b.length - a.length)) {
-    // The term is escaped the same way the text was, or a name carrying an
-    // ampersand ("Salt & Pepper") never matches the escaped copy it sits in.
-    out = out.replace(
-      new RegExp(
-        `(?<!<${PROTECT_TAG}>)${escapeForRegExp(escapeXml(term))}(?!</${PROTECT_TAG}>)`,
-        'g',
-      ),
-      `<${PROTECT_TAG}>${escapeXml(term)}</${PROTECT_TAG}>`,
-    );
-  }
-  return out;
+  // Each term is escaped the same way the text was, or a name carrying an
+  // ampersand ("Salt & Pepper") never matches the escaped copy it sits in.
+  const alternatives = terms
+    .filter((term) => term !== '')
+    .sort((a, b) => b.length - a.length)
+    .map((term) => escapeForRegExp(escapeXml(term)));
+  if (alternatives.length === 0) return text;
+  return text.replace(
+    new RegExp(alternatives.join('|'), 'g'),
+    (term) => `<${PROTECT_TAG}>${term}</${PROTECT_TAG}>`,
+  );
 }
 
 /**
@@ -212,6 +203,38 @@ export function protectTerms(
  */
 export const unprotectTerms = (text: string): string =>
   text.replace(new RegExp(`</?${PROTECT_TAG}>`, 'g'), '');
+
+/**
+ * The drafts in a DeepL answer, checked rather than trusted, then unwrapped.
+ *
+ * The script pairs each draft with the sentence sent in the same position, so
+ * an answer one short would put every later draft on the wrong English, and
+ * each would still read as a good sentence. So the count must equal the texts
+ * sent, and every entry must carry a string. The errors name the shape, never
+ * the content: the script reports a failed request by its status alone,
+ * because a DeepL answer can echo the request.
+ */
+export function deeplDrafts(response: unknown, expected: number): string[] {
+  const translations =
+    response && typeof response === 'object' && 'translations' in response
+      ? response.translations
+      : undefined;
+  if (!Array.isArray(translations))
+    throw new Error('DeepL answered without a list of translations');
+  if (translations.length !== expected)
+    throw new Error(
+      `DeepL returned ${translations.length} translations for ${expected} texts`,
+    );
+  return translations.map((entry: unknown, index) => {
+    const text =
+      entry && typeof entry === 'object' && 'text' in entry
+        ? entry.text
+        : undefined;
+    if (typeof text !== 'string')
+      throw new Error(`translation ${index} has no text`);
+    return unescapeXml(unprotectTerms(text));
+  });
+}
 
 /** A slot in a sentence: `{names}`, `{n}`. */
 const SLOT = /\{[A-Za-z_][A-Za-z0-9_]*\}/g;
@@ -252,22 +275,6 @@ export function buildRequestBody(
   };
 }
 
-/**
- * CSV vocabulary keys a translator must never be handed.
- *
- * `sex` holds the two TOKENS a teacher types into a spreadsheet cell -- `M`
- * and `F` in English, `L`/`P` in Indonesian (from laki-laki / perempuan,
- * matching what the roster table shows on the Indonesian page). Sent to DeepL
- * a bare `M` comes back as a guess about a letter, and the tokens carry a
- * cross-file invariant a translator cannot see: they must agree with
- * `rosterSexMale`/`rosterSexFemale` in the same locale's own catalogue, or the
- * file a teacher exports disagrees with the table they exported it from.
- *
- * Everything else in the table is ordinary words -- column headers, `yes`,
- * `no`, the class comment -- and goes through DeepL like any other copy.
- */
-export const CSV_KEYS_NOT_TRANSLATED: readonly string[] = ['sex'];
-
 /** A letter in any script — Latin, Han, Thai. Not a digit and not punctuation. */
 const HAS_A_LETTER = /\p{L}/u;
 
@@ -290,28 +297,6 @@ export const needsTranslation = (value: unknown): value is string =>
   typeof value === 'string' && HAS_A_LETTER.test(value);
 
 /**
- * Every key the harness cannot do itself, as a dotted path.
- *
- * The point of the report: a machine-translated catalogue that silently
- * carries copy nobody translated looks complete. This names those keys, so
- * the gap is a list somebody works through rather than a discovery months
- * later.
- *
- * Paths match the shape `tests/unit/i18n.test.ts` already reports
- * (`errors.TOO_MANY_STUDENTS`, `list[0]`), so a name from one is a name in
- * the other.
- */
-export function untranslatedKeys(table: unknown, path = ''): string[] {
-  if (Array.isArray(table))
-    return table.flatMap((v, i) => untranslatedKeys(v, `${path}[${i}]`));
-  if (table && typeof table === 'object')
-    return Object.entries(table).flatMap(([k, v]) =>
-      untranslatedKeys(v, path ? `${path}.${k}` : k),
-    );
-  return needsTranslation(table) ? [] : [path];
-}
-
-/**
  * What the harness sends for one catalogue entry: copy as it is, a message as
  * the sentences it can say, and nothing for a symbol or a non-string.
  */
@@ -331,27 +316,21 @@ export function translationUnits(value: unknown): string[] {
  * footer, homepage and 404 copy came to be invisible to the translator: they
  * live in `site.ts`. The CSV vocabulary is the third catalogue: every word a
  * downloaded file carries has to match the language of the page it came
- * from, which makes it copy. Its `sex` tokens are the one part held back --
- * see CSV_KEYS_NOT_TRANSLATED.
+ * from, which makes it copy. Its `sex` letters go too: `M` and `F` are also
+ * `en.rosterSexMale` and `rosterSexFemale`, the letters the roster table
+ * shows, and `tests/unit/csv.test.ts` holds each locale's pair equal. A
+ * hold-back here (`CSV_KEYS_NOT_TRANSLATED`, until #390) kept nothing from
+ * the translator, because the same two strings arrived from `en`.
  *
  * A Set: the same word appears under several keys, and DeepL charges per
  * character sent, not per distinct string.
  */
 export function translatableSentences(): ReadonlySet<string> {
-  const csv = Object.fromEntries(
-    Object.entries(CSV_LOCALES.en).filter(
-      ([key]) => !CSV_KEYS_NOT_TRANSLATED.includes(key),
+  return new Set(
+    [en, siteEn, CSV_LOCALES.en].flatMap((table) =>
+      catalogueLeaves(table).flatMap(([, value]) => translationUnits(value)),
     ),
   );
-  return new Set([en, siteEn, csv].flatMap(unitsIn));
-}
-
-/** Every unit a catalogue sends, walked depth-first in its own key order. */
-function unitsIn(table: unknown): string[] {
-  if (Array.isArray(table)) return table.flatMap(unitsIn);
-  if (table && typeof table === 'object')
-    return Object.values(table).flatMap(unitsIn);
-  return translationUnits(table);
 }
 
 /**

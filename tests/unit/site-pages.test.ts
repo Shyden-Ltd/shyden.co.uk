@@ -1,6 +1,3 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   pageNames,
@@ -8,8 +5,10 @@ import {
   deployedRoutes,
   headingFor,
   HEADING_FOR,
+  TITLE_FOR,
 } from '../site-pages';
 import { LOCALES } from '../../src/lib/i18n';
+import { scratchDir } from '../scratch-dir';
 
 describe('the site page list is derived from src/pages', () => {
   it('reads real pages off disk', () => {
@@ -34,7 +33,7 @@ describe('the page list refuses to answer blind (#84)', () => {
     // A real empty directory, not a mock: `locale-routing.test.ts` loops this
     // list five times and `thai-typography.spec.ts` builds its routes from it,
     // and all six tests passed green while it was empty.
-    const empty = mkdtempSync(join(tmpdir(), 'shyden-pages-'));
+    const empty = scratchDir('shyden-pages-');
     expect(() => pageNames(empty)).toThrow(/broken/);
   });
 });
@@ -47,6 +46,11 @@ describe('the deployed-route table is derived, not written out (#89)', () => {
     // smoked by curl in deploy-prod.yml and never rendered in a browser by
     // either gate. Measured: `--list` reported 28 tests before and after.
     expect(Object.keys(HEADING_FOR).sort()).toEqual([...sitePaths()].sort());
+  });
+
+  it('knows a title for every page the site serves (#390 F130)', () => {
+    // locale-parity.spec.ts checked <title> on a hand-written two of three.
+    expect(Object.keys(TITLE_FOR).sort()).toEqual([...sitePaths()].sort());
   });
 
   it('covers every page in every locale', () => {

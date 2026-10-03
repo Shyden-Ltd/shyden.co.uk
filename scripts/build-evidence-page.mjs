@@ -29,6 +29,8 @@
 
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { parseArgs } from 'node:util';
+import { die, messageOf } from './errors.mjs';
 import { EVIDENCE_MANIFEST, EVIDENCE_REPORT } from './evidence-files.mjs';
 import { signOffOf, standingOf } from './evidence-signoff.mjs';
 
@@ -1408,32 +1410,113 @@ export const imageSize = (bytes) => {
   return null;
 };
 
+const USAGE =
+  'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--published <listing.json>] [--assets <map.json>]\n' +
+  '       build-evidence-page.mjs --plan --evidence <dir> --out <file.html>';
+
 /**
- * @param {string} name
- * @param {string} [fallback]
+ * Text read from `file`, or a refusal naming it and `what` it was meant to be.
+ *
+ * @param {string} file
+ * @param {string} what
  */
-const arg = (name, fallback) => {
-  const i = process.argv.indexOf(`--${name}`);
-  return i > -1 ? process.argv[i + 1] : fallback;
+const textAt = (file, what) => {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `build-evidence-page: could not read ${what} at ${file}: ${messageOf(error)}`,
+    );
+  }
+};
+
+/**
+ * JSON parsed from `text`, or a refusal naming `where` it came from. A bare
+ * `JSON.parse` said only "Unexpected end of JSON input", which names no file.
+ *
+ * @param {string} text
+ * @param {string} where
+ * @returns {any}
+ */
+const jsonFrom = (text, where) => {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      `build-evidence-page: ${where} is not JSON: ${messageOf(error)}`,
+    );
+  }
+};
+
+/**
+ * @param {string} file
+ * @param {string} what
+ */
+const jsonAt = (file, what) =>
+  jsonFrom(textAt(file, what), `${what} at ${file}`);
+
+/**
+ * The paths an artifact already serves, from a saved file listing, refused
+ * unless it is a list of them: an object in it reached `reconcileFiles` and
+ * failed as `path.startsWith is not a function` (#390).
+ *
+ * @param {string} file
+ * @returns {string[]}
+ */
+const listingAt = (file) => {
+  const listing = jsonAt(file, 'the published file listing');
+  if (
+    !Array.isArray(listing) ||
+    !listing.every((path) => typeof path === 'string')
+  ) {
+    throw new Error(
+      `build-evidence-page: the published file listing at ${file} is not a list of paths -- ` +
+        `got ${JSON.stringify(listing).slice(0, 200)}`,
+    );
+  }
+  return listing;
 };
 
 const main = () => {
-  const dir = arg('evidence');
-  const contentPath = arg('content');
-  const out = arg('out');
-  // The paths the artifact already serves, saved from a file listing. Absent on
-  // a first publish; without it nothing can be removed, only added.
-  const publishedPath = arg('published');
-  // Two passes, because an asset id is minted by the upload and cannot be
-  // known before it (#268). `--plan` writes what to upload; the upload answers
-  // with a `/_blob/<id>` for each; `--assets` builds the page from that map.
-  const planning = process.argv.includes('--plan');
-  const assetsPath = arg('assets');
+  // Parsed strictly (#390). The hand-rolled reader ignored an option it did
+  // not know, so a mistyped `--publishd` cost the publish every removal in
+  // silence, and took the next word whatever it was, so `--evidence --out p`
+  // read a directory called `--out`.
+  /** @type {{ evidence?: string, content?: string, out?: string,
+   *   published?: string, plan?: boolean, assets?: string }} */
+  let values;
+  try {
+    ({ values } = parseArgs({
+      options: {
+        evidence: { type: 'string' },
+        content: { type: 'string' },
+        out: { type: 'string' },
+        published: { type: 'string' },
+        plan: { type: 'boolean' },
+        assets: { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    console.error(`build-evidence-page: ${messageOf(error)}`);
+    console.error(USAGE);
+    process.exit(2);
+  }
+  const {
+    evidence: dir,
+    content: contentPath,
+    out,
+    // The paths the artifact already serves, saved from a file listing. Absent
+    // on a first publish; without it nothing can be removed, only added.
+    published: publishedPath,
+    // Two passes, because an asset id is minted by the upload and cannot be
+    // known before it (#268). `--plan` writes what to upload; the upload
+    // answers with a `/_blob/<id>` for each; `--assets` builds the page from
+    // that map.
+    plan: planning = false,
+    assets: assetsPath,
+  } = values;
   if (!dir || !out || (!planning && !contentPath)) {
-    console.error(
-      'usage: build-evidence-page.mjs --evidence <dir> --content <file.json> --out <file.html> [--published <listing.json>] [--assets <map.json>]\n' +
-        '       build-evidence-page.mjs --plan --evidence <dir> --out <file.html>',
-    );
+    console.error(USAGE);
     process.exit(2);
   }
   if (planning && assetsPath) {
@@ -1443,16 +1526,51 @@ const main = () => {
     );
     process.exit(2);
   }
+  try {
+    build({ dir, out, contentPath, publishedPath, planning, assetsPath });
+  } catch (error) {
+    // Every refusal in here is a decision, not a crash. An unhandled throw
+    // prints `at main (...)` under it, which shows the reader an internal
+    // error where a one-line answer belongs (#227).
+    die(messageOf(error));
+  }
+};
 
-  const report = JSON.parse(readFileSync(join(dir, EVIDENCE_REPORT), 'utf8'));
+/**
+ * The work, once the arguments are known. `contentPath` is absent only on a
+ * plan pass: `main()` refuses a build pass without it.
+ *
+ * @param {{ dir: string, out: string, contentPath: string | undefined,
+ *   publishedPath: string | undefined, planning: boolean,
+ *   assetsPath: string | undefined }} command
+ */
+const build = ({
+  dir,
+  out,
+  contentPath,
+  publishedPath,
+  planning,
+  assetsPath,
+}) => {
+  const reportFile = join(dir, EVIDENCE_REPORT);
+  const report = jsonAt(reportFile, 'the evidence report');
   // Before any capture is read: an earlier run's rows are set aside here, so a
-  // capture of theirs that has gone since is never reached for.
+  // capture of theirs that has gone since is never reached for. Blank lines are
+  // skipped, never removed first, so a refusal names the line an editor shows.
+  const manifestFile = join(dir, EVIDENCE_MANIFEST);
   const { current: manifest, earlier } = capturesOfThisRun(
-    readFileSync(join(dir, EVIDENCE_MANIFEST), 'utf8')
-      .trim()
+    textAt(manifestFile, 'the evidence manifest')
       .split('\n')
-      .filter(Boolean)
-      .map((l) => JSON.parse(l)),
+      .flatMap((line, i) =>
+        line.trim()
+          ? [
+              jsonFrom(
+                line,
+                `the evidence manifest at ${manifestFile} line ${i + 1}`,
+              ),
+            ]
+          : [],
+      ),
     report,
   );
   // Before any capture is read: a missing recording refuses the whole page.
@@ -1487,11 +1605,10 @@ const main = () => {
     );
   // Only now: `--plan` needs no content, and reading it would refuse a plan
   // over an argument the plan does not use.
-  if (!contentPath) {
-    console.error('build-evidence-page: --content is required unless --plan');
-    process.exit(2);
-  }
-  const content = JSON.parse(readFileSync(contentPath, 'utf8'));
+  const content = jsonAt(
+    /** @type {string} */ (contentPath),
+    'the page content',
+  );
 
   // Read ONCE: the same buffer answers what the file is and how big it
   // renders. Its bytes travel through the asset store (#368), not the page.
@@ -1519,18 +1636,14 @@ const main = () => {
   // names is published, or the build has already refused above.
   const files = reconcileFiles({
     desired: {},
-    published: publishedPath
-      ? JSON.parse(readFileSync(publishedPath, 'utf8'))
-      : [],
+    published: publishedPath ? listingAt(publishedPath) : [],
   });
   assertPublishLimits({ files, sizeOf: (source) => statSync(source).size });
   // One map answers both kinds; each is checked both ways against its own
   // plan, so a shot missing from it, or one no capture of this run asked for,
   // refuses exactly as a recording does.
   /** @type {Record<string, string>} */
-  const uploaded = assetsPath
-    ? JSON.parse(readFileSync(assetsPath, 'utf8'))
-    : {};
+  const uploaded = assetsPath ? jsonAt(assetsPath, 'the asset map') : {};
   /** @param {(key: string) => boolean} keep */
   const part = (keep) =>
     Object.fromEntries(Object.entries(uploaded).filter(([key]) => keep(key)));

@@ -611,21 +611,19 @@ if (form) {
       ? serialiseForCompare(roster)
       : JSON.stringify({ count: readCount() });
 
-  // `leftovers` is the one `ToolState` field a teacher can actually change
-  // today: the radios now live inside `#cg-grouping-body` (Stage 2, Task 4
-  // rehomed them there, unchanged), and the header must not go on reporting
-  // "none" once one is chosen. This listener needed NO change for that
-  // move: it delegates on `#cg-form`'s own `change` event and
-  // `readRadio` queries `input[name="leftovers"]:checked` scoped to the
-  // whole form, neither of which cares how deep the radio sits inside it.
-  // Calls the SAME `sectionState` that produced the header's build-time
-  // text (see ClassroomGroupsPage.astro's own `initialToolState`) with
-  // every other field left at that same default -- no roster exists yet,
-  // and nothing can mark the roster dirty until a later stage gives it
-  // something to lose -- so the two can never disagree by computing the
-  // sentence two different ways. `sexMode` stays `'off'` here for the same
-  // reason `readSexMode` always returns `'off'` -- see that function's own
-  // comment, above, for the rest of the reasoning.
+  // The Grouping options header names the two choices made inside that
+  // section: the sex switches and the leftovers radios. It must never go on
+  // reporting "none" once either is chosen. The form's `change` handler
+  // (below) refreshes it for both. The switches carry no `name`, so they are
+  // matched by identity; until #390 only the radios were, and ticking "Mix
+  // boys and girls evenly" left the header saying "none" in every locale.
+  // `updateSexSwitches` refreshes it too, because a roster edit that
+  // disables the switches changes what `readSexMode` returns without any
+  // switch changing. Calls the SAME `sectionState` that produced the
+  // header's build-time text (see ClassroomGroupsPage.astro's own
+  // `initialToolState`), so the two can never disagree by computing the
+  // sentence two different ways; the roster fields it leaves at their
+  // defaults belong to the Student details header, not this one.
   const groupingStateEl = document.querySelector<HTMLElement>(
     '#cg-grouping .state',
   );
@@ -768,6 +766,19 @@ if (form) {
   };
 
   /**
+   * The fields' problem, but only while a teacher can act on it.
+   *
+   * A list locks the fields (AC14) and then decides alone who is grouped, so
+   * whatever text the locked fields still hold refuses nothing: it neither
+   * holds the shuffle nor shows a refusal. Both readers ask HERE rather than
+   * checking the lock themselves (#390 F68): the button used to read the
+   * locked fields directly, and a number refused before the list existed
+   * kept it disabled with its stated reason hidden.
+   */
+  const standingNumbersProblem = (): NumberSetsProblem | null =>
+    studentsBoxLocked(getRoster()) ? null : readNumberFields().problem;
+
+  /**
    * The ONE writer of `goButton.disabled`, reading BOTH things that can
    * stand between a teacher and a shuffle.
    *
@@ -781,7 +792,7 @@ if (form) {
     // `readonly Student[]` and `rosterProblems` takes a mutable one, which
     // is the same reason `updateRosterValidation` below spreads it too.
     const rosterStops = rosterProblems([...getRoster()], t).length > 0;
-    const numbersStop = readNumberFields().problem !== null;
+    const numbersStop = standingNumbersProblem() !== null;
     goButton.disabled = rosterStops || numbersStop;
     // ...and the ONE writer of the reason too, for the reason it is the one
     // writer of `disabled`: two writers would be rivals, and a button that
@@ -807,7 +818,7 @@ if (form) {
    * already-populated.
    */
   const updateNumbersValidation = () => {
-    const { problem } = readNumberFields();
+    const problem = standingNumbersProblem();
     if (problem === null) {
       numbersProblemEl.hidden = true;
       numbersProblemEl.textContent = '';
@@ -828,8 +839,10 @@ if (form) {
    * than deciding for itself.
    *
    * A locked field cannot be edited, so a refusal it was showing is about
-   * text nobody can change any more: it is cleared, leaving the roster's own
-   * problems as the only thing that can hold the button.
+   * text nobody can change any more: `standingNumbersProblem` drops it,
+   * leaving the roster's own problems as the only thing that can hold the
+   * button. Unlocking re-validates the same way, so text the class can no
+   * longer hold is refused again with its reason on screen.
    */
   const updateNumberFields = () => {
     const locked = studentsBoxLocked(getRoster());
@@ -842,11 +855,7 @@ if (form) {
       field.help.hidden = locked;
     }
     numbersLockedEl.hidden = !locked;
-    if (locked) {
-      numbersProblemEl.hidden = true;
-      numbersProblemEl.textContent = '';
-    }
-    updateGoButton();
+    updateNumbersValidation();
   };
 
   const updateStudentsBox = () => {
@@ -908,6 +917,9 @@ if (form) {
       sexWhyEl.hidden = why === null;
       sexWhyEl.textContent = why ?? '';
     }
+    // A disabled switch no longer counts (`readSexMode`), so the header
+    // that names it must drop it too.
+    updateGroupingHeader();
   };
 
   /**
@@ -1053,8 +1065,9 @@ if (form) {
    * three predicates that write it: `updateStaleness` clears it, and
    * `updateStaleness` runs during setup -- a `const` declared later is in
    * its temporal dead zone at that moment and throws, which nothing in this
-   * repo would have caught before a visitor did (there is no type checker,
-   * and `astro build` strips types without checking them).
+   * repo would have caught before a visitor did (`astro check` cannot see
+   * the order a function is called in, and `astro build` strips types
+   * without checking them).
    *
    * ONE element for all three exits, because a teacher does one thing at a
    * time and three boxes would be three places to look.
@@ -1115,7 +1128,12 @@ if (form) {
     finishDealNow();
     const target = e.target as HTMLInputElement;
     if (target.name === 'mode') showFor('mode', target.value);
-    if (target.name === 'leftovers') updateGroupingHeader();
+    if (
+      target.name === 'leftovers' ||
+      target === sexMix ||
+      target === sexSeparate
+    )
+      updateGroupingHeader();
     updateStaleness();
   });
   // The brief's own instruction: recompute on every `change` AND `input`
@@ -1178,10 +1196,13 @@ if (form) {
         ? rosterOpenProblem(getRoster().length, readCount(), t)
         : null;
       if (problem) {
+        // Revealed, THEN written: a live region is never announced as
+        // already-populated (updateNumbersValidation's ordering). Written the
+        // other way round, a screen reader said nothing at all (#390 F108).
+        studentsLimitEl.hidden = false;
         if (studentsLimitEl.textContent !== problem) {
           studentsLimitEl.textContent = problem;
         }
-        studentsLimitEl.hidden = false;
         // The section's own open/closed state is untouched: "refuses to
         // open" means exactly that -- `studentsBody.hidden` and
         // `aria-expanded` both stay exactly as they were, so a teacher who

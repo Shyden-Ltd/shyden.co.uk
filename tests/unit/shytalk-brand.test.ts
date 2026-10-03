@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filesUnder, nonEmpty, searched } from '../source-files';
 import { codeWithoutComments } from './source-text';
-import { SHYTALK_MARK, asComputedRgb } from '../../src/lib/shytalk-brand';
+import {
+  SHYTALK_MARK,
+  asComputedRgb,
+  asRgba,
+} from '../../src/lib/shytalk-brand';
 
 /**
  * ShyTalk's brand mark has exactly one home (#17).
@@ -77,6 +81,14 @@ describe("ShyTalk's brand mark has one home", () => {
     expect(asComputedRgb('#e8e0f0')).toBe('rgb(232, 224, 240)');
     expect(asComputedRgb('#0f0d15')).toBe('rgb(15, 13, 21)');
     expect(asComputedRgb('#fff')).toBe('rgb(255, 255, 255)');
+  });
+
+  it('keeps the alpha it is given, for the glow behind the wordmark', () => {
+    // #390: HomePage.astro's text-shadow is `asRgba(SHYTALK_MARK.talk, 0.3)`,
+    // and dropping the alpha left the whole unit suite green -- a glow
+    // painted at full strength, noticed only by a screenshot.
+    expect(asRgba('#d0bcff', 0.3)).toBe('rgba(208, 188, 255, 0.3)');
+    expect(asRgba('#fff', 0)).toBe('rgba(255, 255, 255, 0)');
   });
 
   it('searches the channel triple, so rgba() cannot hide a brand colour', () => {

@@ -4,6 +4,7 @@ import { contrast, over, parseColour, type RGB } from '../wcag';
 import { recorded, shoot } from './evidence';
 import { THEMES } from '../palette';
 import { emulateTheme, expectTheme, saveTheme } from '../themes';
+import { PUBLISHED_ROUTES } from './published-paths';
 
 test.use(recorded);
 
@@ -96,24 +97,31 @@ const inkInUse = async (page: import('@playwright/test').Page) =>
     return [...seen].map(([colour, where]) => ({ colour, where }));
   });
 
-for (const { path, prepare } of [
-  { path: '/', prepare: async () => {} },
-  { path: '/glory-points', prepare: async () => {} },
-  {
-    path: '/classroom-groups',
-    // The sheet a teacher actually prints has groups on it. Without this the
-    // guard measures the empty form and never sees the results at all.
-    prepare: async (page: import('@playwright/test').Page) => {
-      await page.click('#cg-go');
-      await expect(page.locator('#cg-results .group').first()).toBeVisible();
-    },
-  },
-]) {
-  test(`${path}: every printed ink is readable on white paper, whatever the screen shows`, async ({
-    page,
-  }) => {
-    await page.goto(path);
-    for (const { device, saved } of PRINT_RUNS) {
+/**
+ * Every published page in every locale, and the 404. Three hand-written
+ * English pages never sent the 404 or any other language to paper, so 404
+ * headings printing near-white passed (PL1).
+ */
+const PRINTED = PUBLISHED_ROUTES.map((path) => ({
+  path,
+  prepare: path.endsWith('/classroom-groups')
+    ? // The sheet a teacher actually prints has groups on it. Without this
+      // the guard measures the empty form and never sees the results at all.
+      async (page: import('@playwright/test').Page) => {
+        await page.click('#cg-go');
+        await expect(page.locator('#cg-results .group').first()).toBeVisible();
+      }
+    : async () => {},
+}));
+
+for (const { path, prepare } of PRINTED) {
+  // One test per page per print run (#421). Each starts from a fresh context,
+  // so a choice one run saved to localStorage cannot follow it into the next.
+  for (const { device, saved } of PRINT_RUNS)
+    test(`${path}, ${saved ? `${saved} saved over a ${device} device` : `a ${device} device`}: every printed ink is readable on white paper`, async ({
+      page,
+    }) => {
+      await page.goto(path);
       await emulateTheme(page, device);
       if (saved !== null) await saveTheme(page, saved);
       await prepare(page);
@@ -155,33 +163,33 @@ for (const { path, prepare } of [
         page,
         `${path} printed from a ${screen}: all ${inks.length} inks clear ${BODY_TEXT}:1 on white`,
       );
-    }
-  });
+    });
 }
 
-test('a disabled control never depends on its fill reaching paper', async ({
-  page,
-}) => {
-  // #250 AC5. `--disabled-fill` is what makes a disabled control read as
-  // disabled on screen, and a fill only reaches the sheet if the reader has
-  // turned "Background graphics" ON — which browsers leave OFF. A control
-  // whose legibility depended on it would print as text with no boundary, the
-  // same defect the `.btn, button` rule in tokens.css's print block already
-  // exists for.
-  await page.goto('/classroom-groups');
+// One test per theme (#421).
+for (const theme of THEMES)
+  test(`${theme}: a disabled control never depends on its fill reaching paper`, async ({
+    page,
+  }) => {
+    // #250 AC5. `--disabled-fill` is what makes a disabled control read as
+    // disabled on screen, and a fill only reaches the sheet if the reader has
+    // turned "Background graphics" ON — which browsers leave OFF. A control
+    // whose legibility depended on it would print as text with no boundary, the
+    // same defect the `.btn, button` rule in tokens.css's print block already
+    // exists for.
+    await page.goto('/classroom-groups');
 
-  const resolve = (name: string) =>
-    page.evaluate((property) => {
-      const probe = document.createElement('span');
-      probe.style.background = getComputedStyle(document.documentElement)
-        .getPropertyValue(property)
-        .trim();
-      document.body.append(probe);
-      const rgb = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return rgb;
-    }, name);
-  for (const theme of THEMES) {
+    const resolve = (name: string) =>
+      page.evaluate((property) => {
+        const probe = document.createElement('span');
+        probe.style.background = getComputedStyle(document.documentElement)
+          .getPropertyValue(property)
+          .trim();
+        document.body.append(probe);
+        const rgb = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return rgb;
+      }, name);
     await emulateTheme(page, theme);
 
     // Read on SCREEN first: this is the value that must not survive the switch.
@@ -225,17 +233,16 @@ test('a disabled control never depends on its fill reaching paper', async ({
       page,
       `${theme}: under print media --disabled-fill is transparent and none of ${painted.rendered} rendered elements paint ${onScreen}`,
     );
-  }
-});
+  });
 
-test('the screen palette is not dragged down with the print one', async ({
-  page,
-}) => {
-  // The inverse. Fixing print by blackening the ink everywhere would pass
-  // every assertion above and ruin the site, so pin that each screen theme
-  // still paints its own ink.
-  await page.goto('/classroom-groups');
-  for (const theme of THEMES) {
+// The inverse. Fixing print by blackening the ink everywhere would pass every
+// assertion above and ruin the site, so pin that each screen theme still paints
+// its own ink. One test per theme (#421).
+for (const theme of THEMES)
+  test(`${theme}: the screen palette is not dragged down with the print one`, async ({
+    page,
+  }) => {
+    await page.goto('/classroom-groups');
     await emulateTheme(page, theme);
     await expect(page.locator('h1')).toHaveCSS('color', SCREEN_INK[theme]);
     await shoot(
@@ -243,5 +250,4 @@ test('the screen palette is not dragged down with the print one', async ({
       `on a ${theme} screen the heading keeps its ink, ${SCREEN_INK[theme]}`,
       page.locator('h1'),
     );
-  }
-});
+  });

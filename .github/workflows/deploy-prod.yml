@@ -39,6 +39,8 @@ jobs:
       url: https://shyden.co.uk
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -96,86 +98,32 @@ jobs:
       contents: read
       statuses: write
     steps:
-      # The public apex is not behind Basic auth, so the smoke sends no
-      # credential. It used to pass the dev password with `curl -u`, which sends
-      # it on the first request whether or not the host asks for one (#241).
-      - name: Smoke the live prod deployment
-        run: |
-          set -euo pipefail
-          BASE="https://shyden.co.uk"
-
-          # Homepage: 200 + is the Shyden site.
-          code=$(curl -s -o home.html -w '%{http_code}' "$BASE/")
-          [ "$code" = "200" ] || { echo "::error::homepage HTTP $code"; exit 1; }
-          grep -qi 'shyden' home.html || { echo "::error::homepage missing 'shyden'"; exit 1; }
-
-          # Cross-env: prod ShyTalk link present, dev link absent.
-          grep -q 'https://shytalk.shyden.co.uk' home.html || { echo "::error::prod ShyTalk link missing"; exit 1; }
-          if grep -q 'https://dev.shytalk.shyden.co.uk' home.html; then echo "::error::DEV ShyTalk link leaked into prod"; exit 1; fi
-
-          # Real legal footer, no bracket placeholder.
-          grep -q '17110487' home.html || { echo "::error::footer company number missing"; exit 1; }
-
-          # EVERY page this site serves, in EVERY language — not just the two
-          # that happened to exist when this smoke was first written. The
-          # release of 2026-08-12 rebuilt the Classroom Group Creator from
-          # nothing and this smoke would have passed with that page 404ing,
-          # because it only ever fetched the homepage and the calculator.
-          #
-          # This list is hand-written because it is a shell loop with no access
-          # to the catalogue — and it said "BOTH languages" while the site
-          # served five, which is exactly how it goes stale. It cannot any
-          # more: 'the production smoke covers every route' in
-          # tests/unit/route-coverage.test.ts derives the expected set from
-          # LOCALES and fails until this line is updated. Adding a locale means
-          # editing this line by hand; that test is what makes you.
-          for path in /glory-points /classroom-groups /id/ /id/glory-points /id/classroom-groups /zh/ /zh/glory-points /zh/classroom-groups /vi/ /vi/glory-points /vi/classroom-groups /th/ /th/glory-points /th/classroom-groups; do
-            code=$(curl -sL -o page.html -w '%{http_code}' "$BASE$path")
-            [ "$code" = "200" ] || { echo "::error::$path HTTP $code"; exit 1; }
-            # Non-trivial: a Cloudflare error page or an empty build is a 200.
-            bytes=$(wc -c < page.html)
-            [ "$bytes" -gt 2000 ] || { echo "::error::$path served only $bytes bytes"; exit 1; }
-          done
-
-          # The calculator still explains itself.
-          curl -sL -o gp.html "$BASE/glory-points"
-          grep -qi 'How to use it' gp.html || { echo "::error::calculator instructions missing"; exit 1; }
-
-          # The Classroom Group Creator still SHIPS ITS SCRIPT. This page is a
-          # tool, and a partial deploy that dropped the bundle would leave a
-          # form that looks fine and does nothing.
-          curl -sL -o cg.html "$BASE/classroom-groups"
-          grep -q 'id="cg-form"' cg.html || { echo "::error::classroom-groups form missing"; exit 1; }
-          grep -qE '<script[^>]+src="[^"]*\.js"' cg.html || { echo "::error::classroom-groups ships no script"; exit 1; }
-
-          # The homepage still FETCHES no script: its one script, the theme
-          # script, is inline (#142), and a bundler change could add one silently.
-          if grep -qE '<script[^>]+src="[^"]*\.js"' home.html; then
-            echo "::error::the homepage now fetches JavaScript"; exit 1;
-          fi
-
-          echo "Prod smoke passed against $BASE"
-
-      # ---- Gate: a real browser, before the status is posted ---------------
+      # ---- Gate: the smoke and a real browser, before the status ----------
       #
-      # The smoke above proves bytes arrived and that certain strings are among
-      # them. It cannot prove the page RENDERS. It is a text assertion, and this
-      # repo shipped a bug for an entire release that no text assertion could
-      # see: `display: flex` ate authored whitespace while `textContent` still
-      # contained it, so every text-based check passed. It also cannot tell
-      # whether the stylesheet loaded, whether the calculators' script ran, or
-      # whether a page scrolls sideways at 320px.
+      # One Playwright run holds both. tests/prod/prod-smoke.spec.ts is the
+      # smoke, requested without a browser: every page answers, an unknown
+      # path gets the not-found page, and certain strings are among the
+      # bytes. That cannot prove a page RENDERS, and
+      # this repo shipped a bug for an entire release that no text assertion
+      # could see: `display: flex` ate authored whitespace while `textContent`
+      # still contained it. prod-sanity.spec.ts asserts what only rendering
+      # can: the stylesheet, the calculators' script, no sideways scroll.
       #
-      # This job does not check the repo out — the smoke only needed curl — so
-      # the browser check brings its own checkout and dependencies.
+      # The smoke was a step of its own here until #390, where a fact in it
+      # went stale with nothing before a release able to see it. As a spec,
+      # each pull request's `sanity-on-build` runs it against that PR's own
+      # prod build. The public apex is not behind Basic auth, so nothing here
+      # sends a credential (#241).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Verify the live prod site in a real browser
+      - name: Smoke and verify the live prod site
         env:
           WEB_BASE_URL: https://shyden.co.uk
         run: npx playwright test --config=playwright.prod.config.ts

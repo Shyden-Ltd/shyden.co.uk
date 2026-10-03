@@ -18,6 +18,8 @@
  * generic W3C read would predict; see the comment at each one.
  */
 
+import { messageOf } from '../../../scripts/errors.mjs';
+
 /**
  * The W3C "web element identifier" key. Every element reference safaridriver
  * returns is a one-key object mapping this string to an opaque handle.
@@ -215,7 +217,7 @@ export async function waitFor<T>(
       }
     } catch (error) {
       if (!retryable(error)) throw error;
-      observed = `threw ${error instanceof Error ? error.message : String(error)}`;
+      observed = `threw ${messageOf(error)}`;
     }
 
     if (Date.now() >= deadline) {
@@ -289,23 +291,17 @@ export class WebDriver {
     );
   }
 
-  /** Always call in a `finally` -- see this file's module doc and session.ts. */
+  /**
+   * Not called directly: session.ts's `endSession` is the one way a session
+   * ends, so a failed delete keeps the record a leaked session is cleaned up
+   * from (#390 F102).
+   */
   async deleteSession(): Promise<void> {
     await wireRequest('DELETE', this.sessionUrl());
   }
 
   async navigate(url: string): Promise<void> {
     await wireRequest('POST', this.sessionUrl('/url'), { url });
-  }
-
-  async currentUrl(): Promise<string> {
-    const value = await wireRequest('GET', this.sessionUrl('/url'));
-    if (typeof value !== 'string') {
-      throw new Error(
-        `GET .../url expected a string, got: ${JSON.stringify(value)}`,
-      );
-    }
-    return value;
   }
 
   async findElement(cssSelector: string): Promise<WebElement> {
@@ -345,8 +341,10 @@ export class WebDriver {
    * `execute/sync`. Element arguments cross the wire in the same
    * `{ [ELEMENT_KEY]: id }` envelope `findElement` returns -- safaridriver
    * unwraps them into the real DOM node inside the script, as
-   * `arguments[N]`. Used by `WebElement.isDisplayed` below, which has no
-   * native endpoint to call instead.
+   * `arguments[N]`. interaction.ts's DOM-dispatch fallback passes elements
+   * this way. Measured, should a visibility check ever be wanted: safaridriver
+   * has no `GET .../displayed` at all (`"unknown command"`, confirmed live;
+   * W3C lists it only as a legacy extension), so it is a script question.
    */
   async executeScript<T = unknown>(
     script: string,
@@ -413,7 +411,7 @@ export class WebDriver {
     );
   }
 
-  /** @internal -- used by WebElement.isDisplayed to pass itself as a script argument. */
+  /** An element as a script argument, in the envelope `executeScript` sends. */
   elementRef(elementId: string): WireElement {
     return { [ELEMENT_KEY]: elementId } as WireElement;
   }
@@ -490,30 +488,18 @@ export class WebElement {
       this.elementId,
       '/rect',
     );
-    if (typeof value !== 'object' || value === null) {
+    const rect = value as Record<string, unknown> | null;
+    if (
+      typeof rect !== 'object' ||
+      rect === null ||
+      !['x', 'y', 'width', 'height'].every(
+        (key) => typeof rect[key] === 'number',
+      )
+    ) {
       throw new Error(
-        `element ${this.elementId} .rect() expected an object, got: ${JSON.stringify(value)}`,
+        `element ${this.elementId} .rect() expected numbers x, y, width and height, got: ${JSON.stringify(value)}`,
       );
     }
-    return value as { x: number; y: number; width: number; height: number };
-  }
-
-  /**
-   * Measured, not spec text: safaridriver has no `GET .../displayed`
-   * endpoint at all -- `"unknown command"`, confirmed live. (The W3C spec
-   * lists it only as a legacy/optional extension; this driver does not
-   * implement it.) Implemented via `execute/sync` instead, passing this
-   * element in as `arguments[0]` through the same element-reference
-   * envelope the wire protocol already uses -- exercised here for an
-   * argument rather than a find/return value.
-   */
-  async isDisplayed(): Promise<boolean> {
-    return this.driver.executeScript<boolean>(
-      `var el = arguments[0];
-       var r = el.getBoundingClientRect();
-       var cs = getComputedStyle(el);
-       return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';`,
-      [this.driver.elementRef(this.elementId)],
-    );
+    return rect as { x: number; y: number; width: number; height: number };
   }
 }

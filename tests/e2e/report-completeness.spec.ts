@@ -63,8 +63,18 @@ for (const locale of PREFIXED_LOCALES)
       page,
     }) => {
       await page.goto(pagePath(pageId, locale));
-      if (pageId === 'classroom-groups')
-        await page.locator('#cg-students-toggle').click();
+      // Every disclosure open, read from the DOM: a visitor can open any of
+      // them, and a closed one's words fail checkVisibility below. Opening
+      // the students section alone left the grouping, files and sound
+      // sections and the report form itself unread (RC1).
+      await page.evaluate(() => {
+        for (const toggle of document.querySelectorAll<HTMLElement>(
+          '[aria-expanded="false"][aria-controls]',
+        ))
+          toggle.click();
+        for (const details of document.querySelectorAll('details'))
+          details.open = true;
+      });
       const rendered = await page.evaluate(() => {
         const texts: string[] = [];
         const walker = document.createTreeWalker(
@@ -76,6 +86,13 @@ for (const locale of PREFIXED_LOCALES)
           if (parent && parent.checkVisibility() && node.textContent?.trim())
             texts.push(node.textContent);
         }
+        // An option has no box of its own, so it never passes
+        // checkVisibility, yet a visitor reads every one in the open list
+        // (RC3): each visible select's options are read too.
+        for (const select of document.querySelectorAll('select'))
+          if (select.checkVisibility())
+            for (const option of select.options)
+              if (option.text.trim()) texts.push(option.text);
         return texts;
       });
       const onPage = new Set(rendered.map((text) => normalise(text, locale)));

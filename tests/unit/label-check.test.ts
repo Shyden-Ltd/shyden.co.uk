@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { nonEmpty } from '../source-files';
+import { nonEmpty, searched } from '../source-files';
 import {
   backTranslationUnits,
   type BackTranslationUnit,
+  TRANSLATED_LOCALES,
 } from '../../src/lib/i18n/back-translate';
-import { checkLabels, renderedOn } from '../../src/lib/i18n/label-check';
+import {
+  checkLabels,
+  checkNamedLabels,
+  renderedOn,
+} from '../../src/lib/i18n/label-check';
 
 /**
  * A short label, cross-checked against how its own locale renders the same
@@ -250,6 +255,100 @@ describe('checkLabels: a label against the rest of its locale', () => {
   });
 });
 
+describe('checkNamedLabels: a sentence that names a label, held to it', () => {
+  const heading = unit('sectionStudentsHeading', 'Student details', '学生信息');
+  const naming = (translation: string) =>
+    unit(
+      'studentsLockedReason',
+      'Set by your list. Add or remove students in Student details to change it.',
+      translation,
+    );
+
+  it("a sentence naming a heading in the heading's own words carries it", () => {
+    const sentence = naming('如需修改，请在“学生信息”中添加或移除学生。');
+    expect(checkNamedLabels([heading, sentence], 'zh')).toEqual([
+      { sentence, labels: [heading], carried: true },
+    ]);
+  });
+
+  it('a sentence naming it in other words does not, whatever else agrees', () => {
+    // #390: zh told teachers to open 学生详情 six times beside a heading
+    // reading 学生信息. One sentence using the heading's word was enough for
+    // `checkLabels` to call the label agreed.
+    const other = naming('如需修改，请在“学生详情”中添加或移除学生。');
+    const agreeing = unit(
+      'rosterAtLimitMessage',
+      'Student details holds up to {max} students. Remove a student to add another.',
+      '“学生信息”最多可容纳 {max} 名学生。',
+    );
+    expect(
+      checkNamedLabels([heading, other, agreeing], 'zh').map(
+        ({ sentence, carried }) => [sentence.key, carried],
+      ),
+    ).toEqual([
+      ['studentsLockedReason', false],
+      ['rosterAtLimitMessage', true],
+    ]);
+  });
+
+  it('a capital marks a name: the common words of a label name nothing', () => {
+    const list = unit('printWhatClassList', 'Class list', '班级名单');
+    const common = unit(
+      'ioHandoverNotOffered',
+      'No class list arrived. Go back to the other tab and try again.',
+      '没有收到名单。',
+    );
+    expect(checkNamedLabels([list, common], 'zh')).toEqual([]);
+  });
+
+  it('a one-word label is named mid-sentence, never by the capital that starts one', () => {
+    const calculate = unit('site.glory.calculate', 'Calculate', '计算');
+    const named = unit(
+      'site.glory.howToSteps[1]',
+      'Select Calculate — or press Enter.',
+      '选择“计算”——或按 Enter 键。',
+    );
+    const opening = unit(
+      'site.glory.lead',
+      'Calculate the coins you need.',
+      '算出所需金币。',
+    );
+    expect(
+      checkNamedLabels([calculate, named, opening], 'zh').map(
+        ({ sentence }) => sentence.key,
+      ),
+    ).toEqual(['site.glory.howToSteps[1]']);
+  });
+
+  it('a label inside a longer label the sentence names belongs to the longer one', () => {
+    const make = unit('makeGroups', 'Make Groups', 'Tạo nhóm');
+    const groups = unit('printGroupsHeading', 'Groups', 'Các nhóm');
+    const press = unit(
+      'howToSteps[2]',
+      'Press Make Groups.',
+      'Nhấn vào “Tạo nhóm”.',
+    );
+    expect(checkNamedLabels([make, groups, press], 'vi')).toEqual([
+      { sentence: press, labels: [make], carried: true },
+    ]);
+  });
+
+  it('labels sharing an English are one name: carrying any rendering of it is enough', () => {
+    // The sentence carries the SECOND label's rendering only, so a check that
+    // read the first alone would call it a miss.
+    const again = unit('again', 'Shuffle again', '重新洗牌');
+    const board = unit('boardShuffle', 'Shuffle again', '再洗一次');
+    const refusal = unit(
+      'staleRefusePrint',
+      'These groups are out of date. Shuffle again before printing them.',
+      '这些分组已经过时了。打印前请再洗一次。',
+    );
+    expect(checkNamedLabels([again, board, refusal], 'zh')).toEqual([
+      { sentence: refusal, labels: [again, board], carried: true },
+    ]);
+  });
+});
+
 describe('renderedOn: where a label is read', () => {
   it.each([
     ['rosterColSex', '/classroom-groups'],
@@ -302,4 +401,26 @@ describe('on the live catalogues', () => {
       variants: [],
     });
   });
+
+  // #390. A teacher told to open a section, or press a button, looks for the
+  // words the sentence gives; the page shows the label's. Eighteen sentences
+  // named Student details one way beside a heading saying another, and four
+  // named Shuffle again in other words, in zh, vi and th.
+  it.each(TRANSLATED_LOCALES)(
+    '%s: every sentence that names a label carries that label',
+    (locale) => {
+      const verdicts = checkNamedLabels(backTranslationUnits(locale), locale);
+      expect(
+        searched(
+          verdicts
+            .filter(({ carried }) => !carried)
+            .map(
+              ({ sentence, labels }) =>
+                `${sentence.key} names ${labels.map(({ key }) => key).join('/')}`,
+            ),
+          { of: verdicts, what: `${locale} sentences naming a label` },
+        ),
+      ).toEqual([]);
+    },
+  );
 });

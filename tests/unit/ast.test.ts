@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { bind, callGraph, derivationOf, type Bound } from './ast';
+import { scratchDir } from '../scratch-dir';
 
 /**
  * The resolver both meta-guards stand on (#184).
@@ -119,16 +119,19 @@ describe('a name resolves to the declaration the language binds it to', () => {
     ).toEqual([undefined]);
   });
 
-  it('stops at a destructured source whose shape it cannot read', () => {
+  it('answers with the whole source when it cannot read its shape', () => {
     // `load()` passes no function, so there is no object literal to take a
-    // property from. Stopping is right: an OUTER `config` must not answer in
-    // its place, which is what falling through would do (#184).
+    // property from. The binding answers with `load()` itself, never with
+    // nothing: a name answered with nothing is judged by no derivation, and
+    // `const { specs, sites } = scan()` let an absence over `sites` pass
+    // unproved (#446 AC6). Nor with an OUTER `config`, which is what falling
+    // through to the name would do (#184).
     expect(
       resolved(`
         const config = 'outer';
         it('a', () => { const { config } = load(); use(config); });
       `),
-    ).toEqual([undefined]);
+    ).toEqual(['load()']);
   });
 
   it('resolves a destructured binding to its own property', () => {
@@ -165,9 +168,10 @@ describe('a name resolves to the declaration the language binds it to', () => {
     ).toEqual(['mine()']);
   });
 
-  it('refuses a function that returns more than one shape', () => {
+  it('answers a function that returns more than one shape with the whole call', () => {
     // Two returns mean the property is built two ways, and answering with
-    // one of them would be an inference dressed as a resolution.
+    // one of them would be an inference dressed as a resolution. So the
+    // binding answers with the call, which holds both (#446 AC6).
     expect(
       resolved(`
         it('a', () => {
@@ -175,7 +179,9 @@ describe('a name resolves to the declaration the language binds it to', () => {
           use(readings);
         });
       `),
-    ).toEqual([undefined]);
+    ).toEqual([
+      'run(() => { if (x) return { readings: mine() }; return { readings: other() }; })',
+    ]);
   });
 
   it('resolves a shorthand property to the variable, not to the property', () => {
@@ -425,7 +431,7 @@ describe('a parameter binds its name, like any other local (#277)', () => {
    * alarm that gets a working control deleted.
    */
   const corpus = () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ast-binding-'));
+    const dir = scratchDir('ast-binding-');
     const reader = join(dir, 'reader.ts');
     const user = join(dir, 'user.ts');
     writeFileSync(

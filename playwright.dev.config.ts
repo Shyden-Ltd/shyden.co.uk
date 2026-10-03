@@ -18,6 +18,8 @@ const build = onBuild(4398, {
 
 export default defineConfig({
   testDir: './tests/dev',
+  // A stray `test.only` fails the run in CI rather than narrowing it (#390).
+  forbidOnly: !!process.env.CI,
   webServer: build?.webServer,
   grepInvert: build?.grepInvert,
   use: {

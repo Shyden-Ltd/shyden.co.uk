@@ -454,11 +454,19 @@ main:focus {
   outline: none;
 }
 
+/* Reduced motion. A short duration alone does not stop an `infinite`
+   animation: it runs a whole cycle every hundredth of a millisecond, and the
+   homepage's language band was painted at a different offset on every frame
+   in Firefox -- a strobe for exactly the visitors who asked for less motion
+   (#390 F61, 'the language band holds still when motion is reduced' in
+   homepage.spec.ts). One iteration lets every animation finish at once, and
+   its end event still fires for any script that waits on it. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
@@ -482,7 +490,7 @@ main:focus {
  * Ratios against white, all measured: --ink 21:1, --ink-soft 12.63:1,
  * --accent 7.44:1, --accent-ink 10.84:1, --danger 7.41:1, --border-strong
  * 5.33:1 (needs 3:1 for a control boundary). --accent is darkened from mint
- * because #38f5c8 is 1.36:1 on paper — a link that vanishes.
+ * because #38f5c8 is 1.39:1 on paper — a link that vanishes.
  */
 @media print {
   :root {

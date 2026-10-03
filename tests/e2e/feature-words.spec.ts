@@ -18,6 +18,9 @@ test.use(recorded);
 
 /**
  * The sentences corrected on #319's sheet, read where a teacher meets them.
+ * So are the grouping options' summary and the stale-leftovers notice, which
+ * #390 corrected: zh, vi and th said "sorted by sex" for mixing, and leftover
+ * FOOD for the leftover students.
  *
  * `feature-terms.test.ts` holds every piece of copy that names a feature to
  * the words its language approved, and `verified-labels.test.ts` pins what the
@@ -27,8 +30,10 @@ test.use(recorded);
  * language it was corrected in, and photographed for the evidence page.
  *
  * Every expectation is built from the catalogue with the functions the page
- * itself calls -- `renderError` for a refusal, `importFile` for a CSV's
- * problems -- so the pins stay the one place the approved words are written.
+ * itself calls -- `renderError` for a refusal, `importFile` for a faulty
+ * CSV's row problems -- so the pins stay the one place the approved words are
+ * written. A refusal of the whole file is the one key it must be, never
+ * whatever `importFile` returns first.
  *
  * Not reached here, and held by the unit guard and the pins instead: the
  * seven pin messages (the page has no pin control yet), the three
@@ -105,6 +110,25 @@ test.describe('the sentences corrected on #319', () => {
           .first()
           .locator('xpath=ancestor::div[@class="field"]'),
       );
+
+      // The section's own summary names each option chosen (#390).
+      const summary = tool.locator('#cg-grouping-toggle .state');
+      await tool.locator('#cg-sex-mix').check();
+      await expectVisibleText(summary, t.stateMixed);
+      await shoot(
+        tool,
+        `${locale}: mixing boys and girls reads “${t.stateMixed}”`,
+        summary,
+      );
+      await tool.locator('#cg-sex-mix').uncheck();
+      await tool.locator('input[name="leftovers"][value="bunch"]').check();
+      await expectVisibleText(summary, t.stateBunched);
+      await shoot(
+        tool,
+        `${locale}: leftover students in one group reads “${t.stateBunched}”`,
+        summary,
+      );
+      await tool.locator('input[name="leftovers"][value="spread"]').check();
 
       // A mixed-sex together pair cannot make a single-sex group.
       await tool.locator('#cg-sex-separate').check();
@@ -213,6 +237,23 @@ test.describe('the sentences corrected on #319', () => {
       await tool.keyboard.press('Escape');
       await expect(panel).toBeHidden();
 
+      // Changing the leftovers choice makes those groups out of date, and the
+      // notice names the choice in the words of its own label (#390).
+      const stale = tool.locator('#cg-stale');
+      await tool.locator('input[name="leftovers"][value="bunch"]').check();
+      await expectVisibleText(
+        stale.locator('#cg-stale-text'),
+        t.staleLeftovers,
+      );
+      await shoot(
+        tool,
+        `${locale}: out of date because “${t.staleLeftovers}”`,
+        stale,
+      );
+      await tool.locator('input[name="leftovers"][value="spread"]').check();
+      await expect(stale).toHaveCount(1);
+      await expect(stale).toBeHidden();
+
       // A together pair that is also an apart pair is refused as it is typed.
       // A select offers the letters in use and the next free one, so 'A' it is.
       for (const row of [0, 1]) {
@@ -241,6 +282,9 @@ test.describe('the sentences corrected on #319', () => {
         clash,
       );
 
+      // Every problem the page lists after an import, in order.
+      const listed = tool.locator('#cg-io-problems li');
+
       // A file in the page's own language, with one fault on every row.
       await tool.locator('#cg-io-toggle').click();
       const faulty = [
@@ -257,6 +301,7 @@ test.describe('the sentences corrected on #319', () => {
         : parsed.problems.map(({ message }) => message);
       expect(problems.length).toBeGreaterThan(3);
       await upload(tool, 'faulty.csv', faulty);
+      await expect(listed).toHaveText(problems);
       for (const problem of problems)
         await expectVisibleText(
           tool.getByText(problem, { exact: true }),
@@ -268,16 +313,24 @@ test.describe('the sentences corrected on #319', () => {
         tool.getByText(problems[0] ?? '', { exact: true }).locator('xpath=..'),
       );
 
+      // A whole-file refusal is named by its key, not taken from whatever
+      // importFile puts first: a file in another language that stopped being
+      // recognised would fall through to "no number column", and the page
+      // agreeing with that would still pass (#390 F122). Each stands alone,
+      // and the replace warning a roster with work in it would get never opens.
+      const replaceWarning = tool.locator('#cg-io-confirm');
+
       // A file with no number column at all.
       const numberless = [
         [columns.name, columns.absent].join(','),
         `${NAMES[0]},`,
       ].join('\n');
-      const refused = importFile(numberless, locale, t);
-      const reason = refused.ok ? '' : (refused.problems[0]?.message ?? '');
-      expect(reason).not.toBe('');
+      const reason = t.csvProblemNoNumberColumn;
       await upload(tool, 'numberless.csv', numberless);
       await expectVisibleText(tool.getByText(reason, { exact: true }), reason);
+      await expect(listed).toHaveText([reason]);
+      await expect(replaceWarning).toHaveCount(1);
+      await expect(replaceWarning).toBeHidden();
       await shoot(
         tool,
         `${locale}: a class list with no number column is refused`,
@@ -289,11 +342,15 @@ test.describe('the sentences corrected on #319', () => {
         Object.values(CSV_LOCALES.en.columns).join(','),
         `1,${NAMES[0]},F,,,`,
       ].join('\n');
-      const foreign = importFile(english, locale, t);
-      const why = foreign.ok ? '' : (foreign.problems[0]?.message ?? '');
-      expect(why).not.toBe('');
+      const why = t.csvWrongLanguage({
+        language: t.csvLanguageName.en,
+        version: t.csvLanguageVersion.en,
+      });
       await upload(tool, 'english.csv', english);
       await expectVisibleText(tool.getByText(why, { exact: true }), why);
+      await expect(listed).toHaveText([why]);
+      await expect(replaceWarning).toHaveCount(1);
+      await expect(replaceWarning).toBeHidden();
       await shoot(
         tool,
         `${locale}: an English class list is refused with “${why}”`,
