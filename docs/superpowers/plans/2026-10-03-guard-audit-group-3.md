@@ -726,6 +726,55 @@ index 2b2f0d8..7b5e903 100644
      // from the list a reader uses cannot see that list drop a form (#446).
 ~~~~
 
+## Task 8: From review pass 3: the job is read by lines, and a fixture comment names all it spares
+
+Pass 3 findings 10 and 11.
+
+~~~~diff
+diff --git a/tests/unit/absence-liveness.test.ts b/tests/unit/absence-liveness.test.ts
+index 7b5e903..875f402 100644
+--- a/tests/unit/absence-liveness.test.ts
++++ b/tests/unit/absence-liveness.test.ts
+@@ -340,7 +340,8 @@ describe('absence assertions prove the population they searched', () => {
+         'expect.poll(t).toBe(0);',
+         'expect.poll(async () => { return u.size; }).toBe(0);',
+         'assertThat(v.length).toBe(0);',
+-        // Not refused: a value held to 0, a polled value, and the read roots.
++        // Not refused: a value held to 0, a polled value, the two roots that
++        // are read, and an inverse.
+         'assertThat(w).toBe(0);',
+         'expect\n  .poll(async () => (await counters(x)).inflight)\n  .toBe(0);',
+         'expect.soft(q).toEqual([]);',
+diff --git a/tests/unit/pipeline-wiring.test.ts b/tests/unit/pipeline-wiring.test.ts
+index 46a27f0..e5b505c 100644
+--- a/tests/unit/pipeline-wiring.test.ts
++++ b/tests/unit/pipeline-wiring.test.ts
+@@ -2177,15 +2177,15 @@ describe('the drift measurement reports, and never gates (#224)', () => {
+     expect(writes.length).toBeGreaterThan(1);
+     // Independent of the YAML parse (#446, control c): the visual job's own
+     // text, YAML comments aside, names the summary on exactly as many lines.
+-    const ci = workflow('ci.yml');
+-    const start = ci.search(/^ {2}visual:$/m);
++    // The job is every line after its key, up to the next line at a job's
++    // own two-space indent.
++    const lines = workflow('ci.yml').split('\n');
++    const start = lines.indexOf('  visual:');
+     expect(start, 'ci.yml declares no visual job').toBeGreaterThan(-1);
+-    const rest = ci.slice(start + 1);
+-    const end = rest.search(/^ {2}\S/m);
+-    const job = end === -1 ? rest : rest.slice(0, end);
+-    expect(job.split('\n').filter(writesTheSummary)).toHaveLength(
+-      writes.length,
+-    );
++    const after = lines.slice(start + 1);
++    const end = after.findIndex((line) => /^ {2}\S/.test(line));
++    const job = end === -1 ? after : after.slice(0, end);
++    expect(job.filter(writesTheSummary)).toHaveLength(writes.length);
+ 
+     const unreadable = writes.filter(
+       (line) => !/tee\s+-a\s+"\$GITHUB_STEP_SUMMARY"/.test(line),
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/446-g3/g3_mut.py`, copied from Group 2b's runner. Every
@@ -798,3 +847,13 @@ refuses", but "refuses" in that file names the unclassified-root branch; the
 list is of inverses. (9) The ledger's anchored-presence row read "floor
 tight (76)", which does not say the floor is 75. Fixed: this table (5), and
 Task 7 (6-9).
+
+**Pass 3** (branch at `195c48a`). Mechanical: the applied plan equals the
+branch; `astro check` 0/0/0 (so the cast's removal type-checks); prettier
+clean; unit 3533/3533; e2e 101 passed; matrix 6 + 16 as predicted, 0 XX;
+verdict CLEAN. Reading, the whole document: two findings. (10) The refusal
+fixture's comment listed what it spares and left out its last line, an
+inverse. (11) The cross-check found the `visual` job with
+`ci.slice(start + 1)`, skipping one character so the key's own line could
+not end the job, which nothing explained and a tidy-up would break. Fixed:
+Task 8.
