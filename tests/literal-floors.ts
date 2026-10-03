@@ -125,7 +125,9 @@ function isParameter(node: ts.Node, name: string): boolean {
 function literalValue(bound: ts.Expression): number | undefined {
   if (ts.isParenthesizedExpression(bound))
     return literalValue(bound.expression);
-  if (ts.isNumericLiteral(bound)) return Number(bound.text.replace(/_/g, ''));
+  // `text` is TypeScript's normalised value: `5_197` reads `5197`, and
+  // `0x1F` reads `31`. The source as written (`getText()`) would not parse.
+  if (ts.isNumericLiteral(bound)) return Number(bound.text);
   if (
     ts.isPrefixUnaryExpression(bound) &&
     bound.operator === ts.SyntaxKind.MinusToken
