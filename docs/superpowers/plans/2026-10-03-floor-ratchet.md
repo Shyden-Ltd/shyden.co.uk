@@ -59,8 +59,8 @@ files under `tests/`.
 | --- | --- |
 | 1 ids and figures in `tests/floors.json` | Task 1, Task 2; narrowed to the number only (comment on #468) |
 | 2 runner-neutral check, two messages | Task 1: `floors.test.ts` pins each message whole; Task 9 gives its constants one home |
-| 3 recorder, everything checked before any write, CI never records | Task 1 (`decideRecord`, `script-entry` probe), Task 3 (no workflow runs it); matrix R8-R12, R16, R17; each pass runs the recorder on the applied tree |
-| 4 every unit liveness floor converted, after its verdict | Task 2: 43 floors, `spec-scan`'s helper and five callers, four locales, `evidence-recording`'s two comparisons; 16 moved below their verdict |
+| 3 recorder, everything checked before any write, CI never records | Task 1 (`decideRecord`, `script-entry` probe), Task 3 (no workflow runs it), Task 11 (a run that did not start or failed); matrix R8-R12, R16, R17, R30, R31; each pass runs the recorder on the applied tree |
+| 4 every unit liveness floor converted, after its verdict | Task 2: 52 ids, from 41 floors written in place, `spec-scan`'s helper (5 callers), `back-translate` (4 locales) and `evidence-recording`'s two comparisons; 16 moved below their verdict |
 | 5 meta-guard refusing a literal floor in every form | Task 2, Task 7; matrix R18-R25, R29 |
 | 6 every id used by exactly one site | Task 2 ('spells every recorded id exactly once'); `decideRecord` refuses an id from two places at record time; matrix R10, R28 |
 | 7 matrix on both trees | below |
@@ -3284,6 +3284,167 @@ index 7c542ba..e658b73 100644
  });
 ~~~~
 
+## Task 11: From review pass 4: the recorder's refusals of the run itself are tested
+
+Pass 4 finding 14. Moved: duplication/declarations +4, duplicate-imports +1.
+
+~~~~diff
+diff --git a/tests/floors.json b/tests/floors.json
+index c3a4ff1..0a8e757 100644
+--- a/tests/floors.json
++++ b/tests/floors.json
+@@ -12,8 +12,8 @@
+   "deprecated-css/declarations": 1170,
+   "device-tool-homes/files": 299,
+   "download-readers/byte-reads": 8,
+-  "duplicate-imports/imports": 1574,
+-  "duplication/declarations": 5346,
++  "duplicate-imports/imports": 1575,
++  "duplication/declarations": 5350,
+   "duplication/files": 343,
+   "event-collectors/locator-loops": 8,
+   "event-collectors/specs": 65,
+diff --git a/tests/unit/floors.test.ts b/tests/unit/floors.test.ts
+index 7f4208d..83daa1c 100644
+--- a/tests/unit/floors.test.ts
++++ b/tests/unit/floors.test.ts
+@@ -1,5 +1,6 @@
+ import { describe, it, expect } from 'vitest';
+-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
++import { spawnSync } from 'node:child_process';
++import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+ import { floorBreach, readFloors, FLOORS_FILE } from '../floors';
+@@ -210,3 +211,45 @@ describe('floorsText', () => {
+     );
+   });
+ });
++
++describe('record-floors.mjs refuses a run it cannot trust, and writes nothing', () => {
++  // Neither runs the suite: an empty PATH leaves no `npx` to start, and a
++  // stand-in `npx` that exits non-zero fails as a broken suite would. The
++  // stand-in is a stub at the process boundary, the one place a failing run
++  // can be had on demand. Both read the real record before and after.
++  const recordWith = (bin: (dir: string) => void) => {
++    const dir = mkdtempSync(join(tmpdir(), 'floors-path-'));
++    const before = readFileSync(FLOORS_FILE);
++    try {
++      bin(dir);
++      const run = spawnSync(process.execPath, ['scripts/record-floors.mjs'], {
++        encoding: 'utf8',
++        env: { ...process.env, CI: '', PATH: dir },
++      });
++      expect(readFileSync(FLOORS_FILE).equals(before), FLOORS_FILE).toBe(true);
++      return run;
++    } finally {
++      rmSync(dir, { recursive: true, force: true });
++    }
++  };
++
++  it('refuses a suite that did not start, naming why', () => {
++    const run = recordWith(() => {});
++    expect(run.status).toBe(1);
++    expect(run.stderr).toBe(
++      '✗ the unit suite did not start: spawnSync npx ENOENT\n',
++    );
++    expect(run.stdout).toBe('');
++  });
++
++  it('refuses a suite that failed, before judging a single figure', () => {
++    const run = recordWith((dir) => {
++      writeFileSync(join(dir, 'npx'), '#!/bin/sh\nexit 3\n', { mode: 0o755 });
++    });
++    expect(run.status).toBe(1);
++    expect(run.stderr).toBe(
++      '✗ the unit suite failed in record mode (exit 3): nothing recorded\n',
++    );
++    expect(run.stdout).toBe('');
++  });
++});
+~~~~
+
+## Task 12: From review pass 4: the ledger and CLAUDE.md match the code
+
+Pass 4 findings 12 and 13; the ledger counts 37 rows.
+
+~~~~diff
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 1e792f9..022d927 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -10,7 +10,7 @@
+ - **Page-level `scrollWidth` is not containment.** Content can overflow a _card_ by 34.5px and produce zero document scroll — which is exactly how the Remove button shipped hanging out of the Student details border at every laptop width. Assert against the offending element's own container (`nothing in the roster escapes its card`), not just `document.documentElement`.
+ - **A hand-written list of things to check will miss the one that breaks.** The no-horizontal-scroll tests opened `#cg-grouping-toggle` and `#cg-sound-toggle` — added one at a time as each section gained content — and never `#cg-io-toggle`, the only section holding a native `<input type="file">`. Its ~344px intrinsic minimum propagated up `#cg-form`'s grid (items default to `min-width: auto`) and pinned the track to 378px at every viewport: 5px of horizontal scroll at 390px, **74px at 320px**. `max-width: 100%` does not fix this — the automatic minimum reads the element's min-content size, which `max-width` does not change; an explicit `width` replaces it. The replacement test _derives_ every disclosure from the DOM, so a section added later is covered the day it appears.
+ - **A guard you have not watched fail is not a guard.** This repo has shipped two that asserted nothing, and both read as correct on the page. The supply-chain sub-path check (#23) was satisfied by `dependabot.yml`'s own **comment** describing the group it was meant to require — no group configured, suite green. #21 Stage 4's first replacement for the prod-smoke path list used `prod.includes(path)`, and `/glory-points` is a substring of `/id/glory-points`: the English assertion passed on the **Indonesian** path, and mutating a path to `/id/glory-pointsXX` left it green because that still contains the needle. **Every guard asserting against source text, config, or a workflow file is mutation-verified in BOTH directions before it lands** — break the thing it protects and watch it fail, then restore it and watch it pass. Strip comments before matching, so the file's documentation cannot satisfy its own guard. Prefer an exact set comparison to a substring test, and assert ORDER where order carries meaning (Dependabot stops at the first matching group). Presence is not the assertion; failure is. **And a mutation that comes back GREEN where you predicted RED has three causes, not one** (#250): the guard is weak, the mutation never reached `dist/`, or the medium made the mutation impossible. A RED is self-proving — the test failed BECAUSE of the change — so only a GREEN needs the built-output check, and that check belongs on the OBSERVED verdict rather than the predicted one, since a wrong prediction is exactly when it is needed. Rule out "never landed" by asserting the mutation's shape in the built bytes (for a REMOVAL, assert the absence WITH a liveness probe beside it, or an empty file list satisfies it for free), and rule out "weak guard" by probing the assertion's own liveness. What remains is an illegal mutation: `max-height: 40px !important` can never shrink a control, because CSS resolves a box as `max(min-height, min(max-height, height))` and a 44px `min-height` beats any smaller max-height however important it is.
+-- **A liveness floor is a recorded figure, checked for equality (#468).** A floor written `toBeGreaterThan(measured - 1)` is tight only on the day it is measured, because growth never fails it: `absence-liveness` read 424 an hour after it was set to `> 420`. So a guard proves it read its population with `expect(floorBreach('<id>', count)).toBeUndefined()` (`tests/floors.ts`), placed after its verdict, against the figure in `tests/floors.json`: one unit short fails, and so does one more. When a change grows a population, `npm run floors:record` raises the figure and prints every floor that moved; read each delta against your diff, because a raise smaller than the units you added is a reader that lost some, and put the lines in the commit. It never lowers a figure: a real shrink is a hand edit with the reason in the commit. CI never records. `literal-floors.test.ts` refuses a literal floor demanding two or more, however it is written (a matcher, a parameter, `n > 25` inside an `expect`), unless it bounds a product value and says so. A new test file grows several floors at once, and a new file is invisible to the tracked-file guards until `git add -N`, so add it before recording.
++- **A liveness floor is a recorded figure, checked for equality (#468).** A floor written `toBeGreaterThan(measured - 1)` is tight only on the day it is measured, because growth never fails it: `absence-liveness` read 424 an hour after it was set to `> 420`. So a guard proves it read its population with `expect(floorBreach('<id>', count)).toBeUndefined()` (`tests/floors.ts`), placed after its verdict, against the figure in `tests/floors.json`: one unit short fails, and so does one more. When a change grows a population, `npm run floors:record` raises the figure and prints every floor that moved; read each delta against your diff, because a raise smaller than the units you added is a reader that lost some, and put the lines in the commit. It never lowers a figure: a real shrink is a hand edit with the reason in the commit. CI never records. `literal-floors.test.ts` refuses a literal floor demanding two or more, however it is written (a matcher, a parameter, `n > 25` inside an `expect`, or backwards as `expect(5).toBeLessThan(n)`), unless it bounds a product value and says so. A new test file grows several floors at once, and a new file is invisible to the tracked-file guards until `git add -N`, so add it before recording.
+ - **No message may put a closing keyword next to an issue number — not even one you mean.** `close`/`fix`/`resolve` and their inflections, beside `#<n>`, are refused in a commit message (`.githooks/commit-msg`) and in a pull request body (`.github/workflows/pr-body.yml`), both through one home: `scripts/closing-keywords.mjs`. GitHub's parser has no model of negation, tense or intent, and it has retired an issue here **twice** — once from a sentence in capitals saying the issue must stay open, once from a body promising to retire it by hand later. There is deliberately **no exception**, because no such keyword appears in the last 300 commit bodies or 40 pull request bodies: the capability an exception would preserve has never been used, and an allowance branch nothing exercises is the vacuity #118 was filed about. Write `Refs #<n>`, and retire an issue with `gh issue close <n>` once the work is verified. Check a body before it reaches GitHub with `node scripts/closing-keywords.mjs <file> "this pull request body"`. The workflow re-runs on `edited` — a body edited after a green run is how such a sentence gets written — and is **not a gate** until `closing-keywords` joins `required_status_checks.contexts`, which is repository administration and so the operator's (#278).
+ - **Locale files are a review surface.** Every catalogue is typed `Catalogue`, so `npm run typecheck` (`astro check`, run in CI) fails on a missing key; it cannot read copy, so tests hold the rest. `tests/unit/i18n.test.ts` and `dead-copy.test.ts`: blank values, untranslated copy, copy no page renders. `locale-fallbacks.test.ts`: English left in zh, vi and th. `message-parity.test.ts`: every language fills the slots English fills, offers the choices it offers, and has exactly its own plural forms. `label-check.test.ts` and `verified-labels.test.ts`: a label of three words or fewer is checked against its own locale's copy that uses its English and says more, and one that disagrees, or that a namesake renders in other words, is either pinned or listed as awaiting the operator's read (#161). A label can be translated, non-blank and slot-perfect and still name the wrong thing: `Tình dục` passed every other guard here for a month. Messages are templates (#136) — English decides which entries are messages — and zh/vi/th wording is a DeepL draft until a speaker has reviewed it.
+ - **The e2e suite measures `dist/`**, not the dev server (`playwright.config.ts` builds and previews). Anything asserted against `astro dev` is asserting about bytes nobody receives.
+diff --git a/docs/reviews/2026-10-03-guard-liveness-ledger.md b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+index acd5ff5..34a5391 100644
+--- a/docs/reviews/2026-10-03-guard-liveness-ledger.md
++++ b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+@@ -243,8 +243,9 @@ units while its reader loses three records +2 (operator, 2026-10-03). #469
+ gives each guard the number-free cross-check that catches that mechanically.
+ 
+ `literal-floors.test.ts` keeps it that way. Its reader classifies every
+-`toBeGreaterThan(OrEqual)` under `tests/`, and every comparison with a
+-literal inside an `expect` argument, as presence, counted, forwarded,
++`toBeGreaterThan(OrEqual)` under `tests/`, every comparison with a literal
++inside an `expect` argument, and every `toBeLessThan(OrEqual)` whose subject
++is a literal (a floor written backwards), as presence, counted, forwarded,
+ compared, threshold or ceiling, and refuses anything else by line. A
+ counted or forwarded floor must be ratcheted, or listed as a product value
+ with its reason (a 44px target, a grouping statistic), or be one of the
+@@ -252,21 +253,24 @@ seven Playwright floors Group 5 ratchets (that list may only shrink). Its
+ cross-check counts the matcher per file in the comment-stripped text, less
+ what string and regex literals spell; no number drifts in it.
+ 
+-Converted: 43 unit floors, `spec-scan`'s helper (whose number was a
+-parameter, which no literal search sees) and its five callers,
+-`back-translate`'s four locales, and `evidence-recording`'s two floors
+-written as `acting.length > 25` inside a `toEqual`, which the reader first
+-missed and now plants. Sixteen sat before their verdict in the same test
++Converted, as 52 recorded ids: 41 floors written in place; `spec-scan`'s
++helper, whose number was a parameter no literal search sees, as one id for
++each of its five callers; `back-translate`'s floor, one id per locale (4);
++and `evidence-recording`'s two floors written as `acting.length > 25` inside
++a `toEqual`, which the reader first missed and now plants. With
++`absence-liveness`'s three and the meta-guard's own count, `floors.json`
++holds 56. Sixteen sat before their verdict in the same test
+ and were moved below it, so a population that grew never hides a finding.
+ Each first figure was read against the census and the diff that recorded
+ it, and every one is accounted for.
+ 
+-The matrix ran 35 rows, all as predicted once R22 was corrected. On
++The matrix ran 37 rows, all as predicted once R22 was corrected. On
+ `develop`, 6 stayed GREEN: a reader one short in `absence-liveness`,
+ `git-env`, `duplicate-imports` and `spec-scan`'s forwarded floor, and growth
+ through `absence-liveness` and `evidence-recording`'s comparison floor. On the
+-branch, 29 turned their guard RED: those six again, `back-translate`'s looped
+-locale, the recorder's four refusals and its printed moves, both directions
++branch, 31 turned their guard RED: those six again, `back-translate`'s looped
++locale, four of the recorder's refusals (a fall, a stale id, two places,
++two values) and its printed moves, both directions
+ of the check, record mode's call site, the CI refusal's words, a workflow
+ running the recorder, and twelve against the literal reader (a literal floor
+ back, a forwarded bound, the comparison form, a callback's predicate, a
+@@ -274,7 +278,10 @@ literal read as written, `expect.poll`, the cross-check alone with its floor
+ off, a root skipped, a stale product value, a growing Group 5 list, an id
+ spelled twice, and a floor written backwards, `expect(5).toBeLessThan(n)`,
+ which review pass 1 found unread: no file writes one, and none can now pass
+-unseen). R22 first came back GREEN: TypeScript already normalises a
++unseen), and, from review pass 4, the recorder's refusals of a suite that
++did not start and of one that failed, which no test had reached; each is now
++run with a `PATH` that has no `npx`, or a stand-in that exits 3, and the
++real record read before and after. R22 first came back GREEN: TypeScript already normalises a
+ numeric literal's text, so the `replace` it removed was dead code, and is
+ gone. The CI refusal is mutated in its words, not removed, because a
+ recorder that ran under the probe would run the suite and could rewrite the
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/floors/m468.py`, copied from #446 Group 3's runner,
@@ -3323,8 +3484,10 @@ where the branch holds `floorBreach`, so each pair is two rows.
 | R27 | the Group 5 list grows | — | RED |
 | R28 | a recorded id is spelled twice | — | RED |
 | R29 | a floor written backwards is unread (review pass 1) | — | RED |
+| R30 | a suite that did not start is judged (review pass 4) | — | RED |
+| R31 | a suite that failed is judged (review pass 4) | — | RED |
 
-35 rows: 6 on `develop`, 29 on the branch. R16 mutates the refusal's words,
+37 rows: 6 on `develop`, 31 on the branch. R16 mutates the refusal's words,
 not the refusal: a recorder that ran under the probe would run the suite and
 could rewrite the real `tests/floors.json`.
 
@@ -3419,3 +3582,30 @@ seven lines above a `floorBreach` call scanned for a stated count.
 
 The scan found no other comment stating a current count; the rest are dated
 history. Five findings; the loop continues.
+
+### Pass 4 (2026-10-03, 21:13Z, tree `eb2063a`)
+
+Mechanical, by `p468-pass.sh 4`: the ten task diffs applied to `4d07565`
+equal the branch; `astro check` 0/0/0; prettier clean; unit 3595/3595;
+`npm run floors:record` on the applied tree: every floor already matches,
+tree clean; matrix 6 + 29 as predicted, 0 mismatches. CLEAN.
+
+Reading: the ledger's ratchet section and the CLAUDE.md bullet in full,
+each claim checked against `tests/floors.json` (56 ids, counted by guard)
+and the code; the matrix rows against `main()`'s branches.
+
+12. The ledger counted "43 unit floors" and then `spec-scan`'s helper and
+    `back-translate`'s locales again: the 43 were sites, two of which carry
+    nine ids. It now counts 52 converted ids and 56 recorded (Task 12; the
+    AC4 row above too).
+13. The ledger's reader description and the CLAUDE.md bullet predated pass
+    1 and did not name the backwards form (Task 12).
+14. `main()` refuses a suite that did not start and one that failed, and no
+    test or matrix row reached either branch. Both are now run at the
+    process boundary, with no `npx` on `PATH` or a stand-in that exits 3,
+    so the suite never runs, and the real record is read before and after;
+    matrix rows R30 and R31 (Task 11). Recording that test first failed in
+    record mode: `anchored-presence` refused `toContain` on a process's
+    stderr, so each refusal is pinned whole.
+
+Three findings; the loop continues.
