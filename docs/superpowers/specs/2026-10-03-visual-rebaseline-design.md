@@ -13,6 +13,11 @@ Decisions taken by the operator, 2026-10-03:
    included, which could bake a real visual change into a baseline. The
    operator: _"we cannot afford to allow any visual bugs go unnoticed and
    unfixed"_.
+4. **A real merge lock, not a note** (after the plan was approved; #459
+   comment 5967363108). A side review found that only a label and a rule in
+   `CLAUDE.md` stood between a bot-written baseline and `develop`, while
+   agents merge green pull requests there without asking. The operator chose
+   a required check, `operator-review`, scoped to bot rebaselines (Unit 4).
 
 ## Why, and what was measured first
 
@@ -38,6 +43,10 @@ history will not supply one.
   throwaway checkout whose output reaches the repository solely as a commit
   the operator reviews.
 - A baseline changes only as a reviewable diff in the pull request.
+- A pull request carrying a bot rebaseline merges only after the operator
+  has approved it at its current head, and a required check enforces that
+  (decision 4, Unit 4). Nothing commits a rebaseline before that check is
+  required.
 - No retries anywhere (operator rule 2026-10-02). Anything that does not
   arrive fails by name.
 - Privilege is split. The job that runs pull-request code holds a read-only
@@ -59,14 +68,16 @@ it. A hostile dependency could therefore read the capture job's token (read
 only, and it already runs in CI with the same token) and forge the artifact.
 The forgery can reach the repository only as PNG bytes at paths that are
 already baselines, after the validator checks the signature, size, hash and
-path of each one, and only as a diff the operator reviews before it merges. It
-cannot add a file, touch code or a workflow, or reach the write token, which
-lives in a job that never runs pull-request code. The manifest's strings are
-pattern-checked before any of them is written into a comment.
+path of each one, and only as a diff the operator must approve before it
+merges (Unit 4). It cannot add a file, touch code or a workflow, or reach the
+write token, which lives in a job that never runs pull-request code. The
+manifest's strings are pattern-checked before any of them is written into a
+comment.
 
 ## Architecture
 
-Two new workflows and one new trigger on an existing one.
+Four new workflows and one new trigger on an existing one. Units 1-3 make
+the rebaseline; Unit 4 holds its merge until the operator approves it.
 
 ```
 Dependabot PR (Playwright only)
@@ -83,11 +94,21 @@ visual-rebaseline.yml           (read-only token, no secrets, runs PR code)
   ▼
 visual-rebaseline-commit.yml    (contents/actions/pull-requests: write;
                                  default-branch code only, no PR checkout)
-  validate artifact (fail-closed) ─► PR head unchanged? ─► commit via Git
-  Data API (fast-forward only) ─► dispatch ci.yml on the branch ─► comment
+  validate artifact (fail-closed) ─► lock required? ─► PR head unchanged?
+  ─► commit via Git Data API (fast-forward only) ─► dispatch ci.yml on the
+  branch ─► comment
   │ workflow_dispatch
   ▼
 ci.yml (unchanged jobs, so check names stay `build-and-test`, `visual`, …)
+
+Every PR                          Operator's review
+  │ pull_request_target             │ pull_request_review
+  │                                 ▼
+  │                         operator-review-relay.yml  (no permissions)
+  │                                 │ workflow_run (completed)
+  ▼                                 ▼
+operator-review.yml   (default-branch code; statuses: write)
+  pending ─► verdict ─► commit status `operator-review` on the PR head
 ```
 
 ### Unit 1: `visual-rebaseline.yml` (capture, unprivileged)
@@ -188,27 +209,37 @@ exactly (a guard asserts the two agree).
   Dependabot branch cut before Unit 3 landed lacks it, and a commit there
   would leave the head with no checks, so it refuses by name and writes
   nothing. (Dependabot's next rebase brings the trigger in.)
+- **locked?** Also before writing anything, it reads `GET /branches/develop`
+  and refuses by name unless `protection.required_status_checks` names
+  `operator-review` (Unit 4), in `contexts` or in `checks`. A `contents: read`
+  token sees both (measured, run 37112752013: HTTP 200, `contexts`
+  `build-and-test`, `visual`, `closing-keywords`, and `checks` with each
+  `app_id`). So until the operator has required the lock, a rebaseline
+  captures and uploads but never commits.
 - **guard against staleness:** the PR's current head must equal the
   manifest's head SHA. If Dependabot has rebased in between, it refuses by
   name. The next capture run will handle the new head.
 - **commit** through the Git Data API: blobs, a tree on top of the head's
   tree, a commit whose parent is the head, then `PATCH refs/heads/<branch>`
   with `force: false`, so it can only fast-forward. The commit message names
-  #459, the files and the versions. The author is `github-actions[bot]`.
+  #459, the files and the versions. It names no author, so the commit takes
+  the token's identity, `github-actions[bot]`, which Unit 4 keys on.
   Once a commit lands that Dependabot did not write, Dependabot stops
   rebasing the branch, so a later `develop` change is brought in with an
   ordinary update-branch. That push runs the capture again, which finds the
-  gate passing and does nothing.
+  gate passing and does nothing, and moves the head, so `operator-review`
+  waits for the operator's approval at the new head (Unit 4).
 - **dispatch** `ci.yml` on the branch
   (`POST /actions/workflows/ci.yml/dispatches`). GitHub exempts
   `workflow_dispatch` and `repository_dispatch` from the rule that a
   `GITHUB_TOKEN` starts no workflow; the dispatch is the one that runs
   `ci.yml` itself.
 - **comment** on the PR: a table of each baseline, its pixel count and the
-  Playwright version, and the line "Rebaselined automatically (#459). The
-  operator reviews the PNG diff before this merges." It also adds the label
-  `rebaseline-needs-review`. The label is created when this lands, and a
-  failed label call fails the job by name.
+  Playwright version, and the line "Rebaselined automatically (#459).
+  `operator-review` holds the merge until the operator approves the PNG diff
+  at this head." It also adds the label `rebaseline-needs-review`, which makes
+  the state visible on every listing; the lock does not read it. The label is
+  created when this lands, and a failed label call fails the job by name.
 
 ### Why the commit workflow's token can write
 
@@ -233,13 +264,108 @@ level. No `ci.yml` job needs pull-request context: the `workflow_call` path
 from `deploy-dev.yml` already runs every job without it (#163). The
 `pipeline-wiring` trigger pin is updated in the same change.
 
-## The operator's review
+### Unit 4: the `operator-review` lock (decision 4)
 
-A pull request labelled `rebaseline-needs-review` is not merged into
-`develop` by an agent until the operator has approved it (a PR review, or
-approval stated in the session and recorded on the PR). This is a process
-rule, held by `CLAUDE.md` and memory. The label makes it visible on every
-listing.
+A required check that holds the merge until the operator has approved an
+automatic rebaseline. It replaces a process rule that agents, who merge
+green pull requests into `develop` without asking, could only remember.
+
+**The verdict** is a pure function, `reviewVerdict`, in
+`scripts/operator-review.mjs`, unit-tested and fail-closed. Its inputs are the
+pull request's commits (each with its author login and changed paths), its
+reviews, and the current head.
+
+- **Locked** when any commit whose author login is `github-actions[bot]`
+  changed a path under `tests/e2e/__screenshots__/`. It is keyed on the
+  commit, not the label, because the agent App can remove a label. Agent CSS
+  work, committed under the operator's authorship, keeps its current flow
+  (decision 4). A commit on a screenshot whose author login is `null` (an
+  email GitHub links to no account) locks too, so an identity that fails to
+  resolve fails closed rather than open. On `develop`'s last 40 commits every
+  author resolved: `ShydenMcM` 25, `shyden-agent[bot]` 14 (the App's API
+  merges, committer `web-flow`), `dependabot[bot]` 1. Unit 2's commit names
+  no author, so it takes the token's identity, as the App's API merges take
+  the App's; the lock proof below measures that it resolves.
+- **Unlocked:** `success`, "No automatic rebaseline in this pull request".
+- **Locked:** `success` only when the operator's latest decisive review (his
+  last review whose state is `APPROVED`, `CHANGES_REQUESTED` or `DISMISSED`;
+  a `COMMENTED` review decides nothing, as in GitHub's own rule) is
+  `APPROVED` and its `commit_id` is the current head. Otherwise `failure`,
+  "Waiting for the operator to approve the rebaseline at <sha7>". Any later
+  push moves the head, so the check goes red again. Only the login
+  `ShydenMcM` counts; an agent's or Dependabot's approval never does.
+- **Refusals** (the job fails and the status stays `pending`): a commit list
+  shorter than the pull request's own `commits` count (the list endpoint
+  stops at 250); a commit whose file list is truncated (`GET /commits/{sha}`
+  pages at 300 files); any API call that fails or runs out of time.
+
+**The workflows.**
+
+- `operator-review.yml`, `name: Operator review`, the trusted half. `on:
+  pull_request_target` (opened, synchronize, reopened) and `workflow_run` on
+  `Operator review relay` (completed), whatever the relay's conclusion,
+  since the verdict reads everything it needs itself. Both run the default
+  branch's copy of the file, so a pull request cannot change the verdict.
+  `permissions: contents: read, pull-requests: read, statuses: write`. It
+  checks out only the default branch (no `ref:`, `persist-credentials:
+  false`), installs nothing (the script uses Node's own `fetch`), and runs
+  only `node scripts/operator-review.mjs`. It takes the pull request's number
+  from `pull_request.number`, or from the relay's
+  `workflow_run.pull_requests[0].number` (measured: populated after both a
+  `pull_request_target` run and a `pull_request_review` run, runs 37112762418
+  and 37112773792); an empty list fails by name. Before any read it posts
+  `pending` on the payload's head, so an earlier `success` there cannot
+  outlive a run that dies (a dismissal followed by a failed read, say). It
+  then reads the current head from `GET /pulls/{n}`, since a newer push may
+  have moved it, posts `pending` there too if it differs, and posts the
+  verdict on it. The status context is `operator-review`.
+- `operator-review-relay.yml`, `name: Operator review relay`, `on:
+  pull_request_review` (submitted, dismissed). A review fires no
+  `pull_request_target`, so this workflow exists only to complete and so fire
+  the trusted half. `permissions: {}`, no checkout, one step that prints the
+  pull request number. It runs the pull request's own copy of the file, which
+  is why it decides nothing.
+
+**A commit status, not a job's check run.** The relay's run belongs to the
+default branch: measured, run 37112762418 has `head_sha` `9578a53` on
+`develop`, while the pull request's head was `719be94`. A check run named
+`operator-review` from that job would land on `develop`'s commit and never
+satisfy the pull request. A status is posted on the SHA the verdict names
+(measured: HTTP 201 from both triggers, creator `github-actions[bot]`). A
+commit status satisfies a required check, as `main`'s `dev-verified` already
+shows.
+
+**Fail-closed by construction.** The rebaseline commit (Unit 2) is pushed
+with `GITHUB_TOKEN`, which starts no `pull_request_target`, so the new head
+carries no `operator-review`, and a missing required check blocks the merge
+just as a red one does. The first verdict on that head comes from the
+operator's review.
+
+**Requiring it is the operator's.** Adding `operator-review` to `develop`'s
+required checks is administration, which the agent App holds read-only. The
+order is forced, as for every new gate here: merge first, then require, or
+every open pull request waits on a check its base cannot produce. Pull
+requests opened before the merge get the status on their next push. It is
+added with no app pinned, as `dev-verified` is, since the agent App cannot
+post a status at all. Unit 2's **locked?** step keeps the automation off until
+it is done.
+
+**Dependabot as the actor is still to be measured.** The docs say
+`pull_request_target` "does not have these limitations" (the read-only token
+that `pull_request` and `pull_request_review` get when Dependabot triggers
+them), but no Dependabot pull request was open on 2026-10-03. The probe
+merged in #460 stays on `develop` until one is, and records whether that run
+can post a status. This work does not merge before it has: if it cannot, a
+Dependabot pull request would never get its green `operator-review`, and the
+design goes back to the operator. This work removes the probe.
+
+**What the lock does not stop.** It stops an agent merging an unreviewed
+rebaseline by mistake. It does not stop a deliberate bypass: a pull request
+that edits a workflow could post the status from a `pull_request` or
+`pull_request_review` run, which run the branch's copy; a commit could claim
+`github-actions[bot]` as its author; a merged change could rewrite
+`operator-review.yml`. Each is a workflow or authorship edit, visible in the
+diff, and none happens by accident.
 
 ## Error handling
 
@@ -265,7 +391,14 @@ unexpected entry, a moved head.
     does not.
   - report classification: screenshot-only, mixed, timeout, missing
     baseline, count mismatch.
-  - validate: each refusal above.
+  - validate: each refusal above; locked?: the check named in `contexts`, in
+    `checks`, in neither, and a branch with no protection.
+  - verdict (`tests/unit/operator-review.test.ts`): no bot commit; a bot
+    commit outside the screenshots; a bot commit on a screenshot with no
+    review; a commit on a screenshot whose author login is `null`; approved
+    at the head; approved at an older commit; approved by the App, and by
+    Dependabot; approved then changes requested; approved then commented;
+    approved then dismissed; a truncated commit list; a truncated file list.
 
   Fixtures are written in the test, never imported from the code under test.
 - **Wiring guards (`pipeline-wiring.test.ts`), each mutation-verified RED and
@@ -276,33 +409,45 @@ unexpected entry, a moved head.
   `npm ci --ignore-scripts`, and runs `node` only on scripts from that
   default-branch checkout; no step in either workflow retries; `ci.yml`'s
   triggers are exactly the three above; and the commit workflow's trigger
-  names the capture workflow's `name:`. Each guard counts the jobs or steps it
-  judges, with a floor at the measured figure minus one, and plants each
-  construct in each form the workflows write it (global rule 2026-10-02,
-  point e).
+  names the capture workflow's `name:`. For the lock: `operator-review.yml`
+  is started by `pull_request_target` and a `workflow_run` naming the relay's
+  `name:`, and nothing else; it checks out no ref and keeps no token,
+  installs nothing, runs only `node scripts/operator-review.mjs`, and holds
+  exactly its three scopes; the relay is started by `pull_request_review`
+  `submitted` and `dismissed` and nothing else (without `dismissed`, a
+  dismissed approval would keep its `success`), declares `permissions: {}`
+  and checks nothing out; the commit workflow's **locked?** step comes before
+  its first write. Each guard counts the jobs or steps it judges, with a floor
+  at the measured figure minus one, and plants each construct in each form
+  the workflows write it (global rule 2026-10-02, point e).
 - **End-to-end on the real runner, after the develop merge.** GitHub fires
   `workflow_run` only for a workflow file on the default branch, and the
   dispatch needs `ci.yml`'s new trigger there too, so nothing before the
   merge can exercise the chain. A real drift arriving between the merge and
-  the proof would run the chain unproven; whatever it wrote would still be a
-  labelled diff that the operator reviews before it merges, which is the
-  bound on that window. The first proof run establishes three things in
-  order, and if any fails the work stops and goes to the operator: the commit
-  workflow's token can push to the Dependabot branch, it can dispatch
-  `ci.yml` there, and branch protection accepts the dispatched run's checks
-  on that head (`mergeStateStatus` reads `CLEAN` once they pass).
+  the proof would write nothing until the operator has required
+  `operator-review` (Unit 2's **locked?**), and after that the lock holds
+  whatever it wrote, which is the bound on that window. So the operator
+  requires the check first. The first proof run then establishes three
+  things in order, and if any fails the work stops and goes to the operator:
+  the commit workflow's token can push to the Dependabot branch, it can
+  dispatch `ci.yml` there, and branch protection accepts the dispatched run's
+  checks on that head (every required check but `operator-review` reads
+  `success`, and `mergeStateStatus` reads `CLEAN` once the operator has
+  approved).
   - *Positive:* a Dependabot pull request whose diff against `develop` is
     Playwright-only and moves pixels turns `visual` red; capture and commit
     run, the dispatched CI is green on the new head, and the PNG diff shows
     in the file view. No such pull request exists while the repository is on
     the latest Playwright, so the proof makes one: on an open Dependabot pull
-    request, one commit (pushed as the App, so the author stays
-    `dependabot[bot]`) returns that pull request's own change to the base
+    request, one commit (pushed as the App, so the pull request's author
+    stays `dependabot[bot]`) returns that pull request's own change to the base
     and sets Playwright to a release measured to drift. The five releases
     measured so far (1.59.1 to 1.62.1) move no pixel past the gate, so the
-    plan's first task measures further back (1.40 to 1.58, same harness as
-    run 37099208646) for one that does. If none does, that goes to the
-    operator before anything is built on the proof.
+    proof first searches further back for one that does, through the shipped
+    capture workflow after the merge (the operator deferred the throwaway
+    search, #459 comment 5966311423; CI renders only in noble images, so
+    1.45.3 to 1.58.2 are measurable). If none does, that goes to the operator
+    before anything is built on the proof.
   - *Negative:* the same pull request with a source file also changed gets no
     rebaseline, and so does one where Playwright is grouped with another
     package (the font candidate measured 2026-10-03,
@@ -313,6 +458,13 @@ unexpected entry, a moved head.
     pull request from scratch, discarding the proof's commits. The capture
     workflow then runs under Dependabot's own restricted token and ends green,
     qualifying or not as the rule decides for the rebuilt diff.
+  - *The lock,* once the operator has required `operator-review`: an agent's
+    pull request gets `success`; on the positive proof's pull request, the
+    rebaseline's head has no `operator-review` and `mergeStateStatus` reads
+    `BLOCKED`; an App review changes nothing; the operator's approval turns
+    it `success`; a later push turns it `failure` again. Before any of this,
+    the probe's row for a Dependabot-triggered `pull_request_target` must
+    read HTTP 201 (Unit 4).
   - Every run ID is recorded on #459.
 
 ## Out of scope
@@ -348,3 +500,6 @@ and reading the whole document.
 | 16 | `md-swap.py` (the helper built after pass 9) dropped a trailing blank line, gluing the decisions list to a heading; tool fixed and tested |
 | 17 | Out of scope did not name the non-Playwright updates decision 3 excludes |
 | 18 | none |
+| 19 | after decision 4 (Unit 4, measured by the #460 probe): constraints and diagram lacked the lock and Unit 2's **locked?**; threat model cited no enforcement; an unresolved author login would have failed open (now locks; logins on develop measured); Unit 2 claimed an author it does not set; `pending` was posted only after a read that could fail; the proof expected `CLEAN` where the lock makes it `BLOCKED`, and could not commit before the check is required; stale "first task measures 1.40 to 1.58"; a `null`-author test missing; three ragged lines |
+| 20 | update-branch after a rebaseline did not say the lock re-arms; the trusted half could have been gated on the relay's conclusion; no guard pinned the relay's `dismissed` trigger (dropping it would fail open); "author stays `dependabot[bot]`" read as the commit's author beside a lock keyed on it; two ragged lines |
+| 21 | none |
