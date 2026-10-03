@@ -3190,6 +3190,100 @@ index be804ac..2a07291 100644
      const misread = READINGS.filter(({ file, sites, refused }) => {
 ~~~~
 
+## Task 10: From review pass 3: comments and messages fit a ratchet
+
+Pass 3 findings 7-11, from reading Task 2 line by line. No floor moved.
+
+~~~~diff
+diff --git a/tests/unit/absence-liveness.test.ts b/tests/unit/absence-liveness.test.ts
+index 265cad2..f663098 100644
+--- a/tests/unit/absence-liveness.test.ts
++++ b/tests/unit/absence-liveness.test.ts
+@@ -281,8 +281,8 @@ describe('absence assertions prove the population they searched', () => {
+     ).toBeUndefined();
+     // The figure is recorded exactly rather than left comfortably low, for
+     // the reason `anchored-presence` records: a control with slack in it is
+-    // most of the way back to no control at all. #184 found it at 100 over a real 154, and showed
+-    // what that slack costs: with the `toHaveLength(0)` branch of
++    // most of the way back to no control at all. #184 found it at 100 over a
++    // real 154, and showed what that slack costs: with the `toHaveLength(0)` branch of
+     // `absenceSubject` dead, this test stayed green. #390 F161 found it
+     // there again, at 153 over a real 391, with the same branch dead and
+     // the same test green; F159's spellings brought the figure to 394,
+diff --git a/tests/unit/anchored-presence.test.ts b/tests/unit/anchored-presence.test.ts
+index 5808cdb..9e88e66 100644
+--- a/tests/unit/anchored-presence.test.ts
++++ b/tests/unit/anchored-presence.test.ts
+@@ -282,8 +282,8 @@ describe('presence assertions over source text are stripped or anchored', () =>
+   // stopped matching would report zero findings and zero scanned, and only
+   // one of those is good news. `event-collectors.test.ts` settled this shape.
+   it('scans the presence assertions that actually read source text', () => {
+-    // 76 today, and the figure is worth stating: the floor sat at 20 while the
+-    // truth was 27, so a control with that much slack in it is most of the way
++    // The figure is recorded exactly (#468), because slack here has cost
++    // before: the floor sat at 20 while the truth was 27, so a control with that much slack in it is most of the way
+     // back to no control at all. #118 moved the number twice -- UP as the
+     // derivation learned to follow local bindings to a fixed point, then back
+     // DOWN as it stopped reading object-literal keys and parameter names as
+diff --git a/tests/unit/device-tool-homes.test.ts b/tests/unit/device-tool-homes.test.ts
+index 71bb6ad..ba87ac3 100644
+--- a/tests/unit/device-tool-homes.test.ts
++++ b/tests/unit/device-tool-homes.test.ts
+@@ -77,6 +77,7 @@ describe.each(HOMES)('no file spawns $tool but $home', ({ tool, home }) => {
+     expect(
+       floorBreach('device-tool-homes/files', files.length),
+     ).toBeUndefined();
++    // The home is among them, so a walk that loses scripts/ fails too.
+     expect(files).toContain(home);
+   });
+ 
+diff --git a/tests/unit/install-scripts.test.ts b/tests/unit/install-scripts.test.ts
+index 3430e2d..f83b2f1 100644
+--- a/tests/unit/install-scripts.test.ts
++++ b/tests/unit/install-scripts.test.ts
+@@ -86,17 +86,18 @@ describe('the install-script allowlist', () => {
+     // if the lockfile stopped reporting install scripts, the derived set and an
+     // empty `allowScripts` would agree, and a suite asserting nothing would go
+     // green. This repo has shipped two guards that passed because both sides
+-    // were empty or both were satisfied by prose. If a dependency change
+-    // genuinely leaves NO package running install scripts, this failure is the
+-    // prompt to confirm that and delete the suite deliberately — not to weaken
+-    // the assertion.
++    // were empty or both were satisfied by prose.
++    //
++    // If a dependency change genuinely leaves NO package running install
++    // scripts, this failure is the prompt to confirm that and delete the
++    // suite deliberately — not to weaken the assertion.
+     expect(
+       floorBreach(
+         'install-scripts/packages',
+         packagesWithInstallScripts().length,
+       ),
+-      'no package in package-lock.json declares an install script — either ' +
+-        'the lockfile is not v3, or this control is no longer needed',
++      'packages with an install script moved: fewer can mean a lockfile that ' +
++        'is not v3, or a control no longer needed; more, a new one to approve',
+     ).toBeUndefined();
+   });
+ 
+diff --git a/tests/unit/pipeline-wiring.test.ts b/tests/unit/pipeline-wiring.test.ts
+index 7c542ba..e658b73 100644
+--- a/tests/unit/pipeline-wiring.test.ts
++++ b/tests/unit/pipeline-wiring.test.ts
+@@ -2634,10 +2634,9 @@ describe('the back-translation review', () => {
+       'a change to one of these would not start the review',
+     ).toEqual([]);
+     // After the verdict, so a population that grew never hides a finding.
+-    // The closure is followed, not listed: this is its floor, not its size.
++    // The closure is followed, not listed, and its size is ratcheted (#468).
+     expect(
+       floorBreach('pipeline-wiring/sanity-import-walk', inputs.length),
+-      'the import walk found nothing',
+     ).toBeUndefined();
+   });
+ });
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/floors/m468.py`, copied from #446 Group 3's runner,
@@ -3296,3 +3390,32 @@ controls) and `scripts/record-floors.mjs` (`main`).
    symptom; it now refuses with the spawn error (Task 9).
 
 Five findings; the loop continues.
+
+### Pass 3 (2026-10-03, 21:08Z, tree `80cab13`)
+
+Mechanical, by `p468-pass.sh 3`: the nine task diffs applied to `4d07565`
+equal the branch; `astro check` 0/0/0; prettier clean; unit 3595/3595;
+`npm run floors:record` on the applied tree: every floor already matches,
+tree clean; matrix 6 + 29 as predicted, 0 mismatches. CLEAN.
+
+Reading: Task 2's diff, every changed line outside the new test file (503
+lines), then each migrated call's final form, and every comment within
+seven lines above a `floorBreach` call scanned for a stated count.
+
+7. `anchored-presence` said "76 today" beside a figure that now lives in
+   `floors.json`: a comment that drifts the way the floor used to. Reworded.
+8. The stale-comment sweep took a clause that was not stale:
+   `device-tool-homes` explained that the home is among the files, which
+   its `toContain(home)` still asserts. Restored.
+9. `pipeline-wiring` said of the import walk "this is its floor, not its
+   size"; ratcheted, the floor is its size. Reworded.
+10. Two migrated calls kept messages written for a floor that can only fail
+    low: "the import walk found nothing", and install-scripts' "no package
+    declares an install script". A ratchet also fails on growth, where those
+    headlines would mislead. One dropped (the breach names everything), one
+    made two-sided.
+11. `install-scripts` lost a paragraph break in the rewrap, and one
+    `absence-liveness` line ran past the margin. Both restored.
+
+The scan found no other comment stating a current count; the rest are dated
+history. Five findings; the loop continues.
