@@ -299,8 +299,11 @@ describe('backTranslationUnits: every catalogue the site ships', () => {
           key.replace(/ \[[^\]]*\]$/, ''),
         ),
       );
+      // Measured 261 translated entries in zh, vi and th, the fewest of the
+      // four (id has 262) on 2026-10-03 (#446). Stated tight, so a reader that
+      // comes back one short fails.
       expect(expected.size, `${locale} translated nothing`).toBeGreaterThan(
-        100,
+        260,
       );
       expect([...read].sort(), locale).toEqual([...expected].sort());
     }

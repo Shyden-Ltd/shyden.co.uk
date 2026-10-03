@@ -73,7 +73,9 @@ describe('a download’s bytes are read only through downloadText', () => {
         (call) => calleeName(call) === HOME,
       ),
     );
-    expect(readers.length).toBeGreaterThan(0);
+    // Measured 2 specs that read downloaded bytes on 2026-10-03 (#446). Stated
+    // tight, so a reader that comes back one short fails.
+    expect(readers.length).toBeGreaterThan(1);
   });
 });
 

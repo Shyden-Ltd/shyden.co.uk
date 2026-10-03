@@ -179,7 +179,9 @@ describe('absence assertions prove the population they searched', () => {
   // matching would report zero findings over zero absences -- and only one of
   // those is good news. This is the shape `event-collectors.test.ts` settled.
   it('finds the absence assertions it is meant to be judging', () => {
-    expect(tsFiles.length).toBeGreaterThan(30);
+    // Measured 262 TypeScript files under tests/ on 2026-10-03 (#446). Stated
+    // tight, so a reader that comes back one short fails.
+    expect(tsFiles.length).toBeGreaterThan(261);
     // 394 today. The floor is stated against a measured figure rather
     // than left comfortably low, for the reason `anchored-presence`
     // records: a control with slack in it is most of the way back to
@@ -187,8 +189,9 @@ describe('absence assertions prove the population they searched', () => {
     // what that slack costs: with the `toHaveLength(0)` branch of
     // `absenceSubject` dead, this test stayed green. #390 F161 found it
     // there again, at 153 over a real 391, with the same branch dead and
-    // the same test green; F159's spellings brought the figure to 394.
-    expect(result.absences).toBeGreaterThan(393);
+    // the same test green; F159's spellings brought the figure to 394,
+    // and #446 measured 399 on 2026-10-03.
+    expect(result.absences).toBeGreaterThan(398);
     expect(result.proved).toBeGreaterThan(0);
   });
 

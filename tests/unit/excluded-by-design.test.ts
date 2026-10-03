@@ -97,6 +97,8 @@ describe('the gauntlet’s by-design count selects exactly what android-chrome e
               span.expression.text === CONSTANT,
           ),
       );
-    expect(built.length).toBeGreaterThan(0);
+    // Measured 2 built --grep patterns on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    expect(built.length).toBeGreaterThan(1);
   });
 });

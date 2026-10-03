@@ -90,11 +90,13 @@ describe('the install-script allowlist', () => {
     // If a dependency change genuinely leaves NO package running install
     // scripts, this failure is the prompt to confirm that and delete the
     // suite deliberately — not to weaken the assertion.
+    // Measured 3 installed packages with an install script on 2026-10-03
+    // (#446). Stated tight, so a reader that comes back one short fails.
     expect(
       packagesWithInstallScripts().length,
       'no package in package-lock.json declares an install script — either ' +
         'the lockfile is not v3, or this control is no longer needed',
-    ).toBeGreaterThan(0);
+    ).toBeGreaterThan(2);
   });
 
   it('approves exactly the packages that run install scripts, and no others', () => {

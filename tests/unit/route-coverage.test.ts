@@ -124,7 +124,9 @@ describe('the post-deploy gates derive their routes', () => {
   it('has gate specs to check', () => {
     // Without this the loop below is vacuous if the directories are ever
     // renamed: no files, no matches, green.
-    expect(gateSpecs().length).toBeGreaterThan(1);
+    // Measured 3 deploy-gate specs on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    expect(gateSpecs().length).toBeGreaterThan(2);
   });
 
   it('hardcodes no locale-prefixed route in any deploy gate', () => {
