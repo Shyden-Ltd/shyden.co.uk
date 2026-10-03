@@ -3715,3 +3715,16 @@ earlier pass had read whole.
     One assertion now holds both (Task 13).
 
 Three findings; the loop continues.
+
+### Pass 6 (2026-10-03, 21:26Z, tree `df95252`)
+
+Mechanical, by `p468-pass.sh 6`: the thirteen task diffs applied to
+`4d07565` equal the branch; `astro check` 0/0/0; prettier clean; unit
+3601/3601; `npm run floors:record` on the applied tree: every floor already
+matches, tree clean; matrix 6 + 31 as predicted, 0 mismatches. CLEAN.
+
+Reading: Task 13's diff, the head and its AC table against the task list,
+and the pass log. Nothing found.
+
+**Approved at pass 6**: a pass whose run and reading both found nothing.
+17 findings across passes 1-5, all fixed.
