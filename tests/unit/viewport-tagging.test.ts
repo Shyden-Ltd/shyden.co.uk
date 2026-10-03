@@ -237,9 +237,13 @@ const analyze = (file: string, text: string): readonly string[] =>
 
 describe('a real phone cannot resize its own screen', () => {
   it('every test that resizes the viewport is tagged @emulated-viewport, none the phone runs reads it, and no tag is stale', () => {
-    // Measured 771 tests and groups read on 2026-10-03 (#446). Stated tight,
-    // so a reader that comes back one short fails.
-    expectNothingFound(read, declarationsRead('tests and groups read', 770));
+    expectNothingFound(
+      read,
+      declarationsRead(
+        'tests and groups read',
+        'viewport-tagging/declarations',
+      ),
+    );
   });
 });
 

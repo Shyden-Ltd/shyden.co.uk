@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { withoutTsComments } from './source-text';
 import { filesUnder, searched, nonEmpty } from '../source-files';
+import { floorBreach } from '../floors';
 
 /** `tsconfig.json` is JSONC: it carries the reason for every option. */
 const tsconfig = (): Record<string, any> =>
@@ -107,10 +108,7 @@ describe('typecheck reads the scripts that deploy this site (#228)', () => {
   });
 
   it('reads every script, and as many as there are', () => {
-    // Measured 29 scripts on 2026-10-03 (#446). Stated tight, so a walk that
-    // comes back one short fails.
     const read = scripts();
-    expect(read.length).toBeGreaterThan(28);
     // Cross-checked against the compiler: every script TypeScript itself
     // would stop checking must be one the raw scan flags. No script does
     // today, so the planted forms below are what this check runs on.
@@ -119,6 +117,8 @@ describe('typecheck reads the scripts that deploy this site (#228)', () => {
       return silencedByCompiler(path, text) && !optsOut(text);
     });
     expect(searched(missed, { of: read, what: 'scripts read' })).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(floorBreach('typecheck-scope/scripts', read.length)).toBeUndefined();
   });
 
   it.each([

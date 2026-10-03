@@ -7,6 +7,7 @@ import {
   asComputedRgb,
   asRgba,
 } from '../../src/lib/shytalk-brand';
+import { floorBreach } from '../floors';
 
 /**
  * ShyTalk's brand mark has exactly one home (#17).
@@ -165,10 +166,7 @@ describe("ShyTalk's brand mark has one home", () => {
   });
 
   it('reads every source file, and as many as there are', () => {
-    // Measured 329 source files on 2026-10-03 (#446). Stated tight, so a walk
-    // that comes back one short fails.
     const files = scannedFiles();
-    expect(files.length).toBeGreaterThan(328);
     // Cross-checked on the files that do spell the mark, by the same reading
     // the verdict makes: the home spells every hex, and the token home spells
     // its one token exactly once, so a reader gone blind to a script or to a
@@ -184,6 +182,8 @@ describe("ShyTalk's brand mark has one home", () => {
       }),
     ).toEqual([]);
     expect(readCode(TOKEN_HOME).split(TOKEN_FORM).length - 1).toBe(1);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(floorBreach('shytalk-brand/files', files.length)).toBeUndefined();
   });
 
   it.each([

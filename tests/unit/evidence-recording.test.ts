@@ -26,6 +26,7 @@ import {
   enclosingDeclaration,
   useCallsIn,
 } from '../playwright-declarations';
+import { floorBreach } from '../floors';
 
 const E2E = 'tests/e2e';
 const HOME = 'tests/e2e/evidence.ts';
@@ -294,12 +295,7 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
   });
 
   it('reads every spec, and as many declarations as there are', () => {
-    // Measured 43 e2e specs on 2026-10-03 (#446), 26 of them declaring
-    // recorded. Stated tight, so a walk or a reader that comes back one short
-    // fails.
-    expect(SPECS.length).toBeGreaterThan(42);
     const declaring = SPECS.filter((path) => declaresRecorded(sourceOf(path)));
-    expect(declaring.length).toBeGreaterThan(25);
     // Cross-checked against the parse tree: a spec the compiler reads as
     // passing `recorded` to `test.use` is one the text scan reads as
     // declaring it, and the other way round, so neither reading has a form
@@ -314,6 +310,13 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
         what: 'specs checked for a declaration',
       }),
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach('evidence-recording/declaring-specs', declaring.length),
+    ).toBeUndefined();
+    expect(
+      floorBreach('evidence-recording/specs', SPECS.length),
+    ).toBeUndefined();
   });
 
   it.each([
@@ -360,14 +363,14 @@ describe('evidence recording is opt-in, and the opt-in is derived', () => {
   it('some specs really do act, and some really do not', () => {
     // The population control for the two direction guards above: if every
     // spec landed on one side, both would pass while asserting nothing.
-    // Measured 26 acting and 17 still on 2026-10-03 (#446). Stated tight, so
-    // a reader that moves one spec across fails.
+    // Both sides ratcheted in one expectation (#468), so a reader that moves
+    // one spec across reports both, and so does a side that grew.
     const acting = SPECS.filter((p) => actionsIn(sourceOf(p)).length > 0);
     const still = SPECS.filter((p) => actionsIn(sourceOf(p)).length === 0);
-    expect({ acting: acting.length > 25, still: still.length > 16 }).toEqual({
-      acting: true,
-      still: true,
-    });
+    expect({
+      acting: floorBreach('evidence-recording/acting-specs', acting.length),
+      still: floorBreach('evidence-recording/still-specs', still.length),
+    }).toEqual({ acting: undefined, still: undefined });
   });
 
   it('no journey in a recording spec records blank frames (#292)', () => {

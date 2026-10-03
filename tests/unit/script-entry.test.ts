@@ -8,6 +8,7 @@ import { filesUnder, searched } from '../source-files';
 import { parseFile, parseSource, where } from './ast';
 import { scriptCheckout, type ScriptCheckout } from './script-checkout';
 import { withoutTsComments } from './source-text';
+import { floorBreach } from '../floors';
 
 /**
  * A script asks "was I run directly?" with `import.meta.main`, and with
@@ -754,17 +755,12 @@ describe('a script asks whether it was run directly with import.meta.main alone 
   });
 
   it('judges every read of process.argv the scripts make, and as many as there are', () => {
-    // Measured 10 reads on 2026-10-03 (#446). Stated tight, so a reader that
-    // comes back one short fails.
     const readings = modules.map((file) => ({
       file,
       judged: readArgv(parseFile(file)).judged.length,
       written:
         withoutTsComments(readFileSync(file, 'utf8')).match(ARGV)?.length ?? 0,
     }));
-    expect(
-      readings.reduce((sum, { judged }) => sum + judged, 0),
-    ).toBeGreaterThan(9);
     // Two readers, the parse tree and the text: a script where they disagree
     // holds a form the tree reader is blind to.
     const disagree = readings
@@ -774,6 +770,13 @@ describe('a script asks whether it was run directly with import.meta.main alone 
           `${file}: ${judged} judged, ${written} written`,
       );
     expect(searched(disagree, { of: modules, what: 'scripts' })).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'script-entry/argv-reads',
+        readings.reduce((sum, { judged }) => sum + judged, 0),
+      ),
+    ).toBeUndefined();
   });
 
   it('decides on import.meta.main alone', () => {
@@ -914,8 +917,6 @@ describe('a script does no work while it loads (#276)', () => {
   });
 
   it('judges every load-time statement the scripts hold, and as many as there are', () => {
-    // Measured 313 statements on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
     const readings = modules.map((file) => {
       const sf = parseFile(file);
       return {
@@ -928,12 +929,16 @@ describe('a script does no work while it loads (#276)', () => {
         ).length,
       };
     });
-    expect(
-      readings.reduce((sum, { judged }) => sum + judged, 0),
-    ).toBeGreaterThan(312);
     const skipped = readings
       .filter(({ judged, held }) => judged !== held)
       .map(({ file, judged, held }) => `${file}: ${judged} of ${held} judged`);
     expect(searched(skipped, { of: modules, what: 'scripts' })).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'script-entry/load-time-statements',
+        readings.reduce((sum, { judged }) => sum + judged, 0),
+      ),
+    ).toBeUndefined();
   });
 });

@@ -39,6 +39,7 @@ import { declarationsIn } from '../playwright-declarations';
 import { REQUIRED_CHECKS } from '../../scripts/deploy-gate.mjs';
 import { localImage } from '../../scripts/playwright-image.mjs';
 import { stringLeaves } from '../../src/lib/catalogue-leaves';
+import { floorBreach } from '../floors';
 
 /**
  * The plain `test(...)` declarations `spec` makes, read by the parser. A test
@@ -242,11 +243,12 @@ describe('the deploy pipeline runs what it claims to', () => {
   it('the dev sanity suite exists and is more than a stub', () => {
     // A guard that only checked the workflow REFERENCES the config would pass
     // against an emptied suite.
-    // Measured 15 plain tests in dev-sanity.spec.ts on 2026-10-03 (#446).
-    // Stated tight, so a reader that comes back one short fails.
-    expect(plainTestsIn('tests/dev/dev-sanity.spec.ts').length).toBeGreaterThan(
-      14,
-    );
+    expect(
+      floorBreach(
+        'pipeline-wiring/dev-sanity-tests',
+        plainTestsIn('tests/dev/dev-sanity.spec.ts').length,
+      ),
+    ).toBeUndefined();
   });
 
   it('the dev deploy is gated on a gate that SUCCEEDED, never on one that skipped', () => {
@@ -1069,14 +1071,11 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('reads every workflow file reference, and as many as there are', () => {
-    // Measured 19 references on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
     const files = workflowYamlNames();
     const read = files.map((file) => ({
       file,
       refs: workflowRefs(readFileSync(join(WORKFLOWS, file), 'utf8')),
     }));
-    expect(read.flatMap(({ refs }) => refs).length).toBeGreaterThan(18);
     // Cross-checked against the parsed document: every workflow file a
     // value names once YAML has unquoted, unescaped and unfolded it must be
     // among what the raw scan read, or the raw text spells it in a way the
@@ -1088,6 +1087,13 @@ describe('the deploy pipeline runs what it claims to', () => {
         .map((ref) => `${file} → ${ref}`),
     );
     expect(searched(missed, { of: files, what: 'workflow files' })).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'pipeline-wiring/workflow-file-refs',
+        read.flatMap(({ refs }) => refs).length,
+      ),
+    ).toBeUndefined();
   });
 
   it.each([
@@ -1166,11 +1172,12 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the prod sanity suite exists and is more than a stub', () => {
-    // Measured 8 plain tests in prod-sanity.spec.ts on 2026-10-03 (#446).
-    // Stated tight, so a reader that comes back one short fails.
     expect(
-      plainTestsIn('tests/prod/prod-sanity.spec.ts').length,
-    ).toBeGreaterThan(7);
+      floorBreach(
+        'pipeline-wiring/prod-sanity-tests',
+        plainTestsIn('tests/prod/prod-sanity.spec.ts').length,
+      ),
+    ).toBeUndefined();
   });
 });
 
@@ -1311,11 +1318,10 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
   });
 
   it('reads every workflow for an image, and as many as there are', () => {
-    // Measured 10 workflow files on 2026-10-03 (#446), two of them #459's
-    // probes (probe-459.yml, probe-459-relay.yml): lower this when they go.
-    // Stated tight, so a walk that comes back one short fails.
+    // Two of the workflows read are #459's probes (probe-459.yml,
+    // probe-459-relay.yml): when they go, lower this floor's figure in
+    // tests/floors.json by hand, which is what a real shrink takes (#468).
     const workflows = workflowYamlNames();
-    expect(workflows.length).toBeGreaterThan(9);
     // Cross-checked against the parsed document: every value naming the
     // image once YAML has unquoted and unfolded it must be one the text scan
     // reports. No workflow names it today, so the planted forms below are
@@ -1329,6 +1335,13 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     expect(searched(missed, { of: workflows, what: 'workflow files' })).toEqual(
       [],
     );
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'pipeline-wiring/workflows-read-for-an-image',
+        workflows.length,
+      ),
+    ).toBeUndefined();
   });
 
   it.each([
@@ -1866,9 +1879,9 @@ describe('build-and-test stands for the whole suite, run as shards (#163)', () =
     expect(Array.isArray(shards)).toBe(true);
     const list = shards as unknown[];
     // More than one, or it is not a split at all.
-    // Measured 8 shards scheduled on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(list.length).toBeGreaterThan(7);
+    expect(
+      floorBreach('pipeline-wiring/e2e-shards', list.length),
+    ).toBeUndefined();
     expect(list).toEqual(list.map((_, i) => i + 1));
     // A failing shard would otherwise CANCEL its siblings, and every test they
     // had not reached would go unreported: one red run would show one shard's
@@ -2173,8 +2186,6 @@ describe('the drift measurement reports, and never gates (#224)', () => {
     const writes = visualSteps()
       .flatMap((s) => (typeof s.run === 'string' ? s.run.split('\n') : []))
       .filter(writesTheSummary);
-    // Measured 2 on 2026-10-03 (#446). Stated tight.
-    expect(writes.length).toBeGreaterThan(1);
     // Independent of the YAML parse (#446, control c): the visual job's own
     // text, YAML comments aside, names the summary on exactly as many lines.
     // The job is every line after its key, up to the next line at a job's
@@ -2197,6 +2208,10 @@ describe('the drift measurement reports, and never gates (#224)', () => {
       }),
       'a summary written with >> cannot be read back from the job log',
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach('pipeline-wiring/visual-summary-writes', writes.length),
+    ).toBeUndefined();
   });
 
   it('runs even when the gate went red, which is when it is worth having', () => {
@@ -2348,7 +2363,9 @@ describe('no two concurrently launched groups share an output folder (#230)', ()
   };
 
   it('launches more than one config, or the rest of this asserts nothing', () => {
-    expect(launchedConfigs().length).toBeGreaterThan(1);
+    expect(
+      floorBreach('pipeline-wiring/launched-configs', launchedConfigs().length),
+    ).toBeUndefined();
   });
 
   it('gives each launched config a folder of its own', async () => {
@@ -2609,10 +2626,6 @@ describe('the back-translation review', () => {
       'docker/libretranslate/Dockerfile',
       `.github/workflows/${FILE}`,
     ];
-    // The closure is followed, not listed: this is its floor, not its size.
-    // Measured 17 modules the import walk found on 2026-10-03 (#446). Stated
-    // tight, so a reader that comes back one short fails.
-    expect(inputs.length, 'the import walk found nothing').toBeGreaterThan(16);
     const unwatched = inputs.filter(
       (file) => !paths.some((glob) => globToRegExp(glob).test(file)),
     );
@@ -2620,6 +2633,12 @@ describe('the back-translation review', () => {
       searched(unwatched, { of: inputs, what: 'files the review reads' }),
       'a change to one of these would not start the review',
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    // The closure is followed, not listed: this is its floor, not its size.
+    expect(
+      floorBreach('pipeline-wiring/sanity-import-walk', inputs.length),
+      'the import walk found nothing',
+    ).toBeUndefined();
   });
 });
 
@@ -2706,11 +2725,10 @@ describe('wrangler comes from the lockfile (#97)', () => {
   });
 
   it('reads every workflow for an install, and as many as there are', () => {
-    // Measured 10 workflow files on 2026-10-03 (#446), two of them #459's
-    // probes (probe-459.yml, probe-459-relay.yml): lower this when they go.
-    // Stated tight, so a walk that comes back one short fails.
+    // Two of the workflows read are #459's probes (probe-459.yml,
+    // probe-459-relay.yml): when they go, lower this floor's figure in
+    // tests/floors.json by hand, which is what a real shrink takes (#468).
     const workflows = allWorkflows();
-    expect(workflows.length).toBeGreaterThan(9);
     // Cross-checked against a coarser reading: any line naming wrangler
     // beside a global flag must hold a command the parser reports, or the
     // parser has a blind spot. No workflow holds one today, so the planted
@@ -2726,6 +2744,13 @@ describe('wrangler comes from the lockfile (#97)', () => {
         what: 'workflow texts',
       }),
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'pipeline-wiring/workflows-read-for-an-install',
+        workflows.length,
+      ),
+    ).toBeUndefined();
   });
 
   it.each([

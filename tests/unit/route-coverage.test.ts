@@ -6,6 +6,7 @@ import { LOCALES, PREFIXED_LOCALES } from '../../src/lib/i18n';
 import { withoutTsComments, withoutMarkupComments } from './source-text';
 import { nonEmpty, searched } from '../source-files';
 import { parseFile, parseSource, stringTextsIn } from './ast';
+import { floorBreach } from '../floors';
 
 /**
  * #21 Stage 4. Adding a locale must not mean writing routes by hand.
@@ -140,9 +141,9 @@ describe('the post-deploy gates derive their routes', () => {
   it('has gate specs to check', () => {
     // Without this the loop below is vacuous if the directories are ever
     // renamed: no files, no matches, green.
-    // Measured 3 deploy-gate specs on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(gateSpecs().length).toBeGreaterThan(2);
+    expect(
+      floorBreach('route-coverage/gate-specs', gateSpecs().length),
+    ).toBeUndefined();
   });
 
   it('hardcodes no locale-prefixed route in any deploy gate', () => {

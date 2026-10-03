@@ -189,9 +189,10 @@ const analyze = (file: string, text: string): readonly string[] =>
 
 describe('a real device has one browser context', () => {
   it('every test run without JavaScript, or calling newContext(), is tagged @requires-isolated-context, and no tag is stale', () => {
-    // Measured 638 tests read on 2026-10-03, the same 638 one-test-per-case
-    // reads (#446). Stated tight, so a reader that comes back one short fails.
-    expectNothingFound(read, declarationsRead('tests read', 637));
+    expectNothingFound(
+      read,
+      declarationsRead('tests read', 'isolated-context-tagging/tests'),
+    );
   });
 });
 

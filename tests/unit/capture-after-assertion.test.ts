@@ -170,11 +170,9 @@ describe('capturesBeforeAssertion -- the scan proven on synthetic input', () => 
 
 describe('an evidence capture documents an assertion that already passed', () => {
   it('never runs before the assertion it claims to document', () => {
-    // Measured 143 captures on 2026-10-03 (#446). Stated tight, so a reader
-    // that comes back one short fails.
     expectNothingFound(capturesBeforeAssertion, {
       what: 'evidence captures',
-      moreThan: 142,
+      floor: 'capture-after-assertion/captures',
       carries: callsShoot,
     });
   });

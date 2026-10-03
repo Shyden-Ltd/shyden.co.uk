@@ -11,6 +11,7 @@ import {
   type RGB,
 } from '../wcag';
 import { declaredName, parseSource } from './ast';
+import { floorBreach } from '../floors';
 
 /** The sRGB transfer curve's constants: the linear slope, then the curve's. */
 const CURVE = [12.92, 1.055, 2.4];
@@ -133,9 +134,7 @@ describe('the WCAG formula has one home', () => {
       (path) =>
         /^(src|tests|scripts)\//.test(path) && /\.(ts|mjs|js)$/.test(path),
     );
-    // Measured 339 files scanned on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(scanned.length).toBeGreaterThan(338);
+    expect(floorBreach('wcag/files', scanned.length)).toBeUndefined();
     // The home is in the result, so an empty scan cannot pass this.
     expect(
       scanned.flatMap((file) => curvesIn(readFileSync(file, 'utf8'), file)),

@@ -279,10 +279,9 @@ describe('absence assertions prove the population they searched', () => {
     expect(
       floorBreach('absence-liveness/ts-files', tsFiles.length),
     ).toBeUndefined();
-    // The floor is stated against a measured figure rather
-    // than left comfortably low, for the reason `anchored-presence`
-    // records: a control with slack in it is most of the way back to
-    // no control at all. #184 found it at 100 over a real 154, and showed
+    // The figure is recorded exactly rather than left comfortably low, for
+    // the reason `anchored-presence` records: a control with slack in it is
+    // most of the way back to no control at all. #184 found it at 100 over a real 154, and showed
     // what that slack costs: with the `toHaveLength(0)` branch of
     // `absenceSubject` dead, this test stayed green. #390 F161 found it
     // there again, at 153 over a real 391, with the same branch dead and

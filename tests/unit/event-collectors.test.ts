@@ -11,6 +11,7 @@ import { specDirs } from '../spec-dirs';
 import { searched, tsFilesUnder } from '../source-files';
 import { parseSource } from './ast';
 import { withoutTsComments } from './source-text';
+import { floorBreach } from '../floors';
 
 /**
  * Browser events that exist only to be COLLECTED and asserted on later, as
@@ -59,9 +60,9 @@ describe('browser-event collectors have exactly one home', () => {
   it('scans every spec directory', () => {
     // Anti-vacuity: an empty scan satisfies the assertion below, which is the
     // very failure mode this ticket is about.
-    // Measured 65 e2e specs scanned on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(SCANNED.length).toBeGreaterThan(64);
+    expect(
+      floorBreach('event-collectors/specs', SCANNED.length),
+    ).toBeUndefined();
     expect(SCANNED).toContain('tests/e2e/classroom-groups.spec.ts');
     expect(SCANNED).toContain(RECORDERS);
   });
@@ -297,13 +298,13 @@ describe('a locator list cannot be looped unproved', () => {
   it('sees the loops it is scanning for', () => {
     // The detector's own liveness. Zero unproved loops means nothing if the
     // reader found zero loops.
-    // Measured 8 locator loops found on 2026-10-03 (#446), 7 before the
-    // spread form was read. Stated tight, so a reader that comes back one
-    // short fails.
     expect(
-      SCANNED.flatMap((path) => locatorLoops(readFileSync(path, 'utf8')))
-        .length,
-    ).toBeGreaterThan(7);
+      floorBreach(
+        'event-collectors/locator-loops',
+        SCANNED.flatMap((path) => locatorLoops(readFileSync(path, 'utf8')))
+          .length,
+      ),
+    ).toBeUndefined();
   });
 
   it('follows every .all() list it meets into a loop it can judge', () => {

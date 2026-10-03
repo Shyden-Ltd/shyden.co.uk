@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { filesUnder, nonEmpty, searched } from '../source-files';
+import { floorBreach } from '../floors';
 
 /**
  * The shared directory walk (#80). Nine private copies had grown, in three
@@ -12,9 +13,7 @@ describe('filesUnder', () => {
     const specs = filesUnder('tests', (path) => path.endsWith('.spec.ts'));
     // Anti-vacuity: an empty walk would satisfy every "no offenders" guard in
     // the suite at once — the exact failure #79 found in the e2e collectors.
-    // Measured 48 spec files on 2026-10-03 (#446). Stated tight, so a reader
-    // that comes back one short fails.
-    expect(specs.length).toBeGreaterThan(47);
+    expect(floorBreach('source-files/specs', specs.length)).toBeUndefined();
     // Proof it went DOWN, not just listed the top level.
     expect(specs).toContain('tests/e2e/classroom-groups-print.spec.ts');
   });
@@ -84,11 +83,12 @@ describe('filesUnder refuses to answer blind', () => {
     // The refusal belongs to the TOP-LEVEL call only. `tests/` holds
     // directories with no `.spec.ts` in them, so a recursion that refused an
     // empty sub-result could never complete a walk at all.
-    // Measured 48 spec files on 2026-10-03 (#446). Stated tight, so a reader
-    // that comes back one short fails.
     expect(
-      filesUnder('tests', (path) => path.endsWith('.spec.ts')).length,
-    ).toBeGreaterThan(47);
+      floorBreach(
+        'source-files/specs-through-empty-dirs',
+        filesUnder('tests', (path) => path.endsWith('.spec.ts')).length,
+      ),
+    ).toBeUndefined();
   });
 });
 

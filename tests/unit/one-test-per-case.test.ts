@@ -10,6 +10,7 @@ import {
   type LoopedCase,
 } from '../one-test-per-case';
 import { declaresTests } from '../playwright-declarations';
+import { floorBreach } from '../floors';
 
 /**
  * One test per case (operator, 2026-10-02; #417).
@@ -276,20 +277,23 @@ describe('the suite', () => {
   });
 
   it('reads the tests every spec declares, and as many as there are', () => {
-    // Liveness at the level the detector works at. 638 today, measured
-    // against the reader this replaced (both found the same 638 bodies,
-    // #390 F155); stated tight, because a floor with slack is how
+    // Liveness at the level the detector works at, first measured against
+    // the reader this replaced (both found the same 638 bodies, #390 F155),
+    // and ratcheted (#468), because a floor with slack is how
     // absence-liveness sat at 153 under a real 391 (#390 F161). And no spec
     // whose text declares a test may read as none: a reader blind to one
     // form (`test.fail.only` was) is caught by the file it missed.
     const { tests, unread } = scan();
-    expect(tests.length).toBeGreaterThan(637);
     expect(
       searched(unread, {
         of: specDirs().flatMap(tsFilesUnder),
         what: 'files in spec directories',
       }),
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach('one-test-per-case/tests', tests.length),
+    ).toBeUndefined();
   });
 
   it('resolves the shared helpers that navigate', () => {

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 import { parseSource } from './ast';
 import { searched } from '../source-files';
+import { floorBreach } from '../floors';
 
 /**
  * The device gauntlet reports how many tests `android-chrome` excludes by design, by LISTING the
@@ -97,8 +98,8 @@ describe('the gauntlet’s by-design count selects exactly what android-chrome e
               span.expression.text === CONSTANT,
           ),
       );
-    // Measured 2 built --grep patterns on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(built.length).toBeGreaterThan(1);
+    expect(
+      floorBreach('excluded-by-design/built-patterns', built.length),
+    ).toBeUndefined();
   });
 });

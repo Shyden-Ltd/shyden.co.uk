@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { filesUnder, searched } from '../source-files';
 import { stylesheetCss } from './source-text';
+import { floorBreach } from '../floors';
 
 /**
  * CSS Masking deprecates `clip` in favour of `clip-path`, and a deprecated
@@ -110,12 +111,7 @@ describe('no stylesheet declares the deprecated clip property (#200)', () => {
   });
 
   it('reads every declaration the stylesheets hold, and as many as there are', () => {
-    // Measured 1170 declarations on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
     const sheets = stylesheetsUnder('src');
-    expect(
-      sheets.flatMap(({ css }) => declarationsIn(css)).length,
-    ).toBeGreaterThan(1169);
     // Read as text, independently of either reader: a file holding a
     // `<style>` tag or a stylesheet's rule that yields no declaration is a
     // form one of them has gone blind to.
@@ -134,6 +130,13 @@ describe('no stylesheet declares the deprecated clip property (#200)', () => {
         what: 'stylesheets and components under src/',
       }),
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'deprecated-css/declarations',
+        sheets.flatMap(({ css }) => declarationsIn(css)).length,
+      ),
+    ).toBeUndefined();
   });
 
   it.each([

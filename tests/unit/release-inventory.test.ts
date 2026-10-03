@@ -22,6 +22,7 @@ import { searched, trackedFiles } from '../source-files';
 import { withoutTsComments } from './source-text';
 import { parseSource } from './ast';
 import { callsIn } from '../playwright-declarations';
+import { floorBreach } from '../floors';
 
 /** A throwaway repository, driven by the real git. */
 const repository = () => {
@@ -309,9 +310,9 @@ describe('release-inventory.mjs as a command (#362)', () => {
     });
     expect(run.status, run.stderr).toBe(0);
     const lines = run.stdout.trim().split('\n');
-    // Measured 79 lines of capture selection on 2026-10-03 (#446). Stated
-    // tight, so a reader that comes back one short fails.
-    expect(lines.length).toBeGreaterThan(78);
+    expect(
+      floorBreach('release-inventory/capture-lines', lines.length),
+    ).toBeUndefined();
     expect(
       lines.every((l) => /^tests\/e2e\/[\w.-]+\.spec\.ts:\d+$/.test(l)),
     ).toBe(true);
@@ -408,10 +409,7 @@ describe('release-inventory.mjs as a command (#362)', () => {
   });
 
   it('reads every helper module, and as many as there are', () => {
-    // Measured 58 helper modules on 2026-10-03 (#446). Stated tight, so a
-    // walk that comes back one short fails.
     const modules = helperModules();
-    expect(modules.length).toBeGreaterThan(57);
     expect(modules).toContain('tests/e2e/evidence.ts');
     // Cross-checked against the parse tree: every module whose code calls
     // `shoot` must be one the text scan flags. None does today, so the
@@ -423,6 +421,10 @@ describe('release-inventory.mjs as a command (#362)', () => {
     expect(
       searched(missed, { of: modules, what: 'test helper modules' }),
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach('release-inventory/helper-modules', modules.length),
+    ).toBeUndefined();
   });
 
   it.each([

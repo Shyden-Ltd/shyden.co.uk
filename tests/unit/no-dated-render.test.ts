@@ -6,6 +6,7 @@ import {
   astroTemplate,
   withoutTsComments,
 } from './source-text';
+import { floorBreach } from '../floors';
 
 /**
  * No `.astro` source reads the clock, so no built page carries a date and no
@@ -75,10 +76,7 @@ describe('no page is rendered from the clock (#370)', () => {
   });
 
   it('reads every view the sources hold, and as many as there are', () => {
-    // Measured 46 views on 2026-10-03 (#446). Stated tight, so a reader
-    // that comes back one short fails.
     const sources = read();
-    expect(sources.flatMap(({ views }) => views).length).toBeGreaterThan(45);
     const codeUnread = sources
       .filter(({ text, code }) => HOLDS_CODE.test(text) && code.length === 0)
       .map(({ path }) => path);
@@ -91,6 +89,13 @@ describe('no page is rendered from the clock (#370)', () => {
     expect(
       searched(markupUnread, { of: sources, what: '.astro sources' }),
     ).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'no-dated-render/views',
+        sources.flatMap(({ views }) => views).length,
+      ),
+    ).toBeUndefined();
   });
 
   it.each([

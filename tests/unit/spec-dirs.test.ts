@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { specDirs } from '../spec-dirs';
+import { floorBreach } from '../floors';
 
 describe('the directories guards scan are derived, not listed', () => {
   it('finds every directory under tests/ that holds specs', () => {
     // Anti-vacuity: an empty derivation would make every guard a no-op.
-    // Measured 5 spec directories on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(specDirs().length).toBeGreaterThan(4);
+    expect(floorBreach('spec-dirs/dirs', specDirs().length)).toBeUndefined();
     expect(specDirs()).toContain('tests/e2e');
     expect(specDirs()).toContain('tests/device');
   });
