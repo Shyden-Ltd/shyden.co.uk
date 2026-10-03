@@ -24,7 +24,8 @@ files under `tests/`.
 ## Design
 
 - `tests/floors.json`: id to measured figure. Ids name what is counted
-  (`absence-liveness/plain-files`).
+  (`absence-liveness/plain-files`). Its path and the record variable have one
+  home, `scripts/record-floors.mjs`, which `tests/floors.ts` imports.
 - `tests/floors.ts`, runner-neutral: `floorBreach(id, actual, options?)`
   returns nothing on equality and otherwise the breach as text, so a caller
   writes `expect(floorBreach(id, n)).toBeUndefined()` after its verdict. Below
@@ -41,9 +42,8 @@ files under `tests/`.
 - `tests/literal-floors.ts`: classifies every `toBeGreaterThan(OrEqual)` under
   `tests/`, every comparison with a literal inside an `expect` argument, and
   every `toBeLessThan(OrEqual)` whose subject is a literal (a floor written
-  backwards, added at review pass 1) as
-  presence, counted, forwarded, compared, threshold or ceiling, and refuses
-  anything else by line.
+  backwards, added at review pass 1) as presence, counted, forwarded,
+  compared, threshold or ceiling, and refuses anything else by line.
 - `tests/unit/literal-floors.test.ts`: a counted or forwarded floor is
   refused unless it is a product value with its reason, or one of the seven
   Playwright floors #446 Group 5 ratchets (that list may only shrink).
@@ -58,7 +58,7 @@ files under `tests/`.
 | AC | Evidence |
 | --- | --- |
 | 1 ids and figures in `tests/floors.json` | Task 1, Task 2; narrowed to the number only (comment on #468) |
-| 2 runner-neutral check, two messages | Task 1: `floors.test.ts` pins each message whole |
+| 2 runner-neutral check, two messages | Task 1: `floors.test.ts` pins each message whole; Task 9 gives its constants one home |
 | 3 recorder, everything checked before any write, CI never records | Task 1 (`decideRecord`, `script-entry` probe), Task 3 (no workflow runs it); matrix R8-R12, R16, R17; each pass runs the recorder on the applied tree |
 | 4 every unit liveness floor converted, after its verdict | Task 2: 43 floors, `spec-scan`'s helper and five callers, four locales, `evidence-recording`'s two comparisons; 16 moved below their verdict |
 | 5 meta-guard refusing a literal floor in every form | Task 2, Task 7; matrix R18-R25, R29 |
@@ -3070,6 +3070,126 @@ index 1afe549..acd5ff5 100644
  recorder that ran under the probe would run the suite and could rewrite the
 ~~~~
 
+## Task 9: From review pass 2: one home for the record's path and variable
+
+Pass 2 findings 4-6. Moved: duplicate-imports +1 (the new import), load-time statements +1 (`RECORD_ENV`).
+
+~~~~diff
+diff --git a/scripts/record-floors.mjs b/scripts/record-floors.mjs
+index b1febe3..7fbb413 100644
+--- a/scripts/record-floors.mjs
++++ b/scripts/record-floors.mjs
+@@ -30,9 +30,16 @@ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+ import { env } from 'node:process';
+ 
+-import { die } from './errors.mjs';
++import { die, messageOf } from './errors.mjs';
+ 
+-const FLOORS_FILE = 'tests/floors.json';
++/** The recorded figures: one home, which `tests/floors.ts` imports. */
++export const FLOORS_FILE = 'tests/floors.json';
++
++/**
++ * Set to a file for the run's `floorBreach` calls to append what they saw
++ * to, instead of judging it (`tests/floors.ts`).
++ */
++export const RECORD_ENV = 'FLOORS_RECORD';
+ 
+ /**
+  * @typedef {{ id: string, actual: number, site: string }} Observation
+@@ -149,14 +156,16 @@ const main = () => {
+   const dir = mkdtempSync(join(tmpdir(), 'floors-record-'));
+   /** @type {number | null} */
+   let status;
++  /** @type {Error | undefined} */
++  let error;
+   /** @type {Observation[]} */
+   let seen = [];
+   try {
+     const record = join(dir, 'seen.jsonl');
+-    status = spawnSync('npx', ['vitest', 'run'], {
++    ({ status, error } = spawnSync('npx', ['vitest', 'run'], {
+       stdio: 'inherit',
+-      env: { ...env, FLOORS_RECORD: record },
+-    }).status;
++      env: { ...env, [RECORD_ENV]: record },
++    }));
+     if (existsSync(record))
+       seen = readFileSync(record, 'utf8')
+         .split('\n')
+@@ -166,6 +175,8 @@ const main = () => {
+     rmSync(dir, { recursive: true, force: true });
+   }
+ 
++  // A run that never started has no exit status; its error names why.
++  if (error) die(`the unit suite did not start: ${messageOf(error)}`);
+   if (status !== 0)
+     die(
+       `the unit suite failed in record mode (exit ${status}): nothing recorded`,
+diff --git a/tests/floors.json b/tests/floors.json
+index a96f983..c3a4ff1 100644
+--- a/tests/floors.json
++++ b/tests/floors.json
+@@ -12,7 +12,7 @@
+   "deprecated-css/declarations": 1170,
+   "device-tool-homes/files": 299,
+   "download-readers/byte-reads": 8,
+-  "duplicate-imports/imports": 1573,
++  "duplicate-imports/imports": 1574,
+   "duplication/declarations": 5346,
+   "duplication/files": 343,
+   "event-collectors/locator-loops": 8,
+@@ -43,7 +43,7 @@
+   "release-inventory/helper-modules": 60,
+   "route-coverage/gate-specs": 3,
+   "script-entry/argv-reads": 10,
+-  "script-entry/load-time-statements": 319,
++  "script-entry/load-time-statements": 320,
+   "shytalk-brand/files": 333,
+   "site-pages/pages": 3,
+   "sitemap-config/locales": 5,
+diff --git a/tests/floors.ts b/tests/floors.ts
+index 46c38aa..0f35db7 100644
+--- a/tests/floors.ts
++++ b/tests/floors.ts
+@@ -27,14 +27,11 @@
+ import { appendFileSync, readFileSync } from 'node:fs';
+ import { relative } from 'node:path';
+ import { fileURLToPath } from 'node:url';
++import { FLOORS_FILE, RECORD_ENV } from '../scripts/record-floors.mjs';
+ 
+-export const FLOORS_FILE = 'tests/floors.json';
+-
+-/**
+- * Set by `scripts/record-floors.mjs` to a file it reads back: while set,
+- * every check appends what it saw instead of judging it.
+- */
+-export const RECORD_ENV = 'FLOORS_RECORD';
++// One home for both, in the recorder that writes the file and sets the
++// variable (review pass 2).
++export { FLOORS_FILE, RECORD_ENV };
+ 
+ export type Floors = Readonly<Record<string, number>>;
+ 
+diff --git a/tests/unit/literal-floors.test.ts b/tests/unit/literal-floors.test.ts
+index be804ac..2a07291 100644
+--- a/tests/unit/literal-floors.test.ts
++++ b/tests/unit/literal-floors.test.ts
+@@ -319,8 +319,9 @@ describe('the floor reader proves what it read (#468)', () => {
+   it('counts every floor matcher the code writes, file by file', () => {
+     // Independent of the reader's walk (control c): the matcher counted in
+     // each file's comment-stripped text, less the ones a string or a regex
+-    // literal spells (this file's own MATCHER is one), against what the reader returned for that file, sites and
+-    // refusals both. Per file, with no number to drift.
++    // literal spells (this file's own MATCHER is one), against what the
++    // reader returned for that file, sites and refusals both. Per file, with
++    // no number to drift.
+     const MATCHER = /\.toBeGreaterThan(?:OrEqual)?\(/g;
+     const count = (text: string) => text.match(MATCHER)?.length ?? 0;
+     const misread = READINGS.filter(({ file, sites, refused }) => {
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/floors/m468.py`, copied from #446 Group 3's runner,
@@ -3136,7 +3256,10 @@ equal the branch; `astro check` 0/0/0; prettier clean; unit 3592/3592;
 `npm run floors:record` on the applied tree: every floor already matches,
 tree clean; matrix 6 + 28 as predicted, 0 mismatches. CLEAN.
 
-Reading, the whole document and the new modules in their final form:
+Reading: the head, every task note, the matrix, review and log sections,
+and `tests/literal-floors.ts` in its final form. (Pass 2 corrected this line,
+which first claimed the whole document: Task 2's migration diff was not read
+line by line.)
 
 1. A floor written backwards, `expect(5).toBeLessThan(files.length)`, puts
    the count in the bound, and the reader saw only `toBeGreaterThan(OrEqual)`
@@ -3148,3 +3271,28 @@ Reading, the whole document and the new modules in their final form:
    row R29; the ledger counts 35 rows (Task 8).
 
 One finding; the loop continues.
+
+### Pass 2 (2026-10-03, 21:03Z, tree `86011d0`)
+
+Mechanical, by `p468-pass.sh 2`: the eight task diffs applied to `4d07565`
+equal the branch; `astro check` 0/0/0; prettier clean; unit 3595/3595;
+`npm run floors:record` on the applied tree: every floor already matches,
+tree clean; matrix 6 + 29 as predicted, 0 mismatches. CLEAN.
+
+Reading: the head, every task note, the matrix, review and log sections,
+and in their final form `tests/unit/literal-floors.test.ts` (lists, verdict,
+controls) and `scripts/record-floors.mjs` (`main`).
+
+2. Pass 1's log claimed it read the whole document; it read the sections
+   above and one module. Corrected in place.
+3. The Design bullet for `tests/literal-floors.ts` wrapped raggedly after
+   pass 1's edit. Rewrapped.
+4. The cross-check's comment in `literal-floors.test.ts` held one line far
+   past the margin. Rewrapped (Task 9).
+5. `FLOORS_FILE` and `FLOORS_RECORD` were spelled in two homes,
+   `tests/floors.ts` and `scripts/record-floors.mjs`: two copies drift. The
+   recorder holds both and `floors.ts` imports them (Task 9).
+6. A recorder whose `npx` cannot start refused with `exit null`, naming the
+   symptom; it now refuses with the spawn error (Task 9).
+
+Five findings; the loop continues.
