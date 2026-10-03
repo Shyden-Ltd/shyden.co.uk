@@ -37,6 +37,7 @@ import {
 import { parseFile } from './ast';
 import { declarationsIn } from '../playwright-declarations';
 import { REQUIRED_CHECKS } from '../../scripts/deploy-gate.mjs';
+import { localImage } from '../../scripts/playwright-image.mjs';
 
 /**
  * The plain `test(...)` declarations `spec` makes, read by the parser. A test
@@ -1200,7 +1201,7 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     }
   });
 
-  it('takes the image the baselines are captured in from one selector', () => {
+  it('takes the image the baselines are captured in from one selector', async () => {
     // #454: no workflow names the image. The `image` job picks it with
     // scripts/playwright-image.mjs, and the local runner takes the same
     // pick (`localImage`), so a capture and its comparison share one image
@@ -1222,11 +1223,13 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     expect(jobNamed('ci.yml', 'image').runs).toEqual([
       'node scripts/playwright-image.mjs',
     ]);
-    expect(
-      withoutTsComments(readFileSync('scripts/visual.mjs', 'utf8')),
-    ).toMatch(
-      /^import \{[^}]*\blocalImage\b[^}]*\} from '\.\/playwright-image\.mjs';$/m,
-    );
+    // The image the local runner USES, not whether it imports the selector:
+    // an import left beside an image derived another way passed a text
+    // check (mutation PI5).
+    const { image } = (await import('../../scripts/visual.mjs')) as {
+      image: string;
+    };
+    expect(image).toBe(localImage());
   });
 
   it('runs the visual project, with the switch that declares it', () => {

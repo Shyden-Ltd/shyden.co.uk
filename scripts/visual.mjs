@@ -32,7 +32,7 @@ import { localImage } from './playwright-image.mjs';
  * release than the library driving it fails in ways neither reports clearly,
  * and a capture in another image than the comparison is not a baseline.
  */
-const image = localImage();
+export const image = localImage();
 
 /**
  * The argument vector for `docker`, built without running anything so a test
