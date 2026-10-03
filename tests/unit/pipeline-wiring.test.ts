@@ -317,10 +317,12 @@ describe('the deploy pipeline runs what it claims to', () => {
     const ci = parseCleanYaml(workflow('ci.yml'), 'ci.yml') as {
       on?: Record<string, unknown>;
     };
-    // The whole trigger set, exactly: callable, and still nothing else.
+    // The whole trigger set, exactly: callable, dispatchable for the visual
+    // rebaseline's commit (#459), and still nothing else.
     expect(Object.keys(ci.on ?? {}).sort()).toEqual([
       'pull_request',
       'workflow_call',
+      'workflow_dispatch',
     ]);
     expect(jobNamed('deploy-dev.yml', 'test').uses).toBe(CI_WORKFLOW);
   });
@@ -983,12 +985,14 @@ describe('the deploy pipeline runs what it claims to', () => {
     // empty key is one group for every run: a second trigger would let a run
     // on one branch cancel a run on another. So a trigger other than a pull
     // request is allowed only because the key falls back to the run's own id,
-    // a group of one that cancels nothing. The one such trigger is
-    // `workflow_call`, the dispatch path running this suite (#163).
+    // a group of one that cancels nothing. There are two such triggers:
+    // `workflow_call`, the dispatch path running this suite (#163), and
+    // `workflow_dispatch`, which the visual rebaseline's commit uses to run CI
+    // on the head it wrote (#459).
     expect(
       Object.keys(ci.on ?? {}).sort(),
       'a trigger besides pull_request needs a key no other run shares',
-    ).toEqual(['pull_request', 'workflow_call']);
+    ).toEqual(['pull_request', 'workflow_call', 'workflow_dispatch']);
 
     // Exactly these two, in any order. Every workflow in the repo shares one
     // namespace of groups, so the key names this workflow; it names the pull
