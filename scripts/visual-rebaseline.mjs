@@ -24,6 +24,8 @@
  *   node scripts/visual-rebaseline.mjs find                     # commit
  *   node scripts/visual-rebaseline.mjs commit                   # commit
  */
+import { createHash } from 'node:crypto';
+import { relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 export const DEPENDABOT = 'dependabot[bot]';
@@ -210,4 +212,170 @@ function playwrightVersionsMoved(baseText, headText) {
       ? []
       : [`${key.slice('node_modules/'.length)} ${from} → ${to}`];
   });
+}
+
+/** Where every committed baseline lives, and what its name may hold. */
+const BASELINE = /^tests\/e2e\/__screenshots__\/[A-Za-z0-9][\w.-]*-linux\.png$/;
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/**
+ * @param {unknown} text
+ * @returns {string}
+ */
+const plain = (text) => String(text ?? '').replace(ANSI, '');
+
+/**
+ * @param {unknown} text
+ * @returns {string}
+ */
+const firstLine = (text) => plain(text).split('\n')[0] || '(no message)';
+
+/**
+ * @param {Uint8Array} content
+ * @returns {string} lowercase hex
+ */
+export const sha256 = (content) =>
+  createHash('sha256').update(content).digest('hex');
+
+/**
+ * A screenshot the gate failed on pixels alone, at its committed path.
+ * @typedef {{ path: string, pixels: number | null }} FailedBaseline
+ *
+ * What the capture uploads beside the PNGs.
+ * @typedef {object} Manifest
+ * @property {number} pr
+ * @property {string} headSha
+ * @property {string} playwright
+ * @property {{ path: string, sha256: string, bytes: number, pixels: number | null }[]} files
+ */
+
+/**
+ * Every test in a Playwright JSON report, or in a `--list` listing, which
+ * has the same shape with no results.
+ * @param {any} report
+ * @returns {{ title: string, results: any[] }[]}
+ */
+export function testsIn(report) {
+  /** @type {{ title: string, results: any[] }[]} */
+  const tests = [];
+  /** @param {any} suite */
+  const walk = (suite) => {
+    for (const spec of suite.specs ?? [])
+      for (const test of spec.tests ?? [])
+        tests.push({ title: spec.title, results: test.results ?? [] });
+    for (const child of suite.suites ?? []) walk(child);
+  };
+  for (const suite of report.suites ?? []) walk(suite);
+  return tests;
+}
+
+/**
+ * The committed baselines the gate failed on pixels alone. Anything else
+ * refuses by name: an error outside a test, a count unlike the listing's, a
+ * test that timed out, was skipped or ran twice, a failure that is not one
+ * screenshot comparison. The path comes from the `-expected.png`
+ * attachment, which Playwright points at the committed file, never from the
+ * error's wording, which a later release may change.
+ * @param {any} report the gate's JSON report
+ * @param {number} listed how many tests the visual project lists
+ * @param {string} root the checkout the attachment paths sit under
+ * @returns {FailedBaseline[]}
+ */
+export function failedBaselines(report, listed, root) {
+  if (listed <= 0) throw new Error('the listing holds no visual tests');
+  const tests = testsIn(report);
+  if (tests.length !== listed)
+    throw new Error(
+      `the report holds ${tests.length} tests and the listing ${listed}`,
+    );
+  const outside = report.errors ?? [];
+  if (outside.length > 0)
+    throw new Error(
+      `the run failed outside any test: ${firstLine(outside[0]?.message)}`,
+    );
+  return tests.flatMap(({ title, results }) => {
+    if (results.length !== 1)
+      throw new Error(
+        `${title} has ${results.length} results, and the gate runs each test once`,
+      );
+    const [result] = results;
+    if (result.status === 'passed') return [];
+    if (result.status !== 'failed')
+      throw new Error(`${title} ended ${result.status}`);
+    return [screenshotFailure(title, result, root)];
+  });
+}
+
+/**
+ * @param {string} title
+ * @param {any} result
+ * @param {string} root
+ * @returns {FailedBaseline}
+ */
+function screenshotFailure(title, result, root) {
+  /** @type {{ name: string, path?: string }[]} */
+  const attachments = result.attachments ?? [];
+  const errors = result.errors ?? [];
+  const expected = attachments.filter((a) => a.name.endsWith('-expected.png'));
+  if (
+    errors.length !== 1 ||
+    expected.length !== 1 ||
+    !firstLine(errors[0].message).includes('toHaveScreenshot')
+  )
+    throw new Error(
+      `${title} failed on something besides one screenshot comparison: ` +
+        firstLine(errors[0]?.message),
+    );
+  const stem = expected[0].name.slice(0, -'-expected.png'.length);
+  if (!attachments.some((a) => a.name === `${stem}-diff.png`))
+    throw new Error(
+      `${title}: ${stem} has no diff image, so no comparison ran`,
+    );
+  const path = relative(root, expected[0].path ?? '')
+    .split(sep)
+    .join('/');
+  if (!BASELINE.test(path))
+    throw new Error(`${title}: ${path} is not a committed baseline`);
+  const count = /(\d+) pixels \(ratio/.exec(plain(errors[0].message));
+  return { path, pixels: count ? Number(count[1]) : null };
+}
+
+/**
+ * The gate's exit status and its report must agree.
+ * @param {number} exitCode
+ * @param {readonly FailedBaseline[]} failed
+ */
+export function gateAgrees(exitCode, failed) {
+  if (exitCode === 0 && failed.length > 0)
+    throw new Error(
+      `the gate exited 0 but its report holds ${failed.length} failed screenshot(s)`,
+    );
+  if (exitCode !== 0 && failed.length === 0)
+    throw new Error(
+      `the gate exited ${exitCode} with no failed screenshot in its report`,
+    );
+}
+
+/**
+ * The manifest for the recaptured baselines. A baseline the gate failed
+ * that the recapture left byte-identical is a contradiction, and refuses.
+ * @param {object} input
+ * @param {number} input.pr
+ * @param {string} input.headSha
+ * @param {string} input.playwright
+ * @param {readonly (FailedBaseline & { before: string })[]} input.failed
+ * @param {(path: string) => Uint8Array} input.contentOf
+ * @returns {Manifest}
+ */
+export function buildManifest({ pr, headSha, playwright, failed, contentOf }) {
+  const files = failed.map(({ path, pixels, before }) => {
+    const content = contentOf(path);
+    const hash = sha256(content);
+    if (hash === before)
+      throw new Error(
+        `the gate failed ${path}, and the recapture left it unchanged`,
+      );
+    return { path, sha256: hash, bytes: content.length, pixels };
+  });
+  return { pr, headSha, playwright, files };
 }
