@@ -63,6 +63,37 @@ const scannedFiles = (): string[] =>
     `source files under ${SCAN.join(', ')}`,
   );
 
+/**
+ * Whether lower-cased `code` spells `form`. A hex is matched as written. A
+ * channel triple is matched with either separator CSS accepts: commas, as
+ * `rgb(208, 188, 255)` writes them, or spaces, as `rgb(208 188 255 / 0.3)`
+ * does, the syntax `tokens.css` uses. The first version of this scan matched
+ * the comma-and-space spelling alone, so both of those others passed it.
+ */
+const spells = (code: string, form: string): boolean => {
+  if (form.startsWith('#')) return code.includes(form);
+  const [red, green, blue] = form.split(', ');
+  return new RegExp(
+    `(?<![\\d.])${red}\\s*[,\\s]\\s*${green}\\s*[,\\s]\\s*${blue}(?![\\d.])`,
+  ).test(code);
+};
+
+/**
+ * `text` as the scan reads it: comments stripped, because a comment NAMING the
+ * colour is documentation and a guard tripped by its own explanation is noise,
+ * and lower-cased, because a hex is the same colour in either case.
+ */
+const codeOf = (file: string, text: string): string =>
+  codeWithoutComments(file, text).toLowerCase();
+
+/** A file on disk, read as `codeOf` reads it. */
+const readCode = (file: string): string =>
+  codeOf(file, readFileSync(file, 'utf8'));
+
+/** Whether `text`, read as `file` is read, spells any form of the mark. */
+const spellsTheMark = (file: string, text: string): boolean =>
+  spellings().some((form) => spells(codeOf(file, text), form));
+
 describe("ShyTalk's brand mark has one home", () => {
   /**
    * The LEVEL, pinned literally and separately from everything derived.
@@ -114,19 +145,14 @@ describe("ShyTalk's brand mark has one home", () => {
 
     const offenders = files.flatMap((file) => {
       if (ALLOWED.has(file)) return [];
-      const raw = readFileSync(file, 'utf8');
-      // Comments stripped: a comment NAMING the colour is documentation, and
-      // a guard tripped by its own explanation is noise. The assertion is
-      // about what the code spells out.
-      const code = codeWithoutComments(file, raw);
-      const lower = code.toLowerCase();
+      const lower = readCode(file);
       const exempt = file === TOKEN_HOME ? [TOKEN_FORM] : [];
       const repeated = exempt.filter((form) => lower.split(form).length > 2);
       return [
         ...forms
           .filter(
             (form) =>
-              lower.includes(form.toLowerCase()) && !exempt.includes(form),
+              spells(lower, form.toLowerCase()) && !exempt.includes(form),
           )
           .map((form) => `${file} spells out ${form}`),
         ...repeated.map((form) => `${file} spells out ${form} more than once`),
@@ -136,5 +162,73 @@ describe("ShyTalk's brand mark has one home", () => {
     expect(
       searched(offenders, { of: files, what: 'source files scanned' }),
     ).toEqual([]);
+  });
+
+  it('reads every source file, and as many as there are', () => {
+    // Measured 329 source files on 2026-10-03 (#446). Stated tight, so a walk
+    // that comes back one short fails.
+    const files = scannedFiles();
+    expect(files.length).toBeGreaterThan(328);
+    // Cross-checked on the files that do spell the mark, by the same reading
+    // the verdict makes: the home spells every hex, and the token home spells
+    // its one token exactly once, so a reader gone blind to a script or to a
+    // stylesheet is caught by the file it missed.
+    const home = readCode(HOME);
+    const unread = Object.values(SHYTALK_MARK).filter(
+      (hex) => !spells(home, hex.toLowerCase()),
+    );
+    expect(
+      searched(unread, {
+        of: Object.values(SHYTALK_MARK),
+        what: 'brand hexes',
+      }),
+    ).toEqual([]);
+    expect(readCode(TOKEN_HOME).split(TOKEN_FORM).length - 1).toBe(1);
+  });
+
+  it.each([
+    ['a hex in a stylesheet', 'a.css', '.a { color: #D0BCFF; }'],
+    [
+      'a comma triple in a stylesheet',
+      'a.css',
+      '.a { color: rgba(208, 188, 255, 0.3); }',
+    ],
+    [
+      'a space triple in a stylesheet',
+      'a.css',
+      '.a { color: rgb(208 188 255 / 0.3); }',
+    ],
+    ['a tight triple in a script', 'a.ts', "const c = 'rgb(208,188,255)';"],
+    [
+      'a hex in a component style',
+      'a.astro',
+      '---\n---\n<p class="a">x</p>\n<style>\n  .a { color: #d0bcff; }\n</style>\n',
+    ],
+    [
+      'a hex in component frontmatter',
+      'a.astro',
+      "---\nconst c = '#d0bcff';\n---\n<p>{c}</p>\n",
+    ],
+    [
+      'a hex in a style attribute',
+      'a.astro',
+      '---\n---\n<p style="color: #d0bcff">x</p>\n',
+    ],
+    [
+      'a hex in a tsx file',
+      'a.tsx',
+      "export const C = () => <p style={{ color: '#d0bcff' }} />;",
+    ],
+  ])('reads the mark spelled as %s', (_form, file, text) => {
+    expect(spellsTheMark(file, text)).toBe(true);
+  });
+
+  it('does not read a triple inside longer numbers', () => {
+    expect(spellsTheMark('a.css', '.a { grid-area: 1208 188 255; }')).toBe(
+      false,
+    );
+    expect(spellsTheMark('a.css', '.a { color: rgb(208 188 2550); }')).toBe(
+      false,
+    );
   });
 });
