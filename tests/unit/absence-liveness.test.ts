@@ -219,11 +219,18 @@ function countsAPopulation(root: ts.Expression): boolean {
 
 /**
  * An absence matcher as text, for the cross-check: no AST, so a reader blind
- * to one file or one spelling disagrees with it. A count held to 0 is left
- * out, because `toBe(0)` on a bare value is plainly not an absence.
+ * to one file or one spelling disagrees with it. A count held to 0 is read
+ * only on a `.length` or `.size`, as `absenceSubject` reads it: on a bare
+ * value it is plainly not an absence. A `.not` anywhere before the matcher
+ * inverts it.
  */
-const PLAIN_ABSENCE =
-  /(?<!\.not)\.(?:toEqual|toStrictEqual)\(\[\]\)|(?<!\.not)\.toHaveLength\(0\)/;
+const PLAIN_ABSENCE = new RegExp(
+  [
+    String.raw`(?<!\.not)\.(?:toEqual|toStrictEqual)\(\[\]\)`,
+    String.raw`(?<!\.not)\.toHaveLength\(0\)`,
+    String.raw`\.(?:length|size)\)\.(?:toBe|toEqual|toStrictEqual)\(0\)`,
+  ].join('|'),
+);
 
 function scan() {
   const findings: string[] = [];
@@ -360,6 +367,37 @@ describe('absence assertions prove the population they searched', () => {
       'expect.poll(async () => { return u.size; })',
       'assertThat(v.length)',
     ]);
+  });
+
+  it('reads as text every spelling the reader reads, and none it refuses', () => {
+    // The cross-check below is only independent if it knows the same forms.
+    // Written out, never generated from either reader's list: a plant built
+    // from the list a reader uses cannot see that list drop a form (#446).
+    const read = [
+      'expect(a).toEqual([]);',
+      'expect(b).toStrictEqual([]);',
+      'expect(c).toHaveLength(0);',
+      'expect(d.length).toBe(0);',
+      'expect(e.size).toBe(0);',
+      'expect(f.length).toEqual(0);',
+      'expect(g.length).toStrictEqual(0);',
+      'expect.soft(l).toEqual([]);',
+      'expect.soft(m.length).toBe(0);',
+    ];
+    const inverse = [
+      'expect(h).not.toEqual([]);',
+      'expect(i.length).not.toBe(0);',
+      'expect(j.length).toBe(1);',
+      'expect(k).toBe(0);',
+    ];
+    const missed = read.filter((line) => !PLAIN_ABSENCE.test(line));
+    expect(searched(missed, { of: read, what: 'planted absences' })).toEqual(
+      [],
+    );
+    const misread = inverse.filter((line) => PLAIN_ABSENCE.test(line));
+    expect(
+      searched(misread, { of: inverse, what: 'planted non-absences' }),
+    ).toEqual([]);
   });
 
   it('reads an absence in every file whose text plainly writes one', () => {
