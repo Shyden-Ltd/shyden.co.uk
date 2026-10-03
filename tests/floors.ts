@@ -15,8 +15,9 @@
  * that grew, and `npm run floors:record` raises it. Neither direction moves
  * on its own, so every floor is exact on every commit.
  *
- * Runner-neutral: vitest and Playwright both call it, so it imports neither
- * and returns the breach as text for the caller's own `expect`:
+ * Runner-neutral: vitest calls it today and Playwright will (#446 Group 5),
+ * so it imports neither and returns the breach as text for the caller's own
+ * `expect`:
  *
  *     expect(floorBreach('absence-liveness/sites', sites.length)).toBeUndefined();
  *

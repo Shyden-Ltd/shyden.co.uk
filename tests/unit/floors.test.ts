@@ -50,19 +50,27 @@ describe('floorBreach', () => {
     expect(FLOORS_FILE).toBe('tests/floors.json');
   });
 
-  it.each([
-    ['a fraction', 9.5],
-    ['a negative', -1],
-    ['NaN', Number.NaN],
-    ['infinity', Number.POSITIVE_INFINITY],
-  ])('refuses %s as a count, recording or not', (_, actual) => {
+  // One test per value and mode, never a loop inside one (one-test-per-case).
+  it.each(
+    (
+      [
+        ['a fraction', 9.5],
+        ['a negative', -1],
+        ['NaN', Number.NaN],
+        ['infinity', Number.POSITIVE_INFINITY],
+      ] as const
+    ).flatMap(([what, actual]) =>
+      (['judging', 'recording'] as const).map(
+        (mode) => [what, mode, actual] as const,
+      ),
+    ),
+  )('refuses %s as a count while %s', (_, mode, actual) => {
     const dir = mkdtempSync(join(tmpdir(), 'floors-'));
     try {
-      const record = join(dir, 'seen.jsonl');
-      for (const mode of [null, record])
-        expect(
-          floorBreach('guard/units', actual, { ...judging, record: mode }),
-        ).toBe(`guard/units: ${actual} is not a count`);
+      const record = mode === 'recording' ? join(dir, 'seen.jsonl') : null;
+      expect(floorBreach('guard/units', actual, { ...judging, record })).toBe(
+        `guard/units: ${actual} is not a count`,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -82,12 +90,11 @@ describe('floorBreach', () => {
         .trimEnd()
         .split('\n')
         .map((line) => JSON.parse(line) as Record<string, unknown>);
-      expect(lines.map(({ id, actual }) => [id, actual])).toEqual([
-        ['guard/units', 12],
-        ['guard/new', 3],
+      const here = expect.stringMatching(/^tests\/unit\/floors\.test\.ts:\d+$/);
+      expect(lines).toEqual([
+        { id: 'guard/units', actual: 12, site: here },
+        { id: 'guard/new', actual: 3, site: here },
       ]);
-      for (const { site } of lines)
-        expect(site).toMatch(/^tests\/unit\/floors\.test\.ts:\d+$/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
