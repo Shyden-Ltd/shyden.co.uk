@@ -397,60 +397,52 @@ const declaredDevVersion = (name: string): string => {
   };
   const declared = manifest.devDependencies?.[name];
   if (declared === undefined)
-    throw new Error(
-      `package.json declares no devDependency ${name}: judge the hold again (#296)`,
-    );
+    throw new Error(`package.json declares no devDependency ${name}`);
   return declared;
 };
 
-/**
- * prettier-plugin-astro is held at 1.0.0, and this hold lifts itself.
- *
- * Measured 2026-09-22 on Dependabot's group PR (#265). 1.0.1 re-indents the
- * continuation lines of every multi-line CSS block comment inside an `.astro`
- * `<style>` block by two spaces — and does it AGAIN on the next run. One
- * comment line went 7 -> 9 -> 11 -> 13 -> 15 -> 17 leading spaces over five
- * `--write` passes, with `--check` still calling the file dirty. The
- * transform has no fixed point, so no commit can satisfy `npm run format`
- * while 1.0.1 is installed. Isolated against a 2x2 matrix: prettier 3.9.8
- * with the plugin at 1.0.0 is clean, and the plugin at 1.0.1 is dirty under
- * both 3.9.6 and 3.9.8. Six of this repo's twenty `.astro` files are hit.
- *
- * Reported and fixed upstream before we met it:
- * withastro/prettier-plugin-astro#487, opened 2026-09-18 and closed as
- * completed on 2026-09-21. The fix is unreleased -- 1.0.1 (2026-09-17) is
- * still npm's latest as of 2026-09-22 -- so 1.0.2 is the release expected to
- * lift the hold, and the rule below is written to let it through.
- *
- * This is NOT the #178 case, which accepted this plugin's 1.0.0 reformat of
- * eleven files and proved every page still said the same thing. That was
- * right because 1.0.0 has a fixed point: format once, commit, done. Committing
- * a pass of 1.0.1 buys nothing — the next `--write` moves it again.
- *
- * #177 ties its hold to a test that fails when the reason expires. This one
- * needs no such test because the rule names a SINGLE version: 1.0.2 is not
- * ignored, so Dependabot opens a PR for it on its own schedule and the format
- * gate judges it. That is why the first test asserts the narrow shape rather
- * than mere presence — a blanket ignore would freeze the plugin at 1.0.0
- * forever, and nothing would ever come back to ask.
- */
-describe('prettier-plugin-astro is held at 1.0.0 until a release settles', () => {
-  it('ignores 1.0.1 alone, so 1.0.2 still arrives to be judged', () => {
-    expect(
-      npmIgnoresFor('prettier-plugin-astro'),
-      'without this rule every group PR carries 1.0.1 again, and `npm run format` has no formatting it can accept (#296)',
-    ).toEqual([
-      {
-        'dependency-name': 'prettier-plugin-astro',
-        versions: ['1.0.1'],
-      },
-    ]);
-  });
+/** The version `package-lock.json` resolves for one installed package. */
+const lockedVersion = (name: string): string => {
+  const lock = JSON.parse(readFileSync('package-lock.json', 'utf8')) as {
+    packages?: Record<string, { version?: string }>;
+  };
+  const version = lock.packages?.[`node_modules/${name}`]?.version;
+  if (version === undefined)
+    throw new Error(`package-lock.json resolves no ${name}`);
+  return version;
+};
 
-  it('pins the exact version, so a plain `npm install` cannot take 1.0.1', () => {
+/**
+ * prettier-plugin-astro is pinned to one exact version: the one the lockfile
+ * resolves.
+ *
+ * The plugin's output is part of what `npm run format` checks, so a new
+ * release can dirty files no pull request touched. 1.0.1 did worse (#296): it
+ * re-indented multi-line CSS comments in `.astro` `<style>` blocks on EVERY
+ * `--write`, so no commit could satisfy the format gate, and the repo held at
+ * 1.0.0 behind a Dependabot ignore naming 1.0.1 alone. The next release, 1.1.0,
+ * arrived as PR #374. Measured on that tree (#458): two `--write` passes with
+ * 1.1.0 changed 0 files, while 1.0.1 changed 8 on each pass, with a different
+ * diff each time. So the hold lifted, and its ignore rule went with it,
+ * because Dependabot never proposes a downgrade.
+ *
+ * The exact pin stays. Under a range, `npm install` on a laptop can resolve a
+ * release that CI's `npm ci` has never run, and files go dirty with no pull
+ * request to explain them. A new release reaches this repo only as a
+ * Dependabot pull request, where the format gate judges it.
+ */
+describe('prettier-plugin-astro is pinned to the version the lockfile resolves', () => {
+  it('declares an exact version, never a range', () => {
     expect(
       declaredDevVersion('prettier-plugin-astro'),
-      'the lockfile governs `npm ci` alone: under `^1.0.0` a developer running `npm install` resolves to 1.0.1 and six .astro files go dirty with no PR to explain it (#296)',
-    ).toBe('1.0.0');
+      'a range lets `npm install` resolve a release the format gate never judged (#296)',
+    ).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('declares the version the lockfile resolves', () => {
+    expect(
+      declaredDevVersion('prettier-plugin-astro'),
+      'package.json and package-lock.json name different releases, so `npm install` and `npm ci` install different plugins (#458)',
+    ).toBe(lockedVersion('prettier-plugin-astro'));
   });
 });
