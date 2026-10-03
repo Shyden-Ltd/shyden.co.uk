@@ -54,6 +54,9 @@ test.describe('the sentences corrected on #319', () => {
       page,
       context,
     }) => {
+      // Every reachable correction, each driven through the tool: more than
+      // the default 30 s on webkit under load, worst measured 61.3 s (#380).
+      test.setTimeout(120_000);
       const t = getStrings(locale);
       const columns = CSV_LOCALES[locale].columns;
 
