@@ -2634,10 +2634,9 @@ describe('the back-translation review', () => {
       'a change to one of these would not start the review',
     ).toEqual([]);
     // After the verdict, so a population that grew never hides a finding.
-    // The closure is followed, not listed: this is its floor, not its size.
+    // The closure is followed, not listed, and its size is ratcheted (#468).
     expect(
       floorBreach('pipeline-wiring/sanity-import-walk', inputs.length),
-      'the import walk found nothing',
     ).toBeUndefined();
   });
 });

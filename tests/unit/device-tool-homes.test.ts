@@ -77,6 +77,7 @@ describe.each(HOMES)('no file spawns $tool but $home', ({ tool, home }) => {
     expect(
       floorBreach('device-tool-homes/files', files.length),
     ).toBeUndefined();
+    // The home is among them, so a walk that loses scripts/ fails too.
     expect(files).toContain(home);
   });
 

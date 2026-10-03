@@ -282,8 +282,8 @@ describe('presence assertions over source text are stripped or anchored', () => 
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    // 76 today, and the figure is worth stating: the floor sat at 20 while the
-    // truth was 27, so a control with that much slack in it is most of the way
+    // The figure is recorded exactly (#468), because slack here has cost
+    // before: the floor sat at 20 while the truth was 27, so a control with that much slack in it is most of the way
     // back to no control at all. #118 moved the number twice -- UP as the
     // derivation learned to follow local bindings to a fixed point, then back
     // DOWN as it stopped reading object-literal keys and parameter names as

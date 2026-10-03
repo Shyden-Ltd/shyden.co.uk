@@ -86,17 +86,18 @@ describe('the install-script allowlist', () => {
     // if the lockfile stopped reporting install scripts, the derived set and an
     // empty `allowScripts` would agree, and a suite asserting nothing would go
     // green. This repo has shipped two guards that passed because both sides
-    // were empty or both were satisfied by prose. If a dependency change
-    // genuinely leaves NO package running install scripts, this failure is the
-    // prompt to confirm that and delete the suite deliberately — not to weaken
-    // the assertion.
+    // were empty or both were satisfied by prose.
+    //
+    // If a dependency change genuinely leaves NO package running install
+    // scripts, this failure is the prompt to confirm that and delete the
+    // suite deliberately — not to weaken the assertion.
     expect(
       floorBreach(
         'install-scripts/packages',
         packagesWithInstallScripts().length,
       ),
-      'no package in package-lock.json declares an install script — either ' +
-        'the lockfile is not v3, or this control is no longer needed',
+      'packages with an install script moved: fewer can mean a lockfile that ' +
+        'is not v3, or a control no longer needed; more, a new one to approve',
     ).toBeUndefined();
   });
 
