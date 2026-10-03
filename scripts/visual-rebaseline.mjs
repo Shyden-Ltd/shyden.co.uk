@@ -379,3 +379,236 @@ export function buildManifest({ pr, headSha, playwright, failed, contentOf }) {
   });
   return { pr, headSha, playwright, files };
 }
+
+/** The largest baseline today is 578 KB (measured 2026-10-03). */
+export const MAX_PNG_BYTES = 2 * 1024 * 1024;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const MANIFEST_KEYS = ['files', 'headSha', 'playwright', 'pr'];
+const FILE_KEYS = ['bytes', 'path', 'pixels', 'sha256'];
+
+/**
+ * An artifact-derived string, quoted and cut, so a newline in it cannot
+ * start a workflow command when the error reaches the log.
+ * @param {unknown} value
+ * @returns {string}
+ */
+const quoted = (value) => JSON.stringify(String(value).slice(0, 120));
+
+/**
+ * A number as itself; anything else, quoted.
+ * @param {unknown} value
+ * @returns {string}
+ */
+const shown = (value) =>
+  typeof value === 'number' ? String(value) : quoted(value);
+
+/**
+ * @param {unknown} value
+ * @param {readonly string[]} keys sorted
+ * @returns {value is Record<string, any>}
+ */
+const hasExactly = (value, keys) =>
+  value !== null &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  isDeepStrictEqual(Object.keys(value).sort(), keys);
+
+/**
+ * @param {string} path
+ * @returns {string[]} every directory above the file
+ */
+const ancestorsOf = (path) =>
+  path
+    .split('/')
+    .slice(0, -1)
+    .map((_, index, parts) => parts.slice(0, index + 1).join('/'));
+
+/**
+ * @typedef {{ name: string, kind: 'file' | 'directory' | 'other',
+ *   content?: Uint8Array }} Entry
+ */
+
+/**
+ * The artifact, checked from its manifest down to each file's bytes, or a
+ * refusal by name. Nothing in it is trusted: the manifest is bound to the
+ * run that produced it, every path must already be a baseline at the head,
+ * and every file must be exactly the PNG the manifest describes.
+ * @param {object} input
+ * @param {readonly Entry[]} input.entries the downloaded artifact, walked with lstat
+ * @param {{ pr: number, headSha: string }} input.run the triggering run's own facts
+ * @param {ReadonlySet<string>} input.headPaths every file at the pull request's head
+ * @returns {{ manifest: Manifest, files: { path: string, content: Uint8Array }[] }}
+ */
+export function validateArtifact({ entries, run, headPaths }) {
+  const manifestEntry = entries.find(
+    (entry) => entry.name === 'manifest.json' && entry.kind === 'file',
+  );
+  if (!manifestEntry?.content)
+    throw new Error('the artifact holds no manifest.json');
+  /** @type {unknown} */
+  let manifest;
+  try {
+    manifest = JSON.parse(new TextDecoder().decode(manifestEntry.content));
+  } catch {
+    throw new Error('manifest.json is not JSON');
+  }
+  if (!hasExactly(manifest, MANIFEST_KEYS))
+    throw new Error(
+      `manifest.json's keys are not exactly ${MANIFEST_KEYS.join(', ')}`,
+    );
+  if (!Number.isSafeInteger(manifest.pr) || manifest.pr <= 0)
+    throw new Error('manifest.json names no pull request number');
+  if (
+    typeof manifest.headSha !== 'string' ||
+    !/^[0-9a-f]{40}$/.test(manifest.headSha)
+  )
+    throw new Error('manifest.json names no head SHA');
+  if (
+    typeof manifest.playwright !== 'string' ||
+    !/^\d+\.\d+\.\d+$/.test(manifest.playwright)
+  )
+    throw new Error('manifest.json names no Playwright version');
+  if (manifest.pr !== run.pr)
+    throw new Error(
+      `manifest.json names #${manifest.pr}, and the capture ran for #${run.pr}`,
+    );
+  if (manifest.headSha !== run.headSha)
+    throw new Error(
+      `manifest.json names ${manifest.headSha}, and the capture ran on ${run.headSha}`,
+    );
+  if (!Array.isArray(manifest.files) || manifest.files.length === 0)
+    throw new Error('manifest.json lists no files');
+  /** @type {Set<string>} */
+  const listed = new Set();
+  for (const file of manifest.files) {
+    if (!hasExactly(file, FILE_KEYS))
+      throw new Error(`a file's keys are not exactly ${FILE_KEYS.join(', ')}`);
+    if (
+      typeof file.path !== 'string' ||
+      file.path.includes('..') ||
+      !BASELINE.test(file.path)
+    )
+      throw new Error(`${quoted(file.path)} is not a baseline path`);
+    if (listed.has(file.path)) throw new Error(`${file.path} is listed twice`);
+    listed.add(file.path);
+    if (!headPaths.has(file.path))
+      throw new Error(
+        `${file.path} is not a baseline at the head, and a rebaseline adds no file`,
+      );
+    if (typeof file.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(file.sha256))
+      throw new Error(`${file.path} has no sha256`);
+    if (
+      !Number.isSafeInteger(file.bytes) ||
+      file.bytes < 1 ||
+      file.bytes > MAX_PNG_BYTES
+    )
+      throw new Error(
+        `${file.path} declares ${shown(file.bytes)} bytes, outside 1 to ${MAX_PNG_BYTES}`,
+      );
+    if (
+      file.pixels !== null &&
+      (!Number.isSafeInteger(file.pixels) || file.pixels < 0)
+    )
+      throw new Error(
+        `${file.path} has a pixel count of ${shown(file.pixels)}`,
+      );
+  }
+  const expected = new Set(['manifest.json', ...listed]);
+  const needed = new Set([...listed].flatMap(ancestorsOf));
+  /** @type {Map<string, Uint8Array>} */
+  const contents = new Map();
+  for (const entry of entries) {
+    if (entry.kind === 'directory' && needed.has(entry.name)) continue;
+    if (entry.kind !== 'file' || !expected.has(entry.name) || !entry.content)
+      throw new Error(
+        `the artifact holds ${entry.kind} ${quoted(entry.name)}, which the manifest does not list`,
+      );
+    contents.set(entry.name, entry.content);
+  }
+  for (const name of expected)
+    if (!contents.has(name)) throw new Error(`the artifact is missing ${name}`);
+  /** @type {Manifest} */
+  const checked = /** @type {Manifest} */ (manifest);
+  const files = checked.files.map(({ path, bytes, sha256: hash }) => {
+    const content = /** @type {Uint8Array} */ (contents.get(path));
+    if (!PNG_SIGNATURE.every((byte, index) => content[index] === byte))
+      throw new Error(`${path} is not a PNG`);
+    if (content.length !== bytes)
+      throw new Error(
+        `${path} holds ${content.length} bytes, and the manifest says ${bytes}`,
+      );
+    if (sha256(content) !== hash)
+      throw new Error(`${path} does not hash to its manifest entry`);
+    return { path, content };
+  });
+  return { manifest: checked, files };
+}
+
+/**
+ * Whether a parsed workflow can be started by `workflow_dispatch`.
+ * @param {unknown} workflow
+ * @returns {boolean}
+ */
+export function dispatchable(workflow) {
+  const on =
+    workflow !== null && typeof workflow === 'object'
+      ? /** @type {Record<string, unknown>} */ (workflow).on
+      : undefined;
+  if (typeof on === 'string') return on === 'workflow_dispatch';
+  if (Array.isArray(on)) return on.includes('workflow_dispatch');
+  return (
+    on !== null &&
+    typeof on === 'object' &&
+    Object.hasOwn(on, 'workflow_dispatch')
+  );
+}
+
+/**
+ * @param {number | null} pixels
+ * @returns {string}
+ */
+const countOf = (pixels) => (pixels === null ? 'not reported' : String(pixels));
+
+/**
+ * The pull request comment. Every value in it passed `validateArtifact`'s
+ * patterns first.
+ * @param {Manifest} manifest
+ * @param {string} commitSha
+ * @returns {string}
+ */
+export function commentBody(manifest, commitSha) {
+  return [
+    'Rebaselined automatically (#459). `operator-review` holds the merge until the operator approves the PNG diff at this head.',
+    '',
+    `Playwright ${manifest.playwright}, commit ${commitSha}.`,
+    '',
+    '| Baseline | Differing pixels at the gate |',
+    '| --- | --- |',
+    ...manifest.files.map(
+      ({ path, pixels }) => `| \`${path}\` | ${countOf(pixels)} |`,
+    ),
+    '',
+    `Labelled \`${LABEL}\`.`,
+  ].join('\n');
+}
+
+/**
+ * @param {Manifest} manifest
+ * @returns {string}
+ */
+export function commitMessage(manifest) {
+  return [
+    `Rebaseline ${manifest.files.length} screenshot(s) for Playwright ${manifest.playwright} (Refs #459)`,
+    '',
+    "The visual gate failed these on pixels alone after Dependabot's",
+    'Playwright update, and visual-rebaseline.yml recaptured them in the',
+    "gate's own image. operator-review holds the merge until the operator",
+    'approves the PNG diff at this head.',
+    '',
+    ...manifest.files.map(({ path, pixels }) =>
+      pixels === null
+        ? `- ${path} (count not reported)`
+        : `- ${path} (${pixels} px)`,
+    ),
+  ].join('\n');
+}
