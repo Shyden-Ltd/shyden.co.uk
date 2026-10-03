@@ -20,15 +20,18 @@ matrix on both trees.
 
 ## The nine sites
 
+Tasks 1-4 make these changes; Tasks 5 onward are fixes from the review
+passes, each naming the findings it answers.
+
 | Site | `of` before | Unit judged | Reading | Change |
 | --- | --- | --- | --- | --- |
-| `unit/absence-liveness.test.ts` verdict | `result.absences` (a count) | absence assertions | Count of the judged unit, but its floor sat at 398 under a real **421**: Groups 2a and 2b grew the suite the same day, and growth never fails a floor. No cross-check. An absence on any root but `expect(` was skipped, not refused: `expect.soft(x).toEqual([])` was invisible. | `of: result.sites` (the list); floor 420; `expect.soft` read; any other root refused by name, a polled value excepted; raw-text cross-check over 113 files that reads every spelling the reader reads. Tasks 1 and 5. |
-| `unit/pipeline-wiring.test.ts` step summary | `summaryWriters.length` | each write to the summary | **Wrong level**: it judged steps, so a step that tees one line and appends the next with `>>` passed. No floor beyond 0, no cross-check. | Judged per line (2 measured), floor 1, cross-check against the `visual` job's raw YAML. Task 2. |
-| `e2e/classroom-groups-roster.spec.ts` touch targets | `await controls.count()` | rendered controls | **Wrong unit**: `count()` counts every match, hidden ones too, while the measurement filters to rendered ones. A roster whose controls all stopped rendering measured nothing and passed. | `of: measured` (the rendered list). Task 3. |
-| `e2e/rendered-text.spec.ts` lost space | `text.length` | the page's text | Characters include whitespace, so a page rendered as blank space counted as searched. | `of: text.split(/\s+/)` (its words). Task 3. |
-| `e2e/rendered-text.spec.ts` placeholder | `text.length` | the page's text | As above. | As above. Task 3. |
-| `e2e/palette-controls.spec.ts` | `readings.length` | measured controls | Count of the very array, so the judged unit. | `of: readings`: form only, nothing a mutation can separate. Task 3. |
-| `e2e/theme.spec.ts` | `compared.length` | rendered elements | Count of the very array. | `of: compared`: form only. Task 3. |
+| `unit/absence-liveness.test.ts` verdict | `result.absences` (a count) | absence assertions | Count of the judged unit, but its floor sat at 398 under a real **421**: Groups 2a and 2b grew the suite the same day, and growth never fails a floor. No cross-check. An absence on any root but `expect(` was skipped, not refused: `expect.soft(x).toEqual([])` was invisible. | `of: result.sites` (the list); floor 420; `expect.soft` read; any other root refused by name, a polled value excepted; raw-text cross-check over 113 files that reads every spelling the reader reads. |
+| `unit/pipeline-wiring.test.ts` step summary | `summaryWriters.length` | each write to the summary | **Wrong level**: it judged steps, so a step that tees one line and appends the next with `>>` passed. No floor beyond 0, no cross-check. | Judged per line (2 measured), floor 1, cross-check against the `visual` job's raw YAML. |
+| `e2e/classroom-groups-roster.spec.ts` touch targets | `await controls.count()` | rendered controls | **Wrong unit**: `count()` counts every match, hidden ones too, while the measurement filters to rendered ones. A roster whose controls all stopped rendering measured nothing and passed. | `of: measured` (the rendered list). |
+| `e2e/rendered-text.spec.ts` lost space | `text.length` | the page's text | Characters include whitespace, so a page rendered as blank space counted as searched. | `of: text.split(/\s+/)` (its words). |
+| `e2e/rendered-text.spec.ts` placeholder | `text.length` | the page's text | As above. | As above. |
+| `e2e/palette-controls.spec.ts` | `readings.length` | measured controls | Count of the very array, so the judged unit. | `of: readings`: form only, nothing a mutation can separate. |
+| `e2e/theme.spec.ts` | `compared.length` | rendered elements | Count of the very array. | `of: compared`: form only. |
 | `unit/anchored-presence.test.ts` | `result.scanned` | presence assertions over source text | Count of the judged unit; floor 75 under a measured 76, tight. Every member would be a location string, so an array adds no content check. Its population is defined by dataflow, which no raw-text reading reproduces, so it has no cross-check: recorded in the ledger. | None. |
 | `unit/evidence-page.test.ts` deletions | `deletions.length` | `rmSync(reportDir…)` calls | The verdict is `toHaveLength(1)` on the population itself, which is exact and stronger than any floor; the conditional regex beside it is the cross-check. | None: sound. |
 
@@ -857,3 +860,13 @@ inverse. (11) The cross-check found the `visual` job with
 `ci.slice(start + 1)`, skipping one character so the key's own line could
 not end the job, which nothing explained and a tidy-up would break. Fixed:
 Task 8.
+
+**Pass 4** (branch at `e49a55d`). Mechanical: the applied plan equals the
+branch; `astro check` 0/0/0; prettier clean; unit 3533/3533; e2e 101 passed;
+matrix 6 + 16 as predicted, 0 XX, so Task 8's line reading holds under every
+row; verdict CLEAN. Reading, the whole document, each claim against the
+final code: one finding. (12) The head table's task attributions had gone
+stale again (finding 5's class): absence-liveness is changed by Tasks 1, 5, 7
+and 8, the step summary by Tasks 2 and 8. A column every fix task must
+remember to update will keep going stale, so the attributions are gone and
+one sentence says Tasks 5 onward answer the review passes.
