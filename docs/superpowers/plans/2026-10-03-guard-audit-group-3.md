@@ -563,6 +563,107 @@ index b302549..8178b8b 100644
  | `unit/pipeline-wiring.test.ts:2161` | nests none inside another, which a parent wipe would take with it | `dirs` | `nested` | findings drawn from it | sound at one hop: findings are built from the population |
 ~~~~
 
+## Task 5: From review pass 1: the cross-check reads a count held to 0, and its spellings are planted
+
+Pass 1 findings 1 and 2. The new test lists every spelling by hand, never from either reader. The population stays 113 files (measured).
+
+~~~~diff
+diff --git a/tests/unit/absence-liveness.test.ts b/tests/unit/absence-liveness.test.ts
+index d453821..2b2f0d8 100644
+--- a/tests/unit/absence-liveness.test.ts
++++ b/tests/unit/absence-liveness.test.ts
+@@ -219,11 +219,18 @@ function countsAPopulation(root: ts.Expression): boolean {
+ 
+ /**
+  * An absence matcher as text, for the cross-check: no AST, so a reader blind
+- * to one file or one spelling disagrees with it. A count held to 0 is left
+- * out, because `toBe(0)` on a bare value is plainly not an absence.
++ * to one file or one spelling disagrees with it. A count held to 0 is read
++ * only on a `.length` or `.size`, as `absenceSubject` reads it: on a bare
++ * value it is plainly not an absence. A `.not` anywhere before the matcher
++ * inverts it.
+  */
+-const PLAIN_ABSENCE =
+-  /(?<!\.not)\.(?:toEqual|toStrictEqual)\(\[\]\)|(?<!\.not)\.toHaveLength\(0\)/;
++const PLAIN_ABSENCE = new RegExp(
++  [
++    String.raw`(?<!\.not)\.(?:toEqual|toStrictEqual)\(\[\]\)`,
++    String.raw`(?<!\.not)\.toHaveLength\(0\)`,
++    String.raw`\.(?:length|size)\)\.(?:toBe|toEqual|toStrictEqual)\(0\)`,
++  ].join('|'),
++);
+ 
+ function scan() {
+   const findings: string[] = [];
+@@ -362,6 +369,37 @@ describe('absence assertions prove the population they searched', () => {
+     ]);
+   });
+ 
++  it('reads as text every spelling the reader reads, and none it refuses', () => {
++    // The cross-check below is only independent if it knows the same forms.
++    // Written out, never generated from either reader's list: a plant built
++    // from the list a reader uses cannot see that list drop a form (#446).
++    const read = [
++      'expect(a).toEqual([]);',
++      'expect(b).toStrictEqual([]);',
++      'expect(c).toHaveLength(0);',
++      'expect(d.length).toBe(0);',
++      'expect(e.size).toBe(0);',
++      'expect(f.length).toEqual(0);',
++      'expect(g.length).toStrictEqual(0);',
++      'expect.soft(l).toEqual([]);',
++      'expect.soft(m.length).toBe(0);',
++    ];
++    const inverse = [
++      'expect(h).not.toEqual([]);',
++      'expect(i.length).not.toBe(0);',
++      'expect(j.length).toBe(1);',
++      'expect(k).toBe(0);',
++    ];
++    const missed = read.filter((line) => !PLAIN_ABSENCE.test(line));
++    expect(searched(missed, { of: read, what: 'planted absences' })).toEqual(
++      [],
++    );
++    const misread = inverse.filter((line) => PLAIN_ABSENCE.test(line));
++    expect(
++      searched(misread, { of: inverse, what: 'planted non-absences' }),
++    ).toEqual([]);
++  });
++
+   it('reads an absence in every file whose text plainly writes one', () => {
+     // Independent of the AST walk (#446, control c). The floor above catches
+     // a reader that goes blind everywhere; this catches one blind to a single
+~~~~
+
+## Task 6: The ledger records review pass 1
+
+Matrix totals 22 = 6 + 16.
+
+~~~~diff
+diff --git a/docs/reviews/2026-10-03-guard-liveness-ledger.md b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+index 8178b8b..8f83bd9 100644
+--- a/docs/reviews/2026-10-03-guard-liveness-ledger.md
++++ b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+@@ -210,10 +210,13 @@ spells `expect` and `.poll(` on two lines, which a one-line search for
+ `expect.poll(` cannot see. It polls an in-flight counter to 0, a value, so it
+ is exempt by the same rule that exempts `expect(k).toBe(0)`.
+ 
+-The mutation matrix ran 16 rows, all as predicted: 6 on
+-`develop`, where each stayed GREEN, and 10 on the new tree, where each
+-turned a guard RED. Two prove a cross-check alone, with its floor switched
+-off. Removing a `tee` from `ci.yml` was not a gap: on `develop` a sibling
++Review pass 1 found the cross-check blind to a count held to 0
++(`expect(x.length).toBe(0)`), which the reader reads; it now reads that too,
++its spellings are planted, and each new branch has a matrix row. The matrix
++ran 22 rows, all as predicted: 6 on `develop`, where each stayed GREEN, and
++16 on the new tree, where 15 turned a guard RED and one, a shell comment
++naming the summary, stayed GREEN as the exclusion intends. Two prove a
++cross-check alone, with its floor switched off. Removing a `tee` from `ci.yml` was not a gap: on `develop` a sibling
+ test ('prints the container architecture into the job summary') already
+ catches it, so the matrix blinds the guard's reader instead.
+ 
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/446-g3/g3_mut.py`, copied from Group 2b's runner. Every
@@ -583,8 +684,15 @@ file; e2e targets run on Chromium, filtered to one page.
 | PS3 | PS2b with the floor at 0 | — | RED |
 | RO1 | the roster's controls hidden | GREEN | RED |
 | RT1 | `renderedText` returns blank space | both GREEN | both RED |
+| AL6 | the cross-check's count spelling removed | — | planted spellings RED |
+| AL7 | the polled-value exemption removed | — | refusal RED, verdict RED |
+| AL8 | `.length`/`.size` not read as a population | — | refusal RED |
+| AL9 | a polled block body read as a value | — | refusal RED |
+| PS4 | a shell comment naming the summary, planted | — | GREEN: excluded |
+| PS4b | PS4 with comments read as writes | — | RED |
 
-16 rows: 6 on `develop`, 10 on the branch.
+22 rows: 6 on `develop`, 16 on the branch. AL6-AL9, PS4 and PS4b came from
+review pass 1, one per branch no earlier row observed.
 
 ## Review passes
 
@@ -600,4 +708,18 @@ finds nothing.
 
 ## Pass log
 
-No pass yet.
+**Pass 1** (branch at `5d31bfa`). Mechanical: the applied plan equals the
+branch; `astro check` 0/0/0; prettier clean; unit 3532/3532; e2e 101 passed
+on Chromium; matrix 6 + 10 as predicted, 0 XX. Reading: four findings.
+(1) `PLAIN_ABSENCE` left out a count held to 0, so the cross-check could not
+see a file writing only `expect(x.length).toBe(0)`. (2) Nothing planted the
+reader's spellings against the cross-check's. (3) Six branches had no row
+observing them: the count spelling, the polled-value exemption, the
+`.length`/`.size` test, the block-body case, and the shell-comment exclusion
+both ways. (4) `g3-pass.sh` exited with its last `grep`, so a clean run
+reported rc=1, and it never checked the row counts. Fixed: Task 5 (1, 2);
+rows AL6-AL9, PS4, PS4b (3); the script's own verdict, with 6 and 16 rows
+required (4); Task 6, the ledger. While fixing, a `git checkout --` that
+undid a measuring pin also reverted the uncommitted fix; it was restored and
+committed, and `~/.claude/hooks/checkout-keeps-uncommitted-work.py` now
+refuses that shape (27 cases, 9 mutations).
