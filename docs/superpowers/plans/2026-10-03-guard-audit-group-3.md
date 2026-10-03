@@ -870,3 +870,9 @@ stale again (finding 5's class): absence-liveness is changed by Tasks 1, 5, 7
 and 8, the step summary by Tasks 2 and 8. A column every fix task must
 remember to update will keep going stale, so the attributions are gone and
 one sentence says Tasks 5 onward answer the review passes.
+
+**Pass 5** (branch at `5d2221c`). Mechanical: the applied plan equals the
+branch; `astro check` 0/0/0; prettier clean; unit 3533/3533; e2e 101 passed;
+matrix 6 + 16 as predicted, 0 XX; verdict CLEAN. Reading, the whole
+document, each claim against the final code and the ledger's final state: no
+findings. **Approved at pass 5.**
