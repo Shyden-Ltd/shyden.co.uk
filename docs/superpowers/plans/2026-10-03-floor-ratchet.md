@@ -39,7 +39,9 @@ files under `tests/`.
   two values, and a failing run. Refuses under `CI`. `describeMoves` prints
   every move with its delta, largest first (AC10).
 - `tests/literal-floors.ts`: classifies every `toBeGreaterThan(OrEqual)` under
-  `tests/` and every comparison with a literal inside an `expect` argument as
+  `tests/`, every comparison with a literal inside an `expect` argument, and
+  every `toBeLessThan(OrEqual)` whose subject is a literal (a floor written
+  backwards, added at review pass 1) as
   presence, counted, forwarded, compared, threshold or ceiling, and refuses
   anything else by line.
 - `tests/unit/literal-floors.test.ts`: a counted or forwarded floor is
@@ -59,7 +61,7 @@ files under `tests/`.
 | 2 runner-neutral check, two messages | Task 1: `floors.test.ts` pins each message whole |
 | 3 recorder, everything checked before any write, CI never records | Task 1 (`decideRecord`, `script-entry` probe), Task 3 (no workflow runs it); matrix R8-R12, R16, R17; each pass runs the recorder on the applied tree |
 | 4 every unit liveness floor converted, after its verdict | Task 2: 43 floors, `spec-scan`'s helper and five callers, four locales, `evidence-recording`'s two comparisons; 16 moved below their verdict |
-| 5 meta-guard refusing a literal floor in every form | Task 2; matrix R18-R25 |
+| 5 meta-guard refusing a literal floor in every form | Task 2, Task 7; matrix R18-R25, R29 |
 | 6 every id used by exactly one site | Task 2 ('spells every recorded id exactly once'); `decideRecord` refuses an id from two places at record time; matrix R10, R28 |
 | 7 matrix on both trees | below |
 | 8 ledger and CLAUDE.md | Task 4; the global rule's control (b) is edited outside the repo |
@@ -2918,6 +2920,156 @@ index 9e677c6..1afe549 100644
  
 ~~~~
 
+## Task 7: From review pass 1: a floor written backwards is read
+
+Pass 1 finding 1, by reading: `expect(5).toBeLessThan(n)` names the count as the bound, which the reader did not see. No file writes one (measured: 0 literal subjects with a less-than matcher, known positive 2 literal subjects). Planted RED first (2), then read. Matrix row R29.
+
+~~~~diff
+diff --git a/tests/floors.json b/tests/floors.json
+index 5797ca4..a96f983 100644
+--- a/tests/floors.json
++++ b/tests/floors.json
+@@ -13,7 +13,7 @@
+   "device-tool-homes/files": 299,
+   "download-readers/byte-reads": 8,
+   "duplicate-imports/imports": 1573,
+-  "duplication/declarations": 5344,
++  "duplication/declarations": 5346,
+   "duplication/files": 343,
+   "event-collectors/locator-loops": 8,
+   "event-collectors/specs": 65,
+diff --git a/tests/literal-floors.ts b/tests/literal-floors.ts
+index dcb845c..91b0dc1 100644
+--- a/tests/literal-floors.ts
++++ b/tests/literal-floors.ts
+@@ -37,7 +37,7 @@ export interface FloorSite {
+    * Set when the floor is a comparison written inside the `expect(...)`
+    * argument (`expect(n > 25).toBe(true)`) rather than a matcher.
+    */
+-  readonly form?: 'comparison';
++  readonly form?: 'comparison' | 'reversed';
+ }
+ 
+ export interface FloorReading {
+@@ -48,6 +48,9 @@ export interface FloorReading {
+ 
+ const MATCHERS = new Set(['toBeGreaterThan', 'toBeGreaterThanOrEqual']);
+ 
++/** Read only with a literal SUBJECT: `expect(5).toBeLessThan(n)` is `n > 5`. */
++const REVERSED = new Set(['toBeLessThan', 'toBeLessThanOrEqual']);
++
+ /** `expect`, `expect.soft` and `expect.poll`: the roots this repo asserts from. */
+ const isExpectRoot = (callee: ts.Expression): boolean =>
+   (ts.isIdentifier(callee) && callee.text === 'expect') ||
+@@ -260,6 +263,34 @@ export function floorSitesIn(sf: ts.SourceFile): FloorReading {
+         else sites.push({ line, kind: 'compared', subject });
+       }
+     }
++    if (
++      ts.isCallExpression(node) &&
++      ts.isPropertyAccessExpression(node.expression) &&
++      REVERSED.has(node.expression.name.text) &&
++      node.arguments.length === 1
++    ) {
++      const chain = chainOf(node.expression.expression);
++      const [first] = chain.expectCall?.arguments ?? [];
++      const value = first ? literalValue(first) : undefined;
++      if (chain.expectCall && !chain.negated && value !== undefined) {
++        const line =
++          sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
++        const subject = collapse(node.arguments[0].getText(sf));
++        if (!Number.isInteger(value))
++          sites.push({ line, kind: 'threshold', subject, form: 'reversed' });
++        else {
++          const demands =
++            node.expression.name.text === 'toBeLessThan' ? value + 1 : value;
++          sites.push({
++            line,
++            kind: demands >= 2 ? 'counted' : 'presence',
++            demands,
++            subject,
++            form: 'reversed',
++          });
++        }
++      }
++    }
+     ts.forEachChild(node, visit);
+   };
+   visit(sf);
+diff --git a/tests/unit/literal-floors.test.ts b/tests/unit/literal-floors.test.ts
+index 22c794f..be804ac 100644
+--- a/tests/unit/literal-floors.test.ts
++++ b/tests/unit/literal-floors.test.ts
+@@ -94,6 +94,31 @@ describe('floorSitesIn', () => {
+     },
+   );
+ 
++  // Written backwards, the literal is the subject and the count the bound.
++  // No file under tests/ writes one today (measured, review pass 1); read
++  // anyway, because a form the reader cannot see is one nothing refuses.
++  it.each([
++    ['less than', 'expect(5).toBeLessThan(files.length);', 'files.length', 6],
++    ['at most', 'expect(2).toBeLessThanOrEqual(n);', 'n', 2],
++  ])(
++    'reads a floor written backwards, %s, as counted',
++    (_, source, subject, demands) => {
++      expect(read(source)).toEqual({
++        sites: [
++          { line: 1, kind: 'counted', demands, subject, form: 'reversed' },
++        ],
++        refused: [],
++      });
++    },
++  );
++
++  it('reads a ceiling on a count as no floor', () => {
++    expect(read('expect(x.length).toBeLessThan(5);')).toEqual({
++      sites: [],
++      refused: [],
++    });
++  });
++
+   it('reads a comparison bounding from above as a ceiling', () => {
+     expect(read('expect(x.length < 3).toBe(true);').sites).toEqual([
+       { line: 1, kind: 'ceiling', subject: 'x.length', form: 'comparison' },
+~~~~
+
+## Task 8: The ledger records review pass 1's row
+
+35 rows, 6 + 29.
+
+~~~~diff
+diff --git a/docs/reviews/2026-10-03-guard-liveness-ledger.md b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+index 1afe549..acd5ff5 100644
+--- a/docs/reviews/2026-10-03-guard-liveness-ledger.md
++++ b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+@@ -261,18 +261,20 @@ and were moved below it, so a population that grew never hides a finding.
+ Each first figure was read against the census and the diff that recorded
+ it, and every one is accounted for.
+ 
+-The matrix ran 34 rows, all as predicted once R22 was corrected. On
++The matrix ran 35 rows, all as predicted once R22 was corrected. On
+ `develop`, 6 stayed GREEN: a reader one short in `absence-liveness`,
+ `git-env`, `duplicate-imports` and `spec-scan`'s forwarded floor, and growth
+ through `absence-liveness` and `evidence-recording`'s comparison floor. On the
+-branch, 28 turned their guard RED: those six again, `back-translate`'s looped
++branch, 29 turned their guard RED: those six again, `back-translate`'s looped
+ locale, the recorder's four refusals and its printed moves, both directions
+ of the check, record mode's call site, the CI refusal's words, a workflow
+-running the recorder, and eleven against the literal reader (a literal floor
++running the recorder, and twelve against the literal reader (a literal floor
+ back, a forwarded bound, the comparison form, a callback's predicate, a
+ literal read as written, `expect.poll`, the cross-check alone with its floor
+ off, a root skipped, a stale product value, a growing Group 5 list, an id
+-spelled twice). R22 first came back GREEN: TypeScript already normalises a
++spelled twice, and a floor written backwards, `expect(5).toBeLessThan(n)`,
++which review pass 1 found unread: no file writes one, and none can now pass
++unseen). R22 first came back GREEN: TypeScript already normalises a
+ numeric literal's text, so the `replace` it removed was dead code, and is
+ gone. The CI refusal is mutated in its words, not removed, because a
+ recorder that ran under the probe would run the suite and could rewrite the
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/floors/m468.py`, copied from #446 Group 3's runner,
@@ -2956,8 +3108,9 @@ where the branch holds `floorBreach`, so each pair is two rows.
 | R26 | a product value outlives its floor | — | RED |
 | R27 | the Group 5 list grows | — | RED |
 | R28 | a recorded id is spelled twice | — | RED |
+| R29 | a floor written backwards is unread (review pass 1) | — | RED |
 
-34 rows: 6 on `develop`, 28 on the branch. R16 mutates the refusal's words,
+35 rows: 6 on `develop`, 29 on the branch. R16 mutates the refusal's words,
 not the refusal: a recorder that ran under the probe would run the suite and
 could rewrite the real `tests/floors.json`.
 
@@ -2976,4 +3129,22 @@ nothing.
 
 ## Pass log
 
-No pass yet.
+### Pass 1 (2026-10-03, 20:58Z, tree `bd640c8`)
+
+Mechanical, by `p468-pass.sh 1`: the six task diffs applied to `4d07565`
+equal the branch; `astro check` 0/0/0; prettier clean; unit 3592/3592;
+`npm run floors:record` on the applied tree: every floor already matches,
+tree clean; matrix 6 + 28 as predicted, 0 mismatches. CLEAN.
+
+Reading, the whole document and the new modules in their final form:
+
+1. A floor written backwards, `expect(5).toBeLessThan(files.length)`, puts
+   the count in the bound, and the reader saw only `toBeGreaterThan(OrEqual)`
+   and comparisons, so it passed the meta-guard unclassified. Measured: no
+   file under `tests/` writes one (0 literal subjects with a less-than
+   matcher; the probe's known positive, any literal subject, found 2), and
+   no file imports `node:assert` or writes chai's `should`/`assert`. Fixed
+   (Task 7): read and planted, a ceiling on a count stays no floor; matrix
+   row R29; the ledger counts 35 rows (Task 8).
+
+One finding; the loop continues.
