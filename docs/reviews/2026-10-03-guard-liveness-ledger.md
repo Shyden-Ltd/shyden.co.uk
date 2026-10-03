@@ -147,6 +147,46 @@ cross-check alone, with its floor switched off. Appendices A and B below are the
 census at `6d07d37`, before Group 2a. `download-readers.test.ts:78`'s
 file-level floor in Appendix B is gone, replaced by the byte-read floor above.
 
+## Group 2b: file-level absence guards, done
+
+The 12 sites above that judge each file with a pattern and assert an empty
+result now prove their walk, their pattern and a second reading (#446
+Group 2b, plan `docs/superpowers/plans/2026-10-03-guard-audit-group-2b.md`).
+One needed nothing: `browser-matrix`'s content-only guard already had an exact
+cross-check on `rendered-text.spec.ts` and 24 planted forms in
+`engine-dependence.test.ts`, which this census missed by stopping at the
+verdict. `device-tool-homes` and `release-inventory` had part of it. Each of
+the other sites now has a floor at measured − 1, a cross-check by different
+means, and its construct planted in each form:
+
+| Guard | Floor (measured) | Cross-check |
+| --- | --- | --- |
+| `typecheck-scope` ts-nocheck | 29 scripts | the compiler's own directive record |
+| `route-coverage` locale routes | 3 gate specs (already there) | the parse tree's strings |
+| `release-inventory` captures | 58 helper modules | the parse tree's `shoot` calls |
+| `pipeline-wiring` image | 10 workflow files | the parsed document's values |
+| `pipeline-wiring` budget, prebuilt | 1 job running the suite | raw text against the parsed jobs |
+| `pipeline-wiring` wrangler | 10 workflow texts | a coarser line reading |
+| `shytalk-brand` | 329 source files | the homes, through the verdict's reader |
+| `evidence-recording`, both directions | 43 specs, 26 declaring, 26 acting, 17 still | the parse tree's `test.use` calls |
+| `device-tool-homes` | 294 files | the home, through the same pattern (already there) |
+
+Ten forms the code writes, or could write the next day, were invisible, and
+each was planted in a real file and stayed GREEN on `develop`: `'/id'` (a
+locale home with no slash after it) and a route after a template substitution;
+a capture through a namespace import (`evidence.shoot(`); a Playwright image
+pinned by digest or not pinned; `npm install wrangler@4 -g`, and `npm in -g
+wrangler`, one of the eleven install aliases npm documents; a build inside the
+suite's own block script, and `npx astro build`; `rgb(208 188 255 / 0.3)`, the
+space-separated syntax `tokens.css` uses; and `test.use( recorded )` on an
+idle spec.
+
+The mutation matrix ran 66 rows, all as predicted: 18 on `develop`, where each
+planted form and narrowed walk stayed GREEN, and 48 on the new tree, where
+each turned a guard RED. Eight of those prove a cross-check alone, with its
+floor switched off. The two workflow floors count #459's probe workflows, and
+say so. Appendices A and B below remain the census at `6d07d37`.
+
 ## Group 3: plain counts, next
 
 9 `searched` calls pass a number (`text.length`, `result.scanned`,
@@ -169,6 +209,9 @@ on macOS is not the one CI reads.
 
 ## Side findings
 
+- **#465**: `scripts/release-inventory.mjs` selects a test as capturing only
+  through a bare `shoot(` call, so a spec capturing through a namespace
+  import would be left off the release page. No spec does today.
 - **#462**: 169 loops over a population known before the run sit inside a
   single test body, which one-test-per-case does not flag because they
   change no state. The operator decided on 2026-10-03 to widen the guard.
