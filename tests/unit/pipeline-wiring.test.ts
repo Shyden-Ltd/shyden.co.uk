@@ -2916,3 +2916,179 @@ describe('neither rebaseline workflow retries (operator rule, 2026-10-02)', () =
       ).toEqual([]);
     });
 });
+
+// ---- the operator-review lock (#459, decision 4) ---------------------------
+//
+// A commit status that holds an automatic rebaseline's merge until the
+// operator approves it. The trusted half runs the default branch's copy on
+// every push to a pull request and after every review; the relay, holding
+// nothing, exists only so that a review starts it.
+
+const REVIEW = 'operator-review.yml';
+const RELAY = 'operator-review-relay.yml';
+
+/** A step as the YAML parser reads it, with the keys these guards judge. */
+type JudgedStep = ParsedStep & {
+  readonly name?: string;
+  readonly if?: unknown;
+  readonly 'continue-on-error'?: unknown;
+};
+
+describe('operator-review decides from the default branch alone (#459)', () => {
+  const root = () =>
+    parseCleanYaml(workflow(REVIEW), REVIEW) as {
+      on?: {
+        pull_request_target?: { types?: unknown };
+        workflow_run?: { workflows?: unknown; types?: unknown };
+      };
+      permissions?: unknown;
+      jobs?: Record<
+        string,
+        { permissions?: unknown; 'continue-on-error'?: unknown }
+      >;
+    };
+
+  it('is started by a pull request event and by the relay, and by nothing else', () => {
+    expect(Object.keys(root().on ?? {})).toEqual([
+      'pull_request_target',
+      'workflow_run',
+    ]);
+    expect(root().on?.pull_request_target?.types).toEqual([
+      'opened',
+      'synchronize',
+      'reopened',
+    ]);
+    expect(root().on?.workflow_run?.workflows).toEqual([workflowName(RELAY)]);
+    expect(root().on?.workflow_run?.types).toEqual(['completed']);
+  });
+
+  it('holds exactly its three scopes, in one job that widens nothing', () => {
+    expect(root().permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'read',
+      statuses: 'write',
+    });
+    expect(Object.keys(root().jobs ?? {})).toEqual(['verdict']);
+    expect(root().jobs?.verdict?.permissions).toBeUndefined();
+    expect(root().jobs?.verdict?.['continue-on-error']).toBeUndefined();
+  });
+
+  it('checks out the default branch only, keeping no token', () => {
+    const checkouts = stepsOf(REVIEW).filter(({ uses }) =>
+      uses?.startsWith('actions/checkout@'),
+    );
+    // Measured: 1.
+    expect(checkouts).toHaveLength(1);
+    expect(checkouts[0].with).toEqual({ 'persist-credentials': false });
+  });
+
+  it('runs exactly the event check, its two commands and three status posts', () => {
+    // First an independent count of the run steps in the raw text, so a
+    // reader blind to one form of `run:` is caught by the step it missed
+    // before the list below is read through it.
+    const raw =
+      withoutCommentLines(workflow(REVIEW), '#').match(/^\s+(?:- )?run:/gm) ??
+      [];
+    const parsed = stepsOf(REVIEW).filter(({ run }) => run !== undefined);
+    expect(parsed.length, 'the parser read fewer run steps than the text').toBe(
+      raw.length,
+    );
+    // Measured: 6 run steps.
+    expect(raw).toHaveLength(6);
+    // The whole list is the allow-list, in order: an install, another
+    // script, a retry, or a status under another name is a line it does not
+    // hold, and `pending` is posted before the first read.
+    expect(runLinesOf(REVIEW).map(({ line }) => line)).toEqual([
+      'if [ -z "$PR_NUMBER" ] || [ -z "$EVENT_HEAD" ]; then',
+      'echo "::error::the event names no pull request, so there is no head to hold"',
+      'exit 1',
+      'fi',
+      'gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$EVENT_HEAD" -f state=pending -f context=operator-review -f "description=Deciding"',
+      'node scripts/operator-review.mjs head',
+      'gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state=pending -f context=operator-review -f "description=Deciding"',
+      'node scripts/operator-review.mjs verdict',
+      'gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f "state=$STATE" -f context=operator-review -f "description=$DESCRIPTION" -f "target_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"',
+    ]);
+  });
+
+  it('stops at the first failure, so a refusal leaves pending', () => {
+    const steps = stepsOf(REVIEW) as JudgedStep[];
+    // Measured: 8 steps.
+    expect(steps.length).toBeGreaterThanOrEqual(7);
+    const carrying = steps.filter(
+      (step) =>
+        step['continue-on-error'] !== undefined ||
+        /\b(?:always|failure|cancelled)\(/.test(String(step.if ?? '')),
+    );
+    expect(
+      searched(
+        carrying.map((step) => step.name ?? step.uses ?? String(step.run)),
+        {
+          of: steps.map((step) => step.name ?? step.uses ?? String(step.run)),
+          what: 'operator-review steps',
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it('is reported only as a status, never as a check run a job earns by finishing', () => {
+    // A job's check run passes when the job does, so a job named for the lock
+    // would satisfy it with no verdict at all. Every workflow, so a job added
+    // anywhere later is covered.
+    const jobs = workflowYamlNames().flatMap((file) => {
+      const { jobs: parsed } = parseCleanYaml(workflow(file), file) as {
+        jobs: Record<string, { name?: unknown }>;
+      };
+      return Object.entries(parsed).map(([id, body]) => ({
+        at: `${file}: ${id}`,
+        check: typeof body.name === 'string' ? body.name : id,
+      }));
+    });
+    // Measured: 24 jobs across the 12 workflows once #459 lands.
+    expect(jobs.length).toBeGreaterThanOrEqual(23);
+    expect(
+      searched(
+        jobs
+          .filter(({ check }) => check === 'operator-review')
+          .map(({ at }) => at),
+        { of: jobs.map(({ at }) => at), what: 'jobs in every workflow' },
+      ),
+    ).toEqual([]);
+    expect(
+      producibleContexts(workflow(REVIEW), REVIEW).filter(
+        (context) => context === 'operator-review',
+      ),
+    ).toHaveLength(3);
+  });
+});
+
+describe('the review relay decides nothing and holds nothing (#459)', () => {
+  const root = () =>
+    parseCleanYaml(workflow(RELAY), RELAY) as {
+      on?: { pull_request_review?: { types?: unknown } };
+      permissions?: unknown;
+      jobs?: Record<string, { permissions?: unknown }>;
+    };
+
+  it('is started by a review submitted or dismissed, and by nothing else', () => {
+    // Without `dismissed`, a dismissed approval would keep its success.
+    expect(Object.keys(root().on ?? {})).toEqual(['pull_request_review']);
+    expect(root().on?.pull_request_review?.types).toEqual([
+      'submitted',
+      'dismissed',
+    ]);
+  });
+
+  it('holds no permission, in the workflow or its job', () => {
+    expect(root().permissions).toEqual({});
+    expect(Object.keys(root().jobs ?? {})).toEqual(['relay']);
+    expect(root().jobs?.relay?.permissions).toBeUndefined();
+  });
+
+  it('runs one line and no action', () => {
+    expect(stepsOf(RELAY).map(({ uses }) => uses)).toEqual([undefined]);
+    expect(runLinesOf(RELAY).map(({ line }) => line)).toEqual([
+      'echo "Review on pull request $PR_NUMBER; operator-review.yml decides."',
+    ]);
+  });
+});
