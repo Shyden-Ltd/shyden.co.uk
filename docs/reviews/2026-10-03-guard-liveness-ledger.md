@@ -210,10 +210,13 @@ spells `expect` and `.poll(` on two lines, which a one-line search for
 `expect.poll(` cannot see. It polls an in-flight counter to 0, a value, so it
 is exempt by the same rule that exempts `expect(k).toBe(0)`.
 
-The mutation matrix ran 16 rows, all as predicted: 6 on
-`develop`, where each stayed GREEN, and 10 on the new tree, where each
-turned a guard RED. Two prove a cross-check alone, with its floor switched
-off. Removing a `tee` from `ci.yml` was not a gap: on `develop` a sibling
+Review pass 1 found the cross-check blind to a count held to 0
+(`expect(x.length).toBe(0)`), which the reader reads; it now reads that too,
+its spellings are planted, and each new branch has a matrix row. The matrix
+ran 22 rows, all as predicted: 6 on `develop`, where each stayed GREEN, and
+16 on the new tree, where 15 turned a guard RED and one, a shell comment
+naming the summary, stayed GREEN as the exclusion intends. Two prove a
+cross-check alone, with its floor switched off. Removing a `tee` from `ci.yml` was not a gap: on `develop` a sibling
 test ('prints the container architecture into the job summary') already
 catches it, so the matrix blinds the guard's reader instead.
 
