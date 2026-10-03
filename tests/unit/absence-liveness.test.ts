@@ -95,12 +95,12 @@ function absenceRoot(
 
   // Walk back through any modifier chain (`.not`, `.resolves`). A `.not`
   // anywhere in it inverts the claim, so the assertion is not an absence one.
-  let target: ts.Node = node.expression.expression;
+  let target: ts.Expression = node.expression.expression;
   while (ts.isPropertyAccessExpression(target)) {
     if (target.name.text === 'not') return null;
     target = target.expression;
   }
-  return { root: target as ts.Expression, zeroCount };
+  return { root: target, zeroCount };
 }
 
 /** `expect(x)` or `expect.soft(x)`: both assert, so both are read. */
@@ -369,7 +369,7 @@ describe('absence assertions prove the population they searched', () => {
     ]);
   });
 
-  it('reads as text every spelling the reader reads, and none it refuses', () => {
+  it('reads as text every spelling the reader reads, and no inverse', () => {
     // The cross-check below is only independent if it knows the same forms.
     // Written out, never generated from either reader's list: a plant built
     // from the list a reader uses cannot see that list drop a form (#446).

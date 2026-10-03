@@ -202,7 +202,7 @@ passed instead so the control content-checks it (#446 Group 3, plan
 | `classroom-groups-roster` touch targets | `controls.count()` counted hidden controls too, while the measurement judged rendered ones: a roster whose controls all stopped rendering passed. | The measured list. |
 | `rendered-text`, both page scans | Characters include whitespace, so a page rendered blank counted as searched. | The page's words. |
 | `palette-controls`, `theme` | The count of the very array. | The array: form only. |
-| `anchored-presence` | Count of the judged unit, floor tight (76). | Unchanged. Its population is defined by dataflow, which no raw-text reading reproduces, so it still has no cross-check. |
+| `anchored-presence` | Count of the judged unit; floor 75 under a measured 76, tight. | Unchanged. Its population is defined by dataflow, which no raw-text reading reproduces, so it still has no cross-check. |
 | `evidence-page` deletions | `toHaveLength(1)` on the population itself, exact. | Unchanged: sound. |
 
 Fail-closed reading found one site at once: `evidence-page.spec.ts:234`
@@ -216,9 +216,10 @@ its spellings are planted, and each new branch has a matrix row. The matrix
 ran 22 rows, all as predicted: 6 on `develop`, where each stayed GREEN, and
 16 on the new tree, where 15 turned a guard RED and one, a shell comment
 naming the summary, stayed GREEN as the exclusion intends. Two prove a
-cross-check alone, with its floor switched off. Removing a `tee` from `ci.yml` was not a gap: on `develop` a sibling
-test ('prints the container architecture into the job summary') already
-catches it, so the matrix blinds the guard's reader instead.
+cross-check alone, with its floor switched off. Removing a `tee` from
+`ci.yml` was not a gap: on `develop` a sibling test ('prints the container
+architecture into the job summary') already catches it, so the matrix blinds
+the guard's reader instead.
 
 ## Group 4: loop-built findings, next
 
