@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { describe, it, expect } from 'vitest';
-import { specDirs } from '../spec-dirs';
-import { searched, tsFilesUnder } from '../source-files';
+import { callsIn } from '../playwright-declarations';
+import { parseSource } from './ast';
 import { blankCommentLines } from './source-text';
 import { expectNothingFound, type Analyze } from './spec-scan';
 
@@ -54,6 +54,7 @@ const ASSERTION = /\bexpect(?:[A-Z]\w*)?\s*\(|\btoHaveScreenshot\s*\(/;
 const CAPTURE = /\bshoot\s*\(/;
 
 const capturesBeforeAssertion: Analyze = (file, source) => {
+  const judged: string[] = [];
   const findings: string[] = [];
   let asserted = false;
 
@@ -63,6 +64,7 @@ const capturesBeforeAssertion: Analyze = (file, source) => {
       if (SCOPE.test(line)) asserted = false;
       if (ASSERTION.test(line)) asserted = true;
       if (CAPTURE.test(line)) {
+        judged.push(`${file}:${index + 1}`);
         if (!asserted) {
           findings.push(
             `${file}:${index + 1} — shoot() runs before anything is asserted, ` +
@@ -73,42 +75,107 @@ const capturesBeforeAssertion: Analyze = (file, source) => {
       }
     });
 
-  return findings;
+  return { judged, findings };
 };
 
 /**
- * Every capture site the scan above can see, as `file:line`.
- *
- * The liveness control for this guard, and it is a different question from the
- * one `expectNothingFound` already answers. That control proves FILES were
- * scanned; it cannot notice that `shoot` was renamed, which would leave the
- * scan matching nothing and reporting a clean tree forever. #112 is the
- * precedent: the guard written to remove a vacuity class carried that class
- * itself, because its own control was never mutated.
+ * True where the file calls `shoot`, read from the parse tree: independent of
+ * the line scan above, so a scan gone blind to a capture's spelling is caught
+ * by the file it judged none in (#446).
  */
-const capturesSeen = (): string[] =>
-  specDirs()
-    .flatMap(tsFilesUnder)
-    .flatMap((file) =>
-      blankCommentLines(readFileSync(file, 'utf8'))
-        .split('\n')
-        .flatMap((line, index) =>
-          CAPTURE.test(line) ? [`${file}:${index + 1}`] : [],
-        ),
-    );
+const callsShoot = (file: string, source: string): boolean =>
+  callsIn(parseSource(source, file)).some(({ expression }) =>
+    ts.isIdentifier(expression)
+      ? expression.text === 'shoot'
+      : ts.isPropertyAccessExpression(expression) &&
+        expression.name.text === 'shoot',
+  );
+
+describe('capturesBeforeAssertion -- the scan proven on synthetic input', () => {
+  const scan = (...lines: string[]) =>
+    capturesBeforeAssertion('synthetic.spec.ts', lines.join('\n'));
+
+  it('judges every capture and passes one after an assertion', () => {
+    expect(
+      scan(
+        "test('x', async () => {",
+        '  await expect(page).toHaveTitle(/x/);',
+        "  await shoot(page, 'x');",
+        '});',
+      ),
+    ).toEqual({ judged: ['synthetic.spec.ts:3'], findings: [] });
+  });
+
+  it('names a capture taken before anything is asserted', () => {
+    expect(
+      scan("test('x', async () => {", "  await shoot(page, 'x');", '});')
+        .findings,
+    ).toEqual([
+      'synthetic.spec.ts:2 — shoot() runs before anything is asserted, so a present image is not the result',
+    ]);
+  });
+
+  it('counts a helper named expectSomething, and a method of that name', () => {
+    expect(
+      scan(
+        "test('x', async () => {",
+        '  await expectNoHorizontalScroll(page);',
+        "  await shoot(page, 'a');",
+        '  await reported.expectNone();',
+        "  await evidence.shoot(page, 'b');",
+        '});',
+      ),
+    ).toEqual({
+      judged: ['synthetic.spec.ts:3', 'synthetic.spec.ts:5'],
+      findings: [],
+    });
+  });
+
+  it('does not let a second capture lean on the first one’s assertion', () => {
+    expect(
+      scan(
+        "test('x', async () => {",
+        '  await expect(page).toHaveTitle(/x/);',
+        "  await shoot(page, 'a');",
+        "  await shoot(page, 'b');",
+        '});',
+      ).findings,
+    ).toHaveLength(1);
+  });
+
+  it('does not carry an assertion across into the next test', () => {
+    expect(
+      scan(
+        "test('a', async () => {",
+        '  await expect(page).toHaveTitle(/x/);',
+        '});',
+        "test('b', async () => {",
+        "  await shoot(page, 'b');",
+        '});',
+      ).findings,
+    ).toHaveLength(1);
+  });
+
+  it('is not satisfied by an assertion in a comment', () => {
+    expect(
+      scan(
+        "test('x', async () => {",
+        '  // expect(page).toHaveTitle(/x/);',
+        "  await shoot(page, 'x');",
+        '});',
+      ).findings,
+    ).toHaveLength(1);
+  });
+});
 
 describe('an evidence capture documents an assertion that already passed', () => {
   it('never runs before the assertion it claims to document', () => {
-    expectNothingFound(capturesBeforeAssertion);
-  });
-
-  it('is reading real captures, so a clean scan means something', () => {
-    const captures = capturesSeen();
-    expect(
-      searched(captures, {
-        of: captures,
-        what: 'evidence captures in the spec directories',
-      }),
-    ).not.toEqual([]);
+    // Measured 143 captures on 2026-10-03 (#446). Stated tight, so a reader
+    // that comes back one short fails.
+    expectNothingFound(capturesBeforeAssertion, {
+      what: 'evidence captures',
+      moreThan: 142,
+      carries: callsShoot,
+    });
   });
 });

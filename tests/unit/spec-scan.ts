@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect } from 'vitest';
 import { specDirs } from '../spec-dirs';
+import { declaresTests } from '../playwright-declarations';
 import { searched, tsFilesUnder } from '../source-files';
 
 /**
@@ -29,20 +30,88 @@ import { searched, tsFilesUnder } from '../source-files';
  * of a default that drifts in silence.
  */
 
-/** A guard's own reading of one file: the problems it found, as messages. */
-export type Analyze = (file: string, source: string) => readonly string[];
+/**
+ * A guard's own reading of one file: every unit it judged, named so a
+ * failure can point at it, and the problems it found among them.
+ *
+ * `judged` is the liveness control at the level the guard judges (#446).
+ * Proving FILES were opened says nothing about a reader that went blind to
+ * every test, call or capture inside them: it opens every file, finds
+ * nothing, and passes.
+ */
+export type Reading = {
+  readonly judged: readonly string[];
+  readonly findings: readonly string[];
+};
+
+/** A guard's reading of one file, as a pure function of its path and text. */
+export type Analyze = (file: string, source: string) => Reading;
+
+/** What the scan must see before its silence means anything. */
+export type Liveness = {
+  /** The unit `judged` lists, plural: `tests read`, `captures`. */
+  readonly what: string;
+  /**
+   * The floor, stated as measured − 1 by the caller beside the measured
+   * figure, so a reader that comes back one short fails.
+   */
+  readonly moreThan: number;
+  /**
+   * An independent reading of the same file: true where its text plainly
+   * holds the construct. A file it holds and `analyze` judged nothing in is
+   * a form the reader is blind to.
+   */
+  readonly carries: (file: string, source: string) => boolean;
+};
+
+/**
+ * The liveness of a guard whose unit is a test or group the specs declare:
+ * a file whose text declares a test, and in which the guard judged none, is
+ * a form its reader is blind to. One home, since three guards read that way.
+ */
+export const declarationsRead = (what: string, moreThan: number): Liveness => ({
+  what,
+  moreThan,
+  carries: (_file, source) => declaresTests(source),
+});
 
 /**
  * Run `analyze` over every file in the spec directories and assert it found
- * nothing. The failure message is every finding, one per line.
+ * nothing, over a population of the units it judged, at least as many as
+ * measured, with none missed in a file that plainly holds one. The failure
+ * message is every finding, one per line.
  */
-export const expectNothingFound = (analyze: Analyze): void => {
-  const files = specDirs().flatMap(tsFilesUnder);
-  const findings = files.flatMap((file) =>
-    analyze(file, readFileSync(file, 'utf8')),
-  );
+export const expectNothingFound = (
+  analyze: Analyze,
+  liveness: Liveness,
+): void => {
+  const readings = specDirs()
+    .flatMap(tsFilesUnder)
+    .map((file) => {
+      const source = readFileSync(file, 'utf8');
+      return { file, source, ...analyze(file, source) };
+    });
+  const findings = readings.flatMap(({ findings }) => findings);
+  const judged = readings.flatMap(({ judged }) => judged);
   expect(
-    searched(findings, { of: files, what: 'files under the spec directories' }),
+    searched(findings, { of: judged, what: liveness.what }),
     findings.join('\n'),
+  ).toEqual([]);
+  expect(
+    judged.length,
+    `${liveness.what}: fewer than measured`,
+  ).toBeGreaterThan(liveness.moreThan);
+  const missed = readings
+    .filter(
+      ({ file, source, judged }) =>
+        judged.length === 0 && liveness.carries(file, source),
+    )
+    .map(({ file }) => file);
+  expect(
+    searched(missed, {
+      of: readings,
+      what: 'files under the spec directories',
+    }),
+    `files holding ${liveness.what} where the reader judged none`,
   ).toEqual([]);
 };

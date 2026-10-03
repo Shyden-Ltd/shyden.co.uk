@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { withoutTsComments } from './unit/source-text';
 
 /**
  * Playwright's declarations, read from the parse tree (#218).
@@ -226,6 +227,18 @@ function declarationOf(
     ...(unreadable === undefined ? {} : { unreadable }),
   };
 }
+
+/** `test(`, or a `test.<modifier>(` form, as text. */
+const DECLARES_TESTS = /(?<![\w.])test(?:\.(?:only|skip|fixme|fail))*\s*\(/;
+
+/**
+ * True where `text`, comments stripped, calls `test(` or a `test.<modifier>(`
+ * form. Read as text, independently of the parse tree, so a guard can
+ * cross-check its reader: a file this holds for, and the reader found no test
+ * in, is a form the reader has gone blind to (#390, #446).
+ */
+export const declaresTests = (text: string): boolean =>
+  DECLARES_TESTS.test(withoutTsComments(text));
 
 /** Every test and group `sf` declares, in source order. */
 export function declarationsIn(sf: ts.SourceFile): Declaration[] {
