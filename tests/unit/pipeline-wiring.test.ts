@@ -3009,3 +3009,23 @@ describe('the waiting-reports count (#349)', () => {
     });
   });
 });
+
+describe('CI never records the guards’ floors (#468)', () => {
+  it('runs neither npm run floors:record nor its script', () => {
+    // A run that can raise the figure it checks against asserts nothing, for
+    // the reason CI never passes --update-snapshots. The recorder refuses
+    // under CI itself (script-entry.test.ts probes it); this keeps a workflow
+    // from asking.
+    const runs = workflowYamlNames().flatMap((file) =>
+      workflowJobs(workflow(file), file).flatMap(({ runs }) =>
+        runs.map((run) => ({ file, run })),
+      ),
+    );
+    const recording = runs
+      .filter(({ run }) => /floors:record|record-floors/.test(run))
+      .map(({ file, run }) => `${file}: ${run.trim().split('\n')[0]}`);
+    expect(
+      searched(recording, { of: runs, what: 'run steps in the workflows' }),
+    ).toEqual([]);
+  });
+});
