@@ -71,6 +71,26 @@ jobs:
   # Everything the merge gate ran before the e2e suite, in the same order, as a
   # job of its own so it runs BESIDE the shards rather than ahead of them. It
   # gates because build-and-test stands for it (#163).
+  # Which Playwright image this run's browser jobs use (#454): the digest
+  # docker/playwright/Dockerfile pins when it names the installed
+  # @playwright/test, otherwise that version's, resolved now with a warning.
+  # So a Playwright update is never red while Dependabot's image update
+  # catches up, and every browser job in one run shares one digest.
+  image:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.pick.outputs.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - id: pick
+        run: node scripts/playwright-image.mjs
+
   checks:
     runs-on: ubuntu-26.04
     # Bounded, as every job is (#157); not the e2e policy, because this job
@@ -124,6 +144,7 @@ jobs:
   # one 13.2, which is the wall-clock. Eight splits the slow slices.
   e2e:
     name: e2e shard ${{ matrix.shard }} of ${{ strategy.job-total }}
+    needs: image
     runs-on: ubuntu-26.04
     # The e2e policy, restated per shard: tests/unit/pipeline-wiring.test.ts
     # pins it and fails if any job running the suite carries another.
@@ -131,10 +152,11 @@ jobs:
     # The pinned Playwright image (#431): browsers and their system packages
     # come with it, so no step downloads them. A `playwright install` here
     # stalled on an apt mirror in run 36973026350 and spent the whole job.
-    # Pinned by digest, and held to the installed @playwright/test by
-    # pipeline-wiring.test.ts. The job limit is what bounds a stalled pull.
+    # The `image` job picks it: the digest docker/playwright/Dockerfile pins,
+    # or the installed version's when that pin lags (#454). The job limit is
+    # what bounds a stalled pull.
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      image: ${{ needs.image.outputs.ref }}
       # Playwright's own advice for this runner: the runner's user, since
       # Firefox refuses root in another user's home, and the host's IPC
       # namespace, since Chromium outgrows a container's 64 MB /dev/shm.
@@ -204,16 +226,18 @@ jobs:
   # the deploy's own run still covers. It needs no credentials: nothing it
   # reaches is behind the dev site's Basic auth.
   sanity-on-build:
+    needs: image
     runs-on: ubuntu-26.04
     # 5 minutes: its last 12 green runs took at most 77 s (#431).
     timeout-minutes: 5
     # The pinned Playwright image (#431): browsers and their system packages
     # come with it, so no step downloads them. A `playwright install` here
     # stalled on an apt mirror in run 36973026350 and spent the whole job.
-    # Pinned by digest, and held to the installed @playwright/test by
-    # pipeline-wiring.test.ts. The job limit is what bounds a stalled pull.
+    # The `image` job picks it: the digest docker/playwright/Dockerfile pins,
+    # or the installed version's when that pin lags (#454). The job limit is
+    # what bounds a stalled pull.
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      image: ${{ needs.image.outputs.ref }}
       # Playwright's own advice for this runner: the runner's user, since
       # Firefox refuses root in another user's home, and the host's IPC
       # namespace, since Chromium outgrows a container's 64 MB /dev/shm.
@@ -244,16 +268,18 @@ jobs:
   # browser submits real reports to it. build-and-test needs it, so it gates
   # with no change to branch protection.
   functions:
+    needs: image
     runs-on: ubuntu-26.04
     # 8 minutes: its last 12 green runs took at most 248 s (#431).
     timeout-minutes: 8
     # The pinned Playwright image (#431): browsers and their system packages
     # come with it, so no step downloads them. A `playwright install` here
     # stalled on an apt mirror in run 36973026350 and spent the whole job.
-    # Pinned by digest, and held to the installed @playwright/test by
-    # pipeline-wiring.test.ts. The job limit is what bounds a stalled pull.
+    # The `image` job picks it: the digest docker/playwright/Dockerfile pins,
+    # or the installed version's when that pin lags (#454). The job limit is
+    # what bounds a stalled pull.
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      image: ${{ needs.image.outputs.ref }}
       # Playwright's own advice for this runner: the runner's user, since
       # Firefox refuses root in another user's home, and the host's IPC
       # namespace, since Chromium outgrows a container's 64 MB /dev/shm.
@@ -282,7 +308,7 @@ jobs:
   # what it meant when it ran the suite itself: every step ran, and the whole
   # suite ran. It runs none of that now. It stands for the jobs that do.
   build-and-test:
-    needs: [checks, e2e, sanity-on-build, functions]
+    needs: [image, checks, e2e, sanity-on-build, functions]
     # NEVER skipped. A skipped required check is reported to branch protection
     # as passing, so an aggregate whose condition could turn false would read
     # green exactly when a shard failed or was skipped (#157). It runs always,
@@ -334,13 +360,14 @@ jobs:
   # failure class this repo keeps finding; `npm run test:visual:update` is the
   # only way a baseline changes, and it changes as a reviewable diff in a PR.
   visual:
+    needs: image
     runs-on: ubuntu-26.04
     # Five minutes for a job whose last twelve green runs took at most 91 s
     # (measured 2026-10-02, #431): it bounds a stalled image pull, and a hung
     # browser is stopped long before the runner's 360-minute default (#157).
     timeout-minutes: 5
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      image: ${{ needs.image.outputs.ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -358,6 +385,8 @@ jobs:
       # nobody is looking at, and those pixels are spent out of the same
       # tolerance a real regression has to fit inside.
       - name: Record the rendering architecture
+        env:
+          IMAGE: ${{ needs.image.outputs.ref }}
         run: |
           arch=$(uname -m)
           echo "visual renders on: ${arch}"
@@ -367,7 +396,7 @@ jobs:
             echo "| | |"
             echo "| --- | --- |"
             echo "| \`uname -m\` | \`${arch}\` |"
-            echo "| image | \`mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27\` |"
+            echo "| image | \`${IMAGE}\` |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
       - run: npx playwright test --project=visual
         env:

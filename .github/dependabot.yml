@@ -108,3 +108,18 @@ updates:
       - 'dependencies'
       - 'docker'
     open-pull-requests-limit: 5
+  # The Playwright image CI's browser jobs run in (#454). The npm bump and this
+  # one land as separate pull requests; scripts/playwright-image.mjs runs the
+  # installed version's image while either leads, so neither is red.
+  - package-ecosystem: 'docker'
+    directory: '/docker/playwright'
+    target-branch: 'develop'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'UTC'
+    labels:
+      - 'dependencies'
+      - 'docker'
+    open-pull-requests-limit: 5
