@@ -2164,16 +2164,36 @@ describe('the drift measurement reports, and never gates (#224)', () => {
     // A step summary is rendered in the UI and is not exposed by the Actions
     // API, so `gh run view --log` returns the script and nothing else. The
     // drift table was written only there once, and could not be read (#224).
-    const summaryWriters = visualSteps().filter(
-      (s) => typeof s.run === 'string' && s.run.includes('GITHUB_STEP_SUMMARY'),
+    //
+    // Judged per LINE, not per step: a step that tees one line and appends
+    // the next with `>>` holds a `tee` and still writes where nothing reads
+    // it back (#446). Shell comments are not writes.
+    const writesTheSummary = (line: string) =>
+      line.includes('GITHUB_STEP_SUMMARY') && !line.trimStart().startsWith('#');
+    const writes = visualSteps()
+      .flatMap((s) => (typeof s.run === 'string' ? s.run.split('\n') : []))
+      .filter(writesTheSummary);
+    // Measured 2 on 2026-10-03 (#446). Stated tight.
+    expect(writes.length).toBeGreaterThan(1);
+    // Independent of the YAML parse (#446, control c): the visual job's own
+    // text, YAML comments aside, names the summary on exactly as many lines.
+    const ci = workflow('ci.yml');
+    const start = ci.search(/^ {2}visual:$/m);
+    expect(start, 'ci.yml declares no visual job').toBeGreaterThan(-1);
+    const rest = ci.slice(start + 1);
+    const end = rest.search(/^ {2}\S/m);
+    const job = end === -1 ? rest : rest.slice(0, end);
+    expect(job.split('\n').filter(writesTheSummary)).toHaveLength(
+      writes.length,
     );
-    const unreadable = summaryWriters.filter(
-      (s) => !/tee\s+-a\s+"\$GITHUB_STEP_SUMMARY"/.test(s.run as string),
+
+    const unreadable = writes.filter(
+      (line) => !/tee\s+-a\s+"\$GITHUB_STEP_SUMMARY"/.test(line),
     );
     expect(
       searched(unreadable, {
-        of: summaryWriters.length,
-        what: "steps writing a job summary in ci.yml's visual job",
+        of: writes,
+        what: "lines writing a job summary in ci.yml's visual job",
       }),
       'a summary written with >> cannot be read back from the job log',
     ).toEqual([]);
