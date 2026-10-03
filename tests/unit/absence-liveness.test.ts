@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
+import { readFileSync } from 'node:fs';
 import { filesUnder, searched } from '../source-files';
+import { withoutTsComments } from './source-text';
 import { bindFiles, callGraph, derivationOf, where } from './ast';
 
 /**
@@ -71,12 +73,14 @@ const isZero = (arg: ts.Expression | undefined): boolean =>
   arg !== undefined && ts.isNumericLiteral(arg) && arg.text === '0';
 
 /**
- * Every spelling of "this is empty" -- `.toEqual([])`, `.toStrictEqual([])`,
- * `.toHaveLength(0)`, and a `.length` or `.size` held equal to 0 -- and never
- * a `.not` inverse. For the last two the subject is what the count is OF:
- * `expect(found.length).toBe(0)` asserts `found` empty (#390 F159).
+ * The call an absence matcher hangs off -- `expect(x)` in
+ * `expect(x).toEqual([])` -- for every spelling of "this is empty":
+ * `.toEqual([])`, `.toStrictEqual([])`, `.toHaveLength(0)`, and anything held
+ * equal to 0. Null for any other matcher, and for a `.not` inverse.
  */
-function absenceSubject(node: ts.CallExpression): ts.Expression | null {
+function absenceRoot(
+  node: ts.CallExpression,
+): { root: ts.Expression; zeroCount: boolean } | null {
   if (!ts.isPropertyAccessExpression(node.expression)) return null;
   const matcher = node.expression.name.text;
   const arg = node.arguments[0];
@@ -96,12 +100,33 @@ function absenceSubject(node: ts.CallExpression): ts.Expression | null {
     if (target.name.text === 'not') return null;
     target = target.expression;
   }
-  if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression))
-    return null;
-  if (target.expression.text !== 'expect') return null;
-  const subject = target.arguments[0];
+  return { root: target as ts.Expression, zeroCount };
+}
+
+/** `expect(x)` or `expect.soft(x)`: both assert, so both are read. */
+function isExpectCall(root: ts.Expression): root is ts.CallExpression {
+  if (!ts.isCallExpression(root)) return false;
+  const callee = root.expression;
+  if (ts.isIdentifier(callee)) return callee.text === 'expect';
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'expect' &&
+    callee.name.text === 'soft'
+  );
+}
+
+/**
+ * What an absence assertion asserts empty. For a count held to 0 the subject
+ * is what the count is OF: `expect(found.length).toBe(0)` asserts `found`
+ * empty (#390 F159).
+ */
+function absenceSubject(node: ts.CallExpression): ts.Expression | null {
+  const shape = absenceRoot(node);
+  if (!shape || !isExpectCall(shape.root)) return null;
+  const subject = shape.root.arguments[0];
   if (subject === undefined) return null;
-  if (!zeroCount) return subject;
+  if (!shape.zeroCount) return subject;
   // A bare number held to 0 is a value, not a population.
   return ts.isPropertyAccessExpression(subject) &&
     (subject.name.text === 'length' || subject.name.text === 'size')
@@ -145,16 +170,78 @@ function unproved(subject: ts.Expression, file: string): string | null {
   return null;
 }
 
+/**
+ * An absence matcher on a root the reader cannot classify -- `expect.poll`,
+ * an aliased `expect`, a helper returning a matcher -- named, so the scan
+ * refuses it rather than skipping it: skipped, it is an absence nobody judges
+ * (#446, control d).
+ */
+function unclassified(node: ts.CallExpression): string | null {
+  const shape = absenceRoot(node);
+  if (!shape || isExpectCall(shape.root)) return null;
+  if (shape.zeroCount && !countsAPopulation(shape.root)) return null;
+  return shape.root.getText().replace(/\s+/g, ' ').slice(0, 70);
+}
+
+/**
+ * Whether a count held to 0 on an unread root is a population's size. A bare
+ * value held to 0 is not an absence, as `absenceSubject` says of
+ * `expect(k).toBe(0)`. A polled function is judged by what it returns
+ * (`evidence-page.spec.ts` polls an in-flight counter to 0), and one whose
+ * return cannot be read from here counts as a population, so it is refused.
+ */
+function countsAPopulation(root: ts.Expression): boolean {
+  if (!ts.isCallExpression(root)) return true;
+  let counted: ts.Expression | undefined = root.arguments[0];
+  const callee = root.expression;
+  const polled =
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'expect' &&
+    callee.name.text === 'poll';
+  if (polled) {
+    if (
+      counted === undefined ||
+      !ts.isArrowFunction(counted) ||
+      ts.isBlock(counted.body)
+    )
+      return true;
+    counted = counted.body;
+  }
+  while (counted !== undefined && ts.isParenthesizedExpression(counted))
+    counted = counted.expression;
+  return (
+    counted === undefined ||
+    (ts.isPropertyAccessExpression(counted) &&
+      (counted.name.text === 'length' || counted.name.text === 'size'))
+  );
+}
+
+/**
+ * An absence matcher as text, for the cross-check: no AST, so a reader blind
+ * to one file or one spelling disagrees with it. A count held to 0 is left
+ * out, because `toBe(0)` on a bare value is plainly not an absence.
+ */
+const PLAIN_ABSENCE =
+  /(?<!\.not)\.(?:toEqual|toStrictEqual)\(\[\]\)|(?<!\.not)\.toHaveLength\(0\)/;
+
 function scan() {
   const findings: string[] = [];
-  let absences = 0;
+  const sites: string[] = [];
+  const perFile = new Map<string, number>();
   let proved = 0;
   for (const [file, sf] of bound.files) {
     const check = (node: ts.Node) => {
       if (ts.isCallExpression(node)) {
+        const root = unclassified(node);
+        if (root)
+          findings.push(
+            `${where(sf, node)} — an absence on a root the reader cannot classify: ${root}`,
+          );
         const subject = absenceSubject(node);
         if (subject) {
-          absences += 1;
+          sites.push(where(sf, node));
+          perFile.set(file, (perFile.get(file) ?? 0) + 1);
           const why = unproved(subject, file);
           if (why === null) proved += 1;
           else
@@ -168,7 +255,7 @@ function scan() {
     };
     check(sf);
   }
-  return { absences, proved, findings };
+  return { sites, perFile, proved, findings };
 }
 
 const result = scan();
@@ -190,8 +277,10 @@ describe('absence assertions prove the population they searched', () => {
     // `absenceSubject` dead, this test stayed green. #390 F161 found it
     // there again, at 153 over a real 391, with the same branch dead and
     // the same test green; F159's spellings brought the figure to 394,
-    // and #446 measured 399 on 2026-10-03.
-    expect(result.absences).toBeGreaterThan(398);
+    // and #446 measured 399 on 2026-10-03. Groups 2a and 2b added 22 the
+    // same day and left it 22 slack, which is how a floor drifts: growth
+    // never fails it. Re-measured 421 at Group 3 (#446).
+    expect(result.sites.length).toBeGreaterThan(420);
     expect(result.proved).toBeGreaterThan(0);
   });
 
@@ -209,6 +298,8 @@ describe('absence assertions prove the population they searched', () => {
         'expect(e.size).toBe(0);',
         'expect(f.length).toEqual(0);',
         'expect(g.length).toStrictEqual(0);',
+        'expect.soft(l).toEqual([]);',
+        'expect.soft(m.length).toBe(0);',
         'expect(h).not.toEqual([]);',
         'expect(i.length).not.toBe(0);',
         'expect(j.length).toBe(1);',
@@ -226,13 +317,69 @@ describe('absence assertions prove the population they searched', () => {
       ts.forEachChild(node, visit);
     };
     visit(sf);
-    expect(subjects).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+    expect(subjects).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'l', 'm']);
+  });
+
+  it('refuses an absence on a root it cannot classify, rather than skipping it', () => {
+    // `expect.soft(x)` asserts like `expect(x)` and is read above. Any other
+    // root -- `expect.poll(fn)`, an alias, a helper returning a matcher -- was
+    // silently not an absence at all, so nothing judged it (#446, control d).
+    const sf = ts.createSourceFile(
+      'fixture.test.ts',
+      [
+        'expect.poll(n).toEqual([]);',
+        'assertThat(o).toHaveLength(0);',
+        'expect.poll(() => p.length).toBe(0);',
+        'expect.poll(t).toBe(0);',
+        'expect.poll(async () => { return u.size; }).toBe(0);',
+        'assertThat(v.length).toBe(0);',
+        // Not refused: a value held to 0, a polled value, and the read roots.
+        'assertThat(w).toBe(0);',
+        'expect\n  .poll(async () => (await counters(x)).inflight)\n  .toBe(0);',
+        'expect.soft(q).toEqual([]);',
+        'expect(r).toEqual([]);',
+        'expect.poll(s).not.toEqual([]);',
+      ].join('\n'),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const refused: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const root = unclassified(node);
+        if (root) refused.push(root);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    expect(refused).toEqual([
+      'expect.poll(n)',
+      'assertThat(o)',
+      'expect.poll(() => p.length)',
+      'expect.poll(t)',
+      'expect.poll(async () => { return u.size; })',
+      'assertThat(v.length)',
+    ]);
+  });
+
+  it('reads an absence in every file whose text plainly writes one', () => {
+    // Independent of the AST walk (#446, control c). The floor above catches
+    // a reader that goes blind everywhere; this catches one blind to a single
+    // file, or to the one spelling that file uses. Matched on the stripped
+    // text, so a comment naming the matcher cannot satisfy it.
+    const plain = tsFiles.filter((file) =>
+      PLAIN_ABSENCE.test(withoutTsComments(readFileSync(file, 'utf8'))),
+    );
+    // Measured 113 files on 2026-10-03 (#446). Stated tight.
+    expect(plain.length).toBeGreaterThan(112);
+    const unread = plain.filter((file) => !result.perFile.has(file));
+    expect(searched(unread, { of: plain, what: 'files' })).toEqual([]);
   });
 
   it('finds none whose population could be empty without saying so', () => {
     expect(
       searched(result.findings, {
-        of: result.absences,
+        of: result.sites,
         what: 'absence assertions',
       }),
     ).toEqual([]);
