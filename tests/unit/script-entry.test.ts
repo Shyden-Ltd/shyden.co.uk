@@ -558,6 +558,13 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'docker is not available',
   },
+  // With no command it does nothing it could report, so it refuses by name
+  // before reading a file or calling GitHub (#459).
+  'visual-rebaseline.mjs': {
+    args: [],
+    status: 1,
+    says: 'unknown command (none); expected qualify, classify, stage, find or commit',
+  },
   // The three that did all their work at module scope until #276. Each refuses
   // on `argv` alone, before it reads the cache or the catalogue, so the probe
   // proves the entry point ran without touching either.

@@ -25,8 +25,19 @@
  *   node scripts/visual-rebaseline.mjs commit                   # commit
  */
 import { createHash } from 'node:crypto';
-import { relative, sep } from 'node:path';
+import {
+  appendFileSync,
+  copyFileSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
+import { argv, cwd, env, exit } from 'node:process';
 import { isDeepStrictEqual } from 'node:util';
+import { messageOf } from './errors.mjs';
 
 export const DEPENDABOT = 'dependabot[bot]';
 /** The label that holds a rebaselined pull request for the operator. */
@@ -612,3 +623,354 @@ export function commitMessage(manifest) {
     ),
   ].join('\n');
 }
+
+// ---- I/O: everything below reads, writes or calls GitHub -------------------
+
+const LIMIT_MS = 30_000;
+
+/**
+ * @param {string} name
+ * @returns {string}
+ */
+function requireEnv(name) {
+  const value = env[name];
+  if (!value) throw new Error(`${name} is not set`);
+  return value;
+}
+
+/**
+ * A line for the log and, when there is one, the job summary: the API reads
+ * back the log, never the summary (#224).
+ * @param {string} text
+ */
+function report(text) {
+  console.log(text);
+  if (env.GITHUB_STEP_SUMMARY)
+    appendFileSync(env.GITHUB_STEP_SUMMARY, `${text}\n`);
+}
+
+/**
+ * @param {string} name
+ * @param {string} value
+ */
+function output(name, value) {
+  appendFileSync(requireEnv('GITHUB_OUTPUT'), `${name}=${value}\n`);
+}
+
+/**
+ * @param {string} path
+ * @returns {any}
+ */
+const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+
+/**
+ * One request to this repository's API: a time limit, no retry. A status
+ * outside `ok` fails by name.
+ * @param {string} method
+ * @param {string} path below /repos/{owner}/{repo}
+ * @param {{ body?: unknown, accept?: string, ok?: readonly number[] }} [options]
+ * @returns {Promise<{ status: number, text: string }>}
+ */
+async function github(method, path, options = {}) {
+  const {
+    body,
+    accept = 'application/vnd.github+json',
+    ok = [200, 201],
+  } = options;
+  const response = await fetch(
+    `https://api.github.com/repos/${requireEnv('GITHUB_REPOSITORY')}${path}`,
+    {
+      method,
+      headers: {
+        accept,
+        authorization: `Bearer ${requireEnv('GITHUB_TOKEN')}`,
+        'x-github-api-version': '2022-11-28',
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(LIMIT_MS),
+    },
+  );
+  const text = await response.text();
+  if (!ok.includes(response.status))
+    throw new Error(
+      `${method} ${path} answered ${response.status}: ${text.slice(0, 200)}`,
+    );
+  return { status: response.status, text };
+}
+
+/**
+ * @param {string} path
+ * @returns {Promise<any>}
+ */
+const getJson = async (path) => JSON.parse((await github('GET', path)).text);
+
+/**
+ * @param {string} method
+ * @param {string} path
+ * @param {unknown} body
+ * @returns {Promise<any>}
+ */
+const sendJson = async (method, path, body) =>
+  JSON.parse((await github(method, path, { body })).text);
+
+/**
+ * A file's raw text at a commit; `null` only where `missing` allows it.
+ * @param {string} path
+ * @param {string} ref
+ * @param {boolean} [missing]
+ * @returns {Promise<string | null>}
+ */
+async function contentAt(path, ref, missing = false) {
+  const { status, text } = await github('GET', `/contents/${path}?ref=${ref}`, {
+    accept: 'application/vnd.github.raw+json',
+    ok: missing ? [200, 404] : [200],
+  });
+  return status === 404 ? null : text;
+}
+
+/**
+ * @param {string} sha
+ * @returns {Promise<Side>}
+ */
+async function sideAt(sha) {
+  return {
+    lock: /** @type {string} */ (await contentAt('package-lock.json', sha)),
+    pkg: /** @type {string} */ (await contentAt('package.json', sha)),
+    dockerfile: await contentAt('docker/playwright/Dockerfile', sha, true),
+  };
+}
+
+async function runQualify() {
+  const number = requireEnv('PR_NUMBER');
+  const pr = await getJson(`/pulls/${number}`);
+  /** @type {string[]} */
+  const files = [];
+  for (let page = 1; ; page += 1) {
+    const batch = await getJson(
+      `/pulls/${number}/files?per_page=100&page=${page}`,
+    );
+    for (const file of batch)
+      files.push(
+        file.previous_filename
+          ? `${file.previous_filename} → ${file.filename}`
+          : file.filename,
+      );
+    if (batch.length < 100) break;
+  }
+  const compare = await getJson(
+    `/compare/${encodeURIComponent(pr.base.ref)}...${pr.head.sha}`,
+  );
+  const verdict = qualify({
+    author: pr.user.login,
+    headRepo: pr.head.repo?.full_name ?? '(a deleted repository)',
+    baseRepo: pr.base.repo.full_name,
+    files,
+    changedFiles: pr.changed_files,
+    behindBy: compare.behind_by,
+    base: await sideAt(compare.merge_base_commit.sha),
+    head: await sideAt(pr.head.sha),
+  });
+  report(
+    verdict.qualifies
+      ? `Qualifies for a rebaseline: ${verdict.versions}.`
+      : `No rebaseline: ${verdict.reason}.`,
+  );
+  output('qualifies', String(verdict.qualifies));
+}
+
+/**
+ * @param {string} gatePath
+ * @param {string} listPath
+ */
+function runClassify(gatePath, listPath) {
+  const failed = failedBaselines(
+    readJson(gatePath),
+    testsIn(readJson(listPath)).length,
+    cwd(),
+  );
+  gateAgrees(Number(requireEnv('GATE_EXIT')), failed);
+  const recorded = failed.map((each) => ({
+    ...each,
+    before: sha256(readFileSync(each.path)),
+  }));
+  writeFileSync('failed.json', JSON.stringify(recorded, null, 2));
+  report(
+    failed.length === 0
+      ? 'The visual gate passed: nothing to rebaseline.'
+      : [
+          `The visual gate failed ${failed.length} screenshot(s) on pixels alone:`,
+          ...failed.map(({ path, pixels }) => `- ${path} (${countOf(pixels)})`),
+        ].join('\n'),
+  );
+  output('failed', String(failed.length));
+}
+
+/** @param {string} outDir */
+function runStage(outDir) {
+  const manifest = buildManifest({
+    pr: Number(requireEnv('PR_NUMBER')),
+    headSha: requireEnv('HEAD_SHA'),
+    playwright: readJson('node_modules/@playwright/test/package.json').version,
+    failed: readJson('failed.json'),
+    contentOf: (path) => readFileSync(path),
+  });
+  for (const { path } of manifest.files) {
+    mkdirSync(dirname(join(outDir, path)), { recursive: true });
+    copyFileSync(path, join(outDir, path));
+  }
+  writeFileSync(
+    join(outDir, 'manifest.json'),
+    JSON.stringify(manifest, null, 2),
+  );
+  report(
+    `Staged ${manifest.files.length} recaptured baseline(s) for #${manifest.pr}.`,
+  );
+}
+
+async function runFind() {
+  const runId = requireEnv('RUN_ID');
+  const { artifacts } = await getJson(
+    `/actions/runs/${runId}/artifacts?name=${ARTIFACT}`,
+  );
+  const present = artifacts.some(
+    /** @param {{ name: string, expired: boolean }} a */
+    (a) => a.name === ARTIFACT && !a.expired,
+  );
+  report(
+    present
+      ? `Run ${runId} uploaded ${ARTIFACT}.`
+      : `Run ${runId} uploaded no ${ARTIFACT}: nothing to commit.`,
+  );
+  output('present', String(present));
+}
+
+/**
+ * Every entry under the downloaded artifact, read with lstat, so a symlink is
+ * seen as one and never followed. The second home for walking a tree (see
+ * one-home.test.ts): tests/source-files.ts's `filesUnder` skips dotfiles and
+ * node_modules and refuses an empty walk, which is right for scanning the
+ * repository and would blind a validator to exactly what it must refuse.
+ * @param {string} root
+ * @param {string} [prefix]
+ * @returns {Entry[]}
+ */
+export function entriesUnder(root, prefix = '') {
+  return readdirSync(join(root, prefix)).flatMap((name) => {
+    const path = prefix ? `${prefix}/${name}` : name;
+    const stat = lstatSync(join(root, path));
+    if (stat.isDirectory())
+      return [
+        { name: path, kind: /** @type {const} */ ('directory') },
+        ...entriesUnder(root, path),
+      ];
+    if (stat.isFile())
+      return [
+        {
+          name: path,
+          kind: /** @type {const} */ ('file'),
+          content: readFileSync(join(root, path)),
+        },
+      ];
+    return [{ name: path, kind: /** @type {const} */ ('other') }];
+  });
+}
+
+async function runCommit() {
+  const number = Number(requireEnv('RUN_PR'));
+  const headSha = requireEnv('RUN_HEAD_SHA');
+  const entries = entriesUnder(requireEnv('ARTIFACT_DIR'));
+  const pr = await getJson(`/pulls/${number}`);
+  if (pr.user.login !== DEPENDABOT)
+    throw new Error(
+      `#${number} was opened by ${pr.user.login}, not ${DEPENDABOT}`,
+    );
+  if (pr.head.repo?.full_name !== requireEnv('GITHUB_REPOSITORY'))
+    throw new Error(`#${number}'s head is not in this repository`);
+  if (pr.state !== 'open') throw new Error(`#${number} is ${pr.state}`);
+  if (pr.head.sha !== headSha)
+    throw new Error(
+      `#${number}'s head moved from ${headSha} to ${pr.head.sha} after the ` +
+        'capture; the capture on the new head decides again',
+    );
+  const tree = await getJson(`/git/trees/${headSha}?recursive=1`);
+  if (tree.truncated)
+    throw new Error(`the tree at ${headSha} came back truncated`);
+  const headPaths = new Set(
+    tree.tree
+      .filter(/** @param {{ type: string }} t */ (t) => t.type === 'blob')
+      .map(/** @param {{ path: string }} t */ (t) => t.path),
+  );
+  const { manifest, files } = validateArtifact({
+    entries,
+    run: { pr: number, headSha },
+    headPaths,
+  });
+  const { parse } = await import('yaml');
+  const ci = await contentAt('.github/workflows/ci.yml', headSha);
+  if (!dispatchable(parse(/** @type {string} */ (ci))))
+    throw new Error(
+      `ci.yml at ${headSha} has no workflow_dispatch trigger, so nothing could ` +
+        "run CI on a rebaseline commit; Dependabot's next rebase brings it in",
+    );
+  const blobs = [];
+  for (const { path, content } of files) {
+    const blob = await sendJson('POST', '/git/blobs', {
+      content: Buffer.from(content).toString('base64'),
+      encoding: 'base64',
+    });
+    blobs.push({ path, mode: '100644', type: 'blob', sha: blob.sha });
+  }
+  const head = await getJson(`/git/commits/${headSha}`);
+  const newTree = await sendJson('POST', '/git/trees', {
+    base_tree: head.tree.sha,
+    tree: blobs,
+  });
+  const commit = await sendJson('POST', '/git/commits', {
+    message: commitMessage(manifest),
+    tree: newTree.sha,
+    parents: [headSha],
+  });
+  await github('PATCH', `/git/refs/heads/${pr.head.ref}`, {
+    body: { sha: commit.sha, force: false },
+  });
+  report(`Committed ${commit.sha} on ${pr.head.ref}.`);
+  await github('POST', '/actions/workflows/ci.yml/dispatches', {
+    body: { ref: pr.head.ref },
+    ok: [204],
+  });
+  report(`Dispatched ci.yml on ${pr.head.ref}.`);
+  await github('POST', `/issues/${number}/labels`, {
+    body: { labels: [LABEL] },
+  });
+  await github('POST', `/issues/${number}/comments`, {
+    body: { body: commentBody(manifest, commit.sha) },
+  });
+  report(`Labelled #${number} ${LABEL} and commented.`);
+}
+
+/**
+ * @param {readonly string[]} [args]
+ */
+export async function main(args = argv.slice(2)) {
+  const [command, ...rest] = args;
+  try {
+    if (command === 'qualify') await runQualify();
+    else if (command === 'classify') runClassify(rest[0], rest[1]);
+    else if (command === 'stage') runStage(rest[0]);
+    else if (command === 'find') await runFind();
+    else if (command === 'commit') await runCommit();
+    else
+      throw new Error(
+        `unknown command ${command ?? '(none)'}; expected qualify, classify, stage, find or commit`,
+      );
+  } catch (error) {
+    const reason = messageOf(error);
+    console.log(`::error::${reason}`);
+    if (env.GITHUB_STEP_SUMMARY)
+      appendFileSync(env.GITHUB_STEP_SUMMARY, `Refused: ${reason}\n`);
+    exit(1);
+  }
+}
+
+if (import.meta.main) await main();
