@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
+import { floorBreach } from '../floors';
 import { filesUnder, searched } from '../source-files';
 import { withoutTsComments } from './source-text';
 import { bindFiles, callGraph, derivationOf, where } from './ast';
@@ -273,10 +274,12 @@ describe('absence assertions prove the population they searched', () => {
   // matching would report zero findings over zero absences -- and only one of
   // those is good news. This is the shape `event-collectors.test.ts` settled.
   it('finds the absence assertions it is meant to be judging', () => {
-    // Measured 262 TypeScript files under tests/ on 2026-10-03 (#446). Stated
-    // tight, so a reader that comes back one short fails.
-    expect(tsFiles.length).toBeGreaterThan(261);
-    // 394 today. The floor is stated against a measured figure rather
+    // Ratcheted (#468): exact against tests/floors.json, so one file short
+    // fails, and so does one more until it is recorded.
+    expect(
+      floorBreach('absence-liveness/ts-files', tsFiles.length),
+    ).toBeUndefined();
+    // The floor is stated against a measured figure rather
     // than left comfortably low, for the reason `anchored-presence`
     // records: a control with slack in it is most of the way back to
     // no control at all. #184 found it at 100 over a real 154, and showed
@@ -286,8 +289,11 @@ describe('absence assertions prove the population they searched', () => {
     // the same test green; F159's spellings brought the figure to 394,
     // and #446 measured 399 on 2026-10-03. Groups 2a and 2b added 22 the
     // same day and left it 22 slack, which is how a floor drifts: growth
-    // never fails it. Re-measured 421 at Group 3 (#446).
-    expect(result.sites.length).toBeGreaterThan(420);
+    // never fails it. Re-measured 421 at Group 3 (#446), and 424 an hour
+    // after that merged: so it is ratcheted now (#468), exact both ways.
+    expect(
+      floorBreach('absence-liveness/sites', result.sites.length),
+    ).toBeUndefined();
     expect(result.proved).toBeGreaterThan(0);
   });
 
@@ -409,10 +415,12 @@ describe('absence assertions prove the population they searched', () => {
     const plain = tsFiles.filter((file) =>
       PLAIN_ABSENCE.test(withoutTsComments(readFileSync(file, 'utf8'))),
     );
-    // Measured 113 files on 2026-10-03 (#446). Stated tight.
-    expect(plain.length).toBeGreaterThan(112);
     const unread = plain.filter((file) => !result.perFile.has(file));
     expect(searched(unread, { of: plain, what: 'files' })).toEqual([]);
+    // Ratcheted after the verdict (#468), so growth never hides a finding.
+    expect(
+      floorBreach('absence-liveness/plain-files', plain.length),
+    ).toBeUndefined();
   });
 
   it('finds none whose population could be empty without saying so', () => {

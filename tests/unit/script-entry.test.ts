@@ -709,6 +709,14 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 2,
     says: 'usage: build-release-content.mjs',
   },
+  // CI never records the guards' floors, so under CI it refuses before it
+  // runs anything (#468).
+  'record-floors.mjs': {
+    args: [],
+    env: { CI: 'true' },
+    status: 1,
+    says: 'CI never records floors',
+  },
 };
 
 const runAsScript = (script: string, probe: Probe) => {
