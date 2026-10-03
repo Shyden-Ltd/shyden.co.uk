@@ -261,7 +261,22 @@ and were moved below it, so a population that grew never hides a finding.
 Each first figure was read against the census and the diff that recorded
 it, and every one is accounted for.
 
-MATRIX-RESULTS
+The matrix ran 34 rows, all as predicted once R22 was corrected. On
+`develop`, 6 stayed GREEN: a reader one short in `absence-liveness`,
+`git-env`, `duplicate-imports` and `spec-scan`'s forwarded floor, and growth
+through `absence-liveness` and `evidence-recording`'s comparison floor. On the
+branch, 28 turned their guard RED: those six again, `back-translate`'s looped
+locale, the recorder's four refusals and its printed moves, both directions
+of the check, record mode's call site, the CI refusal's words, a workflow
+running the recorder, and eleven against the literal reader (a literal floor
+back, a forwarded bound, the comparison form, a callback's predicate, a
+literal read as written, `expect.poll`, the cross-check alone with its floor
+off, a root skipped, a stale product value, a growing Group 5 list, an id
+spelled twice). R22 first came back GREEN: TypeScript already normalises a
+numeric literal's text, so the `replace` it removed was dead code, and is
+gone. The CI refusal is mutated in its words, not removed, because a
+recorder that ran under the probe would run the suite and could rewrite the
+real `tests/floors.json`.
 
 ## Group 4: loop-built findings, next
 
