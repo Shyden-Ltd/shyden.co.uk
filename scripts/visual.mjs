@@ -22,19 +22,17 @@
  * diff like any other claim about what is correct.
  */
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { messageOf } from './errors.mjs';
-
-const require = createRequire(import.meta.url);
+import { localImage } from './playwright-image.mjs';
 
 /**
- * The image version FOLLOWS the installed library rather than being written
- * down twice; `tests/unit/pipeline-wiring.test.ts` asserts `ci.yml` names the
- * same one. A browser bundle from a different release than the library
- * driving it fails in ways neither reports clearly.
+ * The image CI's visual job compares in, picked by the same selector (#454):
+ * the digest docker/playwright/Dockerfile pins when it names the installed
+ * Playwright, otherwise that version's tag. A browser bundle from a different
+ * release than the library driving it fails in ways neither reports clearly,
+ * and a capture in another image than the comparison is not a baseline.
  */
-const { version } = require('@playwright/test/package.json');
-const image = `mcr.microsoft.com/playwright:v${version}-noble`;
+export const image = localImage();
 
 /**
  * The argument vector for `docker`, built without running anything so a test

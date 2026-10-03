@@ -602,6 +602,13 @@ const PROBES: Readonly<Record<string, Probe>> = {
     status: 1,
     says: 'usage: CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/token-reach.mjs',
   },
+  // It takes no arguments, and refuses one before it reads the lockfile or
+  // asks mcr.microsoft.com anything (#454).
+  'playwright-image.mjs': {
+    args: ['--no-such-flag'],
+    status: 1,
+    says: 'usage: node scripts/playwright-image.mjs (takes no arguments)',
+  },
   // It had no refusal at all, being written never to fail an install, so #276
   // gave it the one the other argument-free scripts have. `prepare` passes
   // nothing, so nothing that is not already a mistake reaches it.
