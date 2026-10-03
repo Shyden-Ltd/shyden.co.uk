@@ -1242,6 +1242,21 @@ describe('the e2e reconciliation guard cannot be bypassed', () => {
 });
 
 /**
+ * Every Playwright image `text` names, whatever follows the name: a tag, a
+ * digest or nothing at all, which is `latest`. The first version of this scan
+ * wanted a colon after the name, so an image pinned by digest, or not pinned,
+ * passed it.
+ */
+const playwrightImagesIn = (text: string): string[] =>
+  text.match(/mcr\.microsoft\.com\/playwright[\w.@:/-]*/g) ?? [];
+
+/** How many of a workflow's parsed string values name a Playwright image. */
+const parsedImageValues = (raw: string, file: string): number =>
+  stringLeaves(parseCleanYaml(raw, file)).filter(([, value]) =>
+    value.includes('mcr.microsoft.com/playwright'),
+  ).length;
+
+/**
  * The visual-regression job, and the one flag that would hollow it out (#33).
  *
  * A screenshot suite that can rewrite its own baseline asserts nothing, and
@@ -1274,15 +1289,11 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
     // pick (`localImage`), so a capture and its comparison share one image
     // without either writing it down. A browser bundle from a different
     // release than the library driving it fails in ways neither reports.
-    const workflows = workflowFileNames().filter(
-      (name) => name.endsWith('.yml') || name.endsWith('.yaml'),
-    );
+    const workflows = workflowYamlNames();
     const named = workflows.flatMap((name) =>
-      (
-        withoutCommentLines(workflow(name), '#').match(
-          /mcr\.microsoft\.com\/playwright:[\w.@:-]+/g,
-        ) ?? []
-      ).map((image) => `${name}: ${image}`),
+      playwrightImagesIn(withoutCommentLines(workflow(name), '#')).map(
+        (image) => `${name}: ${image}`,
+      ),
     );
     expect(searched(named, { of: workflows, what: 'workflow files' })).toEqual(
       [],
@@ -1297,6 +1308,53 @@ describe('the visual-regression job cannot rewrite what it checks', () => {
       image: string;
     };
     expect(image).toBe(localImage());
+  });
+
+  it('reads every workflow for an image, and as many as there are', () => {
+    // Measured 10 workflow files on 2026-10-03 (#446), two of them #459's
+    // probes (probe-459.yml, probe-459-relay.yml): lower this when they go.
+    // Stated tight, so a walk that comes back one short fails.
+    const workflows = workflowYamlNames();
+    expect(workflows.length).toBeGreaterThan(9);
+    // Cross-checked against the parsed document: every value naming the
+    // image once YAML has unquoted and unfolded it must be one the text scan
+    // reports. No workflow names it today, so the planted forms below are
+    // what this check runs on. Counts, not sets, because the verdict above
+    // holds the scan to none: any value naming the image is then one missed.
+    const missed = workflows.filter(
+      (name) =>
+        parsedImageValues(workflow(name), name) >
+        playwrightImagesIn(withoutCommentLines(workflow(name), '#')).length,
+    );
+    expect(searched(missed, { of: workflows, what: 'workflow files' })).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    [
+      'a container image',
+      'jobs:\n  a:\n    container:\n      image: mcr.microsoft.com/playwright:v1.55.0-noble\n',
+    ],
+    [
+      'an image pinned by digest',
+      'jobs:\n  a:\n    container: mcr.microsoft.com/playwright@sha256:0123abcd\n',
+    ],
+    [
+      'an untagged image',
+      'jobs:\n  a:\n    container: mcr.microsoft.com/playwright\n',
+    ],
+    [
+      'a quoted image',
+      "jobs:\n  a:\n    container:\n      image: 'mcr.microsoft.com/playwright:v1.55.0-jammy'\n",
+    ],
+    [
+      'a script',
+      'jobs:\n  a:\n    steps:\n      - run: docker run --rm mcr.microsoft.com/playwright:v1.55.0-noble npx playwright test\n',
+    ],
+  ])('reads a Playwright image named in %s', (_where, raw) => {
+    expect(parsedImageValues(raw, 'plant.yml')).toBe(1);
+    expect(playwrightImagesIn(withoutCommentLines(raw, '#'))).toHaveLength(1);
   });
 
   it('runs the visual project, with the switch that declares it', () => {
@@ -1544,11 +1602,115 @@ describe('the e2e server is supervised, not handed to a daemon', () => {
 const E2E_SHARD_BUDGET_MINUTES = 20;
 
 /**
- * A step script that runs the e2e suite: the command itself, never a longer
+ * The command that runs the e2e suite: the command itself, never a longer
  * script name that merely starts with it.
  */
+const E2E_SUITE_COMMAND = /(?<![\w:-])npm run test:e2e(?![\w:-])/;
+
+/** A step script that runs the e2e suite. */
 const runsTheE2eSuite = (script: string): boolean =>
-  /(?<![\w:-])npm run test:e2e(?![\w:-])/.test(script);
+  E2E_SUITE_COMMAND.test(script);
+
+/** Every job, in every workflow, that runs the e2e suite. */
+const e2eSuites = () =>
+  workflowGraphs().flatMap(({ name, jobs }) =>
+    jobs
+      .filter((job) => job.runs.some(runsTheE2eSuite))
+      .map((job) => ({ name, job })),
+  );
+
+/** A command that builds the site: the npm script, or Astro's own. */
+const BUILDS_THE_SITE = /(?<![\w:-])(?:npm run build|astro build)(?![\w:-])/;
+
+/**
+ * Whether a job builds the site before it runs the e2e suite: in an earlier
+ * step, or earlier in the same step's script. The first version read earlier
+ * steps only, so a block script building and then testing passed it.
+ */
+const buildsBeforeTheSuite = (runs: readonly string[]): boolean => {
+  const script = runs.join('\n');
+  const at = script.search(E2E_SUITE_COMMAND);
+  return at >= 0 && BUILDS_THE_SITE.test(script.slice(0, at));
+};
+
+/** A one-job workflow whose job runs `steps`, for a planted form. */
+const plantedJob = (steps: string): WorkflowJob[] =>
+  workflowJobs(
+    `on: push\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`,
+    'plant.yml',
+  );
+
+describe('every workflow that runs the e2e suite is read as doing so', () => {
+  it('reads every job running the suite, and as many as there are', () => {
+    // Measured 1 job on 2026-10-03 (#446): ci.yml's sharded e2e matrix, which
+    // the dispatch path calls rather than copying. Stated tight, so a reader
+    // that finds none fails.
+    expect(e2eSuites().length).toBeGreaterThan(0);
+    // Cross-checked against the text: a workflow whose runnable text runs
+    // the suite must contribute a job to the parsed population, or the parse
+    // has dropped the step that does it.
+    const workflows = workflowYamlNames();
+    const suites = e2eSuites();
+    const missed = workflows.filter(
+      (name) =>
+        runsTheE2eSuite(runnableText(workflow(name))) &&
+        !suites.some((suite) => suite.name === name),
+    );
+    expect(searched(missed, { of: workflows, what: 'workflow files' })).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    ['a one-line step', '      - run: npm run test:e2e\n'],
+    [
+      'a shard step',
+      '      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}\n',
+    ],
+    [
+      'a block script',
+      '      - run: |\n          npm ci\n          npm run test:e2e\n',
+    ],
+    ['a chained command', '      - run: npm ci && npm run test:e2e\n'],
+  ])('reads a job running the suite in %s', (_form, steps) => {
+    expect(
+      plantedJob(steps).filter((job) => job.runs.some(runsTheE2eSuite)),
+    ).toHaveLength(1);
+  });
+
+  it('does not read a longer script that starts with the same name', () => {
+    const [job] = plantedJob(
+      '      - run: npm run test:e2e:visual\n      - run: npm run test:e2e-report\n',
+    );
+    expect(job!.runs).toHaveLength(2);
+    expect(job!.runs.some(runsTheE2eSuite)).toBe(false);
+  });
+
+  it.each([
+    [
+      'an earlier step',
+      '      - run: npm run build\n      - run: npm run test:e2e\n',
+    ],
+    [
+      'the same block script',
+      '      - run: |\n          npm run build\n          npm run test:e2e\n',
+    ],
+    [
+      "Astro's own command",
+      '      - run: npx astro build\n      - run: npm run test:e2e\n',
+    ],
+  ])('reads a build before the suite in %s', (_form, steps) => {
+    const [job] = plantedJob(steps);
+    expect(buildsBeforeTheSuite(job!.runs)).toBe(true);
+  });
+
+  it('does not read a build after the suite as one before it', () => {
+    const [job] = plantedJob(
+      '      - run: npm run test:e2e\n      - run: npm run build\n',
+    );
+    expect(buildsBeforeTheSuite(job!.runs)).toBe(false);
+  });
+});
 
 describe('every job runs under a budget of its own (#157)', () => {
   it('pins the e2e budget as a chosen policy, not a number nobody picked', () => {
@@ -1587,11 +1749,7 @@ describe('every job runs under a budget of its own (#157)', () => {
   });
 
   it('every job running the e2e suite carries exactly the shard budget', () => {
-    const suites = workflowGraphs().flatMap(({ name, jobs }) =>
-      jobs
-        .filter((job) => job.runs.some(runsTheE2eSuite))
-        .map((job) => ({ name, job })),
-    );
+    const suites = e2eSuites();
     const offBudget = suites
       .filter(({ job }) => job.timeoutMinutes !== E2E_SHARD_BUDGET_MINUTES)
       .map(
@@ -1732,17 +1890,9 @@ describe('build-and-test stands for the whole suite, run as shards (#163)', () =
   // read of `dist/` anywhere the suite is collected. A build step here would
   // pay for a second build and blind the one cold listing CI performs.
   it('no job running the e2e suite builds the site before it', () => {
-    const suites = workflowGraphs().flatMap(({ name, jobs }) =>
-      jobs
-        .filter((job) => job.runs.some(runsTheE2eSuite))
-        .map((job) => ({ name, job })),
-    );
+    const suites = e2eSuites();
     const prebuilt = suites
-      .filter(({ job }) =>
-        job.runs
-          .slice(0, job.runs.findIndex(runsTheE2eSuite))
-          .some((script) => /(?<![\w:-])npm run build(?![\w:-])/.test(script)),
-      )
+      .filter(({ job }) => buildsBeforeTheSuite(job.runs))
       .map(
         ({ name, job }) =>
           `${name}: ${job.id} builds before the e2e suite, so its listing never runs cold`,
@@ -2453,6 +2603,59 @@ describe('the back-translation review', () => {
   });
 });
 
+/** `npm install` and every alias npm documents for it (`npm help install`). */
+const NPM_INSTALL_VERBS = [
+  'install',
+  'add',
+  'i',
+  'in',
+  'ins',
+  'inst',
+  'insta',
+  'instal',
+  'isnt',
+  'isnta',
+  'isntal',
+  'isntall',
+];
+
+/** `text` with each shell continuation joined onto the line it continues. */
+const joinedLines = (text: string): string[] =>
+  text.replace(/\\\n\s*/g, ' ').split('\n');
+
+/**
+ * Each command in `text` that installs wrangler globally: `npm` with an
+ * install verb, a global flag and a wrangler argument, in any order. The first
+ * version of this scan wanted the flag before the package, on one line, after
+ * `install` or `i`, so `npm install wrangler -g` and `npm in -g wrangler`
+ * passed it.
+ */
+const globalWranglerInstalls = (text: string): string[] =>
+  joinedLines(text)
+    .flatMap((line) => line.split(/&&|\|\||;/))
+    .map((command) => command.trim())
+    .filter((command) => {
+      const words = command.split(/\s+/);
+      const at = words.indexOf('npm');
+      if (at < 0) return false;
+      const args = words.slice(at + 2);
+      return (
+        NPM_INSTALL_VERBS.includes(words[at + 1] ?? '') &&
+        args.some((arg) =>
+          /^(?:-g|--global(?:=.*)?|--location=global)$/.test(arg),
+        ) &&
+        args.some((arg) => /^wrangler(?:@|$)/.test(arg))
+      );
+    });
+
+/** Every line of `text` naming wrangler beside a global flag, joined first. */
+const globalFlagLines = (text: string): string[] =>
+  joinedLines(text).filter(
+    (line) =>
+      line.includes('wrangler') &&
+      /(?:^|\s)(?:-g|--global|--location=global)(?![\w-])/.test(line),
+  );
+
 /**
  * wrangler comes from the lockfile (#97, spec section 9).
  *
@@ -2471,18 +2674,77 @@ describe('wrangler comes from the lockfile (#97)', () => {
 
   it('no workflow installs it globally', () => {
     const workflows = allWorkflows();
-    const globalInstalls = workflows
-      .filter(({ text }) =>
-        /\bnpm\s+(?:install|i)\b[^\n]*(?:\s-g\b|\s--global\b)[^\n]*\bwrangler\b/.test(
-          text,
-        ),
-      )
-      .map(({ name }) => name);
+    const globalInstalls = workflows.flatMap(({ name, text }) =>
+      globalWranglerInstalls(text).map((command) => `${name}: ${command}`),
+    );
     expect(
       searched(globalInstalls, {
         of: workflows.map(({ text }) => text),
         what: 'workflow texts',
       }),
+    ).toEqual([]);
+  });
+
+  it('reads every workflow for an install, and as many as there are', () => {
+    // Measured 10 workflow files on 2026-10-03 (#446), two of them #459's
+    // probes (probe-459.yml, probe-459-relay.yml): lower this when they go.
+    // Stated tight, so a walk that comes back one short fails.
+    const workflows = allWorkflows();
+    expect(workflows.length).toBeGreaterThan(9);
+    // Cross-checked against a coarser reading: any line naming wrangler
+    // beside a global flag must hold a command the parser reports, or the
+    // parser has a blind spot. No workflow holds one today, so the planted
+    // forms below are what this check runs on.
+    const missed = workflows.flatMap(({ name, text }) =>
+      globalFlagLines(text)
+        .filter((line) => globalWranglerInstalls(line).length === 0)
+        .map((line) => `${name}: ${line}`),
+    );
+    expect(
+      searched(missed, {
+        of: workflows.map(({ text }) => text),
+        what: 'workflow texts',
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['the flag before the package', 'run: npm install -g wrangler@4'],
+    ['the flag after the package', 'run: npm install wrangler@4 -g'],
+    ['the long flag', 'run: npm i --global wrangler'],
+    ['a continued line', 'run: |\n  npm install \\\n    -g wrangler'],
+    ['sudo', 'run: sudo npm i -g wrangler'],
+    ['a chained command', 'run: npm ci && npm i -g wrangler'],
+  ])('reads a global install written with %s', (_form, text) => {
+    expect(globalFlagLines(text)).toHaveLength(1);
+    expect(globalWranglerInstalls(text)).toHaveLength(1);
+  });
+
+  // Written out, never generated from NPM_INSTALL_VERBS: a test made from the
+  // list cannot see a verb dropped from it, because the verb's test goes too
+  // (#446, matrix row PW6).
+  it.each([
+    'npm install -g wrangler',
+    'npm add -g wrangler',
+    'npm i -g wrangler',
+    'npm in -g wrangler',
+    'npm ins -g wrangler',
+    'npm inst -g wrangler',
+    'npm insta -g wrangler',
+    'npm instal -g wrangler',
+    'npm isnt -g wrangler',
+    'npm isnta -g wrangler',
+    'npm isntal -g wrangler',
+    'npm isntall -g wrangler',
+  ])('reads a global install written `%s`', (command) => {
+    expect(globalWranglerInstalls(`run: ${command}`)).toHaveLength(1);
+  });
+
+  it('does not read the locked copy, or a global install of something else', () => {
+    expect(
+      globalWranglerInstalls(
+        'run: npx wrangler pages deploy dist\nrun: npm i -g pnpm && npx wrangler --version',
+      ),
     ).toEqual([]);
   });
 
