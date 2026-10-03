@@ -181,7 +181,10 @@ describe('a repository named by a hostile GIT_DIR (#377)', () => {
         join(sentinel, 'child-run.json'),
       );
       expect(report.numFailedTests, stderr).toBe(0);
-      expect(report.numPassedTests).toBeGreaterThan(10);
+      // Measured 18 tests in release-inventory.test.ts, the file the child run
+      // executes on 2026-10-03 (#446). Stated tight, so a reader that comes
+      // back one short fails.
+      expect(report.numPassedTests).toBeGreaterThan(17);
       expect(fingerprint(sentinel)).toEqual(before);
     } finally {
       rmSync(sentinel, { recursive: true, force: true });

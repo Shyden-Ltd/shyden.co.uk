@@ -133,7 +133,9 @@ describe('the WCAG formula has one home', () => {
       (path) =>
         /^(src|tests|scripts)\//.test(path) && /\.(ts|mjs|js)$/.test(path),
     );
-    expect(scanned.length).toBeGreaterThan(100);
+    // Measured 339 files scanned on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    expect(scanned.length).toBeGreaterThan(338);
     // The home is in the result, so an empty scan cannot pass this.
     expect(
       scanned.flatMap((file) => curvesIn(readFileSync(file, 'utf8'), file)),

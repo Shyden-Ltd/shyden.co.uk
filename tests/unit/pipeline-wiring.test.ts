@@ -231,8 +231,10 @@ describe('the deploy pipeline runs what it claims to', () => {
   it('the dev sanity suite exists and is more than a stub', () => {
     // A guard that only checked the workflow REFERENCES the config would pass
     // against an emptied suite.
+    // Measured 15 plain tests in dev-sanity.spec.ts on 2026-10-03 (#446).
+    // Stated tight, so a reader that comes back one short fails.
     expect(plainTestsIn('tests/dev/dev-sanity.spec.ts').length).toBeGreaterThan(
-      3,
+      14,
     );
   });
 
@@ -1101,9 +1103,11 @@ describe('the deploy pipeline runs what it claims to', () => {
   });
 
   it('the prod sanity suite exists and is more than a stub', () => {
+    // Measured 8 plain tests in prod-sanity.spec.ts on 2026-10-03 (#446).
+    // Stated tight, so a reader that comes back one short fails.
     expect(
       plainTestsIn('tests/prod/prod-sanity.spec.ts').length,
-    ).toBeGreaterThan(3);
+    ).toBeGreaterThan(7);
   });
 });
 
@@ -1641,7 +1645,9 @@ describe('build-and-test stands for the whole suite, run as shards (#163)', () =
     expect(Array.isArray(shards)).toBe(true);
     const list = shards as unknown[];
     // More than one, or it is not a split at all.
-    expect(list.length).toBeGreaterThan(1);
+    // Measured 8 shards scheduled on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    expect(list.length).toBeGreaterThan(7);
     expect(list).toEqual(list.map((_, i) => i + 1));
     // A failing shard would otherwise CANCEL its siblings, and every test they
     // had not reached would go unreported: one red run would show one shard's
@@ -2371,7 +2377,9 @@ describe('the back-translation review', () => {
       `.github/workflows/${FILE}`,
     ];
     // The closure is followed, not listed: this is its floor, not its size.
-    expect(inputs.length, 'the import walk found nothing').toBeGreaterThan(10);
+    // Measured 17 modules the import walk found on 2026-10-03 (#446). Stated
+    // tight, so a reader that comes back one short fails.
+    expect(inputs.length, 'the import walk found nothing').toBeGreaterThan(16);
     const unwatched = inputs.filter(
       (file) => !paths.some((glob) => globToRegExp(glob).test(file)),
     );

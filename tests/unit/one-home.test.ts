@@ -66,7 +66,9 @@ export function definesACommentStripper(source: string): boolean {
 describe('comment stripping has exactly one home', () => {
   it('scans the whole test and script tree', () => {
     // Anti-vacuity: an empty scan would satisfy the assertion below.
-    expect(SCANNED.length).toBeGreaterThan(20);
+    // Measured 294 files scanned on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    expect(SCANNED.length).toBeGreaterThan(293);
     expect(SCANNED).toContain('tests/unit/source-text.ts');
   });
 

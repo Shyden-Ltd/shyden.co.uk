@@ -59,7 +59,9 @@ describe('browser-event collectors have exactly one home', () => {
   it('scans every spec directory', () => {
     // Anti-vacuity: an empty scan satisfies the assertion below, which is the
     // very failure mode this ticket is about.
-    expect(SCANNED.length).toBeGreaterThan(20);
+    // Measured 65 e2e specs scanned on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    expect(SCANNED.length).toBeGreaterThan(64);
     expect(SCANNED).toContain('tests/e2e/classroom-groups.spec.ts');
     expect(SCANNED).toContain(RECORDERS);
   });
@@ -267,10 +269,12 @@ describe('a locator list cannot be looped unproved', () => {
   it('sees the loops it is scanning for', () => {
     // The detector's own liveness. Zero unproved loops means nothing if the
     // regex found zero loops.
+    // Measured 7 locator loops found on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
     expect(
       SCANNED.flatMap((path) => locatorLoops(readFileSync(path, 'utf8')))
         .length,
-    ).toBeGreaterThanOrEqual(4);
+    ).toBeGreaterThanOrEqual(7);
   });
 
   it('catches a loop with nothing proving the list is not empty', () => {

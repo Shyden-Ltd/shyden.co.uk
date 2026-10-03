@@ -306,7 +306,9 @@ describe('release-inventory.mjs as a command (#362)', () => {
     });
     expect(run.status, run.stderr).toBe(0);
     const lines = run.stdout.trim().split('\n');
-    expect(lines.length).toBeGreaterThan(50);
+    // Measured 79 lines of capture selection on 2026-10-03 (#446). Stated
+    // tight, so a reader that comes back one short fails.
+    expect(lines.length).toBeGreaterThan(78);
     expect(
       lines.every((l) => /^tests\/e2e\/[\w.-]+\.spec\.ts:\d+$/.test(l)),
     ).toBe(true);

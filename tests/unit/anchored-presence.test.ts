@@ -297,7 +297,9 @@ describe('presence assertions over source text are stripped or anchored', () => 
     // #454 took one away on purpose: a text check on visual.mjs's import
     // became a check of the image it uses, so 76.
     expect(result.scanned).toBeGreaterThan(75);
-    expect(tsFiles.length).toBeGreaterThan(30);
+    // Measured 262 TypeScript files under tests/ on 2026-10-03 (#446). Stated
+    // tight, so a reader that comes back one short fails.
+    expect(tsFiles.length).toBeGreaterThan(261);
   });
 
   it('finds none reading raw source with an unanchored matcher', () => {

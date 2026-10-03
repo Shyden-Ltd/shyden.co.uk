@@ -68,6 +68,8 @@ describe('the sitemap declares every locale the site serves', () => {
     // A regex that stopped matching would hand every assertion above an empty
     // object, and `{} === {}` is a pass for a check phrased as "no extras".
     // #84: a guard handed an empty list asserts nothing at all.
-    expect(Object.keys(sitemapLocales()).length).toBeGreaterThan(0);
+    // Measured 5 sitemap locales on 2026-10-03 (#446). Stated tight, so a
+    // reader that comes back one short fails.
+    expect(Object.keys(sitemapLocales()).length).toBeGreaterThan(4);
   });
 });
