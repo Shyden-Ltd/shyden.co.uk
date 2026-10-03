@@ -1,11 +1,18 @@
 # Automated visual rebaseline for Dependabot pull requests (#459)
 
 Status: design, self-approved after review passes (operator rule 2026-09-24).
-Decisions taken by the operator, 2026-10-03, both through AskUserQuestion:
+Decisions taken by the operator, 2026-10-03:
 
-1. **Automate the rebaseline** instead of keeping a local command.
+1. **Automate the rebaseline** instead of keeping a local command
+   (AskUserQuestion).
 2. **No new secret.** The commit is pushed with the job's own short-lived
-   `GITHUB_TOKEN`, and CI on the new head is started by dispatching `ci.yml`.
+   `GITHUB_TOKEN`, and CI on the new head is started by dispatching `ci.yml`
+   (AskUserQuestion).
+3. **Playwright-only updates, nothing else.** A side review pointed out that
+   the first draft acted on any dependency-only pull request, Astro
+   included, which could bake a real visual change into a baseline. The
+   operator: _"we cannot afford to allow any visual bugs go unnoticed and
+   unfixed"_.
 
 ## Why, and what was measured first
 
@@ -37,12 +44,17 @@ history will not supply one.
   token and no secrets. The job that writes never checks out, installs or
   executes pull-request code, and never executes anything from the artifact.
 - It acts only for pull requests **opened by** `dependabot[bot]` from this
-  repository (not a fork), whose changed files are all dependency files, and
-  whose head is level with `develop`.
+  repository (not a fork) that update **Playwright and nothing else**, and
+  whose head is level with `develop`. Operator, 2026-10-03: *"we cannot
+  afford to allow any visual bugs go unnoticed and unfixed"*. Only a browser
+  change is a reason for pixels to move with the site unchanged. Any other
+  dependency (Astro above all, which builds every page) can change how the
+  site really looks, so a red `visual` on such a PR stays red for a person to
+  diagnose, exactly as today, even when Playwright is in the same group.
 
 ## Threat model
 
-A Dependabot pull request installs third-party code, and the capture job runs
+A Playwright update installs third-party code, and the capture job runs
 it. A hostile dependency could therefore read the capture job's token (read
 only, and it already runs in CI with the same token) and forge the artifact.
 The forgery can reach the repository only as PNG bytes at paths that are
@@ -57,7 +69,7 @@ pattern-checked before any of them is written into a comment.
 Two new workflows and one new trigger on an existing one.
 
 ```
-Dependabot PR (deps only)
+Dependabot PR (Playwright only)
   │ pull_request
   ▼
 visual-rebaseline.yml           (read-only token, no secrets, runs PR code)
@@ -90,17 +102,36 @@ exactly (a guard asserts the two agree).
   `timeout-minutes`.
 - **qualify** carries a job-level `if:` on the PR author, so every other
   pull request skips the whole workflow at no cost (it is not a required
-  check, so a skip blocks nothing). It then decides from the event and two
-  reads, as a pure function in `scripts/visual-rebaseline.mjs`, unit-tested.
-  It qualifies only when the head repository equals the base repository; the
-  pull request's file list (`GET /pulls/{n}/files`, paginated, compared
-  against the `changed_files` count so a truncated list refuses) holds only
-  `package.json`, `package-lock.json` or `docker/playwright/Dockerfile`; and
-  the head is level with the base (`GET /compare/{base}...{head}` reports
-  `behind_by: 0`). A PR behind `develop` is skipped with that reason: branch
-  protection is strict, so it must be brought level before it can merge, and
-  that push runs the workflow again. Not qualifying is a success with a
-  logged reason, never red.
+  check, so a skip blocks nothing). It then decides, as a pure function in
+  `scripts/visual-rebaseline.mjs`, unit-tested, and fail-closed. It qualifies
+  only when all of these hold:
+  1. the head repository equals the base repository;
+  2. the PR's file list (`GET /pulls/{n}/files`, paginated, compared against
+     the `changed_files` count so a truncated list refuses) holds only
+     `package.json`, `package-lock.json` and `docker/playwright/Dockerfile`;
+  3. **Playwright only:** `package-lock.json` read at the base and at the
+     head (contents API) differs only in (a) the root `""` entry's
+     `devDependencies["@playwright/test"]`, and (b) entries that are, or sit
+     inside, `node_modules/@playwright/test`, `node_modules/playwright` or
+     `node_modules/playwright-core` (Playwright's own tree, such as
+     `node_modules/playwright/node_modules/fsevents`); and at least one of
+     the three changed version. `package.json` differs in nothing but the
+     `@playwright/test` value, and the Dockerfile, if touched, differs only
+     in its `FROM` pin. Measured against the one real Playwright bump here
+     (#26, `c6af312`, 1.61.1 to 1.63.0): it changed exactly the root
+     `devDependencies` value, the three entries, and removed
+     `node_modules/playwright/node_modules/fsevents`, so a rule naming only
+     the three entries would have refused it. A group PR carrying Astro, a
+     font, or anything else beside Playwright does not qualify;
+  4. the head is level with the base (`GET /compare/{base}...{head}` reports
+     `behind_by: 0`). A PR behind `develop` is skipped with that reason:
+     branch protection is strict, so it must be brought level before it can
+     merge, and that push runs the workflow again.
+
+  Not qualifying is a success with a logged reason, never red. A
+  Dockerfile-only PR (Dependabot's docker update bringing the pin level)
+  moves no Playwright version, so it does not qualify: a red `visual` there
+  is not a browser update, and a person diagnoses it.
 - **image** runs `scripts/playwright-image.mjs`, exactly as `ci.yml` does, so
   capture renders in the gate's image.
 - **capture** runs in that image (`linux/amd64`, as the gate does), on a
@@ -220,12 +251,23 @@ unexpected entry, a moved head.
 
 ## Testing
 
-- **Unit (pure functions, `tests/unit/visual-rebaseline.test.ts`):** qualify
-  (author, fork, each dependency path, any other path, the truncated list, a
-  head behind the base), report classification (screenshot-only, mixed,
-  timeout, missing baseline, count mismatch), and validate (each refusal
-  above), one test per case. Fixtures are written in the test, never imported
-  from the code under test.
+- **Unit (pure functions, `tests/unit/visual-rebaseline.test.ts`), one test
+  per case:**
+  - qualify: author; fork; each dependency path; any other path; the
+    truncated list; a head behind the base; a Playwright bump alone
+    qualifies, including a fixture copied from #26's real lockfile diff
+    (root `devDependencies` value, three entries, nested `fsevents`
+    removed); Playwright grouped with Astro, with a font, or with any other
+    package does not; a lockfile entry added or removed outside Playwright's
+    tree does not; a root-entry change other than the `@playwright/test`
+    value does not; a `package.json` change outside `@playwright/test` does
+    not; a Dockerfile change outside `FROM` does not; a Dockerfile-only PR
+    does not.
+  - report classification: screenshot-only, mixed, timeout, missing
+    baseline, count mismatch.
+  - validate: each refusal above.
+
+  Fixtures are written in the test, never imported from the code under test.
 - **Wiring guards (`pipeline-wiring.test.ts`), each mutation-verified RED and
   restored GREEN:** no `ci.yml` job passes `--update-snapshots`, and the
   config keeps `'none'`; the capture workflow has no write scope, no secrets
@@ -249,26 +291,38 @@ unexpected entry, a moved head.
   workflow's token can push to the Dependabot branch, it can dispatch
   `ci.yml` there, and branch protection accepts the dispatched run's checks
   on that head (`mergeStateStatus` reads `CLEAN` once they pass).
-  - *Positive:* on a Dependabot pull request, a dependency-only commit that
-    moves pixels turns `visual` red; capture and commit run, the dispatched CI
-    is green on the new head, and the PNG diff shows in the file view. The
-    candidate, measured 2026-10-03: `@fontsource-variable/instrument-sans`
-    5.2.4 ships a different `latin-wght-normal.woff2` from 5.3.0 (sha1
-    `3fcfaf5f0e…` against `adbdfd9a78…`), so pinning 5.2.4 changes the body
-    face. If it moves no pixel, the plan finds another before the proof.
+  - *Positive:* a Dependabot pull request whose diff against `develop` is
+    Playwright-only and moves pixels turns `visual` red; capture and commit
+    run, the dispatched CI is green on the new head, and the PNG diff shows
+    in the file view. No such pull request exists while the repository is on
+    the latest Playwright, so the proof makes one: on an open Dependabot pull
+    request, one commit (pushed as the App, so the author stays
+    `dependabot[bot]`) returns that pull request's own change to the base
+    and sets Playwright to a release measured to drift. The five releases
+    measured so far (1.59.1 to 1.62.1) move no pixel past the gate, so the
+    plan's first task measures further back (1.40 to 1.58, same harness as
+    run 37099208646) for one that does. If none does, that goes to the
+    operator before anything is built on the proof.
   - *Negative:* the same pull request with a source file also changed gets no
-    rebaseline.
+    rebaseline, and so does one where Playwright is grouped with another
+    package (the font candidate measured 2026-10-03,
+    `@fontsource-variable/instrument-sans` 5.2.4, whose
+    `latin-wght-normal.woff2` differs from 5.3.0's: a real pixel change that
+    must stay red).
   - *Dependabot as the actor:* afterwards, `@dependabot recreate` rebuilds the
-    pull request from scratch, discarding the proof's commits, and shows the
-    capture workflow qualifying under Dependabot's own restricted token and
-    passing with nothing to do.
+    pull request from scratch, discarding the proof's commits. The capture
+    workflow then runs under Dependabot's own restricted token and ends green,
+    qualifying or not as the rule decides for the rebuilt diff.
   - Every run ID is recorded on #459.
 
 ## Out of scope
 
 Rebaselining non-Dependabot pull requests (a person changing CSS runs
-`npm run test:visual:update` and reviews it, as today); any baseline outside
-`tests/e2e/__screenshots__`; merging automatically.
+`npm run test:visual:update` and reviews it, as today); any Dependabot update
+other than Playwright alone, Astro, fonts and group pull requests included
+(decision 3: a red `visual` there may be a real visual change, so a person
+diagnoses it); any baseline outside `tests/e2e/__screenshots__`; merging
+automatically.
 
 ## Review log
 
@@ -289,3 +343,8 @@ and reading the whole document.
 | 11 | "no `npm ci`" contradicted parsing YAML (now the default branch's lockfile, `--ignore-scripts`); dispatch was not the only exempt event |
 | 12 | one ragged bullet |
 | 13 | none |
+| 14 | after decision 3: a rule naming only the three lockfile entries would have refused #26, the one real Playwright bump (root `devDependencies` value, nested `fsevents`); Dockerfile-only PRs stated as not qualifying |
+| 15 | no Playwright-only Dependabot PR exists to prove on, so the proof makes one; "qualifying" on recreate was wrong; Dockerfile-only test missing |
+| 16 | `md-swap.py` (the helper built after pass 9) dropped a trailing blank line, gluing the decisions list to a heading; tool fixed and tested |
+| 17 | Out of scope did not name the non-Playwright updates decision 3 excludes |
+| 18 | none |
