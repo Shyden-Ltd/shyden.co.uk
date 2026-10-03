@@ -243,8 +243,9 @@ units while its reader loses three records +2 (operator, 2026-10-03). #469
 gives each guard the number-free cross-check that catches that mechanically.
 
 `literal-floors.test.ts` keeps it that way. Its reader classifies every
-`toBeGreaterThan(OrEqual)` under `tests/`, and every comparison with a
-literal inside an `expect` argument, as presence, counted, forwarded,
+`toBeGreaterThan(OrEqual)` under `tests/`, every comparison with a literal
+inside an `expect` argument, and every `toBeLessThan(OrEqual)` whose subject
+is a literal (a floor written backwards), as presence, counted, forwarded,
 compared, threshold or ceiling, and refuses anything else by line. A
 counted or forwarded floor must be ratcheted, or listed as a product value
 with its reason (a 44px target, a grouping statistic), or be one of the
@@ -252,21 +253,24 @@ seven Playwright floors Group 5 ratchets (that list may only shrink). Its
 cross-check counts the matcher per file in the comment-stripped text, less
 what string and regex literals spell; no number drifts in it.
 
-Converted: 43 unit floors, `spec-scan`'s helper (whose number was a
-parameter, which no literal search sees) and its five callers,
-`back-translate`'s four locales, and `evidence-recording`'s two floors
-written as `acting.length > 25` inside a `toEqual`, which the reader first
-missed and now plants. Sixteen sat before their verdict in the same test
+Converted, as 52 recorded ids: 41 floors written in place; `spec-scan`'s
+helper, whose number was a parameter no literal search sees, as one id for
+each of its five callers; `back-translate`'s floor, one id per locale (4);
+and `evidence-recording`'s two floors written as `acting.length > 25` inside
+a `toEqual`, which the reader first missed and now plants. With
+`absence-liveness`'s three and the meta-guard's own count, `floors.json`
+holds 56. Sixteen sat before their verdict in the same test
 and were moved below it, so a population that grew never hides a finding.
 Each first figure was read against the census and the diff that recorded
 it, and every one is accounted for.
 
-The matrix ran 35 rows, all as predicted once R22 was corrected. On
+The matrix ran 37 rows, all as predicted once R22 was corrected. On
 `develop`, 6 stayed GREEN: a reader one short in `absence-liveness`,
 `git-env`, `duplicate-imports` and `spec-scan`'s forwarded floor, and growth
 through `absence-liveness` and `evidence-recording`'s comparison floor. On the
-branch, 29 turned their guard RED: those six again, `back-translate`'s looped
-locale, the recorder's four refusals and its printed moves, both directions
+branch, 31 turned their guard RED: those six again, `back-translate`'s looped
+locale, four of the recorder's refusals (a fall, a stale id, two places,
+two values) and its printed moves, both directions
 of the check, record mode's call site, the CI refusal's words, a workflow
 running the recorder, and twelve against the literal reader (a literal floor
 back, a forwarded bound, the comparison form, a callback's predicate, a
@@ -274,7 +278,10 @@ literal read as written, `expect.poll`, the cross-check alone with its floor
 off, a root skipped, a stale product value, a growing Group 5 list, an id
 spelled twice, and a floor written backwards, `expect(5).toBeLessThan(n)`,
 which review pass 1 found unread: no file writes one, and none can now pass
-unseen). R22 first came back GREEN: TypeScript already normalises a
+unseen), and, from review pass 4, the recorder's refusals of a suite that
+did not start and of one that failed, which no test had reached; each is now
+run with a `PATH` that has no `npx`, or a stand-in that exits 3, and the
+real record read before and after. R22 first came back GREEN: TypeScript already normalises a
 numeric literal's text, so the `replace` it removed was dead code, and is
 gone. The CI refusal is mutated in its words, not removed, because a
 recorder that ran under the probe would run the suite and could rewrite the
