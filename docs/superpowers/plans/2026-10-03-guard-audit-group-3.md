@@ -22,7 +22,7 @@ matrix on both trees.
 
 | Site | `of` before | Unit judged | Reading | Change |
 | --- | --- | --- | --- | --- |
-| `unit/absence-liveness.test.ts` verdict | `result.absences` (a count) | absence assertions | Count of the judged unit, but its floor sat at 398 under a real **421**: Groups 2a and 2b grew the suite the same day, and growth never fails a floor. No cross-check. An absence on any root but `expect(` was skipped, not refused: `expect.soft(x).toEqual([])` was invisible. | `of: result.sites` (the list); floor 420; `expect.soft` read; any other root refused by name, a polled value excepted; raw-text cross-check over 113 files. Task 1. |
+| `unit/absence-liveness.test.ts` verdict | `result.absences` (a count) | absence assertions | Count of the judged unit, but its floor sat at 398 under a real **421**: Groups 2a and 2b grew the suite the same day, and growth never fails a floor. No cross-check. An absence on any root but `expect(` was skipped, not refused: `expect.soft(x).toEqual([])` was invisible. | `of: result.sites` (the list); floor 420; `expect.soft` read; any other root refused by name, a polled value excepted; raw-text cross-check over 113 files that reads every spelling the reader reads. Tasks 1 and 5. |
 | `unit/pipeline-wiring.test.ts` step summary | `summaryWriters.length` | each write to the summary | **Wrong level**: it judged steps, so a step that tees one line and appends the next with `>>` passed. No floor beyond 0, no cross-check. | Judged per line (2 measured), floor 1, cross-check against the `visual` job's raw YAML. Task 2. |
 | `e2e/classroom-groups-roster.spec.ts` touch targets | `await controls.count()` | rendered controls | **Wrong unit**: `count()` counts every match, hidden ones too, while the measurement filters to rendered ones. A roster whose controls all stopped rendering measured nothing and passed. | `of: measured` (the rendered list). Task 3. |
 | `e2e/rendered-text.spec.ts` lost space | `text.length` | the page's text | Characters include whitespace, so a page rendered as blank space counted as searched. | `of: text.split(/\s+/)` (its words). Task 3. |
@@ -664,6 +664,68 @@ index 8178b8b..8f83bd9 100644
  
 ~~~~
 
+## Task 7: From review pass 2: no cast, an accurate title, the ledger rewrapped
+
+Pass 2 findings 6-9; finding 5 is this document's own table.
+
+~~~~diff
+diff --git a/docs/reviews/2026-10-03-guard-liveness-ledger.md b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+index 8f83bd9..c2da5d7 100644
+--- a/docs/reviews/2026-10-03-guard-liveness-ledger.md
++++ b/docs/reviews/2026-10-03-guard-liveness-ledger.md
+@@ -202,7 +202,7 @@ passed instead so the control content-checks it (#446 Group 3, plan
+ | `classroom-groups-roster` touch targets | `controls.count()` counted hidden controls too, while the measurement judged rendered ones: a roster whose controls all stopped rendering passed. | The measured list. |
+ | `rendered-text`, both page scans | Characters include whitespace, so a page rendered blank counted as searched. | The page's words. |
+ | `palette-controls`, `theme` | The count of the very array. | The array: form only. |
+-| `anchored-presence` | Count of the judged unit, floor tight (76). | Unchanged. Its population is defined by dataflow, which no raw-text reading reproduces, so it still has no cross-check. |
++| `anchored-presence` | Count of the judged unit; floor 75 under a measured 76, tight. | Unchanged. Its population is defined by dataflow, which no raw-text reading reproduces, so it still has no cross-check. |
+ | `evidence-page` deletions | `toHaveLength(1)` on the population itself, exact. | Unchanged: sound. |
+ 
+ Fail-closed reading found one site at once: `evidence-page.spec.ts:234`
+@@ -216,9 +216,10 @@ its spellings are planted, and each new branch has a matrix row. The matrix
+ ran 22 rows, all as predicted: 6 on `develop`, where each stayed GREEN, and
+ 16 on the new tree, where 15 turned a guard RED and one, a shell comment
+ naming the summary, stayed GREEN as the exclusion intends. Two prove a
+-cross-check alone, with its floor switched off. Removing a `tee` from `ci.yml` was not a gap: on `develop` a sibling
+-test ('prints the container architecture into the job summary') already
+-catches it, so the matrix blinds the guard's reader instead.
++cross-check alone, with its floor switched off. Removing a `tee` from
++`ci.yml` was not a gap: on `develop` a sibling test ('prints the container
++architecture into the job summary') already catches it, so the matrix blinds
++the guard's reader instead.
+ 
+ ## Group 4: loop-built findings, next
+ 
+diff --git a/tests/unit/absence-liveness.test.ts b/tests/unit/absence-liveness.test.ts
+index 2b2f0d8..7b5e903 100644
+--- a/tests/unit/absence-liveness.test.ts
++++ b/tests/unit/absence-liveness.test.ts
+@@ -95,12 +95,12 @@ function absenceRoot(
+ 
+   // Walk back through any modifier chain (`.not`, `.resolves`). A `.not`
+   // anywhere in it inverts the claim, so the assertion is not an absence one.
+-  let target: ts.Node = node.expression.expression;
++  let target: ts.Expression = node.expression.expression;
+   while (ts.isPropertyAccessExpression(target)) {
+     if (target.name.text === 'not') return null;
+     target = target.expression;
+   }
+-  return { root: target as ts.Expression, zeroCount };
++  return { root: target, zeroCount };
+ }
+ 
+ /** `expect(x)` or `expect.soft(x)`: both assert, so both are read. */
+@@ -369,7 +369,7 @@ describe('absence assertions prove the population they searched', () => {
+     ]);
+   });
+ 
+-  it('reads as text every spelling the reader reads, and none it refuses', () => {
++  it('reads as text every spelling the reader reads, and no inverse', () => {
+     // The cross-check below is only independent if it knows the same forms.
+     // Written out, never generated from either reader's list: a plant built
+     // from the list a reader uses cannot see that list drop a form (#446).
+~~~~
+
 ## Mutation matrix
 
 `.superpowers/sdd/446-g3/g3_mut.py`, copied from Group 2b's runner. Every
@@ -723,3 +785,16 @@ required (4); Task 6, the ledger. While fixing, a `git checkout --` that
 undid a measuring pin also reverted the uncommitted fix; it was restored and
 committed, and `~/.claude/hooks/checkout-keeps-uncommitted-work.py` now
 refuses that shape (27 cases, 9 mutations).
+
+**Pass 2** (branch at `db2768d`). Mechanical: the applied plan equals the
+branch; `astro check` 0/0/0; prettier clean; unit 3533/3533; e2e 101 passed
+on Chromium; matrix 6 + 16 as predicted, 0 XX; the script's own verdict
+CLEAN. Reading, the whole document again: five findings. (5) The head
+table's absence-liveness row credited Task 1 only, though Task 5 changes the
+same site. (6) `absenceRoot` returned `target as ts.Expression`, a cast only
+the old `ts.Node` declaration needed. (7) The ledger paragraph pass 1 spliced
+left a 105-character line. (8) The planted-spellings test said "none it
+refuses", but "refuses" in that file names the unclassified-root branch; the
+list is of inverses. (9) The ledger's anchored-presence row read "floor
+tight (76)", which does not say the floor is 75. Fixed: this table (5), and
+Task 7 (6-9).
