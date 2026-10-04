@@ -83,11 +83,10 @@ describe('a download’s bytes are read only through downloadText', () => {
     // Guards the guard: a scan that found no reads at all -- because the
     // helper was renamed, or `tests/e2e` moved -- would otherwise report a
     // clean sweep it never performed. Counted in reads, not in the files that
-    // hold them: measured 8 on 2026-10-03 (#446), and stated tight, so a
-    // reader that comes back one short fails.
+    // hold them, and ratcheted (#468).
     expectNothingFound(read, {
       what: 'download byte reads',
-      moreThan: 7,
+      floor: 'download-readers/byte-reads',
       carries: (_file, source) => BYTE_READ.test(withoutTsComments(source)),
     });
   });

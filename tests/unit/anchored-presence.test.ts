@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { filesUnder, searched } from '../source-files';
 import { bind, bindFiles, callGraph, type Closure } from './ast';
 import { scanPresence, type PresenceClosures } from './presence-detector';
+import { floorBreach } from '../floors';
 /**
  * A presence assertion over source text must be STRIPPED or ANCHORED.
  *
@@ -281,25 +282,26 @@ describe('presence assertions over source text are stripped or anchored', () => 
   // stopped matching would report zero findings and zero scanned, and only
   // one of those is good news. `event-collectors.test.ts` settled this shape.
   it('scans the presence assertions that actually read source text', () => {
-    // 76 today, and the figure is worth stating: the floor sat at 20 while
-    // the truth was 27, so a control with that much slack in it is most of
-    // the way back to no control at all. #118 moved the number twice --
-    // UP as the derivation learned to follow local bindings to a fixed
-    // point, then back DOWN as it stopped reading object-literal keys and
-    // parameter names as references. Both were corrections, not drift.
-    // #184 found this comment still saying 28 over a real 42, and moved the
-    // figure to 45: resolving names by scope brought in three assertions a
-    // file-wide map had been sending to another test's declaration. #225
-    // measured 46 (the suite had grown by one under a floor of 44) and moved
-    // it to 48: two `evidence-page` assertions a helper's `JSON.stringify`
-    // had been exempting as parsed. #390 found 77 under that floor of 47,
-    // the suite having grown with nobody moving it, and set it to the 77.
-    // #454 took one away on purpose: a text check on visual.mjs's import
-    // became a check of the image it uses, so 76.
-    expect(result.scanned).toBeGreaterThan(75);
-    // Measured 262 TypeScript files under tests/ on 2026-10-03 (#446). Stated
-    // tight, so a reader that comes back one short fails.
-    expect(tsFiles.length).toBeGreaterThan(261);
+    // The figure is recorded exactly (#468), because slack here has cost
+    // before: the floor sat at 20 while the truth was 27, so a control with that much slack in it is most of the way
+    // back to no control at all. #118 moved the number twice -- UP as the
+    // derivation learned to follow local bindings to a fixed point, then back
+    // DOWN as it stopped reading object-literal keys and parameter names as
+    // references. Both were corrections, not drift. #184 found this comment
+    // still saying 28 over a real 42, and moved the figure to 45: resolving
+    // names by scope brought in three assertions a file-wide map had been
+    // sending to another test's declaration. #225 measured 46 (the suite had
+    // grown by one under a floor of 44) and moved it to 48: two `evidence-page`
+    // assertions a helper's `JSON.stringify` had been exempting as parsed. #390
+    // found 77 under that floor of 47, the suite having grown with nobody
+    // moving it, and set it to the 77. #454 took one away on purpose: a text
+    // check on visual.mjs's import became a check of the image it uses, so 76.
+    expect(
+      floorBreach('anchored-presence/scanned', result.scanned),
+    ).toBeUndefined();
+    expect(
+      floorBreach('anchored-presence/ts-files', tsFiles.length),
+    ).toBeUndefined();
   });
 
   it('finds none reading raw source with an unanchored matcher', () => {

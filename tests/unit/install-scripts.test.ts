@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { searched } from '../source-files';
+import { floorBreach } from '../floors';
 
 /**
  * Which dependencies are allowed to EXECUTE CODE when they install.
@@ -81,22 +82,23 @@ const allowScripts = (): Record<string, boolean> =>
 
 describe('the install-script allowlist', () => {
   it('has something to protect', () => {
-    // Without this, the equality below is VACUOUS in the one case that
-    // matters: if the lockfile stopped reporting install scripts, the derived
-    // set and an empty `allowScripts` would agree, and a suite asserting
-    // nothing would go green. This repo has shipped two guards that passed
-    // because both sides were empty or both were satisfied by prose.
+    // Without this, the equality below is VACUOUS in the one case that matters:
+    // if the lockfile stopped reporting install scripts, the derived set and an
+    // empty `allowScripts` would agree, and a suite asserting nothing would go
+    // green. This repo has shipped two guards that passed because both sides
+    // were empty or both were satisfied by prose.
     //
     // If a dependency change genuinely leaves NO package running install
     // scripts, this failure is the prompt to confirm that and delete the
     // suite deliberately — not to weaken the assertion.
-    // Measured 3 installed packages with an install script on 2026-10-03
-    // (#446). Stated tight, so a reader that comes back one short fails.
     expect(
-      packagesWithInstallScripts().length,
-      'no package in package-lock.json declares an install script — either ' +
-        'the lockfile is not v3, or this control is no longer needed',
-    ).toBeGreaterThan(2);
+      floorBreach(
+        'install-scripts/packages',
+        packagesWithInstallScripts().length,
+      ),
+      'packages with an install script moved: fewer can mean a lockfile that ' +
+        'is not v3, or a control no longer needed; more, a new one to approve',
+    ).toBeUndefined();
   });
 
   it('approves exactly the packages that run install scripts, and no others', () => {

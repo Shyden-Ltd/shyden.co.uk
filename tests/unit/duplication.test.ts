@@ -9,6 +9,7 @@ import {
   type DuplicatePair,
 } from './duplication';
 import { searched, trackedFiles } from '../source-files';
+import { floorBreach } from '../floors';
 
 /**
  * Every file a duplicate could live in, from git rather than a list.
@@ -107,14 +108,12 @@ const SEPARATE: ReadonlyMap<string, string> = new Map([
 describe('a function body has one home across files', () => {
   it('scans the whole tracked tree, not a list', () => {
     // Anti-vacuity: an empty scan satisfies every assertion below.
-    // Measured 338 files scanned on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(SCANNED.length).toBeGreaterThan(337);
+    expect(floorBreach('duplication/files', SCANNED.length)).toBeUndefined();
     expect(SCANNED).toContain('src/lib/grouping.ts');
     expect(SCANNED).toContain('scripts/test-devices.mjs');
-    // Measured 5198 declarations compared on 2026-10-03 (#446). Stated tight,
-    // so a reader that comes back one short fails.
-    expect(DECLARATIONS.length).toBeGreaterThan(5197);
+    expect(
+      floorBreach('duplication/declarations', DECLARATIONS.length),
+    ).toBeUndefined();
   });
 
   it('finds no cross-file duplicate that has not been given a verdict', () => {

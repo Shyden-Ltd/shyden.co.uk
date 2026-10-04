@@ -13,6 +13,7 @@ import {
   tokensCss,
 } from '../palette';
 import { SHYTALK_MARK } from '../../src/lib/shytalk-brand';
+import { floorBreach } from '../floors';
 
 /**
  * The structure of tokens.css (#142).
@@ -130,10 +131,12 @@ describe('the two themes (#142)', () => {
     const pad = themeTokens(css, 'light').get('--wordmark-pad');
     expect(pad).toBe('0.12em 0.42em 0.18em');
     const blocks = darkBlocks(css);
-    expect(blocks.length).toBeGreaterThan(1);
     for (const block of blocks) {
       expect(customProperties(block).get('--wordmark-pad') ?? pad).toBe(pad);
     }
+    // Ratcheted after the loop it proves (#468): two today, and a third dark
+    // block must be recorded before its padding is trusted to this loop.
+    expect(floorBreach('tokens/dark-blocks', blocks.length)).toBeUndefined();
   });
 });
 

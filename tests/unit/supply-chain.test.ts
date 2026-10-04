@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path';
 import { withoutYamlComments, withoutYamlQuotes } from './source-text';
 import { filesUnder, nonEmpty, searched } from '../source-files';
 import { parseCleanYaml } from '../workflow-jobs';
+import { floorBreach } from '../floors';
 
 /**
  * The CI supply chain is pinned, and something keeps it current.
@@ -102,9 +103,9 @@ const subPathRepos = (): [string, Set<string>][] => {
 
 describe('the CI supply chain is pinned', () => {
   it('there is something to check', () => {
-    // Measured 38 external action uses on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(externalUses().length).toBeGreaterThan(37);
+    expect(
+      floorBreach('supply-chain/external-uses', externalUses().length),
+    ).toBeUndefined();
   });
 
   it('every third-party action is pinned to a full commit SHA', () => {

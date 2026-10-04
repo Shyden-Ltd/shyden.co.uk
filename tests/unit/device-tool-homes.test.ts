@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { filesUnder, searched } from '../source-files';
 import { withoutTsComments } from './source-text';
+import { floorBreach } from '../floors';
 
 /**
  * Each command-line tool the device leg drives is spawned from one home, which
@@ -73,10 +74,10 @@ describe.each(HOMES)('no file spawns $tool but $home', ({ tool, home }) => {
   });
 
   it('reads every file under tests/ and scripts/, and as many as there are', () => {
-    // Measured 294 files on 2026-10-03 (#446). Stated tight, so a walk that
-    // comes back one short fails, and the home is among them, so a walk that
-    // loses scripts/ fails too.
-    expect(files.length).toBeGreaterThan(293);
+    expect(
+      floorBreach('device-tool-homes/files', files.length),
+    ).toBeUndefined();
+    // The home is among them, so a walk that loses scripts/ fails too.
     expect(files).toContain(home);
   });
 

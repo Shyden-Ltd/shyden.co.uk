@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { filesUnder, searched } from '../source-files';
 import { parseSource } from './ast';
 import { astroCodeViews, withoutTsComments } from './source-text';
+import { floorBreach } from '../floors';
 
 /**
  * No module imports the same specifier twice (#390 F59).
@@ -192,10 +193,7 @@ describe('no source imports one module twice (#390 F59)', () => {
   });
 
   it('reads every import the sources declare, and as many as there are', () => {
-    // Measured 1512 imports on 2026-10-03 (#446). Stated tight, so a reader
-    // that comes back one short fails.
     const sources = scan();
-    expect(sources.flatMap(({ read }) => read).length).toBeGreaterThan(1511);
     const unread = sources
       .filter(
         ({ path, text, read }) =>
@@ -206,5 +204,12 @@ describe('no source imports one module twice (#390 F59)', () => {
       )
       .map(({ path }) => path);
     expect(searched(unread, { of: sources, what: 'source files' })).toEqual([]);
+    // After the verdict, so a population that grew never hides a finding.
+    expect(
+      floorBreach(
+        'duplicate-imports/imports',
+        sources.flatMap(({ read }) => read).length,
+      ),
+    ).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { localGitVars, scratchGit, withoutLocalGit } from '../git-env';
 import { filesUnder, searched } from '../source-files';
+import { floorBreach } from '../floors';
 
 /**
  * A unit run cannot act on the repository git hands it (#377).
@@ -181,10 +182,9 @@ describe('a repository named by a hostile GIT_DIR (#377)', () => {
         join(sentinel, 'child-run.json'),
       );
       expect(report.numFailedTests, stderr).toBe(0);
-      // Measured 18 tests in release-inventory.test.ts, the file the child run
-      // executes on 2026-10-03 (#446). Stated tight, so a reader that comes
-      // back one short fails.
-      expect(report.numPassedTests).toBeGreaterThan(17);
+      expect(
+        floorBreach('git-env/child-tests-passed', report.numPassedTests),
+      ).toBeUndefined();
       expect(fingerprint(sentinel)).toEqual(before);
     } finally {
       rmSync(sentinel, { recursive: true, force: true });

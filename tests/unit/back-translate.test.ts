@@ -34,6 +34,7 @@ import {
   type Comparison,
   type EngineLanguage,
 } from '../../src/lib/i18n/back-translate';
+import { floorBreach } from '../floors';
 
 /**
  * #95. The back-translation gate, minus the engine.
@@ -239,6 +240,17 @@ const CATALOGUES = { id, zh, vi, th } satisfies Record<
 >;
 const TRANSLATED = Object.keys(CATALOGUES) as Array<keyof typeof CATALOGUES>;
 
+/**
+ * Each locale's count of translated entries, ratcheted (#468). Keyed by the
+ * catalogue, so a locale added without a floor fails to compile.
+ */
+const TRANSLATED_FLOOR: Readonly<Record<keyof typeof CATALOGUES, string>> = {
+  id: 'back-translate/translated-id',
+  zh: 'back-translate/translated-zh',
+  vi: 'back-translate/translated-vi',
+  th: 'back-translate/translated-th',
+};
+
 /** The CSV vocabulary without its `sex` letters, which the roster rows read back. */
 const csvCopy = (locale: Locale) =>
   Object.fromEntries(
@@ -299,13 +311,12 @@ describe('backTranslationUnits: every catalogue the site ships', () => {
           key.replace(/ \[[^\]]*\]$/, ''),
         ),
       );
-      // Measured 261 translated entries in zh, vi and th, the fewest of the
-      // four (id has 262) on 2026-10-03 (#446). Stated tight, so a reader that
-      // comes back one short fails.
-      expect(expected.size, `${locale} translated nothing`).toBeGreaterThan(
-        260,
-      );
       expect([...read].sort(), locale).toEqual([...expected].sort());
+      // After the verdict, so a population that grew never hides a finding.
+      expect(
+        floorBreach(TRANSLATED_FLOOR[locale], expected.size),
+        `${locale}: not the recorded count of translated entries`,
+      ).toBeUndefined();
     }
   });
 

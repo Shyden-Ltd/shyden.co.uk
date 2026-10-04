@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { declaredName, parseSource } from './ast';
 import { withoutTsComments } from './source-text';
 import { filesUnder } from '../source-files';
+import { floorBreach } from '../floors';
 
 /**
  * Comment stripping lives in one place. Seven private copies had accumulated
@@ -66,9 +67,7 @@ export function definesACommentStripper(source: string): boolean {
 describe('comment stripping has exactly one home', () => {
   it('scans the whole test and script tree', () => {
     // Anti-vacuity: an empty scan would satisfy the assertion below.
-    // Measured 294 files scanned on 2026-10-03 (#446). Stated tight, so a
-    // reader that comes back one short fails.
-    expect(SCANNED.length).toBeGreaterThan(293);
+    expect(floorBreach('one-home/files', SCANNED.length)).toBeUndefined();
     expect(SCANNED).toContain('tests/unit/source-text.ts');
   });
 

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect } from 'vitest';
 import { specDirs } from '../spec-dirs';
 import { declaresTests } from '../playwright-declarations';
+import { floorBreach } from '../floors';
 import { searched, tsFilesUnder } from '../source-files';
 
 /**
@@ -52,10 +53,11 @@ export type Liveness = {
   /** The unit `judged` lists, plural: `tests read`, `captures`. */
   readonly what: string;
   /**
-   * The floor, stated as measured − 1 by the caller beside the measured
-   * figure, so a reader that comes back one short fails.
+   * The id of the floor in `tests/floors.json` (#468): `judged` is checked
+   * against it for equality, so a reader that comes back one short fails, and
+   * so does a population that grew, until it is recorded.
    */
-  readonly moreThan: number;
+  readonly floor: string;
   /**
    * An independent reading of the same file: true where its text plainly
    * holds the construct. A file it holds and `analyze` judged nothing in is
@@ -69,9 +71,9 @@ export type Liveness = {
  * a file whose text declares a test, and in which the guard judged none, is
  * a form its reader is blind to. One home, since three guards read that way.
  */
-export const declarationsRead = (what: string, moreThan: number): Liveness => ({
+export const declarationsRead = (what: string, floor: string): Liveness => ({
   what,
-  moreThan,
+  floor,
   carries: (_file, source) => declaresTests(source),
 });
 
@@ -97,10 +99,6 @@ export const expectNothingFound = (
     searched(findings, { of: judged, what: liveness.what }),
     findings.join('\n'),
   ).toEqual([]);
-  expect(
-    judged.length,
-    `${liveness.what}: fewer than measured`,
-  ).toBeGreaterThan(liveness.moreThan);
   const missed = readings
     .filter(
       ({ file, source, judged }) =>
@@ -114,4 +112,9 @@ export const expectNothingFound = (
     }),
     `files holding ${liveness.what} where the reader judged none`,
   ).toEqual([]);
+  // After both verdicts, so a population that grew never hides a finding.
+  expect(
+    floorBreach(liveness.floor, judged.length),
+    `${liveness.what}: not the recorded figure`,
+  ).toBeUndefined();
 };

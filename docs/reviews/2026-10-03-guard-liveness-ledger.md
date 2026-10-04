@@ -221,6 +221,72 @@ cross-check alone, with its floor switched off. Removing a `tee` from
 architecture into the job summary') already catches it, so the matrix blinds
 the guard's reader instead.
 
+## The ratchet (#468), done
+
+A floor at measured − 1 is tight only on the day it is measured: growth
+never fails it. `absence-liveness` was set to `> 420` against a real 421 in
+#467 and read 424 an hour after it merged, and a recorder wrapped round
+`toBeGreaterThan(OrEqual)` across the unit suite at `4d07565` found
+`git-env` 6 slack, `duplicate-imports` 7, `one-test-per-case` and
+`spec-scan` 1, all set tight within two days. 20 of the 58 first-parent
+commits on `develop` that week changed the number of files under `tests/`.
+
+So every liveness floor is now a figure in `tests/floors.json`, checked for
+equality by `floorBreach` (`tests/floors.ts`): one unit short fails, and so
+does one more, until `npm run floors:record` raises it. The recorder checks
+everything before writing anything and refuses a figure that would fall
+(lowering is a hand edit with the reason in the commit), an id no test
+asserted, an id asserted from two places or with two values, and a failing
+run; CI never records. It prints every floor that moved, largest first,
+because a raise is accepted on its direction alone: a change that adds five
+units while its reader loses three records +2 (operator, 2026-10-03). #469
+gives each guard the number-free cross-check that catches that mechanically.
+
+`literal-floors.test.ts` keeps it that way. Its reader classifies every
+`toBeGreaterThan(OrEqual)` under `tests/`, every comparison with a literal
+inside an `expect` argument, and every `toBeLessThan(OrEqual)` whose subject
+is a literal (a floor written backwards), as presence, counted, forwarded,
+compared, threshold or ceiling, and refuses anything else by line. A
+counted or forwarded floor must be ratcheted, or listed as a product value
+with its reason (a 44px target, a grouping statistic), or be one of the
+seven Playwright floors Group 5 ratchets (that list may only shrink). Its
+cross-check counts the matcher per file in the comment-stripped text, less
+what string and regex literals spell; no number drifts in it.
+
+Converted, as 52 recorded ids: 41 floors written in place; `spec-scan`'s
+helper, whose number was a parameter no literal search sees, as one id for
+each of its five callers; `back-translate`'s floor, one id per locale (4);
+and `evidence-recording`'s two floors written as `acting.length > 25` inside
+a `toEqual`, which the reader first missed and now plants. With
+`absence-liveness`'s three and the meta-guard's own count, `floors.json`
+holds 56. Sixteen sat before their verdict in the same test
+and were moved below it, so a population that grew never hides a finding.
+Each first figure was read against the census and the diff that recorded
+it, and every one is accounted for.
+
+The matrix ran 37 rows, all as predicted once R22 was corrected. On
+`develop`, 6 stayed GREEN: a reader one short in `absence-liveness`,
+`git-env`, `duplicate-imports` and `spec-scan`'s forwarded floor, and growth
+through `absence-liveness` and `evidence-recording`'s comparison floor. On the
+branch, 31 turned their guard RED: those six again, `back-translate`'s looped
+locale, four of the recorder's refusals (a fall, a stale id, two places,
+two values) and its printed moves, both directions
+of the check, record mode's call site, the CI refusal's words, a workflow
+running the recorder, and twelve against the literal reader (a literal floor
+back, a forwarded bound, the comparison form, a callback's predicate, a
+literal read as written, `expect.poll`, the cross-check alone with its floor
+off, a root skipped, a stale product value, a growing Group 5 list, an id
+spelled twice, and a floor written backwards, `expect(5).toBeLessThan(n)`,
+which review pass 1 found unread: no file writes one, and none can now pass
+unseen), and, from review pass 4, the recorder's refusals of a suite that
+did not start and of one that failed, which no test had reached; each is now
+run with a `PATH` that has no `npx`, or a stand-in that exits 3, and the
+real record read before and after. R22 first came back GREEN: TypeScript already normalises a
+numeric literal's text, so the `replace` it removed was dead code, and is
+gone. The CI refusal is mutated in its words, not removed, because a
+recorder that ran under the probe would run the suite and could rewrite the
+real `tests/floors.json`.
+
 ## Group 4: loop-built findings, next
 
 41 `searched` calls build their findings by pushing inside a loop, which
@@ -229,10 +295,12 @@ over the population `of` names.
 
 ## Group 5: rendered-page floors, next
 
-The e2e floors on what a page rendered (`classroom-groups-controls.spec.ts`
-518, 575, 657, 1760; `feature-words.spec.ts:302`) are runtime populations.
+The e2e floors on what a page rendered are runtime populations: the seven
+listed in `literal-floors.test.ts`'s `GROUP_5` (`classroom-groups-controls`
+four, `classroom-groups-print`, `copy-reaches-a-page`, `feature-words`).
 They are measured per page in the container, since a layout count measured
-on macOS is not the one CI reads.
+on macOS is not the one CI reads, and ratcheted with `floorBreach` like the
+unit floors (#468), which needs the recorder to read a Playwright run.
 
 ## Side findings
 

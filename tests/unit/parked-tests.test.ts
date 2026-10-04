@@ -253,11 +253,9 @@ describe('parked tests must name an issue', () => {
   });
 
   it('the e2e corpus parks nothing without naming an issue', () => {
-    // Measured 771 tests and groups read on 2026-10-03 (#446). Stated tight,
-    // so a reader that comes back one short fails.
     expectNothingFound(
       readParkedTests,
-      declarationsRead('tests and groups read', 770),
+      declarationsRead('tests and groups read', 'parked-tests/declarations'),
     );
   });
 });
